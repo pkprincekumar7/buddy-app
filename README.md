@@ -1,0 +1,2 @@
+# buddy-app
+Buddy Application
