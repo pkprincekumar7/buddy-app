@@ -3,23 +3,34 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Sparkles, ArrowRight, TreeDeciduous, Brain, Heart, 
   Dumbbell, Palette, Star, Rocket, Shield, Users
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { USER_APP_HOME_RESET_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 
 export default function Home() {
+  const queryClient = useQueryClient();
   const { data: children = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date')
   });
-  
-  // Check for onboarding in progress
-  const onboardingInProgress = localStorage.getItem('onboarding_phase') && 
-    localStorage.getItem('onboarding_phase') !== 'null' &&
-    localStorage.getItem('onboarding_phase') !== 'complete';
+
+  const { data: appState = {}, isSuccess: appStateLoaded } = useQuery({
+    queryKey: ['userAppState'],
+    queryFn: () => api.userAppState.get(),
+    staleTime: 30_000,
+  });
+
+  const phaseRaw = appState?.onboarding_phase;
+  const onboardingInProgress =
+    appStateLoaded &&
+    phaseRaw !== undefined &&
+    phaseRaw !== null &&
+    String(phaseRaw) !== 'null' &&
+    String(phaseRaw) !== 'complete';
   
   // Auto-redirect authenticated users (only if no onboarding in progress)
   useEffect(() => {
@@ -40,13 +51,16 @@ export default function Home() {
     checkAuthAndRedirect();
   }, [children, isLoading, onboardingInProgress]);
   
-  const handleStartJourney = () => {
-    // Clear onboarding state for fresh start
-    localStorage.removeItem('onboarding_phase');
-    localStorage.removeItem('onboarding_childData');
-    localStorage.removeItem('onboarding_mbti');
-    localStorage.removeItem('recommendations_progress');
-    
+  const handleStartJourney = async () => {
+    try {
+      if (await api.auth.isAuthenticated()) {
+        await api.userAppState.patch(patchBodyClearKeys(USER_APP_HOME_RESET_KEYS));
+        queryClient.invalidateQueries({ queryKey: ['userAppState'] });
+      }
+    } catch {
+      /* ignore */
+    }
+
     if (children.length > 0) {
       window.location.href = createPageUrl('SelectMode');
     } else {

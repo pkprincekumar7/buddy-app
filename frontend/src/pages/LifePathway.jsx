@@ -6,6 +6,7 @@ import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle } from '
 import TextareaWithVoice from '../components/shared/TextareaWithVoice';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
+import { USER_APP_FULL_ONBOARDING_KEYS, USER_APP_PROCEED_TO_GOALS_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 
 const areaColors = {
@@ -43,13 +44,12 @@ export default function LifePathway() {
         const currentUser = await api.auth.me();
         setUser(currentUser);
 
-        const savedChildData = localStorage.getItem('onboarding_childData');
-        const savedProfile = localStorage.getItem('onboarding_profile');
-        const savedCompletedAreas = localStorage.getItem('completed_growth_areas');
+        const s = await api.userAppState.get();
 
         let resolvedChildData = null;
-        if (savedChildData) {
-          resolvedChildData = JSON.parse(savedChildData);
+        const savedChildData = s?.onboarding_childData;
+        if (savedChildData && typeof savedChildData === 'object') {
+          resolvedChildData = savedChildData;
           setChildData(resolvedChildData);
         } else {
           const children = await api.entities.Child.list('-created_date', 1);
@@ -59,11 +59,13 @@ export default function LifePathway() {
           }
         }
 
-        if (savedProfile) setProfile(JSON.parse(savedProfile));
+        const profileFromState = s?.onboarding_profile;
+        if (profileFromState && typeof profileFromState === 'object') setProfile(profileFromState);
 
+        const savedCompletedAreas = s?.completed_growth_areas;
         let parsedAreas = [];
-        if (savedCompletedAreas) {
-          parsedAreas = JSON.parse(savedCompletedAreas);
+        if (savedCompletedAreas && Array.isArray(savedCompletedAreas)) {
+          parsedAreas = savedCompletedAreas;
           setCompletedAreas(parsedAreas);
         }
 
@@ -83,20 +85,23 @@ export default function LifePathway() {
     setShowConcernModal(true);
   };
 
-  const handleConcernSubmit = () => {
-    if (concernInput.trim()) {
-      localStorage.setItem('parent_concern', concernInput.trim());
+  const handleConcernSubmit = async () => {
+    if (!concernInput.trim()) return;
+    try {
+      await api.userAppState.patch({ parent_concern: concernInput.trim() });
+      setConcernSubmitted(true);
+    } catch {
+      /* still allow UX to proceed */
       setConcernSubmitted(true);
     }
   };
 
-  const handleProceedToDashboard = () => {
-    localStorage.removeItem('onboarding_phase');
-    localStorage.removeItem('onboarding_childData');
-    localStorage.removeItem('onboarding_mbti');
-    localStorage.removeItem('onboarding_profile');
-    localStorage.removeItem('onboarding_recommendations');
-    localStorage.removeItem('recommendations_progress');
+  const handleProceedToDashboard = async () => {
+    try {
+      await api.userAppState.patch(patchBodyClearKeys(USER_APP_PROCEED_TO_GOALS_KEYS));
+    } catch {
+      /* ignore */
+    }
     window.location.href = createPageUrl('GoalsDashboard');
   };
 
@@ -504,8 +509,12 @@ export default function LifePathway() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  ['onboarding_phase','onboarding_childData','onboarding_mbti','onboarding_profile','onboarding_recommendations','recommendations_progress','completed_growth_areas','parent_concern','goals_plan'].forEach(k => localStorage.removeItem(k));
+                onClick={async () => {
+                  try {
+                    await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                  } catch {
+                    /* ignore */
+                  }
                   window.location.href = '/Onboarding';
                 }}
                 className="h-14 px-8 rounded-2xl border-2 text-lg text-amber-700 border-amber-300 hover:bg-amber-50"

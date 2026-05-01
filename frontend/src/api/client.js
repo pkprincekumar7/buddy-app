@@ -171,6 +171,19 @@ export const api = {
     },
   },
 
+  userAppState: {
+    async get() {
+      return request('/user/app-state');
+    },
+    async patch(payload) {
+      return request('/user/app-state', { method: 'PATCH', body: payload });
+    },
+    /** Upserts one completed area by id; server merges atomically into completed_growth_areas */
+    appendCompletedGrowthArea(areaPayload) {
+      return request('/user/app-state/completed-growth-area', { method: 'POST', body: areaPayload });
+    },
+  },
+
   appLogs: {
     logUserInApp() {
       return Promise.resolve();

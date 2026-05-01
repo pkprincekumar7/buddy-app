@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { api } from '@/api/client';
 import { Target, ChevronDown, ChevronUp, Sparkles, RefreshCw, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { USER_APP_FULL_ONBOARDING_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
@@ -20,20 +21,22 @@ export default function GoalsDashboard() {
         const currentUser = await api.auth.me();
         setUser(currentUser);
 
-        const savedChild = localStorage.getItem('onboarding_childData');
-        let child = savedChild ? JSON.parse(savedChild) : null;
+        const s = await api.userAppState.get();
+
+        let child = s?.onboarding_childData && typeof s.onboarding_childData === 'object'
+          ? s.onboarding_childData
+          : null;
         if (!child) {
           const children = await api.entities.Child.list('-created_date', 1);
           if (children?.length > 0) child = children[0];
         }
         setChildData(child);
 
-        const savedConcern = localStorage.getItem('parent_concern') || '';
+        const savedConcern = typeof s.parent_concern === 'string' ? s.parent_concern : '';
         setConcern(savedConcern);
 
-        const savedPlan = localStorage.getItem('goals_plan');
-        if (savedPlan) {
-          setGoalPlan(JSON.parse(savedPlan));
+        if (s.goals_plan) {
+          setGoalPlan(s.goals_plan);
           setIsLoading(false);
           return;
         }
@@ -49,8 +52,9 @@ export default function GoalsDashboard() {
 
   const generateGoals = async (child, parentConcern) => {
     setIsLoading(true);
-    const completedAreas = JSON.parse(localStorage.getItem('completed_growth_areas') || '[]');
-    const profile = JSON.parse(localStorage.getItem('onboarding_profile') || 'null');
+    const s = await api.userAppState.get();
+    const completedAreas = Array.isArray(s.completed_growth_areas) ? s.completed_growth_areas : [];
+    const profile = s.onboarding_profile || null;
 
     const areasContext = completedAreas.map(a => `${a.name}: ${(a.recommendations || []).join('; ')}`).join('\n');
     const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
@@ -129,7 +133,7 @@ Return JSON with this exact structure:
       }
     });
 
-    localStorage.setItem('goals_plan', JSON.stringify(result));
+    await api.userAppState.patch({ goals_plan: result });
     setGoalPlan(result);
     setIsLoading(false);
   };
@@ -248,8 +252,12 @@ Return JSON with this exact structure:
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  ['onboarding_phase','onboarding_childData','onboarding_mbti','onboarding_profile','onboarding_recommendations','recommendations_progress','completed_growth_areas','parent_concern','goals_plan'].forEach(k => localStorage.removeItem(k));
+                onClick={async () => {
+                  try {
+                    await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                  } catch {
+                    /* ignore */
+                  }
                   window.location.href = '/Onboarding';
                 }}
                 className="h-11 px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
@@ -259,8 +267,7 @@ Return JSON with this exact structure:
               <Button
                 variant="outline"
                 onClick={() => {
-                  localStorage.removeItem('goals_plan');
-                  generateGoals(childData, concern);
+                  api.userAppState.patch({ goals_plan: null }).then(() => generateGoals(childData, concern));
                 }}
                 className="h-11 px-6 rounded-2xl border-2"
               >

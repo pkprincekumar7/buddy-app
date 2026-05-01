@@ -19,6 +19,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class UserAppState(Base):
+    """Per-user JSON document for onboarding, goals, and UI preferences (tts_enabled)."""
+
+    __tablename__ = "user_app_state"
+
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
+
+
 class ChildRecord(Base):
     __tablename__ = "children"
 

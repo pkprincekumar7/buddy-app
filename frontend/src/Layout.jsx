@@ -10,10 +10,8 @@ export default function Layout({ children, currentPageName }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [childProfiles, setChildProfiles] = useState([]);
-  const [ttsEnabled, setTtsEnabled] = useState(() => {
-    const saved = localStorage.getItem('tts_enabled');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsHydrated, setTtsHydrated] = useState(false);
 
   // Global TTS control and cleanup on load
   useEffect(() => {
@@ -30,10 +28,35 @@ export default function Layout({ children, currentPageName }) {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('tts_enabled', JSON.stringify(ttsEnabled));
     if (!ttsEnabled && typeof window !== 'undefined') window.speechSynthesis.cancel();
     if (typeof window !== 'undefined') window.ttsEnabled = ttsEnabled;
   }, [ttsEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (await api.auth.isAuthenticated()) {
+          const s = await api.userAppState.get();
+          if (!cancelled && typeof s.tts_enabled === 'boolean') {
+            setTtsEnabled(s.tts_enabled);
+          }
+        }
+      } catch {
+        /* keep default */
+      } finally {
+        if (!cancelled) setTtsHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ttsHydrated) return;
+    api.userAppState.patch({ tts_enabled: ttsEnabled }).catch(() => {});
+  }, [ttsEnabled, ttsHydrated]);
 
   useEffect(() => {
     const checkAuth = async () => {

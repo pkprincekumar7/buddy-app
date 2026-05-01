@@ -3,12 +3,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.auth_utils import create_access_token, hash_password, verify_password
-from app.models import ChildRecord, GrowthMissionRecord, ParentInsightRecord, ReflectionRecord, User
+from app.models import (
+    ChildRecord,
+    GrowthMissionRecord,
+    ParentInsightRecord,
+    ReflectionRecord,
+    User,
+    UserAppState,
+)
 from app.settings import settings
 
 router = APIRouter(tags=["auth"])
@@ -92,6 +100,74 @@ def auth_me(user: User = Depends(get_current_user)):
         role=user.role,
         parent_pin=user.parent_pin,
     )
+
+
+@router.get("/user/app-state")
+def get_user_app_state(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.get(UserAppState, user.id)
+    return dict(row.payload) if row and row.payload else {}
+
+
+@router.patch("/user/app-state")
+def patch_user_app_state(
+    body: dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.get(UserAppState, user.id)
+    if not row:
+        row = UserAppState(user_id=user.id, payload={})
+        db.add(row)
+    data = dict(row.payload or {})
+    for k, v in body.items():
+        if v is None:
+            data.pop(k, None)
+        else:
+            data[k] = v
+    row.payload = data
+    db.commit()
+    db.refresh(row)
+    return dict(row.payload)
+
+
+class CompletedGrowthAreaResponse(BaseModel):
+    completed_growth_areas: list[Any]
+
+
+@router.post("/user/app-state/completed-growth-area", response_model=CompletedGrowthAreaResponse)
+def append_completed_growth_area(
+    body: dict[str, Any],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Atomically upsert one growth area entry by id without losing sibling areas (serialized per user row)."""
+    if not body.get("id"):
+        raise HTTPException(status_code=400, detail="Missing area id")
+
+    for _ in range(6):
+        try:
+            row = db.execute(
+                select(UserAppState).where(UserAppState.user_id == user.id).with_for_update()
+            ).scalar_one_or_none()
+            if not row:
+                row = UserAppState(user_id=user.id, payload={})
+                db.add(row)
+                db.flush()
+            data = dict(row.payload or {})
+            existing = data.get("completed_growth_areas")
+            if not isinstance(existing, list):
+                existing = []
+            aid = body["id"]
+            updated = [a for a in existing if isinstance(a, dict) and a.get("id") != aid]
+            updated.append(body)
+            data["completed_growth_areas"] = updated
+            row.payload = data
+            db.commit()
+            db.refresh(row)
+            return CompletedGrowthAreaResponse(completed_growth_areas=updated)
+        except IntegrityError:
+            db.rollback()
+    raise HTTPException(status_code=500, detail="Could not save completed growth area")
 
 
 def _child_to_api(row: ChildRecord) -> dict[str, Any]:

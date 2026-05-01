@@ -1,48 +1,43 @@
-const isNode = typeof window === 'undefined';
-const windowObj = isNode ? { localStorage: new Map() } : window;
-const storage = windowObj.localStorage;
+/**
+ * Persist access_token from ?access_token= (URL is stripped).
+ * Keeps compat with ?clear_access_token=true.
+ */
 
-const toSnakeCase = (str) => str.replace(/([A-Z])/g, '_$1').toLowerCase();
+const TOKEN_KEY = 'access_token';
 
-const getAppParamValue = (paramName, { defaultValue = undefined, removeFromUrl = false } = {}) => {
-	if (isNode) {
-		return defaultValue;
+const getAccessTokenFromUrlAndStore = () => {
+	if (typeof window === 'undefined') {
+		return null;
 	}
-	const storageKey = paramName === 'access_token' ? 'access_token' : `buddy360_${toSnakeCase(paramName)}`;
 	const urlParams = new URLSearchParams(window.location.search);
-	const searchParam = urlParams.get(paramName);
-	if (removeFromUrl) {
-		urlParams.delete(paramName);
-		const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''
-			}${window.location.hash}`;
-		window.history.replaceState({}, document.title, newUrl);
-	}
+	const searchParam = urlParams.get(TOKEN_KEY);
 	if (searchParam) {
-		storage.setItem(storageKey, searchParam);
+		urlParams.delete(TOKEN_KEY);
+		const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''}${window.location.hash}`;
+		window.history.replaceState({}, document.title, newUrl);
+		localStorage.setItem(TOKEN_KEY, searchParam);
 		return searchParam;
 	}
-	if (defaultValue) {
-		storage.setItem(storageKey, defaultValue);
-		return defaultValue;
-	}
-	const storedValue = storage.getItem(storageKey);
-	if (storedValue) {
-		return storedValue;
-	}
-	return null;
+	return localStorage.getItem(TOKEN_KEY);
 };
 
-const getAppParams = () => {
-	if (getAppParamValue("clear_access_token") === 'true') {
-		storage.removeItem('access_token');
-		storage.removeItem('token');
+const initStoredTokenFromUrl = () => {
+	const urlParams =
+		typeof window === 'undefined' ? null : new URLSearchParams(window.location.search);
+
+	if (
+		urlParams &&
+		urlParams.get('clear_access_token') === 'true'
+	) {
+		localStorage.removeItem('access_token');
+		localStorage.removeItem('token');
 	}
-	return {
-		token: getAppParamValue("access_token", { removeFromUrl: true }),
-		fromUrl: getAppParamValue("from_url", { defaultValue: typeof window !== 'undefined' ? window.location.href : '' }),
-	};
+
+	getAccessTokenFromUrlAndStore();
 };
+
+initStoredTokenFromUrl();
 
 export const appParams = {
-	...getAppParams()
+	token: typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null,
 };

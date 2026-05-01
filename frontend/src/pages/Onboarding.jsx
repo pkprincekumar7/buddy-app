@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { debounce } from 'lodash';
 import { api } from '@/api/client';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,80 +19,52 @@ const phases = [
   { id: 'recommendations', label: 'Your Journey', icon: '💡' }
 ];
 
-export default function Onboarding() {
-  // Load saved phase from localStorage
-  const getSavedPhase = () => {
-    try {
-      const saved = localStorage.getItem('onboarding_phase');
-      return saved ? parseInt(saved, 10) : 0;
-    } catch {
-      return 0;
-    }
-  };
+const DEFAULT_CHILD_STATE = {
+  name: '',
+  age: '',
+  school: '',
+  strengths: [],
+  hobbies: [],
+  thinking_pattern: '',
+  communication_style: '',
+  energy_level: '',
+  social_preference: '',
+  decision_making: '',
+  structure_preference: '',
+  avatar_style: 'explorer',
+  pillar_scores: { cognitive: 25, emotional: 25, physical: 25, talent: 25, character: 25, future: 25 },
+  current_phase: 'foundation',
+  onboarding_completed: false
+};
 
-  const [currentPhase, setCurrentPhase] = useState(getSavedPhase());
+export default function Onboarding() {
+  const debouncedPersistChild = useMemo(
+    () => debounce((data) => api.userAppState.patch({ onboarding_childData: data }), 500),
+    []
+  );
+  const debouncedPersistMbti = useMemo(
+    () => debounce((data) => api.userAppState.patch({ onboarding_mbti: data }), 400),
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      debouncedPersistChild.cancel();
+      debouncedPersistMbti.cancel();
+    };
+  }, [debouncedPersistChild, debouncedPersistMbti]);
+
+  const [currentPhase, setCurrentPhase] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  // Load saved child data from localStorage
-  const getSavedChildData = () => {
-    try {
-      const saved = localStorage.getItem('onboarding_childData');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  };
 
-  const getSavedMbti = () => {
-    try {
-      const saved = localStorage.getItem('onboarding_mbti');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const [childData, setChildData] = useState(getSavedChildData() || {
-    name: '',
-    age: '',
-    school: '',
-    strengths: [],
-    hobbies: [],
-    thinking_pattern: '',
-    communication_style: '',
-    energy_level: '',
-    social_preference: '',
-    decision_making: '',
-    structure_preference: '',
-    avatar_style: 'explorer',
-    pillar_scores: { cognitive: 25, emotional: 25, physical: 25, talent: 25, character: 25, future: 25 },
-    current_phase: 'foundation',
-    onboarding_completed: false
-  });
-  const [mbtiResult, setMbtiResult] = useState(getSavedMbti());
-
-  const getSavedProfile = () => {
-    try {
-      const saved = localStorage.getItem('onboarding_profile');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const getSavedRecommendations = () => {
-    try {
-      const saved = localStorage.getItem('onboarding_recommendations');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const [generatedProfile, setGeneratedProfile] = useState(getSavedProfile());
-  const [recommendations, setRecommendations] = useState(getSavedRecommendations());
+  const [childData, setChildData] = useState(() => ({ ...DEFAULT_CHILD_STATE }));
+  const [mbtiResult, setMbtiResult] = useState(null);
+  const [generatedProfile, setGeneratedProfile] = useState(null);
+  const [recommendations, setRecommendations] = useState(null);
   const [pendingActivities, setPendingActivities] = useState([]);
   const recPhaseBackRef = useRef(null);
 
@@ -112,25 +85,55 @@ export default function Onboarding() {
     checkAuth();
   }, []);
 
-  // Save progress to localStorage when state changes
   useEffect(() => {
-    localStorage.setItem('onboarding_phase', currentPhase.toString());
-    // Clear recommendations progress so it always starts fresh
-    if (currentPhase === 3) {
-      localStorage.removeItem('recommendations_progress');
-      localStorage.removeItem('completed_growth_areas');
-    }
-  }, [currentPhase]);
+    if (checkingAuth) return;
+    let cancelled = false;
+
+    const hydrateFromServer = async () => {
+      try {
+        if (isAuthenticated) {
+          const s = await api.userAppState.get();
+          if (cancelled) return;
+          const ph = s.onboarding_phase;
+          if (ph !== undefined && ph !== null && String(ph) !== '') {
+            const n = typeof ph === 'number' ? ph : parseInt(String(ph), 10);
+            if (!Number.isNaN(n)) setCurrentPhase(n);
+          }
+          if (s.onboarding_childData && typeof s.onboarding_childData === 'object') {
+            setChildData({ ...DEFAULT_CHILD_STATE, ...s.onboarding_childData });
+          }
+          if (s.onboarding_mbti) setMbtiResult(s.onboarding_mbti);
+          if (s.onboarding_profile) setGeneratedProfile(s.onboarding_profile);
+          if (s.onboarding_recommendations) setRecommendations(s.onboarding_recommendations);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    };
+
+    hydrateFromServer();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkingAuth, isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem('onboarding_childData', JSON.stringify(childData));
-  }, [childData]);
+    if (!hydrated) return;
+    api.userAppState.patch({ onboarding_phase: currentPhase }).catch(() => {});
+  }, [currentPhase, hydrated]);
 
   useEffect(() => {
-    if (mbtiResult) {
-      localStorage.setItem('onboarding_mbti', JSON.stringify(mbtiResult));
-    }
-  }, [mbtiResult]);
+    if (!hydrated) return;
+    debouncedPersistChild(childData);
+  }, [childData, hydrated, debouncedPersistChild]);
+
+  useEffect(() => {
+    if (!hydrated || !mbtiResult) return;
+    debouncedPersistMbti(mbtiResult);
+  }, [mbtiResult, hydrated, debouncedPersistMbti]);
 
   const updateChildData = (updates) => {
     setChildData(prev => ({ ...prev, ...updates }));
@@ -179,8 +182,7 @@ export default function Onboarding() {
         growth_areas: mbtiResult.profile.growthAreas
       };
       setGeneratedProfile(profile);
-      // Save to localStorage for in-progress journeys
-      localStorage.setItem('onboarding_profile', JSON.stringify(profile));
+      api.userAppState.patch({ onboarding_profile: profile }).catch(() => {});
     }
   };
 
@@ -243,7 +245,9 @@ Generate:
 
       await generateProfile();
       setRecommendations(result);
-      localStorage.setItem('onboarding_recommendations', JSON.stringify(result));
+      if (result) {
+        await api.userAppState.patch({ onboarding_recommendations: result });
+      }
       setIsLoading(false);
       return result;
     } catch (error) {
@@ -257,10 +261,13 @@ Generate:
 
   const handleNext = async () => {
     if (currentPhase === 2) {
-      // After Personality phase, generate recommendations
       await generateRecommendations();
+      await api.userAppState.patch({
+        recommendations_progress: null,
+        completed_growth_areas: null,
+      });
     }
-    setCurrentPhase(prev => Math.min(prev + 1, phases.length - 1));
+    setCurrentPhase((prev) => Math.min(prev + 1, phases.length - 1));
   };
 
   const handleBack = () => {

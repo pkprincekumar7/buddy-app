@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { debounce } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare, RefreshCw, CheckCircle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -134,40 +135,73 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     window.speechSynthesis.speak(utterance);
   };
 
-  // Load saved progress from localStorage
-  const getSavedProgress = () => {
-    try {
-      const saved = localStorage.getItem('recommendations_progress');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const savedProgress = getSavedProgress();
-
-  const [step, setStep] = useState(savedProgress?.step || 'intro');
-  // Restore selectedArea by ID to avoid losing the icon component reference
-  const [selectedArea, setSelectedArea] = useState(
-    savedProgress?.selectedArea?.id
-      ? growthAreas.find(a => a.id === savedProgress.selectedArea.id) || null
-      : null
-  );
-  const [selectedActivity, setSelectedActivity] = useState(savedProgress?.selectedActivity || null);
-  const [parentLiked, setParentLiked] = useState(savedProgress?.parentLiked || null);
-  const [wantChildActivity, setWantChildActivity] = useState(savedProgress?.wantChildActivity || null);
-  const [feedback, setFeedback] = useState(savedProgress?.feedback || '');
-  const [currentAreaIndex, setCurrentAreaIndex] = useState(savedProgress?.currentAreaIndex || 0);
-  const [interactiveStep, setInteractiveStep] = useState(savedProgress?.interactiveStep || 0);
-  const [interactiveAnswers, setInteractiveAnswers] = useState(savedProgress?.interactiveAnswers || {});
+  const [step, setStep] = useState('intro');
+  const [selectedArea, setSelectedArea] = useState(null);
+  const [selectedActivity, setSelectedActivity] = useState(null);
+  const [parentLiked, setParentLiked] = useState(null);
+  const [wantChildActivity, setWantChildActivity] = useState(null);
+  const [feedback, setFeedback] = useState('');
+  const [currentAreaIndex, setCurrentAreaIndex] = useState(0);
+  const [interactiveStep, setInteractiveStep] = useState(0);
+  const [interactiveAnswers, setInteractiveAnswers] = useState({});
   const [currentAnswer, setCurrentAnswer] = useState('');
-  const [generatedActivity, setGeneratedActivity] = useState(savedProgress?.generatedActivity || null);
-  const [showGame, setShowGame] = useState(savedProgress?.showGame || false);
+  const [generatedActivity, setGeneratedActivity] = useState(null);
+  const [showGame, setShowGame] = useState(false);
   const [showChildGame, setShowChildGame] = useState(false);
   const [childGameResults, setChildGameResults] = useState(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [aiRecommendations, setAiRecommendations] = useState(null);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  const [resumeLoaded, setResumeLoaded] = useState(false);
+
+  // Load saved progress from server once
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await api.userAppState.get();
+        if (cancelled) return;
+        if (s.recommendations_progress) {
+          const p = s.recommendations_progress;
+          setStep(p.step || 'intro');
+          if (p.selectedArea?.id) {
+            const found = growthAreas.find((a) => a.id === p.selectedArea.id);
+            if (found) setSelectedArea(found);
+          }
+          if (p.selectedActivity) setSelectedActivity(p.selectedActivity);
+          if (p.parentLiked != null) setParentLiked(p.parentLiked);
+          if (p.wantChildActivity != null) setWantChildActivity(p.wantChildActivity);
+          if (typeof p.feedback === 'string') setFeedback(p.feedback);
+          if (typeof p.currentAreaIndex === 'number') setCurrentAreaIndex(p.currentAreaIndex);
+          if (typeof p.interactiveStep === 'number') setInteractiveStep(p.interactiveStep);
+          if (p.interactiveAnswers && typeof p.interactiveAnswers === 'object') {
+            setInteractiveAnswers(p.interactiveAnswers);
+          }
+          if (p.generatedActivity) setGeneratedActivity(p.generatedActivity);
+          if (typeof p.showGame === 'boolean') setShowGame(p.showGame);
+        }
+      } catch {
+        /* keep defaults */
+      } finally {
+        if (!cancelled) setResumeLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const debouncedPersistRecommendationsProgress = useMemo(
+    () =>
+      debounce((progress) => {
+        api.userAppState.patch({ recommendations_progress: progress }).catch(() => {});
+      }, 400),
+    []
+  );
+
+  useEffect(() => {
+    return () => debouncedPersistRecommendationsProgress.cancel();
+  }, [debouncedPersistRecommendationsProgress]);
 
   // Register back handler with parent
   useEffect(() => {
@@ -193,12 +227,21 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   // Refs for voice control
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
+  const growthAreaSaveChainRef = useRef(Promise.resolve());
 
-  // Save progress to localStorage whenever state changes
+  // Save recommendations wizard progress (JSON-safe; omit icon components)
   useEffect(() => {
+    if (!resumeLoaded) return;
     const progress = {
       step,
-      selectedArea,
+      selectedArea: selectedArea
+        ? {
+            id: selectedArea.id,
+            name: selectedArea.name,
+            color: selectedArea.color,
+            description: selectedArea.description,
+          }
+        : null,
       selectedActivity,
       parentLiked,
       wantChildActivity,
@@ -207,17 +250,40 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       interactiveStep,
       interactiveAnswers,
       generatedActivity,
-      showGame
+      showGame,
     };
-    localStorage.setItem('recommendations_progress', JSON.stringify(progress));
-  }, [step, selectedArea, selectedActivity, parentLiked, wantChildActivity, feedback, currentAreaIndex, interactiveStep, interactiveAnswers, generatedActivity, showGame]);
+    debouncedPersistRecommendationsProgress(progress);
+  }, [
+    resumeLoaded,
+    step,
+    selectedArea,
+    selectedActivity,
+    parentLiked,
+    wantChildActivity,
+    feedback,
+    currentAreaIndex,
+    interactiveStep,
+    interactiveAnswers,
+    generatedActivity,
+    showGame,
+    debouncedPersistRecommendationsProgress,
+  ]);
 
-  // Helper to persist a completed growth area into localStorage
-  const saveCompletedGrowthArea = (area, answers, recommendations) => {
-    const existing = JSON.parse(localStorage.getItem('completed_growth_areas') || '[]');
-    const updated = existing.filter(a => a.id !== area.id);
-    updated.push({ id: area.id, name: area.name, color: area.color, answers, recommendations });
-    localStorage.setItem('completed_growth_areas', JSON.stringify(updated));
+  const saveCompletedGrowthArea = async (area, answers, recs) => {
+    const payload = {
+      id: area.id,
+      name: area.name,
+      color: area.color,
+      answers,
+      recommendations: recs,
+    };
+    const task = growthAreaSaveChainRef.current.then(() => api.userAppState.appendCompletedGrowthArea(payload));
+    growthAreaSaveChainRef.current = task.catch(() => {});
+    try {
+      await task;
+    } catch {
+      toast.error('Could not save progress');
+    }
   };
 
   // Speak full profile on intro
@@ -810,8 +876,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+              onClick={async () => {
+                if (!selectedArea) return;
+                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
                 setStep('area_selection');
                 setParentLiked(null);
               }}
@@ -822,8 +889,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </div>
           <Button
             variant="outline"
-            onClick={() => {
-              saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+            onClick={async () => {
+              if (!selectedArea) return;
+              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
               window.location.href = createPageUrl('LifePathway');
             }}
             className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
@@ -843,8 +911,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             Present a fun game to {data.name} on the same topic
           </Button>
           <Button
-            onClick={() => {
-              saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+            onClick={async () => {
+              if (!selectedArea) return;
+              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
               setStep('area_selection');
               setParentLiked(null);
             }}
@@ -855,8 +924,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+            onClick={async () => {
+              if (!selectedArea) return;
+              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
               window.location.href = createPageUrl('LifePathway');
             }}
             className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
@@ -979,8 +1049,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
               <div className="flex flex-col gap-3">
               <Button
-                onClick={() => {
-                  saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
+                onClick={async () => {
+                  if (!selectedArea) return;
+                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
                   if (currentAreaIndex < growthAreas.length - 1) {
                     setCurrentAreaIndex(currentAreaIndex + 1);
                     setStep('area_selection');
@@ -999,8 +1070,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
+                onClick={async () => {
+                  if (!selectedArea) return;
+                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
                   window.location.href = createPageUrl('LifePathway');
                 }}
                 className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
