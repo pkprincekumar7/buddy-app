@@ -1,0 +1,48 @@
+{
+  "name": "Reflection",
+  "type": "object",
+  "properties": {
+    "child_id": {
+      "type": "string",
+      "description": "Reference to child"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "gratitude",
+        "achievement",
+        "learning",
+        "feeling",
+        "dream"
+      ],
+      "description": "Type of reflection"
+    },
+    "content": {
+      "type": "string",
+      "description": "The reflection content"
+    },
+    "mood": {
+      "type": "string",
+      "enum": [
+        "happy",
+        "proud",
+        "curious",
+        "calm",
+        "excited",
+        "thoughtful"
+      ],
+      "description": "How the child feels"
+    },
+    "pillar_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Related growth pillars"
+    }
+  },
+  "required": [
+    "child_id",
+    "content"
+  ]
+}

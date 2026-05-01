@@ -1,0 +1,53 @@
+{
+  "name": "ParentInsight",
+  "type": "object",
+  "properties": {
+    "child_id": {
+      "type": "string",
+      "description": "Reference to child"
+    },
+    "insight_type": {
+      "type": "string",
+      "enum": [
+        "strength_emerging",
+        "pattern_detected",
+        "milestone_reached",
+        "conversation_prompt",
+        "activity_suggestion"
+      ],
+      "description": "Type of insight"
+    },
+    "title": {
+      "type": "string",
+      "description": "Insight title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed insight"
+    },
+    "related_pillar": {
+      "type": "string",
+      "enum": [
+        "cognitive",
+        "emotional",
+        "physical",
+        "talent",
+        "character",
+        "future"
+      ]
+    },
+    "action_suggestion": {
+      "type": "string",
+      "description": "Suggested action for parents"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "child_id",
+    "insight_type",
+    "title"
+  ]
+}

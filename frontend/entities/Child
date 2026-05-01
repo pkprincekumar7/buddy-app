@@ -1,0 +1,141 @@
+{
+  "name": "Child",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Child's name"
+    },
+    "date_of_birth": {
+      "type": "string",
+      "format": "date",
+      "description": "Child's date of birth"
+    },
+    "school": {
+      "type": "string",
+      "description": "Child's school name"
+    },
+    "avatar_style": {
+      "type": "string",
+      "enum": [
+        "explorer",
+        "creator",
+        "thinker",
+        "helper",
+        "dreamer"
+      ],
+      "description": "Child's chosen avatar style"
+    },
+    "personality_traits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Observed personality traits / strengths"
+    },
+    "interests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Current interests and hobbies"
+    },
+    "thinking_pattern": {
+      "type": "string",
+      "enum": [
+        "Visual",
+        "Analytical",
+        "Imaginative",
+        "Not sure"
+      ],
+      "description": "Thinking pattern type"
+    },
+    "communication_style": {
+      "type": "string",
+      "description": "Communication style"
+    },
+    "energy_level": {
+      "type": "string",
+      "description": "Energy level description"
+    },
+    "social_preference": {
+      "type": "string",
+      "description": "Social preference"
+    },
+    "social_behaviour": {
+      "type": "string",
+      "description": "Social behaviour style"
+    },
+    "emotional_behaviour": {
+      "type": "string",
+      "description": "Emotional behaviour style"
+    },
+    "mbti_type": {
+      "type": "string",
+      "description": "MBTI personality type (e.g., ESTP, INFJ)"
+    },
+    "pillar_scores": {
+      "type": "object",
+      "description": "Progress in each of the 6 pillars",
+      "properties": {
+        "cognitive": {
+          "type": "number"
+        },
+        "emotional": {
+          "type": "number"
+        },
+        "physical": {
+          "type": "number"
+        },
+        "talent": {
+          "type": "number"
+        },
+        "character": {
+          "type": "number"
+        },
+        "future": {
+          "type": "number"
+        }
+      }
+    },
+    "current_phase": {
+      "type": "string",
+      "enum": [
+        "foundation",
+        "exploration",
+        "direction"
+      ],
+      "description": "Current growth phase"
+    },
+    "total_missions_completed": {
+      "type": "number",
+      "default": 0
+    },
+    "streak_days": {
+      "type": "number",
+      "default": 0
+    },
+    "onboarding_completed": {
+      "type": "boolean",
+      "default": false
+    },
+    "generated_profile": {
+      "type": "object",
+      "description": "AI generated profile data"
+    },
+    "recommendations": {
+      "type": "object",
+      "description": "AI generated recommendations"
+    },
+    "parent_interactions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Parent-child interaction assignment data"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

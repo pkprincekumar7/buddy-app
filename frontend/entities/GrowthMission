@@ -1,0 +1,142 @@
+{
+  "name": "GrowthMission",
+  "type": "object",
+  "properties": {
+    "child_id": {
+      "type": "string",
+      "description": "Reference to child"
+    },
+    "title": {
+      "type": "string",
+      "description": "Mission title"
+    },
+    "description": {
+      "type": "string",
+      "description": "What the mission involves"
+    },
+    "pillar": {
+      "type": "string",
+      "enum": [
+        "cognitive",
+        "emotional",
+        "physical",
+        "talent",
+        "character",
+        "future"
+      ],
+      "description": "Which growth pillar this mission develops"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "easy",
+        "medium",
+        "challenging"
+      ],
+      "default": "easy"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "in_progress",
+        "completed",
+        "skipped"
+      ],
+      "default": "active"
+    },
+    "week_number": {
+      "type": "number",
+      "description": "Which week this mission belongs to"
+    },
+    "activity_type": {
+      "type": "string",
+      "enum": [
+        "interactive",
+        "traditional"
+      ],
+      "default": "traditional",
+      "description": "Whether this is an interactive game activity or traditional mission"
+    },
+    "activity_data": {
+      "type": "object",
+      "description": "Interactive activity questions and structure",
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "estimated_time": {
+          "type": "string"
+        }
+      }
+    },
+    "child_responses": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Child's answers from the interactive activity"
+    },
+    "reflection": {
+      "type": "string",
+      "description": "Child's reflection after completing"
+    },
+    "learning_areas": {
+      "type": "string",
+      "description": "What the child wants to improve or learn more about"
+    },
+    "parent_observation": {
+      "type": "string",
+      "description": "Parent's observation after child completes"
+    },
+    "ai_insights": {
+      "type": "object",
+      "description": "AI-generated insights from child responses and parent observation",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "strengths_observed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "growth_opportunities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "parent_note": {
+      "type": "string",
+      "description": "Parent's note or observation"
+    },
+    "completed_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "required": [
+    "child_id",
+    "title",
+    "pillar"
+  ]
+}

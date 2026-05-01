@@ -1,0 +1,8 @@
+{
+  "name": "Buddy360",
+  "short_name": "Buddy360",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#f8fafc",
+  "icons": []
+}
