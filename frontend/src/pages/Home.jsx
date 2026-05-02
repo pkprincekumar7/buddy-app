@@ -8,7 +8,7 @@ import {
   Dumbbell, Palette, Star, Rocket, Shield, Users
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { USER_APP_HOME_RESET_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
+import { USER_APP_ONBOARDING_START_OVER_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 
 export default function Home() {
   const queryClient = useQueryClient();
@@ -31,30 +31,22 @@ export default function Home() {
     String(phaseRaw) !== 'null' &&
     String(phaseRaw) !== 'complete';
 
-  const goToJourneyEntry = () => {
-    if (children.length > 0) {
-      window.location.href = createPageUrl('SelectMode');
-    } else {
-      window.location.href = createPageUrl('Onboarding');
-    }
-  };
-
-  /** Default CTAs: preserve saved onboarding app-state. */
   const handleStartJourney = () => {
-    goToJourneyEntry();
+    window.location.href = createPageUrl('Onboarding');
   };
 
-  /** Explicit reset only — same key scope as before (onboarding wizard blob, not full Start Over). */
   const handleStartFresh = async () => {
     try {
       if (await api.auth.isAuthenticated()) {
-        await api.userAppState.patch(patchBodyClearKeys(USER_APP_HOME_RESET_KEYS));
+        const existingChildren = await api.entities.Child.list('-created_date');
+        await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
+        await api.userAppState.patch(patchBodyClearKeys(USER_APP_ONBOARDING_START_OVER_KEYS));
         queryClient.invalidateQueries({ queryKey: ['userAppState'] });
       }
     } catch {
       /* ignore */
     }
-    goToJourneyEntry();
+    window.location.href = createPageUrl('Onboarding');
   };
   
   const pillars = [

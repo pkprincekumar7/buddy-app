@@ -1,14 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { debounce, isEqual } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare, RefreshCw, CheckCircle } from 'lucide-react';
+import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronLeft, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare, RefreshCw, CheckCircle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import TextareaWithVoice from '../shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import MissionMiniGame from '../missions/MissionMiniGame';
 import { toast } from 'sonner';
-import ChildActivityGame from './ChildActivityGame';
+import ChildActivityGame, { normalizeChildGameRecommendations } from './ChildActivityGame';
 import { createPageUrl } from '@/utils';
+
+function suggestedActivitiesFromGameRecommendations(rec) {
+  if (!rec || typeof rec !== 'object') return [];
+  const n = normalizeChildGameRecommendations(rec);
+  return Array.isArray(n.suggested_activities) ? n.suggested_activities : [];
+}
 
 const growthAreas = [
   { id: 'life_ambition', name: 'Life Ambition', icon: Rocket, color: 'from-purple-500 to-indigo-600', description: 'Discovering purpose and future goals' },
@@ -229,7 +236,7 @@ function coalesceChildActivitySelections(entry) {
 }
 
 /** Normalize one stored entry (map row or legacy blob) into UI hydration pieces. */
-function normalizeChildActivityEntryFromStorage(entry, areaId) {
+function normalizeChildActivityEntryFromStorage(entry, areaId, areaAnswersFallback = null) {
   if (!entry || typeof entry !== 'object') return null;
   const selections = coalesceChildActivitySelections(entry);
   const bundle =
@@ -240,8 +247,14 @@ function normalizeChildActivityEntryFromStorage(entry, areaId) {
       ? entry.results
       : null;
   const rawSnap = entry.parent_interactive_snapshot;
-  const parentSnap =
+  let parentSnap =
     rawSnap && typeof rawSnap === 'object' ? answersForArea(areaId, rawSnap) : null;
+  if (!parentSnap || !Object.keys(parentSnap).length) {
+    if (areaAnswersFallback && typeof areaAnswersFallback === 'object') {
+      parentSnap = answersForArea(areaId, areaAnswersFallback);
+    }
+  }
+  if (parentSnap && !Object.keys(parentSnap).length) parentSnap = null;
   return { selections, bundle, parentSnap };
 }
 
@@ -299,8 +312,16 @@ function buildChildActivityMapFromProgress(p, completedList = []) {
       ) {
         entry.results = ca.results;
       }
-      if (ca.parent_interactive_snapshot && typeof ca.parent_interactive_snapshot === 'object') {
-        entry.parent_interactive_snapshot = { ...ca.parent_interactive_snapshot };
+      const snapObj =
+        ca.parent_interactive_snapshot && typeof ca.parent_interactive_snapshot === 'object'
+          ? { ...ca.parent_interactive_snapshot }
+          : {};
+      const fromAns =
+        row.answers && typeof row.answers === 'object' ? answersForArea(row.id, row.answers) : {};
+      if (Object.keys(snapObj).length) {
+        entry.parent_interactive_snapshot = { ...snapObj };
+      } else if (Object.keys(fromAns).length) {
+        entry.parent_interactive_snapshot = { ...fromAns };
       }
       out[row.id] = entry;
     }
@@ -331,23 +352,41 @@ function enrichCompletedAreaChildPayloadWithRefs(payload, refs) {
   const selPayload = coalesceChildActivitySelections(payload);
   const selEff = Array.isArray(eff.selections) ? [...eff.selections] : [];
   const selections = selPayload.length > 0 ? selPayload : selEff;
-  const rs =
-    payload.results && typeof payload.results === 'object' && Array.isArray(payload.results.selections)
-      ? [...payload.results.selections]
-      : selections;
+
+  const mergedResults = {
+    ...(payload.results && typeof payload.results === 'object' ? payload.results : {}),
+    recommendations: liveRec,
+  };
+  const nestedForCompare = Array.isArray(mergedResults.selections) ? mergedResults.selections : [];
+  if (selectionsMatch(nestedForCompare, selections)) {
+    delete mergedResults.selections;
+  }
 
   return {
     ...payload,
     selections,
-    results: {
-      ...(payload.results && typeof payload.results === 'object' ? payload.results : {}),
-      selections: rs.length ? rs : selections,
-      recommendations: liveRec,
-    },
+    results: mergedResults,
   };
 }
 
-/** Snapshot for POST completed-growth-area: child_activity / child_activity_game (same shape). */
+/** Strip fields redundant with completed-area row before append (area.answers + backend GET slimming). */
+function stripRedundantChildActivityForPersist(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const next = { ...payload };
+  delete next.parent_interactive_snapshot;
+  const root = coalesceChildActivitySelections(next);
+  if (next.results && typeof next.results === 'object') {
+    const r = { ...next.results };
+    if (Array.isArray(r.selections) && selectionsMatch(r.selections, root)) {
+      delete r.selections;
+    }
+    if (Object.keys(r).length) next.results = r;
+    else delete next.results;
+  }
+  return next;
+}
+
+/** Snapshot for POST completed-growth-area: only `child_activity` is persisted (area.answers canonical for questionnaire). */
 function buildCompletedAreaChildPayload(areaId, explicitOverride, refs) {
   const ia =
     refs.interactiveAnswers && typeof refs.interactiveAnswers === 'object'
@@ -604,11 +643,11 @@ function applyTileEntryInteractivePreference(area, d) {
 }
 
 export default function RecommendationsPhase({ data, profile, recommendations, onActivityAdd, onRegisterBack, onPhaseBack }) {
+  const navigate = useNavigate();
   // Text-to-speech function
   const speak = (text) => {
     if (typeof window === 'undefined') return;
-    if (!window.ttsEnabled) return;
-    if (!voiceEnabled) return;
+    if (!voiceEnabledRef.current) return;
     
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[🌟💪😊🎉👋✨🚀🌱]/g, '').replace(/\n/g, ' ');
@@ -660,6 +699,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   /** Persisted child-game rows keyed by growth area id (survives steps where legacy child_activity_game was nulled). */
   const [childActivityByArea, setChildActivityByArea] = useState({});
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabledRef = useRef(true);
   const [aiRecommendations, setAiRecommendations] = useState(null);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const [resumeLoaded, setResumeLoaded] = useState(false);
@@ -694,6 +734,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         const s = await api.userAppState.get();
         if (cancelled) return;
 
+        if (typeof s.tts_enabled === 'boolean') {
+          voiceEnabledRef.current = s.tts_enabled;
+          setVoiceEnabled(s.tts_enabled);
+        }
+
         const completedList = Array.isArray(s.completed_growth_areas) ? s.completed_growth_areas : [];
 
         if (!s.recommendations_progress) {
@@ -726,7 +771,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           setInteractiveStep(d.interactiveStep);
           setCurrentAnswer(d.currentAnswer);
 
-          const norm = normalizeChildActivityEntryFromStorage(initialChildMap[areaObj.id], areaObj.id);
+          const norm = normalizeChildActivityEntryFromStorage(
+            initialChildMap[areaObj.id],
+            areaObj.id,
+            extractAnswersFromCompletedGrowthAreas(completedList, areaObj.id),
+          );
           if (norm) {
             setChildActivitySelections(norm.selections);
             setSavedChildGameBundle(norm.bundle);
@@ -937,7 +986,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     debouncedPersistRecommendationsProgress.flush?.();
     const explicit =
       childActivitySnapshot && typeof childActivitySnapshot === 'object' ? childActivitySnapshot : null;
-    const childPayload = buildCompletedAreaChildPayload(area.id, explicit, recommendationsPersistRefs.current);
+    const childPayloadRaw = buildCompletedAreaChildPayload(area.id, explicit, recommendationsPersistRefs.current);
+    const child_activity =
+      childPayloadRaw && typeof childPayloadRaw === 'object'
+        ? stripRedundantChildActivityForPersist(childPayloadRaw)
+        : undefined;
 
     const payload = {
       id: area.id,
@@ -945,12 +998,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       color: area.color,
       answers,
       recommendations: recs,
-      ...(childPayload && typeof childPayload === 'object'
-        ? {
-            child_activity: childPayload,
-            child_activity_game: childPayload,
-          }
-        : {}),
+      ...(child_activity && typeof child_activity === 'object' ? { child_activity } : {}),
     };
     const task = growthAreaSaveChainRef.current.then(() => api.userAppState.appendCompletedGrowthArea(payload));
     growthAreaSaveChainRef.current = task.catch(() => {});
@@ -971,7 +1019,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       const completedList = Array.isArray(s.completed_growth_areas) ? s.completed_growth_areas : [];
       const map = buildChildActivityMapFromProgress(p, completedList);
       setChildActivityByArea(map);
-      const norm = normalizeChildActivityEntryFromStorage(map[areaId], areaId);
+      const norm = normalizeChildActivityEntryFromStorage(
+        map[areaId],
+        areaId,
+        extractAnswersFromCompletedGrowthAreas(completedList, areaId),
+      );
       if (norm) {
         setChildActivitySelections(norm.selections);
         setSavedChildGameBundle(norm.bundle);
@@ -996,8 +1048,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   };
 
-  function applyChildGameNormForTile(areaId, tileMap, hydrateResultsUi) {
-    const norm = normalizeChildActivityEntryFromStorage(tileMap[areaId], areaId);
+  function applyChildGameNormForTile(areaId, tileMap, hydrateResultsUi, completedListForFallback) {
+    const ansFb =
+      completedListForFallback && typeof areaId === 'string'
+        ? extractAnswersFromCompletedGrowthAreas(completedListForFallback, areaId)
+        : null;
+    const norm = normalizeChildActivityEntryFromStorage(tileMap[areaId], areaId, ansFb);
     if (norm) {
       setChildActivitySelections(norm.selections);
       setSavedChildGameBundle(norm.bundle);
@@ -1034,8 +1090,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     savedChildGameParentSnapshot,
   ]);
 
-  // Speak full profile on intro
+  // Speak full profile on intro — gated on resumeLoaded so tts_enabled is fetched from DB first
   useEffect(() => {
+    if (!resumeLoaded) return;
     if (step === 'intro' && !introHasSpoken.current && profile) {
       const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s.strength}. ${s.description}`).join('. ') || '';
       const primaryType = profile.personality_type?.split(' - ')[1] || profile.personality_type || '';
@@ -1046,7 +1103,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       speak(fullText);
       introHasSpoken.current = true;
     }
-  }, [step, profile]);
+  }, [step, profile, resumeLoaded]);
 
   const renderIntro = () => {
     return (
@@ -1215,7 +1272,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       else setGeneratedActivity(null);
                       if (typeof p.showGame === 'boolean') setShowGame(p.showGame);
 
-                      applyChildGameNormForTile(area.id, tileMap, nav.step === 'activity_summary');
+                      applyChildGameNormForTile(area.id, tileMap, nav.step === 'activity_summary', completedList);
                       return;
                     }
 
@@ -1230,7 +1287,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setWantChildActivity(null);
                     setFeedback('');
 
-                    const normFresh = normalizeChildActivityEntryFromStorage(tileMap[area.id], area.id);
+                    const normFresh = normalizeChildActivityEntryFromStorage(
+                      tileMap[area.id],
+                      area.id,
+                      extractAnswersFromCompletedGrowthAreas(completedList, area.id),
+                    );
                     if (normFresh) {
                       setChildActivitySelections(normFresh.selections);
                       setSavedChildGameBundle(normFresh.bundle);
@@ -1520,7 +1581,19 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     const currentQuestion = questions[interactiveStep];
     const questionText = currentQuestion?.question.replace('{name}', data.name);
     const isLastQuestion = interactiveStep === questions.length - 1;
+    const isFirstQuestion = interactiveStep === 0;
     const AreaIcon = selectedArea?.icon || Rocket;
+
+    const handlePreviousQuestion = () => {
+      if (currentQuestion?.type === 'text' && currentAnswer.trim()) {
+        setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: currentAnswer });
+      }
+      const prevStep = interactiveStep - 1;
+      const prevQuestion = questions[prevStep];
+      const savedAns = interactiveAnswers[prevQuestion?.id];
+      setCurrentAnswer(prevQuestion?.type === 'text' && typeof savedAns === 'string' ? savedAns : '');
+      setInteractiveStep(prevStep);
+    };
 
     return (
       <div className="space-y-6">
@@ -1591,48 +1664,74 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       );
                     })}
                   </div>
+                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                    {!isFirstQuestion && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handlePreviousQuestion}
+                        className="h-12 rounded-2xl border-2 w-full sm:w-auto"
+                      >
+                        <ChevronLeft className="w-5 h-5 mr-2" />
+                        Previous Question
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const ans = interactiveAnswers[currentQuestion.id];
+                        if (!answerLooksFilled(ans)) return;
+                        if (isLastQuestion) {
+                          setChildGameResults(null);
+                          setShowGame(false);
+                          setStep('activity_summary');
+                        } else {
+                          setInteractiveStep(interactiveStep + 1);
+                        }
+                      }}
+                      disabled={!answerLooksFilled(interactiveAnswers[currentQuestion.id])}
+                      className={`h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                    >
+                      {isLastQuestion ? 'See Summary' : 'Next Question'}
+                      <ChevronRight className="w-5 h-5 ml-2" />
+                    </Button>
+                  </div>
+                </>
+              )}
+              {currentQuestion?.type === 'text' && (
+                <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                  {!isFirstQuestion && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePreviousQuestion}
+                      className="h-12 rounded-2xl border-2 w-full sm:w-auto"
+                    >
+                      <ChevronLeft className="w-5 h-5 mr-2" />
+                      Previous Question
+                    </Button>
+                  )}
                   <Button
-                    type="button"
                     onClick={() => {
-                      const ans = interactiveAnswers[currentQuestion.id];
-                      if (!answerLooksFilled(ans)) return;
-                      if (isLastQuestion) {
-                        setChildGameResults(null);
-                        setShowGame(false);
-                        setStep('activity_summary');
-                      } else {
-                        setInteractiveStep(interactiveStep + 1);
+                      if (currentAnswer.trim()) {
+                        setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: currentAnswer });
+                        setCurrentAnswer('');
+                        if (isLastQuestion) {
+                          setChildGameResults(null);
+                          setShowGame(false);
+                          setStep('activity_summary');
+                        } else {
+                          setInteractiveStep(interactiveStep + 1);
+                        }
                       }
                     }}
-                    disabled={!answerLooksFilled(interactiveAnswers[currentQuestion.id])}
-                    className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+                    disabled={!currentAnswer.trim()}
+                    className={`h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
                     <ChevronRight className="w-5 h-5 ml-2" />
                   </Button>
-                </>
-              )}
-              {currentQuestion?.type === 'text' && (
-                <Button
-                  onClick={() => {
-                    if (currentAnswer.trim()) {
-                      setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: currentAnswer });
-                      setCurrentAnswer('');
-                      if (isLastQuestion) {
-                        setChildGameResults(null);
-                        setShowGame(false);
-                        setStep('activity_summary');
-                      } else {
-                        setInteractiveStep(interactiveStep + 1);
-                      }
-                    }
-                  }}
-                  disabled={!currentAnswer.trim()}
-                  className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
-                >
-                  {isLastQuestion ? 'See Summary' : 'Next Question'}
-                  <ChevronRight className="w-5 h-5 ml-2" />
-                </Button>
+                </div>
               )}
             </div>
           </motion.div>
@@ -1672,7 +1771,14 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         .join('\n\n');
 
       const childContext = childResults
-        ? `\n\nChild's game responses:\nSummary: ${childResults.recommendations?.summary || ''}\nStrengths observed: ${(childResults.recommendations?.strengths || []).join(', ')}\nSuggested activities from game: ${(childResults.recommendations?.activities || []).join(', ')}`
+        ? (() => {
+            const gr =
+              childResults.recommendations && typeof childResults.recommendations === 'object'
+                ? normalizeChildGameRecommendations(childResults.recommendations)
+                : null;
+            const sug = gr?.suggested_activities || [];
+            return `\n\nChild's game responses:\nSummary: ${gr?.summary || ''}\nStrengths observed: ${(gr?.strengths || []).join(', ')}\nSuggested activities from game: ${sug.join(', ')}`;
+          })()
         : '';
 
       const result = await api.integrations.Core.InvokeLLM({
@@ -1795,7 +1901,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             onClick={async () => {
               if (!selectedArea) return;
               await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null, childActivityByArea[selectedArea.id]);
-              window.location.href = createPageUrl('LifePathway');
+              navigate(createPageUrl('LifePathway'), {
+              replace: true,
+            });
             }}
             className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
           >
@@ -1839,7 +1947,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             onClick={async () => {
               if (!selectedArea) return;
               await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null, childActivityByArea[selectedArea.id]);
-              window.location.href = createPageUrl('LifePathway');
+              navigate(createPageUrl('LifePathway'), {
+              replace: true,
+            });
             }}
             className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
           >
@@ -1906,8 +2016,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 childActivitySelections: explicit.selections,
                 aiRecommendations,
               };
-              const childPayload =
+              const childPayloadRaw =
                 buildCompletedAreaChildPayload(area.id, explicit, refsForPayload) ?? explicit;
+              const child_activity = stripRedundantChildActivityForPersist(childPayloadRaw);
 
               try {
                 await api.userAppState.appendCompletedGrowthArea({
@@ -1916,8 +2027,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   color: area.color,
                   answers: interactiveAnswers,
                   recommendations: aiRecommendations ?? null,
-                  child_activity: childPayload,
-                  child_activity_game: childPayload,
+                  child_activity,
                 });
               } catch (e) {
                 toast.error(
@@ -1958,10 +2068,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 <div className="bg-white rounded-2xl p-4 mb-4">
                   <h4 className="font-semibold text-slate-800 mb-2">Suggested Activities</h4>
                   <ul className="space-y-2">
-                    {(Array.isArray(childGameResults?.recommendations?.activities)
-                      ? childGameResults.recommendations.activities
-                      : []
-                    ).map((activity, i) => (
+                    {suggestedActivitiesFromGameRecommendations(childGameResults?.recommendations).map((activity, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
                         <span className="text-emerald-500 mt-1">✓</span>
                         <span>{activity}</span>
@@ -2050,7 +2157,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setAiRecommendations(null);
                     setParentLiked(null);
                   } else {
-                    window.location.href = createPageUrl('LifePathway');
+                    navigate(createPageUrl('LifePathway'), {
+              replace: true,
+            });
                   }
                 }}
                 className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
@@ -2062,7 +2171,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 onClick={async () => {
                   if (!selectedArea) return;
                   await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, childActivityByArea[selectedArea.id]);
-                  window.location.href = createPageUrl('LifePathway');
+                  navigate(createPageUrl('LifePathway'), {
+              replace: true,
+            });
                 }}
                 className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
               >
@@ -2091,7 +2202,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       </p>
       <Button
         onClick={() => {
-          window.location.href = createPageUrl('LifePathway');
+          navigate(createPageUrl('LifePathway'), { replace: true });
         }}
         className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
       >

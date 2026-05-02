@@ -98,6 +98,14 @@ function selectionsMatchSubmit(a, b) {
   return sa === sb;
 }
 
+/** Canonical child-game LLM blob: `suggested_activities` only; strip `activities` if echoed. */
+export function normalizeChildGameRecommendations(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const suggested = Array.isArray(raw.suggested_activities) ? [...raw.suggested_activities] : [];
+  const { activities: _a, suggested_activities: _s, ...rest } = raw;
+  return { ...rest, suggested_activities: suggested };
+}
+
 /** Max picks for an area — keep in sync with persist throttling in RecommendationsPhase. */
 export function getChildActivityMaxSelections(areaId) {
   const game = areaGames[areaId] || areaGames.life_ambition;
@@ -142,7 +150,8 @@ export default function ChildActivityGame({
       typeof cached.recommendations === 'object' &&
       selectionsMatchSubmit(ids, cached.selections || [])
     ) {
-      const done = onComplete({ selections: ids, recommendations: cached.recommendations });
+      const recommendations = normalizeChildGameRecommendations(cached.recommendations);
+      const done = onComplete({ selections: ids, recommendations });
       if (done != null && typeof done.then === 'function') await done;
       return;
     }
@@ -152,18 +161,19 @@ export default function ChildActivityGame({
     const selectedLabels = ids.map((id) => game.options.find((o) => o.id === id)?.label).join(', ');
 
     try {
-      const recommendations = await api.integrations.Core.InvokeLLM({
+      const raw = await api.integrations.Core.InvokeLLM({
         prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(selectedLabels)}`,
         response_json_schema: {
           type: "object",
           properties: {
             summary: { type: "string" },
-            activities: { type: "array", items: { type: "string" } },
+            suggested_activities: { type: "array", items: { type: "string" } },
             strengths: { type: "array", items: { type: "string" } },
           },
         },
       });
 
+      const recommendations = normalizeChildGameRecommendations(raw);
       const done = onComplete({ selections: ids, recommendations });
       if (done != null && typeof done.then === 'function') await done;
     } finally {

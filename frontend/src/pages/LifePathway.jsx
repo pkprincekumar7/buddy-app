@@ -7,7 +7,7 @@ import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle, X } fro
 import TextareaWithVoice from '../components/shared/TextareaWithVoice';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
-import { USER_APP_FULL_ONBOARDING_KEYS, USER_APP_PROCEED_TO_GOALS_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
+import { USER_APP_FULL_ONBOARDING_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 
@@ -32,6 +32,10 @@ const areaMilestoneMap = {
 
 export default function LifePathway() {
   const navigate = useNavigate();
+
+  const handleBack = useCallback(() => {
+    navigate(createPageUrl('Onboarding'));
+  }, [navigate]);
   const [childData, setChildData] = useState(null);
   const [profile, setProfile] = useState(null);
   const [user, setUser] = useState(null);
@@ -50,17 +54,13 @@ export default function LifePathway() {
         const s = await api.userAppState.get();
 
         let resolvedChildData = null;
-        const savedChildData = s?.onboarding_childData;
-        if (savedChildData && typeof savedChildData === 'object') {
-          resolvedChildData = savedChildData;
-          setChildData(resolvedChildData);
-        } else {
-          const children = await api.entities.Child.list('-created_date', 1);
-          if (children && children.length > 0) {
-            resolvedChildData = children[0];
-            setChildData(resolvedChildData);
-          }
+        const children = await api.entities.Child.list('-created_date', 1);
+        if (children && children.length > 0) {
+          resolvedChildData = children[0];
+        } else if (s?.onboarding_childData && typeof s.onboarding_childData === 'object') {
+          resolvedChildData = s.onboarding_childData;
         }
+        if (resolvedChildData) setChildData(resolvedChildData);
 
         const profileFromState =
           s?.onboarding_profile && typeof s.onboarding_profile === 'object' ? s.onboarding_profile : null;
@@ -111,13 +111,8 @@ export default function LifePathway() {
     }
   };
 
-  const handleProceedToDashboard = async () => {
+  const handleProceedToDashboard = () => {
     closeConcernModal();
-    try {
-      await api.userAppState.patch(patchBodyClearKeys(USER_APP_PROCEED_TO_GOALS_KEYS));
-    } catch {
-      /* ignore */
-    }
     navigate(createPageUrl('GoalsDashboard'));
   };
 
@@ -563,7 +558,7 @@ export default function LifePathway() {
               <div className="flex w-full sm:justify-start">
                 <Button
                   variant="outline"
-                  onClick={() => window.history.back()}
+                  onClick={handleBack}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
                 >
                   ← Back
@@ -574,11 +569,13 @@ export default function LifePathway() {
                   variant="outline"
                   onClick={async () => {
                     try {
+                      const existingChildren = await api.entities.Child.list('-created_date');
+                      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
                       await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
                     } catch {
                       /* ignore */
                     }
-                    window.location.href = '/Onboarding';
+                    window.location.href = createPageUrl('Onboarding');
                   }}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
                 >

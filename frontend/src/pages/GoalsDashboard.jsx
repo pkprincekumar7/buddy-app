@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { motion } from 'framer-motion';
 import { api } from '@/api/client';
 import { Target, ChevronDown, ChevronUp, Sparkles, RefreshCw, CheckCircle } from 'lucide-react';
@@ -270,11 +271,13 @@ Return JSON with this exact structure:
                   variant="outline"
                   onClick={async () => {
                     try {
+                      const existingChildren = await api.entities.Child.list('-created_date');
+                      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
                       await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
                     } catch {
                       /* ignore */
                     }
-                    window.location.href = '/Onboarding';
+                    window.location.href = createPageUrl('Onboarding');
                   }}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
                 >

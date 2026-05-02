@@ -10,6 +10,7 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabledRef = useRef(true);
   const [isMinimized, setIsMinimized] = useState(false);
   const [avatarState, setAvatarState] = useState('idle'); // idle, talking, thinking, listening
   const [isRecording, setIsRecording] = useState(false);
@@ -17,14 +18,24 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    // Initial greeting
+    let cancelled = false;
     const greeting = isParentMode
       ? `Hello! I'm here to help you understand ${childName}'s growth journey better. What would you like to know?`
       : `Hi ${childName}! 🌟 I'm your growth buddy! Want to chat about your day or try a fun activity?`;
-    
-    setTimeout(() => {
-      addBotMessage(greeting);
-    }, 500);
+
+    (async () => {
+      try {
+        if (await api.auth.isAuthenticated()) {
+          const s = await api.userAppState.get();
+          if (cancelled) return;
+          if (typeof s.tts_enabled === 'boolean') {
+            voiceEnabledRef.current = s.tts_enabled;
+            setVoiceEnabled(s.tts_enabled);
+          }
+        }
+      } catch { /* keep default */ }
+      if (!cancelled) addBotMessage(greeting);
+    })();
 
     // Initialize speech recognition
     if (typeof window !== 'undefined') {
@@ -60,6 +71,7 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
         setRecognition(recognitionInstance);
       }
     }
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -67,7 +79,7 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
   }, [messages]);
 
   const speak = (text) => {
-    if (!voiceEnabled || typeof window === 'undefined') return;
+    if (!voiceEnabledRef.current || typeof window === 'undefined') return;
     
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[🌟💪😊🎉👋✨]/g, '');
@@ -233,7 +245,7 @@ Respond in a warm, encouraging way. Keep response under 3 sentences. ${isParentM
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              onClick={() => { voiceEnabledRef.current = !voiceEnabled; setVoiceEnabled(!voiceEnabled); }}
               className="text-white hover:bg-white/20 h-8 w-8"
             >
               {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}

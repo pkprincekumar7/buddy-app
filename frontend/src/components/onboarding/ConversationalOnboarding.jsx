@@ -8,6 +8,7 @@ import {
   CHATBOT_CAPTURED_FIELDS,
   questionnaireFieldHasValue,
   pickSavedQuestionnaireForChatbot,
+  normalizeOnboardingChildDataBlob,
 } from '@/lib/onboardingChildData';
 
 function buildAccThrough(flow, data, beforeStepIdx) {
@@ -48,7 +49,6 @@ function findResumeStepIndex(flow, data) {
 export default function ConversationalOnboarding({
   user,
   onComplete,
-  savedAnswers = {},
   resumeHydrationReady = true,
   onContinueToPersonality,
   onQuestionnairePersisted,
@@ -60,13 +60,14 @@ export default function ConversationalOnboarding({
   const [collectedData, setCollectedData] = useState({});
   const [isTyping, setIsTyping] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const voiceEnabledRef = useRef(true);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [showAnalyzing, setShowAnalyzing] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState(0);
   const [analyzingName, setAnalyzingName] = useState('');
   const [showingLoadingDots, setShowingLoadingDots] = useState(false);
   const [dotCount, setDotCount] = useState(0);
-  const [completedShortcut, setCompletedShortcut] = useState(false);
+  const [allAnswered, setAllAnswered] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const idleTimerRef = useRef(null);
@@ -183,29 +184,9 @@ export default function ConversationalOnboarding({
     [parentName],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        if (await api.auth.isAuthenticated()) {
-          const s = await api.userAppState.get();
-          if (cancelled) return;
-          if (typeof s.tts_enabled === 'boolean') {
-            setVoiceEnabled(s.tts_enabled);
-            if (typeof window !== 'undefined') window.ttsEnabled = s.tts_enabled;
-          }
-        }
-      } catch {
-        /* non-fatal */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const speak = (text) => {
-    if (!voiceEnabled || typeof window === 'undefined') return;
+    if (!voiceEnabledRef.current || typeof window === 'undefined') return;
     
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[👋🎉💪😊🌟🚀]/g, '').replace(/\n/g, ' ');
@@ -252,75 +233,94 @@ export default function ConversationalOnboarding({
   useEffect(() => {
     if (!resumeHydrationReady) return;
 
-    const slim = pickSavedQuestionnaireForChatbot(savedAnswers || {});
-    const hasSaved = Object.keys(slim).length > 0;
+    let cancelled = false;
 
-    if (chatSessionStartedRef.current) {
-      const canRecover =
-        allowEmptySessionRecoveryRef.current && hasSaved && userTurnCountRef.current === 0;
-      if (!canRecover) return;
-      chatSessionStartedRef.current = false;
-      allowEmptySessionRecoveryRef.current = false;
-    }
+    (async () => {
+      try {
+        let slim = {};
+        if (await api.auth.isAuthenticated()) {
+          const appState = await api.userAppState.get();
+          slim = pickSavedQuestionnaireForChatbot(
+            normalizeOnboardingChildDataBlob(appState.onboarding_childData) || {}
+          );
+          if (typeof appState.tts_enabled === 'boolean') {
+            voiceEnabledRef.current = appState.tts_enabled;
+            setVoiceEnabled(appState.tts_enabled);
+          }
+        }
+        if (cancelled) return;
 
-    chatSessionStartedRef.current = true;
-    allowEmptySessionRecoveryRef.current = !hasSaved;
+        const hasSaved = Object.keys(slim).length > 0;
 
-    const autoIx = conversationFlow.findIndex((s) => s.type === 'auto');
-    const allAnswered =
-      autoIx >= 0 &&
-      CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
+        if (chatSessionStartedRef.current) {
+          const canRecover =
+            allowEmptySessionRecoveryRef.current && hasSaved && userTurnCountRef.current === 0;
+          if (!canRecover) return;
+          chatSessionStartedRef.current = false;
+          allowEmptySessionRecoveryRef.current = false;
+        }
 
-    /** Full questionnaire in storage → replay transcript + CTA, never re-run "analyzing" loader (that is for live submit only). */
-    if (hasSaved && allAnswered && autoIx >= 0) {
-      const replay = buildReplayMessages(conversationFlow, slim, autoIx);
-      setCollectedData({ ...slim });
-      setMessages(replay);
-      setCurrentStep(autoIx);
-      setWaitingForResponse(false);
-      setShowingLoadingDots(false);
-      setShowAnalyzing(false);
-      setCompletedShortcut(true);
-      return;
-    }
+        chatSessionStartedRef.current = true;
+        allowEmptySessionRecoveryRef.current = !hasSaved;
 
-    if (!hasSaved) {
-      const firstMessage =
-        typeof conversationFlow[0].message === 'function'
-          ? conversationFlow[0].message({})
-          : conversationFlow[0].message;
-      addBotMessage(firstMessage);
-      return;
-    }
+        const autoIx = conversationFlow.findIndex((s) => s.type === 'auto');
+        const answered =
+          autoIx >= 0 &&
+          CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
 
-    const resumeIdx = findResumeStepIndex(conversationFlow, slim);
-    const replay = buildReplayMessages(conversationFlow, slim, resumeIdx);
-    setCollectedData({ ...slim });
-    setMessages(replay);
-    setCurrentStep(resumeIdx);
+        if (hasSaved && answered && autoIx >= 0) {
+          const replay = buildReplayMessages(conversationFlow, slim, autoIx);
+          setCollectedData({ ...slim });
+          setMessages(replay);
+          setCurrentStep(autoIx);
+          setWaitingForResponse(false);
+          setShowingLoadingDots(false);
+          setShowAnalyzing(false);
+          setAllAnswered(true);
+          return;
+        }
 
-    const stepAt = conversationFlow[resumeIdx];
-    if (stepAt.type === 'auto') {
-      setWaitingForResponse(false);
-      setShowingLoadingDots(false);
-      setShowAnalyzing(false);
-      setCompletedShortcut(true);
-      return;
-    }
+        if (!hasSaved) {
+          const firstMessage =
+            typeof conversationFlow[0].message === 'function'
+              ? conversationFlow[0].message({})
+              : conversationFlow[0].message;
+          addBotMessage(firstMessage);
+          return;
+        }
 
-    const accR = buildAccThrough(conversationFlow, slim, resumeIdx);
-    const nextBot =
-      typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
-    addBotMessage(nextBot);
-  }, [resumeHydrationReady, conversationFlow, savedAnswers]);
+        const resumeIdx = findResumeStepIndex(conversationFlow, slim);
+        const replay = buildReplayMessages(conversationFlow, slim, resumeIdx);
+        setCollectedData({ ...slim });
+        setMessages(replay);
+        setCurrentStep(resumeIdx);
+
+        const stepAt = conversationFlow[resumeIdx];
+        if (stepAt.type === 'auto') {
+          setWaitingForResponse(false);
+          setShowingLoadingDots(false);
+          setShowAnalyzing(false);
+          setAllAnswered(true);
+          return;
+        }
+
+        const accR = buildAccThrough(conversationFlow, slim, resumeIdx);
+        const nextBot =
+          typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
+        addBotMessage(nextBot);
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [resumeHydrationReady, conversationFlow]);
 
   const persistVoiceToggle = async () => {
     const next = !voiceEnabled;
+    voiceEnabledRef.current = next;
     setVoiceEnabled(next);
-    if (typeof window !== 'undefined') {
-      window.ttsEnabled = next;
-      if (!next) window.speechSynthesis?.cancel?.();
-    }
+    if (!next && typeof window !== 'undefined') window.speechSynthesis?.cancel?.();
     try {
       if (await api.auth.isAuthenticated()) {
         await api.userAppState.patch({ tts_enabled: next });
@@ -342,7 +342,7 @@ export default function ConversationalOnboarding({
 
   /** Pre-fill text/multi answers from persisted collectedData when landing on that question */
   useEffect(() => {
-    if (!waitingForResponse || completedShortcut) return;
+    if (!waitingForResponse || allAnswered) return;
     const stepData = conversationFlow[currentStep];
     if (!stepData?.field || stepData.type === 'choice' || stepData.type === 'auto') {
       setCurrentInput('');
@@ -355,12 +355,12 @@ export default function ConversationalOnboarding({
     }
     const text = Array.isArray(raw) ? raw.join(', ') : String(raw);
     setCurrentInput(text);
-  }, [waitingForResponse, currentStep, collectedData, conversationFlow, completedShortcut]);
+  }, [waitingForResponse, currentStep, collectedData, conversationFlow, allAnswered]);
 
   // Idle reminder — fires after 30s of no input when waiting for a response
   useEffect(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    if (!waitingForResponse || showAnalyzing || showingLoadingDots || completedShortcut) return;
+    if (!waitingForResponse || showAnalyzing || showingLoadingDots || allAnswered) return;
 
     idleTimerRef.current = setTimeout(() => {
       setMessages(prev => [
@@ -370,7 +370,7 @@ export default function ConversationalOnboarding({
     }, 30000);
 
     return () => clearTimeout(idleTimerRef.current);
-  }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, completedShortcut]);
+  }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered]);
 
   const processResponse = (response) => {
     const step = conversationFlow[currentStep];
@@ -466,7 +466,7 @@ export default function ConversationalOnboarding({
     setAnalyzeProgress(0);
     setShowingLoadingDots(false);
     setDotCount(0);
-    setCompletedShortcut(false);
+    setAllAnswered(false);
     void (async () => {
       try {
         if (!(await api.auth.isAuthenticated())) return;
@@ -497,7 +497,7 @@ export default function ConversationalOnboarding({
 
   // Auto-proceed on 'auto' type steps after showing animated dots (live flow only — not when resuming with full questionnaire)
   useEffect(() => {
-    if (!waitingForResponse || currentStepData?.type !== 'auto' || completedShortcut) return;
+    if (!waitingForResponse || currentStepData?.type !== 'auto' || allAnswered) return;
       setShowingLoadingDots(true);
       setDotCount(0);
 
@@ -530,7 +530,7 @@ export default function ConversationalOnboarding({
       }, 200);
 
     return () => clearInterval(dotInterval);
-  }, [waitingForResponse, currentStep, currentStepData?.type, completedShortcut]);
+  }, [waitingForResponse, currentStep, currentStepData?.type, allAnswered]);
 
   if (showAnalyzing) {
     const steps = [
@@ -654,7 +654,7 @@ export default function ConversationalOnboarding({
       </div>
 
       {/* Input Area */}
-      {showingLoadingDots && !completedShortcut && (
+      {showingLoadingDots && !allAnswered && (
         <div className="px-4 pb-4 pt-2 border-t border-teal-100/60 bg-gradient-to-b from-white via-teal-50/30 to-emerald-50/20">
           <motion.div
             initial={{ opacity: 0, y: 6 }}
@@ -686,7 +686,7 @@ export default function ConversationalOnboarding({
         </div>
       )}
 
-      {waitingForResponse && !completedShortcut && currentStepData?.type === 'choice' && (
+      {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
         <div className="px-4 pb-4">
           <div className="flex flex-wrap gap-2">
             {currentStepData.options.map((option, index) => {
@@ -724,7 +724,7 @@ export default function ConversationalOnboarding({
         </div>
       )}
 
-      {waitingForResponse && !completedShortcut && (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
+      {waitingForResponse && !allAnswered && (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
         <form onSubmit={handleSubmit} className="p-4 border-t border-slate-100">
           {currentStepData.hint && (
             <p className="text-xs text-slate-400 mb-2">{currentStepData.hint}</p>
@@ -753,7 +753,7 @@ export default function ConversationalOnboarding({
         </form>
       )}
 
-      {completedShortcut && typeof onContinueToPersonality === 'function' && (
+      {allAnswered && typeof onContinueToPersonality === 'function' && (
         <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0">
           <Button
             type="button"

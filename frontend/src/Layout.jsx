@@ -30,7 +30,6 @@ export default function Layout({ children, currentPageName }) {
 
   useEffect(() => {
     if (!ttsEnabled && typeof window !== 'undefined') window.speechSynthesis.cancel();
-    if (typeof window !== 'undefined') window.ttsEnabled = ttsEnabled;
   }, [ttsEnabled]);
 
   useEffect(() => {
@@ -87,11 +86,6 @@ export default function Layout({ children, currentPageName }) {
     }
   };
 
-  // Pages that should have no layout chrome
-  const fullScreenPages = ['SelectMode'];
-  if (fullScreenPages.includes(currentPageName)) {
-    return <>{children}</>;
-  }
 
   const navItems = [
     { label: 'Home', icon: Home, path: 'Home', show: true },

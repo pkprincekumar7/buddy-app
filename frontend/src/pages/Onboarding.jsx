@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
@@ -157,6 +158,7 @@ function recommendationsJourneySchema() {
 }
 
 export default function Onboarding() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [currentPhase, setCurrentPhase] = useState(0);
   const [hydrated, setHydrated] = useState(false);
@@ -181,7 +183,6 @@ export default function Onboarding() {
   const personalityEffectStampRef = useRef(0);
   const journeyEffectStampRef = useRef(0);
 
-  const chatbotSavedAnswers = useMemo(() => pickSavedQuestionnaireForChatbot(childData), [childData]);
 
   const determinePhase = (age) => {
     if (!age) return 'foundation';
@@ -324,14 +325,6 @@ export default function Onboarding() {
   useEffect(() => {
     if (!hydrated || currentPhase !== 2) return;
 
-    if (mbtiResult?.type && mbtiResult?.profile) {
-      setGeneratedProfile((prev) => {
-        if (prev) return prev;
-        return onboardingProfileFromViewModel(mbtiResult) ?? prev;
-      });
-      return;
-    }
-
     personalityEffectStampRef.current += 1;
     const stamp = personalityEffectStampRef.current;
 
@@ -375,6 +368,8 @@ export default function Onboarding() {
           return;
         }
 
+        if (cancelled || stamp !== personalityEffectStampRef.current) return;
+
         setPersonalityBusy(true);
         try {
           const prompt = `You analyze a single child using a Buddy360 onboarding questionnaire answered by their parent/caregiver.
@@ -396,6 +391,8 @@ Requirements:
 • role_models: EXACTLY two admirable real public figures relevant to temperament (full names).
 • strength_summary_bullets: exactly 6 strength-focused bullets synthesized from parent's answers plus measured inference.
 Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
+
+          if (cancelled || stamp !== personalityEffectStampRef.current) return;
 
           const ai = await api.integrations.Core.InvokeLLM({
             prompt,
@@ -438,20 +435,10 @@ Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
       cancelled = true;
       setPersonalityBusy(false);
     };
-  }, [hydrated, currentPhase, mbtiResult, generatedProfile]);
+  }, [hydrated, currentPhase]);
 
   useEffect(() => {
     if (!hydrated || currentPhase !== 3) return;
-
-    const hasStoredJourney =
-      recommendations &&
-      typeof recommendations === 'object' &&
-      (typeof recommendations.pathway_overview === 'string' ||
-        (Array.isArray(recommendations.focus_areas) && recommendations.focus_areas.length > 0));
-
-    if (hasStoredJourney) {
-      return;
-    }
 
     journeyEffectStampRef.current += 1;
     const stamp = journeyEffectStampRef.current;
@@ -476,14 +463,26 @@ Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
           return;
         }
 
-        const mergedChild = mergeChildDraft(childData);
+        const normalizedChild = normalizeOnboardingChildDataBlob(s.onboarding_childData);
+        const mergedChild = mergeChildDraft(normalizedChild || {});
         if (!mergedChild.name?.trim?.()) return;
 
+        const storedVmFullJ = s.onboarding_personality_analysis;
+        const storedVmJ =
+          storedVmFullJ?.view_model && typeof storedVmFullJ.view_model === 'object'
+            ? storedVmFullJ.view_model
+            : null;
+        const legacyVmJ =
+          !storedVmJ && s.onboarding_mbti && typeof s.onboarding_mbti === 'object'
+            ? s.onboarding_mbti
+            : null;
+        const vmJ = storedVmJ || legacyVmJ;
         const gp =
-          generatedProfile ||
-          (mbtiResult?.type && mbtiResult?.profile
-            ? onboardingProfileFromViewModel(mbtiResult)
-            : null);
+          s.onboarding_profile && typeof s.onboarding_profile === 'object'
+            ? s.onboarding_profile
+            : vmJ?.type && vmJ?.profile
+              ? onboardingProfileFromViewModel(vmJ)
+              : null;
 
         setJourneyBusy(true);
         if (cancelled || stamp !== journeyEffectStampRef.current) {
@@ -502,7 +501,7 @@ ${questionnaireMarkdown(mergedChild)}
 """
 
 AI personality synopsis:
-• Archetype: ${gp?.personality_type || `${mbtiResult?.type || 'Unknown'} (${mbtiResult?.profile?.name || ''})`}
+• Archetype: ${gp?.personality_type || `${vmJ?.type || 'Unknown'} (${vmJ?.profile?.name || ''})`}
 • Narrative: ${gp?.summary || '(unavailable)'}
 
 Growth areas already highlighted for downstream experiences:
@@ -520,6 +519,8 @@ Generate:
 3. Three attainable starter weekly missions referencing strengths or hobbies cues when plausible`;
 
         try {
+          if (cancelled || stamp !== journeyEffectStampRef.current) return;
+
           const result = await api.integrations.Core.InvokeLLM({
             prompt,
             response_json_schema: recommendationsJourneySchema(),
@@ -543,7 +544,7 @@ Generate:
       cancelled = true;
       setJourneyBusy(false);
     };
-  }, [hydrated, currentPhase, recommendations, childData, generatedProfile, mbtiResult]);
+  }, [hydrated, currentPhase]);
 
   const handleConversationComplete = async (conversationData) => {
     const mergedDraft = mergeChildDraft({
@@ -578,6 +579,8 @@ Generate:
 
   const handleWizardStartOver = async () => {
     try {
+      const existingChildren = await api.entities.Child.list('-created_date');
+      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
       await api.userAppState.patch(patchBodyClearKeys(USER_APP_ONBOARDING_START_OVER_KEYS));
       queryClient.invalidateQueries({ queryKey: ['userAppState'] });
     } catch {
@@ -592,7 +595,16 @@ Generate:
     setConversationBootKey((k) => k + 1);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    if (currentPhase === 2) {
+      // Clear saved sub-step so RecommendationsPhase always opens at "Your Personalized Journey" intro.
+      // onboarding_recommendations (pathway overview) and completed_growth_areas are preserved.
+      try {
+        await api.userAppState.patch({ recommendations_progress: null });
+      } catch {
+        /* ignore — RecommendationsPhase will still default to intro if progress is absent */
+      }
+    }
     setCurrentPhase((prev) => Math.min(prev + 1, phases.length - 1));
   };
 
@@ -688,8 +700,8 @@ Generate:
     
     setCompletionBusy(false);
     
-    // Don't clear progress - let Life Journey handle it
-    window.location.href = createPageUrl('LifePathway');
+    // Single history entry; Back from Life Journey uses browser/history -1
+    navigate(createPageUrl('LifePathway'), { replace: true });
   };
 
   const canProceed = () => {
@@ -711,7 +723,6 @@ Generate:
           <ConversationalOnboarding
             key={conversationBootKey}
             user={user}
-            savedAnswers={chatbotSavedAnswers}
             resumeHydrationReady={hydrated && !checkingAuth && appStateReady}
             onContinueToPersonality={() => setCurrentPhase(2)}
             onQuestionnairePersisted={(slice) =>

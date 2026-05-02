@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { api } from '@/api/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,13 +64,28 @@ export default function ParentChildAssignment({ childName, onComplete, currentAs
   const [notes, setNotes] = useState('');
   const [childResponse, setChildResponse] = useState('');
   const [step, setStep] = useState('select'); // select, conversation, notes, complete
+  const ttsEnabledRef = useRef(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (await api.auth.isAuthenticated()) {
+          const s = await api.userAppState.get();
+          if (!cancelled && typeof s.tts_enabled === 'boolean') {
+            ttsEnabledRef.current = s.tts_enabled;
+          }
+        }
+      } catch { /* keep default */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleStartAssignment = (assignment) => {
     setSelectedAssignment(assignment);
     setStep('conversation');
-    
-    // Text to speech for the prompt
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
+
+    if (ttsEnabledRef.current && typeof window !== 'undefined' && window.speechSynthesis) {
       const utterance = new SpeechSynthesisUtterance(assignment.prompt);
       utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);

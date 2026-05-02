@@ -87,6 +87,42 @@ def _omit_redundant_onboarding_personality_copies(payload: dict[str, Any]) -> No
     payload.pop("onboarding_mbti", None)
 
 
+def _selections_fingerprint(sel: Any) -> str | None:
+    if not isinstance(sel, list):
+        return None
+    return "\0".join(sorted(str(x) for x in sel))
+
+
+def _slim_completed_growth_area_entry(area: Any) -> Any:
+    """One source of truth: area.answers; child_activity only; no child_activity_game; no redundant snapshot/selections."""
+    if not isinstance(area, dict):
+        return area
+    out = {k: v for k, v in area.items() if k != "child_activity_game"}
+    ca = out.get("child_activity")
+    if isinstance(ca, dict):
+        ca2 = {k: v for k, v in ca.items() if k != "parent_interactive_snapshot"}
+        root_fp = _selections_fingerprint(ca2.get("selections"))
+        res = ca2.get("results")
+        if isinstance(res, dict):
+            res2 = dict(res)
+            nest_fp = _selections_fingerprint(res2.get("selections"))
+            if root_fp is not None and nest_fp is not None and root_fp == nest_fp:
+                res2.pop("selections", None)
+            if res2:
+                ca2["results"] = res2
+            else:
+                ca2.pop("results", None)
+        out["child_activity"] = ca2
+    return out
+
+
+def _slim_completed_growth_areas_in_payload(payload: dict[str, Any]) -> None:
+    raw = payload.get("completed_growth_areas")
+    if not isinstance(raw, list):
+        return
+    payload["completed_growth_areas"] = [_slim_completed_growth_area_entry(x) for x in raw]
+
+
 def _app_state_payload_for_response(raw: dict[str, Any]) -> dict[str, Any]:
     """Deep-copy payload so responses never alias ORM JSON; normalize nested onboarding shapes."""
     try:
@@ -95,6 +131,7 @@ def _app_state_payload_for_response(raw: dict[str, Any]) -> dict[str, Any]:
         out = dict(raw)
     _dedupe_personality_profile_growth_fields(out)
     _omit_redundant_onboarding_personality_copies(out)
+    _slim_completed_growth_areas_in_payload(out)
     return _normalize_app_payload_for_response(out)
 
 
@@ -296,8 +333,8 @@ def append_completed_growth_area(
 ):
     """Atomically upsert one growth area entry by id without losing sibling areas (serialized per user row).
 
-    Body may include answers, recommendations (3‑month bullets), child_activity / child_activity_game
-    (same object: selections, optional results LLM payload, optional parent_interactive_snapshot).
+    Body may include answers, recommendations (3‑month bullets), child_activity
+    (selections, results.recommendations, etc.). Legacy child_activity_game is stripped on save/response.
     """
     if not body.get("id"):
         raise HTTPException(status_code=400, detail="Missing area id")
@@ -317,7 +354,7 @@ def append_completed_growth_area(
                 existing = []
             aid = body["id"]
             updated = [a for a in existing if isinstance(a, dict) and a.get("id") != aid]
-            updated.append(body)
+            updated.append(_slim_completed_growth_area_entry(dict(body)))
             data["completed_growth_areas"] = updated
             row.payload = data
             db.commit()

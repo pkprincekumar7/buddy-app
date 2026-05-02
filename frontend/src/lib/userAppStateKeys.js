@@ -10,16 +10,6 @@ export const USER_APP_HOME_RESET_KEYS = [
 	'recommendations_progress',
 ];
 
-/** After LifePathway welcome → Goals; keep questionnaire + completed areas, concern, goals plan */
-export const USER_APP_PROCEED_TO_GOALS_KEYS = [
-	'onboarding_phase',
-	'onboarding_mbti',
-	'onboarding_personality_analysis',
-	'onboarding_profile',
-	'onboarding_recommendations',
-	'recommendations_progress',
-];
-
 export const USER_APP_FULL_ONBOARDING_KEYS = [
 	'onboarding_phase',
 	'onboarding_childData',
