@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from "@/utils";
@@ -31,27 +30,22 @@ export default function Home() {
     phaseRaw !== null &&
     String(phaseRaw) !== 'null' &&
     String(phaseRaw) !== 'complete';
-  
-  // Auto-redirect authenticated users (only if no onboarding in progress)
-  useEffect(() => {
-    const checkAuthAndRedirect = async () => {
-      try {
-        const isAuth = await api.auth.isAuthenticated();
-        if (isAuth && !isLoading && !onboardingInProgress) {
-          if (children.length > 0) {
-            window.location.href = createPageUrl('SelectMode');
-          } else {
-            window.location.href = createPageUrl('Onboarding');
-          }
-        }
-      } catch (e) {
-        // Not authenticated, stay on home page
-      }
-    };
-    checkAuthAndRedirect();
-  }, [children, isLoading, onboardingInProgress]);
-  
-  const handleStartJourney = async () => {
+
+  const goToJourneyEntry = () => {
+    if (children.length > 0) {
+      window.location.href = createPageUrl('SelectMode');
+    } else {
+      window.location.href = createPageUrl('Onboarding');
+    }
+  };
+
+  /** Default CTAs: preserve saved onboarding app-state. */
+  const handleStartJourney = () => {
+    goToJourneyEntry();
+  };
+
+  /** Explicit reset only — same key scope as before (onboarding wizard blob, not full Start Over). */
+  const handleStartFresh = async () => {
     try {
       if (await api.auth.isAuthenticated()) {
         await api.userAppState.patch(patchBodyClearKeys(USER_APP_HOME_RESET_KEYS));
@@ -60,12 +54,7 @@ export default function Home() {
     } catch {
       /* ignore */
     }
-
-    if (children.length > 0) {
-      window.location.href = createPageUrl('SelectMode');
-    } else {
-      window.location.href = createPageUrl('Onboarding');
-    }
+    goToJourneyEntry();
   };
   
   const pillars = [
@@ -134,7 +123,7 @@ export default function Home() {
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                   <Button 
-                    onClick={handleStartJourney}
+                    onClick={handleStartFresh}
                     variant="outline"
                     className="h-14 px-8 text-lg rounded-2xl border-2 border-teal-500"
                   >

@@ -14,7 +14,7 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ", 1)[1]
     payload = decode_token(token)
-    if not payload or not payload.get("sub"):
+    if not payload or not payload.get("sub") or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token")
     user = db.get(User, payload["sub"])
     if not user:

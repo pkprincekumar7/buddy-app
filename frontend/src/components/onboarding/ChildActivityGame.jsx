@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
@@ -92,46 +91,84 @@ const areaGames = {
   }
 };
 
-export default function ChildActivityGame({ childName, areaId = 'life_ambition', onComplete }) {
+function selectionsMatchSubmit(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const sa = [...a].map(String).sort().join('\0');
+  const sb = [...b].map(String).sort().join('\0');
+  return sa === sb;
+}
+
+/** Max picks for an area — keep in sync with persist throttling in RecommendationsPhase. */
+export function getChildActivityMaxSelections(areaId) {
   const game = areaGames[areaId] || areaGames.life_ambition;
-  const [selected, setSelected] = useState([]);
+  return typeof game.maxSelections === 'number' ? game.maxSelections : 3;
+}
+
+export default function ChildActivityGame({
+  childName,
+  areaId = 'life_ambition',
+  selectedIds = [],
+  onSelectedIdsChange,
+  /** When current selections match this bundle (from app-state), skip InvokeLLM on submit */
+  cachedSubmitBundle = null,
+  onComplete,
+}) {
+  const game = areaGames[areaId] || areaGames.life_ambition;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const ids = Array.isArray(selectedIds) ? selectedIds : [];
+
   const toggleSelection = (id) => {
-    if (selected.includes(id)) {
-      setSelected(selected.filter(s => s !== id));
+    const notify = onSelectedIdsChange || (() => {});
+    if (ids.includes(id)) {
+      notify(ids.filter((s) => s !== id));
+    } else if (ids.length < game.maxSelections) {
+      notify([...ids, id]);
     } else {
-      if (selected.length < game.maxSelections) {
-        setSelected([...selected, id]);
-      } else {
-        toast.error(`You can select maximum ${game.maxSelections} options`);
-      }
+      toast.error(`You can select maximum ${game.maxSelections} options`);
     }
   };
 
   const handleSubmit = async () => {
-    if (selected.length === 0) {
+    if (ids.length === 0) {
       toast.error('Please select at least 1 option');
       return;
     }
+
+    const cached = cachedSubmitBundle;
+    if (
+      cached &&
+      cached.recommendations &&
+      typeof cached.recommendations === 'object' &&
+      selectionsMatchSubmit(ids, cached.selections || [])
+    ) {
+      const done = onComplete({ selections: ids, recommendations: cached.recommendations });
+      if (done != null && typeof done.then === 'function') await done;
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const selectedLabels = selected.map(id => game.options.find(o => o.id === id)?.label).join(', ');
+    const selectedLabels = ids.map((id) => game.options.find((o) => o.id === id)?.label).join(', ');
 
-    const recommendations = await api.integrations.Core.InvokeLLM({
-      prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(selectedLabels)}`,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          summary: { type: "string" },
-          activities: { type: "array", items: { type: "string" } },
-          strengths: { type: "array", items: { type: "string" } }
-        }
-      }
-    });
+    try {
+      const recommendations = await api.integrations.Core.InvokeLLM({
+        prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(selectedLabels)}`,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            activities: { type: "array", items: { type: "string" } },
+            strengths: { type: "array", items: { type: "string" } },
+          },
+        },
+      });
 
-    setIsSubmitting(false);
-    onComplete({ selections: selected, recommendations });
+      const done = onComplete({ selections: ids, recommendations });
+      if (done != null && typeof done.then === 'function') await done;
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -139,19 +176,17 @@ export default function ChildActivityGame({ childName, areaId = 'life_ambition',
       <div className="text-center">
         <h2 className="text-2xl font-bold text-slate-800 mb-2">{game.question}</h2>
         <p className="text-slate-500">{game.subtitle}</p>
-        <p className="text-sm text-emerald-600 mt-2">Selected: {selected.length}/{game.maxSelections}</p>
+        <p className="text-sm text-emerald-600 mt-2">Selected: {ids.length}/{game.maxSelections}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {game.options.map((option, i) => (
-          <motion.button
+        {game.options.map((option) => (
+          <button
             key={option.id}
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.08 }}
+            type="button"
             onClick={() => toggleSelection(option.id)}
-            className={`relative rounded-2xl overflow-hidden border-4 transition-all ${
-              selected.includes(option.id)
+            className={`relative rounded-2xl overflow-hidden border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
+              ids.includes(option.id)
                 ? 'border-emerald-500 shadow-lg'
                 : 'border-slate-200 hover:border-emerald-300'
             }`}
@@ -172,19 +207,19 @@ export default function ChildActivityGame({ childName, areaId = 'life_ambition',
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-between p-3">
               <span className="text-white font-semibold text-sm">{option.label}</span>
-              {selected.includes(option.id) ? (
+              {ids.includes(option.id) ? (
                 <CheckCircle className="w-6 h-6 text-white fill-emerald-500" />
               ) : (
                 <Circle className="w-6 h-6 text-white/80" />
               )}
             </div>
-          </motion.button>
+          </button>
         ))}
       </div>
 
       <Button
         onClick={handleSubmit}
-        disabled={selected.length === 0 || isSubmitting}
+        disabled={ids.length === 0 || isSubmitting}
         className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
       >
         {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}

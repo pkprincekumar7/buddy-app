@@ -30,6 +30,7 @@ const initStoredTokenFromUrl = () => {
 		urlParams.get('clear_access_token') === 'true'
 	) {
 		localStorage.removeItem('access_token');
+		localStorage.removeItem('refresh_token');
 		localStorage.removeItem('token');
 	}
 

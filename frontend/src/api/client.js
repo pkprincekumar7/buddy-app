@@ -1,4 +1,8 @@
-const TOKEN_KEY = 'access_token';
+const ACCESS_KEY = 'access_token';
+const REFRESH_KEY = 'refresh_token';
+const REFRESH_INTERVAL_MS = 25 * 60 * 1000;
+
+let refreshIntervalId = null;
 
 function joinApi(path) {
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -12,7 +16,7 @@ async function request(path, { method = 'GET', body, auth = true, raw = false } 
     headers['Content-Type'] = 'application/json';
   }
   if (auth) {
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
+    const token = typeof window !== 'undefined' ? window.localStorage.getItem(ACCESS_KEY) : null;
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
@@ -41,43 +45,86 @@ async function request(path, { method = 'GET', body, auth = true, raw = false } 
   return undefined;
 }
 
+function storeTokensFromResponse(data) {
+  if (typeof window === 'undefined' || !data) return;
+  if (data.access_token) window.localStorage.setItem(ACCESS_KEY, data.access_token);
+  if (data.refresh_token) window.localStorage.setItem(REFRESH_KEY, data.refresh_token);
+}
+
+function clearStoredTokens() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(ACCESS_KEY);
+  window.localStorage.removeItem(REFRESH_KEY);
+}
+
+async function refreshTokenPair() {
+  if (typeof window === 'undefined') {
+    const e = new Error('No window');
+    e.status = 401;
+    throw e;
+  }
+  const access = window.localStorage.getItem(ACCESS_KEY);
+  const refresh = window.localStorage.getItem(REFRESH_KEY);
+  if (!access || !refresh) {
+    const e = new Error('Missing tokens');
+    e.status = 401;
+    throw e;
+  }
+  const data = await request('/auth/refresh', {
+    method: 'POST',
+    auth: false,
+    body: { access_token: access, refresh_token: refresh },
+  });
+  storeTokensFromResponse(data);
+  return data;
+}
+
+function startTokenRefreshLoop() {
+  if (typeof window === 'undefined') return;
+  stopTokenRefreshLoop();
+  refreshIntervalId = window.setInterval(() => {
+    refreshTokenPair().catch(() => {
+      stopTokenRefreshLoop();
+      clearStoredTokens();
+      window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
+    });
+  }, REFRESH_INTERVAL_MS);
+}
+
+function stopTokenRefreshLoop() {
+  if (refreshIntervalId !== null) {
+    clearInterval(refreshIntervalId);
+    refreshIntervalId = null;
+  }
+}
+
 /**
- * Drops Base44-era dependencies: REST + Bearer token backed by Buddy360 backend.
+ * REST + Bearer access token; refresh token rotation on a 25-minute interval.
  */
 export const api = {
-  async ensureSession() {
-    if (typeof window === 'undefined') return;
-    let token = window.localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      const data = await request('/auth/bootstrap', { method: 'POST', auth: false });
-      token = data.access_token;
-      window.localStorage.setItem(TOKEN_KEY, token);
-    }
-  },
+  startTokenRefreshLoop,
+  stopTokenRefreshLoop,
 
   auth: {
     async isAuthenticated() {
       if (typeof window === 'undefined') return false;
-      return !!window.localStorage.getItem(TOKEN_KEY);
+      return !!(window.localStorage.getItem(ACCESS_KEY) && window.localStorage.getItem(REFRESH_KEY));
     },
 
     async me() {
       return request('/auth/me');
     },
 
-    logout(nextHref) {
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(TOKEN_KEY);
-        if (typeof nextHref === 'string' && nextHref.length > 0) {
-          window.location.href = nextHref;
-        }
-      }
+    logout() {
+      stopTokenRefreshLoop();
+      clearStoredTokens();
     },
 
-    /** Clears token and reloads — next load runs bootstrap demo session again. */
     redirectToLogin() {
       api.auth.logout();
-      if (typeof window !== 'undefined') window.location.reload();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/Login';
+      }
     },
 
     async register(email, password, full_name) {
@@ -86,7 +133,8 @@ export const api = {
         auth: false,
         body: { email, password, full_name: full_name || 'Parent' },
       });
-      window.localStorage.setItem(TOKEN_KEY, data.access_token);
+      storeTokensFromResponse(data);
+      startTokenRefreshLoop();
     },
 
     async login(email, password) {
@@ -95,7 +143,18 @@ export const api = {
         auth: false,
         body: { email, password },
       });
-      window.localStorage.setItem(TOKEN_KEY, data.access_token);
+      storeTokensFromResponse(data);
+      startTokenRefreshLoop();
+    },
+
+    async google(id_token) {
+      const data = await request('/auth/google', {
+        method: 'POST',
+        auth: false,
+        body: { id_token },
+      });
+      storeTokensFromResponse(data);
+      startTokenRefreshLoop();
     },
   },
 

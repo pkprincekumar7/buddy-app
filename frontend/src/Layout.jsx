@@ -1,17 +1,18 @@
 import { Link } from 'react-router-dom';
 import { createPageUrl } from "@/utils";
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
-import { Home, Target, Users, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
+import { Home, Target, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Layout({ children, currentPageName }) {
+  const { logout } = useAuth();
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [childProfiles, setChildProfiles] = useState([]);
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const [ttsHydrated, setTtsHydrated] = useState(false);
 
   // Global TTS control and cleanup on load
   useEffect(() => {
@@ -33,32 +34,6 @@ export default function Layout({ children, currentPageName }) {
   }, [ttsEnabled]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (await api.auth.isAuthenticated()) {
-          const s = await api.userAppState.get();
-          if (!cancelled && typeof s.tts_enabled === 'boolean') {
-            setTtsEnabled(s.tts_enabled);
-          }
-        }
-      } catch {
-        /* keep default */
-      } finally {
-        if (!cancelled) setTtsHydrated(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!ttsHydrated) return;
-    api.userAppState.patch({ tts_enabled: ttsEnabled }).catch(() => {});
-  }, [ttsEnabled, ttsHydrated]);
-
-  useEffect(() => {
     const checkAuth = async () => {
       try {
         const authenticated = await api.auth.isAuthenticated();
@@ -76,6 +51,42 @@ export default function Layout({ children, currentPageName }) {
     checkAuth();
   }, []);
 
+  /** After login, load saved voice toggle from DB. */
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    (async () => {
+      try {
+        const s = await api.userAppState.get();
+        if (!cancelled && typeof s.tts_enabled === 'boolean') {
+          setTtsEnabled(s.tts_enabled);
+        }
+      } catch {
+        /* keep default */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  /** Speaker click: optimistic UI + persist so next session matches. */
+  const handleToggleTts = async () => {
+    const next = !ttsEnabled;
+    setTtsEnabled(next);
+    try {
+      if (await api.auth.isAuthenticated()) {
+        await api.userAppState.patch({ tts_enabled: next });
+      }
+    } catch {
+      /* keep optimistic toggle */
+    }
+  };
+
   // Pages that should have no layout chrome
   const fullScreenPages = ['SelectMode'];
   if (fullScreenPages.includes(currentPageName)) {
@@ -85,12 +96,10 @@ export default function Layout({ children, currentPageName }) {
   const navItems = [
     { label: 'Home', icon: Home, path: 'Home', show: true },
     { label: 'Missions', icon: Target, path: 'Missions', show: isAuthenticated && user?.role !== 'child' && childProfiles.length > 0 },
-    { label: 'Profiles', icon: Users, path: 'Individuals', show: isAuthenticated && user?.role !== 'child' }
   ].filter(item => item.show);
 
-  const handleLogout = async () => {
-    await api.auth.logout();
-    window.location.href = createPageUrl('Home');
+  const handleLogout = () => {
+    logout(true);
   };
 
   return (
@@ -145,7 +154,7 @@ export default function Layout({ children, currentPageName }) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setTtsEnabled(!ttsEnabled)}
+                onClick={handleToggleTts}
                 className="text-slate-600"
                 title={ttsEnabled ? "Turn off voice" : "Turn on voice"}
               >

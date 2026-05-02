@@ -31,8 +31,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buddy360_dev}
       POSTGRES_DB: ${POSTGRES_DB:-buddy360}
       JWT_SECRET: ${JWT_SECRET:-dev-docker-only-change-me-32-chars-min!!}
-      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-43200}
-      JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-43200}
+      # Access token (~30m) and refresh token (~24h); refresh requires both tokens still valid.
+      JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
+      JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       # Browser hits UI at http://localhost:${FRONTEND_PORT:-5173}; API is proxied via nginx as /api
@@ -59,6 +61,8 @@ services:
       args:
         # Empty => browser calls /api/... on the same host as the UI (nginx proxies to backend)
         VITE_API_URL: ${VITE_API_URL:-}
+        # Must match backend GOOGLE_CLIENT_ID (Google OAuth 2.0 Web client ID)
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     depends_on:

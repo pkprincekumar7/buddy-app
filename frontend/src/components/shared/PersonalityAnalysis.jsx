@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { Target, Users, Lightbulb, Heart, Zap, Sparkles } from 'lucide-react';
+import { Target, Users, Lightbulb, Heart, Zap, Sparkles, Sprout } from 'lucide-react';
+import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
 
 // New Personality Framework
 const personalityCategories = {
@@ -266,6 +267,104 @@ export function calculateMBTI(data) {
   };
 }
 
+const PERSONALITY_TYPE_KEYS = Object.keys(personalityTypes);
+const PERSONALITY_CATEGORY_KEYS = ['motivators', 'socializers', 'creatives', 'adventurers'];
+
+function roleModelAvatars(roleModels, fallbackName) {
+  const list = Array.isArray(roleModels) ? roleModels : [];
+  const two = [...list.slice(0, 2)];
+  while (two.length < 2) {
+    two.push({ name: two.length === 0 ? fallbackName || 'Role model A' : 'Role model B' });
+  }
+  return two.map((r) => {
+    const nm = typeof r?.name === 'string' && r.name.trim() ? r.name.trim() : 'Guide';
+    return {
+      name: nm,
+      image: `https://ui-avatars.com/api/?name=${encodeURIComponent(nm)}&background=random&size=128`,
+    };
+  });
+}
+
+/**
+ * Builds the same `{ type, scores, profile }` shape rule-based onboarding uses so the Personality UI renders unchanged.
+ * @param {Record<string, unknown>} ai Parsed LLM JSON
+ * @param {string} childName
+ */
+export function adaptAiPersonalityToViewModel(ai, childName) {
+  const safeName = childName?.trim?.() ? childName.trim() : 'your child';
+
+  let dominant =
+    typeof ai?.dominant_style === 'string' && PERSONALITY_TYPE_KEYS.includes(ai.dominant_style)
+      ? ai.dominant_style
+      : 'Creative';
+  let categoryKey =
+    typeof ai?.personality_category === 'string' && PERSONALITY_CATEGORY_KEYS.includes(ai.personality_category)
+      ? ai.personality_category
+      : personalityTypes[dominant].category;
+
+  const base = personalityTypes[dominant];
+
+  const traitsRaw = ai?.personalized_traits;
+  const traits =
+    Array.isArray(traitsRaw) && traitsRaw.length > 0
+      ? traitsRaw.map((t) => String(t)).filter(Boolean)
+      : base.traits;
+
+  const rawDesc =
+    typeof ai?.personalized_description === 'string' ? ai.personalized_description.trim() : '';
+  const description = rawDesc
+    ? personalizedDescriptionOneLiner(
+        rawDesc.replace(/\{childName\}/gi, safeName).replace(/\btheir\b/gi, `${safeName}'s`),
+      )
+    : base.description.replace('{childName}', safeName);
+
+  const strengthsRaw = ai?.strength_summary_bullets;
+  const strengths =
+    Array.isArray(strengthsRaw) && strengthsRaw.length > 0
+      ? strengthsRaw.map((t) => String(t)).filter(Boolean)
+      : base.strengths;
+
+  const gaRaw = ai?.personalized_growth_areas;
+  const growth_areas =
+    Array.isArray(gaRaw) && gaRaw.length > 0
+      ? gaRaw.map((t) => String(t)).filter(Boolean)
+      : base.growthAreas;
+
+  const famousPeople = roleModelAvatars(ai?.role_models, safeName);
+
+  const scoresBase = PERSONALITY_TYPE_KEYS.reduce((acc, key) => {
+    acc[key] = 14;
+    return acc;
+  }, {});
+  scoresBase[dominant] = 100;
+
+  const secondaries = Array.isArray(ai.secondary_styles) ? ai.secondary_styles : [];
+  for (let i = 0; i < secondaries.length && i < 2; i++) {
+    const sty = typeof secondaries[i]?.personality_style === 'string' ? secondaries[i].personality_style : '';
+    if (!PERSONALITY_TYPE_KEYS.includes(sty) || sty === dominant) continue;
+    const prom = typeof secondaries[i]?.prominence === 'number' ? secondaries[i].prominence : 72;
+    const clamped = Math.max(42, Math.min(96, Number.isFinite(prom) ? prom : 72));
+    if (!scoresBase[sty] || scoresBase[sty] < clamped) scoresBase[sty] = clamped;
+  }
+
+  const profile = {
+    ...base,
+    category: categoryKey,
+    name: base.name,
+    traits,
+    description,
+    famousPeople,
+    strengths,
+    growthAreas: growth_areas,
+  };
+
+  return {
+    type: dominant,
+    scores: scoresBase,
+    profile,
+  };
+}
+
 export default function PersonalityAnalysis({ mbtiResult, childName }) {
   const { type, scores, profile } = mbtiResult;
   const category = personalityCategories[profile?.category] || personalityCategories.creatives;
@@ -276,6 +375,13 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
     .map(([typeName, score]) => ({ name: typeName, score }));
+
+  const growthAreasList =
+    Array.isArray(profile?.growthAreas) && profile.growthAreas.length > 0
+      ? profile.growthAreas
+      : Array.isArray(profile?.growth_areas) && profile.growth_areas.length > 0
+        ? profile.growth_areas
+        : [];
 
   return (
     <div className="space-y-6">
@@ -417,8 +523,37 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
           ))}
         </ul>
       </div>
+
+      {/* Growth Areas */}
+      {growthAreasList.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="bg-amber-50 rounded-2xl p-5 border border-amber-200"
+        >
+          <h4 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
+            <Sprout className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />
+            Growth Areas
+          </h4>
+          <ul className="space-y-2">
+            {growthAreasList.map((item, i) => (
+              <motion.li
+                key={`${item}-${i}`}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.05 * i }}
+                className="text-sm text-amber-950/90 flex items-start gap-2"
+              >
+                <span className="w-1.5 h-1.5 mt-1.5 bg-amber-500 rounded-full shrink-0" aria-hidden />
+                <span>{item}</span>
+              </motion.li>
+            ))}
+          </ul>
+        </motion.div>
+      )}
     </div>
   );
 }
 
-export { personalityTypes, personalityCategories };
+export { personalityTypes, personalityCategories, PERSONALITY_TYPE_KEYS };

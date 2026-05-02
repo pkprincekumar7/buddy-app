@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import { Button } from "@/components/ui/button";
-import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle } from 'lucide-react';
+import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle, X } from 'lucide-react';
 import TextareaWithVoice from '../components/shared/TextareaWithVoice';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
 import { USER_APP_FULL_ONBOARDING_KEYS, USER_APP_PROCEED_TO_GOALS_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
+import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 
 const areaColors = {
@@ -29,6 +31,7 @@ const areaMilestoneMap = {
 };
 
 export default function LifePathway() {
+  const navigate = useNavigate();
   const [childData, setChildData] = useState(null);
   const [profile, setProfile] = useState(null);
   const [user, setUser] = useState(null);
@@ -59,8 +62,20 @@ export default function LifePathway() {
           }
         }
 
-        const profileFromState = s?.onboarding_profile;
-        if (profileFromState && typeof profileFromState === 'object') setProfile(profileFromState);
+        const profileFromState =
+          s?.onboarding_profile && typeof s.onboarding_profile === 'object' ? s.onboarding_profile : null;
+        const vm =
+          s?.onboarding_personality_analysis?.view_model &&
+          typeof s.onboarding_personality_analysis.view_model === 'object'
+            ? s.onboarding_personality_analysis.view_model
+            : null;
+        const legacyVm =
+          !vm && s?.onboarding_mbti && typeof s.onboarding_mbti === 'object' ? s.onboarding_mbti : null;
+        const reuseVm = vm || legacyVm;
+        const resolvedProfile =
+          profileFromState ||
+          (reuseVm?.type && reuseVm?.profile ? onboardingProfileFromViewModel(reuseVm) : null);
+        if (resolvedProfile) setProfile(resolvedProfile);
 
         const savedCompletedAreas = s?.completed_growth_areas;
         let parsedAreas = [];
@@ -97,13 +112,57 @@ export default function LifePathway() {
   };
 
   const handleProceedToDashboard = async () => {
+    closeConcernModal();
     try {
       await api.userAppState.patch(patchBodyClearKeys(USER_APP_PROCEED_TO_GOALS_KEYS));
     } catch {
       /* ignore */
     }
-    window.location.href = createPageUrl('GoalsDashboard');
+    navigate(createPageUrl('GoalsDashboard'));
   };
+
+  const closeConcernModal = useCallback(() => {
+    setShowConcernModal(false);
+    setConcernSubmitted(false);
+    setConcernInput('');
+  }, []);
+
+  useEffect(() => {
+    if (!showConcernModal) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') closeConcernModal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showConcernModal, closeConcernModal]);
+
+  /** Prefill concern textarea from saved app-state when opening the modal */
+  useEffect(() => {
+    if (!showConcernModal) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const s = await api.userAppState.get();
+        if (cancelled) return;
+        const stored = typeof s.parent_concern === 'string' ? s.parent_concern.trim() : '';
+        if (stored) setConcernInput(stored);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showConcernModal]);
+
+  /** If this tab restores from bfcache, drop modal state so Back from Goals does not reopen it. */
+  useEffect(() => {
+    const onPageShow = (e) => {
+      if (e.persisted) closeConcernModal();
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [closeConcernModal]);
 
   if (isLoading) {
     return (
@@ -499,35 +558,42 @@ export default function LifePathway() {
             <div className="max-w-3xl mx-auto">
               <p className="text-slate-500 mt-2">Click below to continue this interesting journey with Buddy360.</p>
             </div>
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 max-w-3xl mx-auto w-full">
-              <Button
-                variant="outline"
-                onClick={() => window.history.back()}
-                className="h-14 px-8 rounded-2xl border-2 text-lg"
-              >
-                ← Back
-              </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
-                  } catch {
-                    /* ignore */
-                  }
-                  window.location.href = '/Onboarding';
-                }}
-                className="h-14 px-8 rounded-2xl border-2 text-lg text-amber-700 border-amber-300 hover:bg-amber-50"
-              >
-                🔄 Start Over
-              </Button>
-              <Button
-                onClick={handleStartJourney}
-                className="h-14 px-10 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-lg font-semibold shadow-xl"
-              >
-                Continue Journey
-                <ChevronRight className="w-6 h-6 ml-2" />
-              </Button>
+            {/* sm+: left | center | right; mobile: stacked full-width */}
+            <div className="grid w-full grid-cols-1 gap-3 pt-4 sm:grid-cols-3 sm:items-center">
+              <div className="flex w-full sm:justify-start">
+                <Button
+                  variant="outline"
+                  onClick={() => window.history.back()}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
+                >
+                  ← Back
+                </Button>
+              </div>
+              <div className="flex w-full sm:justify-center">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                    } catch {
+                      /* ignore */
+                    }
+                    window.location.href = '/Onboarding';
+                  }}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                >
+                  🔄 Start Over
+                </Button>
+              </div>
+              <div className="flex w-full sm:justify-end">
+                <Button
+                  onClick={handleStartJourney}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold shadow-xl shadow-teal-500/25"
+                >
+                  Continue Journey
+                  <ChevronRight className="w-5 h-5 ml-2" />
+                </Button>
+              </div>
             </div>
           </motion.div>
         </motion.div>
@@ -535,12 +601,25 @@ export default function LifePathway() {
 
       {/* Concern Modal */}
       {showConcernModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={closeConcernModal}
+          role="presentation"
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl"
+            className="relative bg-white rounded-3xl p-8 pt-12 max-w-lg w-full shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              onClick={closeConcernModal}
+              className="absolute top-4 right-4 rounded-xl p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+              aria-label="Close dialog"
+            >
+              <X className="w-5 h-5" />
+            </button>
             {!concernSubmitted ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-3 mb-2">

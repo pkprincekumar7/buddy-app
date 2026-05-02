@@ -1,6 +1,6 @@
 from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,14 +30,29 @@ class Settings(BaseSettings):
         default="change-me-in-production-use-long-random-string",
         validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
     )
-    jwt_expire_minutes: int = Field(
-        default=60 * 24 * 30,
-        validation_alias=AliasChoices(
-            "JWT_EXPIRE_MINUTES",
-            "JWT_ACCESS_EXPIRE_MINUTES",
-            "jwt_expire_minutes",
-        ),
+    jwt_access_expire_minutes: int = Field(
+        default=30,
+        validation_alias=AliasChoices("JWT_ACCESS_EXPIRE_MINUTES", "jwt_access_expire_minutes"),
     )
+    jwt_refresh_expire_hours: int = Field(
+        default=24,
+        validation_alias=AliasChoices("JWT_REFRESH_EXPIRE_HOURS", "jwt_refresh_expire_hours"),
+    )
+
+    google_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_CLIENT_ID", "google_client_id"),
+    )
+
+    @field_validator("google_client_id", mode="before")
+    @classmethod
+    def normalize_google_client_id(cls, v: object) -> str:
+        if v is None:
+            return ""
+        s = str(v).strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+            s = s[1:-1].strip()
+        return s
 
     cors_origins: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",

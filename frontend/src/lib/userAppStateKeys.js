@@ -4,14 +4,17 @@ export const USER_APP_HOME_RESET_KEYS = [
 	'onboarding_phase',
 	'onboarding_childData',
 	'onboarding_mbti',
+	'onboarding_personality_analysis',
+	'onboarding_profile',
+	'onboarding_recommendations',
 	'recommendations_progress',
 ];
 
-/** After LifePathway welcome → Goals; keep completed areas, concern, goals plan */
+/** After LifePathway welcome → Goals; keep questionnaire + completed areas, concern, goals plan */
 export const USER_APP_PROCEED_TO_GOALS_KEYS = [
 	'onboarding_phase',
-	'onboarding_childData',
 	'onboarding_mbti',
+	'onboarding_personality_analysis',
 	'onboarding_profile',
 	'onboarding_recommendations',
 	'recommendations_progress',
@@ -21,6 +24,7 @@ export const USER_APP_FULL_ONBOARDING_KEYS = [
 	'onboarding_phase',
 	'onboarding_childData',
 	'onboarding_mbti',
+	'onboarding_personality_analysis',
 	'onboarding_profile',
 	'onboarding_recommendations',
 	'recommendations_progress',
@@ -28,6 +32,9 @@ export const USER_APP_FULL_ONBOARDING_KEYS = [
 	'parent_concern',
 	'goals_plan',
 ];
+
+/** Cleared when user taps Start Over on onboarding — same scope as Goals/LifePathway (tts_enabled preserved). */
+export const USER_APP_ONBOARDING_START_OVER_KEYS = USER_APP_FULL_ONBOARDING_KEYS;
 
 export function patchBodyClearKeys(keys) {
 	return Object.fromEntries(keys.map((k) => [k, null]));

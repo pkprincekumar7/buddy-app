@@ -1,9 +1,14 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
+import { createPageUrl } from '@/utils';
+import { pagesConfig } from '../pages.config';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
@@ -11,62 +16,109 @@ export const AuthProvider = ({ children }) => {
   const [appPublicSettings] = useState(null);
   const isLoadingPublicSettings = false;
 
-  const checkAppState = async () => {
+  const checkAppState = useCallback(async (options = {}) => {
+    const withLoading = options.withLoading !== false;
     setAuthError(null);
-    setIsLoadingAuth(true);
+    if (withLoading) {
+      setIsLoadingAuth(true);
+    }
     try {
-      await api.ensureSession();
+      const hasSession = await api.auth.isAuthenticated();
+      if (!hasSession) {
+        api.stopTokenRefreshLoop();
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+
+      api.startTokenRefreshLoop();
       const currentUser = await api.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
     } catch (error) {
-      console.error('Auth bootstrap failed:', error);
-      setIsAuthenticated(false);
-      setUser(null);
-      const msg =
-        error?.message ||
-        'Backend unavailable. Run the API (backend) and ensure Vite proxies /api to it, or set VITE_API_URL.';
-      setAuthError({
-        type: 'unknown',
-        message: msg,
-      });
+      console.error('Auth check failed:', error);
+      api.stopTokenRefreshLoop();
+      const status = error?.status;
+      if (status === 401) {
+        api.auth.logout();
+        setUser(null);
+        setIsAuthenticated(false);
+        setAuthError(null);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+        const msg =
+          error?.message ||
+          'Backend unavailable. Run the API (backend) and ensure Vite proxies /api to it, or set VITE_API_URL.';
+        setAuthError({ type: 'unknown', message: msg });
+      }
     } finally {
-      setIsLoadingAuth(false);
+      if (withLoading) {
+        setIsLoadingAuth(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     checkAppState();
-  }, []);
+  }, [checkAppState]);
 
-  const logout = (shouldRedirect = true) => {
-    setUser(null);
-    setIsAuthenticated(false);
-
-    if (shouldRedirect && typeof window !== 'undefined') {
-      api.auth.logout();
-      window.location.href = '/';
-      return;
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null);
+      setIsAuthenticated(false);
+      setAuthError(null);
+      navigate('/Login', { replace: true });
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('buddy360:auth-expired', onExpired);
+      return () => window.removeEventListener('buddy360:auth-expired', onExpired);
     }
-    api.auth.logout();
-  };
+    return undefined;
+  }, [navigate]);
 
-  const navigateToLogin = () => {
-    api.auth.redirectToLogin();
-  };
+  const logout = useCallback(
+    (shouldRedirect = true) => {
+      api.auth.logout();
+      setUser(null);
+      setIsAuthenticated(false);
+      setAuthError(null);
+      if (shouldRedirect) {
+        navigate('/Login', { replace: true });
+      }
+    },
+    [navigate]
+  );
+
+  const navigateToLogin = useCallback(() => {
+    logout(true);
+  }, [logout]);
+
+  const mainPath = createPageUrl(pagesConfig.mainPage || 'Home');
+
+  useEffect(() => {
+    if (isLoadingAuth) return;
+    const publicPaths = ['/Login', '/Register'];
+    if (!publicPaths.includes(location.pathname)) return;
+    if (isAuthenticated) {
+      navigate(mainPath, { replace: true });
+    }
+  }, [isLoadingAuth, isAuthenticated, location.pathname, navigate, mainPath]);
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated,
-      isLoadingAuth,
-      isLoadingPublicSettings,
-      authError,
-      appPublicSettings,
-      logout,
-      navigateToLogin,
-      checkAppState
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        isLoadingAuth,
+        isLoadingPublicSettings,
+        authError,
+        appPublicSettings,
+        logout,
+        navigateToLogin,
+        checkAppState,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

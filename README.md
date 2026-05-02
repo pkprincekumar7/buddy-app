@@ -6,15 +6,42 @@ Stack: **React (Vite)**, **FastAPI**, **PostgreSQL**, optional **OpenAI** for an
 
 ```bash
 cp .env.example .env
-# set JWT_SECRET and optionally OPENAI_API_KEY
+# Edit `.env`: set JWT_SECRET, optionally OPENAI_API_KEY, and Google IDs if you use Sign in with Google (see below).
 docker compose up --build
 ```
+
+After changing `VITE_GOOGLE_CLIENT_ID`, rebuild the frontend image so Vite embeds it (`docker compose build frontend` or `docker compose up --build`).
+
+All supported variables are documented in `.env.example` (JWT lifetimes, CORS, Postgres, `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, optional `VITE_API_URL`).
 
 - API: `http://localhost:8000` (e.g. `GET /health`)
 - UI: `http://localhost:5173`
 - OpenAPI: `http://localhost:8000/docs`
 
 Migrations run automatically in the API container; seed data (onboarding and growth questions, media placeholders) runs on API startup on an empty database.
+
+## Google Sign-In (optional)
+
+Use the **same** OAuth 2.0 **Web client ID** for both `GOOGLE_CLIENT_ID` (backend verifies the ID token) and `VITE_GOOGLE_CLIENT_ID` (frontend loads the Google button). The value looks like `123456789-xxxx.apps.googleusercontent.com`.
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) and select or create a **project**.
+2. Go to **APIs & Services → OAuth consent screen**. Configure the app (type, name, support email). In testing mode, add **Test users** for accounts that will sign in.
+3. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+4. Application type: **Web application**.
+5. Under **Authorized JavaScript origins**, add the origins where your UI is served, for example:
+   - `http://localhost:5173` and `http://127.0.0.1:5173` (default Docker Compose UI port)
+   - your production origin when you deploy
+6. Create the client and copy the **Client ID** (you do not need the client secret for the ID-token flow used here).
+7. In `.env`, set:
+
+   ```env
+   GOOGLE_CLIENT_ID=your-id.apps.googleusercontent.com
+   VITE_GOOGLE_CLIENT_ID=your-id.apps.googleusercontent.com
+   ```
+
+8. Rebuild the frontend so `VITE_GOOGLE_CLIENT_ID` is baked into the bundle (`docker compose up --build` or `docker compose build frontend`).
+
+If these are left empty, email/password login still works; the login page hides Google until `VITE_GOOGLE_CLIENT_ID` is set at build time and the backend returns an error if Google is used without `GOOGLE_CLIENT_ID`.
 
 ## Local development (without Docker for Node/Python)
 
@@ -31,7 +58,7 @@ Migrations run automatically in the API container; seed data (onboarding and gro
 
 ## API overview
 
-- `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me` (Bearer access token for protected routes).
+- `POST /auth/register`, `POST /auth/login`, `POST /auth/google`, `POST /auth/refresh`, `GET /auth/me` (Bearer access token for protected routes).
 - `GET /journey/state`, `POST /journey/start`, `POST /journey/start-over`, `POST /journey/advance`, `POST /journey/back`, onboarding and growth `PUT`/`POST` routes as in `IMPLEMENTATION_PLAN.md` Part E.
 - `GET /flows/onboarding/questions`, `GET /flows/growth/{module_key}/questions`, `GET /flows/growth/{module_key}/media`.
 

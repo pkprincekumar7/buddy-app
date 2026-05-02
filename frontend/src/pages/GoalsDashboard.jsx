@@ -5,6 +5,7 @@ import { api } from '@/api/client';
 import { Target, ChevronDown, ChevronUp, Sparkles, RefreshCw, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { USER_APP_FULL_ONBOARDING_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
+import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
@@ -54,7 +55,19 @@ export default function GoalsDashboard() {
     setIsLoading(true);
     const s = await api.userAppState.get();
     const completedAreas = Array.isArray(s.completed_growth_areas) ? s.completed_growth_areas : [];
-    const profile = s.onboarding_profile || null;
+    const storedProfile =
+      s.onboarding_profile && typeof s.onboarding_profile === 'object' ? s.onboarding_profile : null;
+    const vm =
+      s.onboarding_personality_analysis?.view_model &&
+      typeof s.onboarding_personality_analysis.view_model === 'object'
+        ? s.onboarding_personality_analysis.view_model
+        : null;
+    const legacyVm =
+      !vm && s.onboarding_mbti && typeof s.onboarding_mbti === 'object' ? s.onboarding_mbti : null;
+    const reuseVm = vm || legacyVm;
+    const profile =
+      storedProfile ||
+      (reuseVm?.type && reuseVm?.profile ? onboardingProfileFromViewModel(reuseVm) : null);
 
     const areasContext = completedAreas.map(a => `${a.name}: ${(a.recommendations || []).join('; ')}`).join('\n');
     const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
@@ -241,39 +254,45 @@ Return JSON with this exact structure:
               );
             })}
 
-            {/* Footer Buttons */}
-            <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => navigate(-1)}
-                className="h-11 px-6 rounded-2xl border-2"
-              >
-                ← Back
-              </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
-                  } catch {
-                    /* ignore */
-                  }
-                  window.location.href = '/Onboarding';
-                }}
-                className="h-11 px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
-              >
-                🔄 Start Over
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  api.userAppState.patch({ goals_plan: null }).then(() => generateGoals(childData, concern));
-                }}
-                className="h-11 px-6 rounded-2xl border-2"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Regenerate Plan
-              </Button>
+            {/* sm+: left | center | right; mobile: stacked full-width */}
+            <div className="grid w-full grid-cols-1 gap-3 pt-4 sm:grid-cols-3 sm:items-center">
+              <div className="flex w-full sm:justify-start">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(-1)}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
+                >
+                  ← Back
+                </Button>
+              </div>
+              <div className="flex w-full sm:justify-center">
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                    } catch {
+                      /* ignore */
+                    }
+                    window.location.href = '/Onboarding';
+                  }}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                >
+                  🔄 Start Over
+                </Button>
+              </div>
+              <div className="flex w-full sm:justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    api.userAppState.patch({ goals_plan: null }).then(() => generateGoals(childData, concern));
+                  }}
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Regenerate Plan
+                </Button>
+              </div>
             </div>
           </div>
         )}

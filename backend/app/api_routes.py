@@ -1,4 +1,7 @@
 from typing import Any
+from copy import deepcopy
+import logging
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import get_current_user
-from app.auth_utils import create_access_token, hash_password, verify_password
+from app.auth_utils import (
+    create_access_token,
+    create_refresh_token,
+    decode_token_of_type,
+    hash_password,
+    verify_password,
+)
 from app.models import (
     ChildRecord,
     GrowthMissionRecord,
@@ -21,9 +30,77 @@ from app.settings import settings
 
 router = APIRouter(tags=["auth"])
 
+log = logging.getLogger(__name__)
 
-class BootstrapResponse(BaseModel):
+_APP_STATE_PUBLIC_DEFAULTS: dict[str, Any] = {"tts_enabled": True}
+
+
+def _coerce_user_app_state_patch_value(key: str, value: Any) -> Any:
+    """Normalize known scalar keys so stored onboarding_phase stays integer-backed."""
+    if key != "onboarding_phase":
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return value
+    return value
+
+
+def _normalize_app_payload_for_response(data: dict[str, Any]) -> dict[str, Any]:
+    """Ensure known keys appear in GET/PATCH responses (defaults remain virtual until client PATCH persists)."""
+    merged = dict(data)
+    for k, v in _APP_STATE_PUBLIC_DEFAULTS.items():
+        if k not in merged:
+            merged[k] = v
+    return merged
+
+
+def _dedupe_personality_profile_growth_fields(payload: dict[str, Any]) -> None:
+    """view_model.profile historically duplicated growthAreas vs growth_areas; keep camelCase only."""
+    analysis = payload.get("onboarding_personality_analysis")
+    if not isinstance(analysis, dict):
+        return
+    vm = analysis.get("view_model")
+    if not isinstance(vm, dict):
+        return
+    prof = vm.get("profile")
+    if isinstance(prof, dict) and "growthAreas" in prof and "growth_areas" in prof:
+        prof.pop("growth_areas", None)
+
+
+def _omit_redundant_onboarding_personality_copies(payload: dict[str, Any]) -> None:
+    """GET responses only: onboarding_profile / legacy onboarding_mbti duplicate view_model (clients derive profile via VM)."""
+    analysis = payload.get("onboarding_personality_analysis")
+    if not isinstance(analysis, dict):
+        return
+    vm = analysis.get("view_model")
+    if not isinstance(vm, dict) or not vm.get("type") or not vm.get("profile"):
+        return
+    payload.pop("onboarding_profile", None)
+    payload.pop("onboarding_mbti", None)
+
+
+def _app_state_payload_for_response(raw: dict[str, Any]) -> dict[str, Any]:
+    """Deep-copy payload so responses never alias ORM JSON; normalize nested onboarding shapes."""
+    try:
+        out = deepcopy(raw)
+    except Exception:
+        out = dict(raw)
+    _dedupe_personality_profile_growth_fields(out)
+    _omit_redundant_onboarding_personality_copies(out)
+    return _normalize_app_payload_for_response(out)
+
+
+class AuthTokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
 
 
@@ -38,6 +115,15 @@ class LoginBody(BaseModel):
     password: str
 
 
+class RefreshBody(BaseModel):
+    access_token: str
+    refresh_token: str
+
+
+class GoogleAuthBody(BaseModel):
+    id_token: str
+
+
 class MeResponse(BaseModel):
     id: str
     email: str
@@ -46,27 +132,14 @@ class MeResponse(BaseModel):
     parent_pin: str
 
 
-@router.post("/auth/bootstrap", response_model=BootstrapResponse)
-def bootstrap_demo_account(db: Session = Depends(get_db)):
-    demo_email = "demo@buddy360.local"
-    user = db.execute(select(User).where(User.email == demo_email)).scalar_one_or_none()
-    pw = "demo!"
-    if not user:
-        user = User(
-            email=demo_email,
-            password_hash=hash_password(pw),
-            full_name="Parent",
-            role="parent",
-            parent_pin=settings.demo_parent_pin,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    token = create_access_token(user.id)
-    return BootstrapResponse(access_token=token)
+def _issue_token_pair(user_id: str) -> AuthTokenResponse:
+    return AuthTokenResponse(
+        access_token=create_access_token(user_id),
+        refresh_token=create_refresh_token(user_id),
+    )
 
 
-@router.post("/auth/register", response_model=BootstrapResponse)
+@router.post("/auth/register", response_model=AuthTokenResponse)
 def register(body: RegisterBody, db: Session = Depends(get_db)):
     if db.execute(select(User).where(User.email == body.email)).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -80,15 +153,86 @@ def register(body: RegisterBody, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return BootstrapResponse(access_token=create_access_token(user.id))
+    return _issue_token_pair(user.id)
 
 
-@router.post("/auth/login", response_model=BootstrapResponse)
+@router.post("/auth/login", response_model=AuthTokenResponse)
 def login(body: LoginBody, db: Session = Depends(get_db)):
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    return BootstrapResponse(access_token=create_access_token(user.id))
+    return _issue_token_pair(user.id)
+
+
+@router.post("/auth/refresh", response_model=AuthTokenResponse)
+def refresh_tokens(body: RefreshBody, db: Session = Depends(get_db)):
+    """Both tokens must still be valid (unexpired). Expired tokens cannot be rotated."""
+    access_payload = decode_token_of_type(body.access_token, "access")
+    refresh_payload = decode_token_of_type(body.refresh_token, "refresh")
+    if not access_payload or not refresh_payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if access_payload.get("sub") != refresh_payload.get("sub"):
+        raise HTTPException(status_code=401, detail="Token mismatch")
+    uid = access_payload["sub"]
+    if not db.get(User, uid):
+        raise HTTPException(status_code=401, detail="User not found")
+    return _issue_token_pair(uid)
+
+
+@router.post("/auth/google", response_model=AuthTokenResponse)
+def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+
+        info = google_id_token.verify_oauth2_token(
+            body.id_token,
+            google_requests.Request(),
+            settings.google_client_id,
+            clock_skew_in_seconds=60,
+        )
+    except Exception as exc:
+        log.warning("Google ID token verification failed: %s: %s", type(exc).__name__, exc, exc_info=True)
+        msg = str(exc).lower()
+        if "requests library is not installed" in msg or "requests` package" in msg:
+            detail = (
+                "Server cannot verify Google tokens: install the `requests` package "
+                "(use `google-auth[requests]` in requirements)."
+            )
+            raise HTTPException(status_code=500, detail=detail) from exc
+        if "audience" in msg or "wrong audience" in msg:
+            detail = (
+                "Google token does not match GOOGLE_CLIENT_ID on this server. "
+                "Set GOOGLE_CLIENT_ID to the same OAuth Web client ID as VITE_GOOGLE_CLIENT_ID."
+            )
+        elif "expired" in msg or "too late" in msg:
+            detail = "Google sign-in token has expired. Use a fresh credential from the browser."
+        elif any(x in msg for x in ("certificate", "urlopen", "connection", "ssl", "timeout", "resolve")):
+            detail = (
+                "Could not verify Google sign-in (failed to reach Google). "
+                "Check outbound HTTPS from the API (e.g. Docker network) and try again."
+            )
+        else:
+            detail = "Invalid Google credential."
+        raise HTTPException(status_code=401, detail=detail) from exc
+    email = info.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Google did not return an email")
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if not user:
+        user = User(
+            email=email,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+            full_name=(info.get("name") or email.split("@")[0])[:255],
+            role="parent",
+            parent_pin=settings.demo_parent_pin,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return _issue_token_pair(user.id)
 
 
 @router.get("/auth/me", response_model=MeResponse)
@@ -105,7 +249,8 @@ def auth_me(user: User = Depends(get_current_user)):
 @router.get("/user/app-state")
 def get_user_app_state(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.get(UserAppState, user.id)
-    return dict(row.payload) if row and row.payload else {}
+    raw = dict(row.payload) if row and row.payload else {}
+    return _app_state_payload_for_response(raw)
 
 
 @router.patch("/user/app-state")
@@ -114,6 +259,15 @@ def patch_user_app_state(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Merge PATCH JSON into the user's app-state blob.
+
+    Clients should send small, step-scoped payloads (clear keys with null per-field).
+    Common onboarding keys: onboarding_phase, onboarding_childData,
+    onboarding_personality_analysis, onboarding_recommendations, tts_enabled, goals_plan, ...
+    Nested under recommendations_progress: child_activity_by_area (per growth-area id),
+    child_activity_game (legacy mirror for the active area), interactiveAnswers, etc.
+    GET returns the stored payload unchanged except personality-field dedupe helpers.
+    """
     row = db.get(UserAppState, user.id)
     if not row:
         row = UserAppState(user_id=user.id, payload={})
@@ -123,11 +277,11 @@ def patch_user_app_state(
         if v is None:
             data.pop(k, None)
         else:
-            data[k] = v
+            data[k] = _coerce_user_app_state_patch_value(k, v)
     row.payload = data
     db.commit()
     db.refresh(row)
-    return dict(row.payload)
+    return _app_state_payload_for_response(dict(row.payload))
 
 
 class CompletedGrowthAreaResponse(BaseModel):
@@ -140,7 +294,11 @@ def append_completed_growth_area(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Atomically upsert one growth area entry by id without losing sibling areas (serialized per user row)."""
+    """Atomically upsert one growth area entry by id without losing sibling areas (serialized per user row).
+
+    Body may include answers, recommendations (3‑month bullets), child_activity / child_activity_game
+    (same object: selections, optional results LLM payload, optional parent_interactive_snapshot).
+    """
     if not body.get("id"):
         raise HTTPException(status_code=400, detail="Missing area id")
 

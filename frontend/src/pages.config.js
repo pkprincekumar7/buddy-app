@@ -49,7 +49,6 @@
  */
 import ChildMode from './pages/ChildMode';
 import Home from './pages/Home';
-import Individuals from './pages/Individuals';
 import LifePathway from './pages/LifePathway';
 import Missions from './pages/Missions';
 import Onboarding from './pages/Onboarding';
@@ -61,7 +60,6 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "ChildMode": ChildMode,
     "Home": Home,
-    "Individuals": Individuals,
     "LifePathway": LifePathway,
     "Missions": Missions,
     "Onboarding": Onboarding,
