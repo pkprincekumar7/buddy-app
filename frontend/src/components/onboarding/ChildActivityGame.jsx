@@ -4,6 +4,16 @@ import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 
+// Fallback gradient palette shown when an image fails to load.
+const TILE_GRADIENTS = [
+  'from-purple-400 to-indigo-500',
+  'from-rose-400 to-pink-500',
+  'from-amber-400 to-orange-500',
+  'from-emerald-400 to-teal-500',
+  'from-blue-400 to-cyan-500',
+  'from-violet-400 to-purple-500',
+];
+
 const areaGames = {
   life_ambition: {
     question: "What do you want to become in life?",
@@ -117,12 +127,11 @@ export default function ChildActivityGame({
   areaId = 'life_ambition',
   selectedIds = [],
   onSelectedIdsChange,
-  /** When current selections match this bundle (from app-state), skip InvokeLLM on submit */
-  cachedSubmitBundle = null,
   onComplete,
 }) {
   const game = areaGames[areaId] || areaGames.life_ambition;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [failedImages, setFailedImages] = useState(new Set());
 
   const ids = Array.isArray(selectedIds) ? selectedIds : [];
 
@@ -143,20 +152,22 @@ export default function ChildActivityGame({
       return;
     }
 
-    const cached = cachedSubmitBundle;
-    if (
-      cached &&
-      cached.recommendations &&
-      typeof cached.recommendations === 'object' &&
-      selectionsMatchSubmit(ids, cached.selections || [])
-    ) {
-      const recommendations = normalizeChildGameRecommendations(cached.recommendations);
-      const done = onComplete({ selections: ids, recommendations });
-      if (done != null && typeof done.then === 'function') await done;
-      return;
-    }
-
     setIsSubmitting(true);
+
+    try {
+      // Check DB first — skip LLM if results already saved for this area
+      const completedData = await api.completedGrowthAreas.list();
+      const existing = completedData?.areas?.find((a) => a.area_id === areaId);
+      if (existing?.child_activity?.results) {
+        const recommendations = normalizeChildGameRecommendations(existing.child_activity.results);
+        const done = onComplete({ selections: existing.child_activity.selections ?? ids, recommendations });
+        if (done != null && typeof done.then === 'function') await done;
+        setIsSubmitting(false);
+        return;
+      }
+    } catch {
+      /* fall through to LLM */
+    }
 
     const selectedLabels = ids.map((id) => game.options.find((o) => o.id === id)?.label).join(', ');
 
@@ -176,6 +187,8 @@ export default function ChildActivityGame({
       const recommendations = normalizeChildGameRecommendations(raw);
       const done = onComplete({ selections: ids, recommendations });
       if (done != null && typeof done.then === 'function') await done;
+    } catch {
+      toast.error('Could not generate recommendations. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -190,7 +203,7 @@ export default function ChildActivityGame({
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {game.options.map((option) => (
+        {game.options.map((option, index) => (
           <button
             key={option.id}
             type="button"
@@ -201,20 +214,20 @@ export default function ChildActivityGame({
                 : 'border-slate-200 hover:border-emerald-300'
             }`}
           >
-            <div className="aspect-[4/3] relative">
-              <img
-                src={option.image}
-                alt={option.label}
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div className="hidden absolute inset-0 bg-gradient-to-br from-purple-400 to-pink-500 items-center justify-center">
-                <span className="text-6xl">{option.emoji}</span>
+            {option.image && !failedImages.has(option.id) ? (
+              <div className="aspect-[4/3] relative overflow-hidden">
+                <img
+                  src={option.image}
+                  alt={option.label}
+                  className="w-full h-full object-cover"
+                  onError={() => setFailedImages((prev) => new Set([...prev, option.id]))}
+                />
               </div>
-            </div>
+            ) : (
+              <div className={`aspect-[4/3] bg-gradient-to-br ${TILE_GRADIENTS[index % TILE_GRADIENTS.length]} flex items-center justify-center`}>
+                <span className="text-5xl select-none">{option.emoji}</span>
+              </div>
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-between p-3">
               <span className="text-white font-semibold text-sm">{option.label}</span>
               {ids.includes(option.id) ? (

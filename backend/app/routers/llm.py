@@ -1,47 +1,37 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from openai import OpenAI
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 
-from app.auth_utils import decode_token
-from app.database import get_db
+from app.deps import get_current_user
 from app.models import User
 from app.settings import settings
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
+_openai_client: OpenAI | None = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+
 
 class LLMInvokeBody(BaseModel):
-    prompt: str
+    prompt: str = Field(max_length=10000)
     response_json_schema: dict[str, Any] | None = None
 
 
 @router.post("/invoke")
 def invoke_llm(
     body: LLMInvokeBody,
-    authorization: str | None = Header(None),
-    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = authorization.split(" ", 1)[1]
-    payload = decode_token(token)
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user = db.get(User, payload["sub"])
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
 
-    if not settings.openai_api_key:
+    if _openai_client is None:
         raise HTTPException(
             status_code=503,
             detail="OPENAI_API_KEY is not set on the server. Add it to backend/.env to enable LLM features.",
         )
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = _openai_client
     schema_hint = ""
     if body.response_json_schema:
         schema_hint = (

@@ -12,6 +12,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [childProfiles, setChildProfiles] = useState([]);
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings] = useState(null);
   const isLoadingPublicSettings = false;
@@ -35,6 +36,8 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await api.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
+      const children = await api.entities.Child.list('-created_date');
+      setChildProfiles(children);
     } catch (error) {
       console.error('Auth check failed:', error);
       api.stopTokenRefreshLoop();
@@ -43,10 +46,12 @@ export const AuthProvider = ({ children }) => {
         api.auth.logout();
         setUser(null);
         setIsAuthenticated(false);
+        setChildProfiles([]);
         setAuthError(null);
       } else {
         setUser(null);
         setIsAuthenticated(false);
+        setChildProfiles([]);
         const msg =
           error?.message ||
           'Backend unavailable. Run the API (backend) and ensure Vite proxies /api to it, or set VITE_API_URL.';
@@ -67,6 +72,7 @@ export const AuthProvider = ({ children }) => {
     const onExpired = () => {
       setUser(null);
       setIsAuthenticated(false);
+      setChildProfiles([]);
       setAuthError(null);
       navigate('/Login', { replace: true });
     };
@@ -82,6 +88,7 @@ export const AuthProvider = ({ children }) => {
       api.auth.logout();
       setUser(null);
       setIsAuthenticated(false);
+      setChildProfiles([]);
       setAuthError(null);
       if (shouldRedirect) {
         navigate('/Login', { replace: true });
@@ -93,6 +100,15 @@ export const AuthProvider = ({ children }) => {
   const navigateToLogin = useCallback(() => {
     logout(true);
   }, [logout]);
+
+  const refreshChildren = useCallback(async () => {
+    try {
+      const children = await api.entities.Child.list('-created_date');
+      setChildProfiles(children);
+    } catch {
+      /* keep current list */
+    }
+  }, []);
 
   const mainPath = createPageUrl(pagesConfig.mainPage || 'Home');
 
@@ -114,6 +130,8 @@ export const AuthProvider = ({ children }) => {
         isLoadingPublicSettings,
         authError,
         appPublicSettings,
+        childProfiles,
+        refreshChildren,
         logout,
         navigateToLogin,
         checkAppState,

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -8,45 +9,52 @@ import {
   Dumbbell, Palette, Star, Rocket, Shield, Users
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { USER_APP_ONBOARDING_START_OVER_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 
 export default function Home() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: children = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date')
   });
 
-  const { data: appState = {}, isSuccess: appStateLoaded } = useQuery({
-    queryKey: ['userAppState'],
-    queryFn: () => api.userAppState.get(),
+  const { data: onboarding = {}, isSuccess: onboardingLoaded } = useQuery({
+    queryKey: ['onboarding'],
+    queryFn: () => api.onboarding.get(),
     staleTime: 30_000,
   });
 
-  const phaseRaw = appState?.onboarding_phase;
+  const phaseRaw = onboarding?.phase;
   const onboardingInProgress =
-    appStateLoaded &&
+    onboardingLoaded &&
     phaseRaw !== undefined &&
     phaseRaw !== null &&
-    String(phaseRaw) !== 'null' &&
-    String(phaseRaw) !== 'complete';
+    phaseRaw > 0;
 
   const handleStartJourney = () => {
-    window.location.href = createPageUrl('Onboarding');
+    navigate(createPageUrl('Onboarding'));
   };
 
   const handleStartFresh = async () => {
     try {
-      if (await api.auth.isAuthenticated()) {
-        const existingChildren = await api.entities.Child.list('-created_date');
-        await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
-        await api.userAppState.patch(patchBodyClearKeys(USER_APP_ONBOARDING_START_OVER_KEYS));
-        queryClient.invalidateQueries({ queryKey: ['userAppState'] });
-      }
+      const existingChildren = await api.entities.Child.list('-created_date');
+      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
+      await Promise.all([
+        api.onboarding.patch({
+          phase: 0,
+          clear_child_data: true,
+          clear_personality: true,
+          clear_recommendations: true,
+        }),
+        api.recommendationsProgress.patch({ step: 'intro' }),
+        api.goals.patch({ clear_plan: true, clear_concern: true }),
+        api.completedGrowthAreas.clear(),
+      ]);
+      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
+      navigate(createPageUrl('Onboarding'));
     } catch {
-      /* ignore */
+      toast.error('Reset failed. Please try again.');
     }
-    window.location.href = createPageUrl('Onboarding');
   };
   
   const pillars = [
@@ -107,7 +115,7 @@ export default function Home() {
               {onboardingInProgress ? (
                 <>
                   <Button 
-                    onClick={() => window.location.href = createPageUrl('Onboarding')}
+                    onClick={() => navigate(createPageUrl('Onboarding'))}
                     className="h-14 px-8 text-lg rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 shadow-xl shadow-teal-500/25"
                   >
                     <Sparkles className="w-5 h-5 mr-2" />

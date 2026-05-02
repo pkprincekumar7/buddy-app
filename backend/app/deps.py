@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models import User
 
 
-async def get_current_user(
+def get_current_user(
     authorization: str | None = Header(None),
     db: Session = Depends(get_db),
 ) -> User:

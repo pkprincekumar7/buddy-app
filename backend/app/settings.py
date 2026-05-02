@@ -1,7 +1,10 @@
+import logging
 from urllib.parse import quote_plus
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -22,14 +25,35 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
     )
+
+    @field_validator("openai_api_key")
+    @classmethod
+    def warn_if_openai_key_missing(cls, v: str) -> str:
+        if not v:
+            log.warning(
+                "OPENAI_API_KEY is not set — LLM features will be disabled. "
+                "Add it to backend/.env to enable them."
+            )
+        return v
+
     openai_model: str = Field(
         default="gpt-4o-mini",
         validation_alias=AliasChoices("OPENAI_MODEL", "openai_model"),
     )
     jwt_secret: str = Field(
-        default="change-me-in-production-use-long-random-string",
         validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
     )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError(
+                f"JWT_SECRET must be at least 32 characters long (got {len(v)}). "
+                "Set the JWT_SECRET environment variable to a long random string."
+            )
+        return v
+
     jwt_access_expire_minutes: int = Field(
         default=30,
         validation_alias=AliasChoices("JWT_ACCESS_EXPIRE_MINUTES", "jwt_access_expire_minutes"),
@@ -59,8 +83,18 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CORS_ORIGINS", "cors_origins"),
     )
 
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: str) -> str:
+        for origin in (o.strip() for o in v.split(",")):
+            if origin == "*":
+                raise ValueError(
+                    "CORS_ORIGINS must not be set to '*'. "
+                    "Specify explicit origins (e.g. https://yourapp.com)."
+                )
+        return v
+
     jwt_algorithm: str = "HS256"
-    demo_parent_pin: str = "1234"
 
     @model_validator(mode="after")
     def assemble_database_url(self):
@@ -80,6 +114,10 @@ class Settings(BaseSettings):
             object.__setattr__(self, "database_url", url)
             return self
 
+        log.warning(
+            "No database configuration found — falling back to SQLite (sqlite:///./buddy360.db). "
+            "Set DATABASE_URL or POSTGRES_* environment variables for production use."
+        )
         object.__setattr__(self, "database_url", "sqlite:///./buddy360.db")
         return self
 

@@ -70,11 +70,9 @@ export default function ParentChildAssignment({ childName, onComplete, currentAs
     let cancelled = false;
     (async () => {
       try {
-        if (await api.auth.isAuthenticated()) {
-          const s = await api.userAppState.get();
-          if (!cancelled && typeof s.tts_enabled === 'boolean') {
-            ttsEnabledRef.current = s.tts_enabled;
-          }
+        const prefs = await api.preferences.get();
+        if (!cancelled && typeof prefs.tts_enabled === 'boolean') {
+          ttsEnabledRef.current = prefs.tts_enabled;
         }
       } catch { /* keep default */ }
     })();

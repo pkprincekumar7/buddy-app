@@ -1,5 +1,6 @@
 const ACCESS_KEY = 'access_token';
 const REFRESH_KEY = 'refresh_token';
+const storage = typeof window !== 'undefined' ? window.sessionStorage : null;
 const REFRESH_INTERVAL_MS = 25 * 60 * 1000;
 
 let refreshIntervalId = null;
@@ -10,13 +11,13 @@ function joinApi(path) {
   return `${base}/api/v1${suffix}`;
 }
 
-async function request(path, { method = 'GET', body, auth = true, raw = false } = {}) {
+async function request(path, { method = 'GET', body, auth = true } = {}) {
   const headers = {};
   if (!(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
   if (auth) {
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem(ACCESS_KEY) : null;
+    const token = storage?.getItem(ACCESS_KEY);
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
@@ -39,32 +40,31 @@ async function request(path, { method = 'GET', body, auth = true, raw = false } 
     throw err;
   }
 
-  if (raw) return res;
   const ct = res.headers.get('content-type');
   if (ct && ct.includes('application/json')) return res.json();
   return undefined;
 }
 
 function storeTokensFromResponse(data) {
-  if (typeof window === 'undefined' || !data) return;
-  if (data.access_token) window.localStorage.setItem(ACCESS_KEY, data.access_token);
-  if (data.refresh_token) window.localStorage.setItem(REFRESH_KEY, data.refresh_token);
+  if (!storage || !data) return;
+  if (data.access_token) storage.setItem(ACCESS_KEY, data.access_token);
+  if (data.refresh_token) storage.setItem(REFRESH_KEY, data.refresh_token);
 }
 
 function clearStoredTokens() {
-  if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(ACCESS_KEY);
-  window.localStorage.removeItem(REFRESH_KEY);
+  if (!storage) return;
+  storage.removeItem(ACCESS_KEY);
+  storage.removeItem(REFRESH_KEY);
 }
 
 async function refreshTokenPair() {
-  if (typeof window === 'undefined') {
+  if (!storage) {
     const e = new Error('No window');
     e.status = 401;
     throw e;
   }
-  const access = window.localStorage.getItem(ACCESS_KEY);
-  const refresh = window.localStorage.getItem(REFRESH_KEY);
+  const access = storage.getItem(ACCESS_KEY);
+  const refresh = storage.getItem(REFRESH_KEY);
   if (!access || !refresh) {
     const e = new Error('Missing tokens');
     e.status = 401;
@@ -98,17 +98,19 @@ function stopTokenRefreshLoop() {
   }
 }
 
-/**
- * REST + Bearer access token; refresh token rotation on a 25-minute interval.
- */
 export const api = {
   startTokenRefreshLoop,
   stopTokenRefreshLoop,
 
   auth: {
+    /** Fast synchronous check — token presence only, no network. Use as a guard in components. */
+    hasToken() {
+      return !!(storage?.getItem(ACCESS_KEY) && storage?.getItem(REFRESH_KEY));
+    },
+
+    /** True auth check — verifies token with the server. Use sparingly (app init, protected routes). */
     async isAuthenticated() {
-      if (typeof window === 'undefined') return false;
-      return !!(window.localStorage.getItem(ACCESS_KEY) && window.localStorage.getItem(REFRESH_KEY));
+      try { await request('/auth/me'); return true; } catch { return false; }
     },
 
     async me() {
@@ -165,6 +167,37 @@ export const api = {
     },
   },
 
+  /** User preferences (TTS toggle etc.) */
+  preferences: {
+    get: () => request('/user/preferences'),
+    patch: (body) => request('/user/preferences', { method: 'PATCH', body }),
+  },
+
+  /** Onboarding: phase, child data, personality, journey recommendations */
+  onboarding: {
+    get: () => request('/user/onboarding'),
+    patch: (body) => request('/user/onboarding', { method: 'PATCH', body }),
+  },
+
+  /** Recommendations progress: sub-step UI state during the growth area flow */
+  recommendationsProgress: {
+    get: () => request('/user/recommendations-progress'),
+    patch: (body) => request('/user/recommendations-progress', { method: 'PATCH', body }),
+  },
+
+  /** Completed growth areas: persistent record of each finished area */
+  completedGrowthAreas: {
+    list: () => request('/user/completed-growth-areas'),
+    append: (body) => request('/user/completed-growth-areas', { method: 'POST', body }),
+    clear: () => request('/user/completed-growth-areas', { method: 'DELETE' }),
+  },
+
+  /** Goals: parent concern + 3-month plan */
+  goals: {
+    get: () => request('/user/goals'),
+    patch: (body) => request('/user/goals', { method: 'PATCH', body }),
+  },
+
   entities: {
     Child: {
       async list(sort = '-created_date', limit = undefined) {
@@ -174,34 +207,22 @@ export const api = {
         const q = qs.toString();
         return request(`/children${q ? `?${q}` : ''}`);
       },
-      create(payload) {
-        return request('/children', { method: 'POST', body: payload });
-      },
-      update(id, patch) {
-        return request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
-      },
-      delete(id) {
-        return request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      },
+      create: (payload) => request('/children', { method: 'POST', body: payload }),
+      update: (id, patch) => request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
+      delete: (id) => request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
 
     GrowthMission: {
       async filter(filters, sort = '-created_date', limit = 50) {
         const qs = new URLSearchParams({ sort });
         if (filters?.child_id) qs.set('child_id', filters.child_id);
-        if (filters?.is_read !== undefined && filters?.is_read !== null) qs.set('is_read', String(filters.is_read));
         qs.set('limit', String(limit));
         return request(`/growth-missions?${qs.toString()}`);
       },
-      create(payload) {
-        return request('/growth-missions', { method: 'POST', body: payload });
-      },
-      update(id, patch) {
-        return request(`/growth-missions/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
-      },
-      bulkCreate(items) {
-        return request('/growth-missions/bulk', { method: 'POST', body: { items } });
-      },
+      get: (id) => request(`/growth-missions/${encodeURIComponent(id)}`),
+      create: (payload) => request('/growth-missions', { method: 'POST', body: payload }),
+      update: (id, patch) => request(`/growth-missions/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
+      bulkCreate: (items) => request('/growth-missions/bulk', { method: 'POST', body: { items } }),
     },
 
     ParentInsight: {
@@ -212,9 +233,8 @@ export const api = {
         qs.set('limit', String(limit));
         return request(`/parent-insights?${qs.toString()}`);
       },
-      create(payload) {
-        return request('/parent-insights', { method: 'POST', body: payload });
-      },
+      create: (payload) => request('/parent-insights', { method: 'POST', body: payload }),
+      update: (id, body) => request(`/parent-insights/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
     },
 
     Reflection: {
@@ -224,28 +244,11 @@ export const api = {
         qs.set('limit', String(limit));
         return request(`/reflections?${qs.toString()}`);
       },
-      create(payload) {
-        return request('/reflections', { method: 'POST', body: payload });
-      },
-    },
-  },
-
-  userAppState: {
-    async get() {
-      return request('/user/app-state');
-    },
-    async patch(payload) {
-      return request('/user/app-state', { method: 'PATCH', body: payload });
-    },
-    /** Upserts one completed area by id; server merges atomically into completed_growth_areas */
-    appendCompletedGrowthArea(areaPayload) {
-      return request('/user/app-state/completed-growth-area', { method: 'POST', body: areaPayload });
+      create: (payload) => request('/reflections', { method: 'POST', body: payload }),
     },
   },
 
   appLogs: {
-    logUserInApp() {
-      return Promise.resolve();
-    },
+    logUserInApp: () => Promise.resolve(),
   },
 };

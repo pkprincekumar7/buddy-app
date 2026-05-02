@@ -10,3 +10,4 @@ openai>=1.59.0
 pydantic-settings==2.7.1
 # [requests] is required for google.auth.transport.requests.Request() (JWKS fetch for Google ID tokens)
 google-auth[requests]>=2.29.0
+slowapi>=0.1.9

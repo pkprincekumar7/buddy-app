@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ChevronLeft, RotateCcw } from 'lucide-react';
@@ -15,10 +17,9 @@ import PersonalityAnalysis, {
   PERSONALITY_TYPE_KEYS,
 } from '../components/shared/PersonalityAnalysis';
 import RecommendationsPhase from '../components/onboarding/RecommendationsPhase';
-import { slimChildConversationForStorage, pickSavedQuestionnaireForChatbot, CHATBOT_CAPTURED_FIELDS, normalizeOnboardingChildDataBlob, conversationDraftFromChildRecord, guessChildNameFromAppState } from '@/lib/onboardingChildData';
+import { slimChildConversationForStorage, pickSavedQuestionnaireForChatbot, CHATBOT_CAPTURED_FIELDS, normalizeOnboardingChildDataBlob, conversationDraftFromChildRecord } from '@/lib/onboardingChildData';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { USER_APP_ONBOARDING_START_OVER_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 
 const phases = [
   { id: 'welcome', label: 'Welcome', icon: '👋' },
@@ -170,9 +171,7 @@ export default function Onboarding() {
   const [journeyBusy, setJourneyBusy] = useState(false);
   const [completionBusy, setCompletionBusy] = useState(false);
   const wizardBusy = personalityBusy || journeyBusy || completionBusy;
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
 
   const [childData, setChildData] = useState(() => ({ ...DEFAULT_CHILD_STATE }));
   const [mbtiResult, setMbtiResult] = useState(null);
@@ -182,6 +181,7 @@ export default function Onboarding() {
   const recPhaseBackRef = useRef(null);
   const personalityEffectStampRef = useRef(0);
   const journeyEffectStampRef = useRef(0);
+  const phasePatchTimerRef = useRef(null);
 
 
   const determinePhase = (age) => {
@@ -192,68 +192,29 @@ export default function Onboarding() {
   };
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const authenticated = await api.auth.isAuthenticated();
-        setIsAuthenticated(authenticated);
-        if (authenticated) {
-          const currentUser = await api.auth.me();
-          setUser(currentUser);
-        }
-      } catch (e) {
-        setIsAuthenticated(false);
-      }
-      setCheckingAuth(false);
-    };
-    checkAuth();
-  }, []);
-
-  useEffect(() => {
-    if (checkingAuth) return;
+    if (isLoadingAuth) return;
     let cancelled = false;
 
     const applyServerState = (s) => {
-      const ph = s.onboarding_phase;
-      if (ph !== undefined && ph !== null && String(ph) !== '') {
-        const n = typeof ph === 'number' ? ph : parseInt(String(ph), 10);
-        if (!Number.isNaN(n)) setCurrentPhase(n);
+      if (typeof s.phase === 'number') setCurrentPhase(s.phase);
+
+      if (s.child_data) {
+        const normalizedChild = normalizeOnboardingChildDataBlob(s.child_data);
+        if (normalizedChild) setChildData(mergeChildDraft(normalizedChild));
       }
-      if (s.onboarding_childData !== undefined && s.onboarding_childData !== null) {
-        const normalizedChild = normalizeOnboardingChildDataBlob(s.onboarding_childData);
-        if (normalizedChild) {
-          setChildData(mergeChildDraft(normalizedChild));
+
+      if (s.personality?.view_model) {
+        const vm = s.personality.view_model;
+        if (vm?.type && vm?.profile) {
+          const clampedVm = maybeClampStoredPersonalityDescription(vm, {
+            analysisSource: s.personality.source,
+          });
+          setMbtiResult(clampedVm);
+          setGeneratedProfile(onboardingProfileFromViewModel(clampedVm));
         }
       }
 
-      const storedVmFull =
-        s.onboarding_personality_analysis &&
-        typeof s.onboarding_personality_analysis === 'object'
-          ? s.onboarding_personality_analysis
-          : null;
-      const storedVm =
-        storedVmFull?.view_model && typeof storedVmFull.view_model === 'object'
-          ? storedVmFull.view_model
-          : null;
-      const legacyVm =
-        !storedVm && s.onboarding_mbti && typeof s.onboarding_mbti === 'object'
-          ? s.onboarding_mbti
-          : null;
-      const vmRaw = storedVm || legacyVm;
-      let clampedVm = null;
-      if (vmRaw?.type && vmRaw?.profile) {
-        clampedVm = maybeClampStoredPersonalityDescription(vmRaw, {
-          analysisSource: storedVmFull?.source,
-        });
-        setMbtiResult(clampedVm);
-      }
-
-      if (s.onboarding_profile && typeof s.onboarding_profile === 'object') {
-        setGeneratedProfile(s.onboarding_profile);
-      } else if (clampedVm?.type && clampedVm?.profile) {
-        setGeneratedProfile(onboardingProfileFromViewModel(clampedVm));
-      }
-
-      if (s.onboarding_recommendations) setRecommendations(s.onboarding_recommendations);
+      if (s.recommendations) setRecommendations(s.recommendations);
     };
 
     const hydrateFromServer = async () => {
@@ -265,13 +226,12 @@ export default function Onboarding() {
       }
       setAppStateReady(false);
       try {
-        const s = await api.userAppState.get();
+        const s = await api.onboarding.get();
         if (cancelled) return;
-        queryClient.setQueryData(['userAppState'], s);
+        queryClient.setQueryData(['onboarding'], s);
         applyServerState(s);
 
-        /** `onboarding_childData` is often null after LifePathway → Goals; rebuild from Child + app copy for phase 1 chat. */
-        const normalized = normalizeOnboardingChildDataBlob(s.onboarding_childData);
+        const normalized = normalizeOnboardingChildDataBlob(s.child_data);
         let mergedForChat = mergeChildDraft(normalized || {});
         let slimCheck = pickSavedQuestionnaireForChatbot(mergedForChat);
         if (Object.keys(slimCheck).length === 0) {
@@ -283,18 +243,15 @@ export default function Onboarding() {
             /* ignore */
           }
           const fromChild = conversationDraftFromChildRecord(childRecord);
-          const nameHint = guessChildNameFromAppState(s);
-          mergedForChat = mergeChildDraft({
-            ...(nameHint ? { name: nameHint } : {}),
-            ...(fromChild || {}),
-            ...(normalized || {}),
-          });
-          slimCheck = pickSavedQuestionnaireForChatbot(mergedForChat);
-          if (Object.keys(slimCheck).length > 0) {
-            setChildData(mergedForChat);
-            const slim = slimChildConversationForStorage(mergedForChat);
-            if (Object.keys(slim).length > 0) {
-              void api.userAppState.patch({ onboarding_childData: slim }).catch(() => {});
+          if (fromChild) {
+            mergedForChat = mergeChildDraft({ ...(fromChild || {}), ...(normalized || {}) });
+            slimCheck = pickSavedQuestionnaireForChatbot(mergedForChat);
+            if (Object.keys(slimCheck).length > 0) {
+              setChildData(mergedForChat);
+              const slim = slimChildConversationForStorage(mergedForChat);
+              if (Object.keys(slim).length > 0) {
+                void api.onboarding.patch({ child_data: slim }).catch(() => {});
+              }
             }
           }
         }
@@ -315,11 +272,15 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [checkingAuth, isAuthenticated, queryClient]);
+  }, [isLoadingAuth, isAuthenticated, queryClient]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
-    api.userAppState.patch({ onboarding_phase: currentPhase }).catch(() => {});
+    clearTimeout(phasePatchTimerRef.current);
+    phasePatchTimerRef.current = setTimeout(() => {
+      api.onboarding.patch({ phase: currentPhase }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(phasePatchTimerRef.current);
   }, [currentPhase, hydrated, isAuthenticated]);
 
   useEffect(() => {
@@ -332,33 +293,18 @@ export default function Onboarding() {
 
     (async () => {
       try {
-        const s = await api.userAppState.get();
+        const s = await api.onboarding.get();
         if (cancelled || stamp !== personalityEffectStampRef.current) return;
 
-        const normalized = normalizeOnboardingChildDataBlob(s.onboarding_childData);
+        const normalized = normalizeOnboardingChildDataBlob(s.child_data);
         const mergedFromServer = mergeChildDraft(normalized || {});
 
-        const storedVmFull = s.onboarding_personality_analysis;
-        const storedVm =
-          storedVmFull?.view_model && typeof storedVmFull.view_model === 'object'
-            ? storedVmFull.view_model
-            : null;
-        const legacyVm =
-          !storedVm && s.onboarding_mbti && typeof s.onboarding_mbti === 'object'
-            ? s.onboarding_mbti
-            : null;
-        const reuseVm = storedVm || legacyVm;
-
-        if (reuseVm?.type && reuseVm?.profile) {
-          const clampedReuse = maybeClampStoredPersonalityDescription(reuseVm, {
-            analysisSource: storedVmFull?.source,
+        if (s.personality?.view_model?.type && s.personality?.view_model?.profile) {
+          const clampedReuse = maybeClampStoredPersonalityDescription(s.personality.view_model, {
+            analysisSource: s.personality.source,
           });
           setMbtiResult(clampedReuse);
-          if (s.onboarding_profile && typeof s.onboarding_profile === 'object') {
-            setGeneratedProfile(s.onboarding_profile);
-          } else {
-            setGeneratedProfile(onboardingProfileFromViewModel(clampedReuse));
-          }
+          setGeneratedProfile(onboardingProfileFromViewModel(clampedReuse));
           return;
         }
 
@@ -401,10 +347,7 @@ Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
           if (cancelled || stamp !== personalityEffectStampRef.current) return;
           const vm = adaptAiPersonalityToViewModel(ai || {}, mergedFromServer.name);
           const prof = onboardingProfileFromViewModel(vm);
-          await api.userAppState.patch({
-            onboarding_personality_analysis: { source: 'llm', view_model: vm },
-            onboarding_mbti: null,
-          });
+          await api.onboarding.patch({ personality: { source: 'llm', view_model: vm } });
           if (cancelled || stamp !== personalityEffectStampRef.current) return;
           setMbtiResult(vm);
           if (prof) setGeneratedProfile(prof);
@@ -413,10 +356,7 @@ Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
           const ruleVm = calculateMBTI(mergedFromServer);
           const prof = onboardingProfileFromViewModel(ruleVm);
           try {
-            await api.userAppState.patch({
-              onboarding_personality_analysis: { source: 'rule_fallback', view_model: ruleVm },
-              onboarding_mbti: null,
-            });
+            await api.onboarding.patch({ personality: { source: 'rule_fallback', view_model: ruleVm } });
           } catch {
             /* ignore */
           }
@@ -447,42 +387,24 @@ Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
 
     (async () => {
       try {
-        const s = await api.userAppState.get();
+        const s = await api.onboarding.get();
         if (cancelled || stamp !== journeyEffectStampRef.current) return;
 
-        const stored =
-          s.onboarding_recommendations && typeof s.onboarding_recommendations === 'object'
-            ? s.onboarding_recommendations
-            : null;
         if (
-          stored &&
-          (typeof stored.pathway_overview === 'string' ||
-            (Array.isArray(stored.focus_areas) && stored.focus_areas.length > 0))
+          s.recommendations &&
+          (typeof s.recommendations.pathway_overview === 'string' ||
+            (Array.isArray(s.recommendations.focus_areas) && s.recommendations.focus_areas.length > 0))
         ) {
-          setRecommendations(stored);
+          setRecommendations(s.recommendations);
           return;
         }
 
-        const normalizedChild = normalizeOnboardingChildDataBlob(s.onboarding_childData);
+        const normalizedChild = normalizeOnboardingChildDataBlob(s.child_data);
         const mergedChild = mergeChildDraft(normalizedChild || {});
         if (!mergedChild.name?.trim?.()) return;
 
-        const storedVmFullJ = s.onboarding_personality_analysis;
-        const storedVmJ =
-          storedVmFullJ?.view_model && typeof storedVmFullJ.view_model === 'object'
-            ? storedVmFullJ.view_model
-            : null;
-        const legacyVmJ =
-          !storedVmJ && s.onboarding_mbti && typeof s.onboarding_mbti === 'object'
-            ? s.onboarding_mbti
-            : null;
-        const vmJ = storedVmJ || legacyVmJ;
-        const gp =
-          s.onboarding_profile && typeof s.onboarding_profile === 'object'
-            ? s.onboarding_profile
-            : vmJ?.type && vmJ?.profile
-              ? onboardingProfileFromViewModel(vmJ)
-              : null;
+        const vmJ = s.personality?.view_model;
+        const gp = vmJ?.type && vmJ?.profile ? onboardingProfileFromViewModel(vmJ) : null;
 
         setJourneyBusy(true);
         if (cancelled || stamp !== journeyEffectStampRef.current) {
@@ -528,7 +450,7 @@ Generate:
           if (cancelled || stamp !== journeyEffectStampRef.current) return;
           setRecommendations(result);
           if (result) {
-            await api.userAppState.patch({ onboarding_recommendations: result });
+            await api.onboarding.patch({ recommendations: result });
           }
         } catch (error) {
           console.error('Failed to generate recommendations:', error);
@@ -560,15 +482,14 @@ Generate:
     setRecommendations(null);
 
     try {
-      await api.userAppState.patch({
-        onboarding_childData: slim,
-        onboarding_recommendations: null,
-        onboarding_profile: null,
-        onboarding_personality_analysis: null,
-        recommendations_progress: null,
-        completed_growth_areas: null,
-        onboarding_mbti: null,
-      });
+      await Promise.all([
+        api.onboarding.patch({
+          child_data: slim,
+          clear_personality: true,
+          clear_recommendations: true,
+        }),
+        api.recommendationsProgress.patch({ step: 'intro' }),
+      ]);
     } catch {
       /* still advance wizard */
     }
@@ -581,8 +502,18 @@ Generate:
     try {
       const existingChildren = await api.entities.Child.list('-created_date');
       await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
-      await api.userAppState.patch(patchBodyClearKeys(USER_APP_ONBOARDING_START_OVER_KEYS));
-      queryClient.invalidateQueries({ queryKey: ['userAppState'] });
+      await Promise.all([
+        api.onboarding.patch({
+          phase: 0,
+          clear_child_data: true,
+          clear_personality: true,
+          clear_recommendations: true,
+        }),
+        api.recommendationsProgress.patch({ step: 'intro' }),
+        api.goals.patch({ clear_plan: true, clear_concern: true }),
+        api.completedGrowthAreas.clear(),
+      ]);
+      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
     } catch {
       /* ignore */
     }
@@ -597,12 +528,10 @@ Generate:
 
   const handleNext = async () => {
     if (currentPhase === 2) {
-      // Clear saved sub-step so RecommendationsPhase always opens at "Your Personalized Journey" intro.
-      // onboarding_recommendations (pathway overview) and completed_growth_areas are preserved.
       try {
-        await api.userAppState.patch({ recommendations_progress: null });
+        await api.recommendationsProgress.patch({ step: 'intro' });
       } catch {
-        /* ignore — RecommendationsPhase will still default to intro if progress is absent */
+        /* ignore */
       }
     }
     setCurrentPhase((prev) => Math.min(prev + 1, phases.length - 1));
@@ -614,94 +543,103 @@ Generate:
 
   const handleComplete = async () => {
     setCompletionBusy(true);
-    const age = parseInt(childData.age, 10) || 10;
-    const phase = determinePhase(age);
-    
-    // Check if child already exists
-    const existingChildren = await api.entities.Child.list('-created_date', 1);
-    const childExists = existingChildren && existingChildren.length > 0 && existingChildren[0].name === childData.name;
-    
-    const finalData = {
-      ...childData,
-      date_of_birth: new Date(new Date().setFullYear(new Date().getFullYear() - age)).toISOString().split('T')[0],
-      current_phase: phase,
-      onboarding_completed: true,
-      personality_traits: childData.strengths || [],
-      interests: childData.hobbies || [],
-      mbti_type: mbtiResult?.type,
-      generated_profile: generatedProfile,
-      recommendations: recommendations
-    };
-    
-    if (!childExists) {
-      await api.entities.Child.create(finalData);
+    try {
+      const age = parseInt(childData.age, 10) || 10;
+      const phase = determinePhase(age);
+
+      // Check if child already exists (case-insensitive name match)
+      const existingChildren = await api.entities.Child.list('-created_date', 1);
+      const childExists =
+        existingChildren &&
+        existingChildren.length > 0 &&
+        existingChildren[0].name?.toLowerCase() === childData.name?.toLowerCase();
+
+      // Compute DOB accounting for whether the birthday has passed this year
+      const today = new Date();
+      const dob = new Date(today.getFullYear() - age, today.getMonth(), today.getDate());
+
+      const finalData = {
+        ...childData,
+        date_of_birth: dob.toISOString().split('T')[0],
+        current_phase: phase,
+        onboarding_completed: true,
+        personality_traits: childData.strengths || [],
+        interests: childData.hobbies || [],
+        mbti_type: mbtiResult?.type,
+        generated_profile: generatedProfile,
+        recommendations: recommendations
+      };
+
+      if (!childExists) {
+        await api.entities.Child.create(finalData);
+      }
+
+      // Get the child (newly created or existing)
+      const children = await api.entities.Child.list('-created_date', 1);
+      const newChild = children[0];
+
+      // Check if missions already exist for this child
+      const existingMissions = await api.entities.GrowthMission.filter({ child_id: newChild.id });
+      const missionsExist = existingMissions && existingMissions.length > 0;
+
+      if (newChild) {
+        const allMissions = [];
+
+        if (recommendations?.initial_missions) {
+          const pillarMap = {
+            'Mind': 'cognitive',
+            'Heart': 'emotional',
+            'Body': 'physical',
+            'Talent': 'talent',
+            'Character': 'character',
+            'Future': 'future'
+          };
+
+          const missions = recommendations.initial_missions.map(m => ({
+            child_id: newChild.id,
+            title: m.title,
+            description: m.description,
+            pillar: pillarMap[m.pillar] || 'cognitive',
+            status: 'active',
+            difficulty: 'easy',
+            week_number: 1
+          }));
+
+          allMissions.push(...missions);
+        }
+
+        if (pendingActivities.length > 0) {
+          const activityMissions = pendingActivities.map(activity => ({
+            child_id: newChild.id,
+            title: activity.title,
+            description: activity.description,
+            pillar: activity.pillar || 'future',
+            status: 'active',
+            difficulty: 'medium',
+            week_number: 1,
+            activity_type: 'interactive',
+            activity_data: {
+              questions: activity.questions || [],
+              instructions: activity.instructions || [],
+              estimated_time: activity.estimated_time || '10-15 min'
+            }
+          }));
+
+          allMissions.push(...activityMissions);
+        }
+
+        if (allMissions.length > 0 && !missionsExist) {
+          await api.entities.GrowthMission.bulkCreate(allMissions);
+        }
+      }
+
+      // Single history entry; Back from Life Journey uses browser/history -1
+      navigate(createPageUrl('LifePathway'), { replace: true });
+    } catch {
+      toast.error('Something went wrong saving your journey. Please try again.');
+    } finally {
+      setCompletionBusy(false);
     }
-    
-    // Get the child (newly created or existing)
-    const children = await api.entities.Child.list('-created_date', 1);
-    const newChild = children[0];
-    
-    // Check if missions already exist for this child
-    const existingMissions = await api.entities.GrowthMission.filter({ child_id: newChild.id });
-    const missionsExist = existingMissions && existingMissions.length > 0;
-    
-    if (newChild) {
-      const allMissions = [];
-      
-      // Create initial missions if recommendations exist
-      if (recommendations?.initial_missions) {
-        const pillarMap = {
-          'Mind': 'cognitive',
-          'Heart': 'emotional', 
-          'Body': 'physical',
-          'Talent': 'talent',
-          'Character': 'character',
-          'Future': 'future'
-        };
-        
-        const missions = recommendations.initial_missions.map(m => ({
-          child_id: newChild.id,
-          title: m.title,
-          description: m.description,
-          pillar: pillarMap[m.pillar] || 'cognitive',
-          status: 'active',
-          difficulty: 'easy',
-          week_number: 1
-        }));
-        
-        allMissions.push(...missions);
-      }
-      
-      // Create pending interactive activities from recommendations phase
-      if (pendingActivities.length > 0) {
-        const activityMissions = pendingActivities.map(activity => ({
-          child_id: newChild.id,
-          title: activity.title,
-          description: activity.description,
-          pillar: activity.pillar || 'future',
-          status: 'active',
-          difficulty: 'medium',
-          week_number: 1,
-          activity_type: 'interactive',
-          activity_data: {
-            questions: activity.questions || [],
-            instructions: activity.instructions || [],
-            estimated_time: activity.estimated_time || '10-15 min'
-          }
-        }));
-        
-        allMissions.push(...activityMissions);
-      }
-      
-      if (allMissions.length > 0 && !missionsExist) {
-        await api.entities.GrowthMission.bulkCreate(allMissions);
-      }
-    }
-    
-    setCompletionBusy(false);
-    
-    // Single history entry; Back from Life Journey uses browser/history -1
-    navigate(createPageUrl('LifePathway'), { replace: true });
   };
 
   const canProceed = () => {
@@ -723,7 +661,7 @@ Generate:
           <ConversationalOnboarding
             key={conversationBootKey}
             user={user}
-            resumeHydrationReady={hydrated && !checkingAuth && appStateReady}
+            resumeHydrationReady={hydrated && !isLoadingAuth && appStateReady}
             onContinueToPersonality={() => setCurrentPhase(2)}
             onQuestionnairePersisted={(slice) =>
               setChildData((prev) => mergeChildDraft({ ...prev, ...slice }))
@@ -749,7 +687,7 @@ Generate:
     }
   };
 
-  if (checkingAuth) {
+  if (isLoadingAuth) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30 flex items-center justify-center">
         <motion.div

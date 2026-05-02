@@ -1,139 +1,84 @@
-from typing import Any
-from copy import deepcopy
 import logging
 import secrets
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, field_validator
+
+from app.limiter import limiter
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.deps import get_current_user
 from app.auth_utils import (
     create_access_token,
     create_refresh_token,
+    decode_access_token_ignore_exp,
     decode_token_of_type,
     hash_password,
     verify_password,
 )
+from app.database import get_db, get_upsert_insert
+from app.deps import get_current_user
 from app.models import (
     ChildRecord,
+    CompletedGrowthAreaRecord,
     GrowthMissionRecord,
     ParentInsightRecord,
     ReflectionRecord,
     User,
-    UserAppState,
+    UserGoalsRecord,
+    UserJourneyRecord,
+    UserOnboardingRecord,
+    UserPersonalityRecord,
+    UserPreferencesRecord,
+    UserRecommendationsProgressRecord,
+)
+from app.models_api import (
+    AppendGrowthAreaRequest,
+    BulkMissionBody,
+    ChildActivity,
+    ChildActivityResults,
+    ChildCreate,
+    ChildPatch,
+    ChildResponse,
+    CompletedGrowthArea,
+    CompletedGrowthAreasResponse,
+    FamousPerson,
+    FocusArea,
+    GoalsPlan,
+    GrowthMissionCreate,
+    GrowthMissionPatch,
+    GrowthMissionResponse,
+    InitialMission,
+    JourneyRecommendations,
+    OnboardingChildData,
+    OnboardingPatch,
+    OnboardingState,
+    ParentInsightCreate,
+    ParentInsightResponse,
+    UpdateInsightBody,
+    PersonalityAnalysis,
+    PersonalityProfile,
+    PersonalityViewModel,
+    RecommendationsProgress,
+    ReflectionCreate,
+    ReflectionResponse,
+    UserGoals,
+    UserGoalsPatch,
+    UserPreferences,
 )
 from app.settings import settings
 
-router = APIRouter(tags=["auth"])
+_upsert_insert = get_upsert_insert()
+
+router = APIRouter(tags=["api"])
 
 log = logging.getLogger(__name__)
 
-_APP_STATE_PUBLIC_DEFAULTS: dict[str, Any] = {"tts_enabled": True}
 
-
-def _coerce_user_app_state_patch_value(key: str, value: Any) -> Any:
-    """Normalize known scalar keys so stored onboarding_phase stays integer-backed."""
-    if key != "onboarding_phase":
-        return value
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return value
-    return value
-
-
-def _normalize_app_payload_for_response(data: dict[str, Any]) -> dict[str, Any]:
-    """Ensure known keys appear in GET/PATCH responses (defaults remain virtual until client PATCH persists)."""
-    merged = dict(data)
-    for k, v in _APP_STATE_PUBLIC_DEFAULTS.items():
-        if k not in merged:
-            merged[k] = v
-    return merged
-
-
-def _dedupe_personality_profile_growth_fields(payload: dict[str, Any]) -> None:
-    """view_model.profile historically duplicated growthAreas vs growth_areas; keep camelCase only."""
-    analysis = payload.get("onboarding_personality_analysis")
-    if not isinstance(analysis, dict):
-        return
-    vm = analysis.get("view_model")
-    if not isinstance(vm, dict):
-        return
-    prof = vm.get("profile")
-    if isinstance(prof, dict) and "growthAreas" in prof and "growth_areas" in prof:
-        prof.pop("growth_areas", None)
-
-
-def _omit_redundant_onboarding_personality_copies(payload: dict[str, Any]) -> None:
-    """GET responses only: onboarding_profile / legacy onboarding_mbti duplicate view_model (clients derive profile via VM)."""
-    analysis = payload.get("onboarding_personality_analysis")
-    if not isinstance(analysis, dict):
-        return
-    vm = analysis.get("view_model")
-    if not isinstance(vm, dict) or not vm.get("type") or not vm.get("profile"):
-        return
-    payload.pop("onboarding_profile", None)
-    payload.pop("onboarding_mbti", None)
-
-
-def _selections_fingerprint(sel: Any) -> str | None:
-    if not isinstance(sel, list):
-        return None
-    return "\0".join(sorted(str(x) for x in sel))
-
-
-def _slim_completed_growth_area_entry(area: Any) -> Any:
-    """One source of truth: area.answers; child_activity only; no child_activity_game; no redundant snapshot/selections."""
-    if not isinstance(area, dict):
-        return area
-    out = {k: v for k, v in area.items() if k != "child_activity_game"}
-    ca = out.get("child_activity")
-    if isinstance(ca, dict):
-        ca2 = {k: v for k, v in ca.items() if k != "parent_interactive_snapshot"}
-        root_fp = _selections_fingerprint(ca2.get("selections"))
-        res = ca2.get("results")
-        if isinstance(res, dict):
-            res2 = dict(res)
-            nest_fp = _selections_fingerprint(res2.get("selections"))
-            if root_fp is not None and nest_fp is not None and root_fp == nest_fp:
-                res2.pop("selections", None)
-            if res2:
-                ca2["results"] = res2
-            else:
-                ca2.pop("results", None)
-        out["child_activity"] = ca2
-    return out
-
-
-def _slim_completed_growth_areas_in_payload(payload: dict[str, Any]) -> None:
-    raw = payload.get("completed_growth_areas")
-    if not isinstance(raw, list):
-        return
-    payload["completed_growth_areas"] = [_slim_completed_growth_area_entry(x) for x in raw]
-
-
-def _app_state_payload_for_response(raw: dict[str, Any]) -> dict[str, Any]:
-    """Deep-copy payload so responses never alias ORM JSON; normalize nested onboarding shapes."""
-    try:
-        out = deepcopy(raw)
-    except Exception:
-        out = dict(raw)
-    _dedupe_personality_profile_growth_fields(out)
-    _omit_redundant_onboarding_personality_copies(out)
-    _slim_completed_growth_areas_in_payload(out)
-    return _normalize_app_payload_for_response(out)
-
+# ---------------------------------------------------------------------------
+# Auth models
+# ---------------------------------------------------------------------------
 
 class AuthTokenResponse(BaseModel):
     access_token: str
@@ -146,10 +91,37 @@ class RegisterBody(BaseModel):
     password: str
     full_name: str | None = "Parent"
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email address")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        return v
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, v: str | None) -> str | None:
+        if v and len(v) > 255:
+            raise ValueError("Name must not exceed 255 characters")
+        return v
+
 
 class LoginBody(BaseModel):
     email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalise_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class RefreshBody(BaseModel):
@@ -166,8 +138,11 @@ class MeResponse(BaseModel):
     email: str
     full_name: str
     role: str
-    parent_pin: str
 
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
 
 def _issue_token_pair(user_id: str) -> AuthTokenResponse:
     return AuthTokenResponse(
@@ -176,8 +151,13 @@ def _issue_token_pair(user_id: str) -> AuthTokenResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# Auth endpoints
+# ---------------------------------------------------------------------------
+
 @router.post("/auth/register", response_model=AuthTokenResponse)
-def register(body: RegisterBody, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, body: RegisterBody, db: Session = Depends(get_db)):
     if db.execute(select(User).where(User.email == body.email)).scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
     user = User(
@@ -185,7 +165,6 @@ def register(body: RegisterBody, db: Session = Depends(get_db)):
         password_hash=hash_password(body.password),
         full_name=body.full_name or "Parent",
         role="parent",
-        parent_pin=settings.demo_parent_pin,
     )
     db.add(user)
     db.commit()
@@ -194,7 +173,8 @@ def register(body: RegisterBody, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/login", response_model=AuthTokenResponse)
-def login(body: LoginBody, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, body: LoginBody, db: Session = Depends(get_db)):
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -203,11 +183,12 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
 
 @router.post("/auth/refresh", response_model=AuthTokenResponse)
 def refresh_tokens(body: RefreshBody, db: Session = Depends(get_db)):
-    """Both tokens must still be valid (unexpired). Expired tokens cannot be rotated."""
-    access_payload = decode_token_of_type(body.access_token, "access")
+    # Access token may be expired — decode ignoring expiry just to extract sub.
+    # Refresh token must still be fully valid (signature + expiry).
+    access_payload = decode_access_token_ignore_exp(body.access_token)
     refresh_payload = decode_token_of_type(body.refresh_token, "refresh")
     if not access_payload or not refresh_payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(status_code=401, detail="Invalid token")
     if access_payload.get("sub") != refresh_payload.get("sub"):
         raise HTTPException(status_code=401, detail="Token mismatch")
     uid = access_payload["sub"]
@@ -217,7 +198,8 @@ def refresh_tokens(body: RefreshBody, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/google", response_model=AuthTokenResponse)
-def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def google_auth(request: Request, body: GoogleAuthBody, db: Session = Depends(get_db)):
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google sign-in is not configured")
     try:
@@ -234,11 +216,13 @@ def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
         log.warning("Google ID token verification failed: %s: %s", type(exc).__name__, exc, exc_info=True)
         msg = str(exc).lower()
         if "requests library is not installed" in msg or "requests` package" in msg:
-            detail = (
-                "Server cannot verify Google tokens: install the `requests` package "
-                "(use `google-auth[requests]` in requirements)."
-            )
-            raise HTTPException(status_code=500, detail=detail) from exc
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Server cannot verify Google tokens: install the `requests` package "
+                    "(use `google-auth[requests]` in requirements)."
+                ),
+            ) from exc
         if "audience" in msg or "wrong audience" in msg:
             detail = (
                 "Google token does not match GOOGLE_CLIENT_ID on this server. "
@@ -254,9 +238,12 @@ def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
         else:
             detail = "Invalid Google credential."
         raise HTTPException(status_code=401, detail=detail) from exc
-    email = info.get("email")
+
+    email = (info.get("email") or "").strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Google did not return an email")
+    if not info.get("email_verified"):
+        raise HTTPException(status_code=400, detail="Google account email is not verified")
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if not user:
         user = User(
@@ -264,7 +251,6 @@ def google_auth(body: GoogleAuthBody, db: Session = Depends(get_db)):
             password_hash=hash_password(secrets.token_urlsafe(32)),
             full_name=(info.get("name") or email.split("@")[0])[:255],
             role="parent",
-            parent_pin=settings.demo_parent_pin,
         )
         db.add(user)
         db.commit()
@@ -279,186 +265,426 @@ def auth_me(user: User = Depends(get_current_user)):
         email=user.email,
         full_name=user.full_name,
         role=user.role,
-        parent_pin=user.parent_pin,
     )
 
 
-@router.get("/user/app-state")
-def get_user_app_state(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = db.get(UserAppState, user.id)
-    raw = dict(row.payload) if row and row.payload else {}
-    return _app_state_payload_for_response(raw)
+# ---------------------------------------------------------------------------
+# ORM ↔ schema conversion helpers
+# ---------------------------------------------------------------------------
+
+def _preferences_to_schema(row: UserPreferencesRecord) -> UserPreferences:
+    return UserPreferences(tts_enabled=row.tts_enabled)
 
 
-@router.patch("/user/app-state")
-def patch_user_app_state(
-    body: dict[str, Any],
+def _personality_row_to_schema(row: UserPersonalityRecord) -> PersonalityAnalysis:
+    profile = PersonalityProfile(
+        name=row.profile_name or "",
+        category=row.category or "",
+        description=row.description or "",
+        color=row.color or "",
+        traits=row.traits or [],
+        strengths=row.strengths or [],
+        growthAreas=row.growth_areas or [],
+        famousPeople=[FamousPerson(**p) for p in (row.famous_people or []) if isinstance(p, dict)],
+    )
+    vm = PersonalityViewModel(
+        type=row.personality_type or "",
+        scores=row.scores or {},
+        profile=profile,
+    )
+    return PersonalityAnalysis(source=row.source or "", view_model=vm)
+
+
+def _journey_row_to_schema(row: UserJourneyRecord) -> JourneyRecommendations:
+    return JourneyRecommendations(
+        pathway_overview=row.overview or "",
+        focus_areas=[FocusArea(**fa) for fa in (row.focus_areas or []) if isinstance(fa, dict)],
+        initial_missions=[InitialMission(**im) for im in (row.initial_missions or []) if isinstance(im, dict)],
+    )
+
+
+def _onboarding_to_schema(
+    ob: UserOnboardingRecord | None,
+    per: UserPersonalityRecord | None,
+    jrn: UserJourneyRecord | None,
+) -> OnboardingState:
+    child_data: OnboardingChildData | None = None
+    if ob and ob.phase > 0:
+        child_data = OnboardingChildData(
+            name=ob.child_name or "",
+            age=ob.child_age or "",
+            school=ob.child_school or "",
+            strengths=ob.child_strengths or [],
+            hobbies=ob.child_hobbies or [],
+            thinking_pattern=ob.child_thinking_pattern or "",
+            communication_style=ob.child_communication_style or "",
+            energy_level=ob.child_energy_level or "",
+            social_behaviour=ob.child_social_behaviour or "",
+            emotional_behaviour=ob.child_emotional_behaviour or "",
+        )
+    return OnboardingState(
+        phase=ob.phase if ob else 0,
+        child_data=child_data,
+        personality=_personality_row_to_schema(per) if per else None,
+        recommendations=_journey_row_to_schema(jrn) if jrn else None,
+    )
+
+
+def _completed_area_row_to_schema(row: CompletedGrowthAreaRecord) -> CompletedGrowthArea:
+    child_activity: ChildActivity | None = None
+    has_activity = row.child_selections or row.child_summary or row.child_strengths or row.child_suggested
+    if has_activity:
+        results: ChildActivityResults | None = None
+        if row.child_summary or row.child_strengths or row.child_suggested:
+            results = ChildActivityResults(
+                summary=row.child_summary or "",
+                strengths=row.child_strengths or [],
+                suggested_activities=row.child_suggested or [],
+            )
+        child_activity = ChildActivity(
+            selections=row.child_selections or [],
+            results=results,
+        )
+    return CompletedGrowthArea(
+        area_id=row.area_id,
+        area_name=row.area_name,
+        area_color=row.area_color,
+        answers=row.answers or {},
+        recommendations=row.recommendations,
+        child_activity=child_activity,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Preferences endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/user/preferences", response_model=UserPreferences)
+def get_preferences(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.get(UserPreferencesRecord, user.id)
+    return _preferences_to_schema(row) if row else UserPreferences()
+
+
+@router.patch("/user/preferences", response_model=UserPreferences)
+def patch_preferences(
+    body: UserPreferences,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Merge PATCH JSON into the user's app-state blob.
-
-    Clients should send small, step-scoped payloads (clear keys with null per-field).
-    Common onboarding keys: onboarding_phase, onboarding_childData,
-    onboarding_personality_analysis, onboarding_recommendations, tts_enabled, goals_plan, ...
-    Nested under recommendations_progress: child_activity_by_area (per growth-area id),
-    child_activity_game (legacy mirror for the active area), interactiveAnswers, etc.
-    GET returns the stored payload unchanged except personality-field dedupe helpers.
-    """
-    row = db.get(UserAppState, user.id)
+    row = db.get(UserPreferencesRecord, user.id)
     if not row:
-        row = UserAppState(user_id=user.id, payload={})
+        row = UserPreferencesRecord(user_id=user.id)
         db.add(row)
-    data = dict(row.payload or {})
-    for k, v in body.items():
-        if v is None:
-            data.pop(k, None)
-        else:
-            data[k] = _coerce_user_app_state_patch_value(k, v)
-    row.payload = data
+    row.tts_enabled = body.tts_enabled
     db.commit()
     db.refresh(row)
-    return _app_state_payload_for_response(dict(row.payload))
+    return _preferences_to_schema(row)
 
 
-class CompletedGrowthAreaResponse(BaseModel):
-    completed_growth_areas: list[Any]
+# ---------------------------------------------------------------------------
+# Onboarding endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/user/onboarding", response_model=OnboardingState)
+def get_onboarding(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ob = db.get(UserOnboardingRecord, user.id)
+    per = db.get(UserPersonalityRecord, user.id)
+    jrn = db.get(UserJourneyRecord, user.id)
+    return _onboarding_to_schema(ob, per, jrn)
 
 
-@router.post("/user/app-state/completed-growth-area", response_model=CompletedGrowthAreaResponse)
-def append_completed_growth_area(
-    body: dict[str, Any],
+@router.patch("/user/onboarding", response_model=OnboardingState)
+def patch_onboarding(
+    body: OnboardingPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Atomically upsert one growth area entry by id without losing sibling areas (serialized per user row).
+    ob = db.get(UserOnboardingRecord, user.id)
 
-    Body may include answers, recommendations (3‑month bullets), child_activity
-    (selections, results.recommendations, etc.). Legacy child_activity_game is stripped on save/response.
-    """
-    if not body.get("id"):
-        raise HTTPException(status_code=400, detail="Missing area id")
+    if body.phase is not None or body.child_data is not None or body.clear_child_data:
+        if not ob:
+            ob = UserOnboardingRecord(user_id=user.id)
+            db.add(ob)
+        if body.phase is not None:
+            ob.phase = body.phase
+        if body.clear_child_data:
+            ob.child_name = ob.child_age = ob.child_school = None
+            ob.child_strengths = ob.child_hobbies = None
+            ob.child_thinking_pattern = ob.child_communication_style = None
+            ob.child_energy_level = ob.child_social_behaviour = ob.child_emotional_behaviour = None
+        elif body.child_data is not None:
+            cd = body.child_data
+            ob.child_name = cd.name or None
+            ob.child_age = cd.age or None
+            ob.child_school = cd.school or None
+            ob.child_strengths = cd.strengths or None
+            ob.child_hobbies = cd.hobbies or None
+            ob.child_thinking_pattern = cd.thinking_pattern or None
+            ob.child_communication_style = cd.communication_style or None
+            ob.child_energy_level = cd.energy_level or None
+            ob.child_social_behaviour = cd.social_behaviour or None
+            ob.child_emotional_behaviour = cd.emotional_behaviour or None
 
-    for _ in range(6):
-        try:
-            row = db.execute(
-                select(UserAppState).where(UserAppState.user_id == user.id).with_for_update()
-            ).scalar_one_or_none()
-            if not row:
-                row = UserAppState(user_id=user.id, payload={})
-                db.add(row)
-                db.flush()
-            data = dict(row.payload or {})
-            existing = data.get("completed_growth_areas")
-            if not isinstance(existing, list):
-                existing = []
-            aid = body["id"]
-            updated = [a for a in existing if isinstance(a, dict) and a.get("id") != aid]
-            updated.append(_slim_completed_growth_area_entry(dict(body)))
-            data["completed_growth_areas"] = updated
-            row.payload = data
-            db.commit()
-            db.refresh(row)
-            return CompletedGrowthAreaResponse(completed_growth_areas=updated)
-        except IntegrityError:
-            db.rollback()
-    raise HTTPException(status_code=500, detail="Could not save completed growth area")
+    per = db.get(UserPersonalityRecord, user.id)
+    if body.clear_personality:
+        if per:
+            db.delete(per)
+            per = None
+    elif body.personality is not None:
+        vm = body.personality.view_model
+        prof = vm.profile
+        if not per:
+            per = UserPersonalityRecord(user_id=user.id)
+            db.add(per)
+        per.source = body.personality.source
+        per.personality_type = vm.type
+        per.profile_name = prof.name
+        per.category = prof.category
+        per.description = prof.description
+        per.color = prof.color
+        per.scores = vm.scores
+        per.traits = prof.traits
+        per.strengths = prof.strengths
+        per.growth_areas = prof.growthAreas
+        per.famous_people = [fp.model_dump() for fp in prof.famousPeople]
+
+    jrn = db.get(UserJourneyRecord, user.id)
+    if body.clear_recommendations:
+        if jrn:
+            db.delete(jrn)
+            jrn = None
+    elif body.recommendations is not None:
+        rec = body.recommendations
+        if not jrn:
+            jrn = UserJourneyRecord(user_id=user.id)
+            db.add(jrn)
+        jrn.overview = rec.pathway_overview
+        jrn.focus_areas = [fa.model_dump() for fa in rec.focus_areas]
+        jrn.initial_missions = [im.model_dump() for im in rec.initial_missions]
+
+    db.commit()
+    if ob:
+        db.refresh(ob)
+    if per:
+        db.refresh(per)
+    if jrn:
+        db.refresh(jrn)
+    return _onboarding_to_schema(ob, per, jrn)
 
 
-def _child_to_api(row: ChildRecord) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Recommendations progress endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/user/recommendations-progress", response_model=RecommendationsProgress)
+def get_recommendations_progress(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.get(UserRecommendationsProgressRecord, user.id)
+    if not row or not row.progress:
+        return RecommendationsProgress()
+    return RecommendationsProgress.model_validate(row.progress)
+
+
+@router.patch("/user/recommendations-progress", response_model=RecommendationsProgress)
+def patch_recommendations_progress(
+    body: RecommendationsProgress,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.get(UserRecommendationsProgressRecord, user.id)
+    if not row:
+        row = UserRecommendationsProgressRecord(user_id=user.id)
+        db.add(row)
+    row.progress = body.model_dump()
+    db.commit()
+    db.refresh(row)
+    return RecommendationsProgress.model_validate(row.progress)
+
+
+# ---------------------------------------------------------------------------
+# Completed growth areas endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
+def list_completed_growth_areas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(CompletedGrowthAreaRecord)
+        .where(CompletedGrowthAreaRecord.user_id == user.id)
+        .order_by(CompletedGrowthAreaRecord.created_at)
+    ).scalars().all()
+    return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
+
+
+@router.post("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
+def append_completed_growth_area(
+    body: AppendGrowthAreaRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ca = body.child_activity
+    insert_values = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.id,
+        "area_id": body.area_id,
+        "area_name": body.area_name,
+        "area_color": body.area_color,
+        "answers": body.answers,
+        "recommendations": body.recommendations,
+        "child_selections": ca.selections if ca else [],
+        "child_summary": ca.results.summary if (ca and ca.results) else None,
+        "child_strengths": ca.results.strengths if (ca and ca.results) else [],
+        "child_suggested": ca.results.suggested_activities if (ca and ca.results) else [],
+    }
+    update_values = {k: v for k, v in insert_values.items() if k not in ("id", "user_id", "area_id")}
+    update_values["updated_at"] = func.now()
+    stmt = (
+        _upsert_insert(CompletedGrowthAreaRecord)
+        .values(**insert_values)
+        .on_conflict_do_update(
+            index_elements=["user_id", "area_id"],
+            set_=update_values,
+        )
+    )
+    db.execute(stmt)
+    db.commit()
+
+    rows = db.execute(
+        select(CompletedGrowthAreaRecord)
+        .where(CompletedGrowthAreaRecord.user_id == user.id)
+        .order_by(CompletedGrowthAreaRecord.created_at)
+    ).scalars().all()
+    return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
+
+
+@router.delete("/user/completed-growth-areas", status_code=204)
+def clear_completed_growth_areas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.execute(
+        delete(CompletedGrowthAreaRecord).where(CompletedGrowthAreaRecord.user_id == user.id)
+    )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Goals endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/user/goals", response_model=UserGoals)
+def get_goals(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.get(UserGoalsRecord, user.id)
+    if not row:
+        return UserGoals()
+    plan = GoalsPlan.model_validate(row.goals_plan) if row.goals_plan else None
+    return UserGoals(parent_concern=row.parent_concern, plan=plan)
+
+
+@router.patch("/user/goals", response_model=UserGoals)
+def patch_goals(
+    body: UserGoalsPatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.get(UserGoalsRecord, user.id)
+    if not row:
+        row = UserGoalsRecord(user_id=user.id)
+        db.add(row)
+    if body.clear_concern:
+        row.parent_concern = None
+    elif body.parent_concern is not None:
+        row.parent_concern = body.parent_concern
+    if body.clear_plan:
+        row.goals_plan = None
+    elif body.plan is not None:
+        row.goals_plan = body.plan.model_dump()
+    db.commit()
+    db.refresh(row)
+    plan = GoalsPlan.model_validate(row.goals_plan) if row.goals_plan else None
+    return UserGoals(parent_concern=row.parent_concern, plan=plan)
+
+
+# ---------------------------------------------------------------------------
+# Children endpoints
+# ---------------------------------------------------------------------------
+
+def _child_to_api(row: ChildRecord) -> dict:
     base = dict(row.payload or {})
     base["id"] = row.id
     base["created_date"] = row.created_at.isoformat()
     return base
 
 
-
-
-def _mission_to_api(row: GrowthMissionRecord) -> dict[str, Any]:
-    base = dict(row.payload or {})
-    base["id"] = row.id
-    base["child_id"] = row.child_id
-    base["created_date"] = row.created_at.isoformat()
-    return base
-
-
-def _insight_to_api(row: ParentInsightRecord) -> dict[str, Any]:
-    base = dict(row.payload or {})
-    base["id"] = row.id
-    base["child_id"] = row.child_id
-    base["created_date"] = row.created_at.isoformat()
-    return base
-
-
-def _reflection_to_api(row: ReflectionRecord) -> dict[str, Any]:
-    base = dict(row.payload or {})
-    base["id"] = row.id
-    base["child_id"] = row.child_id
-    base["created_date"] = row.created_at.isoformat()
-    return base
-
-
-@router.get("/children")
+@router.get("/children", response_model=list[ChildResponse])
 def list_children(
     sort: str | None = "-created_date",
-    limit: int | None = None,
+    limit: int | None = Query(None, ge=1),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = select(ChildRecord).where(ChildRecord.user_id == user.id)
-    rows = list(db.execute(q).scalars().all())
-    descending = sort.startswith("-") if sort else True
-    rows.sort(key=lambda r: r.created_at, reverse=descending)
+    order = ChildRecord.created_at.desc() if (sort or "").startswith("-") else ChildRecord.created_at.asc()
+    q = select(ChildRecord).where(ChildRecord.user_id == user.id).order_by(order)
     if limit is not None:
-        rows = rows[: int(limit)]
+        q = q.limit(limit)
+    rows = db.execute(q).scalars().all()
     return [_child_to_api(r) for r in rows]
 
 
-@router.post("/children")
-def create_child(payload: dict[str, Any], user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = ChildRecord(user_id=user.id, payload={k: v for k, v in payload.items() if k not in ("id", "created_date")})
+@router.post("/children", response_model=ChildResponse)
+def create_child(payload: ChildCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    data = payload.model_dump(exclude_none=True)
+    data.pop("id", None)
+    data.pop("created_date", None)
+    data.pop("user_id", None)
+    row = ChildRecord(user_id=user.id, payload=data)
     db.add(row)
     db.commit()
     db.refresh(row)
     return _child_to_api(row)
 
 
-@router.patch("/children/{child_id}")
+@router.patch("/children/{child_id}", response_model=ChildResponse)
 def update_child(
     child_id: str,
-    patch: dict[str, Any],
+    patch: ChildPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     row = db.get(ChildRecord, child_id)
     if not row or row.user_id != user.id:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Child not found")
     data = dict(row.payload or {})
-    for k, v in patch.items():
-        if k in ("id", "created_date"):
-            continue
-        data[k] = v
+    for k, v in patch.model_dump(exclude_unset=True).items():
+        if k not in ("id", "created_date"):
+            data[k] = v
     row.payload = data
     db.commit()
     db.refresh(row)
     return _child_to_api(row)
 
 
-@router.delete("/children/{child_id}")
+@router.delete("/children/{child_id}", status_code=204)
 def delete_child(child_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.get(ChildRecord, child_id)
     if not row or row.user_id != user.id:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Child not found")
     db.delete(row)
     db.commit()
-    return {"ok": True}
 
 
-@router.get("/growth-missions")
+# ---------------------------------------------------------------------------
+# Growth missions endpoints
+# ---------------------------------------------------------------------------
+
+def _mission_to_api(row: GrowthMissionRecord) -> dict:
+    base = dict(row.payload or {})
+    base["id"] = row.id
+    base["child_id"] = row.child_id
+    base["created_date"] = row.created_at.isoformat()
+    return base
+
+
+@router.get("/growth-missions", response_model=list[GrowthMissionResponse])
 def list_missions(
     child_id: str | None = None,
     sort: str | None = "-created_date",
-    limit: int | None = None,
+    limit: int | None = Query(None, ge=1),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -466,22 +692,26 @@ def list_missions(
         return []
     child = db.get(ChildRecord, child_id)
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
-    rows = list(db.execute(select(GrowthMissionRecord).where(GrowthMissionRecord.child_id == child_id)).scalars().all())
-    descending = sort.startswith("-") if sort else True
-    rows.sort(key=lambda r: r.created_at, reverse=descending)
+        raise HTTPException(status_code=404, detail="Child not found")
+    order = GrowthMissionRecord.created_at.desc() if (sort or "").startswith("-") else GrowthMissionRecord.created_at.asc()
+    q = select(GrowthMissionRecord).where(GrowthMissionRecord.child_id == child_id).order_by(order)
     if limit is not None:
-        rows = rows[: int(limit)]
+        q = q.limit(limit)
+    rows = db.execute(q).scalars().all()
     return [_mission_to_api(r) for r in rows]
 
 
-@router.post("/growth-missions")
-def create_mission(payload: dict[str, Any], user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    cid = payload.get("child_id")
+@router.post("/growth-missions", response_model=GrowthMissionResponse)
+def create_mission(payload: GrowthMissionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = payload.child_id
     child = db.get(ChildRecord, cid) if cid else None
     if not child or child.user_id != user.id:
         raise HTTPException(status_code=404, detail="Invalid child")
-    body = {k: v for k, v in payload.items() if k not in ("id", "created_date")}
+    body = payload.model_dump(exclude_none=True)
+    body.pop("id", None)
+    body.pop("created_date", None)
+    body.pop("child_id", None)
+    body.pop("user_id", None)
     row = GrowthMissionRecord(child_id=cid, payload=body)
     db.add(row)
     db.commit()
@@ -489,19 +719,19 @@ def create_mission(payload: dict[str, Any], user: User = Depends(get_current_use
     return _mission_to_api(row)
 
 
-class BulkMissionBody(BaseModel):
-    items: list[dict[str, Any]]
-
-
-@router.post("/growth-missions/bulk")
+@router.post("/growth-missions/bulk", response_model=list[GrowthMissionResponse])
 def bulk_missions(body: BulkMissionBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     out = []
     for payload in body.items:
-        cid = payload.get("child_id")
+        cid = payload.child_id
         child = db.get(ChildRecord, cid) if cid else None
         if not child or child.user_id != user.id:
-            continue
-        sub = {k: v for k, v in payload.items() if k not in ("id", "created_date")}
+            raise HTTPException(status_code=400, detail=f"Invalid or unauthorized child_id: {cid!r}")
+        sub = payload.model_dump(exclude_none=True)
+        sub.pop("id", None)
+        sub.pop("created_date", None)
+        sub.pop("child_id", None)
+        sub.pop("user_id", None)
         row = GrowthMissionRecord(child_id=cid, payload=sub)
         db.add(row)
         out.append(row)
@@ -511,23 +741,32 @@ def bulk_missions(body: BulkMissionBody, user: User = Depends(get_current_user),
     return [_mission_to_api(r) for r in out]
 
 
-@router.patch("/growth-missions/{mission_id}")
+@router.get("/growth-missions/{mission_id}", response_model=GrowthMissionResponse)
+def get_mission(mission_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.get(GrowthMissionRecord, mission_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    child = db.get(ChildRecord, row.child_id)
+    if not child or child.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    return _mission_to_api(row)
+
+
+@router.patch("/growth-missions/{mission_id}", response_model=GrowthMissionResponse)
 def update_mission(
     mission_id: str,
-    patch: dict[str, Any],
+    patch: GrowthMissionPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     row = db.get(GrowthMissionRecord, mission_id)
     if not row:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Mission not found")
     child = db.get(ChildRecord, row.child_id)
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="Mission not found")
     data = dict(row.payload or {})
-    for k, v in patch.items():
-        if k in ("id", "child_id", "created_date"):
-            continue
+    for k, v in patch.model_dump(exclude_unset=True).items():
         if k == "ai_insights" and isinstance(v, dict) and isinstance(data.get("ai_insights"), dict):
             merged = dict(data["ai_insights"])
             merged.update(v)
@@ -540,12 +779,25 @@ def update_mission(
     return _mission_to_api(row)
 
 
-@router.get("/parent-insights")
+# ---------------------------------------------------------------------------
+# Parent insights endpoints
+# ---------------------------------------------------------------------------
+
+def _insight_to_api(row: ParentInsightRecord) -> dict:
+    base = dict(row.payload or {})
+    base["id"] = row.id
+    base["child_id"] = row.child_id
+    base["is_read"] = row.is_read
+    base["created_date"] = row.created_at.isoformat()
+    return base
+
+
+@router.get("/parent-insights", response_model=list[ParentInsightResponse])
 def list_insights(
     child_id: str | None = None,
     is_read: str | None = None,
     sort: str | None = "-created_date",
-    limit: int | None = None,
+    limit: int | None = Query(None, ge=1),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -553,44 +805,77 @@ def list_insights(
         return []
     child = db.get(ChildRecord, child_id)
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
-    rows = list(db.execute(select(ParentInsightRecord).where(ParentInsightRecord.child_id == child_id)).scalars().all())
-    filt_bool: bool | None = None
+        raise HTTPException(status_code=404, detail="Child not found")
+    order = ParentInsightRecord.created_at.desc() if (sort or "").startswith("-") else ParentInsightRecord.created_at.asc()
+    q = select(ParentInsightRecord).where(ParentInsightRecord.child_id == child_id)
     if is_read is not None:
         v = is_read.strip().lower()
         if v in ("true", "1", "yes"):
-            filt_bool = True
+            q = q.where(ParentInsightRecord.is_read.is_(True))
         elif v in ("false", "0", "no"):
-            filt_bool = False
-    if filt_bool is not None:
-        rows = [r for r in rows if bool((r.payload or {}).get("is_read")) is filt_bool]
-    descending = sort.startswith("-") if sort else True
-    rows.sort(key=lambda r: r.created_at, reverse=descending)
+            q = q.where(ParentInsightRecord.is_read.is_(False))
+    q = q.order_by(order)
     if limit is not None:
-        rows = rows[: int(limit)]
+        q = q.limit(limit)
+    rows = db.execute(q).scalars().all()
     return [_insight_to_api(r) for r in rows]
 
 
-@router.post("/parent-insights")
-def create_insight(payload: dict[str, Any], user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    cid = payload.get("child_id")
+@router.post("/parent-insights", response_model=ParentInsightResponse)
+def create_insight(payload: ParentInsightCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = payload.child_id
     child = db.get(ChildRecord, cid) if cid else None
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
-    body = {k: v for k, v in payload.items() if k not in ("id", "created_date")}
-    body.setdefault("is_read", False)
-    row = ParentInsightRecord(child_id=cid, payload=body)
+        raise HTTPException(status_code=404, detail="Child not found")
+    body = payload.model_dump(exclude_none=True)
+    body.pop("id", None)
+    body.pop("created_date", None)
+    body.pop("is_read", None)
+    body.pop("child_id", None)
+    body.pop("user_id", None)
+    row = ParentInsightRecord(child_id=cid, is_read=False, payload=body)
     db.add(row)
     db.commit()
     db.refresh(row)
     return _insight_to_api(row)
 
 
-@router.get("/reflections")
+@router.patch("/parent-insights/{insight_id}", response_model=ParentInsightResponse)
+def update_insight(
+    insight_id: str,
+    body: UpdateInsightBody,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.get(ParentInsightRecord, insight_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    child = db.get(ChildRecord, row.child_id)
+    if not child or child.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    row.is_read = body.is_read
+    db.commit()
+    db.refresh(row)
+    return _insight_to_api(row)
+
+
+# ---------------------------------------------------------------------------
+# Reflections endpoints
+# ---------------------------------------------------------------------------
+
+def _reflection_to_api(row: ReflectionRecord) -> dict:
+    base = dict(row.payload or {})
+    base["id"] = row.id
+    base["child_id"] = row.child_id
+    base["created_date"] = row.created_at.isoformat()
+    return base
+
+
+@router.get("/reflections", response_model=list[ReflectionResponse])
 def list_reflections(
     child_id: str | None = None,
     sort: str | None = "-created_date",
-    limit: int | None = None,
+    limit: int | None = Query(None, ge=1),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -598,22 +883,26 @@ def list_reflections(
         return []
     child = db.get(ChildRecord, child_id)
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
-    rows = list(db.execute(select(ReflectionRecord).where(ReflectionRecord.child_id == child_id)).scalars().all())
-    descending = sort.startswith("-") if sort else True
-    rows.sort(key=lambda r: r.created_at, reverse=descending)
+        raise HTTPException(status_code=404, detail="Child not found")
+    order = ReflectionRecord.created_at.desc() if (sort or "").startswith("-") else ReflectionRecord.created_at.asc()
+    q = select(ReflectionRecord).where(ReflectionRecord.child_id == child_id).order_by(order)
     if limit is not None:
-        rows = rows[: int(limit)]
+        q = q.limit(limit)
+    rows = db.execute(q).scalars().all()
     return [_reflection_to_api(r) for r in rows]
 
 
-@router.post("/reflections")
-def create_reflection(payload: dict[str, Any], user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    cid = payload.get("child_id")
+@router.post("/reflections", response_model=ReflectionResponse)
+def create_reflection(payload: ReflectionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = payload.child_id
     child = db.get(ChildRecord, cid) if cid else None
     if not child or child.user_id != user.id:
-        raise HTTPException(status_code=404)
-    body = {k: v for k, v in payload.items() if k not in ("id", "created_date")}
+        raise HTTPException(status_code=404, detail="Child not found")
+    body = payload.model_dump(exclude_none=True)
+    body.pop("id", None)
+    body.pop("created_date", None)
+    body.pop("child_id", None)
+    body.pop("user_id", None)
     row = ReflectionRecord(child_id=cid, payload=body)
     db.add(row)
     db.commit()

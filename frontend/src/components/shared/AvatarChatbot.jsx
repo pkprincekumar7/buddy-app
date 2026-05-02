@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Send, Volume2, VolumeX, Minimize2, Maximize2, Mic, MicOff } from 'lucide-react';
+import { toast } from 'sonner';
+import { pickPreferredVoice } from '@/lib/tts';
 import { api } from '@/api/client';
 
 export default function AvatarChatbot({ childName, childData, isParentMode = true, onClose }) {
@@ -25,13 +27,11 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
 
     (async () => {
       try {
-        if (await api.auth.isAuthenticated()) {
-          const s = await api.userAppState.get();
-          if (cancelled) return;
-          if (typeof s.tts_enabled === 'boolean') {
-            voiceEnabledRef.current = s.tts_enabled;
-            setVoiceEnabled(s.tts_enabled);
-          }
+        const prefs = await api.preferences.get();
+        if (cancelled) return;
+        if (typeof prefs.tts_enabled === 'boolean') {
+          voiceEnabledRef.current = prefs.tts_enabled;
+          setVoiceEnabled(prefs.tts_enabled);
         }
       } catch { /* keep default */ }
       if (!cancelled) addBotMessage(greeting);
@@ -87,13 +87,8 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
     utterance.rate = 0.95;
     utterance.pitch = 1.05;
     
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => 
-      v.name.includes('Samantha') || 
-      v.name.includes('Google UK English Female') ||
-      v.lang.includes('en')
-    );
-    if (preferredVoice) utterance.voice = preferredVoice;
+    const voice = pickPreferredVoice();
+    if (voice) utterance.voice = voice;
     
     utterance.onstart = () => setAvatarState('talking');
     utterance.onend = () => setAvatarState('idle');
@@ -108,7 +103,7 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
 
   const toggleRecording = () => {
     if (!recognition) {
-      alert('Speech recognition is not supported in your browser');
+      toast.error('Speech recognition is not supported in your browser');
       return;
     }
 
@@ -129,7 +124,7 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
     setAvatarState('thinking');
 
     // Use AI to generate contextual response
-    const prompt = `You are a friendly, warm AI assistant for a family growth platform called Buddy360. 
+    const prompt = `You are a friendly, warm AI assistant for a family growth platform called Buddy360.
 You're chatting with ${isParentMode ? `a parent about their child ${childName}` : childName + ' directly'}.
 
 Child's profile:
@@ -142,19 +137,26 @@ User message: "${userMessage}"
 
 Respond in a warm, encouraging way. Keep response under 3 sentences. ${isParentMode ? 'Give parenting insights when relevant.' : 'Be fun and engaging for a child.'}`;
 
-    const response = await api.integrations.Core.InvokeLLM({
-      prompt,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          reply: { type: "string" }
+    try {
+      const response = await api.integrations.Core.InvokeLLM({
+        prompt,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            reply: { type: "string" }
+          }
         }
-      }
-    });
-
-    setIsTyping(false);
-    addBotMessage(response.reply);
+      });
+      addBotMessage(response.reply);
+    } catch {
+      toast.error('Failed to get a response. Please try again.');
+    } finally {
+      setIsTyping(false);
+      setAvatarState('idle');
+    }
   };
+
+  const unreadCount = messages.filter(m => m.role === 'bot').length;
 
   if (isMinimized) {
     return (
@@ -165,7 +167,6 @@ Respond in a warm, encouraging way. Keep response under 3 sentences. ${isParentM
         className="fixed bottom-6 right-6 w-16 h-16 rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 shadow-lg flex items-center justify-center z-50"
       >
         <div className="relative">
-          {/* Animated avatar face */}
           <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center">
             <motion.div
               animate={{ scale: [1, 1.05, 1] }}
@@ -175,9 +176,11 @@ Respond in a warm, encouraging way. Keep response under 3 sentences. ${isParentM
               😊
             </motion.div>
           </div>
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
-            1
-          </span>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </div>
       </motion.button>
     );

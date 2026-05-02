@@ -53,7 +53,6 @@ import LifePathway from './pages/LifePathway';
 import Missions from './pages/Missions';
 import Onboarding from './pages/Onboarding';
 import ParentDashboard from './pages/ParentDashboard';
-import SelectMode from './pages/SelectMode';
 import __Layout from './Layout.jsx';
 
 
@@ -64,7 +63,6 @@ export const PAGES = {
     "Missions": Missions,
     "Onboarding": Onboarding,
     "ParentDashboard": ParentDashboard,
-    "SelectMode": SelectMode,
 }
 
 export const pagesConfig = {

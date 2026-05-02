@@ -10,6 +10,7 @@ import {
   pickSavedQuestionnaireForChatbot,
   normalizeOnboardingChildDataBlob,
 } from '@/lib/onboardingChildData';
+import { pickPreferredVoice } from '@/lib/tts';
 
 function buildAccThrough(flow, data, beforeStepIdx) {
   const acc = {};
@@ -71,23 +72,26 @@ export default function ConversationalOnboarding({
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const idleTimerRef = useRef(null);
+  const persistTimerRef = useRef(null);
   const chatSessionStartedRef = useRef(false);
   const allowEmptySessionRecoveryRef = useRef(false);
   const userTurnCountRef = useRef(0);
 
-  const persistQuestionnaireDraft = async (mergedCollected) => {
-    try {
-      if (!(await api.auth.isAuthenticated())) return;
-      const s = await api.userAppState.get();
-      const prev =
-        s.onboarding_childData && typeof s.onboarding_childData === 'object'
-          ? { ...s.onboarding_childData }
-          : {};
-      await api.userAppState.patch({ onboarding_childData: { ...prev, ...mergedCollected } });
-      onQuestionnairePersisted?.(mergedCollected);
-    } catch {
-      /* ignore */
-    }
+  const persistQuestionnaireDraft = (mergedCollected) => {
+    // Update parent state immediately so the wizard reflects the latest answers
+    onQuestionnairePersisted?.(mergedCollected);
+
+    // Debounce the API round-trip: GET + PATCH fires once after the user stops answering
+    clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(async () => {
+      try {
+        const s = await api.onboarding.get();
+        const prev = s.child_data && typeof s.child_data === 'object' ? { ...s.child_data } : {};
+        await api.onboarding.patch({ child_data: { ...prev, ...mergedCollected } });
+      } catch {
+        /* ignore */
+      }
+    }, 500);
   };
 
   const parentName = user?.full_name?.split(' ')[0] || 'there';
@@ -195,28 +199,8 @@ export default function ConversationalOnboarding({
     utterance.pitch = 1.0;
     utterance.volume = 1;
     
-    const voices = window.speechSynthesis.getVoices();
-    // Prioritize premium female voices
-    const preferredVoice = voices.find(v => 
-      v.name.includes('Google US English Female') ||
-      v.name.includes('Google UK English Female') ||
-      v.name.includes('Samantha') ||
-      v.name.includes('Karen') ||
-      v.name.includes('Moira') ||
-      v.name.includes('Fiona') ||
-      v.name.includes('Serena') ||
-      (v.name.includes('Microsoft') && v.name.includes('Zira')) ||
-      (v.name.includes('Microsoft') && v.name.includes('Eva'))
-    ) || voices.find(v => 
-      v.lang.startsWith('en') && !v.localService
-    ) || voices.find(v => 
-      v.lang.startsWith('en')
-    );
-    
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-      console.log('Using voice:', preferredVoice.name);
-    }
+    const voice = pickPreferredVoice();
+    if (voice) utterance.voice = voice;
     window.speechSynthesis.speak(utterance);
   };
 
@@ -238,15 +222,13 @@ export default function ConversationalOnboarding({
     (async () => {
       try {
         let slim = {};
-        if (await api.auth.isAuthenticated()) {
-          const appState = await api.userAppState.get();
-          slim = pickSavedQuestionnaireForChatbot(
-            normalizeOnboardingChildDataBlob(appState.onboarding_childData) || {}
-          );
-          if (typeof appState.tts_enabled === 'boolean') {
-            voiceEnabledRef.current = appState.tts_enabled;
-            setVoiceEnabled(appState.tts_enabled);
-          }
+        const [onboarding, prefs] = await Promise.all([api.onboarding.get(), api.preferences.get()]);
+        slim = pickSavedQuestionnaireForChatbot(
+          normalizeOnboardingChildDataBlob(onboarding.child_data) || {}
+        );
+        if (typeof prefs.tts_enabled === 'boolean') {
+          voiceEnabledRef.current = prefs.tts_enabled;
+          setVoiceEnabled(prefs.tts_enabled);
         }
         if (cancelled) return;
 
@@ -322,9 +304,7 @@ export default function ConversationalOnboarding({
     setVoiceEnabled(next);
     if (!next && typeof window !== 'undefined') window.speechSynthesis?.cancel?.();
     try {
-      if (await api.auth.isAuthenticated()) {
-        await api.userAppState.patch({ tts_enabled: next });
-      }
+      await api.preferences.patch({ tts_enabled: next });
     } catch {
       /* keep optimistic toggle */
     }
@@ -469,15 +449,11 @@ export default function ConversationalOnboarding({
     setAllAnswered(false);
     void (async () => {
       try {
-        if (!(await api.auth.isAuthenticated())) return;
-        const s = await api.userAppState.get();
-        const prev =
-          s.onboarding_childData && typeof s.onboarding_childData === 'object'
-            ? { ...s.onboarding_childData }
-            : {};
+        const s = await api.onboarding.get();
+        const prev = s.child_data && typeof s.child_data === 'object' ? { ...s.child_data } : {};
         for (const k of CHATBOT_CAPTURED_FIELDS) delete prev[k];
-        await api.userAppState.patch({
-          onboarding_childData: Object.keys(prev).length ? prev : {},
+        await api.onboarding.patch({
+          child_data: Object.keys(prev).length ? prev : {},
         });
         onQuestionnaireCleared?.();
       } catch {

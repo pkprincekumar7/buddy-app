@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/api/client';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from "@/utils";
@@ -63,8 +64,21 @@ export default function ParentDashboard() {
   
   const handleParentObservationSubmit = async (observation) => {
     if (!selectedMission) return;
-    
+
+    // Re-fetch the mission to check if insights were already generated
     setIsGeneratingInsights(true);
+    try {
+      const freshMission = await api.entities.GrowthMission.get(selectedMission.id);
+      if (freshMission?.ai_insights && typeof freshMission.ai_insights === 'object') {
+        queryClient.invalidateQueries({ queryKey: ['missions'] });
+        setSelectedMission(null);
+        setIsGeneratingInsights(false);
+        return;
+      }
+    } catch {
+      /* fall through to generate */
+    }
+
     try {
       const prompt = `Analyze a child's responses to a growth activity along with parent's observation.
 
@@ -83,7 +97,7 @@ Generate personalized insights focusing on:
 3. 1-2 growth opportunities
 4. 2-3 actionable recommendations for parents`;
 
-      const insights = await api.integrations.Core.InvokeLLM({
+      const aiInsights = await api.integrations.Core.InvokeLLM({
         prompt,
         response_json_schema: {
           type: "object",
@@ -104,19 +118,19 @@ Generate personalized insights focusing on:
           }
         }
       });
-      
+
       await api.entities.GrowthMission.update(selectedMission.id, {
         parent_observation: observation,
-        ai_insights: insights
+        ai_insights: aiInsights
       });
-      
+
       // Create a parent insight
       await api.entities.ParentInsight.create({
         child_id: activeChild.id,
         insight_type: 'activity_suggestion',
         title: `Insights from: ${selectedMission.title}`,
-        description: insights.summary,
-        action_suggestion: insights.recommendations[0]
+        description: aiInsights.summary,
+        action_suggestion: aiInsights.recommendations?.[0]
       });
       
       queryClient.invalidateQueries({ queryKey: ['missions'] });
@@ -155,12 +169,22 @@ Generate personalized insights focusing on:
   }
   
   const handleAssignmentComplete = async (assignmentData) => {
-    if (activeChild) {
-      const existingInteractions = activeChild.parent_interactions || [];
-      await api.entities.Child.update(activeChild.id, {
-        parent_interactions: [...existingInteractions, assignmentData]
+    if (!activeChild) return;
+    try {
+      await api.entities.Reflection.create({
+        child_id:    activeChild.id,
+        type:        assignmentData.assignment?.category,
+        content:     assignmentData.childResponse,
+        pillar_tags: assignmentData.assignment?.category ? [assignmentData.assignment.category] : [],
+        // extra fields stored in blob for audit trail
+        assignment_id:    assignmentData.assignment?.id,
+        assignment_title: assignmentData.assignment?.title,
+        parent_notes:     assignmentData.parentNotes,
+        completed_at:     assignmentData.completedAt,
       });
-      queryClient.invalidateQueries({ queryKey: ['children'] });
+      queryClient.invalidateQueries({ queryKey: ['reflections', activeChild.id] });
+    } catch {
+      toast.error('Could not save the activity. Please try again.');
     }
   };
 
@@ -193,11 +217,40 @@ Generate personalized insights focusing on:
   const avatarConfig = getAvatarConfig(activeChild.avatar_style);
   const AvatarIcon = avatarConfig.icon;
   const childAge = calculateAge(activeChild.date_of_birth);
-  
-  const thisWeekMissions = missions.filter(m => {
-    const weekNum = Math.ceil((new Date().getTime() - new Date(activeChild.created_date).getTime()) / (7 * 24 * 60 * 60 * 1000));
-    return m.week_number === weekNum || !m.week_number;
-  }).slice(0, 4);
+
+  // Derive stats from actual mission data rather than untracked blob fields
+  const completedMissions = missions.filter(m => m.status === 'completed');
+  const totalCompleted = completedMissions.length;
+
+  // Streak: consecutive days ending today that have at least one completed mission
+  const streakDays = (() => {
+    const completedDates = new Set(
+      completedMissions
+        .filter(m => m.completed_date)
+        .map(m => String(m.completed_date).split('T')[0])
+    );
+    let streak = 0;
+    const d = new Date();
+    while (true) {
+      const key = d.toISOString().split('T')[0];
+      if (!completedDates.has(key)) break;
+      streak++;
+      d.setDate(d.getDate() - 1);
+    }
+    return streak;
+  })();
+
+  // Active missions + missions completed this calendar week
+  const startOfWeek = new Date();
+  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const thisWeekMissions = missions
+    .filter(m =>
+      m.status === 'active' ||
+      (m.completed_date && new Date(m.completed_date) >= startOfWeek)
+    )
+    .slice(0, 4);
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -226,8 +279,8 @@ Generate personalized insights focusing on:
         {/* Quick Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Streak', value: `${activeChild.streak_days || 0} days`, icon: Target, color: 'from-amber-400 to-orange-500' },
-            { label: 'Missions', value: activeChild.total_missions_completed || 0, icon: TrendingUp, color: 'from-emerald-400 to-teal-500' },
+            { label: 'Streak', value: `${streakDays} days`, icon: Target, color: 'from-amber-400 to-orange-500' },
+            { label: 'Missions', value: totalCompleted, icon: TrendingUp, color: 'from-emerald-400 to-teal-500' },
             { label: 'This Week', value: `${thisWeekMissions.filter(m => m.status === 'completed').length}/4`, icon: Calendar, color: 'from-blue-400 to-indigo-500' },
             { label: 'Phase', value: activeChild.current_phase, icon: BookOpen, color: 'from-purple-400 to-pink-500' }
           ].map((stat, i) => (

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
@@ -7,7 +8,6 @@ import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle, X } fro
 import TextareaWithVoice from '../components/shared/TextareaWithVoice';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
-import { USER_APP_FULL_ONBOARDING_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceDot } from 'recharts';
 
@@ -36,9 +36,9 @@ export default function LifePathway() {
   const handleBack = useCallback(() => {
     navigate(createPageUrl('Onboarding'));
   }, [navigate]);
+  const { user } = useAuth();
   const [childData, setChildData] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [completedAreas, setCompletedAreas] = useState([]);
   const [showConcernModal, setShowConcernModal] = useState(false);
@@ -48,45 +48,26 @@ export default function LifePathway() {
   useEffect(() => {
     const loadChildData = async () => {
       try {
-        const currentUser = await api.auth.me();
-        setUser(currentUser);
+        const [onboarding, completedData, children] = await Promise.all([
+          api.onboarding.get(),
+          api.completedGrowthAreas.list(),
+          api.entities.Child.list('-created_date', 1),
+        ]);
 
-        const s = await api.userAppState.get();
-
-        let resolvedChildData = null;
-        const children = await api.entities.Child.list('-created_date', 1);
-        if (children && children.length > 0) {
-          resolvedChildData = children[0];
-        } else if (s?.onboarding_childData && typeof s.onboarding_childData === 'object') {
-          resolvedChildData = s.onboarding_childData;
-        }
+        const resolvedChildData = children?.[0] || onboarding?.child_data || null;
         if (resolvedChildData) setChildData(resolvedChildData);
 
-        const profileFromState =
-          s?.onboarding_profile && typeof s.onboarding_profile === 'object' ? s.onboarding_profile : null;
-        const vm =
-          s?.onboarding_personality_analysis?.view_model &&
-          typeof s.onboarding_personality_analysis.view_model === 'object'
-            ? s.onboarding_personality_analysis.view_model
-            : null;
-        const legacyVm =
-          !vm && s?.onboarding_mbti && typeof s.onboarding_mbti === 'object' ? s.onboarding_mbti : null;
-        const reuseVm = vm || legacyVm;
-        const resolvedProfile =
-          profileFromState ||
-          (reuseVm?.type && reuseVm?.profile ? onboardingProfileFromViewModel(reuseVm) : null);
-        if (resolvedProfile) setProfile(resolvedProfile);
-
-        const savedCompletedAreas = s?.completed_growth_areas;
-        let parsedAreas = [];
-        if (savedCompletedAreas && Array.isArray(savedCompletedAreas)) {
-          parsedAreas = savedCompletedAreas;
-          setCompletedAreas(parsedAreas);
+        const vm = onboarding?.personality?.view_model;
+        if (vm?.type && vm?.profile) {
+          setProfile(onboardingProfileFromViewModel(vm));
         }
 
-
+        if (completedData?.areas?.length) {
+          setCompletedAreas(completedData.areas);
+        }
       } catch (error) {
         console.error('Failed to load child data:', error);
+        toast.error('Failed to load your data. Please refresh and try again.');
       }
       setIsLoading(false);
     };
@@ -103,12 +84,11 @@ export default function LifePathway() {
   const handleConcernSubmit = async () => {
     if (!concernInput.trim()) return;
     try {
-      await api.userAppState.patch({ parent_concern: concernInput.trim() });
-      setConcernSubmitted(true);
+      await api.goals.patch({ parent_concern: concernInput.trim() });
     } catch {
       /* still allow UX to proceed */
-      setConcernSubmitted(true);
     }
+    setConcernSubmitted(true);
   };
 
   const handleProceedToDashboard = () => {
@@ -137,9 +117,9 @@ export default function LifePathway() {
     let cancelled = false;
     void (async () => {
       try {
-        const s = await api.userAppState.get();
+        const goals = await api.goals.get();
         if (cancelled) return;
-        const stored = typeof s.parent_concern === 'string' ? s.parent_concern.trim() : '';
+        const stored = typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '';
         if (stored) setConcernInput(stored);
       } catch {
         /* ignore */
@@ -196,7 +176,7 @@ export default function LifePathway() {
       completedAreas.forEach(area => {
         const boost = getAreaBoost(area);
         const val = 40 + (i * boost) + (i * i * 0.25);
-        point[area.id] = Math.min(Math.round(val), 100);
+        point[area.area_id] = Math.min(Math.round(val), 100);
       });
     } else {
       // Default single buddy360 line
@@ -214,11 +194,11 @@ export default function LifePathway() {
 
   const buddy360Milestones = completedAreas.length > 0
     ? completedAreas.flatMap(area =>
-        (areaMilestoneMap[area.id] || []).map(m => ({
+        (areaMilestoneMap[area.area_id] || []).map(m => ({
           age: currentAge + m.yearOffset,
           text: m.text,
-          area: area.name,
-          color: areaColors[area.id] || '#10b981'
+          area: area.area_name,
+          color: areaColors[area.area_id] || '#10b981'
         }))
       ).sort((a, b) => a.age - b.age)
     : [
@@ -265,12 +245,12 @@ export default function LifePathway() {
               <div className="flex flex-wrap justify-center gap-2 pt-2">
                 {completedAreas.map(area => (
                   <span
-                    key={area.id}
+                    key={area.area_id}
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium text-white"
-                    style={{ backgroundColor: areaColors[area.id] || '#10b981' }}
+                    style={{ backgroundColor: areaColors[area.area_id] || '#10b981' }}
                   >
                     <CheckCircle className="w-3.5 h-3.5" />
-                    {area.name}
+                    {area.area_name}
                   </span>
                 ))}
               </div>
@@ -318,12 +298,12 @@ export default function LifePathway() {
                   {completedAreas.length > 0 ? (
                     completedAreas.map(area => (
                       <Line
-                        key={area.id}
+                        key={area.area_id}
                         type="monotone"
-                        dataKey={area.id}
-                        stroke={areaColors[area.id] || '#10b981'}
+                        dataKey={area.area_id}
+                        stroke={areaColors[area.area_id] || '#10b981'}
                         strokeWidth={3}
-                        name={`${area.name} (Buddy360)`}
+                        name={`${area.area_name} (Buddy360)`}
                         dot={<CustomDot />}
                       />
                     ))
@@ -415,7 +395,7 @@ export default function LifePathway() {
                   </h4>
                   <p className="text-sm text-slate-700">
                     {profile?.summary || `${childData?.name} experiences accelerated holistic growth through personalized guidance, targeted skill development, and continuous support.`}
-                    {completedAreas.length > 0 && ` Development is boosted across ${completedAreas.map(a => a.name).join(', ')}.`}
+                    {completedAreas.length > 0 && ` Development is boosted across ${completedAreas.map(a => a.area_name).join(', ')}.`}
                   </p>
                 </div>
 
@@ -469,12 +449,12 @@ export default function LifePathway() {
               <p className="text-slate-500">Recommendations for each area for {childData?.name}</p>
 
               {completedAreas.map((area, idx) => {
-                const color = areaColors[area.id] || '#10b981';
+                const color = areaColors[area.area_id] || '#10b981';
                 const recs = area.recommendations || [];
                 const answers = area.answers || {};
                 return (
                   <motion.div
-                    key={area.id}
+                    key={area.area_id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.1 * idx }}
@@ -487,7 +467,7 @@ export default function LifePathway() {
                       >
                         {idx + 1}
                       </span>
-                      <h3 className="text-xl font-bold text-slate-800">{area.name}</h3>
+                      <h3 className="text-xl font-bold text-slate-800">{area.area_name}</h3>
                       <span
                         className="ml-auto text-xs px-2 py-1 rounded-full text-white font-medium"
                         style={{ backgroundColor: color }}
@@ -571,11 +551,21 @@ export default function LifePathway() {
                     try {
                       const existingChildren = await api.entities.Child.list('-created_date');
                       await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
-                      await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                      await Promise.all([
+                        api.onboarding.patch({
+                          phase: 0,
+                          clear_child_data: true,
+                          clear_personality: true,
+                          clear_recommendations: true,
+                        }),
+                        api.recommendationsProgress.patch({ step: 'intro' }),
+                        api.goals.patch({ clear_plan: true, clear_concern: true }),
+                        api.completedGrowthAreas.clear(),
+                      ]);
                     } catch {
                       /* ignore */
                     }
-                    window.location.href = createPageUrl('Onboarding');
+                    navigate(createPageUrl('Onboarding'));
                   }}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
                 >

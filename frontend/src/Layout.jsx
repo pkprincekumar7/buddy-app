@@ -7,11 +7,8 @@ import { Home, Target, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Layout({ children, currentPageName }) {
-  const { logout } = useAuth();
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, isAuthenticated, childProfiles, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [childProfiles, setChildProfiles] = useState([]);
   const [ttsEnabled, setTtsEnabled] = useState(true);
 
   // Global TTS control and cleanup on load
@@ -32,24 +29,6 @@ export default function Layout({ children, currentPageName }) {
     if (!ttsEnabled && typeof window !== 'undefined') window.speechSynthesis.cancel();
   }, [ttsEnabled]);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const authenticated = await api.auth.isAuthenticated();
-        setIsAuthenticated(authenticated);
-        if (authenticated) {
-          const currentUser = await api.auth.me();
-          setUser(currentUser);
-          const childrenData = await api.entities.Child.list('-created_date');
-          setChildProfiles(childrenData);
-        }
-      } catch (e) {
-        setIsAuthenticated(false);
-      }
-    };
-    checkAuth();
-  }, []);
-
   /** After login, load saved voice toggle from DB. */
   useEffect(() => {
     let cancelled = false;
@@ -60,9 +39,9 @@ export default function Layout({ children, currentPageName }) {
     }
     (async () => {
       try {
-        const s = await api.userAppState.get();
-        if (!cancelled && typeof s.tts_enabled === 'boolean') {
-          setTtsEnabled(s.tts_enabled);
+        const prefs = await api.preferences.get();
+        if (!cancelled && typeof prefs.tts_enabled === 'boolean') {
+          setTtsEnabled(prefs.tts_enabled);
         }
       } catch {
         /* keep default */
@@ -78,8 +57,8 @@ export default function Layout({ children, currentPageName }) {
     const next = !ttsEnabled;
     setTtsEnabled(next);
     try {
-      if (await api.auth.isAuthenticated()) {
-        await api.userAppState.patch({ tts_enabled: next });
+      if (api.auth.hasToken()) {
+        await api.preferences.patch({ tts_enabled: next });
       }
     } catch {
       /* keep optimistic toggle */

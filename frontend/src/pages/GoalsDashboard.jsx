@@ -1,49 +1,52 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 import { createPageUrl } from '@/utils';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import { api } from '@/api/client';
-import { Target, ChevronDown, ChevronUp, Sparkles, RefreshCw, CheckCircle } from 'lucide-react';
+import { Target, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { USER_APP_FULL_ONBOARDING_KEYS, patchBodyClearKeys } from '@/lib/userAppStateKeys';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [childData, setChildData] = useState(null);
-  const [user, setUser] = useState(null);
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedMonths, setExpandedMonths] = useState({ 0: true, 1: false, 2: false });
+  const [savedOnboarding, setSavedOnboarding] = useState(null);
+  const [savedCompletedAreas, setSavedCompletedAreas] = useState([]);
 
   useEffect(() => {
     const init = async () => {
       try {
-        const currentUser = await api.auth.me();
-        setUser(currentUser);
+        const [onboarding, goals, completedData, children] = await Promise.all([
+          api.onboarding.get(),
+          api.goals.get(),
+          api.completedGrowthAreas.list(),
+          api.entities.Child.list('-created_date', 1),
+        ]);
 
-        const s = await api.userAppState.get();
-
-        let child = s?.onboarding_childData && typeof s.onboarding_childData === 'object'
-          ? s.onboarding_childData
-          : null;
-        if (!child) {
-          const children = await api.entities.Child.list('-created_date', 1);
-          if (children?.length > 0) child = children[0];
-        }
+        const child = children?.[0] || onboarding?.child_data || null;
         setChildData(child);
 
-        const savedConcern = typeof s.parent_concern === 'string' ? s.parent_concern : '';
+        const areas = completedData?.areas || [];
+        setSavedOnboarding(onboarding);
+        setSavedCompletedAreas(areas);
+
+        const savedConcern = typeof goals.parent_concern === 'string' ? goals.parent_concern : '';
         setConcern(savedConcern);
 
-        if (s.goals_plan) {
-          setGoalPlan(s.goals_plan);
+        if (goals.plan) {
+          setGoalPlan(goals.plan);
           setIsLoading(false);
           return;
         }
 
-        await generateGoals(child, savedConcern);
+        await generateGoals(child, savedConcern, onboarding, areas);
       } catch (e) {
         console.error(e);
         setIsLoading(false);
@@ -52,28 +55,26 @@ export default function GoalsDashboard() {
     init();
   }, []);
 
-  const generateGoals = async (child, parentConcern) => {
+  const generateGoals = async (child, parentConcern, onboarding, completedAreas) => {
     setIsLoading(true);
-    const s = await api.userAppState.get();
-    const completedAreas = Array.isArray(s.completed_growth_areas) ? s.completed_growth_areas : [];
-    const storedProfile =
-      s.onboarding_profile && typeof s.onboarding_profile === 'object' ? s.onboarding_profile : null;
-    const vm =
-      s.onboarding_personality_analysis?.view_model &&
-      typeof s.onboarding_personality_analysis.view_model === 'object'
-        ? s.onboarding_personality_analysis.view_model
-        : null;
-    const legacyVm =
-      !vm && s.onboarding_mbti && typeof s.onboarding_mbti === 'object' ? s.onboarding_mbti : null;
-    const reuseVm = vm || legacyVm;
-    const profile =
-      storedProfile ||
-      (reuseVm?.type && reuseVm?.profile ? onboardingProfileFromViewModel(reuseVm) : null);
+    try {
+      let ob = onboarding;
+      let areas = completedAreas;
+      if (!ob || !areas) {
+        const [freshOnboarding, freshCompleted] = await Promise.all([
+          api.onboarding.get(),
+          api.completedGrowthAreas.list(),
+        ]);
+        ob = freshOnboarding;
+        areas = freshCompleted?.areas || [];
+      }
 
-    const areasContext = completedAreas.map(a => `${a.name}: ${(a.recommendations || []).join('; ')}`).join('\n');
-    const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
+      const vm = ob?.personality?.view_model;
+      const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
+      const areasContext = areas.map(a => `${a.area_name}: ${(a.recommendations || []).join('; ')}`).join('\n');
+      const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
 
-    const prompt = `Create a focused 3-month goal plan for ${child?.name || 'the child'}, age ${child?.age || 'unknown'}.
+      const prompt = `Create a focused 3-month goal plan for ${child?.name || 'the child'}, age ${child?.age || 'unknown'}.
 
 ${concernContext}
 Personality: ${profile?.personality_type || 'Unknown'}
@@ -108,32 +109,33 @@ Return JSON with this exact structure:
   ]
 }`;
 
-    const result = await api.integrations.Core.InvokeLLM({
-      prompt,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          months: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                month: { type: "number" },
-                goal: { type: "string" },
-                objective: { type: "string" },
-                periods: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      label: { type: "string" },
-                      activities: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            title: { type: "string" },
-                            objective: { type: "string" }
+      const result = await api.integrations.Core.InvokeLLM({
+        prompt,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            months: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  month: { type: "number" },
+                  goal: { type: "string" },
+                  objective: { type: "string" },
+                  periods: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        label: { type: "string" },
+                        activities: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              title: { type: "string" },
+                              objective: { type: "string" }
+                            }
                           }
                         }
                       }
@@ -144,11 +146,14 @@ Return JSON with this exact structure:
             }
           }
         }
-      }
-    });
+      });
 
-    await api.userAppState.patch({ goals_plan: result });
-    setGoalPlan(result);
+      await api.goals.patch({ plan: result });
+      setGoalPlan(result);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate plan. Please try again.');
+    }
     setIsLoading(false);
   };
 
@@ -205,10 +210,7 @@ Return JSON with this exact structure:
                   className="bg-white rounded-3xl border-2 border-slate-100 shadow-sm overflow-hidden"
                 >
                   {/* Month Header */}
-                  <button
-                    onClick={() => toggleMonth(idx)}
-                    className="w-full text-left"
-                  >
+                  <button onClick={() => toggleMonth(idx)} className="w-full text-left">
                     <div className={`bg-gradient-to-r ${color.bg} px-6 py-5 flex items-center justify-between`}>
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
@@ -273,11 +275,21 @@ Return JSON with this exact structure:
                     try {
                       const existingChildren = await api.entities.Child.list('-created_date');
                       await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
-                      await api.userAppState.patch(patchBodyClearKeys(USER_APP_FULL_ONBOARDING_KEYS));
+                      await Promise.all([
+                        api.onboarding.patch({
+                          phase: 0,
+                          clear_child_data: true,
+                          clear_personality: true,
+                          clear_recommendations: true,
+                        }),
+                        api.recommendationsProgress.patch({ step: 'intro' }),
+                        api.goals.patch({ clear_plan: true, clear_concern: true }),
+                        api.completedGrowthAreas.clear(),
+                      ]);
                     } catch {
                       /* ignore */
                     }
-                    window.location.href = createPageUrl('Onboarding');
+                    navigate(createPageUrl('Onboarding'));
                   }}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
                 >
@@ -287,8 +299,13 @@ Return JSON with this exact structure:
               <div className="flex w-full sm:justify-end">
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    api.userAppState.patch({ goals_plan: null }).then(() => generateGoals(childData, concern));
+                  onClick={async () => {
+                    try {
+                      await api.goals.patch({ clear_plan: true });
+                    } catch {
+                      /* proceed even if clearing fails */
+                    }
+                    await generateGoals(childData, concern, savedOnboarding, savedCompletedAreas);
                   }}
                   className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
                 >
