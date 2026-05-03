@@ -8,10 +8,12 @@ const NativeSpeechRecognition = typeof window !== 'undefined'
   ? (window.SpeechRecognition || window.webkitSpeechRecognition)
   : null;
 
-// Fix #3: also check MediaRecorder exists (absent on iOS < 14.3)
+// Check only that MediaRecorder exists (iOS 14.5+).
+// Do NOT check navigator.mediaDevices here — on iOS it is undefined over HTTP
+// (evaluated at module load) even though it works fine over HTTPS at runtime.
+// The actual mediaDevices availability is checked inside startMediaRecorder.
 const canMediaRecord =
   typeof window !== 'undefined' &&
-  !!navigator.mediaDevices?.getUserMedia &&
   typeof MediaRecorder !== 'undefined';
 
 // Fix #5: prefer audio/mp4 first — Safari/iOS don't support audio/webm
@@ -23,7 +25,9 @@ function getBestMimeType() {
 function extFromMimeType(mimeType) {
   if (mimeType.includes('mp4')) return 'mp4';
   if (mimeType.includes('ogg')) return 'ogg';
-  return 'webm';
+  if (mimeType.includes('webm')) return 'webm';
+  // iOS default codec is mp4/aac — safe fallback
+  return 'mp4';
 }
 
 export default function VoiceInputButton({ onTranscript, isRecording, setIsRecording }) {
@@ -56,7 +60,17 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
       onTranscript(event.results[0][0].transcript);
       setIsRecording(false);
     };
-    instance.onerror = () => setIsRecording(false);
+    // iOS 16+ Safari has webkitSpeechRecognition but can throw permission/network errors
+    instance.onerror = (e) => {
+      setIsRecording(false);
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        toast.error('Microphone access was denied. Please allow mic access and try again.');
+      } else if (e.error === 'network') {
+        toast.error('Speech recognition needs a network connection. Please try again.');
+      } else {
+        toast.error('Speech recognition failed. Please try again.');
+      }
+    };
     instance.onend = () => setIsRecording(false);
 
     recognitionRef.current = instance;
@@ -64,10 +78,17 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
       instance.start();
     } catch {
       setIsRecording(false);
+      toast.error('Could not start voice input. Please try again.');
     }
   };
 
   const startMediaRecorder = async () => {
+    // On iOS, navigator.mediaDevices is only exposed over HTTPS.
+    // Catch this at runtime with a clear message instead of hiding the button.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error('Microphone is not available. Please make sure the page is loaded over HTTPS.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = getBestMimeType();
@@ -80,7 +101,9 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
 
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const resolvedMime = recorder.mimeType || 'audio/webm';
+        // iOS Safari often reports recorder.mimeType as '' even when recording mp4.
+        // Fall back to the mimeType we requested, then 'audio/mp4' as the iOS default.
+        const resolvedMime = recorder.mimeType || mimeType || 'audio/mp4';
         const blob = new Blob(chunksRef.current, { type: resolvedMime });
         const ext = extFromMimeType(resolvedMime);
         setIsRecording(false);
@@ -98,7 +121,8 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
       };
 
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      // Use a 100ms timeslice — required on iOS Safari to reliably fire ondataavailable
+      recorder.start(100);
       setIsRecording(true);
     } catch (err) {
       // Fix #1: inform the user when mic access is denied or unavailable
