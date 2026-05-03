@@ -12,7 +12,7 @@ systemctl start docker
 systemctl enable docker
 
 # Install Docker Compose v2 plugin
-apt-get install -y docker-compose-plugin
+apt-get install -y docker-compose-v2
 
 # Allow ubuntu user to run docker without sudo
 usermod -aG docker ubuntu
