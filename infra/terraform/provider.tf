@@ -2,10 +2,10 @@ terraform {
   required_version = ">= 1.13.0"
 
   backend "s3" {
-    bucket         = "person-deployment-bucket"
-    key            = "terraform-state-files/buddy/dev/ap-south-1/terraform.tfstate"
-    region         = "ap-south-1"
-    dynamodb_table = "terraform-locks"
+    bucket       = "person-deployment-bucket"
+    key          = "terraform-state-files/buddy/dev/ap-south-1/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
   }
 
   required_providers {
