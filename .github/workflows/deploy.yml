@@ -66,6 +66,8 @@ jobs:
             --parameters '{"commands":[
               "set -e",
               "if [ ! -d /home/ubuntu/buddy-app ]; then sudo -u ubuntu git clone https://github.com/pkprincekumar7/buddy-app.git /home/ubuntu/buddy-app; else sudo -u ubuntu git -C /home/ubuntu/buddy-app pull; fi",
+              "printf \"JWT_SECRET=${{ secrets.JWT_SECRET }}\nGOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}\nOPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}\nOPENAI_MODEL=${{ secrets.OPENAI_MODEL }}\nCORS_ORIGINS=${{ secrets.CORS_ORIGINS }}\nVITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}\n\" > /home/ubuntu/buddy-app/.env",
+              "chmod 600 /home/ubuntu/buddy-app/.env",
               "cd /home/ubuntu/buddy-app && docker compose down && docker compose up --build -d"
             ]}' \
             --output text \
