@@ -65,7 +65,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{"commands":[
               "set -e",
-              "if [ ! -d /home/ubuntu/buddy-app ]; then git clone https://github.com/pkprincekumar7/buddy-app.git /home/ubuntu/buddy-app && chown -R ubuntu:ubuntu /home/ubuntu/buddy-app; else cd /home/ubuntu/buddy-app && git pull; fi",
+              "if [ ! -d /home/ubuntu/buddy-app ]; then sudo -u ubuntu git clone https://github.com/pkprincekumar7/buddy-app.git /home/ubuntu/buddy-app; else sudo -u ubuntu git -C /home/ubuntu/buddy-app pull; fi",
               "cd /home/ubuntu/buddy-app && docker compose down && docker compose up --build -d"
             ]}' \
             --output text \
