@@ -500,8 +500,18 @@ Generate:
 
   const handleWizardStartOver = async () => {
     try {
-      const existingChildren = await api.entities.Child.list('-created_date');
-      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
+      // Delete only the child currently being onboarded, matched by name (same
+      // logic as handleComplete). If the child hasn't been saved to DB yet
+      // (mid-wizard), no deletion happens — which is the correct behaviour.
+      if (childData?.name) {
+        const existingChildren = await api.entities.Child.list('-created_date');
+        const match = existingChildren?.find(
+          c => c.name?.toLowerCase() === childData.name.toLowerCase()
+        );
+        if (match) {
+          try { await api.entities.Child.delete(match.id); } catch { /* 404 ok */ }
+        }
+      }
       await Promise.all([
         api.onboarding.patch({
           phase: 0,
@@ -513,6 +523,7 @@ Generate:
         api.goals.patch({ clear_plan: true, clear_concern: true }),
         api.completedGrowthAreas.clear(),
       ]);
+      queryClient.invalidateQueries({ queryKey: ['children'] });
       queryClient.invalidateQueries({ queryKey: ['onboarding'] });
     } catch {
       /* ignore */

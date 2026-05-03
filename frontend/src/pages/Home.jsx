@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 export default function Home() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [isResetting, setIsResetting] = useState(false);
   const { data: children = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date')
@@ -36,24 +38,39 @@ export default function Home() {
   };
 
   const handleStartFresh = async () => {
+    if (isResetting) return;                // guard against double-click
+    setIsResetting(true);
     try {
+      // List children, then delete them one-by-one (sequential to avoid DB lock issues).
+      // Array.isArray guard: request() returns undefined (not []) when the response
+      // lacks a JSON content-type, which would throw "existingChildren.map is not a function".
       const existingChildren = await api.entities.Child.list('-created_date');
-      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
-      await Promise.all([
-        api.onboarding.patch({
-          phase: 0,
-          clear_child_data: true,
-          clear_personality: true,
-          clear_recommendations: true,
-        }),
-        api.recommendationsProgress.patch({ step: 'intro' }),
-        api.goals.patch({ clear_plan: true, clear_concern: true }),
-        api.completedGrowthAreas.clear(),
-      ]);
+      for (const c of (Array.isArray(existingChildren) ? existingChildren : [])) {
+        try {
+          await api.entities.Child.delete(c.id);
+        } catch {
+          // ignore 404s — child may have already been deleted
+        }
+      }
+
+      // Reset all user-level state sequentially.
+      await api.onboarding.patch({
+        phase: 0,
+        clear_child_data: true,
+        clear_personality: true,
+        clear_recommendations: true,
+      });
+      await api.recommendationsProgress.patch({ step: 'intro' });
+      await api.goals.patch({ clear_plan: true, clear_concern: true });
+      await api.completedGrowthAreas.clear();
+
+      queryClient.invalidateQueries({ queryKey: ['children'] });
       queryClient.invalidateQueries({ queryKey: ['onboarding'] });
       navigate(createPageUrl('Onboarding'));
-    } catch {
+    } catch (e) {
+      console.error('[Start Fresh] Reset failed:', e);
       toast.error('Reset failed. Please try again.');
+      setIsResetting(false);               // re-enable only on failure; success navigates away
     }
   };
   
@@ -122,12 +139,13 @@ export default function Home() {
                     Continue Onboarding
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
-                  <Button 
+                  <Button
                     onClick={handleStartFresh}
+                    disabled={isResetting}
                     variant="outline"
                     className="h-14 px-8 text-lg rounded-2xl border-2 border-teal-500"
                   >
-                    Start Fresh
+                    {isResetting ? 'Resetting…' : 'Start Fresh'}
                   </Button>
                 </>
               ) : (

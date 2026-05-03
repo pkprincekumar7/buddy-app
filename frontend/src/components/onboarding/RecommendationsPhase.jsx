@@ -1634,7 +1634,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <Button
                 onClick={async () => {
                   if (!selectedArea) return;
-                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
+                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, {
+                    selections: childActivitySelections,
+                    results: childGameResults,
+                  });
                   if (currentAreaIndex < growthAreas.length - 1) {
                     setCurrentAreaIndex(currentAreaIndex + 1);
                     setStep('area_selection');
@@ -1657,7 +1660,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 variant="outline"
                 onClick={async () => {
                   if (!selectedArea) return;
-                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations);
+                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, {
+                    selections: childActivitySelections,
+                    results: childGameResults,
+                  });
                   navigate(createPageUrl('LifePathway'), {
               replace: true,
             });

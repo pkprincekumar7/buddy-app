@@ -549,8 +549,9 @@ export default function LifePathway() {
                   variant="outline"
                   onClick={async () => {
                     try {
-                      const existingChildren = await api.entities.Child.list('-created_date');
-                      await Promise.all(existingChildren.map((c) => api.entities.Child.delete(c.id)));
+                      if (childData?.id) {
+                        try { await api.entities.Child.delete(childData.id); } catch { /* 404 ok */ }
+                      }
                       await Promise.all([
                         api.onboarding.patch({
                           phase: 0,

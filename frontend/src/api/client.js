@@ -41,7 +41,10 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   }
 
   const ct = res.headers.get('content-type');
-  if (ct && ct.includes('application/json')) return res.json();
+  if (ct && ct.includes('application/json')) {
+    const text = await res.text();
+    return text ? JSON.parse(text) : undefined;
+  }
   return undefined;
 }
 
