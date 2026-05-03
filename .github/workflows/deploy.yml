@@ -23,7 +23,6 @@ on:
 
 permissions:
   id-token: write
-  contents: read
 
 concurrency:
   group: deploy-buddy-${{ inputs.environment }}-${{ inputs.aws_region }}
@@ -33,17 +32,9 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
 
     steps:
-      - name: Validate ROLE_ARN secret
-        env:
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
-        run: |
-          if [ -z "$ROLE_ARN" ]; then
-            echo "ROLE_ARN secret is empty or not set for this environment."
-            exit 1
-          fi
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
