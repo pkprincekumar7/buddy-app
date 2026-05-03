@@ -201,6 +201,8 @@ export default function ConversationalOnboarding({
     
     const voice = pickPreferredVoice();
     if (voice) utterance.voice = voice;
+    // iOS Safari sometimes pauses synthesis; resume before speaking
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
   };
 

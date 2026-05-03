@@ -3,6 +3,7 @@ import { createPageUrl } from "@/utils";
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
+import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { Home, Target, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,6 +15,18 @@ export default function Layout({ children, currentPageName }) {
   // Global TTS control and cleanup on load
   useEffect(() => {
     if (typeof window !== 'undefined') window.speechSynthesis.cancel();
+  }, []);
+
+  // iOS Safari blocks speechSynthesis unless it's first triggered from a user gesture.
+  // Speak a silent utterance on the very first tap/click to unlock it for async use.
+  useEffect(() => {
+    const unlock = () => unlockIOSSpeechSynthesis();
+    document.addEventListener('touchstart', unlock, { once: true });
+    document.addEventListener('click', unlock, { once: true });
+    return () => {
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    };
   }, []);
 
   // Stop TTS when tab is hidden

@@ -1,4 +1,15 @@
 /**
+ * iOS Safari requires speechSynthesis to be triggered from a user gesture.
+ * Call this once on the first user interaction to unlock the API for async use.
+ */
+export function unlockIOSSpeechSynthesis() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const utterance = new SpeechSynthesisUtterance('');
+  utterance.volume = 0;
+  window.speechSynthesis.speak(utterance);
+}
+
+/**
  * Picks the best available English TTS voice using a consistent preference waterfall.
  * Must be called just before speaking — the browser voice list may be empty on first load.
  * @returns {SpeechSynthesisVoice | null}

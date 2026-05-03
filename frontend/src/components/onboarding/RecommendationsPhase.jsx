@@ -359,6 +359,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     utterance.volume = 1;
     const voice = pickPreferredVoice();
     if (voice) utterance.voice = voice;
+    // iOS Safari sometimes pauses synthesis; resume before speaking
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

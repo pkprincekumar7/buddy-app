@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api_routes import router as api_router
 from app.database import Base, engine
 from app.limiter import limiter
+from app.routers.audio import router as audio_router
 from app.routers.llm import router as llm_router
 from app.settings import settings
 
@@ -33,6 +34,7 @@ app.add_middleware(
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(llm_router, prefix="/api/v1")
+app.include_router(audio_router, prefix="/api/v1")
 
 
 @app.get("/health")

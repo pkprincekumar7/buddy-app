@@ -170,6 +170,15 @@ export const api = {
     },
   },
 
+  audio: {
+    /** Send a recorded audio Blob to Whisper for transcription. */
+    transcribe(blob, filename = 'recording.webm') {
+      const form = new FormData();
+      form.append('audio', blob, filename);
+      return request('/audio/transcribe', { method: 'POST', body: form });
+    },
+  },
+
   /** User preferences (TTS toggle etc.) */
   preferences: {
     get: () => request('/user/preferences'),

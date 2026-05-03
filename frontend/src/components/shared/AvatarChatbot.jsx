@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { X, Send, Volume2, VolumeX, Minimize2, Maximize2, Mic, MicOff } from 'lucide-react';
+import { X, Send, Volume2, VolumeX, Minimize2, Maximize2, Mic } from 'lucide-react';
+import VoiceInputButton from '@/components/shared/VoiceInput';
 import { toast } from 'sonner';
 import { pickPreferredVoice } from '@/lib/tts';
 import { api } from '@/api/client';
@@ -16,7 +17,6 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
   const [isMinimized, setIsMinimized] = useState(false);
   const [avatarState, setAvatarState] = useState('idle'); // idle, talking, thinking, listening
   const [isRecording, setIsRecording] = useState(false);
-  const [recognition, setRecognition] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -37,46 +37,21 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
       if (!cancelled) addBotMessage(greeting);
     })();
 
-    // Initialize speech recognition
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognitionInstance = new SpeechRecognition();
-        recognitionInstance.continuous = false;
-        recognitionInstance.interimResults = false;
-        recognitionInstance.lang = 'en-US';
-
-        recognitionInstance.onstart = () => {
-          setIsRecording(true);
-          setAvatarState('listening');
-        };
-
-        recognitionInstance.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          setInput(transcript);
-          setIsRecording(false);
-          setAvatarState('idle');
-        };
-
-        recognitionInstance.onerror = () => {
-          setIsRecording(false);
-          setAvatarState('idle');
-        };
-
-        recognitionInstance.onend = () => {
-          setIsRecording(false);
-          setAvatarState('idle');
-        };
-
-        setRecognition(recognitionInstance);
-      }
-    }
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Sync recording state → avatar listening indicator
+  useEffect(() => {
+    setAvatarState(prev => {
+      if (isRecording) return 'listening';
+      if (prev === 'listening') return 'idle';
+      return prev;
+    });
+  }, [isRecording]);
 
   const speak = (text) => {
     if (!voiceEnabledRef.current || typeof window === 'undefined') return;
@@ -92,26 +67,15 @@ export default function AvatarChatbot({ childName, childData, isParentMode = tru
     
     utterance.onstart = () => setAvatarState('talking');
     utterance.onend = () => setAvatarState('idle');
-    
+
+    // iOS Safari sometimes pauses synthesis; resume before speaking
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
   };
 
   const addBotMessage = (text) => {
     setMessages(prev => [...prev, { role: 'bot', content: text }]);
     speak(text);
-  };
-
-  const toggleRecording = () => {
-    if (!recognition) {
-      toast.error('Speech recognition is not supported in your browser');
-      return;
-    }
-
-    if (isRecording) {
-      recognition.stop();
-    } else {
-      recognition.start();
-    }
   };
 
   const handleSend = async () => {
@@ -311,14 +275,11 @@ Respond in a warm, encouraging way. Keep response under 3 sentences. ${isParentM
       {/* Input */}
       <div className="p-3 border-t border-slate-200 bg-white">
         <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-2">
-          <Button
-            type="button"
-            onClick={toggleRecording}
-            size="icon"
-            className={`h-10 w-10 rounded-xl ${isRecording ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-slate-200 hover:bg-slate-300'}`}
-          >
-            {isRecording ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-slate-600" />}
-          </Button>
+          <VoiceInputButton
+            onTranscript={(t) => setInput(t)}
+            isRecording={isRecording}
+            setIsRecording={setIsRecording}
+          />
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}

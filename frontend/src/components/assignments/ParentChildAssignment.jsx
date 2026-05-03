@@ -86,6 +86,8 @@ export default function ParentChildAssignment({ childName, onComplete, currentAs
     if (ttsEnabledRef.current && typeof window !== 'undefined' && window.speechSynthesis) {
       const utterance = new SpeechSynthesisUtterance(assignment.prompt);
       utterance.rate = 0.9;
+      // iOS Safari sometimes pauses synthesis; resume before speaking
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
       window.speechSynthesis.speak(utterance);
     }
   };
