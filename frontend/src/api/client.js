@@ -1,9 +1,6 @@
 const ACCESS_KEY = 'access_token';
 const REFRESH_KEY = 'refresh_token';
 const storage = typeof window !== 'undefined' ? window.sessionStorage : null;
-const REFRESH_INTERVAL_MS = 25 * 60 * 1000;
-
-let refreshIntervalId = null;
 
 function joinApi(path) {
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -11,7 +8,17 @@ function joinApi(path) {
   return `${base}/api/v1${suffix}`;
 }
 
-async function request(path, { method = 'GET', body, auth = true } = {}) {
+// Single in-flight refresh promise shared across concurrent requests.
+let refreshPromise = null;
+
+function ensureRefreshed() {
+  if (!refreshPromise) {
+    refreshPromise = refreshTokenPair().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
+async function request(path, { method = 'GET', body, auth = true } = {}, _retry = false) {
   const headers = {};
   if (!(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
@@ -26,6 +33,22 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     headers,
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   });
+
+  // On first 401, try refreshing once then replay the original request.
+  if (res.status === 401 && auth && !_retry) {
+    try {
+      await ensureRefreshed();
+      return request(path, { method, body, auth }, true);
+    } catch {
+      clearStoredTokens();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
+      }
+      const err = new Error('Session expired');
+      err.status = 401;
+      throw err;
+    }
+  }
 
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
@@ -82,29 +105,7 @@ async function refreshTokenPair() {
   return data;
 }
 
-function startTokenRefreshLoop() {
-  if (typeof window === 'undefined') return;
-  stopTokenRefreshLoop();
-  refreshIntervalId = window.setInterval(() => {
-    refreshTokenPair().catch(() => {
-      stopTokenRefreshLoop();
-      clearStoredTokens();
-      window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
-    });
-  }, REFRESH_INTERVAL_MS);
-}
-
-function stopTokenRefreshLoop() {
-  if (refreshIntervalId !== null) {
-    clearInterval(refreshIntervalId);
-    refreshIntervalId = null;
-  }
-}
-
 export const api = {
-  startTokenRefreshLoop,
-  stopTokenRefreshLoop,
-
   auth: {
     /** Fast synchronous check — token presence only, no network. Use as a guard in components. */
     hasToken() {
@@ -121,7 +122,6 @@ export const api = {
     },
 
     logout() {
-      stopTokenRefreshLoop();
       clearStoredTokens();
     },
 
@@ -139,7 +139,6 @@ export const api = {
         body: { email, password, full_name: full_name || 'Parent' },
       });
       storeTokensFromResponse(data);
-      startTokenRefreshLoop();
     },
 
     async login(email, password) {
@@ -149,7 +148,6 @@ export const api = {
         body: { email, password },
       });
       storeTokensFromResponse(data);
-      startTokenRefreshLoop();
     },
 
     async google(id_token) {
@@ -159,7 +157,6 @@ export const api = {
         body: { id_token },
       });
       storeTokensFromResponse(data);
-      startTokenRefreshLoop();
     },
   },
 

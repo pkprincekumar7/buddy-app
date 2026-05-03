@@ -198,6 +198,10 @@ class RecommendationsProgress(BaseModel):
 class GoalsActivity(BaseModel):
     title: str
     objective: str
+    completed: bool | None = None
+    score: int | None = None
+    ai_feedback: str | None = None
+    parent_feedback: str | None = None
 
 
 class GoalsPeriod(BaseModel):

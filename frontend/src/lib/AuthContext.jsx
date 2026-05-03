@@ -26,13 +26,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const hasSession = await api.auth.isAuthenticated();
       if (!hasSession) {
-        api.stopTokenRefreshLoop();
         setUser(null);
         setIsAuthenticated(false);
         return;
       }
 
-      api.startTokenRefreshLoop();
       const currentUser = await api.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
@@ -40,7 +38,6 @@ export const AuthProvider = ({ children }) => {
       setChildProfiles(children);
     } catch (error) {
       console.error('Auth check failed:', error);
-      api.stopTokenRefreshLoop();
       const status = error?.status;
       if (status === 401) {
         api.auth.logout();
