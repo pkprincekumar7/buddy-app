@@ -1,5 +1,5 @@
 resource "aws_instance" "buddy_ec2" {
-  ami           = data.aws_ami.ubuntu.id
+  ami           = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type = var.instance_type
   subnet_id     = aws_subnet.public_1.id
 
