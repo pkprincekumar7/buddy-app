@@ -34,7 +34,7 @@ resource "aws_lb_target_group" "frontend" {
 
 resource "aws_lb_target_group" "backend" {
   name     = "${var.app_name}-backend-tg"
-  port     = 8080
+  port     = 8000
   protocol = "HTTP"
   vpc_id   = aws_vpc.buddy_vpc.id
 
@@ -62,7 +62,7 @@ resource "aws_lb_target_group_attachment" "frontend_attach" {
 resource "aws_lb_target_group_attachment" "backend_attach" {
   target_group_arn = aws_lb_target_group.backend.arn
   target_id        = aws_instance.buddy_ec2.id
-  port             = 8080
+  port             = 8000
 }
 
 # ── Listeners ────────────────────────────────────────────────────────────────
