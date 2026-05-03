@@ -1,0 +1,109 @@
+name: Terraform
+run-name: Terraform (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action: plan, apply, destroy"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-buddy-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.13.0"
+  TF_VAR_aws_region: ${{ inputs.aws_region }}
+  TF_VAR_environment: ${{ inputs.environment }}
+  TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
+  TF_VAR_subdomain: ${{ secrets.SUBDOMAIN }}
+  TF_VAR_hosted_zone_id: ${{ secrets.HOSTED_ZONE_ID }}
+  TF_VAR_acm_certificate_arn: ${{ secrets.ACM_CERTIFICATE_ARN }}
+  TF_VAR_allowed_ssh_cidr: ${{ secrets.ALLOWED_SSH_CIDR }}
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate ROLE_ARN secret
+        env:
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE_ARN" ]; then
+            echo "ROLE_ARN secret is empty or not set for this environment."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan'
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve -input=false
+
+      - name: Terraform Plan (destroy)
+        if: inputs.action == 'destroy'
+        run: terraform plan -destroy -input=false -no-color
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform destroy -auto-approve -input=false

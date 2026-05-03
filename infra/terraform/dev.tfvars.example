@@ -1,0 +1,21 @@
+# ── Supplied via GitHub Actions workflow inputs ───────────────────────────────
+# aws_region          -> workflow input
+# environment         -> workflow input
+#
+# ── Supplied via GitHub Actions secrets (do not set here) ────────────────────
+# domain_name         -> secret: DOMAIN_NAME
+# subdomain           -> secret: SUBDOMAIN
+# hosted_zone_id      -> secret: HOSTED_ZONE_ID
+# acm_certificate_arn -> secret: ACM_CERTIFICATE_ARN
+
+# ── General ──────────────────────────────────────────────────────────────────
+app_name = "buddy"
+
+# ── Networking ───────────────────────────────────────────────────────────────
+vpc_cidr             = "10.0.0.0/16"
+public_subnet_1_cidr = "10.0.1.0/24"
+public_subnet_2_cidr = "10.0.2.0/24"
+
+# ── EC2 ──────────────────────────────────────────────────────────────────────
+instance_type    = "t2.small"
+allowed_ssh_cidr = "1.2.3.4/32" # replace with your actual IP
