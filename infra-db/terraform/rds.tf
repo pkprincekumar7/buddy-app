@@ -9,7 +9,7 @@ resource "aws_db_subnet_group" "buddy360_db" {
 
 resource "aws_security_group" "rds_sg" {
   name        = "${var.app_name}-rds-sg"
-  description = "Allow PostgreSQL from EC2 only — ingress rule managed by infra/terraform"
+  description = "Allow PostgreSQL from EC2 only - ingress rule managed by infra/terraform"
   vpc_id      = aws_vpc.buddy360_vpc.id
 
   tags = {

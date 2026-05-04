@@ -14,7 +14,7 @@ variable "environment" {
   type        = string
 }
 
-# ── Networking ───────────────────────────────────────────────────────────────
+# -- Networking ---------------------------------------------------------------
 
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
@@ -46,7 +46,7 @@ variable "private_subnet_2_cidr" {
   default     = "10.0.4.0/24"
 }
 
-# ── RDS ──────────────────────────────────────────────────────────────────────
+# -- RDS ----------------------------------------------------------------------
 
 variable "db_identifier" {
   description = "RDS instance identifier (shown in the AWS console)"
@@ -79,7 +79,7 @@ variable "db_allocated_storage" {
 }
 
 variable "db_deletion_protection" {
-  description = "Enable deletion protection — set true for staging and production"
+  description = "Enable deletion protection  -  set true for staging and production"
   type        = bool
   default     = false
 }

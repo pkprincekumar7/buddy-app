@@ -77,6 +77,7 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           {
             printf 'JWT_SECRET=%s\n'           "$JWT_SECRET"
@@ -96,6 +97,7 @@ jobs:
             printf 'POSTGRES_DB=%s\n'          "$POSTGRES_DB"
           } | base64 -w 0 > /tmp/dotenv_b64
           echo "b64=$(cat /tmp/dotenv_b64)" >> $GITHUB_OUTPUT
+          echo "pat_b64=$(echo -n "$GH_PAT" | base64 -w 0)" >> $GITHUB_OUTPUT
 
       - name: Deploy via SSM
         id: ssm
@@ -105,10 +107,11 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{"commands":[
               "set -e",
-              "if [ ! -d /home/ubuntu/buddy-app ]; then sudo -u ubuntu git clone https://github.com/pkprincekumar7/buddy-app.git /home/ubuntu/buddy-app; else sudo -u ubuntu git -C /home/ubuntu/buddy-app pull; fi",
-              "echo ${{ steps.dotenv.outputs.b64 }} | base64 -d > /home/ubuntu/buddy-app/.env",
-              "chmod 600 /home/ubuntu/buddy-app/.env",
-              "cd /home/ubuntu/buddy-app && docker compose down && docker compose up --build -d"
+              "GH_PAT=$(echo ${{ steps.dotenv.outputs.pat_b64 }} | base64 -d)",
+              "if [ ! -d /home/ubuntu/${{ secrets.GH_REPO_NAME }} ]; then sudo -u ubuntu git clone \"https://oauth2:${GH_PAT}@github.com/${{ secrets.GH_REPO_OWNER }}/${{ secrets.GH_REPO_NAME }}.git\" /home/ubuntu/${{ secrets.GH_REPO_NAME }}; else sudo -u ubuntu git -C /home/ubuntu/${{ secrets.GH_REPO_NAME }} remote set-url origin \"https://oauth2:${GH_PAT}@github.com/${{ secrets.GH_REPO_OWNER }}/${{ secrets.GH_REPO_NAME }}.git\" && sudo -u ubuntu git -C /home/ubuntu/${{ secrets.GH_REPO_NAME }} pull; fi",
+              "echo ${{ steps.dotenv.outputs.b64 }} | base64 -d > /home/ubuntu/${{ secrets.GH_REPO_NAME }}/.env",
+              "chmod 600 /home/ubuntu/${{ secrets.GH_REPO_NAME }}/.env",
+              "cd /home/ubuntu/${{ secrets.GH_REPO_NAME }} && docker compose down && docker compose up --build -d"
             ]}' \
             --output text \
             --query "Command.CommandId")

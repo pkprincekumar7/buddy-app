@@ -12,7 +12,7 @@ resource "aws_vpc" "buddy360_vpc" {
   }
 }
 
-# ── Public subnets (EC2 / ALB) ───────────────────────────────────────────────
+# -- Public subnets (EC2 / ALB) -----------------------------------------------
 
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.buddy360_vpc.id
@@ -68,7 +68,7 @@ resource "aws_route_table_association" "public_2" {
   route_table_id = aws_route_table.public_rt.id
 }
 
-# ── Private subnets (RDS) ────────────────────────────────────────────────────
+# -- Private subnets (RDS) ----------------------------------------------------
 
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.buddy360_vpc.id

@@ -358,7 +358,7 @@ The workflow:
 2. Sends an SSM Run Command that: git-clones or git-pulls the repo, writes `/home/ubuntu/buddy-app/.env` from secrets, then runs `docker compose down && docker compose up --build -d`.
 3. Polls the SSM command status (up to 10 minutes) and prints stdout/stderr on completion.
 
-> **If you fork this repo**, update the hardcoded clone URL in [`deploy.yml`](.github/workflows/deploy.yml) (the `git clone` line) to point to your own repository before running the workflow.
+> **If you fork this repo**, update the `GH_REPO_OWNER` and `GH_REPO_NAME` GitHub secrets to point to your own repository before running the workflow.
 
 ### Required GitHub secrets
 
@@ -393,6 +393,22 @@ Configure these under **Settings → Environments → `<env>` → Secrets** (one
 | `POSTGRES_USER` | Master username — `postgre` (default) |
 | `POSTGRES_PASSWORD` | Retrieved from Secrets Manager after first `terraform-db apply` (see above) |
 | `POSTGRES_DB` | Database name — `buddy360` (default) |
+| `GH_PAT` | Fine-grained personal access token for cloning this repo onto EC2 (see below) |
+| `GH_REPO_OWNER` | GitHub username or org that owns the repository, e.g. `pkprincekumar7` |
+| `GH_REPO_NAME` | Repository name, e.g. `buddy-app` |
+
+**Generating `GH_PAT`:**
+
+The deploy workflow clones this repository directly onto the EC2 instance via SSM. A fine-grained PAT with read-only access allows the repo to stay **private at all times** — no need to make it public during deploys.
+
+1. Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**.
+2. Click **Generate new token**.
+3. Set a token name (e.g. `buddy360-deploy`) and an expiration.
+4. Under **Resource owner**, select your account or org.
+5. Under **Repository access**, choose **Only select repositories** and select `buddy-app`.
+6. Under **Permissions → Repository permissions**, set **Contents** to **Read-only**.
+7. Click **Generate token** and copy the value immediately — it is only shown once.
+8. Store it as the `GH_PAT` secret under **Settings → Environments → `<env>` → Secrets**.
 
 At least one of the three LLM API keys must be set to enable LLM features.
 
@@ -447,21 +463,9 @@ terraform plan -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south
 terraform apply -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
 ```
 
-**Step 4 — Make the GitHub repository public**
-
-The `deploy.yml` workflow git-clones the repo directly onto the EC2 instance. The repository must be **public** for the clone to succeed.
-
-Go to **GitHub → Settings → Danger Zone → Change repository visibility → Public**.
-
-**Step 5 — Deploy**
+**Step 4 — Deploy**
 
 Via GitHub Actions: **Actions → Deploy → Run workflow** → select environment and region.
-
-**Step 6 — Make the GitHub repository private** (after deployment completes)
-
-Once deployment is confirmed working, switch the repository back to private.
-
-Go to **GitHub → Settings → Danger Zone → Change repository visibility → Private**.
 
 ---
 

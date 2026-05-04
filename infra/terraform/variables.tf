@@ -19,7 +19,7 @@ variable "environment" {
   type        = string
 }
 
-# ── EC2 ──────────────────────────────────────────────────────────────────────
+# -- EC2 ----------------------------------------------------------------------
 
 variable "instance_type" {
   description = "EC2 instance type"
@@ -34,12 +34,12 @@ variable "allowed_ssh_cidr" {
 }
 
 variable "key_name" {
-  description = "EC2 key pair name for SSH access (optional — leave null if SSM Session Manager is your only access method)"
+  description = "EC2 key pair name for SSH access (optional  -  leave null if SSM Session Manager is your only access method)"
   type        = string
   default     = null
 }
 
-# ── DNS / TLS ─────────────────────────────────────────────────────────────────
+# -- DNS / TLS -----------------------------------------------------------------
 
 variable "domain_name" {
   description = "Root domain name (e.g. sample.com)"
