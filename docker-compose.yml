@@ -30,13 +30,17 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-buddy360}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buddy360_dev}
       POSTGRES_DB: ${POSTGRES_DB:-buddy360}
-      JWT_SECRET: ${JWT_SECRET:-dev-docker-only-change-me-32-chars-min!!}
+      JWT_SECRET: ${JWT_SECRET}
       # Access token (~30m) and refresh token (~24h); refresh requires both tokens still valid.
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
       JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       # Browser hits UI at http://localhost:${FRONTEND_PORT:-5173}; API is proxied via nginx as /api
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
     ports:

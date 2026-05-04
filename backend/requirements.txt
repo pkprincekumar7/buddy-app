@@ -7,6 +7,8 @@ passlib[bcrypt]==1.7.4
 bcrypt>=4.0.1,<5
 python-multipart==0.0.20
 openai>=1.59.0
+anthropic>=0.40.0
+google-generativeai>=0.8.0
 pydantic-settings==2.7.1
 # [requests] is required for google.auth.transport.requests.Request() (JWKS fetch for Google ID tokens)
 google-auth[requests]>=2.29.0

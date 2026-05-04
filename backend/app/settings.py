@@ -25,20 +25,25 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
     )
-
-    @field_validator("openai_api_key")
-    @classmethod
-    def warn_if_openai_key_missing(cls, v: str) -> str:
-        if not v:
-            log.warning(
-                "OPENAI_API_KEY is not set — LLM features will be disabled. "
-                "Add it to backend/.env to enable them."
-            )
-        return v
-
     openai_model: str = Field(
         default="gpt-4o-mini",
         validation_alias=AliasChoices("OPENAI_MODEL", "openai_model"),
+    )
+    anthropic_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    )
+    anthropic_model: str = Field(
+        default="claude-sonnet-4-6",
+        validation_alias=AliasChoices("ANTHROPIC_MODEL", "anthropic_model"),
+    )
+    gemini_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"),
+    )
+    gemini_model: str = Field(
+        default="gemini-1.5-flash",
+        validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"),
     )
     jwt_secret: str = Field(
         validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
@@ -95,6 +100,15 @@ class Settings(BaseSettings):
         return v
 
     jwt_algorithm: str = "HS256"
+
+    @model_validator(mode="after")
+    def warn_if_no_llm_key(self):
+        if not any([self.openai_api_key, self.anthropic_api_key, self.gemini_api_key]):
+            log.warning(
+                "No LLM API key is set — LLM features will be disabled. "
+                "Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY."
+            )
+        return self
 
     @model_validator(mode="after")
     def assemble_database_url(self):
