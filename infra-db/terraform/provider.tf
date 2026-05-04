@@ -6,7 +6,7 @@ terraform {
     region       = "us-east-1"
     use_lockfile = true
     # key is supplied at terraform init via -backend-config
-    # Pattern: terraform-state-files/buddy360/{env}/app/{region}/terraform.tfstate
+    # Pattern: terraform-state-files/buddy360/{env}/db/{region}/terraform.tfstate
   }
 
   required_providers {

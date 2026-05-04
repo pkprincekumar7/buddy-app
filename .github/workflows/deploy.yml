@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-buddy-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: deploy-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
   cancel-in-progress: false
 
 jobs:
@@ -46,16 +46,56 @@ jobs:
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
             --filters \
-              "Name=tag:Name,Values=buddy-ec2" \
+              "Name=tag:Name,Values=buddy360-ec2" \
               "Name=tag:Environment,Values=${{ inputs.environment }}" \
               "Name=instance-state-name,Values=running" \
             --query "Reservations[0].Instances[0].InstanceId" \
             --output text)
           if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "No running buddy-ec2 instance found."
+            echo "No running buddy360-ec2 instance found."
             exit 1
           fi
           echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+
+      # Secrets are received via env: so special characters (quotes, backslashes, $) cannot
+      # corrupt the shell command or JSON payload. The resulting .env is base64-encoded so
+      # only [A-Za-z0-9+/=] is embedded in the SSM parameters JSON.
+      - name: Build .env
+        id: dotenv
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+        run: |
+          {
+            printf 'JWT_SECRET=%s\n'           "$JWT_SECRET"
+            printf 'GOOGLE_CLIENT_ID=%s\n'     "$GOOGLE_CLIENT_ID"
+            printf 'VITE_GOOGLE_CLIENT_ID=%s\n' "$VITE_GOOGLE_CLIENT_ID"
+            printf 'OPENAI_API_KEY=%s\n'       "$OPENAI_API_KEY"
+            printf 'OPENAI_MODEL=%s\n'         "$OPENAI_MODEL"
+            printf 'ANTHROPIC_API_KEY=%s\n'    "$ANTHROPIC_API_KEY"
+            printf 'ANTHROPIC_MODEL=%s\n'      "$ANTHROPIC_MODEL"
+            printf 'GEMINI_API_KEY=%s\n'       "$GEMINI_API_KEY"
+            printf 'GEMINI_MODEL=%s\n'         "$GEMINI_MODEL"
+            printf 'CORS_ORIGINS=%s\n'         "$CORS_ORIGINS"
+            printf 'POSTGRES_HOST=%s\n'        "$POSTGRES_HOST"
+            printf 'POSTGRES_PORT=5432\n'
+            printf 'POSTGRES_USER=%s\n'        "$POSTGRES_USER"
+            printf 'POSTGRES_PASSWORD=%s\n'    "$POSTGRES_PASSWORD"
+            printf 'POSTGRES_DB=%s\n'          "$POSTGRES_DB"
+          } | base64 -w 0 > /tmp/dotenv_b64
+          echo "b64=$(cat /tmp/dotenv_b64)" >> $GITHUB_OUTPUT
 
       - name: Deploy via SSM
         id: ssm
@@ -66,7 +106,7 @@ jobs:
             --parameters '{"commands":[
               "set -e",
               "if [ ! -d /home/ubuntu/buddy-app ]; then sudo -u ubuntu git clone https://github.com/pkprincekumar7/buddy-app.git /home/ubuntu/buddy-app; else sudo -u ubuntu git -C /home/ubuntu/buddy-app pull; fi",
-              "printf \"JWT_SECRET=${{ secrets.JWT_SECRET }}\nGOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}\nOPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}\nOPENAI_MODEL=${{ secrets.OPENAI_MODEL }}\nCORS_ORIGINS=${{ secrets.CORS_ORIGINS }}\nVITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}\nANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}\nANTHROPIC_MODEL=${{ secrets.ANTHROPIC_MODEL }}\nGEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}\nGEMINI_MODEL=${{ secrets.GEMINI_MODEL }}\n\" > /home/ubuntu/buddy-app/.env",
+              "echo ${{ steps.dotenv.outputs.b64 }} | base64 -d > /home/ubuntu/buddy-app/.env",
               "chmod 600 /home/ubuntu/buddy-app/.env",
               "cd /home/ubuntu/buddy-app && docker compose down && docker compose up --build -d"
             ]}' \

@@ -244,6 +244,7 @@ export const api = {
       },
       create: (payload) => request('/parent-insights', { method: 'POST', body: payload }),
       update: (id, body) => request(`/parent-insights/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
+      delete: (id) => request(`/parent-insights/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
 
     Reflection: {
@@ -254,6 +255,7 @@ export const api = {
         return request(`/reflections?${qs.toString()}`);
       },
       create: (payload) => request('/reflections', { method: 'POST', body: payload }),
+      delete: (id) => request(`/reflections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
   },
 

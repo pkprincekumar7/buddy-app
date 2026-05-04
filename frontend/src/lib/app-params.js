@@ -4,6 +4,7 @@
  */
 
 const TOKEN_KEY = 'access_token';
+const storage = typeof window !== 'undefined' ? window.sessionStorage : null;
 
 const getAccessTokenFromUrlAndStore = () => {
 	if (typeof window === 'undefined') {
@@ -15,10 +16,10 @@ const getAccessTokenFromUrlAndStore = () => {
 		urlParams.delete(TOKEN_KEY);
 		const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''}${window.location.hash}`;
 		window.history.replaceState({}, document.title, newUrl);
-		localStorage.setItem(TOKEN_KEY, searchParam);
+		storage?.setItem(TOKEN_KEY, searchParam);
 		return searchParam;
 	}
-	return localStorage.getItem(TOKEN_KEY);
+	return storage?.getItem(TOKEN_KEY);
 };
 
 const initStoredTokenFromUrl = () => {
@@ -29,9 +30,8 @@ const initStoredTokenFromUrl = () => {
 		urlParams &&
 		urlParams.get('clear_access_token') === 'true'
 	) {
-		localStorage.removeItem('access_token');
-		localStorage.removeItem('refresh_token');
-		localStorage.removeItem('token');
+		storage?.removeItem('access_token');
+		storage?.removeItem('refresh_token');
 	}
 
 	getAccessTokenFromUrlAndStore();
@@ -40,5 +40,5 @@ const initStoredTokenFromUrl = () => {
 initStoredTokenFromUrl();
 
 export const appParams = {
-	token: typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null,
+	token: storage?.getItem(TOKEN_KEY) ?? null,
 };

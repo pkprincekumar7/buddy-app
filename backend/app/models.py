@@ -16,6 +16,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), default="Parent")
     role: Mapped[str] = mapped_column(String(32), default="parent")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
 
 class UserPreferencesRecord(Base):
@@ -160,5 +161,6 @@ class ReflectionRecord(Base):
     child_id: Mapped[str] = mapped_column(String(36), ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
     __table_args__ = (Index("ix_reflections_child_created", "child_id", "created_at"),)

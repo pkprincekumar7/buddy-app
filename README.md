@@ -10,8 +10,11 @@ Frontend UI library: **Tailwind CSS** + **shadcn/ui** (Radix UI primitives), **R
 cp .env.example .env
 # Edit `.env`: set JWT_SECRET, at least one LLM key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY),
 # and Google IDs if you use Sign in with Google.
+
 docker compose up --build
 ```
+
+This starts all three services: Postgres, the FastAPI backend, and the Nginx-served frontend. For production deployments pointing at RDS instead of a local Postgres, set `POSTGRES_HOST` in `.env` to the RDS endpoint before starting.
 
 After changing `VITE_GOOGLE_CLIENT_ID`, rebuild the frontend image so Vite embeds it (`docker compose build frontend` or `docker compose up --build`).
 
@@ -21,7 +24,7 @@ All supported variables are documented in `.env.example` (JWT lifetimes, CORS, P
 - UI: `http://localhost:5173`
 - OpenAPI: `http://localhost:8000/docs`
 
-The database schema is created automatically on API startup (`Base.metadata.create_all`).
+The database schema is managed by **Alembic migrations**. The backend container runs `alembic upgrade head` automatically before starting Uvicorn (see `backend/Dockerfile`).
 
 ## Google Sign-In (optional)
 
@@ -51,7 +54,15 @@ If these are left empty, email/password login still works; the login page hides 
 Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images).
 
 - Start PostgreSQL and set `DATABASE_URL` to it (not `db` as host).
-- Backend: `cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && set -a && source ../.env && set +a && uvicorn app.main:app --reload`
+- Backend:
+  ```bash
+  cd backend
+  python -m venv .venv && source .venv/bin/activate
+  pip install -r requirements.txt
+  set -a && source ../.env && set +a
+  alembic upgrade head
+  uvicorn app.main:app --reload
+  ```
 - Frontend: `cd frontend && npm install && npm run dev`
 
 ## API overview
@@ -124,33 +135,100 @@ Routes are PascalCase (as registered in `pages.config.js`). `/` renders the `mai
 
 ## Infrastructure
 
-Terraform configuration lives in [`infra/terraform/`](infra/terraform/). The EC2 bootstrap script is at [`infra/userdata/install.sh`](infra/userdata/install.sh).
+The infrastructure is split across two independent Terraform modules with separate state files. This allows the application infra to be created and destroyed freely while the database persists untouched.
 
-### What it provisions
+```
+infra-db/terraform/   ← permanent  — VPC, subnets, RDS (never destroy)
+infra/terraform/      ← ephemeral  — EC2, ALB, Route 53 (create/destroy freely)
+```
+
+The app infra reads VPC and subnet IDs from the DB infra's remote state, so **`infra-db` must be applied before `infra`**.
+
+### `infra-db/terraform/` — database and network layer
 
 | Resource | Detail |
 |---|---|
-| VPC | Configurable CIDR, 2 public subnets across 2 AZs |
-| EC2 | Ubuntu, configurable instance type (default `t2.small`), SSM agent installed via userdata |
-| ALB | HTTPS on port 443 (TLS 1.3); HTTP → HTTPS redirect; `/api/*` forwarded to backend, everything else to frontend |
-| Route 53 | A-alias record `{subdomain}.{domain_name}` → ALB |
+| VPC | Configurable CIDR, shared by both infra modules |
+| Public subnets ×2 | One per AZ — used by EC2 and ALB (owned here, consumed by app infra) |
+| Private subnets ×2 | One per AZ — RDS only, no internet route |
+| Internet Gateway | For public subnets |
+| RDS instance | PostgreSQL 16, `db.t3.micro`, 25 GiB gp3, single AZ, private subnets only |
+| RDS security group | Inbound port 5432 from VPC CIDR only — not publicly accessible |
+| DB subnet group | Spans both private subnets (required by RDS even for single-AZ) |
+| Secrets Manager | Auto-created by RDS for the master password (`manage_master_user_password = true`) |
+
+**Retrieving the generated password** after first apply:
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id $(terraform -chdir=infra-db/terraform output -raw rds_secret_arn) \
+  --query SecretString --output text
+```
+The JSON response contains `username` and `password`. Store `password` as the `POSTGRES_PASSWORD` GitHub secret.
+
+### `infra/terraform/` — application layer
+
+| Resource | Detail |
+|---|---|
+| EC2 | Ubuntu 24.04 LTS (AMI auto-resolved from SSM), `t2.small` default, SSM agent via userdata |
+| ALB | HTTPS port 443 (TLS 1.3); HTTP → HTTPS redirect; `/api/*` → backend, all else → frontend |
+| Route 53 | A-alias record → ALB. FQDN: `{subdomain}-{env}.{domain_name}` for non-prod (e.g. `app-dev.example.com`), `{subdomain}.{domain_name}` for prod (e.g. `app.example.com`) |
 | ACM | Certificate referenced by ARN (must already exist) |
-| IAM | EC2 instance profile with `AmazonSSMManagedInstanceCore` (allows SSM agent and deploy workflow to reach the instance) |
-| EC2 AMI | Ubuntu 24.04 LTS — resolved automatically from AWS SSM Parameter Store at plan time; no hardcoded AMI ID |
+| IAM | EC2 instance profile with `AmazonSSMManagedInstanceCore` |
+
+VPC and subnet IDs are read from `infra-db` remote state — no networking resources are created here.
 
 ### Prerequisites
 
-Before running Terraform for the first time:
+One-time setup before running either module:
 
-1. **Terraform CLI >= 1.13.0** — required by `provider.tf`. The S3 backend uses `use_lockfile = true` for native state locking (no DynamoDB table needed).
-2. **S3 state bucket** — the backend is configured in [`provider.tf`](infra/terraform/provider.tf). Update the `bucket`, `key`, and `region` values to match your own bucket before running `terraform init`.
-3. **Route 53 hosted zone** — your domain must already have a hosted zone in Route 53. Note the zone ID.
-4. **ACM certificate** — provision a certificate for `{subdomain}.{domain_name}` in the same AWS region you are deploying to. Note the ARN.
-5. **IAM OIDC role for GitHub Actions** — this is a manual one-time step (see the GitHub Actions section below). Terraform does not create this role.
+1. **Terraform CLI >= 1.13.0** — both modules require it. S3 backend uses `use_lockfile = true` (no DynamoDB needed).
+2. **S3 state bucket** — update `bucket` and `region` in both [`infra-db/terraform/provider.tf`](infra-db/terraform/provider.tf) and [`infra/terraform/provider.tf`](infra/terraform/provider.tf) to your own bucket. The state `key` is **not** hardcoded — it is passed at `terraform init` via `-backend-config`, which gives full isolation per environment and region. State key pattern: `terraform-state-files/buddy360/{env}/{module}/{region}/terraform.tfstate`. Also update the `bucket` in [`infra/terraform/data.tf`](infra/terraform/data.tf) — it reads the infra-db state via `var.db_state_key`, which is set automatically by the workflow.
+3. **Route 53 hosted zone** — note the zone ID (needed by app infra only).
+4. **ACM certificate** — provision in the deployment region and note the ARN (needed by app infra only). The certificate must cover all environment subdomains you plan to use. A **wildcard cert** (`*.example.com`) is the simplest option — one ARN covers `app-dev.example.com`, `app-stg.example.com`, and `app.example.com`. Alternatively use a SAN cert listing each FQDN explicitly, or a separate cert per environment (one `ACM_CERTIFICATE_ARN` secret per GitHub environment).
+5. **IAM OIDC role** — one-time manual step; see the GitHub Actions section below.
+
+### Local usage
+
+```bash
+# ── Step 1: apply DB infra first (once, then leave it alone) ──────────────
+cd infra-db/terraform
+# Update provider.tf with your S3 bucket name, then:
+terraform init -backend-config="key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate"
+cp dev.tfvars.example terraform.tfvars   # edit as needed
+terraform apply -var-file=terraform.tfvars
+
+# Note the outputs — you'll need rds_endpoint and rds_secret_arn
+terraform output
+
+# ── Step 2: apply app infra (create/destroy as needed) ───────────────────
+cd infra/terraform
+# Update provider.tf with your S3 bucket name, then:
+terraform init \
+  -backend-config="key=terraform-state-files/buddy360/dev/app/ap-south-1/terraform.tfstate"
+cp dev.tfvars.example terraform.tfvars   # set allowed_ssh_cidr, domain vars
+# db_state_key must point to the infra-db state applied in Step 1
+terraform apply \
+  -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" \
+  -var-file=terraform.tfvars
+
+# To tear down app infra without touching the DB:
+terraform destroy \
+  -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" \
+  -var-file=terraform.tfvars
+```
 
 ### Variables
 
-Required variables with no default (must be supplied):
+**`infra-db`** — required (no default):
+
+| Variable | Description |
+|---|---|
+| `aws_region` | AWS region |
+| `environment` | e.g. `dev` |
+
+All others have defaults (see [`infra-db/terraform/variables.tf`](infra-db/terraform/variables.tf)): VPC/subnet CIDRs, RDS identifier, db name, username (`postgre`), instance class, storage, deletion protection.
+
+**`infra`** — required (no default):
 
 | Variable | How to supply |
 |---|---|
@@ -161,33 +239,13 @@ Required variables with no default (must be supplied):
 | `hosted_zone_id` | Route 53 hosted zone ID |
 | `acm_certificate_arn` | ACM certificate ARN |
 
-Optional variables have sensible defaults (see [`variables.tf`](infra/terraform/variables.tf)):
-`app_name` (`buddy`), `environment`, `instance_type` (`t2.small`), VPC and subnet CIDRs.
-
-### Local usage
-
-```bash
-cd infra/terraform
-
-# 1. Update provider.tf with your S3 backend bucket details, then:
-terraform init
-
-# 2. Copy the example vars file and fill in your values
-cp dev.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — set allowed_ssh_cidr to your IP;
-# domain_name, subdomain, hosted_zone_id, acm_certificate_arn via env vars or tfvars
-
-terraform plan -var-file=terraform.tfvars
-terraform apply -var-file=terraform.tfvars
-```
-
 ## GitHub Actions
 
-Two manually triggered workflows under [`.github/workflows/`](.github/workflows/). Both authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Three manually triggered workflows under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 ### One-time AWS setup: GitHub OIDC identity provider
 
-This needs to be done once per AWS account before either workflow can run.
+This needs to be done once per AWS account before any of the three workflows can run.
 
 **Step 1 — Add GitHub as an OIDC provider in IAM**
 
@@ -216,12 +274,12 @@ Go to **IAM → Roles → Create role**:
    > If you configure separate GitHub environments (`dev`, `stg`, `prod`) and want each to use a different role, use `repo:YOUR_GITHUB_ORG/buddy-app:environment:dev` instead of the wildcard.
 
 5. Click **Next**, then attach the permissions policy (see Step 3).
-6. Name the role (e.g. `buddy-github-actions-role`) and create it.
+6. Name the role (e.g. `buddy360-github-actions-role`) and create it.
 7. Copy the **Role ARN** — this becomes the `ROLE_ARN` secret in GitHub.
 
 **Step 3 — Attach a permissions policy**
 
-The `terraform.yml` workflow provisions VPC, EC2, ALB, Route 53, IAM, and reads SSM Parameter Store for AMIs. The `deploy.yml` workflow describes EC2 instances and sends SSM Run Commands.
+The `terraform-db.yml` workflow provisions VPC and RDS. The `terraform.yml` workflow provisions EC2, ALB, Route 53, and IAM (it reads VPC/subnets from the DB infra remote state — it does not create networking resources). The `deploy.yml` workflow describes EC2 instances and sends SSM Run Commands.
 
 **Option A — Quick setup (suitable for personal/dev accounts):** attach the `AdministratorAccess` managed policy and skip the custom policy below.
 
@@ -261,6 +319,7 @@ The `terraform.yml` workflow provisions VPC, EC2, ALB, Route 53, IAM, and reads 
       "Sid": "Deploy",
       "Effect": "Allow",
       "Action": [
+        "ec2:DescribeInstances",
         "ssm:SendCommand",
         "ssm:GetCommandInvocation"
       ],
@@ -272,9 +331,13 @@ The `terraform.yml` workflow provisions VPC, EC2, ALB, Route 53, IAM, and reads 
 
 Replace `YOUR_STATE_BUCKET` with the S3 bucket name used in [`provider.tf`](infra/terraform/provider.tf).
 
-### `terraform.yml` — infrastructure management
+### `terraform-db.yml` — database and network layer
 
-Triggered via **Actions → Terraform → Run workflow**. Inputs:
+Triggered via **Actions → Terraform DB → Run workflow**. Manages `infra-db/terraform/`. Apply once to create, then leave it alone. Workflow inputs (action, environment, aws_region) are similar to `terraform.yml`, with the only secret required being `ROLE_ARN` — no domain, certificate, or SSH variables needed. Available actions: `plan`, `apply`, `plan-destroy`, `destroy`.
+
+### `terraform.yml` — application layer
+
+Triggered via **Actions → Terraform → Run workflow**. Manages `infra/terraform/`. Safe to apply and destroy repeatedly. Inputs:
 
 | Input | Options | Default |
 |---|---|---|
@@ -284,12 +347,14 @@ Triggered via **Actions → Terraform → Run workflow**. Inputs:
 
 Concurrency is locked per `environment + region` so two runs never modify the same state simultaneously.
 
+> **Order matters:** run `terraform-db.yml apply` before `terraform.yml apply`. The app infra reads VPC and subnet IDs from the DB infra remote state.
+
 ### `deploy.yml` — application deployment
 
 Triggered via **Actions → Deploy → Run workflow**. Inputs: `environment`, `aws_region`.
 
 The workflow:
-1. Assumes the OIDC role and finds the running EC2 instance by tag (`Name=buddy-ec2`, `Environment=<env>`).
+1. Assumes the OIDC role and finds the running EC2 instance by tag (`Name=buddy360-ec2`, `Environment=<env>`).
 2. Sends an SSM Run Command that: git-clones or git-pulls the repo, writes `/home/ubuntu/buddy-app/.env` from secrets, then runs `docker compose down && docker compose up --build -d`.
 3. Polls the SSM command status (up to 10 minutes) and prints stdout/stderr on completion.
 
@@ -299,7 +364,7 @@ The workflow:
 
 Configure these under **Settings → Environments → `<env>` → Secrets** (one set per environment: `dev`, `stg`, `prod`).
 
-**AWS / infra secrets** (used by both workflows):
+**AWS / infra secrets** (`terraform.yml` requires all; `terraform-db.yml` and `deploy.yml` only require `ROLE_ARN`):
 
 | Secret | Value |
 |---|---|
@@ -324,8 +389,152 @@ Configure these under **Settings → Environments → `<env>` → Secrets** (one
 | `ANTHROPIC_MODEL` | e.g. `claude-sonnet-4-6` |
 | `GEMINI_API_KEY` | Google Gemini key (optional) |
 | `GEMINI_MODEL` | e.g. `gemini-1.5-flash` |
+| `POSTGRES_HOST` | RDS endpoint — from `terraform output rds_endpoint` in `infra-db/terraform/` |
+| `POSTGRES_USER` | Master username — `postgre` (default) |
+| `POSTGRES_PASSWORD` | Retrieved from Secrets Manager after first `terraform-db apply` (see above) |
+| `POSTGRES_DB` | Database name — `buddy360` (default) |
 
 At least one of the three LLM API keys must be set to enable LLM features.
+
+## Operational workflow
+
+### Apply (first time or after a full destroy)
+
+Follow these steps **in order**. Skipping or reordering will break the deploy.
+
+**Step 1 — Apply database infra**
+
+Via GitHub Actions: **Actions → Terraform DB → Run workflow** → action: `plan`, then `apply`.
+
+Or locally:
+```bash
+cd infra-db/terraform
+terraform init -backend-config="key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate"
+terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
+```
+
+**Step 2 — Set `POSTGRES_HOST` and `POSTGRES_PASSWORD` GitHub secrets**
+
+After `infra-db` apply completes, retrieve the RDS endpoint and generated password, then store both as GitHub environment secrets before proceeding.
+
+```bash
+# Get RDS endpoint → set as POSTGRES_HOST secret
+terraform -chdir=infra-db/terraform output -raw rds_endpoint
+
+# Get generated password → set as POSTGRES_PASSWORD secret
+aws secretsmanager get-secret-value \
+  --secret-id $(terraform -chdir=infra-db/terraform output -raw rds_secret_arn) \
+  --query SecretString --output text
+# The JSON response contains "username" and "password" — copy the "password" value.
+```
+
+Go to **GitHub → Settings → Environments → `<env>` → Secrets** and set:
+- `POSTGRES_HOST` → value from `rds_endpoint` output
+- `POSTGRES_PASSWORD` → `password` field from the Secrets Manager JSON above
+
+> This step is required on every fresh `infra-db` apply (i.e. after a full destroy + re-apply), because a new RDS instance generates a new password.
+
+**Step 3 — Apply application infra**
+
+Via GitHub Actions: **Actions → Terraform → Run workflow** → action: `plan`, then `apply`.
+
+Or locally:
+```bash
+cd infra/terraform
+terraform init -backend-config="key=terraform-state-files/buddy360/dev/app/ap-south-1/terraform.tfstate"
+terraform plan -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
+terraform apply -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
+```
+
+**Step 4 — Make the GitHub repository public**
+
+The `deploy.yml` workflow git-clones the repo directly onto the EC2 instance. The repository must be **public** for the clone to succeed.
+
+Go to **GitHub → Settings → Danger Zone → Change repository visibility → Public**.
+
+**Step 5 — Deploy**
+
+Via GitHub Actions: **Actions → Deploy → Run workflow** → select environment and region.
+
+**Step 6 — Make the GitHub repository private** (after deployment completes)
+
+Once deployment is confirmed working, switch the repository back to private.
+
+Go to **GitHub → Settings → Danger Zone → Change repository visibility → Private**.
+
+---
+
+### Destroy
+
+Always destroy `infra` before `infra-db` — the app infra reads remote state from the DB infra, and reversing the order will leave orphaned resources or cause state errors.
+
+**Step 1 — Destroy application infra** (safe, no data loss)
+
+Via GitHub Actions: **Actions → Terraform → Run workflow** → action: `plan-destroy`, then `destroy`.
+
+Or locally:
+```bash
+cd infra/terraform
+terraform plan -destroy -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
+terraform destroy -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
+```
+
+**Step 2 — Destroy database infra** (permanent data loss)
+
+> **Warning:** this deletes the RDS instance and all data. In `dev`, `skip_final_snapshot = true` so no snapshot is taken. There is no recovery.
+
+> **Prod only:** if `db_deletion_protection = true`, Terraform will refuse to destroy. First set `deletion_protection = false`, re-apply, then destroy.
+
+Via GitHub Actions: **Actions → Terraform DB → Run workflow** → action: `plan-destroy`, then `destroy`.
+
+Or locally:
+```bash
+cd infra-db/terraform
+terraform plan -destroy -var-file=terraform.tfvars
+terraform destroy -var-file=terraform.tfvars
+```
+
+---
+
+## Cost estimates
+
+Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default instance sizes (`t3.small` EC2, `db.t3.micro` RDS) and minimal traffic.
+
+### `infra/` — application layer
+
+| Resource | Details | $/hr | $/month |
+|---|---|---|---|
+| EC2 `t3.small` | 1 instance, 2 vCPU / 2 GiB RAM | $0.0208 | $15.18 |
+| ALB | Fixed charge (1 ALB, 2 AZs) | $0.0080 | $5.84 |
+| ALB LCU | Variable — traffic-dependent; ~0 at idle, ~$5.84 at 1 avg LCU | $0.008+ | $5.84+ |
+| EBS root vol | 8 GiB gp3 (default root volume) | $0.0009 | $0.64 |
+| Route 53 A record | Hosted zone + queries | ~$0.0007 | ~$0.50 |
+| **Total** | | **~$0.038/hr** | **~$28/month** |
+
+### `infra-db/` — database layer
+
+| Resource | Details | $/hr | $/month |
+|---|---|---|---|
+| RDS `db.t3.micro` | PostgreSQL 16, Single-AZ | $0.0170 | $12.41 |
+| RDS Storage | 25 GiB gp3, encrypted | $0.0039 | $2.88 |
+| RDS Backups | 7-day retention, ≤ 25 GiB | $0.0000 | Free |
+| Secrets Manager | 1 auto-managed RDS secret | ~$0.0005 | $0.40 |
+| **Total** | | **~$0.021/hr** | **~$15.69/month** |
+
+### Combined
+
+| | $/hr | $/month |
+|---|---|---|
+| `infra` (app + ALB) | ~$0.038 | ~$28.00 |
+| `infra-db` (RDS) | ~$0.021 | ~$15.69 |
+| **Grand total** | **~$0.059/hr** | **~$43.69/month** |
+
+**Notes:**
+- No NAT Gateway cost — EC2 is in a public subnet; RDS is private but only needs to accept traffic from EC2.
+- ACM certificates, VPC, subnets, security groups, IAM, and Route tables are all free.
+- Outbound data transfer beyond 100 GB/month costs $0.09/GiB and is not included above.
+- Switching to **1-year Reserved Instances** (no upfront) cuts compute ~40%: EC2 t3.small → ~$0.0124/hr, RDS db.t3.micro → ~$0.0112/hr.
 
 ## Product notes
 

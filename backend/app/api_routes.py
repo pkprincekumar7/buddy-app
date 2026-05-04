@@ -1,12 +1,14 @@
 import logging
 import secrets
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.limiter import limiter
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth_utils import (
@@ -71,6 +73,10 @@ from app.settings import settings
 
 _upsert_insert = get_upsert_insert()
 
+# Pre-computed hash used to keep login response time constant whether or not
+# the email exists, preventing user-enumeration via timing.
+_DUMMY_HASH: str = hash_password("__dummy_constant_time__")
+
 router = APIRouter(tags=["api"])
 
 log = logging.getLogger(__name__)
@@ -87,8 +93,8 @@ class AuthTokenResponse(BaseModel):
 
 
 class RegisterBody(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
     full_name: str | None = "Parent"
 
     @field_validator("email")
@@ -167,8 +173,13 @@ def register(request: Request, body: RegisterBody, db: Session = Depends(get_db)
         role="parent",
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email already registered")
     db.refresh(user)
+    log.info("user.register id=%s", user.id)
     return _issue_token_pair(user.id)
 
 
@@ -176,20 +187,27 @@ def register(request: Request, body: RegisterBody, db: Session = Depends(get_db)
 @limiter.limit("10/minute")
 def login(request: Request, body: LoginBody, db: Session = Depends(get_db)):
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
-    if not user or not verify_password(body.password, user.password_hash):
+    target_hash = user.password_hash if user else _DUMMY_HASH
+    password_ok = verify_password(body.password, target_hash)
+    if not user or not password_ok:
+        log.warning("auth.login.failed email=%s", body.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    log.info("auth.login.ok id=%s", user.id)
     return _issue_token_pair(user.id)
 
 
 @router.post("/auth/refresh", response_model=AuthTokenResponse)
-def refresh_tokens(body: RefreshBody, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def refresh_tokens(request: Request, body: RefreshBody, db: Session = Depends(get_db)):
     # Access token may be expired — decode ignoring expiry just to extract sub.
     # Refresh token must still be fully valid (signature + expiry).
     access_payload = decode_access_token_ignore_exp(body.access_token)
     refresh_payload = decode_token_of_type(body.refresh_token, "refresh")
     if not access_payload or not refresh_payload:
+        log.warning("auth.refresh.failed reason=invalid_tokens")
         raise HTTPException(status_code=401, detail="Invalid token")
     if access_payload.get("sub") != refresh_payload.get("sub"):
+        log.warning("auth.refresh.failed reason=subject_mismatch sub=%s", access_payload.get("sub"))
         raise HTTPException(status_code=401, detail="Token mismatch")
     uid = access_payload["sub"]
     if not db.get(User, uid):
@@ -246,15 +264,22 @@ def google_auth(request: Request, body: GoogleAuthBody, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail="Google account email is not verified")
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if not user:
+        raw_name = (info.get("name") or "").strip()
+        full_name = (raw_name or email.split("@")[0])[:255]
         user = User(
             email=email,
             password_hash=hash_password(secrets.token_urlsafe(32)),
-            full_name=(info.get("name") or email.split("@")[0])[:255],
+            full_name=full_name,
             role="parent",
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            user = db.execute(select(User).where(User.email == email)).scalar_one()
+        else:
+            db.refresh(user)
     return _issue_token_pair(user.id)
 
 
@@ -266,6 +291,12 @@ def auth_me(user: User = Depends(get_current_user)):
         full_name=user.full_name,
         role=user.role,
     )
+
+
+@router.delete("/user/me", status_code=204)
+def delete_account(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.delete(user)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +315,8 @@ def _personality_row_to_schema(row: UserPersonalityRecord) -> PersonalityAnalysi
         color=row.color or "",
         traits=row.traits or [],
         strengths=row.strengths or [],
-        growthAreas=row.growth_areas or [],
-        famousPeople=[FamousPerson(**p) for p in (row.famous_people or []) if isinstance(p, dict)],
+        growth_areas=row.growth_areas or [],
+        famous_people=[FamousPerson(**p) for p in (row.famous_people or []) if isinstance(p, dict)],
     )
     vm = PersonalityViewModel(
         type=row.personality_type or "",
@@ -445,8 +476,8 @@ def patch_onboarding(
         per.scores = vm.scores
         per.traits = prof.traits
         per.strengths = prof.strengths
-        per.growth_areas = prof.growthAreas
-        per.famous_people = [fp.model_dump() for fp in prof.famousPeople]
+        per.growth_areas = prof.growth_areas
+        per.famous_people = [fp.model_dump() for fp in prof.famous_people]
 
     jrn = db.get(UserJourneyRecord, user.id)
     if body.clear_recommendations:
@@ -613,8 +644,8 @@ def _child_to_api(row: ChildRecord) -> dict:
 
 @router.get("/children", response_model=list[ChildResponse])
 def list_children(
-    sort: str | None = "-created_date",
-    limit: int | None = Query(None, ge=1),
+    sort: Literal["created_date", "-created_date"] | None = Query(default="-created_date"),
+    limit: int | None = Query(None, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -683,8 +714,8 @@ def _mission_to_api(row: GrowthMissionRecord) -> dict:
 @router.get("/growth-missions", response_model=list[GrowthMissionResponse])
 def list_missions(
     child_id: str | None = None,
-    sort: str | None = "-created_date",
-    limit: int | None = Query(None, ge=1),
+    sort: Literal["created_date", "-created_date"] | None = Query(default="-created_date"),
+    limit: int | None = Query(None, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -702,7 +733,8 @@ def list_missions(
 
 
 @router.post("/growth-missions", response_model=GrowthMissionResponse)
-def create_mission(payload: GrowthMissionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+def create_mission(request: Request, payload: GrowthMissionCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     cid = payload.child_id
     child = db.get(ChildRecord, cid) if cid else None
     if not child or child.user_id != user.id:
@@ -720,13 +752,14 @@ def create_mission(payload: GrowthMissionCreate, user: User = Depends(get_curren
 
 
 @router.post("/growth-missions/bulk", response_model=list[GrowthMissionResponse])
-def bulk_missions(body: BulkMissionBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def bulk_missions(request: Request, body: BulkMissionBody, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     out = []
     for payload in body.items:
         cid = payload.child_id
         child = db.get(ChildRecord, cid) if cid else None
         if not child or child.user_id != user.id:
-            raise HTTPException(status_code=400, detail=f"Invalid or unauthorized child_id: {cid!r}")
+            raise HTTPException(status_code=400, detail="Invalid or unauthorized child_id")
         sub = payload.model_dump(exclude_none=True)
         sub.pop("id", None)
         sub.pop("created_date", None)
@@ -743,11 +776,12 @@ def bulk_missions(body: BulkMissionBody, user: User = Depends(get_current_user),
 
 @router.get("/growth-missions/{mission_id}", response_model=GrowthMissionResponse)
 def get_mission(mission_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = db.get(GrowthMissionRecord, mission_id)
+    row = db.execute(
+        select(GrowthMissionRecord)
+        .join(ChildRecord, GrowthMissionRecord.child_id == ChildRecord.id)
+        .where(GrowthMissionRecord.id == mission_id, ChildRecord.user_id == user.id)
+    ).scalar_one_or_none()
     if not row:
-        raise HTTPException(status_code=404, detail="Mission not found")
-    child = db.get(ChildRecord, row.child_id)
-    if not child or child.user_id != user.id:
         raise HTTPException(status_code=404, detail="Mission not found")
     return _mission_to_api(row)
 
@@ -759,11 +793,12 @@ def update_mission(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    row = db.get(GrowthMissionRecord, mission_id)
+    row = db.execute(
+        select(GrowthMissionRecord)
+        .join(ChildRecord, GrowthMissionRecord.child_id == ChildRecord.id)
+        .where(GrowthMissionRecord.id == mission_id, ChildRecord.user_id == user.id)
+    ).scalar_one_or_none()
     if not row:
-        raise HTTPException(status_code=404, detail="Mission not found")
-    child = db.get(ChildRecord, row.child_id)
-    if not child or child.user_id != user.id:
         raise HTTPException(status_code=404, detail="Mission not found")
     data = dict(row.payload or {})
     for k, v in patch.model_dump(exclude_unset=True).items():
@@ -796,8 +831,8 @@ def _insight_to_api(row: ParentInsightRecord) -> dict:
 def list_insights(
     child_id: str | None = None,
     is_read: str | None = None,
-    sort: str | None = "-created_date",
-    limit: int | None = Query(None, ge=1),
+    sort: Literal["created_date", "-created_date"] | None = Query(default="-created_date"),
+    limit: int | None = Query(None, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -847,16 +882,30 @@ def update_insight(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    row = db.get(ParentInsightRecord, insight_id)
+    row = db.execute(
+        select(ParentInsightRecord)
+        .join(ChildRecord, ParentInsightRecord.child_id == ChildRecord.id)
+        .where(ParentInsightRecord.id == insight_id, ChildRecord.user_id == user.id)
+    ).scalar_one_or_none()
     if not row:
-        raise HTTPException(status_code=404, detail="Insight not found")
-    child = db.get(ChildRecord, row.child_id)
-    if not child or child.user_id != user.id:
         raise HTTPException(status_code=404, detail="Insight not found")
     row.is_read = body.is_read
     db.commit()
     db.refresh(row)
     return _insight_to_api(row)
+
+
+@router.delete("/parent-insights/{insight_id}", status_code=204)
+def delete_insight(insight_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.execute(
+        select(ParentInsightRecord)
+        .join(ChildRecord, ParentInsightRecord.child_id == ChildRecord.id)
+        .where(ParentInsightRecord.id == insight_id, ChildRecord.user_id == user.id)
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    db.delete(row)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -874,8 +923,8 @@ def _reflection_to_api(row: ReflectionRecord) -> dict:
 @router.get("/reflections", response_model=list[ReflectionResponse])
 def list_reflections(
     child_id: str | None = None,
-    sort: str | None = "-created_date",
-    limit: int | None = Query(None, ge=1),
+    sort: Literal["created_date", "-created_date"] | None = Query(default="-created_date"),
+    limit: int | None = Query(None, ge=1, le=200),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -908,3 +957,16 @@ def create_reflection(payload: ReflectionCreate, user: User = Depends(get_curren
     db.commit()
     db.refresh(row)
     return _reflection_to_api(row)
+
+
+@router.delete("/reflections/{reflection_id}", status_code=204)
+def delete_reflection(reflection_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = db.execute(
+        select(ReflectionRecord)
+        .join(ChildRecord, ReflectionRecord.child_id == ChildRecord.id)
+        .where(ReflectionRecord.id == reflection_id, ChildRecord.user_id == user.id)
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    db.delete(row)
+    db.commit()

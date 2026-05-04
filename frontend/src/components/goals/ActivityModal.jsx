@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronRight, Trophy, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Trophy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
@@ -9,16 +9,21 @@ export default function ActivityModal({ activity, childName, onClose, onComplete
   const [step, setStep] = useState('loading');
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [direction, setDirection] = useState(1); // 1 = forward, -1 = backward
   const [responses, setResponses] = useState({});
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [aiScore, setAiScore] = useState(null);
   const [aiFeedback, setAiFeedback] = useState('');
   const [parentFeedback, setParentFeedback] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const choiceTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    generateQuestions();
-  }, []);
+  const fallbackQuestions = [
+    { id: 1, type: 'choice', question: `What part of "${activity.title}" are you most excited about?`, options: ['Learning something new', 'Having fun with it', 'Showing my skills', 'Doing it with others'], labels: [] },
+    { id: 2, type: 'text', question: 'What do you think will be the most exciting part of this activity?', options: [], labels: [] },
+    { id: 3, type: 'scale', question: 'How excited are you about this activity?', options: [], labels: ['Not excited', 'Super excited'] },
+    { id: 4, type: 'text', question: 'What do you hope to learn or achieve from this?', options: [], labels: [] }
+  ];
 
   const generateQuestions = async () => {
     try {
@@ -56,20 +61,23 @@ Rules:
           }
         }
       });
-      setQuestions(result.questions || []);
+      const raw = result.properties?.questions ?? result.questions;
+      const qs = raw?.length ? raw : fallbackQuestions;
+      setQuestions(qs);
       setStep('questions');
     } catch {
-      setQuestions([
-        { id: 1, type: 'choice', question: `What part of "${activity.title}" are you most excited about?`, options: ['Learning something new', 'Having fun with it', 'Showing my skills', 'Doing it with others'] },
-        { id: 2, type: 'text', question: 'What do you think will be the most exciting part of this activity?' },
-        { id: 3, type: 'scale', question: 'How excited are you about this activity?', labels: ['Not excited', 'Super excited'] },
-        { id: 4, type: 'text', question: 'What do you hope to learn or achieve from this?' }
-      ]);
+      setQuestions(fallbackQuestions);
       setStep('questions');
     }
   };
 
+  useEffect(() => {
+    generateQuestions();
+    return () => clearTimeout(choiceTimeoutRef.current);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const advanceOrAnalyze = (newResponses, questionIdx) => {
+    setDirection(1);
     if (questionIdx < questions.length - 1) {
       setCurrentQuestionIndex(questionIdx + 1);
     } else {
@@ -89,17 +97,29 @@ Rules:
   };
 
   const handleChoiceSelect = (option) => {
+    clearTimeout(choiceTimeoutRef.current);
     const question = questions[currentQuestionIndex];
+    const idx = currentQuestionIndex;
     const newResponses = {
       ...responses,
       [question.id]: { question: question.question, answer: option, type: 'choice' }
     };
     setCurrentAnswer(option);
-    setTimeout(() => {
+    choiceTimeoutRef.current = setTimeout(() => {
       setResponses(newResponses);
       setCurrentAnswer('');
-      advanceOrAnalyze(newResponses, currentQuestionIndex);
+      advanceOrAnalyze(newResponses, idx);
     }, 250);
+  };
+
+  const handleGoBack = () => {
+    clearTimeout(choiceTimeoutRef.current);
+    const prevIdx = currentQuestionIndex - 1;
+    const prevQuestion = questions[prevIdx];
+    const savedAnswer = responses[prevQuestion?.id]?.answer || '';
+    setDirection(-1);
+    setCurrentAnswer(savedAnswer);
+    setCurrentQuestionIndex(prevIdx);
   };
 
   const analyzeResponses = async (allResponses) => {
@@ -134,8 +154,9 @@ Scoring guidelines:
           }
         }
       });
-      setAiScore(result.score ?? 7);
-      setAiFeedback(result.feedback || 'Great job completing this activity!');
+      const data = result.properties ?? result;
+      setAiScore(data.score ?? 7);
+      setAiFeedback(data.feedback || 'Great job completing this activity!');
       setStep('complete');
     } catch {
       setAiScore(7);
@@ -146,13 +167,16 @@ Scoring guidelines:
 
   const handleSaveAndContinue = async () => {
     setIsSaving(true);
-    await onComplete({
-      score: aiScore,
-      ai_feedback: aiFeedback,
-      parent_feedback: parentFeedback,
-      responses: Object.values(responses)
-    });
-    setIsSaving(false);
+    try {
+      await onComplete({
+        score: aiScore,
+        ai_feedback: aiFeedback,
+        parent_feedback: parentFeedback,
+        responses: Object.values(responses)
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -231,9 +255,9 @@ Scoring guidelines:
             {step === 'questions' && currentQuestion && (
               <motion.div
                 key={`q-${currentQuestionIndex}`}
-                initial={{ opacity: 0, x: 40 }}
+                initial={{ opacity: 0, x: direction * 40 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -40 }}
+                exit={{ opacity: 0, x: direction * -40 }}
                 className="py-4"
               >
                 <h3 className="text-lg font-bold text-slate-800 mb-6 leading-snug">
@@ -256,6 +280,14 @@ Scoring guidelines:
                         <span className="font-medium text-slate-800">{option}</span>
                       </motion.button>
                     ))}
+                    {currentQuestionIndex > 0 && (
+                      <button
+                        onClick={handleGoBack}
+                        className="mt-2 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Previous
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -267,13 +299,26 @@ Scoring guidelines:
                       placeholder="Type or speak your answer..."
                       className="min-h-[120px] rounded-2xl resize-none"
                     />
-                    <Button
-                      onClick={handleAnswerQuestion}
-                      disabled={!currentAnswer.trim()}
-                      className="w-full h-12 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white font-semibold disabled:opacity-50"
-                    >
-                      Next <ChevronRight className="w-5 h-5 ml-1" />
-                    </Button>
+                    <div className="grid grid-cols-2 gap-3">
+                      {currentQuestionIndex > 0 ? (
+                        <Button
+                          variant="outline"
+                          onClick={handleGoBack}
+                          className="h-12 rounded-2xl border-2 text-slate-500"
+                        >
+                          <ChevronLeft className="w-5 h-5 mr-1" /> Previous
+                        </Button>
+                      ) : (
+                        <div />
+                      )}
+                      <Button
+                        onClick={handleAnswerQuestion}
+                        disabled={!currentAnswer.trim()}
+                        className="h-12 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white font-semibold disabled:opacity-50"
+                      >
+                        Next <ChevronRight className="w-5 h-5 ml-1" />
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -301,17 +346,30 @@ Scoring guidelines:
                         <span>{currentQuestion.labels[1]}</span>
                       </div>
                     )}
-                    <Button
-                      onClick={handleAnswerQuestion}
-                      disabled={!currentAnswer}
-                      className={`w-full h-12 rounded-2xl font-semibold transition-all ${
-                        currentAnswer
-                          ? 'bg-teal-500 hover:bg-teal-600 text-white'
-                          : 'bg-teal-200 text-white cursor-not-allowed'
-                      }`}
-                    >
-                      Next <ChevronRight className="w-5 h-5 ml-1" />
-                    </Button>
+                    <div className="grid grid-cols-2 gap-3">
+                      {currentQuestionIndex > 0 ? (
+                        <Button
+                          variant="outline"
+                          onClick={handleGoBack}
+                          className="h-12 rounded-2xl border-2 text-slate-500"
+                        >
+                          <ChevronLeft className="w-5 h-5 mr-1" /> Previous
+                        </Button>
+                      ) : (
+                        <div />
+                      )}
+                      <Button
+                        onClick={handleAnswerQuestion}
+                        disabled={!currentAnswer}
+                        className={`h-12 rounded-2xl font-semibold transition-all ${
+                          currentAnswer
+                            ? 'bg-teal-500 hover:bg-teal-600 text-white'
+                            : 'bg-teal-200 text-white cursor-not-allowed'
+                        }`}
+                      >
+                        Next <ChevronRight className="w-5 h-5 ml-1" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </motion.div>

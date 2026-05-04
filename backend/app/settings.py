@@ -101,6 +101,41 @@ class Settings(BaseSettings):
 
     jwt_algorithm: str = "HS256"
 
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "app_env"),
+    )
+
+    behind_proxy: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("BEHIND_PROXY", "behind_proxy"),
+    )
+
+    llm_timeout_seconds: int = Field(
+        default=60,
+        validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS", "llm_timeout_seconds"),
+    )
+
+    postgres_pool_size: int = Field(
+        default=5,
+        validation_alias=AliasChoices("POSTGRES_POOL_SIZE", "postgres_pool_size"),
+    )
+    postgres_max_overflow: int = Field(
+        default=10,
+        validation_alias=AliasChoices("POSTGRES_MAX_OVERFLOW", "postgres_max_overflow"),
+    )
+
+    @model_validator(mode="after")
+    def warn_production_jwt_secret(self):
+        if self.app_env.lower() == "production" and len(self.jwt_secret) < 64:
+            log.warning(
+                "JWT_SECRET is only %d characters. In production, use a randomly "
+                "generated secret of at least 64 characters "
+                "(e.g. python -c \"import secrets; print(secrets.token_hex(32))\").",
+                len(self.jwt_secret),
+            )
+        return self
+
     @model_validator(mode="after")
     def warn_if_no_llm_key(self):
         if not any([self.openai_api_key, self.anthropic_api_key, self.gemini_api_key]):

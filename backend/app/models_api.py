@@ -16,16 +16,16 @@ class UserPreferences(BaseModel):
 # ---------------------------------------------------------------------------
 
 class OnboardingChildData(BaseModel):
-    name: str = ""
-    age: str = ""
-    school: str = ""
+    name: str = Field(default="", max_length=100)
+    age: str = Field(default="", max_length=20)
+    school: str = Field(default="", max_length=200)
     strengths: list[str] = Field(default_factory=list)
     hobbies: list[str] = Field(default_factory=list)
-    thinking_pattern: str = ""
-    communication_style: str = ""
-    energy_level: str = ""
-    social_behaviour: str = ""
-    emotional_behaviour: str = ""
+    thinking_pattern: str = Field(default="", max_length=100)
+    communication_style: str = Field(default="", max_length=100)
+    energy_level: str = Field(default="", max_length=100)
+    social_behaviour: str = Field(default="", max_length=100)
+    emotional_behaviour: str = Field(default="", max_length=100)
 
 
 # ---------------------------------------------------------------------------
@@ -44,8 +44,8 @@ class PersonalityProfile(BaseModel):
     color: str = ""
     traits: list[str] = Field(default_factory=list)
     strengths: list[str] = Field(default_factory=list)
-    growthAreas: list[str] = Field(default_factory=list)
-    famousPeople: list[FamousPerson] = Field(default_factory=list)
+    growth_areas: list[str] = Field(default_factory=list)
+    famous_people: list[FamousPerson] = Field(default_factory=list)
 
 
 class PersonalityViewModel(BaseModel):
@@ -268,7 +268,7 @@ class ChildCreate(BaseModel):
     # (id, created_date, user_id) must be stripped by the route handler before storage.
     model_config = {"extra": "allow"}
 
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     age: str | int | None = None
     school: str | None = None
     date_of_birth: str | None = None
@@ -336,7 +336,7 @@ class GrowthMissionCreate(BaseModel):
 
 
 class BulkMissionBody(BaseModel):
-    items: list[GrowthMissionCreate]
+    items: list[GrowthMissionCreate] = Field(min_length=1, max_length=50)
 
 
 class GrowthMissionPatch(BaseModel):

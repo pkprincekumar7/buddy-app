@@ -24,13 +24,14 @@ services:
 
   backend:
     build: ./backend
+    restart: unless-stopped
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-db}
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ${POSTGRES_USER:-buddy360}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buddy360_dev}
       POSTGRES_DB: ${POSTGRES_DB:-buddy360}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - see .env.example for how to generate it}
       # Access token (~30m) and refresh token (~24h); refresh requires both tokens still valid.
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
       JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
@@ -67,6 +68,7 @@ services:
         VITE_API_URL: ${VITE_API_URL:-}
         # Must match backend GOOGLE_CLIENT_ID (Google OAuth 2.0 Web client ID)
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     depends_on:

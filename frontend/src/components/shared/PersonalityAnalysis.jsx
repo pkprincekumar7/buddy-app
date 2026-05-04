@@ -16,117 +16,117 @@ const personalityTypes = {
     category: "motivators",
     traits: ["Goal-oriented", "Driven", "Competitive", "Persistent", "Forward-thinking"],
     description: "{childName} sets high standards, aims big, and is motivated by achieving success. They connect effort today with future goals and are energized by challenges.",
-    famousPeople: [
+    famous_people: [
       { name: "Serena Williams", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Serena_Williams_2013.jpg/220px-Serena_Williams_2013.jpg" },
       { name: "Elon Musk", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Elon_Musk_Royal_Society_%28crop2%29.jpg/220px-Elon_Musk_Royal_Society_%28crop2%29.jpg" }
     ],
     color: "from-red-500 to-pink-600",
     strengths: ["Persistence", "High standards", "Focus on goals", "Motivation"],
-    growthAreas: ["Patience", "Managing stress", "Flexibility in approach"]
+    growth_areas: ["Patience", "Managing stress", "Flexibility in approach"]
   },
   Determined: {
     name: "Determined",
     category: "motivators",
     traits: ["Focused", "Hardworking", "Resilient", "Patient", "Goal-oriented"],
     description: "{childName} shows strong persistence, continues even in the face of difficulty, and is motivated to finish what they start.",
-    famousPeople: [
+    famous_people: [
       { name: "Thomas Edison", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Thomas_Edison2.jpg/220px-Thomas_Edison2.jpg" },
       { name: "Malala Yousafzai", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg/220px-Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg" }
     ],
     color: "from-orange-500 to-red-600",
     strengths: ["Persistence", "Goal completion", "Hard work", "Motivation under pressure"],
-    growthAreas: ["Flexibility", "Handling setbacks calmly", "Seeking help when needed"]
+    growth_areas: ["Flexibility", "Handling setbacks calmly", "Seeking help when needed"]
   },
   Outgoing: {
     name: "Outgoing",
     category: "socializers",
     traits: ["Friendly", "Sociable", "Confident", "Energetic", "Engaging"],
     description: "{childName} thrives in social settings, enjoys meeting new people, and energizes others through their presence and enthusiasm.",
-    famousPeople: [
+    famous_people: [
       { name: "Oprah Winfrey", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Oprah_in_2014.jpg/220px-Oprah_in_2014.jpg" },
       { name: "Will Smith", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Will_Smith_2011.jpg/220px-Will_Smith_2011.jpg" }
     ],
     color: "from-yellow-400 to-orange-500",
     strengths: ["Networking", "Communication", "Confidence", "Positive energy"],
-    growthAreas: ["Listening skills", "Sensitivity to introverts", "Managing overstimulation"]
+    growth_areas: ["Listening skills", "Sensitivity to introverts", "Managing overstimulation"]
   },
   Creative: {
     name: "Creative",
     category: "creatives",
     traits: ["Imaginative", "Inventive", "Curious", "Expressive", "Resourceful"],
     description: "{childName} enjoys creating, imagining new possibilities, and finding unique solutions. They are inspired by self-expression and novel ideas.",
-    famousPeople: [
+    famous_people: [
       { name: "Leonardo da Vinci", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Leonardo_self.jpg/220px-Leonardo_self.jpg" },
       { name: "Frida Kahlo", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg/220px-Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg" }
     ],
     color: "from-purple-400 to-pink-500",
     strengths: ["Imagination", "Problem-solving", "Adaptability", "Artistic skills"],
-    growthAreas: ["Practical implementation", "Time management", "Accepting criticism"]
+    growth_areas: ["Practical implementation", "Time management", "Accepting criticism"]
   },
   Enthusiastic: {
     name: "Enthusiastic",
     category: "motivators",
     traits: ["Excitable", "Optimistic", "Eager", "Passionate", "Energetic"],
     description: "{childName} approaches new experiences with eagerness, expresses joy openly, and brings energy to their surroundings.",
-    famousPeople: [
+    famous_people: [
       { name: "Robin Williams", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg" },
       { name: "Ellen DeGeneres", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Ellen_DeGeneres_2011.jpg/220px-Ellen_DeGeneres_2011.jpg" }
     ],
     color: "from-emerald-400 to-yellow-500",
     strengths: ["Positive energy", "Motivation", "Inspiration to others", "Optimism"],
-    growthAreas: ["Focusing energy", "Patience", "Managing disappointment"]
+    growth_areas: ["Focusing energy", "Patience", "Managing disappointment"]
   },
   Restless: {
     name: "Restless",
     category: "adventurers",
     traits: ["Curious", "Impatient", "Varied interests", "Energetic", "Quick-moving"],
     description: "{childName} prefers variety and fast-paced activities, seeks new experiences, and gets bored when things are slow or repetitive.",
-    famousPeople: [
+    famous_people: [
       { name: "Richard Branson", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Richard_Branson_2011.jpg/220px-Richard_Branson_2011.jpg" },
       { name: "Bear Grylls", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bear_Grylls_at_the_Webby_Awards.jpg/220px-Bear_Grylls_at_the_Webby_Awards.jpg" }
     ],
     color: "from-orange-400 to-red-500",
     strengths: ["Adaptability", "Energy", "Variety-seeking", "Quick learning"],
-    growthAreas: ["Patience", "Long-term focus", "Consistency"]
+    growth_areas: ["Patience", "Long-term focus", "Consistency"]
   },
   "Highly Energetic": {
     name: "Highly Energetic",
     category: "motivators",
     traits: ["Active", "Vibrant", "Enthusiastic", "Persistent", "Alert"],
     description: "{childName} has a high energy level, enjoys being active, and can engage in multiple activities with stamina and vitality.",
-    famousPeople: [
+    famous_people: [
       { name: "Serena Williams", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Serena_Williams_2013.jpg/220px-Serena_Williams_2013.jpg" },
       { name: "Dwayne Johnson", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Dwayne_Johnson_2014.jpg/220px-Dwayne_Johnson_2014.jpg" }
     ],
     color: "from-red-500 to-yellow-500",
     strengths: ["Stamina", "Multitasking", "Enthusiasm", "Persistence"],
-    growthAreas: ["Rest and recovery", "Focus", "Patience with slower activities"]
+    growth_areas: ["Rest and recovery", "Focus", "Patience with slower activities"]
   },
   Thinker: {
     name: "Thinker",
     category: "creatives",
     traits: ["Curious", "Analytical", "Observant", "Thoughtful", "Problem-solver"],
     description: "{childName} enjoys thinking deeply, solving problems, asking questions, and reflecting on experiences.",
-    famousPeople: [
+    famous_people: [
       { name: "Albert Einstein", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Albert_Einstein_Head.jpg/220px-Albert_Einstein_Head.jpg" },
       { name: "Marie Curie", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Marie_Curie_c1920.jpg/220px-Marie_Curie_c1920.jpg" }
     ],
     color: "from-blue-400 to-indigo-500",
     strengths: ["Analytical thinking", "Problem-solving", "Curiosity", "Reflection"],
-    growthAreas: ["Action-taking", "Practical application", "Social interaction"]
+    growth_areas: ["Action-taking", "Practical application", "Social interaction"]
   },
   Playful: {
     name: "Playful",
     category: "socializers",
     traits: ["Joyful", "Silly", "Energetic", "Curious", "Spontaneous"],
     description: "{childName} brings fun and joy to situations, enjoys games and surprises, and approaches life with a light-hearted spirit.",
-    famousPeople: [
+    famous_people: [
       { name: "Jim Carrey", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Jim_Carrey_2011.jpg/220px-Jim_Carrey_2011.jpg" },
       { name: "Robin Williams", image: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg" }
     ],
     color: "from-pink-400 to-purple-500",
     strengths: ["Humor", "Joy", "Creativity", "Social engagement"],
-    growthAreas: ["Focus", "Handling serious tasks", "Patience"]
+    growth_areas: ["Focus", "Handling serious tasks", "Patience"]
   }
 };
 
@@ -328,9 +328,9 @@ export function adaptAiPersonalityToViewModel(ai, childName) {
   const growth_areas =
     Array.isArray(gaRaw) && gaRaw.length > 0
       ? gaRaw.map((t) => String(t)).filter(Boolean)
-      : base.growthAreas;
+      : base.growth_areas;
 
-  const famousPeople = roleModelAvatars(ai?.role_models, safeName);
+  const famous_people = roleModelAvatars(ai?.role_models, safeName);
 
   const scoresBase = PERSONALITY_TYPE_KEYS.reduce((acc, key) => {
     acc[key] = 14;
@@ -353,9 +353,9 @@ export function adaptAiPersonalityToViewModel(ai, childName) {
     name: base.name,
     traits,
     description,
-    famousPeople,
+    famous_people,
     strengths,
-    growthAreas: growth_areas,
+    growth_areas,
   };
 
   return {
@@ -376,12 +376,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
     .slice(0, 3)
     .map(([typeName, score]) => ({ name: typeName, score }));
 
-  const growthAreasList =
-    Array.isArray(profile?.growthAreas) && profile.growthAreas.length > 0
-      ? profile.growthAreas
-      : Array.isArray(profile?.growth_areas) && profile.growth_areas.length > 0
-        ? profile.growth_areas
-        : [];
+  const growthAreasList = Array.isArray(profile?.growth_areas) ? profile.growth_areas : [];
 
   return (
     <div className="space-y-6">
@@ -485,7 +480,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
         }</h4>
         <p className="text-xs text-slate-500 mb-4">People {childName} may relate to</p>
         <div className="flex flex-wrap justify-center gap-4">
-          {profile.famousPeople.map((person, i) => (
+          {profile.famous_people.map((person, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, scale: 0.8 }}

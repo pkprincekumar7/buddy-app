@@ -3,10 +3,15 @@ variable "aws_region" {
   type        = string
 }
 
+variable "db_state_key" {
+  description = "S3 key of the infra-db remote state for this environment and region (e.g. terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate)"
+  type        = string
+}
+
 variable "app_name" {
   description = "Application name used for resource naming and tagging"
   type        = string
-  default     = "buddy"
+  default     = "buddy360"
 }
 
 variable "environment" {
@@ -14,32 +19,12 @@ variable "environment" {
   type        = string
 }
 
-# ── Networking ──────────────────────────────────────────────────────────────
-
-variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "public_subnet_1_cidr" {
-  description = "CIDR block for public subnet in AZ-1"
-  type        = string
-  default     = "10.0.1.0/24"
-}
-
-variable "public_subnet_2_cidr" {
-  description = "CIDR block for public subnet in AZ-2"
-  type        = string
-  default     = "10.0.2.0/24"
-}
-
-# ── EC2 ─────────────────────────────────────────────────────────────────────
+# ── EC2 ──────────────────────────────────────────────────────────────────────
 
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
-  default     = "t2.small"
+  default     = "t3.small"
 }
 
 variable "allowed_ssh_cidr" {
@@ -48,7 +33,13 @@ variable "allowed_ssh_cidr" {
   # Set via TF_VAR_allowed_ssh_cidr environment variable or terraform.tfvars
 }
 
-# ── DNS / TLS ────────────────────────────────────────────────────────────────
+variable "key_name" {
+  description = "EC2 key pair name for SSH access (optional — leave null if SSM Session Manager is your only access method)"
+  type        = string
+  default     = null
+}
+
+# ── DNS / TLS ─────────────────────────────────────────────────────────────────
 
 variable "domain_name" {
   description = "Root domain name (e.g. sample.com)"

@@ -1,7 +1,7 @@
 resource "aws_security_group" "alb_sg" {
   name        = "${var.app_name}-alb-sg"
   description = "Allow HTTP and HTTPS inbound to ALB"
-  vpc_id      = aws_vpc.buddy_vpc.id
+  vpc_id      = data.terraform_remote_state.db.outputs.vpc_id
 
   ingress {
     description = "HTTP"
@@ -34,7 +34,7 @@ resource "aws_security_group" "alb_sg" {
 resource "aws_security_group" "ec2_sg" {
   name        = "${var.app_name}-ec2-sg"
   description = "Allow traffic from ALB and SSH from trusted IP"
-  vpc_id      = aws_vpc.buddy_vpc.id
+  vpc_id      = data.terraform_remote_state.db.outputs.vpc_id
 
   ingress {
     description     = "Frontend from ALB"
@@ -70,4 +70,15 @@ resource "aws_security_group" "ec2_sg" {
   tags = {
     Name = "${var.app_name}-ec2-sg"
   }
+}
+
+# Locks RDS access to the EC2 instance only. Managed here (not in infra-db) because
+# the EC2 SG doesn't exist until this stack is applied.
+resource "aws_vpc_security_group_ingress_rule" "ec2_to_rds" {
+  description                  = "PostgreSQL from EC2"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.ec2_sg.id
+  security_group_id            = data.terraform_remote_state.db.outputs.rds_sg_id
 }

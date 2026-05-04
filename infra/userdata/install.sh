@@ -17,7 +17,9 @@ apt-get install -y docker-compose-v2
 # Allow ubuntu user to run docker without sudo
 usermod -aG docker ubuntu
 
-# Install and start SSM agent (not pre-installed on Canonical Ubuntu AMIs)
+# Install and start SSM agent (not pre-installed on Canonical Ubuntu AMIs).
+# Wait for snapd seed to complete before installing to avoid a boot-time race.
+snap wait system seed.loaded
 snap install amazon-ssm-agent --classic
 systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
 systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service

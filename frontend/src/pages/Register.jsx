@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 
 export default function Register() {
   const { checkAppState } = useAuth();
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -15,6 +16,10 @@ export default function Register() {
   const onSubmit = async (ev) => {
     ev.preventDefault();
     setError('');
+    if (!fullName.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
     if (password !== confirm) {
       setError('Password and confirmation do not match.');
       return;
@@ -25,8 +30,7 @@ export default function Register() {
     }
     setBusy(true);
     try {
-      const local = email.trim().split('@')[0] || 'Parent';
-      await api.auth.register(email.trim(), password, local);
+      await api.auth.register(email.trim(), password, fullName.trim());
       await checkAppState({ withLoading: false });
     } catch (e) {
       if (e?.status === 409) {
@@ -51,6 +55,22 @@ export default function Register() {
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="reg-name" className="mb-1 block text-sm font-medium text-slate-700">
+              Full name
+            </label>
+            <input
+              id="reg-name"
+              type="text"
+              autoComplete="name"
+              placeholder="e.g. Sarah Johnson"
+              required
+              maxLength={255}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+            />
+          </div>
           <div>
             <label htmlFor="reg-email" className="mb-1 block text-sm font-medium text-slate-700">
               Username (email)

@@ -1,5 +1,5 @@
 locals {
-  fqdn = "${var.subdomain}.${var.domain_name}"
+  fqdn = var.environment == "prod" ? "${var.subdomain}.${var.domain_name}" : "${var.subdomain}-${var.environment}.${var.domain_name}"
 
   common_tags = {
     Project     = var.app_name

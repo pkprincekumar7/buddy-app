@@ -84,10 +84,17 @@ Growth areas explored: ${areasContext || 'General holistic development'}
 
 Generate a structured 3-month plan. Each month has a theme/goal and is split into 2 bi-weekly periods (Week 1&2 and Week 3&4). Each period has exactly 2 activities with clear objectives.
 
-Follow-up rule (critical): Within every month, Week 3&4 must directly build on Week 1&2:
-- Week 3&4 Activity 1 is the next-step progression of Week 1&2 Activity 1 (same skill/theme, deeper or extended).
-- Week 3&4 Activity 2 is the next-step progression of Week 1&2 Activity 2 (same skill/theme, deeper or extended).
-Do NOT introduce a new unrelated activity in Week 3&4.
+STRICT follow-up rule — you MUST follow this for every month without exception:
+- Period 1 (Week 1 & 2): introduce Activity A and Activity B.
+- Period 2 (Week 3 & 4): Activity 1 MUST be a direct progression of Activity A (same skill, one level deeper). Activity 2 MUST be a direct progression of Activity B (same skill, one level deeper).
+- NEVER place a new unrelated activity in Week 3 & 4. Both slots must follow up on Week 1 & 2.
+
+Example of correct follow-up pairing:
+  Week 1&2 Activity 1: "Picture Description Warm-Up — child describes a single image using 1–2 sentences"
+  Week 3&4 Activity 1: "Picture Story Extension — child describes the same image using 3–4 sentences and answers follow-up questions"
+
+  Week 1&2 Activity 2: "Show-and-Tell with a Toy — child names and describes one feature of a toy"
+  Week 3&4 Activity 2: "Show-and-Tell with Questions — child describes the toy and answers 2 questions from a listener"
 
 Make sure the concern "${parentConcern}" is prominently addressed throughout.
 
@@ -157,9 +164,12 @@ Return JSON with this exact structure:
         }
       });
 
+      // The LLM API wraps data under "properties" when response_json_schema is used.
+      const plan = result.properties ?? result;
+
       // Restore completed activities at their original positions so progress is preserved.
       if (Object.keys(completedSnapshot).length > 0) {
-        result.months?.forEach((month, mIdx) => {
+        plan.months?.forEach((month, mIdx) => {
           month.periods?.forEach((period, pIdx) => {
             period.activities?.forEach((act, aIdx) => {
               const snap = completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`];
@@ -176,8 +186,8 @@ Return JSON with this exact structure:
         });
       }
 
-      await api.goals.patch({ plan: result });
-      setGoalPlan(result);
+      await api.goals.patch({ plan: plan });
+      setGoalPlan(plan);
     } catch (e) {
       console.error(e);
       toast.error('Failed to generate plan. Please try again.');

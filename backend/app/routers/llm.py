@@ -67,8 +67,20 @@ def _invoke_openai(prompt: str, sys_msg: str) -> dict:
             {"role": "user", "content": prompt},
         ],
         response_format={"type": "json_object"},
+        timeout=settings.llm_timeout_seconds,
     )
     return json.loads(comp.choices[0].message.content or "{}")
+
+
+def _parse_json(raw: str | None, provider: str) -> dict:
+    text = raw or "{}"
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        # Re-raise as ValueError so the outer handler includes the raw snippet.
+        raise ValueError(
+            f"LLM ({provider}) returned non-JSON — raw={text[:400]!r}"
+        ) from exc
 
 
 def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
@@ -80,9 +92,11 @@ def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
         max_tokens=4096,
         system=sys_msg,
         messages=[{"role": "user", "content": prompt}],
+        timeout=settings.llm_timeout_seconds,
     )
-    raw = msg.content[0].text if msg.content else "{}"
-    return json.loads(raw)
+    block = msg.content[0] if msg.content else None
+    raw = block.text if (block is not None and hasattr(block, "text")) else None
+    return _parse_json(raw, "anthropic")
 
 
 def _invoke_gemini(prompt: str, sys_msg: str) -> dict:
@@ -96,8 +110,9 @@ def _invoke_gemini(prompt: str, sys_msg: str) -> dict:
     resp = model.generate_content(
         prompt,
         generation_config={"response_mime_type": "application/json"},
+        request_options={"timeout": settings.llm_timeout_seconds},
     )
-    return json.loads(resp.text or "{}")
+    return _parse_json(getattr(resp, "text", None), "gemini")
 
 
 _INVOKERS: dict[ProviderName, Any] = {
@@ -117,15 +132,17 @@ class LLMInvokeBody(BaseModel):
 def invoke_llm(body: LLMInvokeBody, user: User = Depends(get_current_user)):
     provider = _resolve_provider(body.provider)
     sys_msg = _system_message(body.response_json_schema)
-    log.debug("llm/invoke using provider=%s", provider)
+    log.debug("llm.invoke provider=%s", provider)
     try:
         return _INVOKERS[provider](body.prompt, sys_msg)
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=502, detail=f"Model returned invalid JSON: {e}") from e
+        log.warning("llm.invoke.error provider=%s error=invalid_json detail=%s", provider, e)
+        raise HTTPException(status_code=502, detail="LLM service returned an unexpected response.") from e
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        log.warning("llm.invoke.error provider=%s error=%s", provider, e)
+        raise HTTPException(status_code=502, detail="LLM service is temporarily unavailable.") from e
 
 
 @router.get("/providers")
