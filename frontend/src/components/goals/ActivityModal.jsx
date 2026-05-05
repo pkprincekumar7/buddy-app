@@ -4,8 +4,11 @@ import { X, ChevronLeft, ChevronRight, Trophy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
+import { unwrapLLM } from '@/lib/llmUtils';
 
-export default function ActivityModal({ activity, childName, onClose, onComplete }) {
+export default function ActivityModal({ activity, originalActivity, childName, onClose, onComplete }) {
+  const isScorableActivity = activity.scorable !== false;
+
   const [step, setStep] = useState('loading');
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -13,6 +16,7 @@ export default function ActivityModal({ activity, childName, onClose, onComplete
   const [responses, setResponses] = useState({});
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [aiScore, setAiScore] = useState(null);
+  const [aiNote, setAiNote] = useState(null);
   const [aiFeedback, setAiFeedback] = useState('');
   const [parentFeedback, setParentFeedback] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -132,8 +136,9 @@ Rules:
         })
         .join('\n\n');
 
-      const result = await api.integrations.Core.InvokeLLM({
-        prompt: `You are evaluating a young child's responses for the activity "${activity.title}".
+      if (isScorableActivity) {
+        const result = await api.integrations.Core.InvokeLLM({
+          prompt: `You are evaluating a young child's responses for the activity "${activity.title}".
 Activity objective: "${activity.objective}"
 
 Child's answers:
@@ -143,23 +148,56 @@ Scoring guidelines:
 - This is a young child. Short but relevant answers (even 1–2 words) are perfectly valid — do not penalise brevity.
 - For scale questions, treat the numeric rating at face value (e.g. "4" out of 5 is a strong response).
 - For choice questions, any selection shows engagement.
-- For text questions, reward relevance and effort over length.
-- Give a score from 6–10 (never below 6 for a child who attempted all questions). Reserve 9–10 for exceptionally detailed or thoughtful answers.
+- For text questions, assess both relevance/effort AND the quality and correctness of what the child said — reward answers that demonstrate genuine understanding of the activity objective over vague or off-topic ones.
+- Overall score should reflect: (a) engagement and effort, (b) quality of understanding shown, and (c) correctness and relevance of answers to the activity objective.
+- Give a score from 6–10 (never below 6 for a child who attempted all questions). Reserve 9–10 for exceptionally detailed, correct, and thoughtful answers; give 6–7 for minimal or off-topic responses.
 - Write 1–2 sentences of child-friendly encouraging feedback that references what they actually said. Start with "Great job".`,
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            score: { type: 'number' },
-            feedback: { type: 'string' }
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              score: { type: 'number' },
+              feedback: { type: 'string' }
+            }
           }
-        }
-      });
-      const data = result.properties ?? result;
-      setAiScore(data.score ?? 7);
-      setAiFeedback(data.feedback || 'Great job completing this activity!');
+        });
+        const data = result.properties ?? result;
+        setAiScore(unwrapLLM(data.score) ?? 7);
+        setAiFeedback(unwrapLLM(data.feedback) || 'Great job completing this activity!');
+      } else {
+        const result = await api.integrations.Core.InvokeLLM({
+          prompt: `You are reviewing a young child's responses for the activity "${activity.title}".
+Activity objective: "${activity.objective}"
+
+Child's answers:
+${answersText}
+
+Evaluate the child's responses on:
+- Relevance: are the answers related to the activity objective?
+- Engagement: did the child put in genuine effort or give minimal/off-topic answers?
+- Quality of expression: did the child communicate their thoughts clearly, even briefly?
+
+Based on this evaluation, write two things:
+1. "note" — a short appreciation message of MAXIMUM 5 WORDS that reflects how well the child engaged. Use a stronger phrase (e.g. "Outstanding work!", "Brilliant effort today!") for high-quality, relevant responses and a gentler encouraging phrase (e.g. "Keep exploring!", "You're doing great!") for minimal or off-topic ones.
+2. "feedback" — 1–2 sentences of child-friendly encouraging feedback that references what they actually said and gently nudges improvement if needed. Start with "Great job".`,
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              note: { type: 'string' },
+              feedback: { type: 'string' }
+            }
+          }
+        });
+        const data = result.properties ?? result;
+        setAiNote(unwrapLLM(data.note) ?? 'Great effort today!');
+        setAiFeedback(unwrapLLM(data.feedback) || 'Great job completing this activity!');
+      }
       setStep('complete');
     } catch {
-      setAiScore(7);
+      if (isScorableActivity) {
+        setAiScore(7);
+      } else {
+        setAiNote('Great effort today!');
+      }
       setAiFeedback('Great job completing this activity with enthusiasm!');
       setStep('complete');
     }
@@ -167,9 +205,50 @@ Scoring guidelines:
 
   const handleSaveAndContinue = async () => {
     setIsSaving(true);
+    let progressObservation = null;
+
     try {
+      // For non-scorable follow-up activities, compare with the original to
+      // determine progress. This result is stored and used in the progress chart.
+      if (!isScorableActivity && originalActivity?.completed) {
+        try {
+          const result = await api.integrations.Core.InvokeLLM({
+            prompt: `Compare two assessments for the same child activity objective and determine if the child improved.
+
+Original assessment (Week 1&2):
+- Activity: "${originalActivity.title}"
+- Note: "${originalActivity.note || 'none'}"
+- AI Feedback: "${originalActivity.ai_feedback || 'none'}"
+- Parent Feedback: "${originalActivity.parent_feedback || 'none'}"
+
+Follow-up assessment (Week 3&4):
+- Activity: "${activity.title}"
+- Note: "${aiNote || 'none'}"
+- AI Feedback: "${aiFeedback || 'none'}"
+- Parent Feedback: "${parentFeedback || 'none'}"
+
+Based on the quality of engagement, effort, and expression shown across both assessments, return exactly one of:
+- "Improved" — the follow-up shows clearly better engagement, effort, or expression than the original
+- "Needs More Attention" — the follow-up shows weaker engagement or effort compared to the original
+- "No Improvement" — both assessments show similar levels of engagement and effort`,
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                progress_observation: { type: 'string' }
+              }
+            }
+          });
+          const data = result.properties ?? result;
+          progressObservation = unwrapLLM(data.progress_observation) ?? 'No Improvement';
+        } catch {
+          progressObservation = 'No Improvement';
+        }
+      }
+
       await onComplete({
-        score: aiScore,
+        score: isScorableActivity ? aiScore : null,
+        note: isScorableActivity ? null : aiNote,
+        progress_observation: progressObservation,
         ai_feedback: aiFeedback,
         parent_feedback: parentFeedback,
         responses: Object.values(responses)
@@ -410,11 +489,22 @@ Scoring guidelines:
 
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-4 items-start">
                   <div className="flex-shrink-0">
-                    <p className="text-xs font-semibold text-green-600 mb-0.5">AI Score</p>
-                    <p className="text-3xl font-bold text-green-700 leading-none">
-                      {aiScore}
-                      <span className="text-base font-normal text-green-500">/10</span>
-                    </p>
+                    {isScorableActivity ? (
+                      <>
+                        <p className="text-xs font-semibold text-green-600 mb-0.5">AI Score</p>
+                        <p className="text-3xl font-bold text-green-700 leading-none">
+                          {aiScore}
+                          <span className="text-base font-normal text-green-500">/10</span>
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-semibold text-green-600 mb-0.5">Note</p>
+                        <p className="text-base font-bold text-green-700 leading-snug max-w-[120px]">
+                          {aiNote}
+                        </p>
+                      </>
+                    )}
                   </div>
                   <p className="text-green-700 text-sm mt-1">✅ {aiFeedback}</p>
                 </div>

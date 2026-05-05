@@ -2,7 +2,7 @@
 
 A child development app for parents. Stack: **React 18 (Vite)**, **FastAPI**, **PostgreSQL**, optional **OpenAI** for LLM and audio transcription. Run everything with **Docker Compose** or the backend/frontend dev servers.
 
-Frontend UI library: **Tailwind CSS** + **shadcn/ui** (Radix UI primitives), **React Query**, **Framer Motion**, **React Router v6**.
+Frontend UI library: **Tailwind CSS** + **shadcn/ui** (Radix UI primitives), **React Query**, **Framer Motion**, **React Router v6**, **Recharts**.
 
 ## Quick start (Docker)
 

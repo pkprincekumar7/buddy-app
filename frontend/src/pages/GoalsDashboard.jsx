@@ -9,6 +9,7 @@ import { Target, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, RotateCcw, Loc
 import { Button } from '@/components/ui/button';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import ActivityModal from '@/components/goals/ActivityModal';
+import ProgressInsightsModal from '@/components/goals/ProgressInsightsModal';
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
@@ -21,6 +22,7 @@ export default function GoalsDashboard() {
   const [savedOnboarding, setSavedOnboarding] = useState(null);
   const [savedCompletedAreas, setSavedCompletedAreas] = useState([]);
   const [activeActivity, setActiveActivity] = useState(null); // { activity, monthIdx, periodIdx, actIdx }
+  const [showProgress, setShowProgress] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -89,12 +91,21 @@ STRICT follow-up rule — you MUST follow this for every month without exception
 - Period 2 (Week 3 & 4): Activity 1 MUST be a direct progression of Activity A (same skill, one level deeper). Activity 2 MUST be a direct progression of Activity B (same skill, one level deeper).
 - NEVER place a new unrelated activity in Week 3 & 4. Both slots must follow up on Week 1 & 2.
 
-Example of correct follow-up pairing:
-  Week 1&2 Activity 1: "Picture Description Warm-Up — child describes a single image using 1–2 sentences"
-  Week 3&4 Activity 1: "Picture Story Extension — child describes the same image using 3–4 sentences and answers follow-up questions"
+SCORABLE vs NON-SCORABLE activities:
+- Each activity MUST include a "scorable" field (true or false).
+- Across the full 3-month plan, include a MIX — some activities scorable: true, some scorable: false. Do not make all activities the same type.
+- The "scorable" value of a follow-up (Week 3&4) MUST exactly match its Week 1&2 counterpart:
+  - If Week 1&2 Activity A is scorable: true → Week 3&4 Activity 1 must be scorable: true.
+  - If Week 1&2 Activity B is scorable: false → Week 3&4 Activity 2 must be scorable: false.
+- Use scorable: true for structured skill-building activities where measurable progress is clear (e.g. speaking, reading, problem-solving).
+- Use scorable: false for open-ended, creative, emotional, or reflective activities where a numeric score is not meaningful (e.g. journaling feelings, imaginative play, self-expression).
 
-  Week 1&2 Activity 2: "Show-and-Tell with a Toy — child names and describes one feature of a toy"
-  Week 3&4 Activity 2: "Show-and-Tell with Questions — child describes the toy and answers 2 questions from a listener"
+Example of correct follow-up pairing (with scorable):
+  Week 1&2 Activity 1: { "title": "Picture Description Warm-Up", "objective": "child describes a single image using 1–2 sentences", "scorable": true }
+  Week 3&4 Activity 1: { "title": "Picture Story Extension", "objective": "child describes the same image using 3–4 sentences and answers follow-up questions", "scorable": true }
+
+  Week 1&2 Activity 2: { "title": "Feelings Journaling", "objective": "child identifies and names 2 emotions they felt this week", "scorable": false }
+  Week 3&4 Activity 2: { "title": "Feelings Discussion", "objective": "child describes their emotions and shares why they felt that way", "scorable": false }
 
 Make sure the concern "${parentConcern}" is prominently addressed throughout.
 
@@ -109,15 +120,15 @@ Return JSON with this exact structure:
         {
           "label": "Week 1 & 2",
           "activities": [
-            { "title": "Activity title", "objective": "What child will achieve" },
-            { "title": "Activity title", "objective": "What child will achieve" }
+            { "title": "Activity title", "objective": "What child will achieve", "scorable": true },
+            { "title": "Activity title", "objective": "What child will achieve", "scorable": false }
           ]
         },
         {
           "label": "Week 3 & 4",
           "activities": [
-            { "title": "Activity title", "objective": "What child will achieve" },
-            { "title": "Activity title", "objective": "What child will achieve" }
+            { "title": "Activity title", "objective": "What child will achieve", "scorable": true },
+            { "title": "Activity title", "objective": "What child will achieve", "scorable": false }
           ]
         }
       ]
@@ -150,7 +161,8 @@ Return JSON with this exact structure:
                             type: "object",
                             properties: {
                               title: { type: "string" },
-                              objective: { type: "string" }
+                              objective: { type: "string" },
+                              scorable: { type: "boolean" }
                             }
                           }
                         }
@@ -176,8 +188,11 @@ Return JSON with this exact structure:
               if (snap) {
                 act.title = snap.title;
                 act.objective = snap.objective;
+                act.scorable = snap.scorable;
                 act.completed = snap.completed;
                 act.score = snap.score;
+                act.note = snap.note;
+                act.progress_observation = snap.progress_observation;
                 act.ai_feedback = snap.ai_feedback;
                 act.parent_feedback = snap.parent_feedback;
               }
@@ -195,7 +210,7 @@ Return JSON with this exact structure:
     setIsLoading(false);
   };
 
-  const handleActivityComplete = async ({ score, ai_feedback, parent_feedback }) => {
+  const handleActivityComplete = async ({ score, note, progress_observation, ai_feedback, parent_feedback }) => {
     if (!activeActivity) return;
     const { monthIdx, periodIdx, actIdx } = activeActivity;
 
@@ -203,6 +218,8 @@ Return JSON with this exact structure:
     const act = updatedPlan.months[monthIdx].periods[periodIdx].activities[actIdx];
     act.completed = true;
     act.score = score;
+    act.note = note;
+    act.progress_observation = progress_observation;
     act.ai_feedback = ai_feedback;
     act.parent_feedback = parent_feedback;
 
@@ -242,6 +259,8 @@ Return JSON with this exact structure:
             const act = updatedPlan.months[m].periods[p].activities[a];
             delete act.completed;
             delete act.score;
+            delete act.note;
+            delete act.progress_observation;
             delete act.ai_feedback;
             delete act.parent_feedback;
           }
@@ -395,9 +414,15 @@ Return JSON with this exact structure:
                                         <p className="text-sm font-semibold text-green-700">
                                           ✅ {act.ai_feedback}
                                         </p>
-                                        <p className="text-sm font-bold text-slate-700">
-                                          Score: {act.score}/10
-                                        </p>
+                                        {act.scorable !== false ? (
+                                          <p className="text-sm font-bold text-slate-700">
+                                            Score: {act.score}/10
+                                          </p>
+                                        ) : (
+                                          <p className="text-sm font-bold text-slate-700">
+                                            Note: {act.note}
+                                          </p>
+                                        )}
                                         {act.parent_feedback && (
                                           <p className="text-sm italic text-slate-500">
                                             Parent: {act.parent_feedback}
@@ -406,9 +431,12 @@ Return JSON with this exact structure:
                                       </div>
                                     ) : isActive ? (
                                       <button
-                                        onClick={() =>
-                                          setActiveActivity({ activity: act, monthIdx: idx, periodIdx: pIdx, actIdx: aIdx })
-                                        }
+                                        onClick={() => {
+                                          const originalAct = pIdx > 0
+                                            ? month.periods[0]?.activities?.[aIdx]
+                                            : null;
+                                          setActiveActivity({ activity: act, monthIdx: idx, periodIdx: pIdx, actIdx: aIdx, originalActivity: originalAct });
+                                        }}
                                         className={`mt-2 text-sm font-medium ${color.text} hover:underline`}
                                       >
                                         Tap to start activity →
@@ -435,6 +463,16 @@ Return JSON with this exact structure:
                 </motion.div>
               );
             })}
+
+            {/* View Progress & Insights */}
+            <div className="flex justify-center pt-2">
+              <Button
+                onClick={() => setShowProgress(true)}
+                className="h-11 px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+              >
+                View Progress And Insights
+              </Button>
+            </div>
 
             {/* sm+: left | center | right; mobile: stacked full-width */}
             <div className="grid w-full grid-cols-1 gap-3 pt-4 sm:grid-cols-3 sm:items-center">
@@ -508,9 +546,18 @@ Return JSON with this exact structure:
         {activeActivity && (
           <ActivityModal
             activity={activeActivity.activity}
+            originalActivity={activeActivity.originalActivity}
             childName={childData?.name}
             onClose={() => setActiveActivity(null)}
             onComplete={handleActivityComplete}
+          />
+        )}
+        {showProgress && (
+          <ProgressInsightsModal
+            goalPlan={goalPlan}
+            childName={childData?.name}
+            onPlanUpdate={setGoalPlan}
+            onClose={() => setShowProgress(false)}
           />
         )}
       </AnimatePresence>

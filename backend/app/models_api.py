@@ -198,8 +198,11 @@ class RecommendationsProgress(BaseModel):
 class GoalsActivity(BaseModel):
     title: str
     objective: str
+    scorable: bool = True
     completed: bool | None = None
     score: int | None = None
+    note: str | None = None
+    progress_observation: str | None = None
     ai_feedback: str | None = None
     parent_feedback: str | None = None
 
@@ -216,8 +219,23 @@ class GoalsMonth(BaseModel):
     periods: list[GoalsPeriod]
 
 
+class GoalsPlanMonthInsight(BaseModel):
+    month: int
+    insight: str
+
+
+class GoalsPlanInsights(BaseModel):
+    overall_summary: str = ''
+    monthly_insights: list[GoalsPlanMonthInsight] = []
+    recommendations: list[str] = []
+    strongest_area: str | None = None
+    focus_area: str | None = None
+
+
 class GoalsPlan(BaseModel):
     months: list[GoalsMonth]
+    insights: GoalsPlanInsights | None = None
+    insights_signature: int | None = None
 
 
 class UserGoals(BaseModel):
