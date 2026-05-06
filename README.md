@@ -1,6 +1,6 @@
 # Buddy360
 
-A child development app for parents. Stack: **React 18 (Vite)**, **FastAPI**, **PostgreSQL**, optional **OpenAI** for LLM and audio transcription. Run everything with **Docker Compose** or the backend/frontend dev servers.
+A child development app for parents. Stack: **React 18 (Vite)**, **FastAPI**, **PostgreSQL**, optional LLM providers (**OpenAI**, **Anthropic**, **Gemini**) and **OpenAI Whisper** for audio transcription. Run everything with **Docker Compose** or the backend/frontend dev servers.
 
 Frontend UI library: **Tailwind CSS** + **shadcn/ui** (Radix UI primitives), **React Query**, **Framer Motion**, **React Router v6**, **Recharts**.
 
@@ -16,9 +16,9 @@ docker compose up --build
 
 This starts all three services: Postgres, the FastAPI backend, and the Nginx-served frontend. For production deployments pointing at RDS instead of a local Postgres, set `POSTGRES_HOST` in `.env` to the RDS endpoint before starting.
 
-After changing `VITE_GOOGLE_CLIENT_ID`, rebuild the frontend image so Vite embeds it (`docker compose build frontend` or `docker compose up --build`).
+After changing `VITE_GOOGLE_CLIENT_ID` or `VITE_API_URL`, rebuild the frontend image so Vite embeds them (`docker compose build frontend` or `docker compose up --build`).
 
-All supported variables are documented in `.env.example` (JWT lifetimes, CORS, Postgres, `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, optional `VITE_API_URL`).
+All supported variables are documented in `.env.example` (JWT lifetimes, CORS, Postgres, `GOOGLE_CLIENT_ID`, `VITE_GOOGLE_CLIENT_ID`, `VITE_API_URL`, `APP_ENV`, cookie settings).
 
 - API: `http://localhost:8000` (e.g. `GET /health`)
 - UI: `http://localhost:5173`
@@ -53,7 +53,7 @@ If these are left empty, email/password login still works; the login page hides 
 
 Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images).
 
-- Start PostgreSQL and set `DATABASE_URL` to it (not `db` as host).
+- Start PostgreSQL and set `DATABASE_URL` (or the discrete `POSTGRES_*` vars) to point to it. For a local-only backend without PostgreSQL, `DATABASE_URL=sqlite:///./buddy360.db` (the default in `backend/.env.example`) works.
 - Backend:
   ```bash
   cd backend
@@ -93,19 +93,7 @@ Protected routes require `Authorization: Bearer <access_token>`.
 
 **Growth missions** (`/api/v1/growth-missions/...`)
 - `GET /growth-missions?child_id=` — list missions for a child
-- `POST /growth-missions` — create a mission
 - `POST /growth-missions/bulk` — create multiple missions in one request
-- `GET /growth-missions/{mission_id}` — get a single mission
-- `PATCH /growth-missions/{mission_id}` — update a mission (AI insights are deep-merged)
-
-**Parent insights** (`/api/v1/parent-insights/...`)
-- `GET /parent-insights?child_id=` — list insights (supports `is_read` filter, `sort`, `limit`)
-- `POST /parent-insights` — create an insight
-- `PATCH /parent-insights/{insight_id}` — mark read/unread
-
-**Reflections** (`/api/v1/reflections/...`)
-- `GET /reflections?child_id=` — list reflections
-- `POST /reflections` — create a reflection
 
 **LLM** (`/api/v1/llm/...`)
 - `POST /llm/invoke` — send a prompt to an LLM; optionally pass `response_json_schema` for structured JSON output and `provider` (`"openai"` | `"anthropic"` | `"gemini"`) to pin a specific model. Without `provider`, the server auto-selects the first configured key in priority order: OpenAI → Anthropic → Gemini. Returns 503 if no provider is configured.
@@ -116,6 +104,7 @@ Protected routes require `Authorization: Bearer <access_token>`.
 
 **Health**
 - `GET /health` — returns `{"status": "ok"}` (no auth)
+- `GET /api/health` — same as above; use this when accessing via the frontend proxy (e.g. `https://your-domain.com/api/health`)
 
 ## Frontend pages
 
@@ -127,11 +116,8 @@ Routes are PascalCase (as registered in `pages.config.js`). `/` renders the `mai
 | `/Register` | Register |
 | `/` → `/Onboarding` | Conversational onboarding + personality analysis (main landing page) |
 | `/Home` | Home |
-| `/ParentDashboard` | Parent dashboard (insights, growth roadmap, pillar progress) |
 | `/GoalsDashboard` | Goals dashboard |
 | `/LifePathway` | Life pathway / recommendations |
-| `/Missions` | Weekly missions |
-| `/ChildMode` | Child mode view |
 
 ## Infrastructure
 
@@ -169,7 +155,7 @@ The JSON response contains `username` and `password`. Store `password` as the `P
 
 | Resource | Detail |
 |---|---|
-| EC2 | Ubuntu 24.04 LTS (AMI auto-resolved from SSM), `t2.small` default, SSM agent via userdata |
+| EC2 | Ubuntu 24.04 LTS (AMI auto-resolved from SSM), `t3.small` default, SSM agent via userdata |
 | ALB | HTTPS port 443 (TLS 1.3); HTTP → HTTPS redirect; `/api/*` → backend, all else → frontend |
 | Route 53 | A-alias record → ALB. FQDN: `{subdomain}-{env}.{domain_name}` for non-prod (e.g. `app-dev.example.com`), `{subdomain}.{domain_name}` for prod (e.g. `app.example.com`) |
 | ACM | Certificate referenced by ARN (must already exist) |
@@ -379,10 +365,13 @@ Configure these under **Settings → Environments → `<env>` → Secrets** (one
 
 | Secret | Value |
 |---|---|
-| `JWT_SECRET` | Long random string (min 32 chars) — generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `APP_ENV` | Deployment environment — `local` (default), `dev`, `stg`, or `prod`. Affects JWT validation strictness and cookie behavior. |
+| `JWT_SECRET` | Long random string (min 32 chars; min 64 in production) — generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In) |
 | `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
+| `VITE_API_URL` | Frontend API base URL (optional — if empty, the client uses relative paths) |
 | `CORS_ORIGINS` | Comma-separated allowed origins, e.g. `https://app.example.com` |
+| `COOKIE_DOMAIN` | Cookie domain (optional — only set when auth cookies must span subdomains, e.g. `.example.com`) |
 | `OPENAI_API_KEY` | OpenAI key (optional — leave empty if not using OpenAI) |
 | `OPENAI_MODEL` | e.g. `gpt-4o-mini` |
 | `ANTHROPIC_API_KEY` | Anthropic key (optional) |

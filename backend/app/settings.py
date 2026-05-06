@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
 
     app_env: str = Field(
-        default="development",
+        default="local",
         validation_alias=AliasChoices("APP_ENV", "app_env"),
     )
 
@@ -125,9 +125,26 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("POSTGRES_MAX_OVERFLOW", "postgres_max_overflow"),
     )
 
+    # Cookie settings for HttpOnly auth tokens.
+    # Set COOKIE_SECURE=false only for local HTTP development; always True in production.
+    cookie_secure: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("COOKIE_SECURE", "cookie_secure"),
+    )
+    # "lax" allows navigation from external links while blocking cross-site state-changing requests.
+    cookie_samesite: str = Field(
+        default="lax",
+        validation_alias=AliasChoices("COOKIE_SAMESITE", "cookie_samesite"),
+    )
+    # Only set if cookies must span subdomains (e.g. ".example.com"). Leave blank otherwise.
+    cookie_domain: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("COOKIE_DOMAIN", "cookie_domain"),
+    )
+
     @model_validator(mode="after")
     def warn_production_jwt_secret(self):
-        if self.app_env.lower() == "production" and len(self.jwt_secret) < 64:
+        if self.app_env.lower() == "prod" and len(self.jwt_secret) < 64:
             log.warning(
                 "JWT_SECRET is only %d characters. In production, use a randomly "
                 "generated secret of at least 64 characters "

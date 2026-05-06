@@ -44,6 +44,12 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       # Browser hits UI at http://localhost:${FRONTEND_PORT:-5173}; API is proxied via nginx as /api
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
+      # Cookie security: false for local HTTP, true in production (HTTPS required).
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      BEHIND_PROXY: ${BEHIND_PROXY:-false}
+      APP_ENV: ${APP_ENV:-local}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

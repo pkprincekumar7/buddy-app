@@ -7,16 +7,24 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    jti: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    full_name: Mapped[str] = mapped_column(String(255), default="Parent")
-    role: Mapped[str] = mapped_column(String(32), default="parent")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="Parent")
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="parent")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=func.now(), onupdate=func.now())
 
 
 class UserPreferencesRecord(Base):
@@ -114,7 +122,7 @@ class CompletedGrowthAreaRecord(Base):
 
 
 # ---------------------------------------------------------------------------
-# Children, missions, insights, reflections
+# Children and missions
 # ---------------------------------------------------------------------------
 
 class ChildRecord(Base):
@@ -139,28 +147,3 @@ class GrowthMissionRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
     __table_args__ = (Index("ix_missions_child_created", "child_id", "created_at"),)
-
-
-class ParentInsightRecord(Base):
-    __tablename__ = "parent_insights"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    child_id: Mapped[str] = mapped_column(String(36), ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
-    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-
-    __table_args__ = (Index("ix_insights_child_read_created", "child_id", "is_read", "created_at"),)
-
-
-class ReflectionRecord(Base):
-    __tablename__ = "reflections"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    child_id: Mapped[str] = mapped_column(String(36), ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSON, default=lambda: {})
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-
-    __table_args__ = (Index("ix_reflections_child_created", "child_id", "created_at"),)

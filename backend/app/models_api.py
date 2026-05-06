@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ class PersonalityProfile(BaseModel):
 
 class PersonalityViewModel(BaseModel):
     type: str
-    scores: dict[str, int]  # dynamic personality-type keys — the only justified dict
+    scores: dict[str, int] = Field(default_factory=dict, max_length=20)
     profile: PersonalityProfile
 
 
@@ -183,11 +183,11 @@ class RecommendationsProgress(BaseModel):
     feedback: str = ""
     current_area_index: int = 0
     interactive_step: int = 0
-    interactive_answers: dict[str, str] = Field(default_factory=dict)
+    interactive_answers: dict[str, str] = Field(default_factory=dict, max_length=50)
     interactive_draft: InteractiveDraft | None = None
     generated_activity: GeneratedActivity | None = None
     show_game: bool = False
-    child_activity_by_area: dict[str, ChildActivity] = Field(default_factory=dict)
+    child_activity_by_area: dict[str, ChildActivity] = Field(default_factory=dict, max_length=10)
     ai_three_month_recommendations: AiThreeMonthRecs | None = None
 
 
@@ -317,6 +317,13 @@ class ChildPatch(BaseModel):
     parent_interactions: list | None = None
     avatar_style: str | None = None
 
+    @field_validator("pillar_scores")
+    @classmethod
+    def validate_pillar_scores(cls, v: dict | None) -> dict | None:
+        if v is not None and len(v) > 20:
+            raise ValueError("pillar_scores must not exceed 20 entries")
+        return v
+
 
 # ---------------------------------------------------------------------------
 # Growth missions
@@ -339,7 +346,6 @@ class GrowthMissionResponse(BaseModel):
 
 
 class GrowthMissionCreate(BaseModel):
-    # extra="allow": same payload-blob design as ChildCreate.
     model_config = {"extra": "allow"}
 
     child_id: str
@@ -355,73 +361,3 @@ class GrowthMissionCreate(BaseModel):
 
 class BulkMissionBody(BaseModel):
     items: list[GrowthMissionCreate] = Field(min_length=1, max_length=50)
-
-
-class GrowthMissionPatch(BaseModel):
-    # extra="allow": same payload-blob design as ChildCreate.
-    model_config = {"extra": "allow"}
-
-    status: str | None = None
-    completed_date: str | None = None
-    child_responses: list | None = None
-    reflection: str | None = None
-    learning_areas: str | None = None
-    parent_observation: str | None = None
-    ai_insights: dict | None = None
-
-
-# ---------------------------------------------------------------------------
-# Parent insights
-# ---------------------------------------------------------------------------
-
-class ParentInsightResponse(BaseModel):
-    model_config = {"extra": "allow"}
-
-    id: str
-    child_id: str
-    is_read: bool
-    created_date: str
-    insight_type: str | None = None
-    title: str | None = None
-    description: str | None = None
-    action_suggestion: str | None = None
-
-
-class UpdateInsightBody(BaseModel):
-    is_read: bool = True
-
-
-class ParentInsightCreate(BaseModel):
-    # extra="allow": same payload-blob design as ChildCreate.
-    model_config = {"extra": "allow"}
-
-    child_id: str
-    insight_type: str | None = None
-    title: str | None = None
-    description: str | None = None
-    action_suggestion: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Reflections
-# ---------------------------------------------------------------------------
-
-class ReflectionResponse(BaseModel):
-    model_config = {"extra": "allow"}
-
-    id: str
-    child_id: str
-    created_date: str
-    type: str | None = None
-    content: str | None = None
-    pillar_tags: list | None = None
-
-
-class ReflectionCreate(BaseModel):
-    # extra="allow": same payload-blob design as ChildCreate.
-    model_config = {"extra": "allow"}
-
-    child_id: str
-    type: str | None = None
-    content: str | None = None
-    pillar_tags: list | None = None

@@ -83,28 +83,6 @@ export function conversationDraftFromChildRecord(child) {
 }
 
 /**
- * When `onboarding_childData` was cleared but copy still mentions the child (concern, goals, growth areas).
- */
-export function guessChildNameFromAppState(s) {
-	if (!s || typeof s !== 'object') return null;
-	const chunks = [];
-	if (typeof s.parent_concern === 'string') chunks.push(s.parent_concern);
-	if (s.goals_plan && typeof s.goals_plan === 'object') chunks.push(JSON.stringify(s.goals_plan));
-	if (Array.isArray(s.completed_growth_areas)) {
-		for (const area of s.completed_growth_areas) {
-			if (Array.isArray(area?.recommendations)) chunks.push(...area.recommendations);
-		}
-	}
-	const text = chunks.join('\n');
-	const patterns = [/\b(?:for|with)\s+([A-Z][a-z]{1,40})\b/, /\b([A-Z][a-z]{1,40})\s+will\b/];
-	for (const re of patterns) {
-		const m = text.match(re);
-		if (m?.[1]) return m[1];
-	}
-	return null;
-}
-
-/**
  * Raw `onboarding_childData` from GET app-state (object or legacy JSON string).
  * Maps older field names so the chatbot can replay persisted answers.
  */
