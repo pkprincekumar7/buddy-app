@@ -14,8 +14,6 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [childProfiles, setChildProfiles] = useState([]);
   const [authError, setAuthError] = useState(null);
-  const [appPublicSettings] = useState(null);
-  const isLoadingPublicSettings = false;
 
   const checkAppState = useCallback(async (options = {}) => {
     const withLoading = options.withLoading !== false;
@@ -67,6 +65,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const onExpired = () => {
+      api.auth.logout().catch(() => {});
       setUser(null);
       setIsAuthenticated(false);
       setChildProfiles([]);
@@ -81,8 +80,8 @@ export const AuthProvider = ({ children }) => {
   }, [navigate]);
 
   const logout = useCallback(
-    (shouldRedirect = true) => {
-      api.auth.logout();
+    async (shouldRedirect = true) => {
+      await api.auth.logout();
       setUser(null);
       setIsAuthenticated(false);
       setChildProfiles([]);
@@ -124,9 +123,7 @@ export const AuthProvider = ({ children }) => {
         user,
         isAuthenticated,
         isLoadingAuth,
-        isLoadingPublicSettings,
         authError,
-        appPublicSettings,
         childProfiles,
         refreshChildren,
         logout,

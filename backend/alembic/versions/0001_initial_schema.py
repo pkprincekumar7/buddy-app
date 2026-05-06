@@ -20,9 +20,9 @@ def upgrade() -> None:
         sa.Column('id', sa.String(36), nullable=False),
         sa.Column('email', sa.String(255), nullable=False),
         sa.Column('password_hash', sa.String(255), nullable=False),
-        sa.Column('full_name', sa.String(255), nullable=True),
-        sa.Column('role', sa.String(32), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('full_name', sa.String(255), nullable=False),
+        sa.Column('role', sa.String(32), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('email'),
@@ -31,7 +31,7 @@ def upgrade() -> None:
     op.create_table(
         'user_preferences',
         sa.Column('user_id', sa.String(36), nullable=False),
-        sa.Column('tts_enabled', sa.Boolean(), nullable=False),
+        sa.Column('tts_enabled', sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('user_id'),
@@ -40,7 +40,7 @@ def upgrade() -> None:
     op.create_table(
         'user_onboarding',
         sa.Column('user_id', sa.String(36), nullable=False),
-        sa.Column('phase', sa.Integer(), nullable=False),
+        sa.Column('phase', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('child_name', sa.String(100), nullable=True),
         sa.Column('child_age', sa.String(20), nullable=True),
         sa.Column('child_school', sa.String(200), nullable=True),
@@ -127,6 +127,16 @@ def upgrade() -> None:
     op.create_index('ix_growth_areas_user_created', 'completed_growth_areas', ['user_id', 'created_at'])
 
     op.create_table(
+        'refresh_tokens',
+        sa.Column('jti', sa.String(36), nullable=False),
+        sa.Column('user_id', sa.String(36), nullable=False),
+        sa.Column('expires_at', sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('jti'),
+    )
+    op.create_index('ix_refresh_tokens_user_id', 'refresh_tokens', ['user_id'])
+
+    op.create_table(
         'children',
         sa.Column('id', sa.String(36), nullable=False),
         sa.Column('user_id', sa.String(36), nullable=False),
@@ -150,37 +160,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_missions_child_created', 'growth_missions', ['child_id', 'created_at'])
 
-    op.create_table(
-        'parent_insights',
-        sa.Column('id', sa.String(36), nullable=False),
-        sa.Column('child_id', sa.String(36), nullable=False),
-        sa.Column('is_read', sa.Boolean(), nullable=False),
-        sa.Column('payload', sa.JSON(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['child_id'], ['children.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_insights_child_read_created', 'parent_insights', ['child_id', 'is_read', 'created_at'])
-
-    op.create_table(
-        'reflections',
-        sa.Column('id', sa.String(36), nullable=False),
-        sa.Column('child_id', sa.String(36), nullable=False),
-        sa.Column('payload', sa.JSON(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.Column('updated_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['child_id'], ['children.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_reflections_child_created', 'reflections', ['child_id', 'created_at'])
-
-
 def downgrade() -> None:
-    op.drop_index('ix_reflections_child_created', table_name='reflections')
-    op.drop_table('reflections')
-    op.drop_index('ix_insights_child_read_created', table_name='parent_insights')
-    op.drop_table('parent_insights')
     op.drop_index('ix_missions_child_created', table_name='growth_missions')
     op.drop_table('growth_missions')
     op.drop_index('ix_children_user_created', table_name='children')
@@ -193,4 +173,6 @@ def downgrade() -> None:
     op.drop_table('user_personality')
     op.drop_table('user_onboarding')
     op.drop_table('user_preferences')
+    op.drop_index('ix_refresh_tokens_user_id', table_name='refresh_tokens')
+    op.drop_table('refresh_tokens')
     op.drop_table('users')

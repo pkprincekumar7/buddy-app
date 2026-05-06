@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
-import { Home, Target, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
+import { Home, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Layout({ children, currentPageName }) {
@@ -70,9 +70,7 @@ export default function Layout({ children, currentPageName }) {
     const next = !ttsEnabled;
     setTtsEnabled(next);
     try {
-      if (api.auth.hasToken()) {
-        await api.preferences.patch({ tts_enabled: next });
-      }
+      await api.preferences.patch({ tts_enabled: next });
     } catch {
       /* keep optimistic toggle */
     }
@@ -81,7 +79,6 @@ export default function Layout({ children, currentPageName }) {
 
   const navItems = [
     { label: 'Home', icon: Home, path: 'Home', show: true },
-    { label: 'Missions', icon: Target, path: 'Missions', show: isAuthenticated && user?.role !== 'child' && childProfiles.length > 0 },
   ].filter(item => item.show);
 
   const handleLogout = () => {

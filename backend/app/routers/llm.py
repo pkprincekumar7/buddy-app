@@ -1,13 +1,41 @@
 import json
 import logging
+import time
+from collections import defaultdict, deque
+from threading import Lock
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.deps import get_current_user
 from app.models import User
 from app.settings import settings
+
+# ---------------------------------------------------------------------------
+# Per-user rate limiting (in-memory sliding window)
+# ---------------------------------------------------------------------------
+
+_LLM_MAX_CALLS_PER_HOUR = 50
+_LLM_WINDOW_SECONDS = 3600
+
+_user_call_log: dict[str, deque] = defaultdict(deque)
+_rate_limit_lock = Lock()
+
+
+def _enforce_user_rate_limit(user_id: str) -> None:
+    now = time.monotonic()
+    cutoff = now - _LLM_WINDOW_SECONDS
+    with _rate_limit_lock:
+        dq = _user_call_log[user_id]
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= _LLM_MAX_CALLS_PER_HOUR:
+            raise HTTPException(
+                status_code=429,
+                detail=f"LLM rate limit exceeded: max {_LLM_MAX_CALLS_PER_HOUR} requests per hour.",
+            )
+        dq.append(now)
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 log = logging.getLogger(__name__)
@@ -127,9 +155,17 @@ class LLMInvokeBody(BaseModel):
     response_json_schema: dict[str, Any] | None = None
     provider: ProviderName | None = None
 
+    @field_validator("response_json_schema")
+    @classmethod
+    def validate_schema_size(cls, v: dict | None) -> dict | None:
+        if v is not None and len(json.dumps(v)) > 4000:
+            raise ValueError("response_json_schema must not exceed 4000 characters when serialised")
+        return v
+
 
 @router.post("/invoke")
 def invoke_llm(body: LLMInvokeBody, user: User = Depends(get_current_user)):
+    _enforce_user_rate_limit(user.id)
     provider = _resolve_provider(body.provider)
     sys_msg = _system_message(body.response_json_schema)
     log.debug("llm.invoke provider=%s", provider)

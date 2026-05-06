@@ -6,7 +6,6 @@ import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronLeft, Chevr
 import { Button } from "@/components/ui/button";
 import TextareaWithVoice from '../shared/TextareaWithVoice';
 import { api } from '@/api/client';
-import MissionMiniGame from '../missions/MissionMiniGame';
 import { toast } from 'sonner';
 import ChildActivityGame, { normalizeChildGameRecommendations } from './ChildActivityGame';
 import { createPageUrl } from '@/utils';

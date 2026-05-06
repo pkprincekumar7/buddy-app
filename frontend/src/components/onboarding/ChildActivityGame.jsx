@@ -116,12 +116,6 @@ export function normalizeChildGameRecommendations(raw) {
   return { ...rest, suggested_activities: suggested };
 }
 
-/** Max picks for an area — keep in sync with persist throttling in RecommendationsPhase. */
-export function getChildActivityMaxSelections(areaId) {
-  const game = areaGames[areaId] || areaGames.life_ambition;
-  return typeof game.maxSelections === 'number' ? game.maxSelections : 3;
-}
-
 export default function ChildActivityGame({
   childName,
   areaId = 'life_ambition',

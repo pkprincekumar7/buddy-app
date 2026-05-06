@@ -47,22 +47,18 @@
  *
  * The mainPage value must match a key in the PAGES object exactly.
  */
-import ChildMode from './pages/ChildMode';
 import Home from './pages/Home';
 import LifePathway from './pages/LifePathway';
-import Missions from './pages/Missions';
 import Onboarding from './pages/Onboarding';
-import ParentDashboard from './pages/ParentDashboard';
+import GoalsDashboard from './pages/GoalsDashboard';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
-    "ChildMode": ChildMode,
     "Home": Home,
     "LifePathway": LifePathway,
-    "Missions": Missions,
     "Onboarding": Onboarding,
-    "ParentDashboard": ParentDashboard,
+    "GoalsDashboard": GoalsDashboard,
 }
 
 export const pagesConfig = {

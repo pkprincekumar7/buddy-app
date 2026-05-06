@@ -250,7 +250,9 @@ export default function Onboarding() {
               setChildData(mergedForChat);
               const slim = slimChildConversationForStorage(mergedForChat);
               if (Object.keys(slim).length > 0) {
-                void api.onboarding.patch({ child_data: slim }).catch(() => {});
+                void api.onboarding.patch({ child_data: slim }).catch((err) => {
+                  console.warn('Auto-save child data failed:', err);
+                });
               }
             }
           }
@@ -278,7 +280,9 @@ export default function Onboarding() {
     if (!hydrated || !isAuthenticated) return;
     clearTimeout(phasePatchTimerRef.current);
     phasePatchTimerRef.current = setTimeout(() => {
-      api.onboarding.patch({ phase: currentPhase }).catch(() => {});
+      api.onboarding.patch({ phase: currentPhase }).catch((err) => {
+        console.warn('Auto-save phase failed:', err);
+      });
     }, 500);
     return () => clearTimeout(phasePatchTimerRef.current);
   }, [currentPhase, hydrated, isAuthenticated]);

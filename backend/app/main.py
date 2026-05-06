@@ -5,12 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api_routes import router as api_router
-from app.limiter import limiter
+from app.routers.auth import router as auth_router
+from app.routers.users import router as users_router
+from app.routers.children import router as children_router
 from app.routers.audio import router as audio_router
 from app.routers.llm import router as llm_router
 from app.settings import settings
@@ -25,8 +24,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Buddy360 API", lifespan=lifespan)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -46,6 +43,7 @@ async def request_id_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
     response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -54,11 +52,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
 )
 
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(users_router, prefix="/api/v1")
+app.include_router(children_router, prefix="/api/v1")
 app.include_router(llm_router, prefix="/api/v1")
 app.include_router(audio_router, prefix="/api/v1")
 

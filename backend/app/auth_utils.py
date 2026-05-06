@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
+import uuid
 
 import jwt
 from jwt.exceptions import PyJWTError
@@ -30,9 +31,12 @@ def create_access_token(sub: str, extra: dict[str, Any] | None = None) -> str:
     return _encode(payload)
 
 
-def create_refresh_token(sub: str) -> str:
+def create_refresh_token(sub: str) -> tuple[str, str]:
+    """Return (signed_token, jti). Caller must persist jti in refresh_tokens table."""
+    jti = str(uuid.uuid4())
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_refresh_expire_hours)
-    return _encode({"sub": sub, "exp": expire, "type": "refresh"})
+    token = _encode({"sub": sub, "exp": expire, "type": "refresh", "jti": jti})
+    return token, jti
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
