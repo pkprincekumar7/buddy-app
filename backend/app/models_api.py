@@ -9,6 +9,12 @@ from pydantic import BaseModel, Field, field_validator
 
 class UserPreferences(BaseModel):
     tts_enabled: bool = True
+    last_visited_path: str | None = None
+
+
+class UserPreferencesPatch(BaseModel):
+    tts_enabled: bool | None = None
+    last_visited_path: str | None = Field(None, max_length=500)
 
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,76 @@ All supported variables are documented in `.env.example` (JWT lifetimes, CORS, P
 
 The database schema is managed by **Alembic migrations**. The backend container runs `alembic upgrade head` automatically before starting Uvicorn (see `backend/Dockerfile`).
 
+## Connecting to the PostgreSQL database
+
+The `db` service exposes port `5432` on localhost. Default credentials (overridable via `.env`):
+
+| Field | Value |
+|---|---|
+| Host | `localhost` |
+| Port | `5432` |
+| User | `buddy360` |
+| Password | `buddy360_dev` |
+| Database | `buddy360` |
+
+**Option 1 — `psql` inside the container (no extra tools needed):**
+
+```bash
+docker compose exec db psql -U buddy360 -d buddy360
+```
+
+Useful `psql` commands: `\dt` (list tables), `\d <table>` (describe table), `\q` (quit).
+
+**Option 2 — any PostgreSQL client from the host:**
+
+```bash
+psql -h localhost -p 5432 -U buddy360 -d buddy360
+# Password: buddy360_dev
+```
+
+GUI tools (TablePlus, DBeaver, pgAdmin) work too — use the same host/port/credentials above.
+
+**Useful SELECT queries:**
+
+```sql
+-- All registered users
+SELECT id, email, full_name, role, created_at FROM users ORDER BY created_at DESC;
+
+-- Onboarding state per user (join to see email alongside)
+SELECT u.email, o.phase, o.child_name, o.child_age, o.updated_at
+FROM user_onboarding o
+JOIN users u ON u.id = o.user_id
+ORDER BY o.updated_at DESC;
+
+-- Personality profiles
+SELECT u.email, p.personality_type, p.profile_name, p.category, p.updated_at
+FROM user_personality p
+JOIN users u ON u.id = p.user_id;
+
+-- Completed growth areas per user
+SELECT u.email, c.area_name, c.area_color, c.created_at
+FROM completed_growth_areas c
+JOIN users u ON u.id = c.user_id
+ORDER BY c.created_at DESC;
+
+-- Children profiles (payload is JSON — cast to text for a quick look)
+SELECT u.email, ch.id AS child_id, ch.payload::text, ch.created_at
+FROM children ch
+JOIN users u ON u.id = ch.user_id;
+
+-- Growth missions for a specific child
+SELECT gm.id, gm.payload::text, gm.created_at
+FROM growth_missions gm
+WHERE gm.child_id = '<child_id>';
+
+-- Active refresh tokens
+SELECT rt.user_id, u.email, rt.expires_at
+FROM refresh_tokens rt
+JOIN users u ON u.id = rt.user_id
+WHERE rt.expires_at > now()
+ORDER BY rt.expires_at DESC;
+```
+
 ## Google Sign-In (optional)
 
 Use the **same** OAuth 2.0 **Web client ID** for both `GOOGLE_CLIENT_ID` (backend verifies the ID token) and `VITE_GOOGLE_CLIENT_ID` (frontend loads the Google button). The value looks like `123456789-xxxx.apps.googleusercontent.com`.

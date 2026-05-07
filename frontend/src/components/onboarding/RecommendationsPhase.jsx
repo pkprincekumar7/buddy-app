@@ -345,7 +345,7 @@ function applyTileEntryInteractivePreference(area, d) {
   return { step: d.step, interactiveStep: d.interactiveStep, currentAnswer: d.currentAnswer };
 }
 
-export default function RecommendationsPhase({ data, profile, recommendations, onActivityAdd, onRegisterBack, onPhaseBack }) {
+export default function RecommendationsPhase({ data, profile, recommendations, onActivityAdd, onRegisterBack, onRegisterNext, onPhaseBack }) {
   const navigate = useNavigate();
   // voiceEnabledRef is a stable ref — safe to use with empty deps
   const speak = useCallback((text) => {
@@ -382,6 +382,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const [aiRecommendations, setAiRecommendations] = useState(null);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const [resumeLoaded, setResumeLoaded] = useState(false);
+  const [completedAreaIds, setCompletedAreaIds] = useState(new Set());
 
   // Load saved progress from server once
   useEffect(() => {
@@ -402,6 +403,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         }
 
         const completedList = Array.isArray(completedData?.areas) ? completedData.areas : [];
+
+        if (completedList.length > 0) {
+          setCompletedAreaIds(new Set(completedList.map((a) => a.area_id)));
+        }
 
         if (!p || p.step === 'intro') return;
 
@@ -508,6 +513,17 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   }, [step, selectedArea, interactiveAnswers, interactiveStep, onRegisterBack, onPhaseBack]);
 
+  // Register/unregister the "Next" handler with the parent nav bar
+  useEffect(() => {
+    if (!onRegisterNext) return;
+    if (step === 'area_selection' && completedAreaIds.size > 0) {
+      onRegisterNext(() => navigate(createPageUrl('LifePathway'), { replace: true }));
+    } else {
+      onRegisterNext(null);
+    }
+    return () => { onRegisterNext?.(null); };
+  }, [step, completedAreaIds, onRegisterNext]);
+
   // Refs for voice control
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
@@ -586,6 +602,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       setInteractiveAnswers({});
       setAiRecommendations(null);
       setChildActivitySelections([]);
+      setCompletedAreaIds((prev) => { const n = new Set(prev); n.add(area.id); return n; });
     } catch {
       toast.error('Could not save progress');
     }
@@ -863,7 +880,6 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           })}
         </div>
 
-        <div className="text-center pt-2" />
       </div>
     );
   };

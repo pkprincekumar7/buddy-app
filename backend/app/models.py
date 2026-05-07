@@ -32,6 +32,7 @@ class UserPreferencesRecord(Base):
 
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     tts_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_visited_path: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
 
