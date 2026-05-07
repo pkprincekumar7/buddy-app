@@ -38,6 +38,7 @@ from app.models_api import (
     UserGoals,
     UserGoalsPatch,
     UserPreferences,
+    UserPreferencesPatch,
 )
 
 _upsert_insert = get_upsert_insert()
@@ -51,7 +52,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _preferences_to_schema(row: UserPreferencesRecord) -> UserPreferences:
-    return UserPreferences(tts_enabled=row.tts_enabled)
+    return UserPreferences(tts_enabled=row.tts_enabled, last_visited_path=row.last_visited_path)
 
 
 def _personality_row_to_schema(row: UserPersonalityRecord) -> PersonalityAnalysis:
@@ -145,7 +146,7 @@ def get_preferences(user: User = Depends(get_current_user), db: Session = Depend
 
 @router.patch("/user/preferences", response_model=UserPreferences)
 def patch_preferences(
-    body: UserPreferences,
+    body: UserPreferencesPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -153,7 +154,10 @@ def patch_preferences(
     if not row:
         row = UserPreferencesRecord(user_id=user.id)
         db.add(row)
-    row.tts_enabled = body.tts_enabled
+    if 'tts_enabled' in body.model_fields_set:
+        row.tts_enabled = body.tts_enabled
+    if 'last_visited_path' in body.model_fields_set:
+        row.last_visited_path = body.last_visited_path
     db.commit()
     db.refresh(row)
     return _preferences_to_schema(row)

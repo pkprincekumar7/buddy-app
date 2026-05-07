@@ -179,6 +179,8 @@ export default function Onboarding() {
   const [recommendations, setRecommendations] = useState(null);
   const [pendingActivities, setPendingActivities] = useState([]);
   const recPhaseBackRef = useRef(null);
+  const recPhaseNextRef = useRef(null);
+  const [recPhaseHasNext, setRecPhaseHasNext] = useState(false);
   const personalityEffectStampRef = useRef(0);
   const journeyEffectStampRef = useRef(0);
   const phasePatchTimerRef = useRef(null);
@@ -793,6 +795,7 @@ Generate:
                   recommendations={recommendations}
                   onActivityAdd={(activity) => setPendingActivities(prev => [...prev, activity])}
                   onRegisterBack={(fn) => { recPhaseBackRef.current = fn; }}
+                  onRegisterNext={(fn) => { recPhaseNextRef.current = fn; setRecPhaseHasNext(!!fn); }}
                   onPhaseBack={handleBack}
                 />
               ) : (
@@ -833,7 +836,7 @@ Generate:
               </Button>
             </div>
             <div
-              className={`flex w-full sm:justify-end sm:justify-self-end ${currentPhase !== 2 ? 'hidden sm:flex' : ''}`}
+              className={`flex w-full sm:justify-end sm:justify-self-end ${currentPhase === 2 || (currentPhase === 3 && recPhaseHasNext) ? '' : 'hidden sm:flex'}`}
             >
               {currentPhase === 2 ? (
                 <Button
@@ -842,6 +845,14 @@ Generate:
                   className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-slate-800 hover:bg-slate-900 disabled:opacity-50"
                 >
                   Continue
+                  <ChevronRight className="w-5 h-5 ml-1" />
+                </Button>
+              ) : currentPhase === 3 && recPhaseHasNext ? (
+                <Button
+                  onClick={() => recPhaseNextRef.current?.()}
+                  className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold"
+                >
+                  Next
                   <ChevronRight className="w-5 h-5 ml-1" />
                 </Button>
               ) : (

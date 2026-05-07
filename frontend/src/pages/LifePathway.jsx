@@ -44,14 +44,16 @@ export default function LifePathway() {
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');
   const [concernSubmitted, setConcernSubmitted] = useState(false);
+  const [savedConcern, setSavedConcern] = useState('');
 
   useEffect(() => {
     const loadChildData = async () => {
       try {
-        const [onboarding, completedData, children] = await Promise.all([
+        const [onboarding, completedData, children, goals] = await Promise.all([
           api.onboarding.get(),
           api.completedGrowthAreas.list(),
           api.entities.Child.list('-created_date', 1),
+          api.goals.get(),
         ]);
 
         const resolvedChildData = children?.[0] || onboarding?.child_data || null;
@@ -65,6 +67,9 @@ export default function LifePathway() {
         if (completedData?.areas?.length) {
           setCompletedAreas(completedData.areas);
         }
+
+        const stored = typeof goals?.parent_concern === 'string' ? goals.parent_concern.trim() : '';
+        setSavedConcern(stored);
       } catch (error) {
         console.error('Failed to load child data:', error);
         toast.error('Failed to load your data. Please refresh and try again.');
@@ -78,6 +83,10 @@ export default function LifePathway() {
 
 
   const handleStartJourney = () => {
+    if (savedConcern) {
+      navigate(createPageUrl('GoalsDashboard'));
+      return;
+    }
     setShowConcernModal(true);
   };
 
@@ -85,6 +94,7 @@ export default function LifePathway() {
     if (!concernInput.trim()) return;
     try {
       await api.goals.patch({ parent_concern: concernInput.trim() });
+      setSavedConcern(concernInput.trim());
     } catch {
       /* still allow UX to proceed */
     }
@@ -110,25 +120,6 @@ export default function LifePathway() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showConcernModal, closeConcernModal]);
-
-  /** Prefill concern textarea from saved app-state when opening the modal */
-  useEffect(() => {
-    if (!showConcernModal) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const goals = await api.goals.get();
-        if (cancelled) return;
-        const stored = typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '';
-        if (stored) setConcernInput(stored);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showConcernModal]);
 
   /** If this tab restores from bfcache, drop modal state so Back from Goals does not reopen it. */
   useEffect(() => {

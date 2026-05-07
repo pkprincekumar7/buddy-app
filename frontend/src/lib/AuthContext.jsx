@@ -6,6 +6,8 @@ import { pagesConfig } from '../pages.config';
 
 const AuthContext = createContext();
 
+const BLOCKED_REDIRECT_PATHS = ['/Login', '/Register', '/Onboarding'];
+
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -14,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [childProfiles, setChildProfiles] = useState([]);
   const [authError, setAuthError] = useState(null);
+  const [lastVisitedPath, setLastVisitedPath] = useState(null);
 
   const checkAppState = useCallback(async (options = {}) => {
     const withLoading = options.withLoading !== false;
@@ -30,10 +33,14 @@ export const AuthProvider = ({ children }) => {
       }
 
       const currentUser = await api.auth.me();
+      const [children, prefs] = await Promise.all([
+        api.entities.Child.list('-created_date'),
+        api.preferences.get(),
+      ]);
       setUser(currentUser);
-      setIsAuthenticated(true);
-      const children = await api.entities.Child.list('-created_date');
       setChildProfiles(children);
+      setLastVisitedPath(prefs?.last_visited_path || null);
+      setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);
       const status = error?.status;
@@ -42,11 +49,13 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
+        setLastVisitedPath(null);
         setAuthError(null);
       } else {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
+        setLastVisitedPath(null);
         const msg =
           error?.message ||
           'Backend unavailable. Run the API (backend) and ensure Vite proxies /api to it, or set VITE_API_URL.';
@@ -79,12 +88,24 @@ export const AuthProvider = ({ children }) => {
     return undefined;
   }, [navigate]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const timer = setTimeout(() => {
+      const pathToSave = BLOCKED_REDIRECT_PATHS.includes(location.pathname)
+        ? null
+        : location.pathname;
+      api.preferences.patch({ last_visited_path: pathToSave }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [location.pathname, isAuthenticated]);
+
   const logout = useCallback(
     async (shouldRedirect = true) => {
       await api.auth.logout();
       setUser(null);
       setIsAuthenticated(false);
       setChildProfiles([]);
+      setLastVisitedPath(null);
       setAuthError(null);
       if (shouldRedirect) {
         navigate('/Login', { replace: true });
@@ -113,9 +134,15 @@ export const AuthProvider = ({ children }) => {
     const publicPaths = ['/Login', '/Register'];
     if (!publicPaths.includes(location.pathname)) return;
     if (isAuthenticated) {
-      navigate(mainPath, { replace: true });
+      const destination =
+        lastVisitedPath &&
+        lastVisitedPath.startsWith('/') &&
+        !BLOCKED_REDIRECT_PATHS.includes(lastVisitedPath)
+          ? lastVisitedPath
+          : mainPath;
+      navigate(destination, { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, location.pathname, navigate, mainPath]);
+  }, [isLoadingAuth, isAuthenticated, location.pathname, navigate, mainPath, lastVisitedPath]);
 
   return (
     <AuthContext.Provider
