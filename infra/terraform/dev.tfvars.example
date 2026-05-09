@@ -20,3 +20,6 @@ app_name = "buddy360"
 instance_type    = "t3.small"
 allowed_ssh_cidr = "1.2.3.4/32" # replace with your actual IP
 # key_name       = "my-key-pair"  # optional  -  omit if using SSM Session Manager only
+
+# -- ElastiCache ---------------------------------------------------------------
+# elasticache_node_type = "cache.t3.micro"  # default  -  upgrade to cache.t3.small for higher throughput

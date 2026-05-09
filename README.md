@@ -195,7 +195,7 @@ The infrastructure is split across two independent Terraform modules with separa
 
 ```
 infra-db/terraform/   ← permanent  — VPC, subnets, RDS (never destroy)
-infra/terraform/      ← ephemeral  — EC2, ALB, Route 53 (create/destroy freely)
+infra/terraform/      ← ephemeral  — EC2, ALB, Route 53, ElastiCache (create/destroy freely)
 ```
 
 The app infra reads VPC and subnet IDs from the DB infra's remote state, so **`infra-db` must be applied before `infra`**.
@@ -206,7 +206,7 @@ The app infra reads VPC and subnet IDs from the DB infra's remote state, so **`i
 |---|---|
 | VPC | Configurable CIDR, shared by both infra modules |
 | Public subnets ×2 | One per AZ — used by EC2 and ALB (owned here, consumed by app infra) |
-| Private subnets ×2 | One per AZ — RDS only, no internet route |
+| Private subnets ×2 | One per AZ — RDS and ElastiCache, no internet route |
 | Internet Gateway | For public subnets |
 | RDS instance | PostgreSQL 16, `db.t3.micro`, 25 GiB gp3, single AZ, private subnets only |
 | RDS security group | Inbound port 5432 from VPC CIDR only — not publicly accessible |
@@ -230,8 +230,11 @@ The JSON response contains `username` and `password`. Store `password` as the `P
 | Route 53 | A-alias record → ALB. FQDN: `{subdomain}-{env}.{domain_name}` for non-prod (e.g. `app-dev.example.com`), `{subdomain}.{domain_name}` for prod (e.g. `app.example.com`) |
 | ACM | Certificate referenced by ARN (must already exist) |
 | IAM | EC2 instance profile with `AmazonSSMManagedInstanceCore` |
+| ElastiCache Redis | `cache.t3.micro` single node, Redis 7.1, at-rest encrypted, private subnets only |
+| ElastiCache subnet group | Spans both private subnets from `infra-db` |
+| ElastiCache security group | Inbound port 6379 from EC2 security group only — not publicly accessible |
 
-VPC and subnet IDs are read from `infra-db` remote state — no networking resources are created here.
+VPC, public subnet, and private subnet IDs are all read from `infra-db` remote state — no networking resources are created here.
 
 ### Prerequisites
 
@@ -295,6 +298,13 @@ All others have defaults (see [`infra-db/terraform/variables.tf`](infra-db/terra
 | `hosted_zone_id` | Route 53 hosted zone ID |
 | `acm_certificate_arn` | ACM certificate ARN |
 
+Optional with defaults (see [`infra/terraform/variables.tf`](infra/terraform/variables.tf)):
+
+| Variable | Default | Description |
+|---|---|---|
+| `instance_type` | `t3.small` | EC2 instance type |
+| `elasticache_node_type` | `cache.t3.micro` | ElastiCache Redis node type — same micro tier as `db.t3.micro` RDS |
+
 ## GitHub Actions
 
 Three manually triggered workflows under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
@@ -335,7 +345,7 @@ Go to **IAM → Roles → Create role**:
 
 **Step 3 — Attach a permissions policy**
 
-The `terraform-db.yml` workflow provisions VPC and RDS. The `terraform.yml` workflow provisions EC2, ALB, Route 53, and IAM (it reads VPC/subnets from the DB infra remote state — it does not create networking resources). The `deploy.yml` workflow describes EC2 instances and sends SSM Run Commands.
+The `terraform-db.yml` workflow provisions VPC and RDS. The `terraform.yml` workflow provisions EC2, ALB, Route 53, IAM, and ElastiCache (it reads VPC/subnets from the DB infra remote state — it does not create networking resources). The `deploy.yml` workflow describes EC2 instances and sends SSM Run Commands.
 
 **Option A — Quick setup (suitable for personal/dev accounts):** attach the `AdministratorAccess` managed policy and skip the custom policy below.
 
@@ -360,6 +370,7 @@ The `terraform-db.yml` workflow provisions VPC and RDS. The `terraform.yml` work
       "Action": [
         "ec2:*",
         "elasticloadbalancing:*",
+        "elasticache:*",
         "route53:*",
         "iam:GetRole", "iam:CreateRole", "iam:DeleteRole",
         "iam:AttachRolePolicy", "iam:DetachRolePolicy",
@@ -532,7 +543,21 @@ terraform plan -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south
 terraform apply -var="db_state_key=terraform-state-files/buddy360/dev/db/ap-south-1/terraform.tfstate" -var-file=terraform.tfvars
 ```
 
-**Step 4 — Deploy**
+**Step 4 — Set `REDIS_URL` GitHub secret**
+
+After `infra` apply completes, retrieve the ElastiCache primary endpoint and store it as a GitHub environment secret.
+
+```bash
+# Get Redis endpoint
+terraform -chdir=infra/terraform output -raw redis_endpoint
+```
+
+Go to **GitHub → Settings → Environments → `<env>` → Secrets** and set:
+- `REDIS_URL` → `redis://<endpoint>:6379`
+
+> This step is required on every fresh `infra` apply because a new ElastiCache cluster generates a new DNS endpoint.
+
+**Step 5 — Deploy**
 
 Via GitHub Actions: **Actions → Deploy → Run workflow** → select environment and region.
 
@@ -572,7 +597,7 @@ terraform destroy -var-file=terraform.tfvars
 
 ## Cost estimates
 
-Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default instance sizes (`t3.small` EC2, `db.t3.micro` RDS) and minimal traffic.
+Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default instance sizes (`t3.small` EC2, `db.t3.micro` RDS, `cache.t3.micro` ElastiCache) and minimal traffic.
 
 ### `infra/` — application layer
 
@@ -583,7 +608,8 @@ Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default insta
 | ALB LCU | Variable — traffic-dependent; ~0 at idle, ~$5.84 at 1 avg LCU | $0.008+ | $5.84+ |
 | EBS root vol | 8 GiB gp3 (default root volume) | $0.0009 | $0.64 |
 | Route 53 A record | Hosted zone + queries | ~$0.0007 | ~$0.50 |
-| **Total** | | **~$0.038/hr** | **~$28/month** |
+| ElastiCache `cache.t3.micro` | Redis 7.1, single node, 0.555 GiB RAM | $0.0170 | $12.41 |
+| **Total** | | **~$0.055/hr** | **~$40/month** |
 
 ### `infra-db/` — database layer
 
@@ -599,15 +625,15 @@ Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default insta
 
 | | $/hr | $/month |
 |---|---|---|
-| `infra` (app + ALB) | ~$0.038 | ~$28.00 |
+| `infra` (app + ALB + Redis) | ~$0.055 | ~$40.00 |
 | `infra-db` (RDS) | ~$0.021 | ~$15.69 |
-| **Grand total** | **~$0.059/hr** | **~$43.69/month** |
+| **Grand total** | **~$0.076/hr** | **~$55.69/month** |
 
 **Notes:**
-- No NAT Gateway cost — EC2 is in a public subnet; RDS is private but only needs to accept traffic from EC2.
+- No NAT Gateway cost — EC2 is in a public subnet; RDS and ElastiCache are private but only need to accept traffic from EC2.
 - ACM certificates, VPC, subnets, security groups, IAM, and Route tables are all free.
 - Outbound data transfer beyond 100 GB/month costs $0.09/GiB and is not included above.
-- Switching to **1-year Reserved Instances** (no upfront) cuts compute ~40%: EC2 t3.small → ~$0.0124/hr, RDS db.t3.micro → ~$0.0112/hr.
+- Switching to **1-year Reserved Instances** (no upfront) cuts compute ~40%: EC2 t3.small → ~$0.0124/hr, RDS db.t3.micro → ~$0.0112/hr, ElastiCache cache.t3.micro → ~$0.0102/hr.
 
 ## Product notes
 

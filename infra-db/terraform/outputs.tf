@@ -32,3 +32,13 @@ output "rds_sg_id" {
   description = "RDS security group ID  -  consumed by infra/terraform to attach the EC2->RDS ingress rule"
   value       = aws_security_group.rds_sg.id
 }
+
+output "private_subnet_1_id" {
+  description = "Private subnet 1 ID  -  consumed by infra/terraform for the ElastiCache subnet group"
+  value       = aws_subnet.private_1.id
+}
+
+output "private_subnet_2_id" {
+  description = "Private subnet 2 ID  -  consumed by infra/terraform for the ElastiCache subnet group"
+  value       = aws_subnet.private_2.id
+}

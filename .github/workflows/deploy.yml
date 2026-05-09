@@ -80,6 +80,7 @@ jobs:
           COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           APP_ENV: ${{ secrets.APP_ENV }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
         run: |
           {
             printf 'JWT_SECRET=%s\n'              "$JWT_SECRET"
@@ -103,6 +104,7 @@ jobs:
             printf 'COOKIE_DOMAIN=%s\n'           "$COOKIE_DOMAIN"
             printf 'BEHIND_PROXY=true\n'
             printf 'APP_ENV=%s\n'                 "$APP_ENV"
+            printf 'REDIS_URL=%s\n'               "$REDIS_URL"
           } | base64 -w 0 > /tmp/dotenv_b64
           echo "b64=$(cat /tmp/dotenv_b64)" >> $GITHUB_OUTPUT
 
