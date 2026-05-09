@@ -14,7 +14,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts all three services: Postgres, the FastAPI backend, and the Nginx-served frontend. For production deployments pointing at RDS instead of a local Postgres, set `POSTGRES_HOST` in `.env` to the RDS endpoint before starting.
+This starts all four services: Postgres, Redis, the FastAPI backend, and the Nginx-served frontend. For production deployments pointing at RDS instead of a local Postgres, set `POSTGRES_HOST` in `.env` to the RDS endpoint before starting.
 
 After changing `VITE_GOOGLE_CLIENT_ID` or `VITE_API_URL`, rebuild the frontend image so Vite embeds them (`docker compose build frontend` or `docker compose up --build`).
 
@@ -24,7 +24,7 @@ All supported variables are documented in `.env.example` (JWT lifetimes, CORS, P
 - UI: `http://localhost:5173`
 - OpenAPI: `http://localhost:8000/docs`
 
-The database schema is managed by **Alembic migrations**. The backend container runs `alembic upgrade head` automatically before starting Uvicorn (see `backend/Dockerfile`).
+The database schema is managed by **Alembic migrations**. The backend container runs `alembic upgrade head` automatically before starting Uvicorn (see `backend/Dockerfile`). In Aurora multi-region deployments, set `REGIONAL_DB_SKIP_MIGRATION=true` and `ROUTER_DB_URL_SKIP_MIGRATION=true` on secondary-region containers to prevent DDL writes against read-only replicas (see [GLOBAL_ROUTING_SETUP.md](GLOBAL_ROUTING_SETUP.md)).
 
 ## Connecting to the PostgreSQL database
 
@@ -436,11 +436,14 @@ Configure these under **Settings → Environments → `<env>` → Secrets** (one
 | Secret | Value |
 |---|---|
 | `APP_ENV` | Deployment environment — `local` (default), `dev`, `stg`, or `prod`. Affects JWT validation strictness and cookie behavior. |
+| `BEHIND_PROXY` | Set `true` on EC2 — nginx sits in front of the backend and sets `X-Forwarded-For`. Without this, IP-based rate limiting uses the nginx container IP instead of the real client IP. |
 | `JWT_SECRET` | Long random string (min 32 chars; min 64 in production) — generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In) |
 | `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
 | `VITE_API_URL` | Frontend API base URL (optional — if empty, the client uses relative paths) |
 | `CORS_ORIGINS` | Comma-separated allowed origins, e.g. `https://app.example.com` |
+| `COOKIE_SECURE` | `true` in production — restricts auth cookies to HTTPS. Set `false` only for local HTTP dev. |
+| `COOKIE_SAMESITE` | Cookie SameSite policy — `lax` (default), `strict`, or `none` (requires `COOKIE_SECURE=true`) |
 | `COOKIE_DOMAIN` | Cookie domain (optional — only set when auth cookies must span subdomains, e.g. `.example.com`) |
 | `OPENAI_API_KEY` | OpenAI key (optional — leave empty if not using OpenAI) |
 | `OPENAI_MODEL` | e.g. `gpt-4o-mini` |
@@ -448,10 +451,17 @@ Configure these under **Settings → Environments → `<env>` → Secrets** (one
 | `ANTHROPIC_MODEL` | e.g. `claude-sonnet-4-6` |
 | `GEMINI_API_KEY` | Google Gemini key (optional) |
 | `GEMINI_MODEL` | e.g. `gemini-1.5-flash` |
+| `LLM_TIMEOUT_SECONDS` | Timeout for LLM API calls in seconds, default `60` |
+| `LLM_HOURLY_LIMIT` | Maximum LLM calls per user per hour, default `200` |
 | `POSTGRES_HOST` | RDS endpoint — from `terraform output rds_endpoint` in `infra-db/terraform/` |
 | `POSTGRES_USER` | Master username — `postgre` (default) |
 | `POSTGRES_PASSWORD` | Retrieved from Secrets Manager after first `terraform-db apply` (see above) |
 | `POSTGRES_DB` | Database name — `buddy360` (default) |
+| `POSTGRES_POOL_SIZE` | SQLAlchemy connection pool size, default `5` — tune to `vCPUs × 2` for the EC2 instance size |
+| `POSTGRES_MAX_OVERFLOW` | Pool overflow connections beyond pool size, default `10` |
+| `REDIS_URL` | Redis connection URL, e.g. `redis://localhost:6379` — required for the per-user LLM rate limiter. Without this, the app falls back to an in-process counter that breaks under multiple containers. |
+| `DEFAULT_REGION` | Region assigned when no JWT is present, default `local`. Set to the deployment region (e.g. `us`, `eu`) in multi-region deployments. |
+| `RECONCILER_INTERVAL_MINUTES` | How often the background saga reconciler runs (minutes), default `5` |
 | `GH_PAT` | Fine-grained personal access token for cloning this repo onto EC2 (see below) |
 | `GH_REPO_OWNER` | GitHub username or org that owns the repository, e.g. `pkprincekumar7` |
 | `GH_REPO_NAME` | Repository name, e.g. `buddy-app` |
@@ -602,7 +612,7 @@ Prices are **on-demand, us-east-1** (no reserved pricing). Assumes default insta
 ## Product notes
 
 - **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-4o-mini`, `claude-sonnet-4-6`, `gemini-1.5-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
-- **Rate limiting**: `POST /auth/register` is capped at 5 requests/minute per IP; login and Google auth at 10/minute.
+- **Rate limiting**: `POST /auth/register` is capped at 5 requests/minute per IP; login and Google auth at 10/minute. LLM calls are also rate-limited per-user (sliding window, default 200 calls/hour) via Redis — set `REDIS_URL` to a Redis instance; without it the rate limiter falls back to an in-process counter that breaks under multiple containers.
 
 ## Tests
 

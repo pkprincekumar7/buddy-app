@@ -1,41 +1,17 @@
+import asyncio
+import functools
 import json
 import logging
-import time
-from collections import defaultdict, deque
-from threading import Lock
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.deps import get_current_user
+from app.limiter import user_limiter
+from app.llm_rate_limiter import enforce as _enforce_user_rate_limit
 from app.models import User
 from app.settings import settings
-
-# ---------------------------------------------------------------------------
-# Per-user rate limiting (in-memory sliding window)
-# ---------------------------------------------------------------------------
-
-_LLM_MAX_CALLS_PER_HOUR = 50
-_LLM_WINDOW_SECONDS = 3600
-
-_user_call_log: dict[str, deque] = defaultdict(deque)
-_rate_limit_lock = Lock()
-
-
-def _enforce_user_rate_limit(user_id: str) -> None:
-    now = time.monotonic()
-    cutoff = now - _LLM_WINDOW_SECONDS
-    with _rate_limit_lock:
-        dq = _user_call_log[user_id]
-        while dq and dq[0] < cutoff:
-            dq.popleft()
-        if len(dq) >= _LLM_MAX_CALLS_PER_HOUR:
-            raise HTTPException(
-                status_code=429,
-                detail=f"LLM rate limit exceeded: max {_LLM_MAX_CALLS_PER_HOUR} requests per hour.",
-            )
-        dq.append(now)
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 log = logging.getLogger(__name__)
@@ -45,12 +21,42 @@ ProviderName = Literal["openai", "anthropic", "gemini"]
 # Checked left-to-right; first one with a key set wins.
 _PRIORITY: list[ProviderName] = ["openai", "anthropic", "gemini"]
 
+# ---------------------------------------------------------------------------
+# Cached provider clients — created once at startup, reused per request
+# ---------------------------------------------------------------------------
+
+_openai_client = None
+_anthropic_client = None
+_gemini_configured = False
+
+if settings.openai_api_key:
+    try:
+        from openai import AsyncOpenAI as _AsyncOpenAI
+        _openai_client = _AsyncOpenAI(api_key=settings.openai_api_key)
+    except Exception as _exc:
+        log.warning("Failed to initialize OpenAI client: %s", _exc)
+
+if settings.anthropic_api_key:
+    try:
+        import anthropic as _anthropic_module
+        _anthropic_client = _anthropic_module.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    except Exception as _exc:
+        log.warning("Failed to initialize Anthropic client: %s", _exc)
+
+if settings.gemini_api_key:
+    try:
+        import google.generativeai as _genai
+        _genai.configure(api_key=settings.gemini_api_key)
+        _gemini_configured = True
+    except Exception as _exc:
+        log.warning("Failed to initialize Gemini client: %s", _exc)
+
 
 def _available() -> dict[ProviderName, bool]:
     return {
-        "openai": bool(settings.openai_api_key),
-        "anthropic": bool(settings.anthropic_api_key),
-        "gemini": bool(settings.gemini_api_key),
+        "openai": _openai_client is not None,
+        "anthropic": _anthropic_client is not None,
+        "gemini": _gemini_configured,
     }
 
 
@@ -84,11 +90,8 @@ def _system_message(schema: dict[str, Any] | None) -> str:
     return "You reply with a single JSON object only, no markdown fences, no explanation." + hint
 
 
-def _invoke_openai(prompt: str, sys_msg: str) -> dict:
-    from openai import OpenAI
-
-    client = OpenAI(api_key=settings.openai_api_key)
-    comp = client.chat.completions.create(
+async def _invoke_openai(prompt: str, sys_msg: str) -> dict:
+    comp = await _openai_client.chat.completions.create(
         model=settings.openai_model,
         messages=[
             {"role": "system", "content": sys_msg},
@@ -111,11 +114,8 @@ def _parse_json(raw: str | None, provider: str) -> dict:
         ) from exc
 
 
-def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    msg = client.messages.create(
+async def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
+    msg = await _anthropic_client.messages.create(
         model=settings.anthropic_model,
         max_tokens=4096,
         system=sys_msg,
@@ -127,20 +127,26 @@ def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
     return _parse_json(raw, "anthropic")
 
 
-def _invoke_gemini(prompt: str, sys_msg: str) -> dict:
-    import google.generativeai as genai
-
-    genai.configure(api_key=settings.gemini_api_key)
-    model = genai.GenerativeModel(
+@functools.lru_cache(maxsize=16)
+def _gemini_model_for(sys_msg: str):
+    return _genai.GenerativeModel(
         model_name=settings.gemini_model,
         system_instruction=sys_msg,
     )
+
+
+def _invoke_gemini_sync(prompt: str, sys_msg: str) -> dict:
+    model = _gemini_model_for(sys_msg)
     resp = model.generate_content(
         prompt,
         generation_config={"response_mime_type": "application/json"},
         request_options={"timeout": settings.llm_timeout_seconds},
     )
     return _parse_json(getattr(resp, "text", None), "gemini")
+
+
+async def _invoke_gemini(prompt: str, sys_msg: str) -> dict:
+    return await asyncio.to_thread(_invoke_gemini_sync, prompt, sys_msg)
 
 
 _INVOKERS: dict[ProviderName, Any] = {
@@ -164,13 +170,14 @@ class LLMInvokeBody(BaseModel):
 
 
 @router.post("/invoke")
-def invoke_llm(body: LLMInvokeBody, user: User = Depends(get_current_user)):
+@user_limiter.limit("30/minute")
+async def invoke_llm(request: Request, body: LLMInvokeBody, user: User = Depends(get_current_user)):
     _enforce_user_rate_limit(user.id)
     provider = _resolve_provider(body.provider)
     sys_msg = _system_message(body.response_json_schema)
     log.debug("llm.invoke provider=%s", provider)
     try:
-        return _INVOKERS[provider](body.prompt, sys_msg)
+        return await _INVOKERS[provider](body.prompt, sys_msg)
     except json.JSONDecodeError as e:
         log.warning("llm.invoke.error provider=%s error=invalid_json detail=%s", provider, e)
         raise HTTPException(status_code=502, detail="LLM service returned an unexpected response.") from e
@@ -182,7 +189,8 @@ def invoke_llm(body: LLMInvokeBody, user: User = Depends(get_current_user)):
 
 
 @router.get("/providers")
-def list_providers(user: User = Depends(get_current_user)):
+@user_limiter.limit("60/minute")
+def list_providers(request: Request, user: User = Depends(get_current_user)):
     """Return which providers have a key configured and which would be auto-selected."""
     av = _available()
     default = next((p for p in _PRIORITY if av[p]), None)

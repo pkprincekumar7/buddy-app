@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: deploy-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
