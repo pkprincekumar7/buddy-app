@@ -30,7 +30,7 @@ output "backend_target_group_arn" {
 
 output "redis_endpoint" {
   description = "ElastiCache Redis primary endpoint — set as the host in REDIS_URL (e.g. redis://<endpoint>:6379)"
-  value       = aws_elasticache_replication_group.redis.primary_endpoint_address
+  value       = nonsensitive(aws_elasticache_replication_group.redis.primary_endpoint_address)
 }
 
 output "redis_port" {

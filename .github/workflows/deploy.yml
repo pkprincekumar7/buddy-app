@@ -124,7 +124,7 @@ jobs:
               "if [ ! -d /home/ubuntu/${{ secrets.GH_REPO_NAME }} ]; then sudo -u ubuntu git clone \"https://oauth2:${GH_PAT}@github.com/${{ secrets.GH_REPO_OWNER }}/${{ secrets.GH_REPO_NAME }}.git\" /home/ubuntu/${{ secrets.GH_REPO_NAME }}; else sudo -u ubuntu git -C /home/ubuntu/${{ secrets.GH_REPO_NAME }} remote set-url origin \"https://oauth2:${GH_PAT}@github.com/${{ secrets.GH_REPO_OWNER }}/${{ secrets.GH_REPO_NAME }}.git\" && sudo -u ubuntu git -C /home/ubuntu/${{ secrets.GH_REPO_NAME }} pull; fi",
               "echo ${{ steps.dotenv.outputs.b64 }} | base64 -d > /home/ubuntu/${{ secrets.GH_REPO_NAME }}/.env",
               "chmod 600 /home/ubuntu/${{ secrets.GH_REPO_NAME }}/.env",
-              "cd /home/ubuntu/${{ secrets.GH_REPO_NAME }} && docker compose down && docker compose up --build -d"
+              "cd /home/ubuntu/${{ secrets.GH_REPO_NAME }} && docker compose -f docker-compose-cloud.yml down && docker compose -f docker-compose-cloud.yml up --build -d"
             ]}' \
             --output text \
             --query "Command.CommandId")
