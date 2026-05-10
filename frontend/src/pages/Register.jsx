@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { COUNTRIES } from '@/lib/countries';
 
 export default function Register() {
   const { checkAppState } = useAuth();
@@ -10,6 +11,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [countryCode, setCountryCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -18,6 +20,10 @@ export default function Register() {
     setError('');
     if (!fullName.trim()) {
       setError('Please enter your full name.');
+      return;
+    }
+    if (!countryCode) {
+      setError('Please select your country.');
       return;
     }
     if (password !== confirm) {
@@ -30,7 +36,7 @@ export default function Register() {
     }
     setBusy(true);
     try {
-      await api.auth.register(email.trim(), password, fullName.trim());
+      await api.auth.register(email.trim(), password, fullName.trim(), countryCode);
       await checkAppState({ withLoading: false });
     } catch (e) {
       if (e?.status === 409) {
@@ -84,6 +90,26 @@ export default function Register() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
             />
+          </div>
+          <div>
+            <label htmlFor="reg-country" className="mb-1 block text-sm font-medium text-slate-700">
+              Country
+            </label>
+            <select
+              id="reg-country"
+              required
+              value={countryCode}
+              onChange={(e) => setCountryCode(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+            >
+              <option value="" disabled>Select your country…</option>
+              {COUNTRIES.map(({ code, label }) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Determines where your data is stored to comply with local privacy laws.
+            </p>
           </div>
           <div>
             <label htmlFor="reg-password" className="mb-1 block text-sm font-medium text-slate-700">

@@ -25,13 +25,6 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(true);
     }
     try {
-      const hasSession = await api.auth.isAuthenticated();
-      if (!hasSession) {
-        setUser(null);
-        setIsAuthenticated(false);
-        return;
-      }
-
       const currentUser = await api.auth.me();
       const [children, prefs] = await Promise.all([
         api.entities.Child.list('-created_date'),

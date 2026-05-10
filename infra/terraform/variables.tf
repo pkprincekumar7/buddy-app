@@ -39,6 +39,14 @@ variable "key_name" {
   default     = null
 }
 
+# -- ElastiCache ---------------------------------------------------------------
+
+variable "elasticache_node_type" {
+  description = "ElastiCache node type for Redis (cache.t3.micro matches the db.t3.micro RDS tier)"
+  type        = string
+  default     = "cache.t3.micro"
+}
+
 # -- DNS / TLS -----------------------------------------------------------------
 
 variable "domain_name" {

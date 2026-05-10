@@ -40,6 +40,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_VERSION: "1.13.0"
   TF_VAR_aws_region: ${{ inputs.aws_region }}
   TF_VAR_environment: ${{ inputs.environment }}

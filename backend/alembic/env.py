@@ -20,12 +20,31 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# ---------------------------------------------------------------------------
+# Multi-region target selection
+# ---------------------------------------------------------------------------
+# Pass -x db=router to run migrations against the Global Router DB only.
+# Default (db=regional) targets the main DATABASE_URL (regional or single-instance).
+#
+# Usage:
+#   alembic upgrade head                   # regional / single-instance DB
+#   alembic -x db=router upgrade head      # dedicated router DB (ROUTER_DB_URL)
+# ---------------------------------------------------------------------------
+_db_target = context.get_x_argument(as_dictionary=True).get("db", "regional")
+
+
+def _get_url() -> str:
+    """Return the DB URL for the current migration target."""
+    if _db_target == "router" and settings.router_db_url:
+        return settings.router_db_url
+    return settings.database_url
+
 
 def run_migrations_offline() -> None:
-    # Use settings.database_url directly to avoid configparser percent-interpolation
+    # Use _get_url() directly to avoid configparser percent-interpolation
     # errors when the password contains percent-encoded special characters.
     context.configure(
-        url=settings.database_url,
+        url=_get_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -35,7 +54,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = create_engine(settings.database_url, poolclass=pool.NullPool)
+    connectable = create_engine(_get_url(), poolclass=pool.NullPool)
     try:
         with connectable.connect() as connection:
             context.configure(connection=connection, target_metadata=target_metadata)

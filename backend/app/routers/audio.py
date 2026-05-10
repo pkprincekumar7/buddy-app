@@ -1,10 +1,11 @@
 import io
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from app.deps import get_current_user
+from app.limiter import user_limiter
 from app.models import User
 from app.settings import settings
 
@@ -17,8 +18,8 @@ if not settings.openai_api_key:
     pass  # client stays None; endpoint will surface a clear 503
 else:
     try:
-        from openai import OpenAI
-        _openai_client = OpenAI(api_key=settings.openai_api_key)
+        from openai import AsyncOpenAI
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
     except Exception as _exc:
         _openai_init_error = str(_exc)
         log.warning("Failed to initialize OpenAI client: %s", _exc)
@@ -33,7 +34,9 @@ class TranscribeResponse(BaseModel):
 
 
 @router.post("/transcribe", response_model=TranscribeResponse)
+@user_limiter.limit("10/minute")
 async def transcribe_audio(
+    request: Request,
     audio: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
@@ -55,11 +58,16 @@ async def transcribe_audio(
 
     filename = audio.filename or "recording.webm"
     raw_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
-    ext = raw_ext if raw_ext in _ALLOWED_AUDIO_EXTS else "webm"
+    if raw_ext not in _ALLOWED_AUDIO_EXTS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type '.{raw_ext}'. Allowed: {', '.join(sorted(_ALLOWED_AUDIO_EXTS))}",
+        )
+    ext = raw_ext
     mime = audio.content_type or f"audio/{ext}"
 
     try:
-        transcript = _openai_client.audio.transcriptions.create(
+        transcript = await _openai_client.audio.transcriptions.create(
             model="whisper-1",
             file=(f"recording.{ext}", io.BytesIO(content), mime),
             language="en",

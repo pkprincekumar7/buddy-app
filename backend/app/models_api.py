@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+import json
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Relative path: starts with a single /, no control chars, no protocol chars (:)
+# and no characters that enable HTML/script injection or open-redirect via //host.
+_SAFE_PATH_RE = re.compile(r'^/(?!/)[^\x00-\x1f\\<>"\':`]*$')
 
 
 # ---------------------------------------------------------------------------
@@ -16,6 +23,18 @@ class UserPreferencesPatch(BaseModel):
     tts_enabled: bool | None = None
     last_visited_path: str | None = Field(None, max_length=500)
 
+    @field_validator("last_visited_path")
+    @classmethod
+    def validate_last_visited_path(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not _SAFE_PATH_RE.match(v):
+            raise ValueError(
+                "last_visited_path must be a relative path starting with '/' "
+                "and must not contain control characters, backslashes, colons, or quotes"
+            )
+        return v
+
 
 # ---------------------------------------------------------------------------
 # Onboarding — child data
@@ -25,8 +44,8 @@ class OnboardingChildData(BaseModel):
     name: str = Field(default="", max_length=100)
     age: str = Field(default="", max_length=20)
     school: str = Field(default="", max_length=200)
-    strengths: list[str] = Field(default_factory=list)
-    hobbies: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list, max_length=20)
+    hobbies: list[str] = Field(default_factory=list, max_length=20)
     thinking_pattern: str = Field(default="", max_length=100)
     communication_style: str = Field(default="", max_length=100)
     energy_level: str = Field(default="", max_length=100)
@@ -137,11 +156,11 @@ class CompletedGrowthAreasResponse(BaseModel):
 
 
 class AppendGrowthAreaRequest(BaseModel):
-    area_id: str
-    area_name: str
-    area_color: str
-    answers: dict[str, str] = Field(default_factory=dict)
-    recommendations: list[str] | None = None
+    area_id: str = Field(max_length=50)
+    area_name: str = Field(max_length=100)
+    area_color: str = Field(max_length=100)
+    answers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    recommendations: list[str] | None = Field(None, max_length=50)
     child_activity: ChildActivity | None = None
 
 
@@ -261,7 +280,7 @@ class UserGoalsPatch(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ChildResponse(BaseModel):
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "ignore"}
 
     id: str
     created_date: str
@@ -286,6 +305,9 @@ class ChildResponse(BaseModel):
     emotional_behaviour: str | None = None
 
 
+_PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
+
+
 class ChildCreate(BaseModel):
     # extra="allow" is intentional: unknown fields pass through to the JSON payload blob,
     # letting the frontend evolve fields without a backend migration. System fields
@@ -293,8 +315,8 @@ class ChildCreate(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str = Field(min_length=1, max_length=255)
-    age: str | int | None = None
-    school: str | None = None
+    age: str | int | None = Field(None, max_length=20)
+    school: str | None = Field(None, max_length=300)
     date_of_birth: str | None = None
     current_phase: int | None = None
     onboarding_completed: bool | None = None
@@ -312,12 +334,22 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
 
+    @model_validator(mode="after")
+    def limit_extra_payload_size(self) -> "ChildCreate":
+        if self.__pydantic_extra__:
+            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+                raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
+        return self
+
 
 class ChildPatch(BaseModel):
     # extra="allow": same payload-blob design as ChildCreate.
     model_config = {"extra": "allow"}
 
     name: str | None = None
+    # Promoted columns — declared explicitly so max_length validation applies on the patch path.
+    age: str | int | None = Field(None, max_length=20)
+    school: str | None = Field(None, max_length=300)
     pillar_scores: dict | None = None
     total_missions_completed: int | None = None
     parent_interactions: list | None = None
@@ -330,13 +362,20 @@ class ChildPatch(BaseModel):
             raise ValueError("pillar_scores must not exceed 20 entries")
         return v
 
+    @model_validator(mode="after")
+    def limit_extra_payload_size(self) -> "ChildPatch":
+        if self.__pydantic_extra__:
+            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+                raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Growth missions
 # ---------------------------------------------------------------------------
 
 class GrowthMissionResponse(BaseModel):
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "ignore"}
 
     id: str
     child_id: str
@@ -354,15 +393,22 @@ class GrowthMissionResponse(BaseModel):
 class GrowthMissionCreate(BaseModel):
     model_config = {"extra": "allow"}
 
-    child_id: str
-    title: str
+    child_id: str = Field(max_length=36)
+    title: str = Field(max_length=255)
     description: str | None = None
-    pillar: str | None = None
-    status: str = "active"
-    difficulty: str = "easy"
+    pillar: str | None = Field(None, max_length=100)
+    status: str = Field("active", max_length=50)
+    difficulty: str = Field("easy", max_length=50)
     week_number: int | None = None
-    activity_type: str | None = None
+    activity_type: str | None = Field(None, max_length=100)
     activity_data: dict | None = None
+
+    @model_validator(mode="after")
+    def limit_extra_payload_size(self) -> "GrowthMissionCreate":
+        if self.__pydantic_extra__:
+            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+                raise ValueError("Mission payload exceeds maximum allowed size (64 KB)")
+        return self
 
 
 class BulkMissionBody(BaseModel):

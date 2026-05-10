@@ -7,6 +7,10 @@ function joinApi(path) {
 // Single in-flight refresh promise shared across concurrent requests.
 let refreshPromise = null;
 
+// Guard: prevents two concurrent callers (e.g. an auth-expired event listener
+// and the originating page's error handler) from both calling logout + redirect.
+let _redirectingToLogin = false;
+
 function ensureRefreshed() {
   if (!refreshPromise) {
     refreshPromise = refreshTokenPair().finally(() => { refreshPromise = null; });
@@ -57,8 +61,9 @@ async function request(path, { method = 'GET', body } = {}, _retry = false) {
     } catch {
       /* ignore */
     }
-    const err = new Error(detail);
+    const err = new Error(typeof detail === 'string' ? detail : (detail?.msg || JSON.stringify(detail)));
     err.status = res.status;
+    err.detail = detail;
     throw err;
   }
 
@@ -97,16 +102,18 @@ export const api = {
     },
 
     async redirectToLogin() {
+      if (_redirectingToLogin) return;
+      _redirectingToLogin = true;
       await api.auth.logout();
       if (typeof window !== 'undefined') {
         window.location.href = '/Login';
       }
     },
 
-    async register(email, password, full_name) {
+    async register(email, password, full_name, country_code) {
       await request('/auth/register', {
         method: 'POST',
-        body: { email, password, full_name: full_name || 'Parent' },
+        body: { email, password, full_name: full_name || 'Parent', country_code },
       });
     },
 
@@ -117,10 +124,17 @@ export const api = {
       });
     },
 
-    async google(id_token) {
+    async google(id_token, country_code) {
       await request('/auth/google', {
         method: 'POST',
-        body: { id_token },
+        body: country_code ? { id_token, country_code } : { id_token },
+      });
+    },
+
+    async deleteAccount(confirmEmail) {
+      await request('/user/me', {
+        method: 'DELETE',
+        body: { confirm_email: confirmEmail },
       });
     },
   },

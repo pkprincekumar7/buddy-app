@@ -1,7 +1,8 @@
+import json
 import logging
 from urllib.parse import quote_plus
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger(__name__)
@@ -91,11 +92,15 @@ class Settings(BaseSettings):
     @field_validator("cors_origins")
     @classmethod
     def validate_cors_origins(cls, v: str) -> str:
-        for origin in (o.strip() for o in v.split(",")):
+        for origin in (o.strip() for o in v.split(",") if o.strip()):
             if origin == "*":
                 raise ValueError(
                     "CORS_ORIGINS must not be set to '*'. "
                     "Specify explicit origins (e.g. https://yourapp.com)."
+                )
+            if not (origin.startswith("http://") or origin.startswith("https://")):
+                raise ValueError(
+                    f"CORS origin must start with http:// or https://: {origin!r}"
                 )
         return v
 
@@ -125,6 +130,106 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("POSTGRES_MAX_OVERFLOW", "postgres_max_overflow"),
     )
 
+    # ---------------------------------------------------------------------------
+    # Multi-region routing (all optional — omit for single-instance mode)
+    # ---------------------------------------------------------------------------
+
+    # Dedicated PostgreSQL instance that stores only email_hash → region mappings.
+    # Falls back to the main database_url when not set.
+    router_db_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ROUTER_DB_URL", "router_db_url"),
+    )
+
+    # Raw JSON string read from the REGIONAL_DB_URLS environment variable.
+    # Intentionally excluded from model_dump() and repr — use the parsed
+    # `regional_db_urls` property instead.
+    # Example env value: '{"eu": "postgresql://...", "us": "postgresql://..."}'
+    regional_db_urls_raw: str = Field(
+        default="{}",
+        exclude=True,
+        repr=False,
+        validation_alias=AliasChoices("REGIONAL_DB_URLS", "regional_db_urls_raw"),
+    )
+
+    # Redis URL for the per-user LLM rate limiter (sliding window, LLM_HOURLY_LIMIT req/hour).
+    # When not set the rate limiter falls back to an in-process counter — correct
+    # for single-instance local dev but breaks under multiple pods.
+    redis_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REDIS_URL", "redis_url"),
+    )
+
+    # Maximum LLM calls per user per hour. Set generously — the per-minute slowapi
+    # limit handles burst abuse; this cap is purely for sustained cost exposure.
+    llm_hourly_limit: int = Field(
+        default=200,
+        validation_alias=AliasChoices("LLM_HOURLY_LIMIT", "llm_hourly_limit"),
+    )
+
+    # The region assigned when no JWT is present (register/login flows in
+    # single-instance mode, and as a safe fallback).
+    default_region: str = Field(
+        default="local",
+        validation_alias=AliasChoices("DEFAULT_REGION", "default_region"),
+    )
+
+    # How often the background reconciler runs (minutes).
+    # The reconciler repairs stale 'pending' UserRegionRecord rows left behind
+    # by a failed Phase 2 or Phase 3 saga write.
+    reconciler_interval_minutes: int = Field(
+        default=5,
+        validation_alias=AliasChoices("RECONCILER_INTERVAL_MINUTES", "reconciler_interval_minutes"),
+    )
+
+    # Parsed once at startup; never re-parsed on every request.
+    _regional_db_urls_parsed: dict[str, str] = PrivateAttr(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _parse_regional_db_urls(self) -> "Settings":
+        """Parse and validate REGIONAL_DB_URLS once at startup.
+
+        Logs a WARNING for any invalid entry so misconfigured multi-region
+        deployments fail visibly rather than silently falling back to the
+        main DB and writing data to the wrong region.
+        """
+        from sqlalchemy.engine import make_url as _make_url
+        from sqlalchemy.exc import ArgumentError as _ArgError
+
+        raw = self.regional_db_urls_raw.strip()
+        if not raw:
+            # Empty string means single-instance / single-region — not an error.
+            result = {}
+        else:
+            try:
+                result = json.loads(raw) or {}
+            except json.JSONDecodeError as exc:
+                log.error(
+                    "REGIONAL_DB_URLS is not valid JSON — falling back to "
+                    "single-instance mode.  error=%s",
+                    exc,
+                )
+                result = {}
+
+        for region_key, url in list(result.items()):
+            try:
+                _make_url(url)
+            except (_ArgError, Exception) as exc:
+                log.warning(
+                    "REGIONAL_DB_URLS[%r] is not a valid DB URL — removing from "
+                    "routing map, traffic will fall back to main engine.  error=%s",
+                    region_key, exc,
+                )
+                del result[region_key]
+
+        object.__setattr__(self, "_regional_db_urls_parsed", result)
+        return self
+
+    @property
+    def regional_db_urls(self) -> dict[str, str]:
+        """Parsed regional DB URL map. Returns empty dict in single-instance mode."""
+        return self._regional_db_urls_parsed
+
     # Cookie settings for HttpOnly auth tokens.
     # Set COOKIE_SECURE=false only for local HTTP development; always True in production.
     cookie_secure: bool = Field(
@@ -142,6 +247,25 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("COOKIE_DOMAIN", "cookie_domain"),
     )
 
+    @field_validator("cookie_samesite", mode="before")
+    @classmethod
+    def normalise_cookie_samesite(cls, v: object) -> object:
+        return v.lower() if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def validate_cookie_settings(self) -> "Settings":
+        allowed = {"lax", "strict", "none"}
+        if self.cookie_samesite.lower() not in allowed:
+            raise ValueError(
+                f"COOKIE_SAMESITE must be one of {allowed!r} (got {self.cookie_samesite!r})"
+            )
+        if self.cookie_samesite.lower() == "none" and not self.cookie_secure:
+            raise ValueError(
+                "COOKIE_SAMESITE=none requires COOKIE_SECURE=true. "
+                "Browsers silently drop cookies with SameSite=None without the Secure flag."
+            )
+        return self
+
     @model_validator(mode="after")
     def warn_production_jwt_secret(self):
         if self.app_env.lower() == "prod" and len(self.jwt_secret) < 64:
@@ -150,6 +274,16 @@ class Settings(BaseSettings):
                 "generated secret of at least 64 characters "
                 "(e.g. python -c \"import secrets; print(secrets.token_hex(32))\").",
                 len(self.jwt_secret),
+            )
+        return self
+
+    @model_validator(mode="after")
+    def warn_production_cookie_security(self):
+        if self.app_env.lower() == "prod" and not self.cookie_secure:
+            log.warning(
+                "COOKIE_SECURE=false in a production environment — auth cookies will "
+                "not be restricted to HTTPS.  Set COOKIE_SECURE=true unless you are "
+                "explicitly terminating TLS before this service."
             )
         return self
 
@@ -180,6 +314,12 @@ class Settings(BaseSettings):
             object.__setattr__(self, "database_url", url)
             return self
 
+        if self.app_env.lower() == "prod":
+            raise ValueError(
+                "No database configuration found. "
+                "Set DATABASE_URL or POSTGRES_* environment variables. "
+                "SQLite is not permitted in production."
+            )
         log.warning(
             "No database configuration found — falling back to SQLite (sqlite:///./buddy360.db). "
             "Set DATABASE_URL or POSTGRES_* environment variables for production use."

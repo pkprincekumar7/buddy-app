@@ -2,31 +2,59 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 import uuid
 
+import bcrypt as _bcrypt
+import anyio
 import jwt
 from jwt.exceptions import PyJWTError
-from passlib.context import CryptContext
 
 from app.settings import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+async def async_hash_password(password: str) -> str:
+    """Run bcrypt hashing in a worker thread so it doesn't block the event loop."""
+    return await anyio.to_thread.run_sync(hash_password, password)
+
+
+async def async_verify_password(plain: str, hashed: str) -> bool:
+    """Run bcrypt verification in a worker thread so it doesn't block the event loop."""
+    return await anyio.to_thread.run_sync(verify_password, plain, hashed)
 
 
 def _encode(payload: dict[str, Any]) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(sub: str, extra: dict[str, Any] | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_access_expire_minutes)
-    payload: dict[str, Any] = {"sub": sub, "exp": expire, "type": "access"}
+def create_access_token(
+    sub: str,
+    region: str = "local",
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """
+    Issue a signed access token.
+
+    The `region` claim is embedded so that downstream get_db can route the
+    request to the correct regional DB without a full JWT re-verification.
+    Defaults to "local" (main DB) which is correct for single-instance mode.
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_access_expire_minutes)
+    payload: dict[str, Any] = {"sub": sub, "iat": now, "exp": expire, "type": "access", "region": region}
     if extra:
+        _RESERVED = {"sub", "iat", "exp", "type", "region"}
+        overlap = _RESERVED & extra.keys()
+        if overlap:
+            raise ValueError(f"extra must not override reserved JWT claims: {overlap}")
         payload.update(extra)
     return _encode(payload)
 

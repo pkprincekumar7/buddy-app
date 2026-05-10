@@ -1,12 +1,13 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db, get_upsert_insert
 from app.deps import get_current_user
+from app.limiter import user_limiter
 from app.models import (
     CompletedGrowthAreaRecord,
     User,
@@ -41,8 +42,6 @@ from app.models_api import (
     UserPreferencesPatch,
 )
 
-_upsert_insert = get_upsert_insert()
-
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
 
@@ -64,7 +63,10 @@ def _personality_row_to_schema(row: UserPersonalityRecord) -> PersonalityAnalysi
         traits=row.traits or [],
         strengths=row.strengths or [],
         growth_areas=row.growth_areas or [],
-        famous_people=[FamousPerson(**p) for p in (row.famous_people or []) if isinstance(p, dict)],
+        famous_people=[
+            FamousPerson(**p) for p in (row.famous_people or [])
+            if isinstance(p, dict) and p.get("name")
+        ],
     )
     vm = PersonalityViewModel(
         type=row.personality_type or "",
@@ -139,13 +141,16 @@ def _completed_area_row_to_schema(row: CompletedGrowthAreaRecord) -> CompletedGr
 # ---------------------------------------------------------------------------
 
 @router.get("/user/preferences", response_model=UserPreferences)
-def get_preferences(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("60/minute")
+def get_preferences(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.get(UserPreferencesRecord, user.id)
     return _preferences_to_schema(row) if row else UserPreferences()
 
 
 @router.patch("/user/preferences", response_model=UserPreferences)
+@user_limiter.limit("30/minute")
 def patch_preferences(
+    request: Request,
     body: UserPreferencesPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -168,7 +173,8 @@ def patch_preferences(
 # ---------------------------------------------------------------------------
 
 @router.get("/user/onboarding", response_model=OnboardingState)
-def get_onboarding(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("60/minute")
+def get_onboarding(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ob = db.get(UserOnboardingRecord, user.id)
     per = db.get(UserPersonalityRecord, user.id)
     jrn = db.get(UserJourneyRecord, user.id)
@@ -176,7 +182,9 @@ def get_onboarding(user: User = Depends(get_current_user), db: Session = Depends
 
 
 @router.patch("/user/onboarding", response_model=OnboardingState)
+@user_limiter.limit("20/minute")
 def patch_onboarding(
+    request: Request,
     body: OnboardingPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -259,7 +267,8 @@ def patch_onboarding(
 # ---------------------------------------------------------------------------
 
 @router.get("/user/recommendations-progress", response_model=RecommendationsProgress)
-def get_recommendations_progress(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("60/minute")
+def get_recommendations_progress(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.get(UserRecommendationsProgressRecord, user.id)
     if not row or not row.progress:
         return RecommendationsProgress()
@@ -267,7 +276,11 @@ def get_recommendations_progress(user: User = Depends(get_current_user), db: Ses
 
 
 @router.patch("/user/recommendations-progress", response_model=RecommendationsProgress)
+@user_limiter.limit("30/minute")
+# Full-replace semantics: the entire progress blob is overwritten.
+# Callers must GET first, merge client-side, then send the complete object.
 def patch_recommendations_progress(
+    request: Request,
     body: RecommendationsProgress,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -276,7 +289,14 @@ def patch_recommendations_progress(
     if not row:
         row = UserRecommendationsProgressRecord(user_id=user.id)
         db.add(row)
-    row.progress = body.model_dump()
+    progress_dict = body.model_dump()
+    row.progress = progress_dict
+    # Keep promoted columns in sync so analytics queries can filter by step
+    # without scanning the JSON blob.
+    if "step" in progress_dict:
+        row.step = str(progress_dict["step"] or "intro")
+    if "current_area_index" in progress_dict:
+        row.current_area_index = int(progress_dict["current_area_index"] or 0)
     db.commit()
     db.refresh(row)
     return RecommendationsProgress.model_validate(row.progress)
@@ -287,17 +307,28 @@ def patch_recommendations_progress(
 # ---------------------------------------------------------------------------
 
 @router.get("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
-def list_completed_growth_areas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("60/minute")
+def list_completed_growth_areas(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     rows = db.execute(
         select(CompletedGrowthAreaRecord)
         .where(CompletedGrowthAreaRecord.user_id == user.id)
         .order_by(CompletedGrowthAreaRecord.created_at)
+        .limit(limit)
+        .offset(offset)
     ).scalars().all()
     return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
 
 
 @router.post("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
+@user_limiter.limit("20/minute")
 def append_completed_growth_area(
+    request: Request,
     body: AppendGrowthAreaRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -319,7 +350,7 @@ def append_completed_growth_area(
     update_values = {k: v for k, v in insert_values.items() if k not in ("id", "user_id", "area_id")}
     update_values["updated_at"] = func.now()
     stmt = (
-        _upsert_insert(CompletedGrowthAreaRecord)
+        get_upsert_insert(db)(CompletedGrowthAreaRecord)
         .values(**insert_values)
         .on_conflict_do_update(
             index_elements=["user_id", "area_id"],
@@ -333,12 +364,14 @@ def append_completed_growth_area(
         select(CompletedGrowthAreaRecord)
         .where(CompletedGrowthAreaRecord.user_id == user.id)
         .order_by(CompletedGrowthAreaRecord.created_at)
+        .limit(200)
     ).scalars().all()
     return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
 
 
 @router.delete("/user/completed-growth-areas", status_code=204)
-def clear_completed_growth_areas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("10/minute")
+def clear_completed_growth_areas(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.execute(
         delete(CompletedGrowthAreaRecord).where(CompletedGrowthAreaRecord.user_id == user.id)
     )
@@ -350,7 +383,8 @@ def clear_completed_growth_areas(user: User = Depends(get_current_user), db: Ses
 # ---------------------------------------------------------------------------
 
 @router.get("/user/goals", response_model=UserGoals)
-def get_goals(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@user_limiter.limit("60/minute")
+def get_goals(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     row = db.get(UserGoalsRecord, user.id)
     if not row:
         return UserGoals()
@@ -359,7 +393,11 @@ def get_goals(user: User = Depends(get_current_user), db: Session = Depends(get_
 
 
 @router.patch("/user/goals", response_model=UserGoals)
+@user_limiter.limit("20/minute")
+# Full-replace semantics for `plan`: when plan is provided it overwrites the entire goals_plan blob.
+# Callers must GET first, merge client-side, then send the complete plan.
 def patch_goals(
+    request: Request,
     body: UserGoalsPatch,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

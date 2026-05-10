@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { COUNTRIES } from '@/lib/countries';
 
 export default function Login() {
   const { checkAppState } = useAuth();
@@ -13,6 +14,28 @@ export default function Login() {
   const googleBtnRef = useRef(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
+  // Google new-user flow: when the backend returns country_code_required,
+  // we hold the id_token and show a country selector before retrying.
+  const [pendingGoogleToken, setPendingGoogleToken] = useState(null);
+  const [googleCountry, setGoogleCountry] = useState('');
+  const [googleCountryBusy, setGoogleCountryBusy] = useState(false);
+
+  const onGoogleCountrySubmit = async () => {
+    if (!googleCountry || !pendingGoogleToken) return;
+    setError('');
+    setGoogleCountryBusy(true);
+    try {
+      await api.auth.google(pendingGoogleToken, googleCountry);
+      await checkAppState({ withLoading: false });
+    } catch (e) {
+      setError(e?.message || 'Google sign-in failed.');
+      setPendingGoogleToken(null);
+      setGoogleCountry('');
+    } finally {
+      setGoogleCountryBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!googleClientId) return;
 
@@ -20,13 +43,19 @@ export default function Login() {
       const idToken = response?.credential;
       if (!idToken) return;
       setError('');
+      setPendingGoogleToken(null);
+      setGoogleCountry('');
       setBusy(true);
       try {
         await api.auth.google(idToken);
         await checkAppState({ withLoading: false });
       } catch (e) {
-        const msg = e?.message || 'Google sign-in failed';
-        setError(msg.includes('503') ? 'Google sign-in is not configured on the server.' : msg);
+        if (e?.status === 422 && e?.detail?.code === 'country_code_required') {
+          setPendingGoogleToken(idToken);
+        } else {
+          const msg = e?.message || 'Google sign-in failed';
+          setError(msg.includes('503') ? 'Google sign-in is not configured on the server.' : msg);
+        }
       } finally {
         setBusy(false);
       }
@@ -140,6 +169,42 @@ export default function Login() {
             <code className="rounded bg-slate-100 px-1">GOOGLE_CLIENT_ID</code> on the API.
           </p>
         )}
+
+        {pendingGoogleToken ? (
+          <div className="mt-6 rounded-xl border border-teal-200 bg-teal-50 p-4">
+            <p className="mb-3 text-sm font-medium text-slate-800">One more step</p>
+            <p className="mb-3 text-xs text-slate-600">
+              Select your country so we can store your data in the right region.
+            </p>
+            <select
+              value={googleCountry}
+              onChange={(e) => setGoogleCountry(e.target.value)}
+              className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+            >
+              <option value="" disabled>Select your country…</option>
+              {COUNTRIES.map(({ code, label }) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <Button
+                onClick={onGoogleCountrySubmit}
+                disabled={!googleCountry || googleCountryBusy}
+                className="flex-1 bg-teal-600 hover:bg-teal-700 text-sm"
+              >
+                {googleCountryBusy ? 'Signing in…' : 'Continue'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => { setPendingGoogleToken(null); setGoogleCountry(''); setError(''); }}
+                disabled={googleCountryBusy}
+                className="text-sm"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <p className="mt-8 text-center text-sm text-slate-600">
           New here?{' '}
