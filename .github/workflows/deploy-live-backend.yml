@@ -1,0 +1,229 @@
+name: Deploy Live Backend
+run-name: Deploy Live Backend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+      skip_migrations:
+        description: "Skip Alembic migrations (use only if migrations were already run)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-live-backend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    name: Deploy Live Backend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets.
+      # SSM parameters are written automatically by terraform-live-backend.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          get_ssm() {
+            aws ssm get-parameter --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecr_repository_url")
+          CLUSTER=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecs_cluster_name")
+          SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecs_service_name")
+
+          if [ -z "$ECR_URL" ]; then
+            echo "ERROR: ECR repository URL not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$SERVICE" ]; then
+            echo "ERROR: ECS service name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+
+          echo "ecr_url=$ECR_URL"       >> $GITHUB_OUTPUT
+          echo "ecs_cluster=$CLUSTER"   >> $GITHUB_OUTPUT
+          echo "ecs_service=$SERVICE"   >> $GITHUB_OUTPUT
+          echo "ECR:     $ECR_URL"
+          echo "Cluster: $CLUSTER"
+          echo "Service: $SERVICE"
+
+      # -------------------------------------------------------------------------
+      # Build and push to ECR.
+      # Tagged with both :latest and :<git-sha> for traceability.
+      # -------------------------------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr_login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: build
+        env:
+          ECR_URL: ${{ steps.tf_outputs.outputs.ecr_url }}
+          IMAGE_SHA: ${{ steps.tf_outputs.outputs.ecr_url }}:${{ github.sha }}
+          IMAGE_LATEST: ${{ steps.tf_outputs.outputs.ecr_url }}:latest
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t "$IMAGE_SHA" \
+            -t "$IMAGE_LATEST" \
+            -f backend/Dockerfile \
+            backend/
+
+          docker push "$IMAGE_SHA"
+          docker push "$IMAGE_LATEST"
+          echo "image=$IMAGE_SHA" >> $GITHUB_OUTPUT
+          echo "Pushed: $IMAGE_SHA"
+          echo "Pushed: $IMAGE_LATEST"
+
+      # -------------------------------------------------------------------------
+      # Run Alembic migrations as a one-off ECS task before updating the service.
+      # Uses the freshly pushed image with the alembic upgrade head command override.
+      # Skipped if skip_migrations input is true.
+      # -------------------------------------------------------------------------
+      - name: Run Alembic migrations
+        if: ${{ !inputs.skip_migrations }}
+        env:
+          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          # Fetch the current task definition JSON from the running service
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --query "services[0].taskDefinition" \
+            --output text)
+
+          echo "Base task definition: $TASK_DEF_ARN"
+
+          # Register a new task definition revision with the freshly pushed image.
+          # ECS run-task --overrides does not support overriding the image field;
+          # a proper task definition revision is the only reliable way to pin the image.
+          NEW_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_DEF_ARN" \
+            --query "taskDefinition" \
+            --output json \
+            | jq --arg IMAGE "$IMAGE" \
+                 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) |
+                  .containerDefinitions[0].image = $IMAGE')
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
+
+          echo "Migration task definition: $NEW_TASK_DEF_ARN"
+
+          # Fetch network config from the service to run the one-off task in same subnets/SGs
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --query "services[0].networkConfiguration" \
+            --output json)
+
+          # Launch one-off migration task using the new task definition
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$NEW_TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "{
+              \"containerOverrides\": [{
+                \"name\": \"backend\",
+                \"command\": [\"alembic\", \"upgrade\", \"head\"]
+              }]
+            }" \
+            --query "tasks[0].taskArn" \
+            --output text)
+
+          echo "Migration task ARN: $TASK_ARN"
+
+          # Wait for the migration task to finish.
+          # --cli-read-timeout 0 disables the SDK socket timeout so slow cold starts
+          # (large image pull on first deploy) do not abort the wait prematurely.
+          echo "Waiting for migration task to complete..."
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --cli-read-timeout 0
+
+          # Check exit code — non-zero means migration failed
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query "tasks[0].containers[0].exitCode" \
+            --output text)
+
+          echo "Migration task exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "ERROR: Alembic migration failed (exit code $EXIT_CODE). Aborting deploy."
+            exit 1
+          fi
+          echo "Migrations completed successfully."
+
+      # -------------------------------------------------------------------------
+      # Force a rolling update of the ECS service.
+      # ECS pulls :latest from ECR and replaces running tasks one by one.
+      # Waits for the service to reach a steady state before reporting success.
+      # -------------------------------------------------------------------------
+      - name: Deploy new image to ECS
+        env:
+          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --output json \
+            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
+            | cat
+
+          echo "Waiting for service to reach steady state (up to 15 minutes)..."
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE"
+
+          echo "Deployment complete — service is stable."

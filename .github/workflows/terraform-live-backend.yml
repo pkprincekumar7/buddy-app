@@ -1,0 +1,158 @@
+name: Terraform Live Backend
+run-name: Terraform Live Backend (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action: plan, apply, plan-destroy, destroy"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-destroy
+          - destroy
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-live-backend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_VERSION: "1.13.0"
+  TF_VAR_aws_region:        ${{ inputs.aws_region }}
+  TF_VAR_environment:       ${{ inputs.environment }}
+  TF_VAR_state_bucket:      ${{ secrets.STATE_BUCKET }}
+  TF_VAR_db_state_key: "terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/database/${{ inputs.aws_region }}/terraform.tfstate"
+
+jobs:
+  terraform:
+    name: Terraform Live Backend ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra-live-backend/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: terraform-live-backend-${{ inputs.environment }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/terraform.tfstate"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan.bin
+
+      # -------------------------------------------------------------------------
+      # Populate the Secrets Manager app secret from GitHub environment secrets.
+      # Falls back to REPLACE_ME (or "" for COOKIE_DOMAIN) if a secret is not set.
+      # Uses jq to build JSON safely — handles special characters in secret values.
+      # This runs every apply so rotating a GitHub secret takes effect on next deploy.
+      # -------------------------------------------------------------------------
+      - name: Populate app secrets
+        if: inputs.action == 'apply'
+        env:
+          JWT_SECRET:        ${{ secrets.JWT_SECRET }}
+          GOOGLE_CLIENT_ID:  ${{ secrets.GOOGLE_CLIENT_ID }}
+          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
+          CORS_ORIGINS:      ${{ secrets.CORS_ORIGINS }}
+          COOKIE_DOMAIN:     ${{ secrets.COOKIE_DOMAIN }}
+        run: |
+          SECRET_ARN=$(terraform output -raw app_secret_arn)
+          aws secretsmanager put-secret-value \
+            --secret-id "$SECRET_ARN" \
+            --secret-string "$(jq -n \
+              --arg jwt    "${JWT_SECRET:-REPLACE_ME}" \
+              --arg gid    "${GOOGLE_CLIENT_ID:-REPLACE_ME}" \
+              --arg openai "${OPENAI_API_KEY:-REPLACE_ME}" \
+              --arg anthro "${ANTHROPIC_API_KEY:-REPLACE_ME}" \
+              --arg gemini "${GEMINI_API_KEY:-REPLACE_ME}" \
+              --arg cors   "${CORS_ORIGINS:-REPLACE_ME}" \
+              --arg cookie "${COOKIE_DOMAIN:-}" \
+              '{JWT_SECRET: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, CORS_ORIGINS: $cors, COOKIE_DOMAIN: $cookie}')"
+          echo "App secrets populated in Secrets Manager."
+
+      # -------------------------------------------------------------------------
+      # Publish key outputs to SSM Parameter Store (Standard tier, free).
+      # deploy-live-backend.yml reads these so no manual secret copying is needed.
+      # -------------------------------------------------------------------------
+      - name: Publish outputs to SSM
+        if: inputs.action == 'apply'
+        run: |
+          put() {
+            aws ssm put-parameter \
+              --name "$1" --value "$2" \
+              --type String --overwrite \
+              --region "${{ inputs.aws_region }}" \
+              > /dev/null
+            echo "  $1"
+          }
+          echo "Writing SSM parameters..."
+          put "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecr_repository_url" \
+              "$(terraform output -raw ecr_repository_url)"
+          put "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecs_cluster_name" \
+              "$(terraform output -raw ecs_cluster_name)"
+          put "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/ecs_service_name" \
+              "$(terraform output -raw ecs_service_name)"
+          echo "Done."
+
+      - name: Terraform Plan (destroy)
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform apply -auto-approve tfplan.bin
