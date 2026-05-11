@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# ALB — backend only (HTTPS on port 443)
+#
+# CloudFront terminates TLS for end users and proxies /api/* to this ALB
+# using https-only to the internal subdomain (e.g. buddy-internal-dev.learning-dev.com).
+# The existing ACM certificate in ap-south-1 (ACM_CERTIFICATE_ARN_AP_SOUTH_1)
+# covers this subdomain and is referenced here.
+# ALB→ECS traffic stays within the VPC on HTTP port 8000.
+# ---------------------------------------------------------------------------
+
+resource "aws_lb" "backend" {
+  name               = "${var.app_name}-backend-alb-${var.environment}"
+  load_balancer_type = "application"
+  subnets = [
+    aws_subnet.public_1.id,
+    aws_subnet.public_2.id,
+  ]
+  security_groups = [aws_security_group.alb_sg.id]
+
+  tags = {
+    Name = "${var.app_name}-backend-alb-${var.environment}"
+  }
+}
+
+resource "aws_lb_target_group" "backend" {
+  name        = "${var.app_name}-backend-tg-${var.environment}"
+  port        = 8000
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = aws_vpc.main.id
+
+  health_check {
+    path                = "/health"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+
+  tags = {
+    Name = "${var.app_name}-backend-tg-${var.environment}"
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.backend.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.acm_certificate_arn_ap_south_1
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+}

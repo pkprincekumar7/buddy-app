@@ -1,0 +1,141 @@
+name: Deploy Live Backend
+run-name: Deploy Live Backend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+          - eu-west-1
+          - us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-live-backend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    name: Deploy Live Backend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets.
+      # SSM parameters are written automatically by terraform-live-backend.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecr_repository_url")
+          CLUSTER=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
+          SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+
+          if [ -z "$ECR_URL" ]; then
+            echo "ERROR: ECR repository URL not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$SERVICE" ]; then
+            echo "ERROR: ECS service name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+
+          echo "ecr_url=$ECR_URL"       >> $GITHUB_OUTPUT
+          echo "ecs_cluster=$CLUSTER"   >> $GITHUB_OUTPUT
+          echo "ecs_service=$SERVICE"   >> $GITHUB_OUTPUT
+          echo "ECR:     $ECR_URL"
+          echo "Cluster: $CLUSTER"
+          echo "Service: $SERVICE"
+
+      # -------------------------------------------------------------------------
+      # Build and push to ECR.
+      # Tagged with both :latest and :<git-sha> for traceability.
+      # -------------------------------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr_login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: build
+        env:
+          ECR_URL: ${{ steps.tf_outputs.outputs.ecr_url }}
+          IMAGE_SHA: ${{ steps.tf_outputs.outputs.ecr_url }}:${{ github.sha }}
+          IMAGE_LATEST: ${{ steps.tf_outputs.outputs.ecr_url }}:latest
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t "$IMAGE_SHA" \
+            -t "$IMAGE_LATEST" \
+            -f backend/Dockerfile \
+            backend/
+
+          docker push "$IMAGE_SHA"
+          docker push "$IMAGE_LATEST"
+          echo "image=$IMAGE_SHA" >> $GITHUB_OUTPUT
+          echo "Pushed: $IMAGE_SHA"
+          echo "Pushed: $IMAGE_LATEST"
+
+      # -------------------------------------------------------------------------
+      # Force a rolling update of the ECS service.
+      # ECS pulls :latest from ECR and replaces running tasks one by one.
+      # Waits for the service to reach a steady state before reporting success.
+      # -------------------------------------------------------------------------
+      - name: Deploy new image to ECS
+        env:
+          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --output json \
+            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
+            | cat
+
+          echo "Waiting for service to reach steady state (up to 15 minutes)..."
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE"
+
+          echo "Deployment complete — service is stable."

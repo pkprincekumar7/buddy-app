@@ -1,0 +1,101 @@
+name: Terraform Live Bucket
+run-name: Terraform Live Bucket (${{ inputs.action }}, ${{ inputs.environment }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action: plan, apply, plan-destroy, destroy"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-destroy
+          - destroy
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-live-bucket-${{ secrets.APP_NAME }}-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_VERSION: "1.13.0"
+  TF_VAR_environment: ${{ inputs.environment }}
+
+jobs:
+  terraform:
+    name: Terraform Live Bucket ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra-live-bucket/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: terraform-live-bucket-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/bucket/us-east-1/terraform.tfstate"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan.bin
+
+      # -------------------------------------------------------------------------
+      # Destroy: plan-destroy runs first (same execution), then destroy.
+      # NOTE: aws_s3_bucket resources have prevent_destroy = true — terraform
+      # destroy will error on the bucket resources intentionally. To fully remove
+      # the state, run:
+      #   terraform state rm aws_s3_bucket.frontend aws_s3_bucket.backend
+      # then re-run destroy to clean up only the SSM parameters.
+      # -------------------------------------------------------------------------
+      - name: Terraform Plan (destroy)
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform apply -auto-approve tfplan.bin

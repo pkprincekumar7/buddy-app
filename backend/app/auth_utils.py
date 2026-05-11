@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 import uuid
@@ -18,6 +19,14 @@ def verify_password(plain: str, hashed: str) -> bool:
         return _bcrypt.checkpw(plain.encode(), hashed.encode())
     except Exception:
         return False
+
+
+async def async_hash_password(password: str) -> str:
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def async_verify_password(plain: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password, plain, hashed)
 
 
 def _encode(payload: dict[str, Any]) -> str:

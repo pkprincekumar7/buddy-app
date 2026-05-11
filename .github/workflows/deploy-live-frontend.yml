@@ -1,0 +1,132 @@
+name: Deploy Live Frontend
+run-name: Deploy Live Frontend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+          - eu-west-1
+          - us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-live-frontend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    name: Deploy Live Frontend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run build
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets.
+      # SSM parameters are written automatically by terraform-live-frontend.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/cloudfront_distribution_id")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "ERROR: S3 bucket not found in SSM. Run terraform-live-frontend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: CloudFront distribution ID not found in SSM. Run terraform-live-frontend workflow (apply) first."
+            exit 1
+          fi
+
+          echo "s3_bucket=$S3_BUCKET"   >> $GITHUB_OUTPUT
+          echo "cf_dist_id=$CF_DIST_ID" >> $GITHUB_OUTPUT
+          echo "S3 bucket:              $S3_BUCKET"
+          echo "CloudFront distribution: $CF_DIST_ID"
+
+      - name: Sync to S3
+        run: |
+          # Upload hashed assets (JS/CSS) with long-lived cache headers
+          aws s3 sync frontend/dist/assets/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/assets/ \
+            --cache-control "public,max-age=31536000,immutable" \
+            --delete
+
+          # Upload everything else (index.html, manifest.json, etc.) with no-cache
+          aws s3 sync frontend/dist/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/ \
+            --exclude "assets/*" \
+            --cache-control "no-cache,no-store,must-revalidate" \
+            --delete
+
+      - name: Invalidate CloudFront cache
+        id: invalidate
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" \
+            --output text)
+          echo "Invalidation ID: $INVALIDATION_ID"
+          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for invalidation to complete
+        run: |
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --id "${{ steps.invalidate.outputs.invalidation_id }}"
+          echo "CloudFront cache invalidation complete."

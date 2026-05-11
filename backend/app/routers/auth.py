@@ -23,12 +23,13 @@ except ImportError:
     )
 
 from app.auth_utils import (
+    async_hash_password,
+    async_verify_password,
     create_access_token,
     create_refresh_token,
     decode_access_token_ignore_exp,
     decode_token_of_type,
     hash_password,
-    verify_password,
 )
 from app.database import get_db
 from app.deps import get_current_user
@@ -250,16 +251,16 @@ async def register(
                 )
             else:
                 # Live user exists — constant-time path to prevent email enumeration.
-                verify_password(body.password, _DUMMY_HASH)
+                await async_verify_password(body.password, _DUMMY_HASH)
                 raise HTTPException(status_code=409, detail="Email already registered")
         else:
-            verify_password(body.password, _DUMMY_HASH)
+            await async_verify_password(body.password, _DUMMY_HASH)
             raise HTTPException(status_code=409, detail="Email already registered")
 
     user_doc = {
         "_id": new_user_id,
         "email": body.email,
-        "password_hash": hash_password(body.password),
+        "password_hash": await async_hash_password(body.password),
         "full_name": body.full_name or "Parent",
         "role": "parent",
         "country_code": body.country_code,
@@ -305,12 +306,12 @@ async def login(
         })
 
     if user and user.get("is_being_deleted"):
-        verify_password(body.password, _DUMMY_HASH)
+        await async_verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     # .get() guards against Google-only accounts that have no password_hash.
     target_hash = user.get("password_hash") or _DUMMY_HASH if user else _DUMMY_HASH
-    password_ok = verify_password(body.password, target_hash)
+    password_ok = await async_verify_password(body.password, target_hash)
 
     if not user or not password_ok:
         log.warning("auth.login.failed email=%s", body.email)
@@ -463,7 +464,7 @@ async def google_auth(
         user_doc = {
             "_id": new_user_id,
             "email": email,
-            "password_hash": hash_password(secrets.token_urlsafe(32)),
+            "password_hash": await async_hash_password(secrets.token_urlsafe(32)),
             "full_name": full_name,
             "role": "parent",
             "country_code": body.country_code,
