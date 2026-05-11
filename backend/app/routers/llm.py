@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.deps import get_current_user
 from app.limiter import user_limiter
 from app.llm_rate_limiter import enforce as _enforce_user_rate_limit
-from app.models import User
 from app.settings import settings
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -171,8 +170,8 @@ class LLMInvokeBody(BaseModel):
 
 @router.post("/invoke")
 @user_limiter.limit("30/minute")
-async def invoke_llm(request: Request, body: LLMInvokeBody, user: User = Depends(get_current_user)):
-    _enforce_user_rate_limit(user.id)
+async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_user)):
+    _enforce_user_rate_limit(user["_id"])
     provider = _resolve_provider(body.provider)
     sys_msg = _system_message(body.response_json_schema)
     log.debug("llm.invoke provider=%s", provider)
@@ -190,7 +189,7 @@ async def invoke_llm(request: Request, body: LLMInvokeBody, user: User = Depends
 
 @router.get("/providers")
 @user_limiter.limit("60/minute")
-def list_providers(request: Request, user: User = Depends(get_current_user)):
+def list_providers(request: Request, user: dict = Depends(get_current_user)):
     """Return which providers have a key configured and which would be auto-selected."""
     av = _available()
     default = next((p for p in _PRIORITY if av[p]), None)

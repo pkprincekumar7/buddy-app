@@ -143,22 +143,6 @@ export function calculateMBTI(data) {
     Playful: 0
   };
 
-  // Social preference
-  if (data.social_preference === 'Loves being with many people') {
-    scores.Outgoing += 3;
-    scores.Enthusiastic += 2;
-    scores.Playful += 2;
-  } else if (data.social_preference === 'Prefers small groups') {
-    scores.Outgoing += 1;
-    scores.Thinker += 1;
-  } else if (data.social_preference === 'Enjoys alone time') {
-    scores.Thinker += 3;
-    scores.Creative += 2;
-  } else {
-    scores.Creative += 1;
-    scores.Determined += 1;
-  }
-
   // Energy level
   if (data.energy_level === 'High energy - always active') {
     scores["Highly Energetic"] += 3;

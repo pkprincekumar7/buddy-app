@@ -1,4 +1,4 @@
-# Stack: Postgres (db) + FastAPI (backend) + static UI served by nginx (frontend image).
+# Stack: Redis + FastAPI (backend) + static UI served by nginx (frontend image).
 # There is no separate "nginx" service: nginx runs inside the frontend container on port 80.
 #
 # UI: http://localhost:${FRONTEND_PORT:-5173} → nginx proxies /api/* to backend:8000
@@ -21,40 +21,14 @@ services:
       retries: 5
       start_period: 5s
 
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    networks:
-      - buddy360_net
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-buddy360}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buddy360_dev}
-      POSTGRES_DB: ${POSTGRES_DB:-buddy360}
-    ports:
-      # POSTGRES_HOST_PORT: host-side port for external access (psql, GUI tools).
-      # Change this if 5432 is already in use on the host — it does NOT affect
-      # container-to-container connectivity (backend always reaches db:5432 internally).
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
   backend:
     build: ./backend
     restart: unless-stopped
     environment:
-      POSTGRES_HOST: ${POSTGRES_HOST:-db}
-      POSTGRES_PORT: "${POSTGRES_PORT:-5432}"
-      POSTGRES_USER: ${POSTGRES_USER:-buddy360}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-buddy360_dev}
-      POSTGRES_DB: ${POSTGRES_DB:-buddy360}
+      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy_app}
+      DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - see .env.example for how to generate it}
-      # Access token (~30m) and refresh token (~24h); refresh requires both tokens still valid.
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
       JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -64,34 +38,20 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
-      # Browser hits UI at http://localhost:${FRONTEND_PORT:-5173}; API is proxied via nginx as /api
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
-      # Cookie security: false for local HTTP, true in production (HTTPS required).
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       BEHIND_PROXY: ${BEHIND_PROXY:-true}
       APP_ENV: ${APP_ENV:-local}
-      # Redis — rate limiter (sliding window per user for LLM calls)
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      # LLM settings
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
-      # DB connection pool
-      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-5}
-      POSTGRES_MAX_OVERFLOW: ${POSTGRES_MAX_OVERFLOW:-10}
-      # Multi-region routing (leave blank for single-instance / local dev)
-      DEFAULT_REGION: ${DEFAULT_REGION:-local}
-      ROUTER_DB_URL: ${ROUTER_DB_URL:-}
-      REGIONAL_DB_URLS: ${REGIONAL_DB_URLS:-{}}
-      RECONCILER_INTERVAL_MINUTES: ${RECONCILER_INTERVAL_MINUTES:-5}
     networks:
       - buddy360_net
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -111,12 +71,7 @@ services:
     build:
       context: ./frontend
       args:
-        # Empty => browser calls /api/... on the same host as the UI (nginx proxies to backend)
         VITE_API_URL: ${VITE_API_URL:-}
-        # BUILD-TIME arg — must be set before `docker compose build`, not at runtime.
-        # Must match backend GOOGLE_CLIENT_ID (Google OAuth 2.0 Web client ID).
-        # In ECS/CI: pass via --build-arg or the pipeline's build step env, NOT as a
-        # task environment variable (which is runtime-only and is ignored here).
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     restart: unless-stopped
     ports:
@@ -132,8 +87,6 @@ services:
       start_period: 5s
 
 volumes:
-  postgres_data:
-    name: buddy360_postgres_data
   redis_data:
     name: buddy360_redis_data
 

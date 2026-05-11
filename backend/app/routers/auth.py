@@ -1,4 +1,3 @@
-import hashlib
 import logging
 import re
 import secrets
@@ -9,9 +8,8 @@ from email_validator import validate_email as _validate_email, EmailNotValidErro
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-from sqlalchemy import select, delete, update
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
 try:
     from google.oauth2 import id_token as _google_id_token
@@ -24,11 +22,7 @@ except ImportError:
         "return 503.  Install with: pip install 'google-auth[requests]'"
     )
 
-import anyio
-
 from app.auth_utils import (
-    async_hash_password,
-    async_verify_password,
     create_access_token,
     create_refresh_token,
     decode_access_token_ignore_exp,
@@ -36,11 +30,11 @@ from app.auth_utils import (
     hash_password,
     verify_password,
 )
-from app.database import db_for_region, get_db, get_router_db
+from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import limiter, user_limiter
-from app.models import RefreshToken, User, UserRegionRecord
-from app.routing import resolve_region, REGION_RE
+from app import models
+from app.routing import resolve_region, LOCATION_RE
 from app.settings import settings
 
 router = APIRouter(tags=["auth"])
@@ -48,52 +42,7 @@ log = logging.getLogger(__name__)
 
 _DUMMY_HASH: str = hash_password("__dummy_constant_time__")
 
-# Path for the refresh-token cookie — scoped to /api/v1/auth/ so it is sent to both
-# /auth/refresh (rotation) and /auth/logout (server-side invalidation), but not to
-# any other API request.
 _REFRESH_COOKIE_PATH = "/api/v1/auth/"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _email_hash(email: str) -> str:
-    """sha256(email.lower()) — used as PII-free routing key."""
-    return hashlib.sha256(email.lower().encode()).hexdigest()
-
-
-def _compensate_router_record(
-    router_db: Session,
-    route_record: "UserRegionRecord",
-    ehash: str,
-    op: str,
-) -> None:
-    """
-    Saga Phase-1 compensation: delete the router record so the email is not
-    permanently blocked after a Phase-2 failure.
-
-    Returns normally when the delete succeeds; the caller is then responsible
-    for raising the appropriate HTTPException (e.g. "please try again").
-
-    Raises HTTPException(500, "… cleanup incomplete") when the delete itself
-    fails, logging the email_hash so ops can run:
-        DELETE FROM user_regions WHERE email_hash = '<ehash>';
-    """
-    try:
-        router_db.delete(route_record)
-        router_db.commit()
-    except Exception as comp_exc:
-        log.error(
-            "%s saga compensation failed for email_hash=%s; "
-            "router record may be orphaned — manual cleanup required. "
-            "compensation_error=%s",
-            op, ehash, comp_exc, exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"{op} failed and cleanup incomplete — please contact support",
-        ) from comp_exc
 
 
 # ---------------------------------------------------------------------------
@@ -104,8 +53,6 @@ class RegisterBody(BaseModel):
     email: str = Field(max_length=255)
     password: str = Field(min_length=8, max_length=128)
     full_name: str | None = Field(default=None, max_length=255)
-    # ISO-3166-1 alpha-2 country code — determines the data-residency region.
-    # The frontend MUST present a country selector before calling this endpoint.
     country_code: str = Field(
         min_length=2,
         max_length=2,
@@ -124,8 +71,6 @@ class RegisterBody(BaseModel):
     @field_validator("country_code", mode="before")
     @classmethod
     def normalise_country_code(cls, v: object) -> object:
-        # Strip whitespace BEFORE Pydantic applies min_length/max_length so that
-        # " IN" (2 chars) doesn't pass the length check and then strip to "I" (1 char).
         return v.strip().upper() if isinstance(v, str) else v
 
 
@@ -141,9 +86,6 @@ class LoginBody(BaseModel):
 
 class GoogleAuthBody(BaseModel):
     id_token: str = Field(max_length=4096)
-    # Required only for NEW sign-ups (is_new_user=true from /auth/google/check).
-    # For returning users this field is ignored — their region is read from
-    # user_regions.  Omit it on subsequent logins; supply it on first sign-up.
     country_code: str | None = Field(
         default=None,
         min_length=2,
@@ -154,8 +96,6 @@ class GoogleAuthBody(BaseModel):
     @field_validator("country_code", mode="before")
     @classmethod
     def normalise_country_code(cls, v: object) -> object:
-        # Strip whitespace BEFORE Pydantic applies min_length/max_length (same
-        # fix as RegisterBody) so " IN" doesn't pass length then strip to "I".
         return v.strip().upper() if isinstance(v, str) else v
 
 
@@ -183,25 +123,28 @@ def _cookie_kwargs() -> dict:
     )
 
 
-def _set_auth_cookies(
+async def _set_auth_cookies(
     response: Response,
     user_id: str,
-    region: str,
-    db: Session,
+    location: str,
+    db: AsyncIOMotorDatabase,
 ) -> None:
-    """Issue access + refresh tokens and write the refresh JTI to the DB."""
     kw = _cookie_kwargs()
     response.set_cookie(
         key="access_token",
-        value=create_access_token(user_id, region=region),
+        value=create_access_token(user_id, location=location),
         max_age=settings.jwt_access_expire_minutes * 60,
         path="/",
         **kw,
     )
-    refresh_token, jti = create_refresh_token(user_id)
+    refresh_token, jti = create_refresh_token(user_id, location=location)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_refresh_expire_hours)
-    db.add(RefreshToken(jti=jti, user_id=user_id, expires_at=expires_at))
-    db.commit()
+    await db[models.SESSIONS].insert_one({
+        "_id": jti,
+        "user_id": user_id,
+        "location": location,
+        "expires_at": expires_at,
+    })
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -217,19 +160,11 @@ def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("refresh_token", path=_REFRESH_COOKIE_PATH, **kw)
 
 
-
-
 # ---------------------------------------------------------------------------
-# Google token verification helper (shared by /check and /google)
+# Google token verification helper
 # ---------------------------------------------------------------------------
 
 def _verify_google_token(id_token_str: str) -> dict:
-    """
-    Verify a Google ID token and return the decoded info dict.
-
-    Raises HTTPException on any verification failure so callers don't need
-    to repeat the error-classification logic.
-    """
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google sign-in is not configured")
     if _google_id_token is None:
@@ -280,102 +215,71 @@ async def register(
     request: Request,
     body: RegisterBody,
     response: Response,
-    router_db: Session = Depends(get_router_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Register a new user.
-
-    Saga pattern (two-phase write):
-      Phase 1 — write UserRegionRecord to the Global Router DB (PII-free).
-                 Fails with 409 if email already registered.
-      Phase 2 — write User to the correct regional DB.
-                 On failure, compensate by deleting the Phase-1 record so
-                 the email is not permanently blocked.
-
-    In single-instance mode both DBs are the same engine, so this is
-    effectively a two-step transaction on a single database.
-    Compensation failure is logged with the email_hash for manual ops cleanup:
-      DELETE FROM user_regions WHERE email_hash = '<ehash>';
-    """
-    ehash = _email_hash(body.email)
-    region = resolve_region(body.country_code or "")
-
-    # Phase 1 — claim the email in the router DB
-    existing_route = router_db.get(UserRegionRecord, ehash)
-    if existing_route:
-        # Run a dummy bcrypt to equalise response time whether or not the email
-        # exists, preventing timing-based email enumeration (Vuln 2 fix).
-        await async_verify_password(body.password, _DUMMY_HASH)
-        if existing_route.is_deleted:
-            # Account deletion is in progress — window is normally milliseconds.
-            raise HTTPException(
-                status_code=409,
-                detail="This email address is temporarily unavailable. Please try again shortly.",
-            )
-        raise HTTPException(status_code=409, detail="Email already registered")
-
+    location = resolve_region(body.country_code or "")
+    now = datetime.now(timezone.utc)
     new_user_id = str(uuid.uuid4())
 
-    route_record = UserRegionRecord(
-        email_hash=ehash,
-        user_id=new_user_id,
-        region=region,
-        status='pending',
-    )
-    router_db.add(route_record)
+    # email_index is the global uniqueness guard (unsharded collection).
+    # Insert here first — if it succeeds we own the email and can safely
+    # create the user document on the correct shard.
     try:
-        router_db.commit()
-    except IntegrityError:
-        router_db.rollback()
-        # Concurrent request won the race — equalise timing before returning 409.
-        await async_verify_password(body.password, _DUMMY_HASH)
-        raise HTTPException(status_code=409, detail="Email already registered")
-
-    # Phase 2 — write the User to the regional DB
-    try:
-        with db_for_region(region) as regional_db:
-            user = User(
-                id=new_user_id,
-                email=body.email,
-                password_hash=await async_hash_password(body.password),
-                full_name=body.full_name or "Parent",
-                role="parent",
-                country_code=body.country_code,
-            )
-            regional_db.add(user)
-            try:
-                regional_db.commit()
-            except IntegrityError:
-                regional_db.rollback()
-                # Email already exists in the regional DB (race or pre-existing row).
-                # Compensate Phase 1 before surfacing 409.
-                _compensate_router_record(router_db, route_record, ehash, op="Registration")
-                raise HTTPException(status_code=409, detail="Email already registered")
-
-            regional_db.refresh(user)
-            log.info("user.register id=%s region=%s", user.id, region)
-
-            # Phase 3 — mark router record active now that Phase 2 is confirmed
-            route_record.status = 'active'
-            try:
-                router_db.commit()
-            except Exception as status_exc:
-                router_db.rollback()
-                log.warning(
-                    "user.register status update failed email_hash=%s — "
-                    "reconciler will repair within %d min: %s",
-                    ehash, settings.reconciler_interval_minutes, status_exc,
+        await db[models.EMAIL_INDEX].insert_one({
+            "_id": body.email,
+            "user_id": new_user_id,
+            "location": location,
+        })
+    except DuplicateKeyError:
+        # Check whether the existing entry is an orphan left by a failed
+        # delete_account rollback (email_index exists but user doc is gone).
+        existing_entry = await db[models.EMAIL_INDEX].find_one({"_id": body.email})
+        if existing_entry:
+            orphaned_user = await db[models.USERS].find_one({
+                "_id": existing_entry["user_id"],
+                "location": existing_entry["location"],
+            })
+            if not orphaned_user:
+                # Reclaim the orphaned reservation and continue registration.
+                await db[models.EMAIL_INDEX].update_one(
+                    {"_id": body.email},
+                    {"$set": {"user_id": new_user_id, "location": location}},
                 )
+                log.info(
+                    "register: reclaimed orphaned email_index entry for email=%s", body.email
+                )
+            else:
+                # Live user exists — constant-time path to prevent email enumeration.
+                verify_password(body.password, _DUMMY_HASH)
+                raise HTTPException(status_code=409, detail="Email already registered")
+        else:
+            verify_password(body.password, _DUMMY_HASH)
+            raise HTTPException(status_code=409, detail="Email already registered")
 
-            # Issue cookies — refresh token written to regional DB
-            _set_auth_cookies(response, user.id, region, regional_db)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        log.error("user.register regional write failed, compensating: %s", exc)
-        _compensate_router_record(router_db, route_record, ehash, op="Registration")
+    user_doc = {
+        "_id": new_user_id,
+        "email": body.email,
+        "password_hash": hash_password(body.password),
+        "full_name": body.full_name or "Parent",
+        "role": "parent",
+        "country_code": body.country_code,
+        "location": location,
+        "preferences": {"tts_enabled": True, "last_visited_path": None},
+        "tokens_revoked_at": None,
+        "is_being_deleted": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        await db[models.USERS].insert_one(user_doc)
+    except Exception:
+        # Roll back the email reservation so the address can be retried.
+        await db[models.EMAIL_INDEX].delete_one({"_id": body.email})
+        log.exception("register: users insert failed; rolled back email_index for email=%s", body.email)
         raise HTTPException(status_code=500, detail="Registration failed — please try again")
 
+    log.info("user.register id=%s location=%s", new_user_id, location)
+    await _set_auth_cookies(response, new_user_id, location, db)
     return {"status": "ok"}
 
 
@@ -385,66 +289,46 @@ async def login(
     request: Request,
     body: LoginBody,
     response: Response,
-    router_db: Session = Depends(get_router_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Authenticate a user.
+    # Two-phase lookup: resolve email → (user_id, location) via the global
+    # email_index (unsharded), then fetch the full user document from the
+    # correct shard using both fields.  This avoids a cross-shard scatter-
+    # gather query that would otherwise hit every zone on an Atlas Global
+    # Cluster.
+    email_doc = await db[models.EMAIL_INDEX].find_one({"_id": body.email})
+    user = None
+    if email_doc:
+        user = await db[models.USERS].find_one({
+            "_id": email_doc["user_id"],
+            "location": email_doc["location"],
+        })
 
-    Two-phase lookup:
-      1. Hash the email and look up the router DB → get region + user_id.
-      2. Load the User from the correct regional DB and verify password.
-
-    In single-instance mode the router DB is the main DB, so this is
-    equivalent to the original single-query login.
-    """
-    ehash = _email_hash(body.email)
-    route_record = router_db.get(UserRegionRecord, ehash)
-
-    # -----------------------------------------------------------------
-    # Tombstone check — account deletion in progress: treat as not found
-    # (same constant-time dummy hash path) so we don't leak the state.
-    # -----------------------------------------------------------------
-    if route_record and route_record.is_deleted:
-        await async_verify_password(body.password, _DUMMY_HASH)   # constant-time
+    if user and user.get("is_being_deleted"):
+        verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    region = route_record.region if route_record else settings.default_region
+    # .get() guards against Google-only accounts that have no password_hash.
+    target_hash = user.get("password_hash") or _DUMMY_HASH if user else _DUMMY_HASH
+    password_ok = verify_password(body.password, target_hash)
 
-    with db_for_region(region) as regional_db:
-        user = regional_db.execute(
-            select(User).where(User.email == body.email)
-        ).scalar_one_or_none()
+    if not user or not password_ok:
+        log.warning("auth.login.failed email=%s", body.email)
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-        target_hash = user.password_hash if user else _DUMMY_HASH
-        password_ok = await async_verify_password(body.password, target_hash)
-
-        if not user or not password_ok:
-            log.warning("auth.login.failed email_hash=%s", ehash)
-            raise HTTPException(status_code=401, detail="Invalid email or password")
-
-        log.info("auth.login.ok id=%s region=%s", user.id, region)
-        _set_auth_cookies(response, user.id, region, regional_db)
-
+    location = user.get("location", settings.default_location)
+    log.info("auth.login.ok id=%s location=%s", user["_id"], location)
+    await _set_auth_cookies(response, user["_id"], location, db)
     return {"status": "ok"}
 
 
 @router.post("/auth/refresh", status_code=200)
 @user_limiter.limit("20/minute")
-def refresh_tokens(
+async def refresh_tokens(
     request: Request,
     response: Response,
-    db: Session = Depends(get_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Rotate access + refresh token pair.
-
-    get_db is region-aware: it reads the region from the (possibly expired)
-    access_token cookie, so the RefreshToken lookup always hits the right DB.
-    The new access token carries forward the same region claim.
-
-    Rotation is atomic: the old token is deleted and the new token is committed
-    in the same transaction, so there is no window where both tokens are valid.
-    """
     access_token = request.cookies.get("access_token")
     refresh_token_val = request.cookies.get("refresh_token")
     if not access_token or not refresh_token_val:
@@ -467,48 +351,44 @@ def refresh_tokens(
         _clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    row = db.get(RefreshToken, jti)
-    if not row:
+    uid = refresh_payload.get("sub")
+    raw_location = access_payload.get("location", settings.default_location)
+    location = (
+        raw_location
+        if isinstance(raw_location, str) and LOCATION_RE.match(raw_location)
+        else settings.default_location
+    )
+
+    session = await db[models.SESSIONS].find_one({"_id": jti, "user_id": uid, "location": location})
+    if not session:
         _clear_auth_cookies(response)
-        log.warning("auth.refresh.failed reason=jti_not_found sub=%s", refresh_payload.get("sub"))
+        log.warning("auth.refresh.failed reason=jti_not_found sub=%s", uid)
         raise HTTPException(status_code=401, detail="Session expired or already logged out")
 
-    expires_at = row.expires_at if row.expires_at.tzinfo is not None else row.expires_at.replace(tzinfo=timezone.utc)
+    expires_at = session["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
-        db.delete(row)
-        db.commit()
+        await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
         _clear_auth_cookies(response)
-        log.warning("auth.refresh.failed reason=db_expiry sub=%s", refresh_payload.get("sub"))
+        log.warning("auth.refresh.failed reason=db_expiry sub=%s", uid)
         raise HTTPException(status_code=401, detail="Session expired")
 
-    uid = row.user_id
-    # Carry forward the region from the original access token, validating it
-    # against the same REGION_RE allowlist used in _region_from_request so a
-    # tampered-but-still-signed token cannot embed an unexpected region value.
-    raw_region = access_payload.get("region", settings.default_region)
-    region = (
-        raw_region
-        if isinstance(raw_region, str) and REGION_RE.match(raw_region)
-        else settings.default_region
-    )
-    # Delete old token and issue new tokens atomically so there is never a
-    # window where both the old and new refresh tokens are simultaneously valid.
-    db.delete(row)
-    _set_auth_cookies(response, uid, region, db)
+    # Insert new session before deleting old: if the process crashes after the insert
+    # but before the HTTP response is sent, the client retries with the old cookies
+    # (old session still present) and succeeds. The orphaned new session expires naturally.
+    await _set_auth_cookies(response, uid, location, db)
+    await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
     return {"status": "ok"}
 
 
 @router.post("/auth/logout", status_code=204)
 @user_limiter.limit("20/minute")
-def logout(
+async def logout(
     request: Request,
     response: Response,
-    db: Session = Depends(get_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Invalidate the refresh token.  get_db is region-aware so the correct
-    regional DB is hit automatically via the access_token cookie.
-    """
     refresh_token_val = request.cookies.get("refresh_token")
     if refresh_token_val:
         refresh_payload = decode_token_of_type(refresh_token_val, "refresh")
@@ -519,8 +399,9 @@ def logout(
                 if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
                     _clear_auth_cookies(response)
                     raise HTTPException(status_code=401, detail="Token mismatch")
-            db.execute(delete(RefreshToken).where(RefreshToken.jti == jti))
-            db.commit()
+            raw_loc = refresh_payload.get("location", "")
+            location = raw_loc if isinstance(raw_loc, str) and LOCATION_RE.match(raw_loc) else settings.default_location
+            await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
     _clear_auth_cookies(response)
 
 
@@ -530,17 +411,9 @@ async def google_auth(
     request: Request,
     body: GoogleAuthBody,
     response: Response,
-    router_db: Session = Depends(get_router_db),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Google sign-in / sign-up.
-
-    Existing user  — country_code is not required; region comes from user_regions.
-    New user       — country_code is required; returns 422 country_code_required if
-                     omitted so the frontend knows to show a country-selector screen
-                     before retrying this endpoint.
-    """
-    info = await anyio.to_thread.run_sync(_verify_google_token, body.id_token)
+    info = _verify_google_token(body.id_token)
 
     raw_email = (info.get("email") or "").strip()
     if not raw_email:
@@ -552,39 +425,24 @@ async def google_auth(
     except EmailNotValidError:
         raise HTTPException(status_code=400, detail="Google did not return a valid email")
 
-    ehash = _email_hash(email)
-    route_record = router_db.get(UserRegionRecord, ehash)
+    # Two-phase lookup via email_index — same pattern as /auth/login.
+    email_doc = await db[models.EMAIL_INDEX].find_one({"_id": email})
+    existing = None
+    if email_doc:
+        existing = await db[models.USERS].find_one({
+            "_id": email_doc["user_id"],
+            "location": email_doc["location"],
+        })
 
-    if route_record:
-        if route_record.is_deleted:
+    if existing:
+        if existing.get("is_being_deleted"):
             raise HTTPException(
                 status_code=409,
                 detail="This account is temporarily unavailable. Please try again shortly.",
             )
-        # ── Existing user — region from router DB, country_code ignored ──
-        region = route_record.region
-        with db_for_region(region) as regional_db:
-            user = regional_db.execute(
-                select(User).where(User.email == email)
-            ).scalar_one_or_none()
-            if not user:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Account inconsistency; please contact support",
-                )
-            if user.id != route_record.user_id:
-                log.error(
-                    "google_auth user_id mismatch: router=%s regional=%s email_hash=%s",
-                    route_record.user_id, user.id, ehash,
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail="Account inconsistency; please contact support",
-                )
-            _set_auth_cookies(response, user.id, region, regional_db)
-
+        location = existing.get("location", settings.default_location)
+        await _set_auth_cookies(response, existing["_id"], location, db)
     else:
-        # ── New user — country_code is mandatory ──────────────────────────
         if not body.country_code:
             raise HTTPException(
                 status_code=422,
@@ -597,295 +455,173 @@ async def google_auth(
                 },
             )
 
-        region = resolve_region(body.country_code)
+        location = resolve_region(body.country_code)
+        now = datetime.now(timezone.utc)
         new_user_id = str(uuid.uuid4())
+        raw_name = re.sub(r'[\x00-\x1f\x7f]', '', (info.get("name") or "").strip())
+        full_name = (raw_name or email.split("@")[0])[:255]
+        user_doc = {
+            "_id": new_user_id,
+            "email": email,
+            "password_hash": hash_password(secrets.token_urlsafe(32)),
+            "full_name": full_name,
+            "role": "parent",
+            "country_code": body.country_code,
+            "location": location,
+            "preferences": {"tts_enabled": True, "last_visited_path": None},
+            "tokens_revoked_at": None,
+            "is_being_deleted": False,
+            "created_at": now,
+            "updated_at": now,
+        }
 
-        # Saga Phase 1: claim email in router DB
-        new_route = UserRegionRecord(email_hash=ehash, user_id=new_user_id, region=region, status='pending')
-        router_db.add(new_route)
+        # Reserve the email globally before writing the user document.
         try:
-            router_db.commit()
-        except IntegrityError:
-            router_db.rollback()
-            # Lost race — another concurrent request claimed this email in Phase 1.
-            route_record = router_db.get(UserRegionRecord, ehash)
-
-            if route_record is None:
-                # The winner also compensated (it claimed Phase 1 then failed
-                # Phase 2 and rolled back).  Both requests are now in a clean
-                # state — tell the caller to retry.
-                log.warning(
-                    "google_auth lost-race: competing registration also "
-                    "compensated for email_hash=%s; asking client to retry.",
-                    ehash,
-                )
-                raise HTTPException(
-                    status_code=409,
-                    detail="Sign-in temporarily unavailable due to a concurrent request. Please try again.",
-                )
-
-            # Winner succeeded — sign in under their router record's region.
-            if route_record.is_deleted:
-                raise HTTPException(
-                    status_code=409,
-                    detail="This account is temporarily unavailable. Please try again shortly.",
-                )
-            region = route_record.region
-            with db_for_region(region) as regional_db:
-                user = regional_db.execute(
-                    select(User).where(User.email == email)
-                ).scalar_one_or_none()
-                if not user:
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Account inconsistency; please contact support",
+            await db[models.EMAIL_INDEX].insert_one({
+                "_id": email,
+                "user_id": new_user_id,
+                "location": location,
+            })
+        except DuplicateKeyError:
+            race_doc = await db[models.EMAIL_INDEX].find_one({"_id": email})
+            race_user = (
+                await db[models.USERS].find_one({
+                    "_id": race_doc["user_id"],
+                    "location": race_doc["location"],
+                })
+                if race_doc else None
+            )
+            if not race_user:
+                if race_doc:
+                    # Orphaned reservation from a failed delete_account rollback.
+                    # Reclaim the entry and continue registration.
+                    await db[models.EMAIL_INDEX].update_one(
+                        {"_id": email},
+                        {"$set": {"user_id": new_user_id, "location": location}},
                     )
-                if user.id != route_record.user_id:
-                    log.error(
-                        "google_auth race-recovery user_id mismatch: router=%s regional=%s email_hash=%s",
-                        route_record.user_id, user.id, ehash,
+                    log.info(
+                        "google_auth: reclaimed orphaned email_index entry for email=%s", email
                     )
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Account inconsistency; please contact support",
-                    )
-                _set_auth_cookies(response, user.id, region, regional_db)
-            return {"status": "ok"}
-
-        # Saga Phase 2: create user in regional DB
-        #
-        # _route_needs_compensation tracks whether Phase 1 still needs to be
-        # rolled back on failure.  It starts True (Phase 1 is live and must be
-        # cleaned up if Phase 2 fails) and is set False once the router record
-        # is either successfully patched to point at an existing user OR the
-        # user row is committed — at that point deleting the router record would
-        # orphan a real account.
-        _route_needs_compensation = True
-        try:
-            with db_for_region(region) as regional_db:
-                raw_name = re.sub(r'[\x00-\x1f\x7f]', '', (info.get("name") or "").strip())
-                full_name = (raw_name or email.split("@")[0])[:255]
-                user = User(
-                    id=new_user_id,
-                    email=email,
-                    password_hash=await async_hash_password(secrets.token_urlsafe(32)),
-                    full_name=full_name,
-                    role="parent",
-                    country_code=body.country_code,
-                )
-                regional_db.add(user)
-                try:
-                    regional_db.commit()
-                except IntegrityError:
-                    # User row already exists (race between /check and sign-up).
-                    # Update the Phase-1 router record to point at the existing
-                    # user rather than deleting it — deleting would leave the user
-                    # permanently without a routing record, breaking password login
-                    # and causing every subsequent Google sign-in to loop through
-                    # the new-user path (Vuln 3 fix).
-                    regional_db.rollback()
-                    with db_for_region(region) as fresh_db:
-                        existing_user = fresh_db.execute(
-                            select(User).where(User.email == email)
-                        ).scalar_one()
-                    new_route.user_id = existing_user.id
-                    new_route.status = 'active'
-                    try:
-                        router_db.commit()
-                    except Exception as patch_exc:
-                        router_db.rollback()
-                        log.error(
-                            "google_auth router record patch failed for email_hash=%s; "
-                            "error=%s", ehash, patch_exc, exc_info=True,
-                        )
-                        raise HTTPException(
-                            status_code=500, detail="Sign-in failed — please try again"
-                        ) from patch_exc
-                    # Patch committed — router record now points at a real user.
-                    # Do NOT compensate (delete) it if something fails after this.
-                    _route_needs_compensation = False
-                    with db_for_region(region) as fresh_db:
-                        user = fresh_db.execute(
-                            select(User).where(User.email == email)
-                        ).scalar_one()
-                        _set_auth_cookies(response, user.id, region, fresh_db)
                 else:
-                    # New user row committed — Phase 1 and Phase 2 are both live.
-                    # The router record is now permanently valid; stop compensation.
-                    _route_needs_compensation = False
-                    regional_db.refresh(user)
-                    # Phase 3 — mark router record active
-                    new_route.status = 'active'
-                    try:
-                        router_db.commit()
-                    except Exception as status_exc:
-                        router_db.rollback()
-                        log.warning(
-                            "google_auth status update failed email_hash=%s — "
-                            "reconciler will repair within %d min: %s",
-                            ehash, settings.reconciler_interval_minutes, status_exc,
-                        )
-                    _set_auth_cookies(response, user.id, region, regional_db)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            # Only compensate (delete the router record) if the user row was
-            # never committed and the router record was never patched to point
-            # at an existing user.  If _route_needs_compensation is False the
-            # router record is valid and must be kept.
-            log.error("google_auth regional write failed, compensating: %s", exc)
-            if _route_needs_compensation:
-                live_route = router_db.get(UserRegionRecord, ehash)
-                if live_route:
-                    _compensate_router_record(router_db, live_route, ehash, op="Sign-in")
+                    # email_index entry exists but user doc not yet committed —
+                    # extremely narrow window; ask the client to retry.
+                    raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
+            else:
+                if race_user.get("is_being_deleted"):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This account is temporarily unavailable. Please try again shortly.",
+                    )
+                await _set_auth_cookies(response, race_user["_id"], race_user.get("location", settings.default_location), db)
+                return {"status": "ok"}
+
+        try:
+            await db[models.USERS].insert_one(user_doc)
+        except Exception:
+            await db[models.EMAIL_INDEX].delete_one({"_id": email})
+            log.exception("google_auth: users insert failed; rolled back email_index for email=%s", email)
             raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
+
+        log.info("google_auth.register id=%s location=%s", new_user_id, location)
+        await _set_auth_cookies(response, new_user_id, location, db)
 
     return {"status": "ok"}
 
 
 @router.get("/auth/me", response_model=MeResponse)
 @user_limiter.limit("60/minute")
-def auth_me(request: Request, user: User = Depends(get_current_user)):
+async def auth_me(request: Request, user: dict = Depends(get_current_user)):
     return MeResponse(
-        id=user.id,
-        email=user.email,
-        full_name=user.full_name,
-        role=user.role,
+        id=user["_id"],
+        email=user["email"],
+        full_name=user["full_name"],
+        role=user["role"],
     )
 
 
 @router.delete("/user/me", status_code=204)
 @user_limiter.limit("3/minute")
-def delete_account(
+async def delete_account(
     request: Request,
     body: DeleteAccountBody,
     response: Response,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    router_db: Session = Depends(get_router_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """
-    Delete the authenticated user's account.
-
-    Four-step deletion — revokes tokens immediately and closes the re-registration
-    race window:
-      Step 0  SET tokens_revoked_at on the user row.
-              All outstanding access tokens are immediately invalidated by
-              get_current_user, so no existing session can perform further actions.
-      Step 1  SET is_deleted=TRUE on the router record (soft-delete / tombstone).
-              Concurrent register/login calls see the tombstone and get a
-              "temporarily unavailable" / 401 response before we touch user data.
-      Step 2  DELETE the user row (cascade removes all owned data).
-      Step 3  DELETE the router record — email is now fully free.
-
-    Failure modes:
-      Step 0 fails → nothing deleted; tokens still valid; caller retries.
-      Step 1 fails → tokens revoked, user row intact; caller retries.
-      Step 2 fails → tokens revoked, tombstone set, user row intact; caller retries.
-      Step 3 fails → user row gone, tombstone orphaned; email is blocked with a
-                     clear message.  Ops cleanup:
-                       DELETE FROM user_regions WHERE is_deleted = TRUE;
-    """
-    if body.confirm_email.strip().lower() != user.email:
+    if body.confirm_email.strip().lower() != user["email"]:
         raise HTTPException(status_code=400, detail="Email confirmation does not match")
 
-    ehash = _email_hash(user.email)
-    route_record = router_db.get(UserRegionRecord, ehash)
+    user_id = user["_id"]
+    location = user.get("location", settings.default_location)
+    now = datetime.now(timezone.utc)
 
-    # Step 0 — revoke all outstanding access tokens immediately.
-    # Purging all RefreshToken rows in the same commit means refresh_tokens()
-    # finds no JTI and returns 401 immediately, closing the race window where
-    # an attacker with a stolen refresh token could re-issue a new access token
-    # after tokens_revoked_at is set but before the user row is deleted (Vuln 1 fix).
-    revoke_time = datetime.now(timezone.utc)
-    user.tokens_revoked_at = revoke_time
-    db.execute(delete(RefreshToken).where(RefreshToken.user_id == user.id))
-    try:
-        db.commit()
-    except Exception as exc:
-        log.error(
-            "delete_account Step 0 (token revocation) failed for email_hash=%s; "
-            "aborting — no data changed. error=%s",
-            ehash, exc, exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="Account deletion failed — please try again or contact support",
-        ) from exc
+    # All sharded collections share the same location value, so this
+    # transaction touches only one zone shard — supported on all Atlas tiers
+    # including M0.  email_index is intentionally kept outside the transaction:
+    # it is an unsharded collection (primary shard) and including it would make
+    # this a cross-shard transaction, which Atlas M0/M2/M5 does not support.
+    # If the post-commit email_index delete fails, the orphaned entry is cleaned
+    # up automatically the next time someone registers with the same address.
+    async with await db.client.start_session() as mongo_session:
+        async with mongo_session.start_transaction():
+            # Step 1 — revoke all tokens and mark deletion in progress
+            await db[models.USERS].update_one(
+                {"_id": user_id, "location": location},
+                {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
+                session=mongo_session,
+            )
+            await db[models.SESSIONS].delete_many(
+                {"user_id": user_id, "location": location}, session=mongo_session
+            )
 
-    # Step 1 — tombstone
-    if route_record:
-        route_record.is_deleted = True
-        try:
-            router_db.commit()
-        except Exception as exc:
-            log.error(
-                "delete_account Step 1 (tombstone) failed for email_hash=%s; "
-                "aborting — no data changed. error=%s",
-                ehash, exc, exc_info=True,
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="Account deletion failed — please try again or contact support",
-            ) from exc
-
-    # Step 2 — delete user row (cascade)
-    db.delete(user)
-    try:
-        db.commit()
-    except Exception as exc:
-        log.error(
-            "delete_account Step 2 (user row) failed for email_hash=%s; "
-            "attempting to restore account to usable state. error=%s",
-            ehash, exc, exc_info=True,
-        )
-        # Attempt to restore: clear token revocation so the user can still log in.
-        try:
-            db.rollback()
-            db.execute(
-                update(User)
-                .where(User.id == user.id)
-                .values(tokens_revoked_at=None)
-            )
-            db.commit()
-        except Exception as restore_exc:
-            log.error(
-                "delete_account Step 2 restore failed for email_hash=%s; "
-                "tokens remain revoked — user cannot log in. "
-                "Manual fix: UPDATE users SET tokens_revoked_at = NULL WHERE id = '%s'; "
-                "error=%s",
-                ehash, user.id, restore_exc,
-            )
-        # Attempt to clear the tombstone so new registrations are not blocked.
-        if route_record:
-            try:
-                route_record.is_deleted = False
-                router_db.commit()
-            except Exception:
-                log.error(
-                    "delete_account Step 2 tombstone revert failed for email_hash=%s",
-                    ehash,
+            # Step 2 — cascade delete: missions belonging to this user's children
+            child_docs = await db[models.CHILDREN].find(
+                {"user_id": user_id, "location": location},
+                {"_id": 1},
+                session=mongo_session,
+            ).to_list(None)
+            child_ids = [c["_id"] for c in child_docs]
+            if child_ids:
+                await db[models.MISSIONS].delete_many(
+                    {"child_id": {"$in": child_ids}, "location": location}, session=mongo_session
                 )
-        raise HTTPException(
-            status_code=500,
-            detail="Account deletion failed — please try again or contact support.",
-        ) from exc
 
-    # Step 3 — hard-delete router record
-    if route_record:
-        router_db.delete(route_record)
-        try:
-            router_db.commit()
-        except Exception as exc:
-            # Non-fatal: user row is gone, only the tombstone remains.
-            # Email is effectively blocked until ops removes the orphan.
-            log.error(
-                "delete_account Step 3 (router record) failed for email_hash=%s; "
-                "user row deleted but tombstone is orphaned. "
-                "Clean up with: DELETE FROM user_regions WHERE is_deleted = TRUE; "
-                "error=%s",
-                ehash, exc, exc_info=True,
+            # Step 3 — delete all other owned collections
+            await db[models.CHILDREN].delete_many(
+                {"user_id": user_id, "location": location}, session=mongo_session
             )
-            # Do not raise — the account is deleted from the user's perspective.
+            await db[models.MISSIONS].delete_many(
+                {"user_id": user_id, "location": location}, session=mongo_session
+            )
+            await db[models.ONBOARDING].delete_one(
+                {"_id": user_id, "location": location}, session=mongo_session
+            )
+            await db[models.GOALS].delete_one(
+                {"_id": user_id, "location": location}, session=mongo_session
+            )
+            await db[models.RECOMMENDATIONS].delete_one(
+                {"_id": user_id, "location": location}, session=mongo_session
+            )
+            await db[models.GROWTH_AREAS].delete_many(
+                {"user_id": user_id, "location": location}, session=mongo_session
+            )
+
+            # Step 4 — delete the user document
+            await db[models.USERS].delete_one(
+                {"_id": user_id, "location": location}, session=mongo_session
+            )
+
+    # Step 5 — release the email (outside the transaction: email_index is
+    # unsharded and must not be included in a single-zone shard transaction).
+    # If this delete fails, the orphaned entry is reclaimed on the next
+    # registration attempt for the same address (see /auth/register).
+    try:
+        await db[models.EMAIL_INDEX].delete_one({"_id": user["email"]})
+    except Exception:
+        log.exception(
+            "delete_account: failed to remove email_index entry for user_id=%s — "
+            "orphaned entry will be reclaimed on next registration attempt",
+            user_id,
+        )
 
     _clear_auth_cookies(response)

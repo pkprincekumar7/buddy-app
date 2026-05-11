@@ -1,9 +1,10 @@
-import json
 import logging
-from urllib.parse import quote_plus
+import re
 
-from pydantic import AliasChoices, Field, PrivateAttr, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
 
 log = logging.getLogger(__name__)
 
@@ -11,17 +12,64 @@ log = logging.getLogger(__name__)
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+    mongodb_uri: str = Field(
+        default="mongodb://localhost:27017",
+        validation_alias=AliasChoices("MONGODB_URI", "mongodb_uri"),
     )
-    postgres_host: str | None = Field(default=None, validation_alias=AliasChoices("POSTGRES_HOST", "postgres_host"))
-    postgres_port: str = Field(default="5432", validation_alias=AliasChoices("POSTGRES_PORT", "postgres_port"))
-    postgres_user: str | None = Field(default=None, validation_alias=AliasChoices("POSTGRES_USER", "postgres_user"))
-    postgres_password: str | None = Field(
-        default=None, validation_alias=AliasChoices("POSTGRES_PASSWORD", "postgres_password")
+    mongodb_db_name: str = Field(
+        default="buddy_app",
+        validation_alias=AliasChoices("MONGODB_DB_NAME", "mongodb_db_name"),
     )
-    postgres_db: str | None = Field(default=None, validation_alias=AliasChoices("POSTGRES_DB", "postgres_db"))
+    default_location: str = Field(
+        default="us",
+        validation_alias=AliasChoices("DEFAULT_LOCATION", "default_location"),
+    )
+
+    @field_validator("mongodb_uri")
+    @classmethod
+    def validate_mongodb_uri(cls, v: str) -> str:
+        if not (v.startswith("mongodb://") or v.startswith("mongodb+srv://")):
+            raise ValueError(
+                f"MONGODB_URI must start with mongodb:// or mongodb+srv://, got {v!r}. "
+                "Local example: mongodb://localhost:27017  "
+                "Atlas example: mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/"
+            )
+        return v
+
+    @field_validator("default_location")
+    @classmethod
+    def validate_default_location(cls, v: str) -> str:
+        if not _LOCATION_RE.match(v):
+            raise ValueError(
+                f"DEFAULT_LOCATION must match [a-z0-9_-]{{1,16}} (got {v!r}). "
+                "Valid examples: us, eu, apac, in, br, me, cn, ru."
+            )
+        return v
+
+    jwt_secret: str = Field(
+        validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
+    )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError(
+                f"JWT_SECRET must be at least 32 characters long (got {len(v)}). "
+                "Set the JWT_SECRET environment variable to a long random string."
+            )
+        return v
+
+    jwt_access_expire_minutes: int = Field(
+        default=30,
+        validation_alias=AliasChoices("JWT_ACCESS_EXPIRE_MINUTES", "jwt_access_expire_minutes"),
+    )
+    jwt_refresh_expire_hours: int = Field(
+        default=24,
+        validation_alias=AliasChoices("JWT_REFRESH_EXPIRE_HOURS", "jwt_refresh_expire_hours"),
+    )
+    jwt_algorithm: str = "HS256"
+
     openai_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
@@ -45,28 +93,6 @@ class Settings(BaseSettings):
     gemini_model: str = Field(
         default="gemini-1.5-flash",
         validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"),
-    )
-    jwt_secret: str = Field(
-        validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
-    )
-
-    @field_validator("jwt_secret")
-    @classmethod
-    def validate_jwt_secret(cls, v: str) -> str:
-        if len(v) < 32:
-            raise ValueError(
-                f"JWT_SECRET must be at least 32 characters long (got {len(v)}). "
-                "Set the JWT_SECRET environment variable to a long random string."
-            )
-        return v
-
-    jwt_access_expire_minutes: int = Field(
-        default=30,
-        validation_alias=AliasChoices("JWT_ACCESS_EXPIRE_MINUTES", "jwt_access_expire_minutes"),
-    )
-    jwt_refresh_expire_hours: int = Field(
-        default=24,
-        validation_alias=AliasChoices("JWT_REFRESH_EXPIRE_HOURS", "jwt_refresh_expire_hours"),
     )
 
     google_client_id: str = Field(
@@ -104,8 +130,6 @@ class Settings(BaseSettings):
                 )
         return v
 
-    jwt_algorithm: str = "HS256"
-
     app_env: str = Field(
         default="local",
         validation_alias=AliasChoices("APP_ENV", "app_env"),
@@ -120,128 +144,24 @@ class Settings(BaseSettings):
         default=60,
         validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS", "llm_timeout_seconds"),
     )
-
-    postgres_pool_size: int = Field(
-        default=5,
-        validation_alias=AliasChoices("POSTGRES_POOL_SIZE", "postgres_pool_size"),
-    )
-    postgres_max_overflow: int = Field(
-        default=10,
-        validation_alias=AliasChoices("POSTGRES_MAX_OVERFLOW", "postgres_max_overflow"),
-    )
-
-    # ---------------------------------------------------------------------------
-    # Multi-region routing (all optional — omit for single-instance mode)
-    # ---------------------------------------------------------------------------
-
-    # Dedicated PostgreSQL instance that stores only email_hash → region mappings.
-    # Falls back to the main database_url when not set.
-    router_db_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("ROUTER_DB_URL", "router_db_url"),
-    )
-
-    # Raw JSON string read from the REGIONAL_DB_URLS environment variable.
-    # Intentionally excluded from model_dump() and repr — use the parsed
-    # `regional_db_urls` property instead.
-    # Example env value: '{"eu": "postgresql://...", "us": "postgresql://..."}'
-    regional_db_urls_raw: str = Field(
-        default="{}",
-        exclude=True,
-        repr=False,
-        validation_alias=AliasChoices("REGIONAL_DB_URLS", "regional_db_urls_raw"),
-    )
-
-    # Redis URL for the per-user LLM rate limiter (sliding window, LLM_HOURLY_LIMIT req/hour).
-    # When not set the rate limiter falls back to an in-process counter — correct
-    # for single-instance local dev but breaks under multiple pods.
-    redis_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("REDIS_URL", "redis_url"),
-    )
-
-    # Maximum LLM calls per user per hour. Set generously — the per-minute slowapi
-    # limit handles burst abuse; this cap is purely for sustained cost exposure.
     llm_hourly_limit: int = Field(
         default=200,
         validation_alias=AliasChoices("LLM_HOURLY_LIMIT", "llm_hourly_limit"),
     )
 
-    # The region assigned when no JWT is present (register/login flows in
-    # single-instance mode, and as a safe fallback).
-    default_region: str = Field(
-        default="local",
-        validation_alias=AliasChoices("DEFAULT_REGION", "default_region"),
+    redis_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REDIS_URL", "redis_url"),
     )
 
-    # How often the background reconciler runs (minutes).
-    # The reconciler repairs stale 'pending' UserRegionRecord rows left behind
-    # by a failed Phase 2 or Phase 3 saga write.
-    reconciler_interval_minutes: int = Field(
-        default=5,
-        validation_alias=AliasChoices("RECONCILER_INTERVAL_MINUTES", "reconciler_interval_minutes"),
-    )
-
-    # Parsed once at startup; never re-parsed on every request.
-    _regional_db_urls_parsed: dict[str, str] = PrivateAttr(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _parse_regional_db_urls(self) -> "Settings":
-        """Parse and validate REGIONAL_DB_URLS once at startup.
-
-        Logs a WARNING for any invalid entry so misconfigured multi-region
-        deployments fail visibly rather than silently falling back to the
-        main DB and writing data to the wrong region.
-        """
-        from sqlalchemy.engine import make_url as _make_url
-        from sqlalchemy.exc import ArgumentError as _ArgError
-
-        raw = self.regional_db_urls_raw.strip()
-        if not raw:
-            # Empty string means single-instance / single-region — not an error.
-            result = {}
-        else:
-            try:
-                result = json.loads(raw) or {}
-            except json.JSONDecodeError as exc:
-                log.error(
-                    "REGIONAL_DB_URLS is not valid JSON — falling back to "
-                    "single-instance mode.  error=%s",
-                    exc,
-                )
-                result = {}
-
-        for region_key, url in list(result.items()):
-            try:
-                _make_url(url)
-            except (_ArgError, Exception) as exc:
-                log.warning(
-                    "REGIONAL_DB_URLS[%r] is not a valid DB URL — removing from "
-                    "routing map, traffic will fall back to main engine.  error=%s",
-                    region_key, exc,
-                )
-                del result[region_key]
-
-        object.__setattr__(self, "_regional_db_urls_parsed", result)
-        return self
-
-    @property
-    def regional_db_urls(self) -> dict[str, str]:
-        """Parsed regional DB URL map. Returns empty dict in single-instance mode."""
-        return self._regional_db_urls_parsed
-
-    # Cookie settings for HttpOnly auth tokens.
-    # Set COOKIE_SECURE=false only for local HTTP development; always True in production.
     cookie_secure: bool = Field(
         default=True,
         validation_alias=AliasChoices("COOKIE_SECURE", "cookie_secure"),
     )
-    # "lax" allows navigation from external links while blocking cross-site state-changing requests.
     cookie_samesite: str = Field(
         default="lax",
         validation_alias=AliasChoices("COOKIE_SAMESITE", "cookie_samesite"),
     )
-    # Only set if cookies must span subdomains (e.g. ".example.com"). Leave blank otherwise.
     cookie_domain: str | None = Field(
         default=None,
         validation_alias=AliasChoices("COOKIE_DOMAIN", "cookie_domain"),
@@ -282,7 +202,7 @@ class Settings(BaseSettings):
         if self.app_env.lower() == "prod" and not self.cookie_secure:
             log.warning(
                 "COOKIE_SECURE=false in a production environment — auth cookies will "
-                "not be restricted to HTTPS.  Set COOKIE_SECURE=true unless you are "
+                "not be restricted to HTTPS. Set COOKIE_SECURE=true unless you are "
                 "explicitly terminating TLS before this service."
             )
         return self
@@ -294,37 +214,6 @@ class Settings(BaseSettings):
                 "No LLM API key is set — LLM features will be disabled. "
                 "Set at least one of OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY."
             )
-        return self
-
-    @model_validator(mode="after")
-    def assemble_database_url(self):
-        if self.database_url is not None:
-            return self
-
-        host = self.postgres_host
-        user = self.postgres_user
-        password = self.postgres_password
-        dbname = self.postgres_db
-
-        if host and user is not None and password is not None and dbname:
-            url = (
-                f"postgresql+psycopg://{quote_plus(user)}:{quote_plus(password)}"
-                f"@{host}:{self.postgres_port}/{dbname}"
-            )
-            object.__setattr__(self, "database_url", url)
-            return self
-
-        if self.app_env.lower() == "prod":
-            raise ValueError(
-                "No database configuration found. "
-                "Set DATABASE_URL or POSTGRES_* environment variables. "
-                "SQLite is not permitted in production."
-            )
-        log.warning(
-            "No database configuration found — falling back to SQLite (sqlite:///./buddy360.db). "
-            "Set DATABASE_URL or POSTGRES_* environment variables for production use."
-        )
-        object.__setattr__(self, "database_url", "sqlite:///./buddy360.db")
         return self
 
 

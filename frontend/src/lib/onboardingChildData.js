@@ -76,9 +76,6 @@ export function conversationDraftFromChildRecord(child) {
 	]) {
 		if (questionnaireFieldHasValue(k, child)) out[k] = child[k];
 	}
-	if (!questionnaireFieldHasValue('social_behaviour', out) && questionnaireFieldHasValue('social_preference', child)) {
-		out.social_behaviour = child.social_preference;
-	}
 	return Object.keys(out).length ? out : null;
 }
 
@@ -96,9 +93,5 @@ export function normalizeOnboardingChildDataBlob(raw) {
 		}
 	}
 	if (!o || typeof o !== 'object') return null;
-	const out = { ...o };
-	if (!questionnaireFieldHasValue('social_behaviour', out) && questionnaireFieldHasValue('social_preference', out)) {
-		out.social_behaviour = out.social_preference;
-	}
-	return out;
+	return { ...o };
 }

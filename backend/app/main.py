@@ -1,17 +1,20 @@
+import asyncio
 import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from motor.motor_asyncio import AsyncIOMotorClient
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy.exc import SQLAlchemyError
 
+from app.database import init_indexes
 from app.limiter import limiter, user_limiter
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
@@ -22,41 +25,48 @@ from app.settings import settings
 
 log = logging.getLogger(__name__)
 
-# Only allow safe printable ASCII characters (no newlines, control chars, or
-# non-ASCII) to prevent log-injection via a crafted X-Request-Id header.
 _REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9\-_]{1,64}$')
+
+# ---------------------------------------------------------------------------
+# Background task: expired-session cleanup
+# ---------------------------------------------------------------------------
+# MongoDB TTL indexes cannot be compound, so they cannot include the shard key
+# (location) that is required on Atlas Global Clusters.  Instead, a background
+# coroutine runs every hour and deletes any sessions whose expires_at has
+# already passed.  On Atlas the fan-out across shards is acceptable for a
+# once-hourly maintenance operation.
+_SESSION_CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
+
+
+async def _cleanup_expired_sessions(db) -> None:
+    while True:
+        await asyncio.sleep(_SESSION_CLEANUP_INTERVAL_SECONDS)
+        try:
+            now = datetime.now(timezone.utc)
+            result = await db["sessions"].delete_many({"expires_at": {"$lt": now}})
+            if result.deleted_count:
+                log.info("session_cleanup: removed %d expired sessions", result.deleted_count)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("session_cleanup: unexpected error — will retry next cycle")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Schema is managed by Alembic migrations (run via `alembic upgrade head` before startup).
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from app.reconciler import cleanup_expired_tokens, reconcile_pending_routes
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(
-        reconcile_pending_routes,
-        trigger="interval",
-        minutes=settings.reconciler_interval_minutes,
-        id="reconciler",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        cleanup_expired_tokens,
-        trigger="interval",
-        hours=6,
-        id="token_cleanup",
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.start()
-    log.info("reconciler: scheduler started (interval=%d min)", settings.reconciler_interval_minutes)
+    client = AsyncIOMotorClient(settings.mongodb_uri)
+    db = client[settings.mongodb_db_name]
+    await init_indexes(db)
+    app.state.db = db
+    log.info("mongodb: connected db=%s", settings.mongodb_db_name)
+    cleanup_task = asyncio.create_task(_cleanup_expired_sessions(db))
     try:
         yield
     finally:
-        scheduler.shutdown(wait=False)
-        log.info("reconciler: scheduler stopped")
+        cleanup_task.cancel()
+        await asyncio.gather(cleanup_task, return_exceptions=True)
+        client.close()
+        log.info("mongodb: connection closed")
 
 
 app = FastAPI(title="Buddy360 API", lifespan=lifespan)
@@ -75,12 +85,6 @@ app.add_middleware(SlowAPIMiddleware)
 @app.exception_handler(HTTPException)
 async def custom_http_exception_handler(request: Request, exc: HTTPException):
     return await http_exception_handler(request, exc)
-
-
-@app.exception_handler(SQLAlchemyError)
-async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    log.exception("Database error on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.exception_handler(Exception)
