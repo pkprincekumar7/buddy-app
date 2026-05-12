@@ -8,6 +8,11 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
 
 ```
                               Users (global)
+                                    │
+                          ┌─────────▼──────────┐
+                          │     Route 53        │
+                          │      (DNS)          │
+                          └─────────┬──────────┘
                                     │ HTTPS
                           ┌─────────▼──────────┐
                           │     CloudFront      │
@@ -16,15 +21,15 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
                           └──────┬─────────┬───┘
                        /api/*    │         │   /*
                   ┌──────────────┘         └──────────────────────┐
-                  │ HTTPS-only                                      │
-                  │ (to primary backend region)                     │
+                  │                                                 │
                   ▼                                                 ▼
-   ┌──────────────────────────────┐              ┌─────────────────────────┐
-   │  Internal ALB  (HTTPS/443)   │              │  S3 — frontend assets   │
-   │  buddy-internal-{env}        │              │  (us-east-1)            │
-   │    -{region}.learning-dev.com│              │  OAC — no public access │
-   └──────────────┬───────────────┘              └─────────────────────────┘
-                  │ HTTP/8000  (within VPC)
+        ┌───────────────────┐               ┌─────────────────────────┐
+        │   Lambda@Edge     │               │  S3 — frontend assets   │
+        │  origin routing   │               │  (us-east-1)            │
+        │   (viewer geo)    │               │  OAC — no public access │
+        └─────────┬─────────┘               └─────────────────────────┘
+                  │ HTTPS/443 to
+                  │ nearest region's ALB
                   ▼
 
 ╔══════════════════╦══════════════════╦══════════════════╗
@@ -32,11 +37,13 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
 ║  (Mumbai)        ║  (Ireland)       ║  (N. Virginia)   ║
 ╠══════════════════╬══════════════════╬══════════════════╣
 ║ VPC              ║ VPC              ║ VPC              ║
-║ ECS Fargate      ║ ECS Fargate      ║ ECS Fargate      ║
 ║ ALB (HTTPS/443)  ║ ALB (HTTPS/443)  ║ ALB (HTTPS/443)  ║
-║ ElastiCache Redis║ ElastiCache Redis║ ElastiCache Redis║
-║ ECR              ║ ECR              ║ ECR              ║
-║ Secrets Manager  ║ Secrets Manager  ║ Secrets Manager  ║
+║  └── ECS Fargate ║  └── ECS Fargate ║  └── ECS Fargate ║
+║      ├── Redis   ║      ├── Redis   ║      ├── Redis   ║
+║      │  (in-VPC) ║      │  (in-VPC) ║      │  (in-VPC) ║
+║      ├── ECR     ║      ├── ECR     ║      ├── ECR     ║
+║      └── Secrets ║      └── Secrets ║      └── Secrets ║
+║        Manager   ║        Manager   ║        Manager   ║
 ╚══════════════════╩══════════════════╩══════════════════╝
          │                  │                  │
          │ TLS              │ TLS              │ TLS
