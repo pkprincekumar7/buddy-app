@@ -1,0 +1,193 @@
+name: Terraform Live Edge
+run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action: plan, apply, plan-destroy, destroy"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-destroy
+          - destroy
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region (for S3 bucket data source; WAF and CloudFront are always us-east-1 / global)"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        # Multi-region expansion: add the new region here and follow the
+        # checklist in infra-live-edge/terraform/variables.tf (aws_region).
+        options:
+          - ap-south-1
+      backend_region:
+        description: "AWS region where the backend (ALB) is deployed — sets the CloudFront origin"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        # Multi-region expansion: add the new region here. The backend must
+        # already be applied in that region before running this workflow.
+        # See infra-live-edge/terraform/variables.tf (backend_region).
+        options:
+          - ap-south-1
+  workflow_call:
+    inputs:
+      action:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+      aws_region:
+        type: string
+        required: true
+      backend_region:
+        type: string
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-live-edge-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_VERSION: "1.13.0"
+  TF_VAR_aws_region:     ${{ inputs.aws_region }}
+  TF_VAR_environment:    ${{ inputs.environment }}
+  TF_VAR_backend_region: ${{ inputs.backend_region }}
+
+jobs:
+  terraform:
+    name: Terraform Live Edge ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra-live-edge/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+      # Resolved from GitHub Environment Secrets so dev/stg/prod each use their own values.
+      TF_VAR_domain_name:                   ${{ secrets.DOMAIN_NAME }}
+      TF_VAR_subdomain:                     ${{ secrets.SUBDOMAIN }}
+      TF_VAR_hosted_zone_id:                ${{ secrets.HOSTED_ZONE_ID }}
+      TF_VAR_acm_certificate_arn_us_east_1: ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:                     ${{ secrets.ROLE_ARN }}
+          APP_NAME:                     ${{ secrets.APP_NAME }}
+          STATE_BUCKET:                 ${{ secrets.STATE_BUCKET }}
+          DOMAIN_NAME:                  ${{ secrets.DOMAIN_NAME }}
+          SUBDOMAIN:                    ${{ secrets.SUBDOMAIN }}
+          HOSTED_ZONE_ID:               ${{ secrets.HOSTED_ZONE_ID }}
+          ACM_CERTIFICATE_ARN_US_EAST_1: ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"                      ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"                      ]] && missing+=("APP_NAME")
+          [[ -z "$STATE_BUCKET"                  ]] && missing+=("STATE_BUCKET")
+          [[ -z "$DOMAIN_NAME"                   ]] && missing+=("DOMAIN_NAME")
+          [[ -z "$SUBDOMAIN"                     ]] && missing+=("SUBDOMAIN")
+          [[ -z "$HOSTED_ZONE_ID"                ]] && missing+=("HOSTED_ZONE_ID")
+          [[ -z "$ACM_CERTIFICATE_ARN_US_EAST_1" ]] && missing+=("ACM_CERTIFICATE_ARN_US_EAST_1")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: terraform-live-edge-${{ inputs.environment }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/${{ inputs.aws_region }}/terraform.tfstate"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Show plan summary
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: |
+          {
+            echo "### Terraform Plan — edge / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artefact
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-edge-${{ inputs.environment }}-${{ inputs.aws_region }}
+          path: infra-live-edge/terraform/tfplan.bin
+          retention-days: 7
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan.bin
+
+      - name: Terraform Plan (destroy)
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Show destroy plan summary
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: |
+          {
+            echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload destroy plan artefact
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-edge-destroy-${{ inputs.environment }}-${{ inputs.aws_region }}
+          path: infra-live-edge/terraform/tfplan.bin
+          retention-days: 7
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform apply -auto-approve tfplan.bin

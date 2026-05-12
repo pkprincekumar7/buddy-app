@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# CloudFront — global CDN serving the React SPA and proxying the API
+#
+# Two origins:
+#   s3-frontend  — static assets from S3 (default behaviour)
+#   alb-backend  — FastAPI backend behind the ALB (/api/* behaviour)
+#
+# CloudFront→ALB uses HTTPS only to the internal ALB subdomain
+# (e.g. buddy-internal-dev.learning-dev.com). End-user TLS is terminated
+# at CloudFront. ALB→ECS is HTTP within the VPC.
+# ---------------------------------------------------------------------------
+
+locals {
+  cache_policy_optimized                = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+  cache_policy_disabled                 = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+  origin_request_cors_s3                = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
+  origin_request_all_viewer_except_host = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+  response_headers_security             = "67f7725c-6f97-4210-82d7-5512b31e9d03"
+}
+
+resource "aws_cloudfront_distribution" "frontend" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "${var.app_name} frontend (${var.environment})"
+  default_root_object = "index.html"
+  aliases             = [local.fqdn]
+  web_acl_id          = aws_wafv2_web_acl.frontend.arn
+
+  price_class = var.cloudfront_price_class
+
+  # -- Origins -----------------------------------------------------------------
+
+  origin {
+    origin_id                = "s3-frontend"
+    domain_name              = data.aws_s3_bucket.frontend.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+  }
+
+  origin {
+    origin_id   = "alb-backend"
+    domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # -- Default behaviour: S3 static assets ------------------------------------
+
+  default_cache_behavior {
+    target_origin_id       = "s3-frontend"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = local.cache_policy_optimized
+    origin_request_policy_id   = local.origin_request_cors_s3
+    response_headers_policy_id = local.response_headers_security
+  }
+
+  # -- /api/* behaviour: proxy to ALB backend ---------------------------------
+
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    target_origin_id       = "alb-backend"
+    viewer_protocol_policy = "https-only"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = false
+
+    cache_policy_id          = local.cache_policy_disabled
+    origin_request_policy_id = local.origin_request_all_viewer_except_host
+  }
+
+  # -- SPA fallback: S3 returns 403 for missing objects -----------------------
+
+  custom_error_response {
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  custom_error_response {
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = var.acm_certificate_arn_us_east_1
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  tags = {
+    Name = "${var.app_name}-frontend-cf-${var.environment}"
+  }
+}

@@ -1,0 +1,150 @@
+name: Deploy Live Frontend
+run-name: Deploy Live Frontend (${{ inputs.environment }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-live-frontend-buddy360-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    name: Deploy Live Frontend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:             ${{ secrets.ROLE_ARN }}
+          APP_NAME:             ${{ secrets.APP_NAME }}
+          VITE_API_URL:         ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME")
+          [[ -z "$VITE_API_URL"          ]] && missing+=("VITE_API_URL")
+          [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: deploy-live-frontend-${{ inputs.environment }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets before the Node.js build so the workflow
+      # fails fast if edge infra has not been applied yet — avoiding a wasted
+      # npm install + build before hitting the SSM error.
+      # SSM parameters are written automatically by terraform-live-edge.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/cloudfront_distribution_id")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "ERROR: S3 bucket not found in SSM. Run terraform-live-edge workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: CloudFront distribution ID not found in SSM. Run terraform-live-edge workflow (apply) first."
+            exit 1
+          fi
+
+          echo "s3_bucket=$S3_BUCKET"   >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "S3 bucket:               $S3_BUCKET"
+          echo "CloudFront distribution: $CF_DIST_ID"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run build
+
+      - name: Sync to S3
+        run: |
+          # Upload hashed assets (JS/CSS) with long-lived cache headers
+          aws s3 sync frontend/dist/assets/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/assets/ \
+            --cache-control "public,max-age=31536000,immutable" \
+            --delete
+
+          # Upload everything else (index.html, manifest.json, etc.) with no-cache
+          aws s3 sync frontend/dist/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/ \
+            --exclude "assets/*" \
+            --cache-control "no-cache,no-store,must-revalidate" \
+            --delete
+
+      - name: Invalidate CloudFront cache
+        id: invalidate
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" \
+            --output text)
+          echo "Invalidation ID: $INVALIDATION_ID"
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for invalidation to complete
+        run: |
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --id "${{ steps.invalidate.outputs.invalidation_id }}"
+          echo "CloudFront cache invalidation complete."
