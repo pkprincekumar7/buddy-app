@@ -37,7 +37,7 @@ resource "aws_ssm_parameter" "s3_bucket_name" {
   provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/edge/s3_bucket_name"
-  value = data.aws_ssm_parameter.frontend_bucket_name.value
+  value = var.frontend_bucket_name
   type  = "String"
 
   tags = { Name = "${var.app_name}-edge-s3-bucket-${var.environment}" }

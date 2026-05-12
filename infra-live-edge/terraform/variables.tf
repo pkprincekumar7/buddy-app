@@ -2,9 +2,15 @@ variable "aws_region" {
   description = "AWS region (for S3 bucket data source and SSM; WAF and CloudFront are always us-east-1 / global)"
   type        = string
 
+  # Multi-region expansion checklist — do all of the following for each new region:
+  #   1. Add the new region as a choice in the aws_region workflow_dispatch input
+  #      in terraform-live-edge.yml and terraform-live-all.yml.
+  #   2. Add the new region to the validation condition below.
+  #   3. Follow the same steps for backend_region in this file.
+  #   4. For the full cross-module checklist see infra-live-backend/terraform/variables.tf.
   validation {
-    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
-    error_message = "aws_region must be one of: ap-south-1, eu-west-1, us-east-1."
+    condition     = var.aws_region == "ap-south-1"
+    error_message = "aws_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
   }
 }
 
@@ -48,8 +54,35 @@ variable "backend_region" {
   description = "AWS region where the backend (ALB) was deployed — used to read the correct ALB FQDN from SSM"
   type        = string
 
+  # Multi-region expansion checklist — do all of the following for each new region:
+  #   1. Apply infra-live-backend for the new region first. This module reads the
+  #      ALB FQDN from SSM using backend_region as a path segment; if the backend
+  #      hasn't been applied the SSM parameter won't exist and this apply will fail
+  #      with a cryptic "parameter not found" error.
+  #   2. Add the new region as a choice in the backend_region workflow_dispatch
+  #      input in terraform-live-edge.yml.
+  #   3. Add the new region to the validation condition below.
+  #   4. For the full cross-module checklist see infra-live-backend/terraform/variables.tf.
   validation {
-    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.backend_region)
-    error_message = "backend_region must be one of: ap-south-1, eu-west-1, us-east-1."
+    condition     = var.backend_region == "ap-south-1"
+    error_message = "backend_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
+  }
+}
+
+# -- S3 -----------------------------------------------------------------------
+variable "frontend_bucket_name" {
+  description = "Pre-existing S3 frontend assets bucket name (us-east-1)"
+  type        = string
+}
+
+# -- CloudFront ---------------------------------------------------------------
+variable "cloudfront_price_class" {
+  description = "CloudFront price class controlling which edge locations serve traffic. PriceClass_100 = US/EU only; PriceClass_200 = US/EU/Asia/ME/Africa; PriceClass_All = all edge locations."
+  type        = string
+  default     = "PriceClass_200"
+
+  validation {
+    condition     = contains(["PriceClass_100", "PriceClass_200", "PriceClass_All"], var.cloudfront_price_class)
+    error_message = "cloudfront_price_class must be one of: PriceClass_100, PriceClass_200, PriceClass_All."
   }
 }

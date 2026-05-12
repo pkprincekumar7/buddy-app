@@ -5,6 +5,11 @@
 # internet access for ECR image pulls and LLM API calls without a NAT Gateway.
 # Inbound is locked to the ALB security group only.
 #
+# ⚠ Security trade-off: each task receives a public IP. If the ALB SG is ever
+# misconfigured, tasks become directly internet-reachable. Private subnets +
+# NAT Gateway would eliminate this risk at ~$32/month/region extra cost.
+# TODO: revisit when budget allows.
+#
 # Task definition uses :latest as the initial image. The deploy workflow
 # (deploy-live-backend.yml) manages image updates; Terraform is not involved
 # after the initial apply (ignore_changes = [task_definition, desired_count]).
@@ -69,7 +74,9 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
         { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
         { name = "DEFAULT_REGION", value = var.default_region },
-        { name = "S3_BUCKET_NAME", value = data.aws_ssm_parameter.backend_bucket_name.value },
+        { name = "S3_BUCKET_NAME", value = var.backend_bucket_name },
+        { name = "CORS_ORIGINS", value = var.cors_origins },
+        { name = "COOKIE_DOMAIN", value = var.cookie_domain },
       ]
 
       # Sensitive values — injected by the ECS agent from Secrets Manager.
@@ -81,8 +88,6 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
         { name = "ANTHROPIC_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:ANTHROPIC_API_KEY::" },
         { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_API_KEY::" },
-        { name = "CORS_ORIGINS", valueFrom = "${aws_secretsmanager_secret.app.arn}:CORS_ORIGINS::" },
-        { name = "COOKIE_DOMAIN", valueFrom = "${aws_secretsmanager_secret.app.arn}:COOKIE_DOMAIN::" },
       ]
 
       logConfiguration = {

@@ -7,8 +7,14 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket_policy" "frontend" {
-  provider = aws.us_east_1
-  bucket   = data.aws_ssm_parameter.frontend_bucket_name.value
+  bucket = var.frontend_bucket_name
+
+  lifecycle {
+    precondition {
+      condition     = data.aws_ssm_parameter.s3_bucket_name.value == var.frontend_bucket_name
+      error_message = "frontend_bucket_name in tfvars (\"${var.frontend_bucket_name}\") does not match the value written to SSM by infra-live-edge (\"${data.aws_ssm_parameter.s3_bucket_name.value}\"). Update the tfvars value to match."
+    }
+  }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -20,7 +26,7 @@ resource "aws_s3_bucket_policy" "frontend" {
           Service = "cloudfront.amazonaws.com"
         }
         Action   = "s3:GetObject"
-        Resource = "${data.aws_ssm_parameter.frontend_bucket_arn.value}/*"
+        Resource = "arn:aws:s3:::${var.frontend_bucket_name}/*"
         Condition = {
           StringEquals = {
             "AWS:SourceArn" = data.aws_ssm_parameter.cloudfront_arn.value

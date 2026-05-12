@@ -1,8 +1,8 @@
 # Key SSM parameter paths for this environment are:
-#   /{app}/{env}/backend/alb_internal_fqdn
-#   /{app}/{env}/backend/ecr_repository_url
-#   /{app}/{env}/backend/ecs_cluster_name
-#   /{app}/{env}/backend/ecs_service_name
+#   /{app}/{env}/backend/{region}/alb_internal_fqdn
+#   /{app}/{env}/backend/{region}/ecr_repository_url
+#   /{app}/{env}/backend/{region}/ecs_cluster_name
+#   /{app}/{env}/backend/{region}/ecs_service_name
 # These are written as Terraform resources in ssm_write.tf.
 
 output "alb_internal_fqdn" {

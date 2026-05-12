@@ -18,17 +18,25 @@ on:
         required: true
         default: "ap-south-1"
         type: choice
+        # Multi-region expansion: add the new region here.
+        # Full checklist: infra-live-backend/terraform/variables.tf.
         options:
           - ap-south-1
-          - eu-west-1
-          - us-east-1
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      aws_region:
+        type: string
+        required: true
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: deploy-live-backend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
   cancel-in-progress: false
 
 env:
@@ -44,10 +52,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: deploy-live-backend-${{ inputs.environment }}
           aws-region: ${{ inputs.aws_region }}
 
       # -------------------------------------------------------------------------
@@ -80,9 +103,9 @@ jobs:
             exit 1
           fi
 
-          echo "ecr_url=$ECR_URL"       >> $GITHUB_OUTPUT
-          echo "ecs_cluster=$CLUSTER"   >> $GITHUB_OUTPUT
-          echo "ecs_service=$SERVICE"   >> $GITHUB_OUTPUT
+          echo "ecr_url=$ECR_URL"       >> "$GITHUB_OUTPUT"
+          echo "ecs_cluster=$CLUSTER"   >> "$GITHUB_OUTPUT"
+          echo "ecs_service=$SERVICE"   >> "$GITHUB_OUTPUT"
           echo "ECR:     $ECR_URL"
           echo "Cluster: $CLUSTER"
           echo "Service: $SERVICE"
@@ -98,7 +121,6 @@ jobs:
       - name: Build and push Docker image
         id: build
         env:
-          ECR_URL: ${{ steps.tf_outputs.outputs.ecr_url }}
           IMAGE_SHA: ${{ steps.tf_outputs.outputs.ecr_url }}:${{ github.sha }}
           IMAGE_LATEST: ${{ steps.tf_outputs.outputs.ecr_url }}:latest
         run: |
@@ -111,31 +133,94 @@ jobs:
 
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_LATEST"
-          echo "image=$IMAGE_SHA" >> $GITHUB_OUTPUT
+          echo "image=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
           echo "Pushed: $IMAGE_SHA"
           echo "Pushed: $IMAGE_LATEST"
 
       # -------------------------------------------------------------------------
-      # Force a rolling update of the ECS service.
-      # ECS pulls :latest from ECR and replaces running tasks one by one.
-      # Waits for the service to reach a steady state before reporting success.
+      # Register a new task definition that pins the image to the git SHA.
+      # This makes rollbacks deterministic: ECS's circuit-breaker can revert
+      # to the previous task definition revision automatically on failure, and
+      # a manual rollback is just re-deploying an older revision — no re-push
+      # of :latest required.
       # -------------------------------------------------------------------------
-      - name: Deploy new image to ECS
+      - name: Register new task definition
+        id: register_td
         env:
-          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
-          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+          IMAGE_SHA: ${{ steps.build.outputs.image }}
+        run: |
+          TASK_FAMILY="${{ secrets.APP_NAME }}-backend-${{ inputs.environment }}"
+
+          CURRENT_TD=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' --output json)
+
+          # Strip read-only fields that AWS rejects on register-task-definition,
+          # then patch the image for the backend container. All other fields
+          # (runtimePlatform, volumes, ephemeralStorage, tags, etc.) are
+          # preserved exactly as they are in the current revision.
+          NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
+            --arg img "$IMAGE_SHA" \
+            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                 .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+             | .containerDefinitions =
+                 [.containerDefinitions[]
+                  | if .name == "backend" then .image = $img else . end]')
+
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD_JSON" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          echo "new_td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered: $NEW_TD_ARN"
+
+      # -------------------------------------------------------------------------
+      # Update the ECS service to the new task definition revision.
+      # ECS performs a rolling replacement; the circuit-breaker rolls back
+      # automatically if the new revision fails to reach steady state.
+      # Waits up to 15 minutes using a manual polling loop (aws ecs wait
+      # services-stable has a hard 10-minute ceiling).
+      # -------------------------------------------------------------------------
+      - name: Deploy new task definition to ECS
+        env:
+          CLUSTER:    ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          SERVICE:    ${{ steps.tf_outputs.outputs.ecs_service }}
+          NEW_TD_ARN: ${{ steps.register_td.outputs.new_td_arn }}
         run: |
           aws ecs update-service \
             --cluster "$CLUSTER" \
             --service "$SERVICE" \
-            --force-new-deployment \
+            --task-definition "$NEW_TD_ARN" \
             --output json \
             --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
             | cat
 
           echo "Waiting for service to reach steady state (up to 15 minutes)..."
-          aws ecs wait services-stable \
-            --cluster "$CLUSTER" \
-            --services "$SERVICE"
+          for i in $(seq 1 60); do
+            SERVICE_INFO=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --query 'services[0]' --output json)
+            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
+            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
+            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
+            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
+            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
 
-          echo "Deployment complete — service is stable."
+            if [ "$ROLLOUT" = "FAILED" ]; then
+              echo "ERROR: Deployment failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
+              exit 1
+            fi
+
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ]; then
+              echo "Deployment complete — service is stable ($RUNNING/$DESIRED tasks running)."
+              break
+            fi
+
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: Service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
+              exit 1
+            fi
+
+            echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
+            sleep 15
+          done

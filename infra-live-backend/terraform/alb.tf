@@ -3,8 +3,8 @@
 #
 # CloudFront terminates TLS for end users and proxies /api/* to this ALB
 # using https-only to the internal subdomain (e.g. buddy-internal-dev.learning-dev.com).
-# The existing ACM certificate in ap-south-1 (ACM_CERTIFICATE_ARN_AP_SOUTH_1)
-# covers this subdomain and is referenced here.
+# The ACM certificate for the backend region (var.acm_certificate_arn) is resolved
+# per-region by the workflow and must cover the internal ALB subdomain.
 # ALB→ECS traffic stays within the VPC on HTTP port 8000.
 # ---------------------------------------------------------------------------
 
@@ -49,7 +49,7 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = var.acm_certificate_arn_ap_south_1
+  certificate_arn   = var.acm_certificate_arn
 
   default_action {
     type             = "forward"

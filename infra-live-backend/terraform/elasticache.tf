@@ -23,13 +23,6 @@ resource "aws_security_group" "elasticache_sg" {
   description = "Allow Redis from ECS tasks only"
   vpc_id      = aws_vpc.main.id
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   tags = {
     Name = "${var.app_name}-backend-elasticache-sg-${var.environment}"
   }
@@ -61,8 +54,12 @@ resource "aws_elasticache_replication_group" "main" {
   subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [aws_security_group.elasticache_sg.id]
 
-  at_rest_encryption_enabled  = true
+  at_rest_encryption_enabled = true
   transit_encryption_enabled = true
+  # Require TLS for all connections (matches rediss:// in ECS task env).
+  # No auth_token — connections are VPC-internal only; TLS provides transport
+  # security without a password, which is intentional for this private service.
+  transit_encryption_mode = "required"
 
   tags = {
     Name = "${var.app_name}-backend-redis-${var.environment}"

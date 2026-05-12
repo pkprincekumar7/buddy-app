@@ -1,4 +1,5 @@
-# aws_region and environment are supplied via workflow inputs (TF_VAR_*)
-# All other values are read from SSM Parameter Store at apply time.
+# environment is supplied via workflow inputs (TF_VAR_environment).
+# This module has no aws_region variable — all resources are fixed to us-east-1.
 
-app_name = "buddy360"
+app_name             = "buddy360"
+frontend_bucket_name = "person-frontend-stg-bucket"

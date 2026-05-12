@@ -69,25 +69,41 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          data.aws_ssm_parameter.backend_bucket_arn.value,
-          "${data.aws_ssm_parameter.backend_bucket_arn.value}/*"
-        ]
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = ["arn:aws:s3:::${var.backend_bucket_name}"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = ["arn:aws:s3:::${var.backend_bucket_name}/*"]
       }
     ]
   })
 }
 
-# Required by ECS Exec (enable_execute_command). Safe to leave attached in prod
-# since the feature is disabled at the service level via var.enable_execute_command.
-resource "aws_iam_role_policy_attachment" "ecs_task_ssm" {
-  role       = aws_iam_role.ecs_task_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+# Required by ECS Exec (enable_execute_command). Scoped to the four
+# ssmmessages:* actions that ECS Exec actually uses — avoids the much broader
+# AmazonSSMManagedInstanceCore managed policy (which also grants SSM RunCommand,
+# ec2messages:*, compliance checks, etc.). Safe to leave attached in prod since
+# the feature is disabled at the service level via var.enable_execute_command.
+resource "aws_iam_role_policy" "ecs_task_exec_command" {
+  name = "${var.app_name}-ecs-task-exec-command-${var.environment}"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }

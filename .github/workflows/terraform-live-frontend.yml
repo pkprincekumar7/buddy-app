@@ -1,5 +1,5 @@
 name: Terraform Live Frontend
-run-name: Terraform Live Frontend (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Terraform Live Frontend (${{ inputs.action }}, ${{ inputs.environment }})
 
 on:
   workflow_dispatch:
@@ -23,29 +23,29 @@ on:
           - dev
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+  workflow_call:
+    inputs:
+      action:
+        type: string
         required: true
-        default: "ap-south-1"
-        type: choice
-        options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+      environment:
+        type: string
+        required: true
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: terraform-live-frontend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: terraform-live-frontend-buddy360-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_VERSION: "1.13.0"
-  TF_VAR_aws_region:  ${{ inputs.aws_region }}
   TF_VAR_environment: ${{ inputs.environment }}
+  # No TF_VAR_aws_region — the module has no aws_region variable.
+  # All resources are hardcoded to us-east-1 (S3 bucket policy, SSM reads).
 
 jobs:
   terraform:
@@ -62,12 +62,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:     ${{ secrets.ROLE_ARN }}
+          APP_NAME:     ${{ secrets.APP_NAME }}
+          STATE_BUCKET: ${{ secrets.STATE_BUCKET }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"     ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"     ]] && missing+=("APP_NAME")
+          [[ -z "$STATE_BUCKET" ]] && missing+=("STATE_BUCKET")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: terraform-live-frontend-${{ inputs.environment }}
-          aws-region: ${{ inputs.aws_region }}
+          # All resources in this module are in us-east-1.
+          aws-region: us-east-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -78,7 +95,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/frontend/${{ inputs.aws_region }}/terraform.tfstate"
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/frontend/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -90,6 +107,24 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
 
+      - name: Show plan summary
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: |
+          {
+            echo "### Terraform Plan — frontend / ${{ inputs.environment }}"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artefact
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-frontend-${{ inputs.environment }}
+          path: infra-live-frontend/terraform/tfplan.bin
+          retention-days: 7
+
       - name: Terraform Apply
         if: inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan.bin
@@ -97,6 +132,24 @@ jobs:
       - name: Terraform Plan (destroy)
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Show destroy plan summary
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: |
+          {
+            echo "### Terraform Destroy Plan — frontend / ${{ inputs.environment }}"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload destroy plan artefact
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-frontend-destroy-${{ inputs.environment }}
+          path: infra-live-frontend/terraform/tfplan.bin
+          retention-days: 7
 
       - name: Terraform Destroy
         if: inputs.action == 'destroy'

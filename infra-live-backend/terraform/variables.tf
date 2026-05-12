@@ -2,9 +2,20 @@ variable "aws_region" {
   description = "AWS region to deploy resources"
   type        = string
 
+  # Multi-region expansion checklist — do all of the following for each new region:
+  #   1. Provision an ACM certificate in the new region covering the internal ALB
+  #      subdomain (e.g. buddy-internal-<env>.<domain>) and add it as a GitHub
+  #      environment secret: ACM_CERTIFICATE_ARN_<REGION_UPPER_SNAKE>.
+  #   2. Add a case entry to the "Resolve ACM certificate ARN for backend region"
+  #      step in .github/workflows/terraform-live-backend.yml.
+  #   3. Add the new region as a choice in the aws_region workflow_dispatch input
+  #      in terraform-live-backend.yml and terraform-live-all.yml.
+  #   4. Remove or relax the validation below once a second region is active.
+  #   5. Update infra-live-edge/terraform/variables.tf similarly — the edge module
+  #      must read the ALB FQDN for whichever backend_region is being targeted.
   validation {
-    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
-    error_message = "aws_region must be one of: ap-south-1, eu-west-1, us-east-1."
+    condition     = var.aws_region == "ap-south-1"
+    error_message = "aws_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
   }
 }
 
@@ -73,8 +84,15 @@ variable "hosted_zone_id" {
   type        = string
 }
 
-variable "acm_certificate_arn_ap_south_1" {
-  description = "ACM certificate ARN in ap-south-1 covering the internal ALB subdomain"
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN in the backend region covering the internal ALB subdomain"
+  type        = string
+}
+
+# -- S3 -----------------------------------------------------------------------
+
+variable "backend_bucket_name" {
+  description = "Pre-existing S3 bucket name for backend application use (us-east-1, shared across regions)"
   type        = string
 }
 
@@ -123,13 +141,13 @@ variable "enable_execute_command" {
 # -- Application settings ------------------------------------------------------
 
 variable "app_env" {
-  description = "APP_ENV value passed to the backend container"
+  description = "APP_ENV value passed to the backend container (dev, stg, or prod)"
   type        = string
-  default     = "prod"
 }
 
 variable "openai_model" {
   type    = string
+  # gpt-5.4-mini is a valid, tested model identifier — not a typo.
   default = "gpt-5.4-mini"
 }
 
@@ -140,7 +158,7 @@ variable "anthropic_model" {
 
 variable "gemini_model" {
   type    = string
-  default = "gemini-1.5-flash"
+  default = "gemini-1.5-pro"
 }
 
 variable "llm_timeout_seconds" {
@@ -156,5 +174,16 @@ variable "llm_hourly_limit" {
 variable "default_region" {
   type    = string
   default = "us"
+}
+
+variable "cors_origins" {
+  description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
+  type        = string
+}
+
+variable "cookie_domain" {
+  description = "Cookie domain for session cookies (empty string means browser default)"
+  type        = string
+  default     = ""
 }
 

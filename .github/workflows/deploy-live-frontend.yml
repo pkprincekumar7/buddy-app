@@ -1,5 +1,5 @@
 name: Deploy Live Frontend
-run-name: Deploy Live Frontend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Deploy Live Frontend (${{ inputs.environment }})
 
 on:
   workflow_dispatch:
@@ -13,22 +13,18 @@ on:
           - dev
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+  workflow_call:
+    inputs:
+      environment:
+        type: string
         required: true
-        default: "ap-south-1"
-        type: choice
-        options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: deploy-live-frontend-${{ secrets.APP_NAME }}-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: deploy-live-frontend-buddy360-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -44,11 +40,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:             ${{ secrets.ROLE_ARN }}
+          APP_NAME:             ${{ secrets.APP_NAME }}
+          VITE_API_URL:         ${{ secrets.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME")
+          [[ -z "$VITE_API_URL"          ]] && missing+=("VITE_API_URL")
+          [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
-          aws-region: ${{ inputs.aws_region }}
+          role-session-name: deploy-live-frontend-${{ inputs.environment }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets before the Node.js build so the workflow
+      # fails fast if edge infra has not been applied yet — avoiding a wasted
+      # npm install + build before hitting the SSM error.
+      # SSM parameters are written automatically by terraform-live-edge.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/cloudfront_distribution_id")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "ERROR: S3 bucket not found in SSM. Run terraform-live-edge workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: CloudFront distribution ID not found in SSM. Run terraform-live-edge workflow (apply) first."
+            exit 1
+          fi
+
+          echo "s3_bucket=$S3_BUCKET"   >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "S3 bucket:               $S3_BUCKET"
+          echo "CloudFront distribution: $CF_DIST_ID"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -67,36 +115,6 @@ jobs:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
-
-      # -------------------------------------------------------------------------
-      # Resolve deployment targets.
-      # SSM parameters are written automatically by terraform-live-frontend.yml
-      # after every successful apply — no manual secret copying needed.
-      # -------------------------------------------------------------------------
-      - name: Resolve deployment targets
-        id: tf_outputs
-        run: |
-          # SSM params are always written to us-east-1 (control-plane region).
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
-
-          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/s3_bucket_name")
-          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/cloudfront_distribution_id")
-
-          if [ -z "$S3_BUCKET" ]; then
-            echo "ERROR: S3 bucket not found in SSM. Run terraform-live-frontend workflow (apply) first."
-            exit 1
-          fi
-          if [ -z "$CF_DIST_ID" ]; then
-            echo "ERROR: CloudFront distribution ID not found in SSM. Run terraform-live-frontend workflow (apply) first."
-            exit 1
-          fi
-
-          echo "s3_bucket=$S3_BUCKET"   >> $GITHUB_OUTPUT
-          echo "cf_dist_id=$CF_DIST_ID" >> $GITHUB_OUTPUT
-          echo "S3 bucket:              $S3_BUCKET"
-          echo "CloudFront distribution: $CF_DIST_ID"
 
       - name: Sync to S3
         run: |
@@ -122,7 +140,7 @@ jobs:
             --query "Invalidation.Id" \
             --output text)
           echo "Invalidation ID: $INVALIDATION_ID"
-          echo "invalidation_id=$INVALIDATION_ID" >> $GITHUB_OUTPUT
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for invalidation to complete
         run: |

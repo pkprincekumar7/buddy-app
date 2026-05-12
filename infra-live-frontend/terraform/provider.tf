@@ -5,7 +5,7 @@ terraform {
     region       = "us-east-1"
     use_lockfile = true
     # bucket and key are supplied at terraform init via -backend-config
-    # key pattern: terraform-state-files/{app_name}/{env}/frontend/{region}/terraform.tfstate
+    # key pattern: terraform-state-files/{app_name}/{env}/frontend/us-east-1/terraform.tfstate
   }
 
   required_providers {
@@ -16,22 +16,10 @@ terraform {
   }
 }
 
-# Default provider — region comes from workflow input.
+# Both providers are hardcoded to us-east-1 — every resource in this
+# module (S3 bucket policy, SSM reads) lives in us-east-1. There is no
+# aws_region variable; hardcoding prevents accidental cross-region drift.
 provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project     = var.app_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
-  }
-}
-
-# Frontend S3 bucket lives in us-east-1 — bucket policy must use this alias.
-provider "aws" {
-  alias  = "us_east_1"
   region = "us-east-1"
 
   default_tags {
@@ -43,8 +31,7 @@ provider "aws" {
   }
 }
 
-# SSM reads always come from us-east-1 (control-plane region).
-# When aws_region is already us-east-1 this alias is a no-op.
+# Explicit alias used by ssm_read.tf — consistent with the SSM control-plane pattern.
 provider "aws" {
   alias  = "ssm"
   region = "us-east-1"

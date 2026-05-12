@@ -26,7 +26,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   aliases             = [local.fqdn]
   web_acl_id          = aws_wafv2_web_acl.frontend.arn
 
-  price_class = "PriceClass_200"
+  price_class = var.cloudfront_price_class
 
   # -- Origins -----------------------------------------------------------------
 

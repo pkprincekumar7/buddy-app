@@ -1,0 +1,182 @@
+# ---------------------------------------------------------------------------
+# Full-stack orchestrator — provisions or tears down all infra, then deploys.
+#
+# Apply order (plan / apply):
+#   1. terraform-live-backend   VPC / ECS / ALB / Redis / ECR / Secrets Manager
+#   2. terraform-live-edge      CloudFront / WAF / public DNS
+#   3. terraform-live-frontend  S3 bucket policy (OAC)
+#   4. deploy-live-backend      Docker build + ECS rolling update  (apply only)
+#   5. deploy-live-frontend     React build + S3 sync + CF invalidation  (apply only)
+#
+# Destroy order (plan-destroy / destroy) — reverse dependency order:
+#   1. terraform-live-frontend  Remove S3 bucket policy first
+#   2. terraform-live-edge      Remove CloudFront / WAF
+#   3. terraform-live-backend   Remove VPC / ECS / ALB / Redis / ECR
+# ---------------------------------------------------------------------------
+
+name: Terraform Live — Full Stack
+run-name: "Full Stack (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action — deploy steps only run on apply; destroy runs in reverse dependency order"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-destroy
+          - destroy
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "Backend AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        # Multi-region expansion: add the new region here. This value is
+        # forwarded to terraform-live-backend, terraform-live-edge, and
+        # deploy-live-backend — add it in those workflows too.
+        # Full checklist: infra-live-backend/terraform/variables.tf.
+        options:
+          - ap-south-1
+      deploy:
+        description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
+        required: false
+        default: "true"
+        type: boolean
+
+# OIDC token + repo read required by every called workflow.
+permissions:
+  id-token: write
+  contents: read
+
+# Only one full-stack run per environment+region at a time.
+concurrency:
+  group: terraform-live-all-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Step 1 — Backend infrastructure (regional)
+  # ---------------------------------------------------------------------------
+  tf-backend:
+    name: "1 · Terraform Backend"
+    if: inputs.action == 'plan' || inputs.action == 'apply'
+    uses: ./.github/workflows/terraform-live-backend.yml
+    with:
+      action:      ${{ inputs.action }}
+      environment: ${{ inputs.environment }}
+      aws_region:  ${{ inputs.aws_region }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Step 2 — Edge (CloudFront + WAF + public DNS) — global, us-east-1
+  # backend_region tells CloudFront which ALB to use as /api/* origin.
+  # aws_region is passed as the state-key region (matches backend region).
+  # ---------------------------------------------------------------------------
+  tf-edge:
+    name: "2 · Terraform Edge"
+    needs: tf-backend
+    if: inputs.action == 'plan' || inputs.action == 'apply'
+    uses: ./.github/workflows/terraform-live-edge.yml
+    with:
+      action:         ${{ inputs.action }}
+      environment:    ${{ inputs.environment }}
+      aws_region:     ${{ inputs.aws_region }}
+      backend_region: ${{ inputs.aws_region }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Step 3 — Frontend bucket policy (always us-east-1)
+  # No aws_region input — the frontend module hardcodes us-east-1 for all
+  # resources (S3 bucket policy, SSM reads) and the state key.
+  # ---------------------------------------------------------------------------
+  tf-frontend:
+    name: "3 · Terraform Frontend"
+    needs: tf-edge
+    if: inputs.action == 'plan' || inputs.action == 'apply'
+    uses: ./.github/workflows/terraform-live-frontend.yml
+    with:
+      action:      ${{ inputs.action }}
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Step 4 — Deploy backend (Docker build + ECS rolling update)
+  # Skipped when action=plan or deploy=false.
+  # ---------------------------------------------------------------------------
+  deploy-backend:
+    name: "4 · Deploy Backend"
+    needs: tf-frontend
+    if: inputs.action == 'apply' && inputs.deploy
+    uses: ./.github/workflows/deploy-live-backend.yml
+    with:
+      environment: ${{ inputs.environment }}
+      aws_region:  ${{ inputs.aws_region }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Step 5 — Deploy frontend (React build + S3 sync + CloudFront invalidation)
+  # Skipped when action=plan or deploy=false (inherits skip from step 4).
+  # ---------------------------------------------------------------------------
+  deploy-frontend:
+    name: "5 · Deploy Frontend"
+    needs: deploy-backend
+    if: inputs.action == 'apply' && inputs.deploy
+    uses: ./.github/workflows/deploy-live-frontend.yml
+    with:
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Destroy step 1 — Frontend bucket policy (reverse order: remove OAC first)
+  # ---------------------------------------------------------------------------
+  destroy-tf-frontend:
+    name: "D1 · Terraform Frontend (destroy)"
+    if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+    uses: ./.github/workflows/terraform-live-frontend.yml
+    with:
+      action:      ${{ inputs.action }}
+      environment: ${{ inputs.environment }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Destroy step 2 — Edge (CloudFront / WAF)
+  # ---------------------------------------------------------------------------
+  destroy-tf-edge:
+    name: "D2 · Terraform Edge (destroy)"
+    needs: destroy-tf-frontend
+    if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+    uses: ./.github/workflows/terraform-live-edge.yml
+    with:
+      action:         ${{ inputs.action }}
+      environment:    ${{ inputs.environment }}
+      aws_region:     ${{ inputs.aws_region }}
+      backend_region: ${{ inputs.aws_region }}
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Destroy step 3 — Backend (VPC / ECS / ALB / Redis / ECR)
+  # ---------------------------------------------------------------------------
+  destroy-tf-backend:
+    name: "D3 · Terraform Backend (destroy)"
+    needs: destroy-tf-edge
+    if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+    uses: ./.github/workflows/terraform-live-backend.yml
+    with:
+      action:      ${{ inputs.action }}
+      environment: ${{ inputs.environment }}
+      aws_region:  ${{ inputs.aws_region }}
+    secrets: inherit
