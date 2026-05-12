@@ -38,10 +38,19 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
 ║ ECR              ║ ECR              ║ ECR              ║
 ║ Secrets Manager  ║ Secrets Manager  ║ Secrets Manager  ║
 ╚══════════════════╩══════════════════╩══════════════════╝
-                  │ TLS (internet)
-         ┌────────▼────────┐
-         │  MongoDB Atlas  │  (global managed service)
-         └─────────────────┘
+         │                  │                  │
+         │ TLS              │ TLS              │ TLS
+         ▼                  ▼                  ▼
+┌────────────────────────────────────────────────────────┐
+│             MongoDB Atlas — Global Cluster             │
+│          (sharded by `location` field · TLS)           │
+├──────────────────┬──────────────────┬──────────────────┤
+│   Zone: APAC     │    Zone: EU      │  Zone: Americas  │
+│  (ap-south-1)    │  (eu-west-1)     │  (us-east-1)     │
+│  location=APAC   │  location=EU     │  location=AMER   │
+├──────────────────┴──────────────────┴──────────────────┤
+│         cross-zone replication (Atlas managed)         │
+└────────────────────────────────────────────────────────┘
 ```
 
 **TLS chain (end-to-end):**
@@ -148,12 +157,15 @@ Configure in **GitHub → Settings → Environments** (one set per environment: 
 | `VITE_GOOGLE_CLIENT_ID` | `deploy-live-frontend` | Frontend env var: Google OAuth client ID |
 | `JWT_SECRET` | `terraform-live-backend` | Injected into Secrets Manager |
 | `GOOGLE_CLIENT_ID` | `terraform-live-backend` | Injected into Secrets Manager |
-| `OPENAI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager |
-| `ANTHROPIC_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager |
-| `GEMINI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager |
+| `OPENAI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (required) |
+| `ANTHROPIC_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
+| `GEMINI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
+| `OPENAI_MODEL` | `terraform-live-backend` | OpenAI model identifier passed as ECS env var (required, e.g. `gpt-4o-mini`) |
+| `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (optional — falls back to tfvars default) |
+| `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (optional — falls back to tfvars default) |
 | `CORS_ORIGINS` | `terraform-live-backend` | Passed as `CORS_ORIGINS` env var to the ECS container (not a secret) |
 | `COOKIE_DOMAIN` | `terraform-live-backend` | Passed as `COOKIE_DOMAIN` env var to the ECS container (not a secret) |
-| `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager |
+| `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager (required) |
 
 ---
 
@@ -268,8 +280,8 @@ Repeat step 3 for each deployed backend region before destroying edge.
 
 1. Reads `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` from SSM under `/{APP}/{env}/backend/{region}/`
 2. Builds Docker image tagged `:<git-sha>` and `:latest`; pushes to ECR
-3. Force-deploys ECS service; tasks pull `:latest` image
-4. Waits up to 15 minutes for service to reach steady state (deployment circuit breaker + auto-rollback enabled)
+3. Registers a new task definition revision with the image pinned to `:<git-sha>`; updates the ECS service to that revision
+4. Waits up to 15 minutes for service to reach steady state; ECS circuit breaker rolls back automatically on failure
 
 ### Frontend deploy — `deploy-live-frontend`
 
@@ -285,7 +297,7 @@ Repeat step 3 for each deployed backend region before destroying edge.
 
 Backend app secrets are populated from GitHub environment secrets on every `terraform-live-backend action=apply`. `recovery_window_in_days = 0` means the secret is **hard-deleted immediately** on `terraform destroy` — no 30-day window — allowing clean re-applies without naming conflicts.
 
-If a GitHub secret is not set the value falls back to `REPLACE_ME`.
+The required keys (`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `MONGODB_URI`) are validated before apply. The optional LLM keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) fall back to `REPLACE_ME` if not set — the app will start but those providers will be unavailable.
 
 > **Note:** `CORS_ORIGINS` and `COOKIE_DOMAIN` are plain environment variables injected into the ECS task definition — they are **not** stored in Secrets Manager. To change them, update the `CORS_ORIGINS` / `COOKIE_DOMAIN` GitHub environment secrets and re-run `terraform-live-backend action=apply`.
 
@@ -411,5 +423,5 @@ Adding a second backend region repeats the backend stack cost for that environme
 | Stop dev/stg ECS service outside business hours (`desired_count = 0`) | up to 65 % of ECS cost | dev, stg |
 | Use `cache.t3.micro` for stg instead of t3.small | ~$13/month | stg |
 | Enable CloudFront caching for `/api/*` responses where safe | reduces ALB LCU + ECS load | all |
-| Use CloudFront Price Class 100 (US/EU only) instead of All | ~15–20 % of CF cost | prod (if traffic is US/EU-only) |
+| Use CloudFront Price Class 100 (US/EU only) instead of PriceClass_200 | ~10–15 % of CF cost | prod (dev/stg already use PriceClass_100; set `cloudfront_price_class` in prod.tfvars) |
 | Reduce CloudWatch log retention from 30 to 7 days in dev | ~$0.50/month | dev |
