@@ -176,8 +176,7 @@ Return JSON with this exact structure:
         }
       });
 
-      // The LLM API wraps data under "properties" when response_json_schema is used.
-      const plan = result.properties ?? result;
+      const plan = result;
 
       // Restore completed activities at their original positions so progress is preserved.
       if (Object.keys(completedSnapshot).length > 0) {

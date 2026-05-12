@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 from app.deps import get_current_user
 from app.limiter import user_limiter
-from app.models import User
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class TranscribeResponse(BaseModel):
 async def transcribe_audio(
     request: Request,
     audio: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     if _openai_client is None:
         if not settings.openai_api_key:

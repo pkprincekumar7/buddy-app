@@ -1,23 +1,14 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Query, Request
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.database import get_db, get_upsert_insert
+from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import user_limiter
-from app.models import (
-    CompletedGrowthAreaRecord,
-    User,
-    UserGoalsRecord,
-    UserJourneyRecord,
-    UserOnboardingRecord,
-    UserPersonalityRecord,
-    UserPreferencesRecord,
-    UserRecommendationsProgressRecord,
-)
+from app import models
 from app.models_api import (
     AppendGrowthAreaRequest,
     ChildActivity,
@@ -47,91 +38,102 @@ log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# ORM ↔ schema helpers
+# Document → schema helpers
 # ---------------------------------------------------------------------------
 
-def _preferences_to_schema(row: UserPreferencesRecord) -> UserPreferences:
-    return UserPreferences(tts_enabled=row.tts_enabled, last_visited_path=row.last_visited_path)
+def _doc_to_preferences(user: dict) -> UserPreferences:
+    prefs = user.get("preferences") or {}
+    return UserPreferences(
+        tts_enabled=prefs.get("tts_enabled", True),
+        last_visited_path=prefs.get("last_visited_path"),
+    )
 
 
-def _personality_row_to_schema(row: UserPersonalityRecord) -> PersonalityAnalysis:
+def _doc_to_personality(data: dict | None) -> PersonalityAnalysis | None:
+    if not data:
+        return None
+    vm_data = data.get("view_model") or {}
+    prof_data = vm_data.get("profile") or {}
     profile = PersonalityProfile(
-        name=row.profile_name or "",
-        category=row.category or "",
-        description=row.description or "",
-        color=row.color or "",
-        traits=row.traits or [],
-        strengths=row.strengths or [],
-        growth_areas=row.growth_areas or [],
+        name=prof_data.get("name", ""),
+        category=prof_data.get("category", ""),
+        description=prof_data.get("description", ""),
+        color=prof_data.get("color", ""),
+        traits=prof_data.get("traits") or [],
+        strengths=prof_data.get("strengths") or [],
+        growth_areas=prof_data.get("growth_areas") or [],
         famous_people=[
-            FamousPerson(**p) for p in (row.famous_people or [])
+            FamousPerson(**p) for p in (prof_data.get("famous_people") or [])
             if isinstance(p, dict) and p.get("name")
         ],
     )
     vm = PersonalityViewModel(
-        type=row.personality_type or "",
-        scores=row.scores or {},
+        type=vm_data.get("type", ""),
+        scores=vm_data.get("scores") or {},
         profile=profile,
     )
-    return PersonalityAnalysis(source=row.source or "", view_model=vm)
+    return PersonalityAnalysis(source=data.get("source", ""), view_model=vm)
 
 
-def _journey_row_to_schema(row: UserJourneyRecord) -> JourneyRecommendations:
+def _doc_to_journey(data: dict | None) -> JourneyRecommendations | None:
+    if not data:
+        return None
     return JourneyRecommendations(
-        pathway_overview=row.overview or "",
-        focus_areas=[FocusArea(**fa) for fa in (row.focus_areas or []) if isinstance(fa, dict)],
-        initial_missions=[InitialMission(**im) for im in (row.initial_missions or []) if isinstance(im, dict)],
+        pathway_overview=data.get("pathway_overview", ""),
+        focus_areas=[FocusArea(**fa) for fa in (data.get("focus_areas") or []) if isinstance(fa, dict)],
+        initial_missions=[InitialMission(**im) for im in (data.get("initial_missions") or []) if isinstance(im, dict)],
     )
 
 
-def _onboarding_to_schema(
-    ob: UserOnboardingRecord | None,
-    per: UserPersonalityRecord | None,
-    jrn: UserJourneyRecord | None,
-) -> OnboardingState:
+def _doc_to_onboarding(doc: dict | None) -> OnboardingState:
+    if not doc:
+        return OnboardingState()
     child_data: OnboardingChildData | None = None
-    if ob and ob.phase > 0:
+    if doc.get("phase", 0) > 0:
         child_data = OnboardingChildData(
-            name=ob.child_name or "",
-            age=ob.child_age or "",
-            school=ob.child_school or "",
-            strengths=ob.child_strengths or [],
-            hobbies=ob.child_hobbies or [],
-            thinking_pattern=ob.child_thinking_pattern or "",
-            communication_style=ob.child_communication_style or "",
-            energy_level=ob.child_energy_level or "",
-            social_behaviour=ob.child_social_behaviour or "",
-            emotional_behaviour=ob.child_emotional_behaviour or "",
+            name=doc.get("child_name") or "",
+            age=doc.get("child_age") or "",
+            school=doc.get("child_school") or "",
+            strengths=doc.get("child_strengths") or [],
+            hobbies=doc.get("child_hobbies") or [],
+            thinking_pattern=doc.get("child_thinking_pattern") or "",
+            communication_style=doc.get("child_communication_style") or "",
+            energy_level=doc.get("child_energy_level") or "",
+            social_behaviour=doc.get("child_social_behaviour") or "",
+            emotional_behaviour=doc.get("child_emotional_behaviour") or "",
         )
     return OnboardingState(
-        phase=ob.phase if ob else 0,
+        phase=doc.get("phase", 0),
         child_data=child_data,
-        personality=_personality_row_to_schema(per) if per else None,
-        recommendations=_journey_row_to_schema(jrn) if jrn else None,
+        personality=_doc_to_personality(doc.get("personality")),
+        recommendations=_doc_to_journey(doc.get("journey")),
     )
 
 
-def _completed_area_row_to_schema(row: CompletedGrowthAreaRecord) -> CompletedGrowthArea:
+def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
     child_activity: ChildActivity | None = None
-    has_activity = row.child_selections or row.child_summary or row.child_strengths or row.child_suggested
+    has_activity = (
+        doc.get("child_selections") or doc.get("child_summary")
+        or doc.get("child_strengths") or doc.get("child_suggested")
+    )
     if has_activity:
         results: ChildActivityResults | None = None
-        if row.child_summary or row.child_strengths or row.child_suggested:
+        if doc.get("child_summary") or doc.get("child_strengths") or doc.get("child_suggested"):
             results = ChildActivityResults(
-                summary=row.child_summary or "",
-                strengths=row.child_strengths or [],
-                suggested_activities=row.child_suggested or [],
+                summary=doc.get("child_summary") or "",
+                strengths=doc.get("child_strengths") or [],
+                suggested_activities=doc.get("child_suggested") or [],
             )
         child_activity = ChildActivity(
-            selections=row.child_selections or [],
+            selections=doc.get("child_selections") or [],
             results=results,
         )
     return CompletedGrowthArea(
-        area_id=row.area_id,
-        area_name=row.area_name,
-        area_color=row.area_color,
-        answers=row.answers or {},
-        recommendations=row.recommendations,
+        area_id=doc["area_id"],
+        area_name=doc["area_name"],
+        area_color=doc["area_color"],
+        answers=doc.get("answers") or {},
+        recommendations=doc.get("recommendations"),
         child_activity=child_activity,
     )
 
@@ -142,30 +144,34 @@ def _completed_area_row_to_schema(row: CompletedGrowthAreaRecord) -> CompletedGr
 
 @router.get("/user/preferences", response_model=UserPreferences)
 @user_limiter.limit("60/minute")
-def get_preferences(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = db.get(UserPreferencesRecord, user.id)
-    return _preferences_to_schema(row) if row else UserPreferences()
+async def get_preferences(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    return _doc_to_preferences(user)
 
 
 @router.patch("/user/preferences", response_model=UserPreferences)
 @user_limiter.limit("30/minute")
-def patch_preferences(
+async def patch_preferences(
     request: Request,
     body: UserPreferencesPatch,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    row = db.get(UserPreferencesRecord, user.id)
-    if not row:
-        row = UserPreferencesRecord(user_id=user.id)
-        db.add(row)
-    if 'tts_enabled' in body.model_fields_set:
-        row.tts_enabled = body.tts_enabled
-    if 'last_visited_path' in body.model_fields_set:
-        row.last_visited_path = body.last_visited_path
-    db.commit()
-    db.refresh(row)
-    return _preferences_to_schema(row)
+    set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    if "tts_enabled" in body.model_fields_set:
+        set_fields["preferences.tts_enabled"] = body.tts_enabled
+    if "last_visited_path" in body.model_fields_set:
+        set_fields["preferences.last_visited_path"] = body.last_visited_path
+
+    updated = await db[models.USERS].find_one_and_update(
+        {"_id": user["_id"], "location": user["location"]},
+        {"$set": set_fields},
+        return_document=True,
+    )
+    return _doc_to_preferences(updated or user)
 
 
 # ---------------------------------------------------------------------------
@@ -174,92 +180,71 @@ def patch_preferences(
 
 @router.get("/user/onboarding", response_model=OnboardingState)
 @user_limiter.limit("60/minute")
-def get_onboarding(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    ob = db.get(UserOnboardingRecord, user.id)
-    per = db.get(UserPersonalityRecord, user.id)
-    jrn = db.get(UserJourneyRecord, user.id)
-    return _onboarding_to_schema(ob, per, jrn)
+async def get_onboarding(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    doc = await db[models.ONBOARDING].find_one({"_id": user["_id"], "location": user["location"]})
+    return _doc_to_onboarding(doc)
 
 
 @router.patch("/user/onboarding", response_model=OnboardingState)
 @user_limiter.limit("20/minute")
-def patch_onboarding(
+async def patch_onboarding(
     request: Request,
     body: OnboardingPatch,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    ob = db.get(UserOnboardingRecord, user.id)
+    now = datetime.now(timezone.utc)
+    set_fields: dict = {"updated_at": now}
+    # _id and location are equality conditions in the filter; MongoDB sets them
+    # automatically on insert, so they are omitted from $setOnInsert.
+    set_on_insert: dict = {"created_at": now}
 
-    if body.phase is not None or body.child_data is not None or body.clear_child_data:
-        if not ob:
-            ob = UserOnboardingRecord(user_id=user.id)
-            db.add(ob)
-        if body.phase is not None:
-            ob.phase = body.phase
-        if body.clear_child_data:
-            ob.child_name = ob.child_age = ob.child_school = None
-            ob.child_strengths = ob.child_hobbies = None
-            ob.child_thinking_pattern = ob.child_communication_style = None
-            ob.child_energy_level = ob.child_social_behaviour = ob.child_emotional_behaviour = None
-        elif body.child_data is not None:
-            cd = body.child_data
-            ob.child_name = cd.name or None
-            ob.child_age = cd.age or None
-            ob.child_school = cd.school or None
-            ob.child_strengths = cd.strengths or None
-            ob.child_hobbies = cd.hobbies or None
-            ob.child_thinking_pattern = cd.thinking_pattern or None
-            ob.child_communication_style = cd.communication_style or None
-            ob.child_energy_level = cd.energy_level or None
-            ob.child_social_behaviour = cd.social_behaviour or None
-            ob.child_emotional_behaviour = cd.emotional_behaviour or None
+    if body.phase is not None:
+        set_fields["phase"] = body.phase
 
-    per = db.get(UserPersonalityRecord, user.id)
+    if body.clear_child_data:
+        for f in [
+            "child_name", "child_age", "child_school", "child_strengths", "child_hobbies",
+            "child_thinking_pattern", "child_communication_style", "child_energy_level",
+            "child_social_behaviour", "child_emotional_behaviour",
+        ]:
+            set_fields[f] = None
+    elif body.child_data is not None:
+        cd = body.child_data
+        set_fields.update({
+            "child_name": cd.name or None,
+            "child_age": cd.age or None,
+            "child_school": cd.school or None,
+            "child_strengths": cd.strengths or None,
+            "child_hobbies": cd.hobbies or None,
+            "child_thinking_pattern": cd.thinking_pattern or None,
+            "child_communication_style": cd.communication_style or None,
+            "child_energy_level": cd.energy_level or None,
+            "child_social_behaviour": cd.social_behaviour or None,
+            "child_emotional_behaviour": cd.emotional_behaviour or None,
+        })
+
     if body.clear_personality:
-        if per:
-            db.delete(per)
-            per = None
+        set_fields["personality"] = None
     elif body.personality is not None:
-        vm = body.personality.view_model
-        prof = vm.profile
-        if not per:
-            per = UserPersonalityRecord(user_id=user.id)
-            db.add(per)
-        per.source = body.personality.source
-        per.personality_type = vm.type
-        per.profile_name = prof.name
-        per.category = prof.category
-        per.description = prof.description
-        per.color = prof.color
-        per.scores = vm.scores
-        per.traits = prof.traits
-        per.strengths = prof.strengths
-        per.growth_areas = prof.growth_areas
-        per.famous_people = [fp.model_dump() for fp in prof.famous_people]
+        set_fields["personality"] = body.personality.model_dump()
 
-    jrn = db.get(UserJourneyRecord, user.id)
     if body.clear_recommendations:
-        if jrn:
-            db.delete(jrn)
-            jrn = None
+        set_fields["journey"] = None
     elif body.recommendations is not None:
-        rec = body.recommendations
-        if not jrn:
-            jrn = UserJourneyRecord(user_id=user.id)
-            db.add(jrn)
-        jrn.overview = rec.pathway_overview
-        jrn.focus_areas = [fa.model_dump() for fa in rec.focus_areas]
-        jrn.initial_missions = [im.model_dump() for im in rec.initial_missions]
+        set_fields["journey"] = body.recommendations.model_dump()
 
-    db.commit()
-    if ob:
-        db.refresh(ob)
-    if per:
-        db.refresh(per)
-    if jrn:
-        db.refresh(jrn)
-    return _onboarding_to_schema(ob, per, jrn)
+    doc = await db[models.ONBOARDING].find_one_and_update(
+        {"_id": user["_id"], "location": user["location"]},
+        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        upsert=True,
+        return_document=True,
+    )
+    return _doc_to_onboarding(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -268,38 +253,41 @@ def patch_onboarding(
 
 @router.get("/user/recommendations-progress", response_model=RecommendationsProgress)
 @user_limiter.limit("60/minute")
-def get_recommendations_progress(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = db.get(UserRecommendationsProgressRecord, user.id)
-    if not row or not row.progress:
+async def get_recommendations_progress(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    doc = await db[models.RECOMMENDATIONS].find_one({"_id": user["_id"], "location": user["location"]})
+    if not doc or not doc.get("progress"):
         return RecommendationsProgress()
-    return RecommendationsProgress.model_validate(row.progress)
+    return RecommendationsProgress.model_validate(doc["progress"])
 
 
 @router.patch("/user/recommendations-progress", response_model=RecommendationsProgress)
 @user_limiter.limit("30/minute")
-# Full-replace semantics: the entire progress blob is overwritten.
-# Callers must GET first, merge client-side, then send the complete object.
-def patch_recommendations_progress(
+async def patch_recommendations_progress(
     request: Request,
     body: RecommendationsProgress,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    row = db.get(UserRecommendationsProgressRecord, user.id)
-    if not row:
-        row = UserRecommendationsProgressRecord(user_id=user.id)
-        db.add(row)
+    now = datetime.now(timezone.utc)
     progress_dict = body.model_dump()
-    row.progress = progress_dict
-    # Keep promoted columns in sync so analytics queries can filter by step
-    # without scanning the JSON blob.
-    if "step" in progress_dict:
-        row.step = str(progress_dict["step"] or "intro")
-    if "current_area_index" in progress_dict:
-        row.current_area_index = int(progress_dict["current_area_index"] or 0)
-    db.commit()
-    db.refresh(row)
-    return RecommendationsProgress.model_validate(row.progress)
+    set_fields: dict = {
+        "progress": progress_dict,
+        "step": str(progress_dict.get("step") or "intro"),
+        "current_area_index": int(progress_dict.get("current_area_index") or 0),
+        "updated_at": now,
+    }
+    set_on_insert: dict = {"created_at": now}
+    doc = await db[models.RECOMMENDATIONS].find_one_and_update(
+        {"_id": user["_id"], "location": user["location"]},
+        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        upsert=True,
+        return_document=True,
+    )
+    return RecommendationsProgress.model_validate(doc["progress"]) if doc and doc.get("progress") else body
 
 
 # ---------------------------------------------------------------------------
@@ -308,36 +296,34 @@ def patch_recommendations_progress(
 
 @router.get("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
 @user_limiter.limit("60/minute")
-def list_completed_growth_areas(
+async def list_completed_growth_areas(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    rows = db.execute(
-        select(CompletedGrowthAreaRecord)
-        .where(CompletedGrowthAreaRecord.user_id == user.id)
-        .order_by(CompletedGrowthAreaRecord.created_at)
-        .limit(limit)
-        .offset(offset)
-    ).scalars().all()
-    return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
+    docs = await (
+        db[models.GROWTH_AREAS]
+        .find({"user_id": user["_id"], "location": user["location"]})
+        .sort("created_at", 1)
+        .skip(offset)
+        .to_list(limit)
+    )
+    return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
 @router.post("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
 @user_limiter.limit("20/minute")
-def append_completed_growth_area(
+async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    now = datetime.now(timezone.utc)
     ca = body.child_activity
-    insert_values = {
-        "id": str(uuid.uuid4()),
-        "user_id": user.id,
-        "area_id": body.area_id,
+    set_fields: dict = {
         "area_name": body.area_name,
         "area_color": body.area_color,
         "answers": body.answers,
@@ -346,36 +332,36 @@ def append_completed_growth_area(
         "child_summary": ca.results.summary if (ca and ca.results) else None,
         "child_strengths": ca.results.strengths if (ca and ca.results) else [],
         "child_suggested": ca.results.suggested_activities if (ca and ca.results) else [],
+        "updated_at": now,
     }
-    update_values = {k: v for k, v in insert_values.items() if k not in ("id", "user_id", "area_id")}
-    update_values["updated_at"] = func.now()
-    stmt = (
-        get_upsert_insert(db)(CompletedGrowthAreaRecord)
-        .values(**insert_values)
-        .on_conflict_do_update(
-            index_elements=["user_id", "area_id"],
-            set_=update_values,
-        )
+    # user_id, area_id, and location are equality conditions in the filter;
+    # only _id and created_at need explicit $setOnInsert.
+    set_on_insert: dict = {
+        "_id": str(uuid.uuid4()),
+        "created_at": now,
+    }
+    await db[models.GROWTH_AREAS].update_one(
+        {"user_id": user["_id"], "area_id": body.area_id, "location": user["location"]},
+        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        upsert=True,
     )
-    db.execute(stmt)
-    db.commit()
-
-    rows = db.execute(
-        select(CompletedGrowthAreaRecord)
-        .where(CompletedGrowthAreaRecord.user_id == user.id)
-        .order_by(CompletedGrowthAreaRecord.created_at)
-        .limit(200)
-    ).scalars().all()
-    return CompletedGrowthAreasResponse(areas=[_completed_area_row_to_schema(r) for r in rows])
+    docs = await (
+        db[models.GROWTH_AREAS]
+        .find({"user_id": user["_id"], "location": user["location"]})
+        .sort("created_at", 1)
+        .to_list(200)
+    )
+    return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
 @router.delete("/user/completed-growth-areas", status_code=204)
 @user_limiter.limit("10/minute")
-def clear_completed_growth_areas(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    db.execute(
-        delete(CompletedGrowthAreaRecord).where(CompletedGrowthAreaRecord.user_id == user.id)
-    )
-    db.commit()
+async def clear_completed_growth_areas(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await db[models.GROWTH_AREAS].delete_many({"user_id": user["_id"], "location": user["location"]})
 
 
 # ---------------------------------------------------------------------------
@@ -384,37 +370,45 @@ def clear_completed_growth_areas(request: Request, user: User = Depends(get_curr
 
 @router.get("/user/goals", response_model=UserGoals)
 @user_limiter.limit("60/minute")
-def get_goals(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = db.get(UserGoalsRecord, user.id)
-    if not row:
+async def get_goals(
+    request: Request,
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    doc = await db[models.GOALS].find_one({"_id": user["_id"], "location": user["location"]})
+    if not doc:
         return UserGoals()
-    plan = GoalsPlan.model_validate(row.goals_plan) if row.goals_plan else None
-    return UserGoals(parent_concern=row.parent_concern, plan=plan)
+    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc.get("goals_plan") else None
+    return UserGoals(parent_concern=doc.get("parent_concern"), plan=plan)
 
 
 @router.patch("/user/goals", response_model=UserGoals)
 @user_limiter.limit("20/minute")
-# Full-replace semantics for `plan`: when plan is provided it overwrites the entire goals_plan blob.
-# Callers must GET first, merge client-side, then send the complete plan.
-def patch_goals(
+async def patch_goals(
     request: Request,
     body: UserGoalsPatch,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    row = db.get(UserGoalsRecord, user.id)
-    if not row:
-        row = UserGoalsRecord(user_id=user.id)
-        db.add(row)
+    now = datetime.now(timezone.utc)
+    set_fields: dict = {"updated_at": now}
+    set_on_insert: dict = {"created_at": now}
+
     if body.clear_concern:
-        row.parent_concern = None
+        set_fields["parent_concern"] = None
     elif body.parent_concern is not None:
-        row.parent_concern = body.parent_concern
+        set_fields["parent_concern"] = body.parent_concern
+
     if body.clear_plan:
-        row.goals_plan = None
+        set_fields["goals_plan"] = None
     elif body.plan is not None:
-        row.goals_plan = body.plan.model_dump()
-    db.commit()
-    db.refresh(row)
-    plan = GoalsPlan.model_validate(row.goals_plan) if row.goals_plan else None
-    return UserGoals(parent_concern=row.parent_concern, plan=plan)
+        set_fields["goals_plan"] = body.plan.model_dump()
+
+    doc = await db[models.GOALS].find_one_and_update(
+        {"_id": user["_id"], "location": user["location"]},
+        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        upsert=True,
+        return_document=True,
+    )
+    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc and doc.get("goals_plan") else None
+    return UserGoals(parent_concern=doc.get("parent_concern") if doc else None, plan=plan)
