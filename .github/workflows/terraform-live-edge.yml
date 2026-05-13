@@ -1,5 +1,5 @@
 name: Terraform Live Edge
-run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.backend_region }})
+run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend: ${{ inputs.backend_region }})
 
 on:
   workflow_dispatch:
@@ -50,7 +50,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-live-edge-buddy360-${{ inputs.environment }}-${{ inputs.backend_region }}
+  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1-${{ inputs.backend_region }}
   cancel-in-progress: false
 
 env:
@@ -135,7 +135,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
           {
-            echo "### Terraform Plan — edge / ${{ inputs.environment }} / ${{ inputs.backend_region }}"
+            echo "### Terraform Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend: ${{ inputs.backend_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -145,7 +145,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-edge-${{ inputs.environment }}-${{ inputs.backend_region }}
+          name: tfplan-edge-${{ inputs.environment }}-us-east-1-backend-${{ inputs.backend_region }}
           path: infra-live-edge/terraform/tfplan.bin
           retention-days: 7
 
@@ -161,7 +161,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         run: |
           {
-            echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / ${{ inputs.backend_region }}"
+            echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend: ${{ inputs.backend_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -171,7 +171,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-edge-destroy-${{ inputs.environment }}-${{ inputs.backend_region }}
+          name: tfplan-edge-destroy-${{ inputs.environment }}-us-east-1-backend-${{ inputs.backend_region }}
           path: infra-live-edge/terraform/tfplan.bin
           retention-days: 7
 
