@@ -12,7 +12,7 @@ resource "aws_s3_bucket_policy" "frontend" {
   lifecycle {
     precondition {
       condition     = data.aws_ssm_parameter.s3_bucket_name.value == var.frontend_bucket_name
-      error_message = "frontend_bucket_name in tfvars (\"${var.frontend_bucket_name}\") does not match the value written to SSM by infra-live-edge (\"${data.aws_ssm_parameter.s3_bucket_name.value}\"). Update the tfvars value to match."
+      error_message = "frontend_bucket_name in tfvars (\"${var.frontend_bucket_name}\") does not match the bucket name written to SSM by infra-live-edge. Update the tfvars value to match the SSM parameter."
     }
   }
 
