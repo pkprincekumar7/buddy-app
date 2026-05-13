@@ -1,6 +1,6 @@
 # Live Infrastructure — Current State
 
-This guide covers the three Terraform modules and five GitHub Actions workflows that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
+This guide covers the three Terraform modules and six GitHub Actions workflows (five component workflows plus one orchestrating workflow) that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
 
 ---
 
@@ -44,9 +44,10 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
 ║  (public IP/IGW) ║
 ║  [private subnet]║
 ║  Redis (in-VPC)  ║
-║  ECR             ║
-║  Secrets Manager ║
 ╚══════════════════╝
+         │ outbound via Internet Gateway
+         ├──▶ ECR (ap-south-1)
+         ├──▶ Secrets Manager (ap-south-1)
          │
          │ TLS
          ▼
@@ -60,6 +61,7 @@ This guide covers the three Terraform modules and five GitHub Actions workflows 
 ```
 Browser ──HTTPS──▶ CloudFront ──HTTPS──▶ ALB (443) ──HTTP/8000──▶ ECS task (public subnet · assign_public_ip=true) ──TLS──▶ MongoDB Atlas (M0)
          (us-east-1 ACM cert)  (ap-south-1 ACM cert)  within VPC    outbound via Internet Gateway
+                                                       (TLS terminates at ALB; container receives plain HTTP within VPC)
 ```
 
 **Region roles:**
@@ -82,7 +84,7 @@ Browser ──HTTPS──▶ CloudFront ──HTTPS──▶ ALB (443) ──HTT
 | Frontend | `infra-live-frontend/` | `terraform-live-frontend.yml` | S3 bucket policy (CloudFront OAC access only) |
 | Backend deploy | — | `deploy-live-backend.yml` | Build + push Docker image; rolling ECS update |
 | Frontend deploy | — | `deploy-live-frontend.yml` | Build React app; sync to S3; CloudFront invalidation |
-| **Full stack** | — | **`terraform-live-all.yml`** | **Orchestrates all five workflows in sequence (single trigger)** |
+| **Full stack** | — | **`terraform-live-all.yml`** | **Orchestrates the five component workflows in sequence (single trigger)** |
 
 ---
 
@@ -107,6 +109,8 @@ Written by infra-live-edge:
 ```
 
 ### Read dependencies
+
+All paths below omit the `/{APP_NAME}/{env}` prefix. Full example: `/buddy360/dev/backend/ap-south-1/alb_internal_fqdn`.
 
 ```
 infra-live-edge      reads: /backend/ap-south-1/alb_internal_fqdn
@@ -136,7 +140,7 @@ deploy-live-frontend reads: /edge/s3_bucket_name
 
 ### GitHub Actions secrets
 
-Configure in **GitHub → Settings → Environments** (one set per environment: `dev`, `stg`, `prod`).
+Environment secrets are configured in **GitHub → Settings → Environments** (one set per environment: `dev`, `stg`, `prod`). Repository secrets (`APP_NAME`, `STATE_BUCKET`) are set at the repository level under **GitHub → Settings → Secrets and variables → Actions**.
 
 #### Repository secrets (shared across all environments)
 
@@ -158,14 +162,14 @@ Configure in **GitHub → Settings → Environments** (one set per environment: 
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | `terraform-live-edge` | ACM cert in `us-east-1` for CloudFront (must be in `us-east-1`) |
 | `VITE_API_URL` | `deploy-live-frontend` | Frontend env var: API base URL |
 | `VITE_GOOGLE_CLIENT_ID` | `deploy-live-frontend` | Frontend env var: Google OAuth client ID |
-| `JWT_SECRET` | `terraform-live-backend` | Injected into Secrets Manager |
-| `GOOGLE_CLIENT_ID` | `terraform-live-backend` | Injected into Secrets Manager |
+| `JWT_SECRET` | `terraform-live-backend` | Injected into Secrets Manager (required) |
+| `GOOGLE_CLIENT_ID` | `terraform-live-backend` | Injected into Secrets Manager (required) |
 | `OPENAI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (required) |
 | `ANTHROPIC_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
 | `GEMINI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
 | `OPENAI_MODEL` | `terraform-live-backend` | OpenAI model identifier passed as ECS env var (required; all envs default to `gpt-5.4-mini` in tfvars) |
-| `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (optional — falls back to tfvars default) |
-| `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (optional — falls back to tfvars default) |
+| `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (optional — falls back to `claude-sonnet-4-6` in tfvars) |
+| `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (optional — falls back to `gemini-1.5-pro` in tfvars) |
 | `CORS_ORIGINS` | `terraform-live-backend` | Passed as `CORS_ORIGINS` env var to the ECS container (not a secret) |
 | `COOKIE_DOMAIN` | `terraform-live-backend` | Passed as `COOKIE_DOMAIN` env var to the ECS container (not a secret) |
 | `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager (required) |
@@ -202,7 +206,7 @@ Run workflows via **GitHub → Actions → workflow name → Run workflow**.
 Step 1  terraform-live-backend  action=apply  aws_region=ap-south-1
         → VPC / ECS / ALB / Redis live
         → internal DNS record + SSM written
-        → backend API reachable once edge is deployed ✓
+        → backend API not yet public — edge deployment needed next
 
 Step 2  terraform-live-edge     action=apply  backend_region=ap-south-1
         → CloudFront + WAF + public DNS live
@@ -228,16 +232,16 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **VPC**: 2 public subnets + 2 private subnets across 2 AZs in `ap-south-1`; Internet Gateway + public route table; private route table (no default route — ElastiCache has no internet access needed)
 - **Security groups**: ALB SG accepts HTTPS (443) from CloudFront managed prefix list only (`com.amazonaws.global.cloudfront.origin-facing`); ECS task SG accepts port 8000 from ALB SG only; both SGs allow unrestricted egress
 - **ALB** (HTTPS/443): CloudFront-only ingress via managed prefix list; TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06` (TLS 1.3 preferred, 1.2 minimum); ACM cert in `ap-south-1` covers internal ALB subdomain; target group health-checks on `GET /health` (HTTP 200, 30 s interval, 5 s timeout, 2 healthy / 3 unhealthy thresholds)
-- **ECS Fargate**: cluster with Container Insights enabled; task definition runs on `awsvpc` network mode; health check `python -c "urllib.request.urlopen('http://127.0.0.1:8000/health')"` (30 s interval, 60 s start period); deployment circuit breaker enabled with automatic rollback; `ignore_changes = [task_definition, desired_count]` — Terraform does not manage image updates after initial apply
+- **ECS Fargate**: cluster with Container Insights enabled; task definition runs on `awsvpc` network mode; health check `python -c "urllib.request.urlopen('http://127.0.0.1:8000/health')"` (30 s interval, 60 s start period); deployment circuit breaker enabled with automatic rollback; `ignore_changes = [task_definition, desired_count]` — Terraform does not manage image updates after initial apply; ⚠ `desired_count` is also ignored, so manually scaling the service to 0 (e.g. to save cost) will **not** be restored by a subsequent `terraform apply` — use `aws ecs update-service --cluster <cluster> --service <service> --desired-count <N>` to scale back up
 - **ECS Exec**: enabled in `dev` and `stg` (scoped `ssmmessages:*` permissions on task role); disabled in `prod`
 - **ECR**: private repository in `ap-south-1`; `scan_on_push = true`; AES256 encryption at rest; lifecycle policy — keep last 10 tagged images, expire untagged after 1 day
-- **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient; used for LLM rate-limit counters only (ephemeral, no persistence needed)
-- **CloudWatch Logs**: log group `/ecs/{app}/backend/{env}`, 30-day retention; Container Insights metrics also collected
-- **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy); placeholder values written at apply time, populated via CLI before first deploy; `ignore_changes = [secret_string]` prevents Terraform from overwriting CLI-updated values
+- **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient (acceptable for ephemeral rate-limit counters; revisit if persistent or sensitive data is ever cached); used for LLM rate-limit counters only (ephemeral, no persistence needed)
+- **CloudWatch Logs**: log group `/ecs/{APP_NAME}/backend/{env}`, 30-day retention; Container Insights metrics also collected
+- **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
 - **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `S3_BUCKET_NAME` env var; separate from the frontend assets bucket
 - **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue`; task role — inline S3 policy on backend bucket + scoped `ssmmessages:*` for ECS Exec
 - **Route 53 A record**: `{SUBDOMAIN_INTERNAL}-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
-- Writes `alb_internal_fqdn`, `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` to SSM under `/{APP}/{env}/backend/ap-south-1/`
+- Writes `alb_internal_fqdn`, `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` to SSM under `/{APP_NAME}/{env}/backend/ap-south-1/`
 
 **Step 2 — infra-live-edge**
 - **WAF WebACL** (`us-east-1`, `scope = CLOUDFRONT`): 4 rules evaluated in priority order — Core Rule Set (OWASP Top 10, priority 10), Known Bad Inputs (priority 20), Amazon IP Reputation List (priority 30), rate limit 1 000 req / 5 min per IP — block action (priority 40); CloudWatch metrics + sampled requests enabled on all rules
@@ -248,11 +252,68 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
   - *SPA fallback*: CloudFront 403 and 404 responses mapped to `index.html` with HTTP 200 and `error_caching_min_ttl = 0` — supports React client-side routing
 - **CloudFront price class**: `PriceClass_100` (US/EU edge locations) for `dev` and `stg`; `PriceClass_200` (US/EU/Asia/ME/Africa) for `prod`; set via `cloudfront_price_class` in tfvars
 - **Route 53 A record**: `{SUBDOMAIN}-{env}.{DOMAIN_NAME}` → CloudFront (prod omits the `-{env}` suffix)
-- Writes `cloudfront_distribution_id`, `cloudfront_arn`, `app_url`, `s3_bucket_name` to SSM under `/{APP}/{env}/edge/`
+- Writes `cloudfront_distribution_id`, `cloudfront_arn`, `app_url`, `s3_bucket_name` to SSM under `/{APP_NAME}/{env}/edge/`
 
 **Step 3 — infra-live-frontend**
 - S3 bucket policy: grants CloudFront OAC (`cloudfront.amazonaws.com`) `s3:GetObject` scoped to the specific distribution ARN read from SSM; direct public access remains blocked
 - Precondition guard: apply fails fast if `frontend_bucket_name` in tfvars does not match the value written to SSM by `infra-live-edge` — prevents silently applying the wrong bucket policy
+
+---
+
+## ECS Task Definition — What Each Workflow Changes
+
+### During `terraform apply` (`terraform-live-backend`)
+
+Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore_changes`. A **new task definition revision is registered** whenever any of the following change in tfvars or GitHub environment secrets:
+
+| Category | Fields |
+|---|---|
+| Compute | CPU, memory |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `S3_BUCKET_NAME`, `CORS_ORIGINS`, `COOKIE_DOMAIN` |
+| Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
+| Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
+| Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |
+
+> ⚠ The ECS **service** has `ignore_changes = [task_definition]`, so Terraform never updates the service to point to the new revision. The new revision is registered in AWS but sits idle until the next `deploy-live-backend` run.
+
+### During `deploy-live-backend`
+
+The deploy workflow fetches the **latest active revision** of the task definition family (so if `terraform apply` just registered a new revision with updated env vars, the deploy picks it up automatically). It then:
+
+1. Strips all AWS-managed read-only fields from the current revision
+2. **Patches only the `image` field** for the `backend` container — from whatever it currently is to `<ecr_url>:<git-sha>`
+3. Registers this as a new revision
+4. Updates the ECS service to that revision and performs a rolling deployment
+
+All other fields — env vars, secrets references, CPU, memory, log config, health check, roles — are carried over from the revision it read and are not touched.
+
+### Combined effect
+
+| What changed | How to apply it |
+|---|---|
+| Application code | Run `deploy-live-backend` |
+| Env var / model / config (tfvars or GitHub secrets) | Run `terraform apply`, then `deploy-live-backend` (apply registers the new revision; deploy activates it) |
+| CPU / memory | Run `terraform apply`, then `deploy-live-backend` |
+| Secret values (API keys, DB URI) | Update via `aws secretsmanager put-secret-value`; restart tasks (run `deploy-live-backend` or force-deploy) |
+
+---
+
+## Application Deployment
+
+### Backend deploy — `deploy-live-backend`
+
+1. Reads `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` from SSM under `/{APP_NAME}/{env}/backend/ap-south-1/`
+2. Builds Docker image tagged `:<git-sha>` and `:latest`; pushes to ECR
+3. Registers a new task definition revision with the image pinned to `:<git-sha>`; updates the ECS service to that revision
+4. Waits up to 15 minutes for service to reach steady state; ECS circuit breaker rolls back automatically on failure
+
+### Frontend deploy — `deploy-live-frontend`
+
+1. Reads `s3_bucket_name`, `cloudfront_distribution_id` from SSM under `/{APP_NAME}/{env}/edge/`
+2. Builds React app with `VITE_API_URL` and `VITE_GOOGLE_CLIENT_ID`
+3. Syncs hashed assets (`/assets/*`) with 1-year immutable cache
+4. Syncs root files (`index.html`, etc.) with `no-cache` headers
+5. Invalidates CloudFront cache (`/*`) and waits for completion
 
 ---
 
@@ -271,38 +332,21 @@ Step 3  terraform-live-backend  action=destroy  aws_region=ap-south-1
 
 ---
 
-## Application Deployment
-
-### Backend deploy — `deploy-live-backend`
-
-1. Reads `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` from SSM under `/{APP}/{env}/backend/ap-south-1/`
-2. Builds Docker image tagged `:<git-sha>` and `:latest`; pushes to ECR
-3. Registers a new task definition revision with the image pinned to `:<git-sha>`; updates the ECS service to that revision
-4. Waits up to 15 minutes for service to reach steady state; ECS circuit breaker rolls back automatically on failure
-
-### Frontend deploy — `deploy-live-frontend`
-
-1. Reads `s3_bucket_name`, `cloudfront_distribution_id` from SSM under `/{APP}/{env}/edge/`
-2. Builds React app with `VITE_API_URL` and `VITE_GOOGLE_CLIENT_ID`
-3. Syncs hashed assets (`/assets/*`) with 1-year immutable cache
-4. Syncs root files (`index.html`, etc.) with `no-cache` headers
-5. Invalidates CloudFront cache (`/*`) and waits for completion
-
----
-
 ## Secrets Manager — App Secrets
 
-Backend app secrets are populated from GitHub environment secrets on every `terraform-live-backend action=apply`. `recovery_window_in_days = 0` means the secret is **hard-deleted immediately** on `terraform destroy` — no 30-day window — allowing clean re-applies without naming conflicts.
+Backend app secrets are auto-populated from GitHub environment secrets on the **first** `terraform-live-backend action=apply` only — when the secret still contains `REPLACE_ME` placeholder values written by Terraform on resource creation. Subsequent applies check the current secret value and skip the update if all required keys already contain real values, so manually rotated secrets are never overwritten by automation.
+
+`recovery_window_in_days = 0` means the secret is **hard-deleted immediately** on `terraform destroy` — no 30-day window — allowing clean re-applies without naming conflicts. ⚠ This deletion is irreversible — ensure all secret values are backed up before running destroy.
 
 The required keys (`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `MONGODB_URI`) are validated before apply. The optional LLM keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) fall back to `REPLACE_ME` if not set — the app will start but those providers will be unavailable.
 
 > **Note:** `CORS_ORIGINS` and `COOKIE_DOMAIN` are plain environment variables injected into the ECS task definition — they are **not** stored in Secrets Manager. To change them, update the `CORS_ORIGINS` / `COOKIE_DOMAIN` GitHub environment secrets and re-run `terraform-live-backend action=apply`.
 
-To update a secret without a full Terraform re-apply:
+To rotate or update a secret value (the only way after initial setup):
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id "buddy360/{env}/backend-secrets" \
+  --secret-id "{APP_NAME}/{env}/backend-secrets" \
   --region ap-south-1 \
   --secret-string '{
     "JWT_SECRET":         "...",

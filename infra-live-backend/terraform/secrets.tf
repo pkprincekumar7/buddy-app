@@ -2,9 +2,13 @@
 # Secrets Manager — application secrets
 #
 # One JSON secret holds all sensitive env vars for the backend container.
-# Terraform creates the secret shell with placeholder values.
+# Terraform creates the secret with REPLACE_ME placeholder values.
 #
-# BEFORE the first ECS deployment, update the secret with actual values:
+# The terraform-live-backend workflow auto-populates real values from GitHub
+# secrets on the FIRST apply only (when REPLACE_ME placeholders are detected).
+# Subsequent applies skip the update to preserve manually rotated values.
+#
+# To rotate or update a secret after initial setup:
 #
 #   aws secretsmanager put-secret-value \
 #     --secret-id "<secret_arn output>" \

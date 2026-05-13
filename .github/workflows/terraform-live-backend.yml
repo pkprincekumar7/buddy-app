@@ -208,14 +208,15 @@ jobs:
         run: terraform apply -auto-approve tfplan.bin
 
       # -------------------------------------------------------------------------
-      # Populate the Secrets Manager app secret from GitHub environment secrets.
-      # JWT_SECRET, GOOGLE_CLIENT_ID, and MONGODB_URI are required (validated above).
-      # Optional LLM keys fall back to REPLACE_ME so the app starts even if a
-      # provider isn't configured yet.
-      # Uses jq to build JSON safely — handles special characters in secret values.
-      # This runs every apply so rotating a GitHub secret takes effect on next deploy.
+      # Initialise the Secrets Manager app secret on first apply only.
+      # Reads the current secret and skips the update if all required keys already
+      # contain real values (i.e. are not the REPLACE_ME placeholder written by
+      # Terraform on resource creation). This prevents every apply from overwriting
+      # secrets that were rotated manually outside of Terraform.
+      # To update secrets after initial setup, use aws secretsmanager put-secret-value
+      # directly (see README_LIVE.md — Secrets Manager section).
       # -------------------------------------------------------------------------
-      - name: Populate app secrets
+      - name: Initialise app secrets (first apply only)
         if: inputs.action == 'apply'
         env:
           JWT_SECRET:        ${{ secrets.JWT_SECRET }}
@@ -226,17 +227,37 @@ jobs:
           MONGODB_URI:       ${{ secrets.MONGODB_URI }}
         run: |
           SECRET_ARN=$(terraform output -raw app_secret_arn)
-          aws secretsmanager put-secret-value \
+
+          # Fetch current secret to check whether required keys are still placeholders
+          CURRENT=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ARN" \
-            --secret-string "$(jq -n \
-              --arg jwt    "$JWT_SECRET" \
-              --arg gid    "$GOOGLE_CLIENT_ID" \
-              --arg openai "$OPENAI_API_KEY" \
-              --arg anthro "${ANTHROPIC_API_KEY:-REPLACE_ME}" \
-              --arg gemini "${GEMINI_API_KEY:-REPLACE_ME}" \
-              --arg mongo  "$MONGODB_URI" \
-              '{JWT_SECRET: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo}')"
-          echo "App secrets populated in Secrets Manager."
+            --query SecretString \
+            --output text 2>/dev/null || echo '{"JWT_SECRET":"REPLACE_ME"}')
+
+          NEEDS_INIT=$(echo "$CURRENT" | jq -r '
+            if (.JWT_SECRET == "REPLACE_ME") or
+               (.GOOGLE_CLIENT_ID == "REPLACE_ME") or
+               (.OPENAI_API_KEY == "REPLACE_ME") or
+               (.MONGODB_URI == "REPLACE_ME")
+            then "true" else "false" end
+          ')
+
+          if [[ "$NEEDS_INIT" == "true" ]]; then
+            echo "Placeholder values detected — initialising Secrets Manager..."
+            aws secretsmanager put-secret-value \
+              --secret-id "$SECRET_ARN" \
+              --secret-string "$(jq -n \
+                --arg jwt    "$JWT_SECRET" \
+                --arg gid    "$GOOGLE_CLIENT_ID" \
+                --arg openai "$OPENAI_API_KEY" \
+                --arg anthro "${ANTHROPIC_API_KEY:-REPLACE_ME}" \
+                --arg gemini "${GEMINI_API_KEY:-REPLACE_ME}" \
+                --arg mongo  "$MONGODB_URI" \
+                '{JWT_SECRET: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo}')"
+            echo "App secrets initialised in Secrets Manager."
+          else
+            echo "Secrets Manager already contains real values — skipping automatic update. Rotate manually if needed."
+          fi
 
       - name: Terraform Plan (destroy)
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
