@@ -15,11 +15,11 @@ private_subnet_1_cidr = "10.2.3.0/24"
 private_subnet_2_cidr = "10.2.4.0/24"
 
 # ElastiCache
-elasticache_node_type = "cache.t3.micro"
+elasticache_node_type = "cache.t3.small"
 
 # ECS
-task_cpu      = 256
-task_memory   = 512
+task_cpu      = 512
+task_memory   = 1024
 desired_count = 1
 
 # Application
