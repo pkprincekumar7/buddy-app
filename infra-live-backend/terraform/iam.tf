@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "${var.app_name}-ecs-execution-role-${var.environment}"
+  name = "${var.app_name}-ecs-execution-role-${var.environment}-${var.aws_region}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -23,7 +23,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
 }
 
 resource "aws_iam_role_policy" "ecs_execution_secrets" {
-  name = "${var.app_name}-ecs-execution-secrets-${var.environment}"
+  name = "${var.app_name}-ecs-execution-secrets-${var.environment}-${var.aws_region}"
   role = aws_iam_role.ecs_execution_role.id
 
   policy = jsonencode({
@@ -49,7 +49,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "ecs_task_role" {
-  name = "${var.app_name}-ecs-task-role-${var.environment}"
+  name = "${var.app_name}-ecs-task-role-${var.environment}-${var.aws_region}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -62,7 +62,7 @@ resource "aws_iam_role" "ecs_task_role" {
 }
 
 resource "aws_iam_role_policy" "ecs_task_s3" {
-  name = "${var.app_name}-ecs-task-s3-${var.environment}"
+  name = "${var.app_name}-ecs-task-s3-${var.environment}-${var.aws_region}"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
@@ -88,7 +88,7 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
 # ec2messages:*, compliance checks, etc.). Safe to leave attached in prod since
 # the feature is disabled at the service level via var.enable_execute_command.
 resource "aws_iam_role_policy" "ecs_task_exec_command" {
-  name = "${var.app_name}-ecs-task-exec-command-${var.environment}"
+  name = "${var.app_name}-ecs-task-exec-command-${var.environment}-${var.aws_region}"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({

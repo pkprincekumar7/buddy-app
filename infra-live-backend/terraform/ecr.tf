@@ -6,7 +6,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "backend" {
-  name                 = "${var.app_name}/backend"
+  name                 = "${var.app_name}/${var.environment}/backend"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 
