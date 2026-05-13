@@ -90,7 +90,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Validate required secrets
         env:
@@ -117,14 +117,14 @@ jobs:
           fi
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: terraform-live-edge-${{ inputs.environment }}
           aws-region: ${{ inputs.aws_region }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4.0.1
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
@@ -156,7 +156,7 @@ jobs:
 
       - name: Upload plan artefact
         if: inputs.action == 'plan' || inputs.action == 'apply'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-edge-${{ inputs.environment }}-${{ inputs.aws_region }}
           path: infra-live-edge/terraform/tfplan.bin
@@ -182,7 +182,7 @@ jobs:
 
       - name: Upload destroy plan artefact
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-edge-destroy-${{ inputs.environment }}-${{ inputs.aws_region }}
           path: infra-live-edge/terraform/tfplan.bin
