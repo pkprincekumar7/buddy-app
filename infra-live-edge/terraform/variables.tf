@@ -1,19 +1,3 @@
-variable "aws_region" {
-  description = "AWS region (for S3 bucket data source and SSM; WAF and CloudFront are always us-east-1 / global)"
-  type        = string
-
-  # Multi-region expansion checklist — do all of the following for each new region:
-  #   1. Add the new region as a choice in the aws_region workflow_dispatch input
-  #      in terraform-live-edge.yml and terraform-live-all.yml.
-  #   2. Add the new region to the validation condition below.
-  #   3. Follow the same steps for backend_region in this file.
-  #   4. For the full cross-module checklist see infra-live-backend/terraform/variables.tf.
-  validation {
-    condition     = var.aws_region == "ap-south-1"
-    error_message = "aws_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
-  }
-}
-
 variable "app_name" {
   description = "Application name used for resource naming and tagging"
   type        = string
