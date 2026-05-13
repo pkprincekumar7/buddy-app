@@ -1,5 +1,5 @@
 name: Terraform Live Edge
-run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend: ${{ inputs.backend_region }})
 
 on:
   workflow_dispatch:
@@ -23,15 +23,6 @@ on:
           - dev
           - stg
           - prod
-      aws_region:
-        description: "AWS region (for S3 bucket data source; WAF and CloudFront are always us-east-1 / global)"
-        required: true
-        default: "ap-south-1"
-        type: choice
-        # Multi-region expansion: add the new region here and follow the
-        # checklist in infra-live-edge/terraform/variables.tf (aws_region).
-        options:
-          - ap-south-1
       backend_region:
         description: "AWS region where the backend (ALB) is deployed — sets the CloudFront origin"
         required: true
@@ -50,9 +41,6 @@ on:
       environment:
         type: string
         required: true
-      aws_region:
-        type: string
-        required: true
       backend_region:
         type: string
         required: true
@@ -62,13 +50,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-live-edge-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1-${{ inputs.backend_region }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_VERSION: "1.13.0"
-  TF_VAR_aws_region:     ${{ inputs.aws_region }}
   TF_VAR_environment:    ${{ inputs.environment }}
   TF_VAR_backend_region: ${{ inputs.backend_region }}
 
@@ -121,7 +108,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: terraform-live-edge-${{ inputs.environment }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: us-east-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
@@ -132,7 +119,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/${{ inputs.aws_region }}/terraform.tfstate"
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -148,7 +135,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
           {
-            echo "### Terraform Plan — edge / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo "### Terraform Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend: ${{ inputs.backend_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -158,7 +145,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-edge-${{ inputs.environment }}-${{ inputs.aws_region }}
+          name: tfplan-edge-${{ inputs.environment }}-us-east-1-backend-${{ inputs.backend_region }}
           path: infra-live-edge/terraform/tfplan.bin
           retention-days: 7
 
@@ -174,7 +161,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         run: |
           {
-            echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend: ${{ inputs.backend_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -184,7 +171,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-edge-destroy-${{ inputs.environment }}-${{ inputs.aws_region }}
+          name: tfplan-edge-destroy-${{ inputs.environment }}-us-east-1-backend-${{ inputs.backend_region }}
           path: infra-live-edge/terraform/tfplan.bin
           retention-days: 7
 

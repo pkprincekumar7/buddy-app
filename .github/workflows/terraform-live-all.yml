@@ -82,9 +82,8 @@ jobs:
     secrets: inherit
 
   # ---------------------------------------------------------------------------
-  # Step 2 — Edge (CloudFront + WAF + public DNS) — global, us-east-1
+  # Step 2 — Edge (CloudFront + WAF + public DNS) — always us-east-1
   # backend_region tells CloudFront which ALB to use as /api/* origin.
-  # aws_region is passed as the state-key region (matches backend region).
   # ---------------------------------------------------------------------------
   tf-edge:
     name: "2 · Terraform Edge"
@@ -94,7 +93,6 @@ jobs:
     with:
       action:         ${{ inputs.action }}
       environment:    ${{ inputs.environment }}
-      aws_region:     ${{ inputs.aws_region }}
       backend_region: ${{ inputs.aws_region }}
     secrets: inherit
 
@@ -163,7 +161,6 @@ jobs:
     with:
       action:         ${{ inputs.action }}
       environment:    ${{ inputs.environment }}
-      aws_region:     ${{ inputs.aws_region }}
       backend_region: ${{ inputs.aws_region }}
     secrets: inherit
 

@@ -5,7 +5,7 @@ terraform {
     region       = "us-east-1"
     use_lockfile = true
     # bucket and key are supplied at terraform init via -backend-config
-    # key pattern: terraform-state-files/{app_name}/{env}/edge/{region}/terraform.tfstate
+    # key pattern: terraform-state-files/{app_name}/{env}/edge/us-east-1/terraform.tfstate
   }
 
   required_providers {
@@ -17,7 +17,7 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"
 
   default_tags {
     tags = {
@@ -44,7 +44,6 @@ provider "aws" {
 }
 
 # SSM reads/writes always go to us-east-1 (control-plane region).
-# When aws_region is already us-east-1 this alias is a no-op.
 provider "aws" {
   alias  = "ssm"
   region = "us-east-1"
