@@ -37,6 +37,15 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_to_redis" {
   referenced_security_group_id = aws_security_group.ecs_task_sg.id
 }
 
+resource "aws_elasticache_parameter_group" "redis7" {
+  name   = "${var.app_name}-backend-redis7-${var.environment}"
+  family = "redis7"
+
+  tags = {
+    Name = "${var.app_name}-backend-redis7-${var.environment}"
+  }
+}
+
 resource "aws_elasticache_replication_group" "main" {
   replication_group_id = "${var.app_name}-backend-redis-${var.environment}"
   description          = "Redis for ${var.app_name} LLM rate limiter (${var.environment})"
@@ -48,7 +57,7 @@ resource "aws_elasticache_replication_group" "main" {
   multi_az_enabled           = false
 
   engine_version       = "7.1"
-  parameter_group_name = "default.redis7.1"
+  parameter_group_name = aws_elasticache_parameter_group.redis7.name
   port                 = 6379
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name
