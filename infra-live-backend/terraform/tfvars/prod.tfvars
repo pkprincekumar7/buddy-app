@@ -23,13 +23,13 @@ task_memory   = 2048
 desired_count = 2
 
 # Application
-app_env                     = "prod"
-openai_model                = "gpt-5.4-mini" # valid, tested model identifier
-anthropic_model             = "claude-sonnet-4-6"
-gemini_model                = "gemini-1.5-pro"
-llm_timeout_seconds         = 90
-llm_hourly_limit            = 200
-default_region              = "us"
+app_env             = "prod"
+openai_model        = "gpt-5.4-mini" # valid, tested model identifier
+anthropic_model     = "claude-sonnet-4-6"
+gemini_model        = "gemini-1.5-pro"
+llm_timeout_seconds = 90
+llm_hourly_limit    = 200
+default_region      = "us"
 
 # ECS Exec
 enable_execute_command = false

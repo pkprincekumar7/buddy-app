@@ -23,13 +23,13 @@ task_memory   = 1024
 desired_count = 1
 
 # Application
-app_env                     = "stg"
-openai_model                = "gpt-5.4-mini" # valid, tested model identifier
-anthropic_model             = "claude-sonnet-4-6"
-gemini_model                = "gemini-1.5-pro"
-llm_timeout_seconds         = 60
-llm_hourly_limit            = 100
-default_region              = "us"
+app_env             = "stg"
+openai_model        = "gpt-5.4-mini" # valid, tested model identifier
+anthropic_model     = "claude-sonnet-4-6"
+gemini_model        = "gemini-1.5-pro"
+llm_timeout_seconds = 60
+llm_hourly_limit    = 100
+default_region      = "us"
 
 # ECS Exec — intentionally enabled in staging for live container debugging.
 # Staging does not use production data, so shell access to running tasks is
