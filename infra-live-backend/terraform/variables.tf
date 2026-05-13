@@ -99,9 +99,8 @@ variable "backend_bucket_name" {
 # -- Database ------------------------------------------------------------------
 
 variable "mongodb_db_name" {
-  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME)"
+  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME); include the environment suffix, e.g. buddy360-dev"
   type        = string
-  default     = "buddy360"
 }
 
 # -- ElastiCache ---------------------------------------------------------------
