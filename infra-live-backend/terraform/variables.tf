@@ -146,7 +146,7 @@ variable "app_env" {
 }
 
 variable "openai_model" {
-  type    = string
+  type = string
   # gpt-5.4-mini is a valid, tested model identifier — not a typo.
   default = "gpt-5.4-mini"
 }
