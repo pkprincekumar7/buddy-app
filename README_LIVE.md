@@ -393,8 +393,8 @@ All estimates are in **USD/month**, based on **730 hours/month** (continuous 24/
 
 | Resource | Dev | Stg | Prod |
 |---|---|---|---|
-| ECS task CPU | 0.25 vCPU | 0.5 vCPU | 1 vCPU |
-| ECS task memory | 512 MB | 1 GB | 2 GB |
+| ECS task CPU | 0.5 vCPU | 0.5 vCPU | 1 vCPU |
+| ECS task memory | 1 GB | 1 GB | 2 GB |
 | ECS desired count | 1 task | 1 task | 2 tasks |
 | ElastiCache node | `cache.t3.micro` | `cache.t3.small` | `cache.t3.medium` |
 | LLM hourly limit | 50 req/h | 100 req/h | 200 req/h |
