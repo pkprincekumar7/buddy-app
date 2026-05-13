@@ -5,7 +5,7 @@
 
 app_name            = "buddy360"
 backend_bucket_name = "person-backend-dev-app-bucket"
-mongodb_db_name     = "buddy360"
+mongodb_db_name     = "buddy360-dev"
 
 # Networking
 vpc_cidr              = "10.2.0.0/16"
