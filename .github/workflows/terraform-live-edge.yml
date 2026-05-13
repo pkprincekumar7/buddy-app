@@ -1,5 +1,5 @@
 name: Terraform Live Edge
-run-name: Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend: ${{ inputs.backend_region }})
+run-name: "Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend: ${{ inputs.backend_region }})"
 
 on:
   workflow_dispatch:
