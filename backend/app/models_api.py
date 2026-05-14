@@ -249,12 +249,20 @@ class GoalsPlanMonthInsight(BaseModel):
     insight: str
 
 
+class InsightItem(BaseModel):
+    text: str
+    type: str
+    details: str
+
+
 class GoalsPlanInsights(BaseModel):
+    schema_version: int | None = None
     overall_summary: str = ''
     monthly_insights: list[GoalsPlanMonthInsight] = []
     recommendations: list[str] = []
     strongest_area: str | None = None
     focus_area: str | None = None
+    insight_items: list[InsightItem] = []
 
 
 class GoalsPlan(BaseModel):
