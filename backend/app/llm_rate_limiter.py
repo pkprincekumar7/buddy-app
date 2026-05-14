@@ -118,8 +118,13 @@ def _enforce_redis(r: "_redis_type.Redis", user_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Public entry points
 # ---------------------------------------------------------------------------
+
+def get_redis_client() -> "_redis_type.Redis | None":
+    """Return the shared Redis client, or None if Redis is unavailable."""
+    return _get_redis()
+
 
 def enforce(user_id: str) -> None:
     """Raise HTTPException(429) if the user has exceeded the hourly LLM limit."""
