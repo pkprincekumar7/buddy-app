@@ -1,14 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, CheckCircle2, AlertTriangle, Clock, Lock,
-  Minus, BarChart3, Lightbulb,
+  Minus, BarChart3, RefreshCw,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Cell, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList, Tooltip,
 } from 'recharts';
-import { INSIGHTS_SCHEMA_VERSION, NON_SCORABLE_DELTA_PTS, truncate, buildMonthData } from '@/lib/insightsUtils';
+import { api } from '@/api/client';
+import {
+  INSIGHTS_SCHEMA_VERSION, NON_SCORABLE_DELTA_PTS,
+  truncate, buildMonthData, completedCount, generateInsights,
+} from '@/lib/insightsUtils';
 
 // Maps a single pair observation to a chart score value.
 // Non-scorable uses ±NON_SCORABLE_DELTA_PTS as a fixed unit so direction is still visible.
@@ -89,10 +93,13 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function ProgressInsightsModal({ goalPlan, onClose }) {
-  const [activeTab,       setActiveTab]       = useState('progress');
-  const [progressTab,     setProgressTab]     = useState('monthly');
-  const [expandedInsight, setExpandedInsight] = useState(null);
+export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdate, onClose }) {
+  const [activeTab,        setActiveTab]        = useState('progress');
+  const [progressTab,      setProgressTab]      = useState('monthly');
+  const [expandedInsight,  setExpandedInsight]  = useState(null);
+  const [insightsData,     setInsightsData]     = useState(null);
+  const [insightsLoading,  setInsightsLoading]  = useState(false);
+  const [insightsError,    setInsightsError]    = useState(false);
 
   const monthData = useMemo(() => buildMonthData(goalPlan), [goalPlan]);
 
@@ -117,6 +124,44 @@ export default function ProgressInsightsModal({ goalPlan, onClose }) {
 
   const CustomTick    = useMemo(() => buildCustomTick(chartData),    [chartData]);
   const CustomTooltip = useMemo(() => buildCustomTooltip(chartData), [chartData]);
+
+  useEffect(() => {
+    if (activeTab !== 'insights' || insightsData || insightsLoading || insightsError) return;
+
+    const currentCount = completedCount(goalPlan);
+
+    // Valid cache: same schema version and generated after the last completed activity.
+    if (
+      goalPlan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
+      goalPlan?.insights_signature === currentCount
+    ) {
+      setInsightsData(goalPlan.insights);
+      return;
+    }
+
+    // Stale or missing — generate via LLM, then persist.
+    const generate = async () => {
+      setInsightsLoading(true);
+      setInsightsError(false);
+      try {
+        const payload = await generateInsights(childName, goalPlan);
+        const updatedPlan = { ...goalPlan, insights: payload, insights_signature: currentCount };
+        try {
+          await api.goals.patch({ plan: updatedPlan });
+          onPlanUpdate?.(updatedPlan);
+        } catch {
+          // Save failure is non-fatal — insights still display for this session.
+        }
+        setInsightsData(payload);
+      } catch {
+        setInsightsError(true);
+      }
+      setInsightsLoading(false);
+    };
+    generate();
+  // goalPlan/childName are intentionally omitted: re-generation is driven by
+  // insightsData being reset (e.g. on retry), not by every prop change.
+  }, [activeTab, insightsData, insightsLoading, insightsError]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <motion.div
@@ -306,21 +351,36 @@ export default function ProgressInsightsModal({ goalPlan, onClose }) {
           {/* ── INSIGHTS TAB ── */}
           {activeTab === 'insights' && (
             <div>
-              {/* No insights yet */}
-              {(!goalPlan?.insights || goalPlan.insights.schema_version !== INSIGHTS_SCHEMA_VERSION) && (
-                <div className="py-20 flex flex-col items-center gap-3 text-center">
-                  <Lightbulb className="w-10 h-10 text-slate-300" />
-                  <p className="text-slate-600 font-semibold">No insights yet</p>
-                  <p className="text-slate-400 text-sm max-w-xs">
-                    Insights are generated automatically after each activity is completed.
-                  </p>
+              {/* Loading */}
+              {insightsLoading && (
+                <div className="py-20 flex flex-col items-center gap-4">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                    className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+                  />
+                  <p className="text-slate-600 font-semibold">Generating personalised insights…</p>
+                  <p className="text-slate-400 text-sm">Analysing {childName ? `${childName}'s` : 'the'} assessment data</p>
+                </div>
+              )}
+
+              {/* Error */}
+              {insightsError && !insightsLoading && (
+                <div className="py-16 flex flex-col items-center gap-4">
+                  <p className="text-slate-500 text-sm">Failed to generate insights. Please try again.</p>
+                  <button
+                    onClick={() => { setInsightsError(false); setInsightsData(null); }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" /> Retry
+                  </button>
                 </div>
               )}
 
               {/* Insights list */}
-              {goalPlan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION && (
+              {insightsData && !insightsLoading && (
                 <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200">
-                  {(goalPlan.insights.insight_items || []).map((item, idx) => {
+                  {(insightsData.insight_items || []).map((item, idx) => {
                     const isAnomaly  = item.type === 'anomaly';
                     const isExpanded = expandedInsight === idx;
                     return (

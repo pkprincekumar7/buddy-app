@@ -8,7 +8,6 @@ import { api } from '@/api/client';
 import { Target, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import { generateInsights, completedCount } from '@/lib/insightsUtils';
 import ActivityModal from '@/components/goals/ActivityModal';
 import ProgressInsightsModal from '@/components/goals/ProgressInsightsModal';
 
@@ -210,21 +209,6 @@ Return JSON with this exact structure:
     setIsLoading(false);
   };
 
-  const generateAndSaveInsights = async (plan) => {
-    try {
-      const insights = await generateInsights(childData?.name, plan);
-      const planWithInsights = {
-        ...plan,
-        insights,
-        insights_signature: completedCount(plan),
-      };
-      await api.goals.patch({ plan: planWithInsights });
-      setGoalPlan(planWithInsights);
-    } catch {
-      // Non-fatal — insights will be generated on the next activity completion.
-    }
-  };
-
   const handleActivityComplete = async ({ score, note, progress_observation, ai_feedback, parent_feedback }) => {
     if (!activeActivity) return;
     const { monthIdx, periodIdx, actIdx } = activeActivity;
@@ -238,18 +222,13 @@ Return JSON with this exact structure:
     act.ai_feedback = ai_feedback;
     act.parent_feedback = parent_feedback;
 
-    let saved = false;
     try {
       await api.goals.patch({ plan: updatedPlan });
       setGoalPlan(updatedPlan);
-      saved = true;
     } catch {
       toast.error('Failed to save activity. Please try again.');
     }
     setActiveActivity(null);
-
-    // Kick off insights regeneration in the background — does not block the UI.
-    if (saved) generateAndSaveInsights(updatedPlan);
   };
 
   const handleActivityReset = async (monthIdx, periodIdx, actIdx) => {
@@ -575,6 +554,8 @@ Return JSON with this exact structure:
         {showProgress && (
           <ProgressInsightsModal
             goalPlan={goalPlan}
+            childName={childData?.name}
+            onPlanUpdate={setGoalPlan}
             onClose={() => setShowProgress(false)}
           />
         )}

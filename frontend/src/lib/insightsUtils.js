@@ -10,7 +10,7 @@ export const NON_SCORABLE_DELTA_PTS = 30;
 export const truncate = (str, n = 38) =>
   str && str.length > n ? str.slice(0, n - 1) + '…' : str || '';
 
-export const computeObservation = (original, followUp) => {
+const computeObservation = (original, followUp) => {
   if (!original) return { label: 'Not Started', type: 'notStarted' };
   if (!original.completed && !followUp?.completed)
     return { label: 'Not Started', type: 'notStarted' };
@@ -39,7 +39,7 @@ export const computeObservation = (original, followUp) => {
   }
 };
 
-export const computeMonthScore = (pairs) => {
+const computeMonthScore = (pairs) => {
   let total = 0, count = 0;
   for (const { observation } of pairs) {
     if (observation.type === 'improved')           { total += observation.percent ?? NON_SCORABLE_DELTA_PTS; count++; }
