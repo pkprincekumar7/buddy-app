@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, CheckCircle2, AlertTriangle, Clock, Lock,
-  Minus, Lightbulb, BarChart3, Target, Star, RefreshCw,
+  Minus, BarChart3, RefreshCw,
 } from 'lucide-react';
 import { api } from '@/api/client';
 import { unwrapLLM } from '@/lib/llmUtils';
@@ -127,6 +127,7 @@ const buildInsightsPrompt = (childName, monthData) => {
   lines.push(`3. recommendations: An array of 3–5 specific, actionable strings tailored to this child's strengths and areas needing attention.`);
   lines.push(`4. strongest_area: A short phrase naming the activity or skill where ${name} showed the most progress (null if insufficient data).`);
   lines.push(`5. focus_area: A short phrase naming the activity or skill that needs the most attention going forward (null if insufficient data).`);
+  lines.push(`6. insight_items: An array of exactly 3 objects. The first 2 must highlight ${name}'s clear strengths (type: "strength"). The third must identify a potential improvement area (type: "anomaly"). Each object has: "text" (a single complete, warm sentence starting with ${name}'s first name describing the insight), "type" ("strength" or "anomaly"), "details" (2–3 sentences of expanded detail; for the anomaly, frame it in a very positive and constructive manner focused on growth opportunity, celebrating small wins and encouraging next steps).`);
 
   return lines.join('\n');
 };
@@ -199,14 +200,18 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
   );
 };
 
+// Bump when the insights payload shape changes — forces regeneration of cached plans.
+const INSIGHTS_SCHEMA_VERSION = 2;
+
 // ── main component ────────────────────────────────────────────────────────────
 
 export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdate, onClose }) {
-  const [activeTab,      setActiveTab]      = useState('progress');
-  const [progressTab,    setProgressTab]    = useState('monthly');
-  const [insightsData,   setInsightsData]   = useState(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [insightsError,  setInsightsError]  = useState(false);
+  const [activeTab,        setActiveTab]        = useState('progress');
+  const [progressTab,      setProgressTab]      = useState('monthly');
+  const [insightsData,     setInsightsData]     = useState(null);
+  const [insightsLoading,  setInsightsLoading]  = useState(false);
+  const [insightsError,    setInsightsError]    = useState(false);
+  const [expandedInsight,  setExpandedInsight]  = useState(null);
 
   const monthData = useMemo(() => {
     return (goalPlan?.months || []).map(month => {
@@ -252,8 +257,13 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
     const currentCount = completedCount(goalPlan);
 
-    // Valid cached insights exist and match the current completion state → reuse.
-    if (goalPlan?.insights && goalPlan?.insights_signature === currentCount) {
+    // Valid cached insights exist, match the current completion state, and were
+    // generated with the current schema version → reuse.
+    if (
+      goalPlan?.insights &&
+      goalPlan.insights.schema_version === INSIGHTS_SCHEMA_VERSION &&
+      goalPlan?.insights_signature === currentCount
+    ) {
       setInsightsData(goalPlan.insights);
       return;
     }
@@ -283,16 +293,29 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
               recommendations: { type: 'array', items: { type: 'string' } },
               strongest_area:  { type: 'string' },
               focus_area:      { type: 'string' },
+              insight_items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    text:    { type: 'string' },
+                    type:    { type: 'string', enum: ['strength', 'anomaly'] },
+                    details: { type: 'string' },
+                  },
+                },
+              },
             },
           },
         });
         const data = result.properties ?? result;
         const payload = {
+          schema_version:   INSIGHTS_SCHEMA_VERSION,
           overall_summary:  unwrapLLM(data.overall_summary)  || '',
           monthly_insights: Array.isArray(data.monthly_insights) ? data.monthly_insights : [],
           recommendations:  Array.isArray(data.recommendations)  ? data.recommendations  : [],
           strongest_area:   unwrapLLM(data.strongest_area) || null,
           focus_area:       unwrapLLM(data.focus_area)     || null,
+          insight_items:    Array.isArray(data.insight_items) ? data.insight_items : [],
         };
 
         // Persist insights + signature into the plan so future opens skip the LLM call.
@@ -537,72 +560,65 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                 </div>
               )}
 
-              {/* Insights content */}
+              {/* Insights list */}
               {insightsData && !insightsLoading && (
-                <div className="space-y-5">
-                  {/* Overall summary */}
-                  <div className="bg-teal-50 border border-teal-100 rounded-2xl p-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Target className="w-5 h-5 text-teal-600" />
-                      <h3 className="font-bold text-teal-800">Overall Summary</h3>
-                    </div>
-                    <p className="text-slate-600 text-sm leading-relaxed">{insightsData.overall_summary}</p>
-                  </div>
-
-                  {/* Strongest / Focus area highlights */}
-                  {(insightsData.strongest_area || insightsData.focus_area) && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {insightsData.strongest_area && (
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex gap-3 items-start">
-                          <Star className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-emerald-600 mb-0.5">Strongest Area</p>
-                            <p className="text-slate-700 text-sm font-medium">{insightsData.strongest_area}</p>
-                          </div>
-                        </div>
-                      )}
-                      {insightsData.focus_area && (
-                        <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 flex gap-3 items-start">
-                          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-widest text-amber-600 mb-0.5">Needs Focus</p>
-                            <p className="text-slate-700 text-sm font-medium">{insightsData.focus_area}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Per-month insights */}
-                  {insightsData.monthly_insights?.map((mi, mIdx) => {
-                    const c = monthColors[mIdx] || monthColors[0];
-                    const md = monthData.find(m => m.month.month === mi.month);
+                <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200">
+                  {(insightsData.insight_items || []).map((item, idx) => {
+                    const isAnomaly  = item.type === 'anomaly';
+                    const isExpanded = expandedInsight === idx;
                     return (
-                      <div key={mIdx} className={`border rounded-2xl p-5 ${c.bg}`}>
-                        <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${c.badge}`}>Month {mi.month}</p>
-                        {md && <h4 className={`font-bold text-sm mb-2 ${c.title}`}>{md.month.goal}</h4>}
-                        <p className="text-slate-600 text-sm leading-relaxed">{mi.insight}</p>
+                      <div key={idx} className={isAnomaly ? 'bg-amber-50' : 'bg-white'}>
+                        {/* Row */}
+                        <div className="flex items-center gap-3 px-5 py-4">
+                          <div className="flex-shrink-0">
+                            {isAnomaly
+                              ? <AlertTriangle className="w-4 h-4 text-amber-500" />
+                              : <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            }
+                          </div>
+                          <p className={`flex-1 text-sm font-medium leading-snug ${
+                            isAnomaly ? 'text-amber-800' : 'text-slate-700'
+                          }`}>
+                            {item.text}
+                          </p>
+                          <button
+                            onClick={() => setExpandedInsight(prev => prev === idx ? null : idx)}
+                            className={`ml-2 flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                              isAnomaly
+                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                            }`}
+                          >
+                            {isExpanded ? 'Hide Details' : 'View Details'}
+                          </button>
+                        </div>
+
+                        {/* Expanded details */}
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className={`px-5 pb-5 border-t ${
+                              isAnomaly ? 'border-amber-100 bg-amber-50/60' : 'border-slate-100 bg-slate-50/50'
+                            }`}
+                          >
+                            <p className="text-sm text-slate-600 leading-relaxed pt-4 pb-4">
+                              {item.details}
+                            </p>
+                            <div className="flex gap-2 flex-wrap">
+                              <button className="px-4 py-2 bg-teal-500 text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
+                                Start Monitoring
+                              </button>
+                              <button className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors">
+                                Check-in Later
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
                       </div>
                     );
                   })}
-
-                  {/* Recommendations */}
-                  {insightsData.recommendations?.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Lightbulb className="w-5 h-5 text-amber-500" />
-                        <h3 className="font-bold text-amber-800">Recommendations</h3>
-                      </div>
-                      <ul className="space-y-2.5">
-                        {insightsData.recommendations.map((rec, idx) => (
-                          <li key={idx} className="text-sm text-slate-600 flex gap-2">
-                            <span className="text-amber-500 flex-shrink-0 mt-0.5">•</span>
-                            {rec}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </div>
               )}
             </div>

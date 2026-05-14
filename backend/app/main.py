@@ -16,6 +16,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import init_indexes
 from app.limiter import limiter, user_limiter
+from app.llm_rate_limiter import get_redis_client
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
 from app.routers.children import router as children_router
@@ -36,11 +37,31 @@ _REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9\-_]{1,64}$')
 # already passed.  On Atlas the fan-out across shards is acceptable for a
 # once-hourly maintenance operation.
 _SESSION_CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
+_CLEANUP_LOCK_KEY = "session_cleanup:lock"
+# TTL is slightly shorter than the interval so the lock never outlives a full cycle.
+# It acts as a safety net only — the lock is explicitly released after cleanup.
+_CLEANUP_LOCK_TTL = _SESSION_CLEANUP_INTERVAL_SECONDS - 10
 
 
 async def _cleanup_expired_sessions(db) -> None:
     while True:
         await asyncio.sleep(_SESSION_CLEANUP_INTERVAL_SECONDS)
+
+        r = get_redis_client()
+        loop = asyncio.get_running_loop()
+        lock_acquired = False
+
+        if r is not None:
+            # SET key 1 NX EX ttl — atomic acquire; returns True only if the key
+            # did not exist, ensuring exactly one instance runs the cleanup.
+            acquired = await loop.run_in_executor(
+                None, lambda: r.set(_CLEANUP_LOCK_KEY, "1", nx=True, ex=_CLEANUP_LOCK_TTL)
+            )
+            if not acquired:
+                log.debug("session_cleanup: lock held by another instance — skipping this cycle")
+                continue
+            lock_acquired = True
+
         try:
             now = datetime.now(timezone.utc)
             result = await db["sessions"].delete_many({"expires_at": {"$lt": now}})
@@ -50,6 +71,13 @@ async def _cleanup_expired_sessions(db) -> None:
             raise
         except Exception:
             log.exception("session_cleanup: unexpected error — will retry next cycle")
+        finally:
+            if lock_acquired:
+                try:
+                    if not asyncio.current_task().cancelling():
+                        await loop.run_in_executor(None, r.delete, _CLEANUP_LOCK_KEY)
+                except Exception:
+                    pass  # TTL will expire the lock naturally
 
 
 @asynccontextmanager
