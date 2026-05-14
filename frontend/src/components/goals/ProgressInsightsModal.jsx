@@ -1,65 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, CheckCircle2, AlertTriangle, Clock, Lock,
-  Minus, BarChart3, RefreshCw,
+  Minus, BarChart3, Lightbulb,
 } from 'lucide-react';
-import { api } from '@/api/client';
-import { unwrapLLM } from '@/lib/llmUtils';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Cell, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList, Tooltip,
 } from 'recharts';
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-// Non-scorable activities have no numeric delta, so we use a fixed ±point value
-// to make improvement/decline still visible on the chart.
-const NON_SCORABLE_DELTA_PTS = 30;
-
-const truncate = (str, n = 38) =>
-  str && str.length > n ? str.slice(0, n - 1) + '…' : str || '';
-
-const computeObservation = (original, followUp) => {
-  if (!original) return { label: 'Not Started', type: 'notStarted' };
-  if (!original.completed && !followUp?.completed)
-    return { label: 'Not Started', type: 'notStarted' };
-  if (original.completed && !followUp?.completed)
-    return { label: 'In Progress', type: 'inProgress' };
-
-  if (original.scorable !== false) {
-    const origPct   = (original.score / 10) * 100;
-    const followPct = (followUp.score / 10) * 100;
-    if (origPct === 0) return { label: 'No Improvement', type: 'noImprovement' };
-    if (followPct > origPct) {
-      const pct = Math.round(((followPct - origPct) / origPct) * 100);
-      return { label: `Improved by ${pct}%`, type: 'improved', percent: pct };
-    }
-    if (followPct < origPct) {
-      const pct = Math.round(((origPct - followPct) / origPct) * 100);
-      return { label: `Declined by ${pct}%`, type: 'declined', percent: pct };
-    }
-    return { label: 'No Improvement', type: 'noImprovement' };
-  } else {
-    // Use the LLM-computed comparison stored at follow-up completion time.
-    const po = followUp.progress_observation;
-    if (po === 'Improved')               return { label: 'Improved',               type: 'improved'      };
-    if (po === 'Needs More Attention')   return { label: 'Needs More Attention',   type: 'declined'      };
-    if (po === 'No Improvement')         return { label: 'No Improvement',         type: 'noImprovement' };
-    // Fallback if the field is missing (e.g. completed before this feature)
-    return { label: 'No Improvement', type: 'noImprovement' };
-  }
-};
-
-const computeMonthScore = (pairs) => {
-  let total = 0, count = 0;
-  for (const { observation } of pairs) {
-    if (observation.type === 'improved')      { total += observation.percent ?? NON_SCORABLE_DELTA_PTS; count++; }
-    else if (observation.type === 'declined') { total -= observation.percent ?? NON_SCORABLE_DELTA_PTS; count++; }
-    else if (observation.type === 'noImprovement') { count++; }
-  }
-  return count > 0 ? Math.round(total / count) : null;
-};
+import { INSIGHTS_SCHEMA_VERSION, NON_SCORABLE_DELTA_PTS, truncate, buildMonthData } from '@/lib/insightsUtils';
 
 // Maps a single pair observation to a chart score value.
 // Non-scorable uses ±NON_SCORABLE_DELTA_PTS as a fixed unit so direction is still visible.
@@ -68,68 +17,6 @@ const obsToScore = (obs) => {
   if (obs.type === 'declined')      return -(obs.percent ?? NON_SCORABLE_DELTA_PTS);
   if (obs.type === 'noImprovement') return 0;
   return null; // inProgress / notStarted → NA
-};
-
-// Count total completed activities in the plan — used as the staleness signature.
-const completedCount = (plan) =>
-  (plan?.months || []).reduce((total, month) =>
-    total + (month.periods || []).reduce((mTotal, period) =>
-      mTotal + (period.activities || []).filter(a => a.completed).length, 0), 0);
-
-const buildInsightsPrompt = (childName, monthData) => {
-  const name = childName || 'the child';
-  const lines = [
-    `Generate personalised progress insights for ${name} based on their 3-month goal plan assessments.\n`,
-  ];
-
-  monthData.forEach(({ month, pairs }) => {
-    lines.push(`--- Month ${month.month}: ${month.goal} ---`);
-    lines.push(`Month objective: ${month.objective}`);
-    pairs.forEach((pair, pIdx) => {
-      const orig = pair.original;
-      const fu   = pair.followUp;
-      lines.push(`\n  Objective ${pIdx + 1}: ${orig?.title || 'Unknown'}`);
-
-      if (orig?.completed) {
-        lines.push(`  Original (Week 1&2):`);
-        if (orig.scorable !== false) {
-          lines.push(`    Score: ${orig.score}/10`);
-        } else {
-          lines.push(`    Note: ${orig.note || 'none'}`);
-        }
-        lines.push(`    AI Feedback: ${orig.ai_feedback || 'none'}`);
-        if (orig.parent_feedback) lines.push(`    Parent Feedback: ${orig.parent_feedback}`);
-      } else {
-        lines.push(`  Original (Week 1&2): Not completed`);
-      }
-
-      if (fu?.completed) {
-        lines.push(`  Follow-up (Week 3&4): ${fu.title || 'Unknown'}`);
-        if (fu.scorable !== false) {
-          lines.push(`    Score: ${fu.score}/10`);
-          lines.push(`    Progress: ${pair.observation.label}`);
-        } else {
-          lines.push(`    Note: ${fu.note || 'none'}`);
-          lines.push(`    Progress: ${fu.progress_observation || 'No Improvement'}`);
-        }
-        lines.push(`    AI Feedback: ${fu.ai_feedback || 'none'}`);
-        if (fu.parent_feedback) lines.push(`    Parent Feedback: ${fu.parent_feedback}`);
-      } else {
-        lines.push(`  Follow-up (Week 3&4): Not completed`);
-      }
-    });
-    lines.push('');
-  });
-
-  lines.push(`Based on the data above, provide all of the following:`);
-  lines.push(`1. overall_summary: 2–3 sentences personalised to ${name}'s specific results, referencing actual activities and outcomes. Be warm and encouraging.`);
-  lines.push(`2. monthly_insights: An array of 3 objects, one per month. Each has "month" (1/2/3) and "insight" (1–2 sentences specific to that month's actual data).`);
-  lines.push(`3. recommendations: An array of 3–5 specific, actionable strings tailored to this child's strengths and areas needing attention.`);
-  lines.push(`4. strongest_area: A short phrase naming the activity or skill where ${name} showed the most progress (null if insufficient data).`);
-  lines.push(`5. focus_area: A short phrase naming the activity or skill that needs the most attention going forward (null if insufficient data).`);
-  lines.push(`6. insight_items: An array of exactly 3 objects. The first 2 must highlight ${name}'s clear strengths (type: "strength"). The third must identify a potential improvement area (type: "anomaly"). Each object has: "text" (a single complete, warm sentence starting with ${name}'s first name describing the insight), "type" ("strength" or "anomaly"), "details" (2–3 sentences of expanded detail; for the anomaly, frame it in a very positive and constructive manner focused on growth opportunity, celebrating small wins and encouraging next steps).`);
-
-  return lines.join('\n');
 };
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -200,35 +87,14 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
   );
 };
 
-// Bump when the insights payload shape changes — forces regeneration of cached plans.
-const INSIGHTS_SCHEMA_VERSION = 2;
-
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdate, onClose }) {
-  const [activeTab,        setActiveTab]        = useState('progress');
-  const [progressTab,      setProgressTab]      = useState('monthly');
-  const [insightsData,     setInsightsData]     = useState(null);
-  const [insightsLoading,  setInsightsLoading]  = useState(false);
-  const [insightsError,    setInsightsError]    = useState(false);
-  const [expandedInsight,  setExpandedInsight]  = useState(null);
+export default function ProgressInsightsModal({ goalPlan, onClose }) {
+  const [activeTab,       setActiveTab]       = useState('progress');
+  const [progressTab,     setProgressTab]     = useState('monthly');
+  const [expandedInsight, setExpandedInsight] = useState(null);
 
-  const monthData = useMemo(() => {
-    return (goalPlan?.months || []).map(month => {
-      const pairs = [0, 1].map(actIdx => {
-        const original = month.periods?.[0]?.activities?.[actIdx];
-        const followUp = month.periods?.[1]?.activities?.[actIdx];
-        return {
-          original,
-          followUp,
-          label:       truncate(original?.title || `Activity ${actIdx + 1}`),
-          scorable:    original?.scorable !== false,
-          observation: computeObservation(original, followUp),
-        };
-      });
-      return { month, pairs, score: computeMonthScore(pairs) };
-    });
-  }, [goalPlan]);
+  const monthData = useMemo(() => buildMonthData(goalPlan), [goalPlan]);
 
   // 6 entries — one per objective pair — grouped visually by month
   const chartData = useMemo(() =>
@@ -251,100 +117,6 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
   const CustomTick    = useMemo(() => buildCustomTick(chartData),    [chartData]);
   const CustomTooltip = useMemo(() => buildCustomTooltip(chartData), [chartData]);
-
-  useEffect(() => {
-    if (activeTab !== 'insights' || insightsData || insightsLoading) return;
-
-    const currentCount = completedCount(goalPlan);
-
-    // Valid cached insights exist, match the current completion state, and were
-    // generated with the current schema version → reuse.
-    if (
-      goalPlan?.insights &&
-      goalPlan.insights.schema_version === INSIGHTS_SCHEMA_VERSION &&
-      goalPlan?.insights_signature === currentCount
-    ) {
-      setInsightsData(goalPlan.insights);
-      return;
-    }
-
-    // No valid cache — generate fresh insights.
-    const generate = async () => {
-      setInsightsLoading(true);
-      setInsightsError(false);
-      try {
-        const prompt = buildInsightsPrompt(childName, monthData);
-        const result = await api.integrations.Core.InvokeLLM({
-          prompt,
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              overall_summary:  { type: 'string' },
-              monthly_insights: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    month:   { type: 'number' },
-                    insight: { type: 'string' },
-                  },
-                },
-              },
-              recommendations: { type: 'array', items: { type: 'string' } },
-              strongest_area:  { type: 'string' },
-              focus_area:      { type: 'string' },
-              insight_items: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    text:    { type: 'string' },
-                    type:    { type: 'string', enum: ['strength', 'anomaly'] },
-                    details: { type: 'string' },
-                  },
-                },
-              },
-            },
-          },
-        });
-        const data = result.properties ?? result;
-        const payload = {
-          schema_version:   INSIGHTS_SCHEMA_VERSION,
-          overall_summary:  unwrapLLM(data.overall_summary)  || '',
-          monthly_insights: Array.isArray(data.monthly_insights) ? data.monthly_insights : [],
-          recommendations:  Array.isArray(data.recommendations)  ? data.recommendations  : [],
-          strongest_area:   unwrapLLM(data.strongest_area) || null,
-          focus_area:       unwrapLLM(data.focus_area)     || null,
-          insight_items:    Array.isArray(data.insight_items) ? data.insight_items : [],
-        };
-
-        // Persist insights + signature into the plan so future opens skip the LLM call.
-        const updatedPlan = { ...goalPlan, insights: payload, insights_signature: currentCount };
-        try {
-          await api.goals.patch({ plan: updatedPlan });
-          onPlanUpdate?.(updatedPlan);
-        } catch {
-          // Save failure is non-fatal — insights still show for this session.
-        }
-
-        setInsightsData(payload);
-      } catch {
-        setInsightsError(true);
-      }
-      setInsightsLoading(false);
-    };
-    generate();
-  // goalPlan/childName/monthData are intentionally omitted from deps: insights
-  // should only regenerate when the tab is opened fresh or the user retries, not
-  // on every plan mutation. The insights_signature cache-bust handles staleness
-  // when the modal is reopened after new activities are completed.
-  }, [activeTab, insightsData, insightsLoading]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const monthColors = [
-    { bg: 'bg-teal-50 border-teal-100',    title: 'text-teal-800',   badge: 'text-teal-400' },
-    { bg: 'bg-blue-50 border-blue-100',    title: 'text-blue-800',   badge: 'text-blue-400' },
-    { bg: 'bg-purple-50 border-purple-100', title: 'text-purple-800', badge: 'text-purple-400' },
-  ];
 
   return (
     <motion.div
@@ -534,36 +306,21 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
           {/* ── INSIGHTS TAB ── */}
           {activeTab === 'insights' && (
             <div>
-              {/* Loading */}
-              {insightsLoading && (
-                <div className="py-20 flex flex-col items-center gap-4">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                    className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
-                  />
-                  <p className="text-slate-600 font-semibold">Generating personalised insights…</p>
-                  <p className="text-slate-400 text-sm">Analysing {childName ? `${childName}'s` : 'the'} assessment data</p>
-                </div>
-              )}
-
-              {/* Error */}
-              {insightsError && !insightsLoading && (
-                <div className="py-16 flex flex-col items-center gap-4">
-                  <p className="text-slate-500 text-sm">Failed to generate insights. Please try again.</p>
-                  <button
-                    onClick={() => { setInsightsError(false); setInsightsData(null); }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 transition-colors"
-                  >
-                    <RefreshCw className="w-4 h-4" /> Retry
-                  </button>
+              {/* No insights yet */}
+              {(!goalPlan?.insights || goalPlan.insights.schema_version !== INSIGHTS_SCHEMA_VERSION) && (
+                <div className="py-20 flex flex-col items-center gap-3 text-center">
+                  <Lightbulb className="w-10 h-10 text-slate-300" />
+                  <p className="text-slate-600 font-semibold">No insights yet</p>
+                  <p className="text-slate-400 text-sm max-w-xs">
+                    Insights are generated automatically after each activity is completed.
+                  </p>
                 </div>
               )}
 
               {/* Insights list */}
-              {insightsData && !insightsLoading && (
+              {goalPlan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION && (
                 <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200">
-                  {(insightsData.insight_items || []).map((item, idx) => {
+                  {(goalPlan.insights.insight_items || []).map((item, idx) => {
                     const isAnomaly  = item.type === 'anomaly';
                     const isExpanded = expandedInsight === idx;
                     return (
