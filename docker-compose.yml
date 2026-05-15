@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy_app}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
       DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - see .env.example for how to generate it}
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}

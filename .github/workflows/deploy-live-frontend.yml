@@ -42,15 +42,17 @@ jobs:
 
       - name: Validate required secrets
         env:
-          ROLE_ARN:             ${{ secrets.ROLE_ARN }}
-          APP_NAME:             ${{ secrets.APP_NAME }}
-          VITE_API_URL:         ${{ secrets.VITE_API_URL }}
+          ROLE_ARN:              ${{ secrets.ROLE_ARN }}
+          APP_NAME:              ${{ secrets.APP_NAME }}
+          SUBDOMAIN:             ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME")
-          [[ -z "$VITE_API_URL"          ]] && missing+=("VITE_API_URL")
+          [[ -z "$SUBDOMAIN"             ]] && missing+=("SUBDOMAIN")
+          [[ -z "$DOMAIN_NAME"           ]] && missing+=("DOMAIN_NAME")
           [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
@@ -65,6 +67,23 @@ jobs:
           role-session-name: deploy-live-frontend-${{ inputs.environment }}
           # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
           aws-region: us-east-1
+
+      # -------------------------------------------------------------------------
+      # VITE_API_URL is the public CloudFront origin — the same FQDN logic used
+      # by infra-live-edge (prod: {subdomain}.{domain}, non-prod: {subdomain}-{env}.{domain}).
+      # Derived here so it does not need to be maintained as a separate secret.
+      # -------------------------------------------------------------------------
+      - name: Resolve derived values
+        env:
+          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        run: |
+          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+            FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
+          else
+            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+          fi
+          echo "VITE_API_URL=https://${FQDN}" >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Resolve deployment targets before the Node.js build so the workflow
@@ -112,7 +131,7 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_URL: ${{ env.VITE_API_URL }}
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 

@@ -70,13 +70,16 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       # Resolved from GitHub Environment Secrets so dev/stg/prod each use their own values.
-      TF_VAR_subdomain_internal: ${{ secrets.SUBDOMAIN_INTERNAL }}
-      TF_VAR_domain_name:        ${{ secrets.DOMAIN_NAME }}
-      TF_VAR_hosted_zone_id:     ${{ secrets.HOSTED_ZONE_ID }}
-      TF_VAR_cors_origins:       ${{ secrets.CORS_ORIGINS }}
-      TF_VAR_cookie_domain:      ${{ secrets.COOKIE_DOMAIN }}
+      TF_VAR_app_name:            ${{ secrets.APP_NAME }}
+      TF_VAR_mongodb_db_name:     ${{ secrets.APP_NAME }}-${{ inputs.environment }}
+      TF_VAR_domain_name:         ${{ secrets.DOMAIN_NAME }}
+      TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
+      TF_VAR_backend_bucket_name: ${{ secrets.BACKEND_BUCKET_NAME }}
       # TF_VAR_acm_certificate_arn is resolved per-region in the
       # "Resolve ACM certificate ARN" step below and exported to GITHUB_ENV.
+      # TF_VAR_subdomain_internal, TF_VAR_cookie_domain, and TF_VAR_cors_origins
+      # are all derived from SUBDOMAIN + environment + DOMAIN_NAME in the
+      # "Resolve derived values" step below and exported to GITHUB_ENV.
 
     steps:
       - name: Checkout
@@ -89,31 +92,29 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Validate required secrets
         env:
-          ROLE_ARN:                    ${{ secrets.ROLE_ARN }}
-          APP_NAME:                    ${{ secrets.APP_NAME }}
-          STATE_BUCKET:                ${{ secrets.STATE_BUCKET }}
+          ROLE_ARN:                       ${{ secrets.ROLE_ARN }}
+          APP_NAME:                       ${{ secrets.APP_NAME }}
+          STATE_BUCKET:                   ${{ secrets.STATE_BUCKET }}
           ACM_CERTIFICATE_ARN_AP_SOUTH_1: ${{ secrets.ACM_CERTIFICATE_ARN_AP_SOUTH_1 }}
-          SUBDOMAIN_INTERNAL:          ${{ secrets.SUBDOMAIN_INTERNAL }}
-          DOMAIN_NAME:                 ${{ secrets.DOMAIN_NAME }}
-          HOSTED_ZONE_ID:              ${{ secrets.HOSTED_ZONE_ID }}
-          CORS_ORIGINS:                ${{ secrets.CORS_ORIGINS }}
-          COOKIE_DOMAIN:               ${{ secrets.COOKIE_DOMAIN }}
-          JWT_SECRET:                  ${{ secrets.JWT_SECRET }}
-          GOOGLE_CLIENT_ID:            ${{ secrets.GOOGLE_CLIENT_ID }}
-          MONGODB_URI:                 ${{ secrets.MONGODB_URI }}
-          OPENAI_MODEL:                ${{ secrets.OPENAI_MODEL }}
-          OPENAI_API_KEY:              ${{ secrets.OPENAI_API_KEY }}
+          SUBDOMAIN:                      ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:                    ${{ secrets.DOMAIN_NAME }}
+          HOSTED_ZONE_ID:                 ${{ secrets.HOSTED_ZONE_ID }}
+          BACKEND_BUCKET_NAME:            ${{ secrets.BACKEND_BUCKET_NAME }}
+          JWT_SECRET:                     ${{ secrets.JWT_SECRET }}
+          GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
+          MONGODB_URI:                    ${{ secrets.MONGODB_URI }}
+          OPENAI_MODEL:                   ${{ secrets.OPENAI_MODEL }}
+          OPENAI_API_KEY:                 ${{ secrets.OPENAI_API_KEY }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME")
           [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET")
           [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1" ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
-          [[ -z "$SUBDOMAIN_INTERNAL"             ]] && missing+=("SUBDOMAIN_INTERNAL")
+          [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
-          [[ -z "$CORS_ORIGINS"                   ]] && missing+=("CORS_ORIGINS")
-          [[ -z "$COOKIE_DOMAIN"                  ]] && missing+=("COOKIE_DOMAIN")
+          [[ -z "$BACKEND_BUCKET_NAME"            ]] && missing+=("BACKEND_BUCKET_NAME")
           [[ -z "$JWT_SECRET"                     ]] && missing+=("JWT_SECRET")
           [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
@@ -146,6 +147,32 @@ jobs:
             ap-south-1) echo "TF_VAR_acm_certificate_arn=$ACM_ARN_AP_SOUTH_1" >> "$GITHUB_ENV" ;;
             *) echo "ERROR: No ACM certificate configured for region '${{ inputs.aws_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
           esac
+
+      # -------------------------------------------------------------------------
+      # Several values are derived from SUBDOMAIN + environment + DOMAIN_NAME
+      # using the same prod/non-prod FQDN logic as local.fqdn in infra-live-edge:
+      #   prod     → {subdomain}.{domain_name}
+      #   non-prod → {subdomain}-{environment}.{domain_name}
+      #
+      # subdomain_internal  — internal ALB prefix: SUBDOMAIN + "-internal"
+      # cookie_domain       — public CloudFront FQDN (browser cookie scope)
+      # cors_origins        — allowed browser origin: https://{fqdn}
+      #
+      # None of these need to be maintained as separate GitHub secrets.
+      # -------------------------------------------------------------------------
+      - name: Resolve derived values
+        env:
+          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        run: |
+          echo "TF_VAR_subdomain_internal=${SUBDOMAIN}-internal" >> "$GITHUB_ENV"
+          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+            FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
+          else
+            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+          fi
+          echo "TF_VAR_cookie_domain=${FQDN}"          >> "$GITHUB_ENV"
+          echo "TF_VAR_cors_origins=https://${FQDN}"   >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Model overrides via GitHub Environment Secrets.
