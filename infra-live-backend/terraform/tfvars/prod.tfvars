@@ -1,11 +1,7 @@
 # aws_region and environment are supplied via workflow inputs (TF_VAR_*)
 
-# subdomain_internal, domain_name, hosted_zone_id, acm_certificate_arn
-#   are supplied via GitHub Environment Secrets (TF_VAR_*)
-
-app_name            = "buddy360"
-backend_bucket_name = "person-backend-prod-app-bucket"
-mongodb_db_name     = "buddy360-prod"
+# subdomain_internal, domain_name, hosted_zone_id, acm_certificate_arn,
+# backend_bucket_name, app_name, mongodb_db_name are supplied via GitHub Environment Secrets (TF_VAR_*)
 
 # Networking
 vpc_cidr              = "10.22.0.0/16"

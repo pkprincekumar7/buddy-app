@@ -21,33 +21,24 @@ This guide covers the three Terraform modules and six GitHub Actions workflows (
                           └──────┬─────────┬───┘
                        /api/*    │         │   /*
                   ┌──────────────┘         └──────────────────────┐
-                  │                                                 │
+                  │ HTTPS/443                                       │
                   ▼                                                 ▼
-        ┌───────────────────┐               ┌─────────────────────────┐
-        │  ALB              │               │  S3 — frontend assets   │
-        │  (ap-south-1)     │               │  (us-east-1)            │
-        │  single CF origin │               │  OAC — no public access │
-        └─────────┬─────────┘               └─────────────────────────┘
-                  │ HTTPS/443
-                  ▼
-
-── Backend VPC layout (ap-south-1, Mumbai) ──
-
-╔══════════════════╗
-║   ap-south-1     ║
-║  (Mumbai)        ║
-╠══════════════════╣
-║ VPC              ║
-║  [public subnet] ║
-║  ALB (HTTPS/443) ║
-║  ECS Fargate     ║
-║  (public IP/IGW) ║
-║  [private subnet]║
-║  Redis (in-VPC)  ║
-╚══════════════════╝
+╔══════════════════════════════╗               ┌─────────────────────────┐
+║  Backend VPC (ap-south-1)    ║               │  S3 — frontend assets   │
+╠══════════════════════════════╣               │  (us-east-1)            │
+║  [public subnet]             ║               │  OAC — no public access │
+║  ALB (HTTPS/443)             ║               └─────────────────────────┘
+║    │ HTTP/8000                ║
+║  ECS Fargate                 ║
+║  (public IP · IGW egress)    ║
+║  [private subnet]            ║
+║  Redis (in-VPC · TLS)        ║
+╚══════════════════════════════╝
          │ outbound via Internet Gateway
          ├──▶ ECR (ap-south-1)
          ├──▶ Secrets Manager (ap-south-1)
+         ├──▶ S3 (us-east-1, backend bucket)
+         ├──▶ LLM APIs (OpenAI · Anthropic · Gemini)
          │
          │ TLS
          ▼
@@ -131,8 +122,8 @@ deploy-live-frontend reads: /edge/s3_bucket_name
 | Resource | Convention | Region | Notes |
 |---|---|---|---|
 | S3 state bucket | any name | `us-east-1` | Holds all Terraform state; set as `STATE_BUCKET` secret |
-| Frontend assets bucket | `person-frontend-{env}-bucket` | `us-east-1` | One per environment; name set in each module's tfvars |
-| Backend app bucket | `person-backend-{env}-app-bucket` | `us-east-1` | One per environment; name set in backend tfvars |
+| Frontend assets bucket | `person-frontend-{env}-bucket` | `us-east-1` | One per environment; name set via `FRONTEND_BUCKET_NAME` environment secret |
+| Backend app bucket | `person-backend-{env}-app-bucket` | `us-east-1` | One per environment; name set via `BACKEND_BUCKET_NAME` environment secret |
 | IAM role (OIDC) | any name | global | Trusted by GitHub Actions; ARN set as `ROLE_ARN` secret |
 | ACM certificate | covers public subdomain | `us-east-1` | For CloudFront; set as `ACM_CERTIFICATE_ARN_US_EAST_1` |
 | ACM certificate | covers internal subdomain | `ap-south-1` | For ALB HTTPS; set as `ACM_CERTIFICATE_ARN_AP_SOUTH_1` |
@@ -154,13 +145,11 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | Secret | Used by | Description |
 |---|---|---|
 | `ROLE_ARN` | All workflows | IAM role ARN assumed via OIDC |
-| `DOMAIN_NAME` | `terraform-live-backend`, `terraform-live-edge` | Root domain (e.g. `learning-dev.com`) |
-| `SUBDOMAIN` | `terraform-live-edge` | Public subdomain prefix (e.g. `buddy`) |
-| `SUBDOMAIN_INTERNAL` | `terraform-live-backend` | Internal ALB subdomain prefix (e.g. `buddy-internal-ap`) |
+| `DOMAIN_NAME` | `terraform-live-backend`, `terraform-live-edge`, `deploy-live-frontend` | Root domain (e.g. `learning-dev.com`) |
+| `SUBDOMAIN` | `terraform-live-backend`, `terraform-live-edge`, `deploy-live-frontend` | Public subdomain prefix (e.g. `buddy`); backend derives `subdomain_internal` as `{SUBDOMAIN}-internal`; frontend derives `VITE_API_URL` as `https://{SUBDOMAIN}[-{env}].{DOMAIN_NAME}` |
 | `HOSTED_ZONE_ID` | `terraform-live-backend`, `terraform-live-edge` | Route 53 hosted zone ID |
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | `terraform-live-backend` | ACM cert in `ap-south-1` covering the internal ALB subdomain |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | `terraform-live-edge` | ACM cert in `us-east-1` for CloudFront (must be in `us-east-1`) |
-| `VITE_API_URL` | `deploy-live-frontend` | Frontend env var: API base URL |
 | `VITE_GOOGLE_CLIENT_ID` | `deploy-live-frontend` | Frontend env var: Google OAuth client ID |
 | `JWT_SECRET` | `terraform-live-backend` | Injected into Secrets Manager (required) |
 | `GOOGLE_CLIENT_ID` | `terraform-live-backend` | Injected into Secrets Manager (required) |
@@ -170,8 +159,8 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | `OPENAI_MODEL` | `terraform-live-backend` | OpenAI model identifier passed as ECS env var (required; all envs default to `gpt-5.4-mini` in tfvars) |
 | `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (optional — falls back to `claude-sonnet-4-6` in tfvars) |
 | `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (optional — falls back to `gemini-1.5-pro` in tfvars) |
-| `CORS_ORIGINS` | `terraform-live-backend` | Passed as `CORS_ORIGINS` env var to the ECS container (not a secret) |
-| `COOKIE_DOMAIN` | `terraform-live-backend` | Passed as `COOKIE_DOMAIN` env var to the ECS container (not a secret) |
+| `BACKEND_BUCKET_NAME` | `terraform-live-backend` | Pre-existing S3 bucket name for backend app use (`us-east-1`) |
+| `FRONTEND_BUCKET_NAME` | `terraform-live-edge`, `terraform-live-frontend` | Pre-existing S3 bucket name for frontend assets (`us-east-1`) |
 | `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager (required) |
 
 ---
@@ -200,7 +189,7 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 
 Run workflows via **GitHub → Actions → workflow name → Run workflow**.
 
-> **Shortcut:** `terraform-live-all` runs all five steps in a single trigger. Use individual workflows when you need to re-run or troubleshoot a specific step.
+> **Shortcut:** `terraform-live-all` runs all five steps in a single trigger. Use individual workflows when you need to re-run or troubleshoot a specific step. Set the `deploy` input to `false` (default `true`) to run only the three Terraform steps without triggering a backend or frontend deploy — useful when updating infrastructure config without a new image push.
 
 ```
 Step 1  terraform-live-backend  action=apply  aws_region=ap-south-1
@@ -232,15 +221,15 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **VPC**: 2 public subnets + 2 private subnets across 2 AZs in `ap-south-1`; Internet Gateway + public route table; private route table (no default route — ElastiCache has no internet access needed)
 - **Security groups**: ALB SG accepts HTTPS (443) from CloudFront managed prefix list only (`com.amazonaws.global.cloudfront.origin-facing`); ECS task SG accepts port 8000 from ALB SG only; both SGs allow unrestricted egress
 - **ALB** (HTTPS/443): CloudFront-only ingress via managed prefix list; TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06` (TLS 1.3 preferred, 1.2 minimum); ACM cert in `ap-south-1` covers internal ALB subdomain; target group health-checks on `GET /health` (HTTP 200, 30 s interval, 5 s timeout, 2 healthy / 3 unhealthy thresholds)
-- **ECS Fargate**: cluster with Container Insights enabled; task definition runs on `awsvpc` network mode; health check `python -c "urllib.request.urlopen('http://127.0.0.1:8000/health')"` (30 s interval, 60 s start period); deployment circuit breaker enabled with automatic rollback; `ignore_changes = [task_definition, desired_count]` — Terraform does not manage image updates after initial apply; ⚠ `desired_count` is also ignored, so manually scaling the service to 0 (e.g. to save cost) will **not** be restored by a subsequent `terraform apply` — use `aws ecs update-service --cluster <cluster> --service <service> --desired-count <N>` to scale back up
-- **ECS Exec**: enabled in `dev` and `stg` (scoped `ssmmessages:*` permissions on task role); disabled in `prod`
+- **ECS Fargate**: cluster with Container Insights enabled; task definition runs on `awsvpc` network mode; health check `python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1` (30 s interval, 5 s timeout, 3 retries, 60 s start period); deployment circuit breaker enabled with automatic rollback; `ignore_changes = [task_definition, desired_count]` — Terraform does not manage image updates after initial apply; ⚠ `desired_count` is also ignored, so manually scaling the service to 0 (e.g. to save cost) will **not** be restored by a subsequent `terraform apply` — use `aws ecs update-service --cluster <cluster> --service <service> --desired-count <N>` to scale back up
+- **ECS Exec**: enabled in `dev` and `stg` (task role grants `ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`, `ssmmessages:OpenControlChannel`, `ssmmessages:OpenDataChannel`); disabled in `prod`
 - **ECR**: private repository in `ap-south-1`; `scan_on_push = true`; AES256 encryption at rest; lifecycle policy — keep last 10 tagged images, expire untagged after 1 day
 - **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient (acceptable for ephemeral rate-limit counters; revisit if persistent or sensitive data is ever cached); used for LLM rate-limit counters only (ephemeral, no persistence needed)
 - **CloudWatch Logs**: log group `/ecs/{APP_NAME}/backend/{env}`, 30-day retention; Container Insights metrics also collected
 - **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
 - **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `S3_BUCKET_NAME` env var; separate from the frontend assets bucket
-- **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue`; task role — inline S3 policy on backend bucket + scoped `ssmmessages:*` for ECS Exec
-- **Route 53 A record**: `{SUBDOMAIN_INTERNAL}-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
+- **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` and `secretsmanager:DescribeSecret`; task role — inline S3 policy on backend bucket + four specific `ssmmessages:` actions for ECS Exec (see ECS Exec bullet above)
+- **Route 53 A record**: `{SUBDOMAIN}-internal-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
 - Writes `alb_internal_fqdn`, `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` to SSM under `/{APP_NAME}/{env}/backend/ap-south-1/`
 
 **Step 2 — infra-live-edge**
@@ -269,7 +258,7 @@ Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore
 | Category | Fields |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `S3_BUCKET_NAME`, `CORS_ORIGINS`, `COOKIE_DOMAIN` |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `S3_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
 | Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
 | Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
 | Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |
@@ -310,7 +299,7 @@ All other fields — env vars, secrets references, CPU, memory, log config, heal
 ### Frontend deploy — `deploy-live-frontend`
 
 1. Reads `s3_bucket_name`, `cloudfront_distribution_id` from SSM under `/{APP_NAME}/{env}/edge/`
-2. Builds React app with `VITE_API_URL` and `VITE_GOOGLE_CLIENT_ID`
+2. Derives `VITE_API_URL` from `SUBDOMAIN` + environment + `DOMAIN_NAME`, then builds React app with it and `VITE_GOOGLE_CLIENT_ID`
 3. Syncs hashed assets (`/assets/*`) with 1-year immutable cache
 4. Syncs root files (`index.html`, etc.) with `no-cache` headers
 5. Invalidates CloudFront cache (`/*`) and waits for completion
@@ -340,7 +329,7 @@ Backend app secrets are auto-populated from GitHub environment secrets on the **
 
 The required keys (`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `MONGODB_URI`) are validated before apply. The optional LLM keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) fall back to `REPLACE_ME` if not set — the app will start but those providers will be unavailable.
 
-> **Note:** `CORS_ORIGINS` and `COOKIE_DOMAIN` are plain environment variables injected into the ECS task definition — they are **not** stored in Secrets Manager. To change them, update the `CORS_ORIGINS` / `COOKIE_DOMAIN` GitHub environment secrets and re-run `terraform-live-backend action=apply`.
+> **Note:** `CORS_ORIGINS`, `COOKIE_DOMAIN`, and `SUBDOMAIN_INTERNAL` are all **derived automatically** by the workflow from `SUBDOMAIN` + `environment` + `DOMAIN_NAME` — none need to be set as separate secrets. All follow the same prod/non-prod FQDN logic as CloudFront (`CORS_ORIGINS = https://{fqdn}`, `COOKIE_DOMAIN = {fqdn}`, `SUBDOMAIN_INTERNAL = {SUBDOMAIN}-internal`). They are plain ECS task definition env vars, not stored in Secrets Manager.
 
 To rotate or update a secret value (the only way after initial setup):
 
@@ -406,14 +395,14 @@ All estimates are in **USD/month**, based on **730 hours/month** (continuous 24/
 
 | Service | Dev | Stg | Prod |
 |---|---|---|---|
-| **ECS Fargate** | $9 | $18 | $72 |
+| **ECS Fargate** | ~$18 | ~$18 | $72 |
 | **Application Load Balancer** | $7 | $8 | $12 |
-| **ElastiCache Redis** (single node) | $12 | $25 | $50 |
+| **ElastiCache Redis** (single node) | ~$25 | ~$25 | $50 |
 | **ECR** (~1–2 GB image storage) | $1 | $1 | $1 |
 | **Secrets Manager** (1 secret) | $1 | $1 | $1 |
 | **CloudWatch Logs** (30-day retention) | $1 | $2 | $5 |
 | **CloudWatch Container Insights metrics** | ~$1 | ~$2 | ~$4 |
-| **Backend subtotal** | **~$32** | **~$57** | **~$145** |
+| **Backend subtotal** | **~$54** | **~$57** | **~$145** |
 
 > ECS Fargate rates: $0.04048/vCPU/hour · $0.004445/GB/hour (us-east-1 baseline; ap-south-1 ~10–15 % higher).
 > ElastiCache rates: t3.micro $0.017/h · t3.small $0.034/h · t3.medium $0.068/h.
@@ -442,7 +431,7 @@ Traffic assumptions: dev ~500 K req/month · stg ~2 M req/month · prod ~20 M re
 
 | Environment | Backend | Global | **Monthly total** | **Annual total** |
 |---|---|---|---|---|
-| **Dev** | ~$32 | ~$12 | **~$44 / month** | **~$528 / year** |
+| **Dev** | ~$54 | ~$12 | **~$66 / month** | **~$792 / year** |
 | **Stg** | ~$57 | ~$15 | **~$72 / month** | **~$864 / year** |
 | **Prod** | ~$145 | ~$48 | **~$193 / month** | **~$2 316 / year** |
 
@@ -451,7 +440,7 @@ Traffic assumptions: dev ~500 K req/month · stg ~2 M req/month · prod ~20 M re
 | Action | Saving | Applicable to |
 |---|---|---|
 | Stop dev/stg ECS service outside business hours (`desired_count = 0`) | up to 65 % of ECS cost | dev, stg |
-| Use `cache.t3.micro` for stg instead of t3.small | ~$13/month | stg |
+| Use `cache.t3.micro` for dev and stg instead of t3.small | ~$13/month each | dev, stg |
 | Enable CloudFront caching for `/api/*` responses where safe | reduces ALB LCU + ECS load | all |
 | Use CloudFront Price Class 100 (US/EU only) instead of PriceClass_200 | ~10–15 % of CF cost | prod (dev/stg already use PriceClass_100; set `cloudfront_price_class` in prod.tfvars) |
 | Reduce CloudWatch log retention from 30 to 7 days in dev | ~$0.50/month | dev |
