@@ -1,7 +1,6 @@
 variable "app_name" {
   description = "Application name used for resource naming and tagging"
   type        = string
-  default     = "buddy360"
 }
 
 variable "environment" {
@@ -63,7 +62,6 @@ variable "frontend_bucket_name" {
 variable "cloudfront_price_class" {
   description = "CloudFront price class controlling which edge locations serve traffic. PriceClass_100 = US/EU only; PriceClass_200 = US/EU/Asia/ME/Africa; PriceClass_All = all edge locations."
   type        = string
-  default     = "PriceClass_200"
 
   validation {
     condition     = contains(["PriceClass_100", "PriceClass_200", "PriceClass_All"], var.cloudfront_price_class)
