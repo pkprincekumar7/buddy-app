@@ -773,8 +773,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 key={area.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                whileTap={{ scale: 0.97, transition: { duration: 0.1, delay: 0 } }}
-                transition={{ delay: i * 0.08 }}
+                whileTap={{ scale: 0.97 }}
+                transition={{
+                  opacity: { delay: i * 0.08 },
+                  y: { delay: i * 0.08 },
+                  scale: { duration: 0.1, delay: 0 },
+                }}
                 onClick={async () => {
                   debouncedPersistRecommendationsProgress.flush?.();
                   setSelectedArea(area);
