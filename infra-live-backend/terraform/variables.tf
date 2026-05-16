@@ -22,7 +22,6 @@ variable "aws_region" {
 variable "app_name" {
   description = "Application name used for resource naming and tagging"
   type        = string
-  default     = "buddy360"
 }
 
 variable "environment" {
@@ -40,31 +39,26 @@ variable "environment" {
 variable "vpc_cidr" {
   description = "CIDR block for the backend VPC"
   type        = string
-  default     = "10.2.0.0/16"
 }
 
 variable "public_subnet_1_cidr" {
   description = "CIDR for public subnet AZ-1 (ALB and ECS tasks)"
   type        = string
-  default     = "10.2.1.0/24"
 }
 
 variable "public_subnet_2_cidr" {
   description = "CIDR for public subnet AZ-2 (ALB and ECS tasks)"
   type        = string
-  default     = "10.2.2.0/24"
 }
 
 variable "private_subnet_1_cidr" {
   description = "CIDR for private subnet AZ-1 (ElastiCache)"
   type        = string
-  default     = "10.2.3.0/24"
 }
 
 variable "private_subnet_2_cidr" {
   description = "CIDR for private subnet AZ-2 (ElastiCache)"
   type        = string
-  default     = "10.2.4.0/24"
 }
 
 # -- DNS / TLS ----------------------------------------------------------------
@@ -108,7 +102,6 @@ variable "mongodb_db_name" {
 variable "elasticache_node_type" {
   description = "ElastiCache node type"
   type        = string
-  default     = "cache.t3.micro"
 }
 
 # -- ECS / Fargate -------------------------------------------------------------
@@ -116,63 +109,48 @@ variable "elasticache_node_type" {
 variable "task_cpu" {
   description = "Fargate task CPU units (256 = 0.25 vCPU, 512 = 0.5 vCPU, 1024 = 1 vCPU)"
   type        = number
-  default     = 512
 }
 
 variable "task_memory" {
   description = "Fargate task memory in MiB"
   type        = number
-  default     = 1024
 }
 
 variable "desired_count" {
   description = "Number of ECS tasks to run"
   type        = number
-  default     = 1
 }
 
 variable "enable_execute_command" {
   description = "Enable ECS Exec (aws ecs execute-command) for live container debugging. Disable in prod."
   type        = bool
-  default     = false
 }
 
 # -- Application settings ------------------------------------------------------
 
-variable "app_env" {
-  description = "APP_ENV value passed to the backend container (dev, stg, or prod)"
+variable "openai_model" {
+  description = "OpenAI model identifier (gpt-5.4-mini is a valid, tested model identifier — not a typo)"
   type        = string
 }
 
-variable "openai_model" {
-  type = string
-  # gpt-5.4-mini is a valid, tested model identifier — not a typo.
-  default = "gpt-5.4-mini"
-}
-
 variable "anthropic_model" {
-  type    = string
-  default = "claude-sonnet-4-6"
+  type = string
 }
 
 variable "gemini_model" {
-  type    = string
-  default = "gemini-1.5-pro"
+  type = string
 }
 
 variable "llm_timeout_seconds" {
-  type    = number
-  default = 60
+  type = number
 }
 
 variable "llm_hourly_limit" {
-  type    = number
-  default = 200
+  type = number
 }
 
 variable "default_region" {
-  type    = string
-  default = "us"
+  type = string
 }
 
 variable "cors_origins" {
@@ -181,8 +159,7 @@ variable "cors_origins" {
 }
 
 variable "cookie_domain" {
-  description = "Cookie domain for session cookies (empty string means browser default)"
+  description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
   type        = string
-  default     = ""
 }
 

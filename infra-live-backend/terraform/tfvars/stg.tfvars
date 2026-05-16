@@ -1,7 +1,9 @@
 # aws_region and environment are supplied via workflow inputs (TF_VAR_*)
 
-# subdomain_internal, domain_name, hosted_zone_id, acm_certificate_arn,
-# backend_bucket_name, app_name, mongodb_db_name are supplied via GitHub Environment Secrets (TF_VAR_*)
+# app_name, mongodb_db_name, domain_name, hosted_zone_id, acm_certificate_arn,
+# backend_bucket_name, subdomain_internal, cookie_domain, cors_origins,
+# openai_model, anthropic_model, gemini_model
+# are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 
 # Networking
 vpc_cidr              = "10.12.0.0/16"
@@ -19,10 +21,6 @@ task_memory   = 1024
 desired_count = 1
 
 # Application
-app_env             = "stg"
-openai_model        = "gpt-5.4-mini" # valid, tested model identifier
-anthropic_model     = "claude-sonnet-4-6"
-gemini_model        = "gemini-1.5-pro"
 llm_timeout_seconds = 60
 llm_hourly_limit    = 100
 default_region      = "us"

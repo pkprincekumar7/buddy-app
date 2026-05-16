@@ -69,7 +69,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "COOKIE_SECURE", value = "true" },
         { name = "COOKIE_SAMESITE", value = "lax" },
         { name = "BEHIND_PROXY", value = "true" },
-        { name = "APP_ENV", value = var.app_env },
+        { name = "APP_ENV", value = var.environment },
         { name = "REDIS_URL", value = "rediss://${aws_elasticache_replication_group.main.primary_endpoint_address}:6379" },
         { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
         { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },

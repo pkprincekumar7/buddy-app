@@ -1,7 +1,6 @@
 variable "app_name" {
   description = "Application name"
   type        = string
-  default     = "buddy360"
 }
 
 variable "environment" {

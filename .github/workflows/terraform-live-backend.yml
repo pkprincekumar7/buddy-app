@@ -89,6 +89,9 @@ jobs:
       # Validate required secrets first — pure bash, no AWS calls needed —
       # so the workflow fails with a clear message before touching AWS if any
       # secret is missing, regardless of action (plan, apply, destroy, etc.).
+      # ANTHROPIC_API_KEY and GEMINI_API_KEY are intentionally omitted — they
+      # are optional integrations. If absent, the Secrets Manager init step
+      # writes REPLACE_ME placeholders which can be updated manually later.
       # -------------------------------------------------------------------------
       - name: Validate required secrets
         env:
@@ -103,8 +106,10 @@ jobs:
           JWT_SECRET:                     ${{ secrets.JWT_SECRET }}
           GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
           MONGODB_URI:                    ${{ secrets.MONGODB_URI }}
-          OPENAI_MODEL:                   ${{ secrets.OPENAI_MODEL }}
           OPENAI_API_KEY:                 ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL:                   ${{ secrets.OPENAI_MODEL }}
+          ANTHROPIC_MODEL:                ${{ secrets.ANTHROPIC_MODEL }}
+          GEMINI_MODEL:                   ${{ secrets.GEMINI_MODEL }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
@@ -118,8 +123,10 @@ jobs:
           [[ -z "$JWT_SECRET"                     ]] && missing+=("JWT_SECRET")
           [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
-          [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
           [[ -z "$OPENAI_API_KEY"                 ]] && missing+=("OPENAI_API_KEY")
+          [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
+          [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL")
+          [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
@@ -175,21 +182,20 @@ jobs:
           echo "TF_VAR_cors_origins=https://${FQDN}"   >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
-      # Model overrides via GitHub Environment Secrets.
-      # OPENAI_MODEL is required (validated above). ANTHROPIC_MODEL and
-      # GEMINI_MODEL are optional — when not set, Terraform falls back to the
-      # tfvars default for that environment.
+      # Export AI model identifiers from GitHub Environment Secrets.
+      # All three are required (validated above) — model names are non-sensitive
+      # config that may differ per environment, so they live as secrets rather
+      # than tfvars to allow changes without a code commit.
       # -------------------------------------------------------------------------
-      - name: Resolve optional model overrides
+      - name: Resolve model variables
         env:
           OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
           GEMINI_MODEL:    ${{ secrets.GEMINI_MODEL }}
         run: |
-          [[ -n "$OPENAI_MODEL"    ]] && echo "TF_VAR_openai_model=$OPENAI_MODEL"       >> "$GITHUB_ENV"
-          [[ -n "$ANTHROPIC_MODEL" ]] && echo "TF_VAR_anthropic_model=$ANTHROPIC_MODEL" >> "$GITHUB_ENV"
-          [[ -n "$GEMINI_MODEL"    ]] && echo "TF_VAR_gemini_model=$GEMINI_MODEL"       >> "$GITHUB_ENV"
-          true
+          echo "TF_VAR_openai_model=$OPENAI_MODEL"       >> "$GITHUB_ENV"
+          echo "TF_VAR_anthropic_model=$ANTHROPIC_MODEL" >> "$GITHUB_ENV"
+          echo "TF_VAR_gemini_model=$GEMINI_MODEL"       >> "$GITHUB_ENV"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
