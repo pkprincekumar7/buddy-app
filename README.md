@@ -293,7 +293,7 @@ All animations use **Framer Motion**. The design system follows a consistent dar
 
 ## GitHub Actions
 
-Six workflows live under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Seven workflows live under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
@@ -303,6 +303,7 @@ Six workflows live under [`.github/workflows/`](.github/workflows/). All authent
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution + ACM cert (always `us-east-1`) |
 | `deploy-live-backend.yml` | Manual / called | Builds Docker image, pushes to ECR, updates ECS service |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
+| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes) |
 
 ### One-time AWS setup: GitHub OIDC identity provider
 

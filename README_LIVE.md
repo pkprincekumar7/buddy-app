@@ -1,6 +1,6 @@
 # Live Infrastructure — Current State
 
-This guide covers the three Terraform modules and six GitHub Actions workflows (five component workflows plus one orchestrating workflow) that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
+This guide covers the three Terraform modules and seven GitHub Actions workflows (six component workflows plus one orchestrating workflow) that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
 
 ---
 
@@ -74,6 +74,7 @@ Browser ──HTTPS──▶ CloudFront ──HTTPS──▶ ALB (443) ──HTT
 | Edge | `infra-live-edge/` | `terraform-live-edge.yml` | CloudFront, WAF, public DNS, OAC; publish CF details to SSM |
 | Frontend | `infra-live-frontend/` | `terraform-live-frontend.yml` | S3 bucket policy (CloudFront OAC access only) |
 | Backend deploy | — | `deploy-live-backend.yml` | Build + push Docker image; rolling ECS update |
+| Backend restart | — | `restart-live-backend.yml` | Force-restart ECS tasks without a new build (picks up secret rotations, env changes) |
 | Frontend deploy | — | `deploy-live-frontend.yml` | Build React app; sync to S3; CloudFront invalidation |
 | **Full stack** | — | **`terraform-live-all.yml`** | **Orchestrates the five component workflows in sequence (single trigger)** |
 
@@ -283,7 +284,7 @@ All other fields — env vars, secrets references, CPU, memory, log config, heal
 | Application code | Run `deploy-live-backend` |
 | Env var / model / config (tfvars or GitHub secrets) | Run `terraform apply`, then `deploy-live-backend` (apply registers the new revision; deploy activates it) |
 | CPU / memory | Run `terraform apply`, then `deploy-live-backend` |
-| Secret values (API keys, DB URI) | Update via `aws secretsmanager put-secret-value`; restart tasks (run `deploy-live-backend` or force-deploy) |
+| Secret values (API keys, DB URI) | Update via `aws secretsmanager put-secret-value`; restart tasks via `restart-live-backend` |
 
 ---
 
