@@ -705,11 +705,11 @@ Generate:
 
   if (isLoadingAuth) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30 flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-          className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+          className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full"
         />
       </div>
     );
@@ -717,43 +717,43 @@ Generate:
 
   if (isAuthenticated && !appStateReady) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30 flex flex-col items-center justify-center gap-4 px-4">
+      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-4 px-4">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+          className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full"
         />
-        <p className="text-sm text-slate-600 text-center max-w-sm">Restoring your onboarding progress from your account…</p>
+        <p className="text-sm text-slate-500 text-center max-w-sm">Restoring your onboarding progress from your account…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
+    <div className="min-h-screen bg-[#0a0a0a]">
       {/* Phase Progress - hide on welcome */}
       {currentPhase > 0 && (
-        <div className="bg-white/80 backdrop-blur-lg border-b border-slate-100 sticky top-0 z-40">
-          <div className="max-w-4xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-2">
+        <div className="bg-[#0f0f0f]/90 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-40">
+          <div className="max-w-4xl mx-auto px-4 py-3">
+            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
               {phases.slice(1).map((phase, index) => (
                 <div
                   key={phase.id}
                   className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all whitespace-nowrap ${
-                    index + 1 === currentPhase 
-                      ? 'bg-teal-50 border border-teal-200' 
-                      : index + 1 < currentPhase 
-                        ? 'bg-emerald-50 border border-emerald-200'
-                        : 'bg-slate-50 border border-slate-200 opacity-50'
+                    index + 1 === currentPhase
+                      ? 'bg-teal-500/10 border border-teal-500/25'
+                      : index + 1 < currentPhase
+                        ? 'bg-emerald-500/10 border border-emerald-500/20'
+                        : 'bg-white/[0.03] border border-white/[0.06] opacity-50'
                   }`}
                 >
-                  <span className="text-lg">{phase.icon}</span>
-                  <span className={`text-sm font-medium hidden sm:block ${
-                    index + 1 === currentPhase ? 'text-teal-700' : index + 1 < currentPhase ? 'text-emerald-700' : 'text-slate-500'
+                  <span className="text-base">{phase.icon}</span>
+                  <span className={`text-xs font-medium hidden sm:block ${
+                    index + 1 === currentPhase ? 'text-teal-400' : index + 1 < currentPhase ? 'text-emerald-400' : 'text-slate-600'
                   }`}>
                     {phase.label}
                   </span>
                   {index + 1 < currentPhase && (
-                    <span className="text-emerald-500 text-sm">✓</span>
+                    <span className="text-emerald-400 text-xs">✓</span>
                   )}
                 </div>
               ))}
@@ -776,9 +776,9 @@ Generate:
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  className="w-16 h-16 border-4 border-teal-500 border-t-transparent rounded-full mb-4"
+                  className="w-12 h-12 border-2 border-teal-500 border-t-transparent rounded-full mb-4"
                 />
-                <p className="text-slate-600 font-medium text-center max-w-md">
+                <p className="text-slate-400 font-medium text-center max-w-md">
                   {completionBusy
                     ? 'Saving journey data…'
                     : journeyBusy
@@ -817,9 +817,9 @@ Generate:
                     handleBack();
                   }
                 }}
-                className="h-12 w-full sm:w-auto px-6 rounded-2xl border-2 border-slate-200"
+                className="h-12 w-full sm:w-auto px-6 rounded-2xl border border-white/[0.12] text-slate-300 bg-transparent hover:bg-white/[0.05] hover:text-white transition-all"
               >
-                <ChevronLeft className="w-5 h-5 mr-1" />
+                <ChevronLeft className="w-4 h-4 mr-1" />
                 Back
               </Button>
             </div>
@@ -828,9 +828,9 @@ Generate:
                 type="button"
                 variant="outline"
                 onClick={() => handleWizardStartOver()}
-                className="h-12 w-full sm:w-auto px-6 rounded-2xl border-2 border-amber-300 text-amber-800 hover:bg-amber-50"
+                className="h-12 w-full sm:w-auto px-6 rounded-2xl border border-amber-500/30 text-amber-400 bg-transparent hover:bg-amber-500/10 transition-all"
               >
-                <RotateCcw className="w-5 h-5 mr-1" />
+                <RotateCcw className="w-4 h-4 mr-1" />
                 Start Over
               </Button>
             </div>
@@ -841,7 +841,7 @@ Generate:
                 <Button
                   onClick={handleNext}
                   disabled={!canProceed()}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-slate-800 hover:bg-slate-900 disabled:opacity-50"
+                  className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal disabled:opacity-50"
                 >
                   Continue
                   <ChevronRight className="w-5 h-5 ml-1" />
@@ -849,7 +849,7 @@ Generate:
               ) : currentPhase === 3 && recPhaseHasNext ? (
                 <Button
                   onClick={() => recPhaseNextRef.current?.()}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold"
+                  className="h-12 w-full sm:w-auto px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal"
                 >
                   Next
                   <ChevronRight className="w-5 h-5 ml-1" />

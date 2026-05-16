@@ -521,25 +521,25 @@ export default function ConversationalOnboarding({
     const currentLabel = steps[activeStep >= 0 ? activeStep : steps.length - 1].label;
 
     return (
-      <div className="flex flex-col items-center justify-center h-[600px] max-h-[80vh] rounded-3xl border-2 border-teal-100 bg-gradient-to-br from-teal-50/40 via-white to-emerald-50/50 overflow-hidden px-6 sm:px-10 py-10 sm:py-12 space-y-8 shadow-xl shadow-teal-500/10">
+      <div className="flex flex-col items-center justify-center h-[600px] max-h-[80vh] rounded-2xl border border-white/[0.08] bg-[#141414] overflow-hidden px-6 sm:px-10 py-10 sm:py-12 space-y-8">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-          className="w-20 h-20 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-xl shadow-teal-500/25"
+          className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal"
         >
-          <Brain className="w-10 h-10 text-white" />
+          <Brain className="w-8 h-8 text-white" />
         </motion.div>
 
         <div className="text-center space-y-2">
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-800">Analyzing {analyzingName}'s personality</h2>
-          <p className="text-sm text-teal-800/80 font-medium">{currentLabel}</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-white">Analyzing {analyzingName}'s personality</h2>
+          <p className="text-sm text-teal-400 font-medium">{currentLabel}</p>
         </div>
 
         {/* Progress Bar */}
         <div className="w-full max-w-md space-y-2">
-          <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden border border-slate-100">
+          <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden">
             <div
-              className="h-3 rounded-full bg-gradient-to-r from-teal-400 to-emerald-500 transition-all duration-100 shadow-sm"
+              className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-teal-300 transition-all duration-100"
               style={{ width: `${analyzeProgress}%` }}
             />
           </div>
@@ -553,11 +553,11 @@ export default function ConversationalOnboarding({
             const done = analyzeProgress >= s.threshold;
             const active = !done && (i === 0 || analyzeProgress >= steps[i - 1]?.threshold);
             return (
-              <div key={i} className={`flex items-center gap-3 transition-opacity ${done || active ? 'opacity-100' : 'opacity-35'}`}>
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${done ? 'bg-gradient-to-br from-emerald-400 to-teal-600 text-white' : active ? 'bg-teal-100 text-teal-700 ring-2 ring-teal-200' : 'bg-slate-100 text-slate-400'}`}>
-                  <Icon className={`w-4 h-4 ${done ? 'text-white' : ''}`} />
+              <div key={i} className={`flex items-center gap-3 transition-opacity ${done || active ? 'opacity-100' : 'opacity-30'}`}>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${done ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : active ? 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30' : 'bg-white/[0.05] text-slate-500'}`}>
+                  <Icon className="w-4 h-4" />
                 </div>
-                <span className={`text-sm ${done ? 'text-emerald-800 font-medium line-through decoration-emerald-300' : active ? 'text-slate-800 font-semibold' : 'text-slate-400'}`}>
+                <span className={`text-sm ${done ? 'text-emerald-400 font-medium line-through decoration-emerald-600' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
                   {s.label}
                 </span>
               </div>
@@ -569,42 +569,42 @@ export default function ConversationalOnboarding({
   }
 
   return (
-    <div className="flex flex-col h-[600px] max-h-[80vh] bg-white rounded-3xl border border-slate-200 overflow-hidden">
+    <div className="flex flex-col h-[600px] max-h-[80vh] bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-teal-500 to-emerald-500">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] bg-[#1a1a1a]">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-            <span className="text-xl">🌱</span>
+          <div className="w-9 h-9 rounded-xl bg-teal-500/20 flex items-center justify-center">
+            <span className="text-lg">🌱</span>
           </div>
           <div>
-            <h3 className="font-semibold text-white">Buddy360 Guide</h3>
-            <p className="text-xs text-white/80">Your growth companion</p>
+            <h3 className="font-semibold text-white text-sm">Buddy360 Guide</h3>
+            <p className="text-xs text-slate-500">Your growth companion</p>
           </div>
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={persistVoiceToggle}
-          className="text-white hover:bg-white/20"
+          className="text-slate-400 hover:text-white hover:bg-white/[0.06]"
         >
-          {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
         </Button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <AnimatePresence>
           {messages.map((msg, index) => (
             <motion.div
               key={index}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                msg.role === 'user' 
-                  ? 'bg-teal-500 text-white rounded-tr-md' 
-                  : 'bg-slate-100 text-slate-800 rounded-tl-md'
+              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                msg.role === 'user'
+                  ? 'bg-teal-500 text-white rounded-tr-sm'
+                  : 'bg-[#1e1e1e] text-slate-300 rounded-tl-sm border border-white/[0.06]'
               }`}>
                 <p className="whitespace-pre-line">{msg.content}</p>
               </div>
@@ -618,11 +618,11 @@ export default function ConversationalOnboarding({
             animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="bg-slate-100 rounded-2xl rounded-tl-md px-4 py-3">
+            <div className="bg-[#1e1e1e] rounded-2xl rounded-tl-sm px-4 py-3 border border-white/[0.06]">
               <div className="flex gap-1">
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </motion.div>
@@ -633,29 +633,29 @@ export default function ConversationalOnboarding({
 
       {/* Input Area */}
       {showingLoadingDots && !allAnswered && (
-        <div className="px-4 pb-4 pt-2 border-t border-teal-100/60 bg-gradient-to-b from-white via-teal-50/30 to-emerald-50/20">
+        <div className="px-4 pb-4 pt-2 border-t border-white/[0.06]">
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
             className="flex justify-start"
           >
-            <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-tl-md border-2 border-teal-100 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/60 px-4 py-4 shadow-lg shadow-teal-500/10">
+            <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-tl-sm border border-teal-500/20 bg-teal-500/[0.05] px-4 py-4">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shrink-0 shadow-md shadow-teal-500/25">
-                  <Sparkles className="w-5 h-5 text-white" />
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shrink-0 glow-teal-sm">
+                  <Sparkles className="w-4 h-4 text-white" />
                 </div>
                 <div className="min-w-0 pt-0.5">
-                  <p className="text-slate-800 font-semibold text-[15px] leading-snug">
+                  <p className="text-white font-semibold text-sm leading-snug">
                     Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
                   </p>
-                  <p className="text-xs text-teal-700/85 mt-1.5 font-medium">
+                  <p className="text-xs text-teal-400 mt-1.5">
                     Getting things ready — almost there
                   </p>
                   <div className="flex gap-1.5 mt-3">
-                    <span className="w-2 h-2 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>
@@ -665,7 +665,7 @@ export default function ConversationalOnboarding({
       )}
 
       {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 border-t border-white/[0.06] pt-3">
           <div className="flex flex-wrap gap-2">
             {currentStepData.options.map((option, index) => {
               const chosen = collectedData[currentStepData.field];
@@ -675,13 +675,13 @@ export default function ConversationalOnboarding({
                 key={option}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.1 }}
+                transition={{ delay: index * 0.08 }}
                 type="button"
                 onClick={() => handleChoiceSelect(option)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                   isSelected
-                    ? 'border-teal-500 bg-teal-50 text-teal-900 ring-2 ring-teal-200 shadow-sm'
-                    : 'bg-white border-slate-200 text-slate-700 hover:border-teal-500 hover:bg-teal-50'
+                    ? 'border-teal-500 bg-teal-500/15 text-teal-300'
+                    : 'bg-white/[0.04] border-white/[0.10] text-slate-400 hover:border-teal-500/50 hover:bg-teal-500/10 hover:text-teal-300'
                 }`}
               >
                 {option}
@@ -693,9 +693,9 @@ export default function ConversationalOnboarding({
             <button
               onClick={handleReset}
               title="Reset conversation"
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors"
+              className="flex items-center gap-1 text-xs text-slate-600 hover:text-red-400 transition-colors"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3 h-3" />
               Reset
             </button>
           </div>
@@ -703,9 +703,9 @@ export default function ConversationalOnboarding({
       )}
 
       {waitingForResponse && !allAnswered && (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-        <form onSubmit={handleSubmit} className="p-4 border-t border-slate-100">
+        <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.06]">
           {currentStepData.hint && (
-            <p className="text-xs text-slate-400 mb-2">{currentStepData.hint}</p>
+            <p className="text-xs text-slate-500 mb-2">{currentStepData.hint}</p>
           )}
           <div className="flex gap-2">
             <InputWithVoice
@@ -713,29 +713,29 @@ export default function ConversationalOnboarding({
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               placeholder={currentStepData.placeholder || 'Type your response...'}
-              className="flex-1 h-12 rounded-xl border-slate-200"
+              className="flex-1 h-11 rounded-xl bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600 focus:border-teal-500/50"
             />
             <Button
               type="button"
               variant="outline"
               onClick={handleReset}
-              className="h-12 px-3 rounded-xl border-slate-200 text-slate-500 hover:text-red-500 hover:border-red-300"
+              className="h-11 px-3 rounded-xl border-white/[0.10] bg-transparent text-slate-500 hover:text-red-400 hover:border-red-500/30"
               title="Reset conversation"
             >
-              <RotateCcw className="w-5 h-5" />
+              <RotateCcw className="w-4 h-4" />
             </Button>
-            <Button type="submit" className="h-12 px-4 rounded-xl bg-teal-500 hover:bg-teal-600">
-              <Send className="w-5 h-5" />
+            <Button type="submit" className="h-11 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-[#0a0a0a]">
+              <Send className="w-4 h-4" />
             </Button>
           </div>
         </form>
       )}
 
       {allAnswered && typeof onContinueToPersonality === 'function' && (
-        <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+        <div className="p-4 border-t border-white/[0.06] shrink-0">
           <Button
             type="button"
-            className="w-full h-12 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-medium"
+            className="w-full h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold"
             onClick={() => onContinueToPersonality()}
           >
             Continue to personality analysis

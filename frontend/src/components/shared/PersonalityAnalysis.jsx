@@ -378,7 +378,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl p-6 border-2 border-slate-200 shadow-sm"
+        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
       >
         <div className="text-center mb-4">
           <motion.div
@@ -387,8 +387,8 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
             transition={{ delay: 0.2, type: "spring" }}
             className="flex items-center justify-center gap-2 mb-3"
           >
-            <Sparkles className="w-8 h-8 text-teal-500" />
-            <h3 className="text-3xl font-bold text-slate-800">{profile.name}</h3>
+            <Sparkles className="w-6 h-6 text-teal-400" />
+            <h3 className="text-2xl font-bold text-white">{profile.name}</h3>
           </motion.div>
           <p className="text-slate-500 text-sm">{childName}'s personality type</p>
         </div>
@@ -400,27 +400,27 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 + i * 0.1 }}
-              className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm"
+              className="px-3 py-1 bg-white/[0.06] text-slate-300 rounded-full text-xs border border-white/[0.06]"
             >
               {trait}
             </motion.span>
           ))}
         </div>
 
-        <p className="text-slate-600 text-center leading-relaxed">
+        <p className="text-slate-400 text-sm text-center leading-relaxed">
           {profile.description}
         </p>
       </motion.div>
 
       {/* Personality Balance */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200">
-        <h4 className="font-semibold text-slate-800 mb-4">Personality Profile Breakdown</h4>
-        <div className="space-y-3">
+      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]">
+        <h4 className="font-semibold text-white mb-4 text-sm">Personality Profile Breakdown</h4>
+        <div className="space-y-4">
           {topTypes.map((item, index) => {
             const maxScore = topTypes[0].score;
             const percentage = maxScore > 0 ? (item.score / maxScore) * 100 : 0;
             const itemProfile = personalityTypes[item.name];
-            
+
             if (!itemProfile) return null;
 
             return (
@@ -430,11 +430,11 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-medium text-slate-700">{itemProfile.name}</span>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="font-medium text-slate-300">{itemProfile.name}</span>
                   <span className="text-slate-500">{Math.round(percentage)}%</span>
                 </div>
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${percentage}%` }}
@@ -449,8 +449,8 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
       </div>
 
       {/* Famous People */}
-      <div className="bg-slate-50 rounded-3xl p-6 border border-slate-200">
-        <h4 className="font-semibold text-slate-800 mb-3">Famous {
+      <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-white/[0.08]">
+        <h4 className="font-semibold text-white mb-1 text-sm">Famous {
           profile.name === 'Ambitious' ? 'Achievers' :
           profile.name === 'Determined' ? 'Strivers' :
           profile.name === 'Outgoing' ? 'Socializers' :
@@ -462,8 +462,8 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
           profile.name === 'Playful' ? 'Players' :
           profile.name + 's'
         }</h4>
-        <p className="text-xs text-slate-500 mb-4">People {childName} may relate to</p>
-        <div className="flex flex-wrap justify-center gap-4">
+        <p className="text-xs text-slate-500 mb-5">People {childName} may relate to</p>
+        <div className="flex flex-wrap justify-center gap-6">
           {profile.famous_people.map((person, i) => (
             <motion.div
               key={i}
@@ -472,17 +472,17 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
               transition={{ delay: 0.1 * i }}
               className="flex flex-col items-center gap-2"
             >
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white shadow-md">
-                <img 
-                  src={person.image} 
+              <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/[0.10]">
+                <img
+                  src={person.image}
                   alt={person.name}
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=random&size=128`;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=1a1a1a&color=2dd4bf&size=128`;
                   }}
                 />
               </div>
-              <span className="text-xs text-slate-600 text-center font-medium max-w-[80px]">
+              <span className="text-xs text-slate-400 text-center font-medium max-w-[80px] leading-tight">
                 {person.name}
               </span>
             </motion.div>
@@ -491,12 +491,12 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
       </div>
 
       {/* Strengths */}
-      <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-200">
-        <h4 className="font-semibold text-emerald-800 mb-3">💪 Strengths</h4>
+      <div className="bg-[#141414] rounded-2xl p-5 border border-emerald-500/15">
+        <h4 className="font-semibold text-emerald-400 mb-3 text-sm">💪 Strengths</h4>
         <ul className="space-y-2">
           {profile.strengths.map((s, i) => (
-            <li key={i} className="text-sm text-emerald-700 flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+            <li key={i} className="text-sm text-slate-400 flex items-center gap-2.5">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
               {s}
             </li>
           ))}
@@ -509,10 +509,10 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="bg-amber-50 rounded-2xl p-5 border border-amber-200"
+          className="bg-[#141414] rounded-2xl p-5 border border-amber-500/15"
         >
-          <h4 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
-            <Sprout className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />
+          <h4 className="font-semibold text-amber-400 mb-3 flex items-center gap-2 text-sm">
+            <Sprout className="w-4 h-4 shrink-0" aria-hidden />
             Growth Areas
           </h4>
           <ul className="space-y-2">
@@ -522,7 +522,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.05 * i }}
-                className="text-sm text-amber-950/90 flex items-start gap-2"
+                className="text-sm text-slate-400 flex items-start gap-2.5"
               >
                 <span className="w-1.5 h-1.5 mt-1.5 bg-amber-500 rounded-full shrink-0" aria-hidden />
                 <span>{item}</span>

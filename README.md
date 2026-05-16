@@ -2,7 +2,21 @@
 
 A child development app for parents. Stack: **React 18 (Vite)**, **FastAPI**, **MongoDB** (Motor async driver), optional LLM providers (**OpenAI**, **Anthropic**, **Gemini**) and **OpenAI Whisper** for audio transcription. Run everything with **Docker Compose** or the backend/frontend dev servers.
 
-Frontend UI library: **Tailwind CSS** + **shadcn/ui** (Radix UI primitives), **React Query**, **Framer Motion**, **React Router v6**, **Recharts**, **Stripe** (payments), **Three.js** (3D), **React Leaflet** (maps), **React Quill** (rich text), **jsPDF** + **html2canvas** (PDF export), **@hello-pangea/dnd** (drag and drop), **next-themes**, **Sonner** (notifications).
+Frontend UI library: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **React Query**, **Framer Motion v11** (animations), **React Router v6**, **Recharts** (charts), **Stripe** (payments), **Three.js** (3D), **React Leaflet** (maps), **React Quill** (rich text), **jsPDF** + **html2canvas** (PDF export), **@hello-pangea/dnd** (drag and drop), **next-themes**, **Sonner** (notifications).
+
+## Table of contents
+
+- [Quick start (Docker)](#quick-start-docker)
+- [Connecting to MongoDB](#connecting-to-mongodb)
+- [Google Sign-In](#google-sign-in-optional)
+- [Local development](#local-development-without-docker-for-nodepython)
+- [API overview](#api-overview)
+- [Frontend pages](#frontend-pages)
+- [UI design system](#ui-design-system)
+- [Frontend animations](#frontend-animations)
+- [GitHub Actions](#github-actions)
+- [Product notes](#product-notes)
+- [Tests](#tests)
 
 ## Quick start (Docker)
 
@@ -175,9 +189,111 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 
 Protected routes redirect to `/Login` when unauthenticated. Pages other than Login and Register are auto-registered from `pages.config.js`.
 
+## UI design system
+
+The entire frontend uses a **dark cosmic theme**. All colors are defined as CSS custom properties in `frontend/src/index.css` and applied via Tailwind utility classes.
+
+### Color tokens
+
+| Token | Value | Usage |
+|---|---|---|
+| Base background | `#0a0a0a` | Page backgrounds (`bg-[#0a0a0a]`) |
+| Card surface | `#141414` | Primary cards and modals |
+| Elevated card | `#1a1a1a` | Nested cards, headers inside modals |
+| Input surface | `#1e1e1e` | Form inputs, chat bubbles |
+| Border subtle | `rgba(255,255,255,0.06)` | Default card borders (`border-white/[0.06]`) |
+| Border default | `rgba(255,255,255,0.08)` | Standard card borders |
+| Border emphasis | `rgba(255,255,255,0.10–0.14)` | Hover and active borders |
+| Primary accent | `teal-400 / teal-500` | CTAs, active states, highlights |
+| Secondary accent | `amber-400 / amber-500` | Warnings, "Start Over" actions |
+| Success | `emerald-400 / emerald-500` | Completed states, scores |
+| Text primary | `white` | Headings and active labels |
+| Text secondary | `slate-300` | Body text |
+| Text muted | `slate-400 / slate-500` | Captions, placeholders |
+
+### Glow utilities
+
+Three custom Tailwind utilities are defined in `index.css`:
+
+| Class | Effect |
+|---|---|
+| `glow-teal` | Large teal box-shadow — used on primary CTA buttons |
+| `glow-teal-sm` | Small teal box-shadow — used on icons and small accents |
+| `glow-amber` | Amber box-shadow — used on warning/secondary buttons |
+
+### Button hierarchy
+
+| Type | Style |
+|---|---|
+| Primary CTA | `bg-gradient-to-r from-teal-500 to-teal-400 text-[#0a0a0a] font-semibold glow-teal` |
+| Secondary / outline | `border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]` |
+| Danger / reset | `border border-amber-500/30 text-amber-400 bg-transparent hover:bg-amber-500/10` |
+| Teal outline | `border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10` |
+
+## Frontend animations
+
+All animations use **Framer Motion**. The design system follows a consistent dark/cosmic aesthetic: elements fade in and slide up on entry, lists stagger by a fixed delay per item, and modals scale in from slightly below center.
+
+### Page / section entry
+
+| Location | Duration | Effect |
+|---|---|---|
+| Home — hero | `0.8s` | Fade + slide up (`y: 30 → 0`) |
+| Home — pillar cards | `0.08s` stagger per card | Fade + slide up, triggered on scroll (`whileInView`) |
+| Home — "How It Works" cards | `0.15s` stagger per card | Fade + slide up, triggered on scroll |
+| Home — CTA section | `0.3s` (Framer default) | Fade + scale (`0.97 → 1`) |
+| Onboarding — phase transition | `0.3s` | Slide left/right (`x: ±50 → 0`), `AnimatePresence mode="wait"` |
+| LifePathway — page entry | `0.3s` (Framer default) | Fade + slide up |
+| LifePathway — sections (stagger) | `0.1s` per section | Slide from left (`x: -20 → 0`) |
+| GoalsDashboard — month cards | `0.1s` stagger per card | Fade + slide up |
+
+### Component-level
+
+| Location | Duration | Effect |
+|---|---|---|
+| WelcomePhase — logo icon | spring (`stiffness: 200`) | Scale pop (`0 → 1`) |
+| WelcomePhase — elements (stagger) | `0.2s – 0.8s` sequential delays | Fade + slide up |
+| ConversationalOnboarding — chat messages | `0.3s` (Framer default) | Fade + slide up (`y: 8 → 0`), `AnimatePresence` |
+| ConversationalOnboarding — choice buttons | `0.08s` stagger per button | Fade + scale (`0.9 → 1`) |
+| ConversationalOnboarding — typing dots | CSS `animate-bounce` (built-in) | Staggered bounce (`0ms / 150ms / 300ms` delay) |
+| RecommendationsPhase — area cards | `0.08s` stagger per card | Fade + slide up |
+| RecommendationsPhase — question transition | `0.2s`, `AnimatePresence mode="wait"` | Fade + slide up/down (`y: 20 → 0 / 0 → -20`) |
+| RecommendationsPhase — answer items | `0.1s` stagger per item | Slide from left (`x: -20 → 0`) |
+| RecommendationsPhase — recommendations list | `0.08s` stagger per item | Slide from left (`x: -10 → 0`) |
+| PersonalityAnalysis — main card | `0.3s` (Framer default) | Fade + scale (`0.95 → 1`) |
+| PersonalityAnalysis — type icon | spring, `0.2s` delay | Scale pop (`0 → 1`) |
+| PersonalityAnalysis — trait chips | `0.1s` stagger per chip | Fade + slide up (`y: 10 → 0`) |
+| PersonalityAnalysis — progress bars | `0.8s` per bar, `0.1s` stagger | Width fill (`0 → actual%`) |
+| PersonalityAnalysis — famous people | `0.1s` stagger per image | Fade + scale (`0.8 → 1`) |
+
+### Modals
+
+| Location | Duration | Effect |
+|---|---|---|
+| ActivityModal | `0.3s` (Framer default) | Scale + slide up (`scale: 0.9, y: 20 → 1, 0`), `AnimatePresence` |
+| ProgressInsightsModal | `0.3s` (Framer default) | Scale + slide up (`scale: 0.95, y: 20 → 1, 0`), `AnimatePresence` |
+| LifePathway — concern modal (backdrop) | `0.2s` | Fade (`opacity: 0 → 1`), `AnimatePresence` |
+| LifePathway — concern modal (card) | `0.25s` ease-out | Scale + slide up (`scale: 0.95, y: 16 → 1, 0`) |
+
+### Loaders / repeating
+
+| Location | Duration | Effect |
+|---|---|---|
+| All page/section spinners | `1.2s – 2s` infinite | Rotate 360° (`ease: linear`) |
+| Analyzing screen spinner (ConversationalOnboarding) | `3s` infinite | Slow rotate 360° |
+| Typing indicator dots | CSS `animate-bounce` | Staggered bounce |
+
+### Design rules
+
+- **Default card entry**: `initial={{ opacity: 0, y: 20 }}` → `animate={{ opacity: 1, y: 0 }}`
+- **Default list stagger**: `delay: index * 0.08` (fast lists) or `index * 0.1` (slower reveals)
+- **Icon spring**: `transition={{ type: "spring", stiffness: 200 }}` — used for logo/icon pops
+- **Phase transitions**: always use `AnimatePresence mode="wait"` so the exiting element completes before the entering one starts
+- **Exit animations**: modals exit with the reverse of their entry (`scale: 0.95, y: 16, opacity: 0`)
+
 ## GitHub Actions
 
-Six workflows live under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Seven workflows live under [`.github/workflows/`](.github/workflows/). All authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
@@ -187,6 +303,7 @@ Six workflows live under [`.github/workflows/`](.github/workflows/). All authent
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution + ACM cert (always `us-east-1`) |
 | `deploy-live-backend.yml` | Manual / called | Builds Docker image, pushes to ECR, updates ECS service |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
+| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes) |
 
 ### One-time AWS setup: GitHub OIDC identity provider
 
@@ -246,7 +363,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `COOKIE_DOMAIN` | Cookie domain for cross-subdomain auth, e.g. `.example.com` |
 | `MONGODB_URI` | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
 | `OPENAI_API_KEY` | OpenAI key (optional) |
-| `OPENAI_MODEL` | e.g. `gpt-4o-mini` |
+| `OPENAI_MODEL` | e.g. `gpt-5.4-mini` |
 | `ANTHROPIC_API_KEY` | Anthropic key (optional) |
 | `ANTHROPIC_MODEL` | e.g. `claude-sonnet-4-6` |
 | `GEMINI_API_KEY` | Google Gemini key (optional) |

@@ -191,7 +191,7 @@ export default function ChildActivityGame({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">{game.question}</h2>
+        <h2 className="text-2xl font-bold text-white mb-2">{game.question}</h2>
         <p className="text-slate-500">{game.subtitle}</p>
         <p className="text-sm text-emerald-600 mt-2">Selected: {ids.length}/{game.maxSelections}</p>
       </div>
@@ -205,7 +205,7 @@ export default function ChildActivityGame({
             className={`relative rounded-2xl overflow-hidden border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
               ids.includes(option.id)
                 ? 'border-emerald-500 shadow-lg'
-                : 'border-slate-200 hover:border-emerald-300'
+                : 'border-white/[0.08] hover:border-emerald-500/50'
             }`}
           >
             {option.image && !failedImages.has(option.id) ? (

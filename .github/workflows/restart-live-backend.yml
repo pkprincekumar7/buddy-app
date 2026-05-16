@@ -1,0 +1,138 @@
+name: Restart Live Backend
+run-name: Restart Live Backend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+      aws_region:
+        description: "AWS region"
+        required: true
+        default: "ap-south-1"
+        type: choice
+        options:
+          - ap-south-1
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  restart:
+    name: Restart Live Backend
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Validate required secrets
+        env:
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: restart-live-backend-${{ inputs.environment }}
+          aws-region: ${{ inputs.aws_region }}
+
+      # -------------------------------------------------------------------------
+      # Resolve ECS targets from SSM (written by terraform-live-backend).
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          CLUSTER=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
+          SERVICE=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          if [ -z "$SERVICE" ]; then
+            echo "ERROR: ECS service name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+
+          echo "ecs_cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
+          echo "ecs_service=$SERVICE" >> "$GITHUB_OUTPUT"
+          echo "Cluster: $CLUSTER"
+          echo "Service: $SERVICE"
+
+      # -------------------------------------------------------------------------
+      # Force a new deployment without changing the task definition.
+      # ECS stops existing tasks and starts fresh ones using the current image.
+      # The circuit-breaker rolls back automatically on failure.
+      # Waits up to 15 minutes using a polling loop (aws ecs wait has a 10-minute
+      # hard ceiling so we use the same approach as deploy-live-backend).
+      # -------------------------------------------------------------------------
+      - name: Force new deployment
+        env:
+          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --output json \
+            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
+            | cat
+
+          echo "Waiting for service to reach steady state (up to 15 minutes)..."
+          for i in $(seq 1 60); do
+            SERVICE_INFO=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$SERVICE" \
+              --query 'services[0]' --output json)
+            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
+            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
+            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
+            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
+            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
+
+            if [ "$ROLLOUT" = "FAILED" ]; then
+              echo "ERROR: Restart failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
+              exit 1
+            fi
+
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ]; then
+              echo "Restart complete — service is stable ($RUNNING/$DESIRED tasks running)."
+              break
+            fi
+
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: Service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
+              exit 1
+            fi
+
+            echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
+            sleep 15
+          done

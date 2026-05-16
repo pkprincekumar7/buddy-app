@@ -113,19 +113,19 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#141414] p-8">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-600">Buddy360 — continue to your pathway</p>
+          <h1 className="text-2xl font-bold text-white">Sign in</h1>
+          <p className="mt-1 text-sm text-slate-400">Buddy360 — continue to your pathway</p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-300">
               Username (email)
             </label>
             <input
@@ -135,11 +135,11 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
             />
           </div>
           <div>
-            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-300">
               Password
             </label>
             <input
@@ -149,7 +149,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
             />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -165,21 +165,21 @@ export default function Login() {
           </div>
         ) : (
           <p className="mt-4 text-center text-xs text-slate-400">
-            Google sign-in: set <code className="rounded bg-slate-100 px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
-            <code className="rounded bg-slate-100 px-1">GOOGLE_CLIENT_ID</code> on the API.
+            Google sign-in: set <code className="rounded bg-white/[0.08] px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
+            <code className="rounded bg-white/[0.08] px-1">GOOGLE_CLIENT_ID</code> on the API.
           </p>
         )}
 
         {pendingGoogleToken ? (
-          <div className="mt-6 rounded-xl border border-teal-200 bg-teal-50 p-4">
-            <p className="mb-3 text-sm font-medium text-slate-800">One more step</p>
-            <p className="mb-3 text-xs text-slate-600">
+          <div className="mt-6 rounded-xl border border-teal-500/25 bg-teal-500/[0.08] p-4">
+            <p className="mb-3 text-sm font-medium text-white">One more step</p>
+            <p className="mb-3 text-xs text-slate-400">
               Select your country so we can store your data in the right region.
             </p>
             <select
               value={googleCountry}
               onChange={(e) => setGoogleCountry(e.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="mb-3 w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-sm text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
             >
               <option value="" disabled>Select your country…</option>
               {COUNTRIES.map(({ code, label }) => (
@@ -206,7 +206,7 @@ export default function Login() {
           </div>
         ) : null}
 
-        <p className="mt-8 text-center text-sm text-slate-600">
+        <p className="mt-8 text-center text-sm text-slate-400">
           New here?{' '}
           <Link to="/Register" className="font-medium text-teal-700 hover:text-teal-800">
             Create an account
