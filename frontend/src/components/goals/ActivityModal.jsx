@@ -272,7 +272,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
-        className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-[#141414] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/[0.08]"
       >
         {/* Header */}
         <div className="p-6 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-t-3xl relative">
@@ -327,7 +327,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                   className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full"
                 />
-                <p className="text-slate-500 font-medium">Preparing activity...</p>
+                <p className="text-slate-400 font-medium">Preparing activity...</p>
               </motion.div>
             )}
 
@@ -339,7 +339,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                 exit={{ opacity: 0, x: direction * -40 }}
                 className="py-4"
               >
-                <h3 className="text-lg font-bold text-slate-800 mb-6 leading-snug">
+                <h3 className="text-lg font-bold text-white mb-6 leading-snug">
                   {currentQuestion.question}
                 </h3>
 
@@ -352,17 +352,17 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         onClick={() => handleChoiceSelect(option)}
                         className={`w-full p-4 rounded-2xl border-2 text-left transition-all ${
                           currentAnswer === option
-                            ? 'border-teal-500 bg-teal-50'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
+                            ? 'border-teal-500 bg-teal-500/10'
+                            : 'border-white/[0.08] hover:border-white/[0.18] bg-[#1e1e1e]'
                         }`}
                       >
-                        <span className="font-medium text-slate-800">{option}</span>
+                        <span className="font-medium text-slate-300">{option}</span>
                       </motion.button>
                     ))}
                     {currentQuestionIndex > 0 && (
                       <button
                         onClick={handleGoBack}
-                        className="mt-2 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors"
+                        className="mt-2 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-300 transition-colors"
                       >
                         <ChevronLeft className="w-4 h-4" /> Previous
                       </button>
@@ -383,7 +383,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border-2 text-slate-500"
+                          className="h-12 rounded-2xl border border-white/[0.12] text-slate-400 bg-transparent hover:bg-white/[0.05]"
                         >
                           <ChevronLeft className="w-5 h-5 mr-1" /> Previous
                         </Button>
@@ -412,7 +412,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                           className={`flex-1 h-16 rounded-2xl font-bold text-xl transition-all ${
                             currentAnswer === value.toString()
                               ? 'bg-teal-500 text-white shadow-lg'
-                              : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                              : 'bg-white/[0.06] text-slate-400 hover:bg-white/[0.10]'
                           }`}
                         >
                           {value}
@@ -430,7 +430,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border-2 text-slate-500"
+                          className="h-12 rounded-2xl border border-white/[0.12] text-slate-400 bg-transparent hover:bg-white/[0.05]"
                         >
                           <ChevronLeft className="w-5 h-5 mr-1" /> Previous
                         </Button>
@@ -467,8 +467,8 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                   className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
                 />
-                <p className="text-slate-700 font-semibold text-lg">Analysing the response...</p>
-                <p className="text-slate-400 text-sm">Just a moment</p>
+                <p className="text-white font-semibold text-lg">Analysing the response...</p>
+                <p className="text-slate-500 text-sm">Just a moment</p>
               </motion.div>
             )}
 
@@ -480,37 +480,37 @@ Based on the quality of engagement, effort, and expression shown across both ass
                 className="py-4 space-y-5"
               >
                 <div className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
-                    <Trophy className="w-8 h-8 text-amber-500" />
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
+                    <Trophy className="w-8 h-8 text-amber-400" />
                   </div>
-                  <h3 className="text-2xl font-bold text-slate-800">Activity Complete! 🎉</h3>
-                  <p className="text-slate-500">Great work, {childName || 'there'}!</p>
+                  <h3 className="text-2xl font-bold text-white">Activity Complete! 🎉</h3>
+                  <p className="text-slate-400">Great work, {childName || 'there'}!</p>
                 </div>
 
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-4 items-start">
+                <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-2xl p-4 flex gap-4 items-start">
                   <div className="flex-shrink-0">
                     {isScorableActivity ? (
                       <>
-                        <p className="text-xs font-semibold text-green-600 mb-0.5">AI Score</p>
-                        <p className="text-3xl font-bold text-green-700 leading-none">
+                        <p className="text-xs font-semibold text-emerald-400 mb-0.5">AI Score</p>
+                        <p className="text-3xl font-bold text-emerald-300 leading-none">
                           {aiScore}
-                          <span className="text-base font-normal text-green-500">/10</span>
+                          <span className="text-base font-normal text-emerald-500">/10</span>
                         </p>
                       </>
                     ) : (
                       <>
-                        <p className="text-xs font-semibold text-green-600 mb-0.5">Note</p>
-                        <p className="text-base font-bold text-green-700 leading-snug max-w-[120px]">
+                        <p className="text-xs font-semibold text-emerald-400 mb-0.5">Note</p>
+                        <p className="text-base font-bold text-emerald-300 leading-snug max-w-[120px]">
                           {aiNote}
                         </p>
                       </>
                     )}
                   </div>
-                  <p className="text-green-700 text-sm mt-1">✅ {aiFeedback}</p>
+                  <p className="text-emerald-300 text-sm mt-1">✅ {aiFeedback}</p>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1.5">
+                  <label className="block font-semibold text-slate-300 mb-1.5">
                     Parent Feedback{' '}
                     <span className="font-normal text-slate-400">(optional)</span>
                   </label>

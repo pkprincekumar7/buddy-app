@@ -83,9 +83,9 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
     entry.obsType === 'declined'      ? 'text-red-500'     :
     entry.obsType === 'noImprovement' ? 'text-slate-500'   : 'text-blue-500';
   return (
-    <div className="bg-white border border-slate-200 rounded-xl px-3 py-2.5 shadow-lg text-sm max-w-[200px]">
-      <p className="font-semibold text-slate-700 leading-snug mb-0.5 break-words">{entry.fullLabel}</p>
-      <p className="text-slate-400 text-xs">Month {entry.monthNum} · Activity {entry.actIdx + 1}</p>
+    <div className="bg-[#1a1a1a] border border-white/[0.08] rounded-xl px-3 py-2.5 shadow-lg text-sm max-w-[200px]">
+      <p className="font-semibold text-white leading-snug mb-0.5 break-words">{entry.fullLabel}</p>
+      <p className="text-slate-500 text-xs">Month {entry.monthNum} · Activity {entry.actIdx + 1}</p>
       <p className={`font-medium mt-1 ${obsColor}`}>{entry.obsLabel}</p>
     </div>
   );
@@ -174,7 +174,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
         initial={{ scale: 0.95, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.95, y: 20 }}
-        className="bg-white rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col"
+        className="bg-[#141414] rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col border border-white/[0.08]"
       >
         {/* Header */}
         <div className="bg-gradient-to-br from-teal-400 to-emerald-500 px-6 py-5 flex items-center justify-between flex-shrink-0">
@@ -196,15 +196,15 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
         </div>
 
         {/* Top-level tabs */}
-        <div className="flex border-b border-slate-100 px-6 pt-3 flex-shrink-0 bg-white">
+        <div className="flex border-b border-white/[0.06] px-6 pt-3 flex-shrink-0 bg-[#141414]">
           {[['progress', 'Progress'], ['insights', 'Insights']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
               className={`pb-3 px-5 text-sm font-semibold border-b-2 transition-colors ${
                 activeTab === key
-                  ? 'border-teal-500 text-teal-600'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  ? 'border-teal-500 text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
               }`}
             >
               {label}
@@ -226,7 +226,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
                       progressTab === key
                         ? 'bg-teal-500 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        : 'bg-white/[0.06] text-slate-400 hover:bg-white/[0.10]'
                     }`}
                   >
                     {label}
@@ -236,14 +236,14 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
               {/* Monthly table */}
               {progressTab === 'monthly' && (
-                <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-sm">
+                <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-slate-50">
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600 w-20 border-b border-slate-100">Month</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600 border-b border-slate-100">Goal</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600 border-b border-slate-100">Objective</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600 border-b border-slate-100">Observation</th>
+                      <tr className="bg-[#1a1a1a]">
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 w-20 border-b border-white/[0.06]">Month</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Goal</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Objective</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Observation</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -251,12 +251,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                         pairs.map((pair, pIdx) => (
                           <tr
                             key={`${mIdx}-${pIdx}`}
-                            className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors"
+                            className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors"
                           >
                             {pIdx === 0 && (
                               <td
                                 rowSpan={pairs.length}
-                                className="px-4 py-3 font-bold text-slate-700 align-middle border-r border-slate-100 whitespace-nowrap"
+                                className="px-4 py-3 font-bold text-slate-300 align-middle border-r border-white/[0.06] whitespace-nowrap"
                               >
                                 Month {month.month}
                               </td>
@@ -264,12 +264,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                             {pIdx === 0 && (
                               <td
                                 rowSpan={pairs.length}
-                                className="px-4 py-3 text-slate-700 align-middle border-r border-slate-100 max-w-[160px]"
+                                className="px-4 py-3 text-slate-300 align-middle border-r border-white/[0.06] max-w-[160px]"
                               >
                                 {truncate(month.goal, 42)}
                               </td>
                             )}
-                            <td className="px-4 py-3 text-slate-600 border-r border-slate-100 max-w-[160px]">
+                            <td className="px-4 py-3 text-slate-400 border-r border-white/[0.06] max-w-[160px]">
                               {pair.label}
                             </td>
                             <td className="px-4 py-3">
@@ -286,7 +286,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
               {/* 3-Months chart — one bar per objective pair */}
               {progressTab === '3months' && (
                 <div>
-                  <p className="text-sm text-slate-500 mb-4 text-center">
+                  <p className="text-sm text-slate-400 mb-4 text-center">
                     Per-objective comparison: original (Week 1&amp;2) vs follow-up (Week 3&amp;4)
                   </p>
                   <ResponsiveContainer width="100%" height={320}>
@@ -297,11 +297,11 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       barCategoryGap="30%"
                     >
                       {/* Month group background bands */}
-                      <ReferenceArea x1="1-0" x2="1-1" fill="#f0fdf9" fillOpacity={0.8} ifOverflow="visible" />
-                      <ReferenceArea x1="2-0" x2="2-1" fill="#eff6ff" fillOpacity={0.8} ifOverflow="visible" />
-                      <ReferenceArea x1="3-0" x2="3-1" fill="#faf5ff" fillOpacity={0.8} ifOverflow="visible" />
+                      <ReferenceArea x1="1-0" x2="1-1" fill="rgba(20,255,160,0.03)" fillOpacity={1} ifOverflow="visible" />
+                      <ReferenceArea x1="2-0" x2="2-1" fill="rgba(60,120,255,0.03)" fillOpacity={1} ifOverflow="visible" />
+                      <ReferenceArea x1="3-0" x2="3-1" fill="rgba(160,60,255,0.03)" fillOpacity={1} ifOverflow="visible" />
 
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                       <XAxis
                         dataKey="key"
                         tick={<CustomTick />}
@@ -340,7 +340,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       <span className="w-3 h-3 rounded-sm bg-red-300 inline-block" /> Decline
                     </span>
                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <span className="w-3 h-3 rounded-sm bg-slate-200 inline-block" /> N/A
+                      <span className="w-3 h-3 rounded-sm bg-white/[0.15] inline-block" /> N/A
                     </span>
                   </div>
                 </div>
@@ -359,15 +359,15 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                     transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                     className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
                   />
-                  <p className="text-slate-600 font-semibold">Generating personalised insights…</p>
-                  <p className="text-slate-400 text-sm">Analysing {childName ? `${childName}'s` : 'the'} assessment data</p>
+                  <p className="text-white font-semibold">Generating personalised insights…</p>
+                  <p className="text-slate-500 text-sm">Analysing {childName ? `${childName}'s` : 'the'} assessment data</p>
                 </div>
               )}
 
               {/* Error */}
               {insightsError && !insightsLoading && (
                 <div className="py-16 flex flex-col items-center gap-4">
-                  <p className="text-slate-500 text-sm">Failed to generate insights. Please try again.</p>
+                  <p className="text-slate-400 text-sm">Failed to generate insights. Please try again.</p>
                   <button
                     onClick={() => { setInsightsError(false); setInsightsData(null); }}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl bg-teal-500 text-white text-sm font-semibold hover:bg-teal-600 transition-colors"
@@ -379,12 +379,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
               {/* Insights list */}
               {insightsData && !insightsLoading && (
-                <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200">
+                <div className="border border-white/[0.06] rounded-2xl overflow-hidden divide-y divide-white/[0.04]">
                   {(insightsData.insight_items || []).map((item, idx) => {
                     const isAnomaly  = item.type === 'anomaly';
                     const isExpanded = expandedInsight === idx;
                     return (
-                      <div key={idx} className={isAnomaly ? 'bg-amber-50' : 'bg-white'}>
+                      <div key={idx} className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-[#141414]'}>
                         {/* Row */}
                         <div className="flex items-center gap-3 px-5 py-4">
                           <div className="flex-shrink-0">
@@ -394,7 +394,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                             }
                           </div>
                           <p className={`flex-1 text-sm font-medium leading-snug ${
-                            isAnomaly ? 'text-amber-800' : 'text-slate-700'
+                            isAnomaly ? 'text-amber-300' : 'text-slate-300'
                           }`}>
                             {item.text}
                           </p>
@@ -402,8 +402,8 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                             onClick={() => setExpandedInsight(prev => prev === idx ? null : idx)}
                             className={`ml-2 flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                               isAnomaly
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                                ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                                : 'bg-teal-500/10 text-teal-400 hover:bg-teal-500/20'
                             }`}
                           >
                             {isExpanded ? 'Hide Details' : 'View Details'}
@@ -417,17 +417,17 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                             animate={{ opacity: 1, height: 'auto' }}
                             exit={{ opacity: 0, height: 0 }}
                             className={`px-5 pb-5 border-t ${
-                              isAnomaly ? 'border-amber-100 bg-amber-50/60' : 'border-slate-100 bg-slate-50/50'
+                              isAnomaly ? 'border-amber-500/15 bg-amber-500/[0.05]' : 'border-white/[0.04] bg-white/[0.02]'
                             }`}
                           >
-                            <p className="text-sm text-slate-600 leading-relaxed pt-4 pb-4">
+                            <p className="text-sm text-slate-400 leading-relaxed pt-4 pb-4">
                               {item.details}
                             </p>
                             <div className="flex gap-2 flex-wrap">
                               <button className="px-4 py-2 bg-teal-500 text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
                                 Start Monitoring
                               </button>
-                              <button className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors">
+                              <button className="px-4 py-2 bg-white/[0.05] border border-white/[0.10] text-slate-300 text-xs font-semibold rounded-xl hover:bg-white/[0.08] transition-colors">
                                 Check-in Later
                               </button>
                             </div>

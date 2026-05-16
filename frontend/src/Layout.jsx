@@ -86,17 +86,17 @@ export default function Layout({ children, currentPageName }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-[#0a0a0a]">
       {/* Top Navigation */}
-      <nav className="bg-white border-b border-slate-200 sticky top-0 z-40">
+      <nav className="bg-[#0f0f0f]/90 backdrop-blur-xl border-b border-white/[0.06] sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
-            <Link to={createPageUrl('Home')} className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">LP</span>
+            <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
+                <span className="text-white font-bold text-sm">B</span>
               </div>
-              <span className="font-bold text-slate-800 text-lg hidden sm:block">Buddy360</span>
+              <span className="font-bold text-white text-lg hidden sm:block tracking-tight">Buddy360</span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -105,10 +105,10 @@ export default function Layout({ children, currentPageName }) {
                 <Link
                   key={item.path}
                   to={createPageUrl(item.path)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${
                     currentPageName === item.path
-                      ? 'bg-teal-50 text-teal-700 font-medium'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-teal-500/10 text-teal-400 font-medium'
+                      : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                   }`}
                 >
                   <item.icon className="w-4 h-4" />
@@ -118,14 +118,19 @@ export default function Layout({ children, currentPageName }) {
               {isAuthenticated && (
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-100 hover:text-red-600"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 text-slate-400 hover:bg-white/[0.05] hover:text-red-400"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Logout</span>
                 </button>
               )}
               {!isAuthenticated && (
-                <Button variant="outline" size="sm" onClick={() => api.auth.redirectToLogin()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => api.auth.redirectToLogin()}
+                  className="border-white/[0.12] text-slate-300 hover:bg-white/[0.05] hover:text-white"
+                >
                   Sign In
                 </Button>
               )}
@@ -138,7 +143,7 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="sm"
                 onClick={handleToggleTts}
-                className="text-slate-600"
+                className="text-slate-400 hover:text-white hover:bg-white/[0.05]"
                 title={ttsEnabled ? "Turn off voice" : "Turn on voice"}
               >
                 {ttsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -149,7 +154,7 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="icon"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden"
+                className="md:hidden text-slate-400 hover:text-white hover:bg-white/[0.05]"
               >
                 {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </Button>
@@ -159,17 +164,17 @@ export default function Layout({ children, currentPageName }) {
 
         {/* Mobile / Tablet Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-200 bg-white">
+          <div className="md:hidden border-t border-white/[0.06] bg-[#0f0f0f]">
             <div className="px-4 py-3 space-y-1">
               {navItems.map(item => (
                 <Link
                   key={item.path}
                   to={createPageUrl(item.path)}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                     currentPageName === item.path
-                      ? 'bg-teal-50 text-teal-700 font-medium'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-teal-500/10 text-teal-400 font-medium'
+                      : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
                   }`}
                 >
                   <item.icon className="w-5 h-5" />
@@ -179,7 +184,7 @@ export default function Layout({ children, currentPageName }) {
               {isAuthenticated ? (
                 <button
                   onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-red-600"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/[0.05] hover:text-red-400 transition-all duration-200"
                 >
                   <LogOut className="w-5 h-5" />
                   <span>Logout</span>
@@ -187,7 +192,7 @@ export default function Layout({ children, currentPageName }) {
               ) : (
                 <button
                   onClick={() => { setMobileMenuOpen(false); api.auth.redirectToLogin(); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-100"
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-white/[0.05] hover:text-white transition-all duration-200"
                 >
                   <span>Sign In</span>
                 </button>

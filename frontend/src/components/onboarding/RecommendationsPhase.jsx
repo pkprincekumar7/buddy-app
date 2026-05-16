@@ -669,8 +669,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           >
             <Sparkles className="w-12 h-12 text-white" />
           </motion.div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Your Personalized Journey</h2>
-          <p className="text-slate-500">Here's what we've discovered about {data.name}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">Your Personalized Journey</h2>
+          <p className="text-slate-400">Here's what we've discovered about {data.name}</p>
         </div>
 
         {/* Profile Summary Card */}
@@ -678,37 +678,37 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm"
+            className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
           >
             <div className="flex items-start gap-4 mb-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center flex-shrink-0">
-                <Star className="w-7 h-7 text-white" />
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center flex-shrink-0 glow-teal-sm">
+                <Star className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-800">{data.name}'s Profile</h3>
-                <p className="text-teal-600 text-sm font-medium">{profile.personality_type?.split(' - ')[1] || profile.personality_type}</p>
+                <h3 className="text-lg font-bold text-white">{data.name}'s Profile</h3>
+                <p className="text-teal-400 text-sm font-medium">{profile.personality_type?.split(' - ')[1] || profile.personality_type}</p>
               </div>
             </div>
-            
-            <p className="text-slate-600 mb-6 leading-relaxed">{profile.summary}</p>
-            
+
+            <p className="text-slate-400 mb-5 leading-relaxed text-sm">{profile.summary}</p>
+
             {/* Top Strengths */}
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Emerging Strengths</p>
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-3">Emerging Strengths</p>
               {profile.top_strengths?.map((strength, index) => (
                 <motion.div
                   key={index}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  className="flex items-start gap-3 bg-slate-50 rounded-xl p-3 border border-slate-100"
+                  className="flex items-start gap-3 bg-[#1e1e1e] rounded-xl p-3 border border-white/[0.06]"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-amber-600 font-bold text-sm">{index + 1}</span>
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+                    <span className="text-amber-400 font-bold text-xs">{index + 1}</span>
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-800">{strength.strength}</p>
-                    <p className="text-sm text-slate-500 mt-0.5">{strength.description}</p>
+                    <p className="font-semibold text-white text-sm">{strength.strength}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{strength.description}</p>
                   </div>
                 </motion.div>
               ))}
@@ -721,34 +721,33 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-
-          className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-3xl p-6 border border-purple-200"
+          className="bg-[#141414] rounded-2xl p-6 border border-purple-500/20"
         >
           <div className="text-center space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
-              <Compass className="w-8 h-8" />
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+              <Compass className="w-7 h-7 text-white" />
             </div>
-            <h3 className="text-xl font-bold text-slate-800">
+            <h3 className="text-lg font-bold text-white">
               Do you want to explore the specific growth areas for {data.name} to become their best version?
             </h3>
-            <p className="text-slate-600">
+            <p className="text-slate-400 text-sm">
               Discover personalized activities to help {data.name} develop key life skills
             </p>
-            
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-              <Button 
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+              <Button
                 onClick={() => setStep('area_selection')}
-                className="h-12 px-8 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700"
+                className="h-12 px-8 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white"
               >
-                <Zap className="w-5 h-5 mr-2" />
+                <Zap className="w-4 h-4 mr-2" />
                 Continue Now
               </Button>
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="h-12 px-8 rounded-2xl border-2"
+                className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
               >
-                <Clock className="w-5 h-5 mr-2" />
+                <Clock className="w-4 h-4 mr-2" />
                 Catch Up Later
               </Button>
             </div>
@@ -762,8 +761,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return (
       <div className="space-y-6">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Growth Areas</h2>
-          <p className="text-slate-500">Choose an area to explore for {data.name}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">Growth Areas</h2>
+          <p className="text-slate-400">Choose an area to explore for {data.name}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -868,12 +867,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setStep('interactive_activity');
                   }
                 }}
-                className={`p-4 rounded-2xl border-2 text-left transition-all hover:shadow-md bg-white border-slate-200 hover:border-purple-300`}
+                className="p-4 rounded-2xl border border-white/[0.08] text-left transition-all bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]"
               >
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${area.color} flex items-center justify-center mb-3`}>
-                  <Icon className="w-6 h-6" />
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${area.color} flex items-center justify-center mb-3`}>
+                  <Icon className="w-5 h-5 text-white" />
                 </div>
-                <h4 className="font-semibold text-slate-800 text-sm">{area.name}</h4>
+                <h4 className="font-semibold text-white text-sm">{area.name}</h4>
                 <p className="text-xs text-slate-500 mt-1">{area.description}</p>
               </motion.button>
             );
@@ -894,8 +893,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           <div className={`w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br ${selectedArea?.color} flex items-center justify-center mb-4`}>
             <Icon className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">{selectedArea?.name}</h2>
-          <p className="text-slate-500">Choose an activity to try with {data.name}</p>
+          <h2 className="text-2xl font-bold text-white mb-2">{selectedArea?.name}</h2>
+          <p className="text-slate-400">Choose an activity to try with {data.name}</p>
         </div>
 
         <div className="space-y-3">
@@ -907,33 +906,33 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 setSelectedActivity(activity);
                 setStep('parent_activity');
               }}
-              className={`w-full p-4 rounded-2xl border-2 text-left transition-[border-color,background-color,transform] duration-150 ease-out active:scale-[0.99] hover:shadow-md ${
+              className={`w-full p-4 rounded-2xl border text-left transition-all duration-150 ${
                 selectedActivity?.title === activity.title
-                  ? 'border-purple-500 bg-purple-50'
-                  : 'border-slate-200 bg-white hover:border-purple-300'
+                  ? 'border-purple-500/50 bg-purple-500/10'
+                  : 'border-white/[0.08] bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h4 className="font-semibold text-slate-800">{activity.title}</h4>
-                  <p className="text-sm text-slate-500 mt-1">{activity.description}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs px-2 py-1 bg-slate-100 rounded-full text-slate-600">
+                  <h4 className="font-semibold text-white text-sm">{activity.title}</h4>
+                  <p className="text-xs text-slate-500 mt-1">{activity.description}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs px-2 py-0.5 bg-white/[0.06] rounded-full text-slate-400">
                       ⏱ {activity.duration}
                     </span>
-                    <span className="text-xs px-2 py-1 bg-purple-100 rounded-full text-purple-600 capitalize">
+                    <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">
                       {activity.type}
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-400" />
+                <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />
               </div>
             </button>
           ))}
         </div>
 
-        <div className="text-center pt-4">
-          <Button variant="ghost" onClick={() => setStep('area_selection')}>
+        <div className="text-center pt-2">
+          <Button variant="ghost" onClick={() => setStep('area_selection')} className="text-slate-500 hover:text-white">
             ← Back to Growth Areas
           </Button>
         </div>
@@ -947,32 +946,32 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className={`bg-gradient-to-br ${selectedArea?.color} rounded-3xl p-6 text-white`}
+          className={`bg-gradient-to-br ${selectedArea?.color} rounded-2xl p-6 text-white`}
         >
-          <div className="text-center space-y-4">
-            <Award className="w-12 h-12 mx-auto" />
-            <h2 className="text-2xl font-bold">{selectedActivity?.title}</h2>
-            <p className="text-white/90">{selectedActivity?.description}</p>
-            <div className="flex justify-center gap-4 pt-2">
-              <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
+          <div className="text-center space-y-3">
+            <Award className="w-10 h-10 mx-auto" />
+            <h2 className="text-xl font-bold">{selectedActivity?.title}</h2>
+            <p className="text-white/80 text-sm">{selectedActivity?.description}</p>
+            <div className="flex justify-center gap-4 pt-1">
+              <span className="px-3 py-1 bg-white/20 rounded-full text-xs">
                 ⏱ {selectedActivity?.duration}
               </span>
             </div>
           </div>
         </motion.div>
 
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
-          <h3 className="font-bold text-slate-800 text-center">Did you like this activity suggestion?</h3>
-        
+        <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-5">
+          <h3 className="font-bold text-white text-center text-sm">Did you like this activity suggestion?</h3>
+
         <div className="flex justify-center gap-4">
           <Button
             onClick={() => {
               setParentLiked(true);
               setStep('child_activity_prompt');
             }}
-            className="h-14 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-600"
+            className="h-12 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white"
           >
-            <ThumbsUp className="w-5 h-5 mr-2" />
+            <ThumbsUp className="w-4 h-4 mr-2" />
             Yes, I like it!
           </Button>
           <Button
@@ -981,16 +980,16 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               setParentLiked(false);
               setStep('feedback');
             }}
-            className="h-14 px-8 rounded-2xl border-2"
+            className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
           >
-            <ThumbsDown className="w-5 h-5 mr-2" />
+            <ThumbsDown className="w-4 h-4 mr-2" />
             Not quite
           </Button>
         </div>
       </div>
 
       <div className="text-center">
-        <Button variant="ghost" onClick={() => setStep('activity_selection')}>
+        <Button variant="ghost" onClick={() => setStep('activity_selection')} className="text-slate-500 hover:text-white">
           ← Choose Different Activity
         </Button>
       </div>
@@ -1002,20 +1001,20 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return (
       <div className="space-y-6">
         <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">We'd love your feedback</h2>
-          <p className="text-slate-500">What kind of activity would you like for {data.name}?</p>
+          <h2 className="text-2xl font-bold text-white mb-2">We'd love your feedback</h2>
+          <p className="text-slate-400">What kind of activity would you like for {data.name}?</p>
         </div>
 
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
+      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4">
         <TextareaWithVoice
           placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          className="min-h-[120px] rounded-xl pr-14"
+          className="min-h-[120px] rounded-xl pr-14 bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600"
         />
-        
+
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => setStep('activity_selection')}>
+          <Button variant="outline" onClick={() => setStep('activity_selection')} className="border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]">
             Go Back
           </Button>
           <Button
@@ -1023,7 +1022,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               debouncedPersistRecommendationsProgress.flush?.();
               setStep('activity_selection');
             }}
-            className="bg-purple-500 hover:bg-purple-600"
+            className="bg-purple-500 hover:bg-purple-400 text-white"
           >
             Submit & Try Another
           </Button>
@@ -1039,30 +1038,30 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-6 border border-emerald-200"
+          className="bg-[#141414] rounded-2xl p-6 border border-emerald-500/20"
         >
           <div className="text-center space-y-4">
-            <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Zap className="w-8 h-8 text-white" />
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+              <Zap className="w-7 h-7 text-white" />
             </div>
-            <h2 className="text-xl font-bold text-slate-800">
+            <h2 className="text-lg font-bold text-white">
               Do you want {data.name} to take a fun activity on {selectedArea?.name}?
             </h2>
-          <p className="text-slate-600">
+          <p className="text-slate-400 text-sm">
             {data.name} can complete this as a game on their device
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-            <Button 
+            <Button
               onClick={() => setStep('results')}
-              className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+              className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white"
             >
               Yes, Start Activity
             </Button>
             <Button
               variant="outline"
               onClick={() => navigate(createPageUrl('Home'))}
-              className="h-12 px-8 rounded-2xl border-2"
+              className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
             >
               Catch Up Later
             </Button>
@@ -1084,32 +1083,32 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         >
           <Award className="w-10 h-10 text-white" />
         </motion.div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Activity Results Preview</h2>
-        <p className="text-slate-500">Here's what you'll see after {data.name} completes activities</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Activity Results Preview</h2>
+        <p className="text-slate-400">Here's what you'll see after {data.name} completes activities</p>
       </div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-3xl p-6 border border-slate-200 space-y-4"
+        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4"
       >
         <div className="text-center">
-          <p className="text-sm text-slate-500 uppercase tracking-wide mb-2">{selectedArea?.name} Quotient</p>
-          <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-600">
+          <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">{selectedArea?.name} Quotient</p>
+          <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">
             --
           </div>
-          <p className="text-sm text-slate-500 mt-1">Score will appear after activity</p>
+          <p className="text-sm text-slate-600 mt-1">Score will appear after activity</p>
         </div>
 
-        <div className="border-t border-slate-100 pt-4">
-          <h4 className="font-semibold text-slate-800 mb-3">Personalized Recommendations</h4>
+        <div className="border-t border-white/[0.06] pt-4">
+          <h4 className="font-semibold text-white text-sm mb-3">Personalized Recommendations</h4>
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
-                <div className="w-8 h-8 rounded-lg bg-slate-200 animate-pulse" />
+              <div key={i} className="flex items-center gap-3 p-3 bg-[#1e1e1e] rounded-xl">
+                <div className="w-8 h-8 rounded-lg bg-white/[0.06] animate-pulse" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 bg-slate-200 rounded animate-pulse w-3/4" />
-                  <div className="h-3 bg-slate-200 rounded animate-pulse w-1/2" />
+                  <div className="h-3 bg-white/[0.06] rounded animate-pulse w-3/4" />
+                  <div className="h-2.5 bg-white/[0.04] rounded animate-pulse w-1/2" />
                 </div>
               </div>
             ))}
@@ -1123,8 +1122,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         transition={{ delay: 0.3 }}
         className="text-center py-4"
       >
-        <p className="text-slate-600">
-          🎉 You're all set! Click <span className="font-semibold text-teal-600">"Start the Journey"</span> to go to your dashboard.
+        <p className="text-slate-400 text-sm">
+          🎉 You're all set! Click <span className="font-semibold text-teal-400">"Start the Journey"</span> to go to your dashboard.
         </p>
       </motion.div>
     </div>
@@ -1153,21 +1152,21 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       <div className="space-y-6">
         {/* Progress */}
         <div className="text-center">
-          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 bg-gradient-to-r ${selectedArea?.color || 'from-purple-500 to-indigo-600'} bg-opacity-10`} style={{background: 'rgba(16,185,129,0.08)'}}>
-            <AreaIcon className="w-4 h-4 text-emerald-600" />
-            <span className="text-sm font-medium text-emerald-700">{selectedArea?.name} Activity</span>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 bg-teal-500/10 border border-teal-500/20">
+            <AreaIcon className="w-4 h-4 text-teal-400" />
+            <span className="text-sm font-medium text-teal-400">{selectedArea?.name} Activity</span>
           </div>
           <div className="flex justify-center gap-1 mb-2">
             {questions.map((_, i) => (
-              <div 
-                key={i} 
-                className={`h-2 w-10 rounded-full transition-all ${
-                  i === interactiveStep ? 'bg-purple-500' : i < interactiveStep ? 'bg-emerald-400' : 'bg-slate-200'
+              <div
+                key={i}
+                className={`h-1.5 w-8 rounded-full transition-all ${
+                  i === interactiveStep ? 'bg-teal-400' : i < interactiveStep ? 'bg-emerald-500' : 'bg-white/[0.08]'
                 }`}
               />
             ))}
           </div>
-          <p className="text-sm text-slate-500">Question {interactiveStep + 1} of {questions.length}</p>
+          <p className="text-xs text-slate-500">Question {interactiveStep + 1} of {questions.length}</p>
         </div>
 
         <AnimatePresence mode="wait">
@@ -1176,24 +1175,24 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-white rounded-3xl p-6 border border-slate-200 shadow-lg"
+            className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
           >
             {/* Question */}
-            <div className="mb-6">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-4">
-                <MessageSquare className="w-6 h-6 text-white" />
+            <div className="mb-5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center mb-4">
+                <MessageSquare className="w-5 h-5 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">{questionText}</h3>
+              <h3 className="text-lg font-bold text-white mb-1">{questionText}</h3>
             </div>
 
             {/* Answer Input */}
-            <div className="space-y-4">
+            <div className="space-y-3">
               {currentQuestion?.type === 'text' ? (
                 <TextareaWithVoice
                   value={currentAnswer}
                   onChange={(e) => setCurrentAnswer(e.target.value)}
                   placeholder={currentQuestion?.placeholder}
-                  className="min-h-[100px] rounded-xl text-lg pr-14"
+                  className="min-h-[100px] rounded-xl pr-14 bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600"
                 />
               ) : (
                 <>
@@ -1207,10 +1206,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                           onClick={() => {
                             setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: option });
                           }}
-                          className={`w-full p-4 rounded-xl text-left transition-all border-2 ${
+                          className={`w-full p-3.5 rounded-xl text-left transition-all border text-sm ${
                             selected
-                              ? 'border-emerald-500 bg-emerald-50 shadow-sm ring-2 ring-emerald-100'
-                              : 'bg-slate-50 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50'
+                              ? 'border-teal-500/50 bg-teal-500/10 text-teal-300'
+                              : 'bg-[#1e1e1e] border-white/[0.08] text-slate-300 hover:border-teal-500/30 hover:bg-teal-500/[0.05]'
                           }`}
                         >
                           <span className="font-medium">{option}</span>
@@ -1224,10 +1223,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         type="button"
                         variant="outline"
                         onClick={handlePreviousQuestion}
-                        className="h-12 rounded-2xl border-2 w-full sm:w-auto"
+                        className="h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05] w-full sm:w-auto"
                       >
-                        <ChevronLeft className="w-5 h-5 mr-2" />
-                        Previous Question
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Previous
                       </Button>
                     )}
                     <Button
@@ -1244,10 +1243,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         }
                       }}
                       disabled={!answerLooksFilled(interactiveAnswers[currentQuestion.id])}
-                      className={`h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                      className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
                     >
                       {isLastQuestion ? 'See Summary' : 'Next Question'}
-                      <ChevronRight className="w-5 h-5 ml-2" />
+                      <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </div>
                 </>
@@ -1259,10 +1258,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       type="button"
                       variant="outline"
                       onClick={handlePreviousQuestion}
-                      className="h-12 rounded-2xl border-2 w-full sm:w-auto"
+                      className="h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05] w-full sm:w-auto"
                     >
-                      <ChevronLeft className="w-5 h-5 mr-2" />
-                      Previous Question
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      Previous
                     </Button>
                   )}
                   <Button
@@ -1280,10 +1279,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       }
                     }}
                     disabled={!currentAnswer.trim()}
-                    className={`h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                    className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
-                    <ChevronRight className="w-5 h-5 ml-2" />
+                    <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
               )}
@@ -1375,11 +1374,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         >
           <AreaIcon className="w-10 h-10 text-white" />
         </motion.div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Great Insights!</h2>
-        <p className="text-slate-500">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Great Insights!</h2>
+        <p className="text-slate-400">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
       </div>
 
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 space-y-4">
+      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
         {questions.map((q, i) => {
           const answer = interactiveAnswers[q.id];
           if (!answer) return null;
@@ -1389,35 +1388,35 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.1 }}
-              className="border-b border-slate-100 pb-4 last:border-0"
+              className="border-b border-white/[0.06] pb-3 last:border-0"
             >
-              <p className="text-sm text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
-              <p className="text-slate-800 font-medium">{answer}</p>
+              <p className="text-xs text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
+              <p className="text-white text-sm font-medium">{answer}</p>
             </motion.div>
           );
         })}
       </div>
 
       {selectedActivity && !childGameResults && (
-        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-3xl p-6 border-2 border-purple-200 space-y-4">
-          <p className="text-xs font-semibold text-purple-600 uppercase tracking-widest">Your selected activity</p>
+        <div className="bg-[#141414] rounded-2xl p-5 border border-purple-500/20 space-y-4">
+          <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Your selected activity</p>
           <div>
-            <h3 className="text-lg font-bold text-slate-800">{selectedActivity.title}</h3>
-            <p className="text-sm text-slate-600 mt-1">{selectedActivity.description}</p>
+            <h3 className="text-base font-bold text-white">{selectedActivity.title}</h3>
+            <p className="text-sm text-slate-400 mt-1">{selectedActivity.description}</p>
             <div className="flex flex-wrap gap-2 mt-3">
-              <span className="text-xs px-2 py-1 bg-white/80 rounded-full text-slate-600">⏱ {selectedActivity.duration}</span>
-              <span className="text-xs px-2 py-1 bg-white/80 rounded-full text-purple-700 capitalize">{selectedActivity.type}</span>
+              <span className="text-xs px-2 py-0.5 bg-white/[0.06] rounded-full text-slate-400">⏱ {selectedActivity.duration}</span>
+              <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">{selectedActivity.type}</span>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <Button
               type="button"
               onClick={() => setStep('parent_activity')}
-              className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600"
+              className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white"
             >
               Open activity details
             </Button>
-            <Button type="button" variant="outline" onClick={() => setStep('activity_selection')} className="rounded-2xl">
+            <Button type="button" variant="outline" onClick={() => setStep('activity_selection')} className="rounded-2xl border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]">
               Pick a different activity
             </Button>
           </div>
@@ -1433,7 +1432,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
                 setParentLiked(true);
               }}
-              className="flex-1 h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+              className="flex-1 h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold"
             >
               Explore Child Activity
             </Button>
@@ -1448,7 +1447,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 setChildGameResults(null);
                 setShowGame(false);
               }}
-              className="flex-1 h-12 rounded-2xl border-2"
+              className="flex-1 h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
             >
               Next Growth Area
             </Button>
@@ -1462,9 +1461,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               replace: true,
             });
             }}
-            className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+            className="w-full h-11 rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
           >
-            <ChevronRight className="w-5 h-5 mr-2" />
+            <ChevronRight className="w-4 h-4 mr-2" />
             Go to Life Journey
           </Button>
         </div>
@@ -1506,7 +1505,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               replace: true,
             });
             }}
-            className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+            className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
           >
             <ChevronRight className="w-5 h-5 mr-2" />
             Go to Life Journey
@@ -1516,7 +1515,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
       {/* Child Game */}
       {showGame && !childGameResults && selectedArea?.id && (
-        <div className="bg-white rounded-3xl p-6 border-2 border-emerald-200 shadow-lg">
+        <div className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
           <ChildActivityGame
             key={selectedArea.id}
             childName={data.name}
@@ -1562,24 +1561,24 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               animate={{ opacity: 1, y: 0 }}
               className="space-y-4"
             >
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-6 border-2 border-emerald-200">
+              <div className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
                 <div className="text-center mb-4">
                   <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3">
                     <Sparkles className="w-8 h-8 text-white" />
                   </div>
-                  <h3 className="text-xl font-bold text-slate-800">Recommendations for {data.name}</h3>
+                  <h3 className="text-xl font-bold text-white">Recommendations for {data.name}</h3>
                 </div>
 
-                <div className="bg-white rounded-2xl p-4 mb-4">
-                  <h4 className="font-semibold text-slate-800 mb-2">What This Reveals</h4>
-                  <p className="text-slate-600 text-sm">{childGameResults?.summary ?? ''}</p>
+                <div className="bg-[#1a1a1a] rounded-2xl p-4 mb-4">
+                  <h4 className="font-semibold text-white mb-2">What This Reveals</h4>
+                  <p className="text-slate-400 text-sm">{childGameResults?.summary ?? ''}</p>
                 </div>
 
-                <div className="bg-white rounded-2xl p-4 mb-4">
-                  <h4 className="font-semibold text-slate-800 mb-2">Suggested Activities</h4>
+                <div className="bg-[#1a1a1a] rounded-2xl p-4 mb-4">
+                  <h4 className="font-semibold text-white mb-2">Suggested Activities</h4>
                   <ul className="space-y-2">
                     {suggestedActivitiesFromGameRecommendations(childGameResults).map((activity, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
                         <span className="text-emerald-500 mt-1">✓</span>
                         <span>{activity}</span>
                       </li>
@@ -1587,11 +1586,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   </ul>
                 </div>
 
-                <div className="bg-white rounded-2xl p-4">
-                  <h4 className="font-semibold text-slate-800 mb-2">Strengths to Encourage</h4>
+                <div className="bg-[#1a1a1a] rounded-2xl p-4">
+                  <h4 className="font-semibold text-white mb-2">Strengths to Encourage</h4>
                   <ul className="space-y-2">
                     {(Array.isArray(childGameResults?.strengths) ? childGameResults.strengths : []).map((strength, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
                         <span className="text-emerald-500 mt-1">★</span>
                         <span>{strength}</span>
                       </li>
@@ -1605,9 +1604,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-6 border border-emerald-200"
+                className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/15"
               >
-                <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <h3 className="font-bold text-white mb-3 flex items-center gap-2">
                   <Target className="w-5 h-5 text-emerald-600" />
                   3-Month Recommendations for {selectedArea?.name}
                 </h3>
@@ -1625,7 +1624,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 {loadingRecommendations && (
                   <div className="flex items-center gap-3 py-4">
                     <RefreshCw className="w-5 h-5 text-emerald-500 animate-spin" />
-                    <p className="text-slate-600 text-sm">Generating personalized recommendations...</p>
+                    <p className="text-slate-400 text-sm">Generating personalized recommendations...</p>
                   </div>
                 )}
 
@@ -1637,7 +1636,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.08 }}
-                        className="flex items-start gap-3 text-sm text-slate-700"
+                        className="flex items-start gap-3 text-sm text-slate-300"
                       >
                         <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">{i + 1}</span>
                         <span>{rec}</span>
@@ -1685,7 +1684,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               replace: true,
             });
                 }}
-                className="w-full h-12 rounded-2xl border-2 border-teal-300 text-teal-700 hover:bg-teal-50"
+                className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
               >
                 <ChevronRight className="w-5 h-5 mr-2" />
                 Go to Life Journey
@@ -1706,8 +1705,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       >
         <Sparkles className="w-10 h-10 text-white" />
       </motion.div>
-      <h2 className="text-2xl font-bold text-slate-800">Ready for the Next Step!</h2>
-      <p className="text-slate-600">
+      <h2 className="text-2xl font-bold text-white">Ready for the Next Step!</h2>
+      <p className="text-slate-400">
         Let's explore the Life Journey designed for {data.name}.
       </p>
       <Button

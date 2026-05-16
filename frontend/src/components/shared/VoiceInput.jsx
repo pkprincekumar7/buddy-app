@@ -170,7 +170,7 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
           ? 'bg-red-500 hover:bg-red-600 animate-pulse'
           : isTranscribing
           ? 'bg-amber-400 cursor-wait'
-          : 'bg-slate-200 hover:bg-slate-300'
+          : 'bg-white/[0.08] hover:bg-white/[0.12]'
       }`}
     >
       {isTranscribing ? (
@@ -178,7 +178,7 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
       ) : isRecording ? (
         <MicOff className="w-4 h-4 text-white" />
       ) : (
-        <Mic className="w-4 h-4 text-slate-600" />
+        <Mic className="w-4 h-4 text-slate-400" />
       )}
     </Button>
   );

@@ -56,15 +56,15 @@ function AppShell() {
   if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-2 border-white/[0.10] border-t-white rounded-full animate-spin"></div>
       </div>
     );
   }
 
   if (authError?.type === 'unknown') {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-slate-50 p-6">
-        <p className="max-w-lg text-center text-slate-700">{authError.message}</p>
+      <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-[#0a0a0a] p-6">
+        <p className="max-w-lg text-center text-slate-300">{authError.message}</p>
         <Button type="button" className="bg-teal-600 hover:bg-teal-700" onClick={() => checkAppState()}>
           Retry
         </Button>

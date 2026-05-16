@@ -281,9 +281,9 @@ Return JSON with this exact structure:
   };
 
   const monthColors = [
-    { bg: 'from-teal-500 to-emerald-500', light: 'bg-teal-50 border-teal-200', text: 'text-teal-700', dot: 'bg-teal-500' },
-    { bg: 'from-blue-500 to-cyan-500', light: 'bg-blue-50 border-blue-200', text: 'text-blue-700', dot: 'bg-blue-500' },
-    { bg: 'from-purple-500 to-indigo-500', light: 'bg-purple-50 border-purple-200', text: 'text-purple-700', dot: 'bg-purple-500' },
+    { bg: 'from-teal-600 to-teal-500', light: 'bg-teal-500/10 border-teal-500/25', text: 'text-teal-400', dot: 'bg-teal-500' },
+    { bg: 'from-blue-600 to-blue-500', light: 'bg-blue-500/10 border-blue-500/25', text: 'text-blue-400', dot: 'bg-blue-500' },
+    { bg: 'from-purple-600 to-purple-500', light: 'bg-purple-500/10 border-purple-500/25', text: 'text-purple-400', dot: 'bg-purple-500' },
   ];
 
   // Precompute flat index for every activity and find the first incomplete one.
@@ -309,20 +309,20 @@ Return JSON with this exact structure:
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
+    <div className="min-h-screen bg-[#0a0a0a]">
       <div className="max-w-4xl mx-auto px-4 py-10">
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
-            <Target className="w-8 h-8 text-white" />
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
+            <Target className="w-7 h-7 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">
+          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">
             3-Month Growth Plan for {childData?.name || 'Your Child'}
           </h1>
-          <p className="text-slate-500">Personalized goals powered by Buddy360</p>
+          <p className="text-slate-400">Personalized goals powered by Buddy360</p>
 
           {concern && (
-            <div className="mt-4 max-w-xl mx-auto bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-sm text-amber-800">
+            <div className="mt-4 max-w-xl mx-auto bg-amber-500/10 border border-amber-500/25 rounded-2xl px-5 py-3 text-sm text-amber-400">
               <span className="font-semibold">Focus area: </span>{concern}
             </div>
           )}
@@ -333,12 +333,12 @@ Return JSON with this exact structure:
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-              className="w-14 h-14 border-4 border-teal-500 border-t-transparent rounded-full"
+              className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full"
             />
-            <p className="text-slate-500 font-medium">Building your 3-month plan...</p>
+            <p className="text-slate-500">Building your 3-month plan...</p>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {goalPlan?.months?.map((month, idx) => {
               const color = monthColors[idx] || monthColors[0];
               const isOpen = expandedMonths[idx];
@@ -348,24 +348,24 @@ Return JSON with this exact structure:
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="bg-white rounded-3xl border-2 border-slate-100 shadow-sm overflow-hidden"
+                  className="bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden"
                 >
                   {/* Month Header */}
                   <button onClick={() => toggleMonth(idx)} className="w-full text-left">
-                    <div className={`bg-gradient-to-r ${color.bg} px-6 py-5 flex items-center justify-between`}>
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                          <span className="text-white font-bold text-xl">{month.month}</span>
+                    <div className={`bg-gradient-to-r ${color.bg} px-6 py-4 flex items-center justify-between`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                          <span className="text-white font-bold">{month.month}</span>
                         </div>
                         <div>
-                          <p className="text-white/80 text-xs font-medium uppercase tracking-widest">Month {month.month}</p>
-                          <h3 className="text-white font-bold text-lg">{month.goal}</h3>
+                          <p className="text-white/70 text-xs font-medium uppercase tracking-widest">Month {month.month}</p>
+                          <h3 className="text-white font-bold">{month.goal}</h3>
                         </div>
                       </div>
-                      {isOpen ? <ChevronUp className="w-5 h-5 text-white/80" /> : <ChevronDown className="w-5 h-5 text-white/80" />}
+                      {isOpen ? <ChevronUp className="w-5 h-5 text-white/70" /> : <ChevronDown className="w-5 h-5 text-white/70" />}
                     </div>
                     {month.objective && (
-                      <div className={`px-6 py-3 ${color.light} border-b-2`}>
+                      <div className={`px-6 py-2.5 ${color.light} border-b border-white/[0.06]`}>
                         <p className={`text-sm font-medium ${color.text}`}>🎯 {month.objective}</p>
                       </div>
                     )}
@@ -373,11 +373,11 @@ Return JSON with this exact structure:
 
                   {/* Expanded Periods */}
                   {isOpen && (
-                    <div className="px-6 py-5 space-y-6">
+                    <div className="px-5 py-5 space-y-5">
                       {month.periods?.map((period, pIdx) => (
                         <div key={pIdx}>
                           <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${color.text}`}>{period.label}</p>
-                          <div className="space-y-3">
+                          <div className="space-y-2.5">
                             {period.activities?.map((act, aIdx) => {
                               const flatIdx = flatIndexMap.get(`${idx}-${pIdx}-${aIdx}`);
                               const isActive = flatIdx === firstActiveFlat;
@@ -386,44 +386,44 @@ Return JSON with this exact structure:
                               return (
                                 <div
                                   key={aIdx}
-                                  className={`relative flex items-start gap-3 p-4 rounded-2xl border transition-all ${
+                                  className={`relative flex items-start gap-3 p-4 rounded-xl border transition-all ${
                                     act.completed
-                                      ? 'bg-green-50 border-green-200'
+                                      ? 'bg-emerald-500/[0.07] border-emerald-500/20'
                                       : isLocked
-                                      ? 'bg-slate-50 border-slate-200 border-dashed'
-                                      : 'bg-slate-50 border-slate-100'
+                                      ? 'bg-white/[0.02] border-white/[0.04] border-dashed'
+                                      : 'bg-[#1a1a1a] border-white/[0.08]'
                                   }`}
                                 >
                                   {act.completed ? (
-                                    <CheckCircle2 className="w-6 h-6 text-green-500 flex-shrink-0 mt-0.5" />
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                                   ) : isLocked ? (
-                                    <div className="w-6 h-6 rounded-full bg-slate-300 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                      <Lock className="w-3 h-3 text-slate-500" />
+                                    <div className="w-5 h-5 rounded-full bg-white/[0.08] flex items-center justify-center flex-shrink-0 mt-0.5">
+                                      <Lock className="w-3 h-3 text-slate-600" />
                                     </div>
                                   ) : (
-                                    <div className={`w-6 h-6 rounded-full ${color.dot} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                                      <span className="text-white text-xs font-bold">{aIdx + 1}</span>
+                                    <div className={`w-5 h-5 rounded-full ${color.dot} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                                      <span className="text-white text-[10px] font-bold">{aIdx + 1}</span>
                                     </div>
                                   )}
                                   <div className="flex-1 min-w-0">
-                                    <p className={`font-semibold ${isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{act.title}</p>
-                                    <p className={`text-sm mt-0.5 ${isLocked ? 'text-slate-400' : 'text-slate-500'}`}>{act.objective}</p>
+                                    <p className={`font-semibold text-sm ${isLocked ? 'text-slate-600' : 'text-white'}`}>{act.title}</p>
+                                    <p className={`text-xs mt-0.5 ${isLocked ? 'text-slate-700' : 'text-slate-500'}`}>{act.objective}</p>
                                     {act.completed ? (
                                       <div className="mt-2 space-y-1">
-                                        <p className="text-sm font-semibold text-green-700">
+                                        <p className="text-xs font-semibold text-emerald-400">
                                           ✅ {act.ai_feedback}
                                         </p>
                                         {act.scorable !== false ? (
-                                          <p className="text-sm font-bold text-slate-700">
+                                          <p className="text-xs font-bold text-slate-300">
                                             Score: {act.score}/10
                                           </p>
                                         ) : (
-                                          <p className="text-sm font-bold text-slate-700">
+                                          <p className="text-xs font-bold text-slate-300">
                                             Note: {act.note}
                                           </p>
                                         )}
                                         {act.parent_feedback && (
-                                          <p className="text-sm italic text-slate-500">
+                                          <p className="text-xs italic text-slate-500">
                                             Parent: {act.parent_feedback}
                                           </p>
                                         )}
@@ -436,7 +436,7 @@ Return JSON with this exact structure:
                                             : null;
                                           setActiveActivity({ activity: act, monthIdx: idx, periodIdx: pIdx, actIdx: aIdx, originalActivity: originalAct });
                                         }}
-                                        className={`mt-2 text-sm font-medium ${color.text} hover:underline`}
+                                        className={`mt-1.5 text-xs font-medium ${color.text} hover:underline`}
                                       >
                                         Tap to start activity →
                                       </button>
@@ -445,10 +445,10 @@ Return JSON with this exact structure:
                                   {act.completed && (
                                     <button
                                       onClick={() => handleActivityReset(idx, pIdx, aIdx)}
-                                      className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
+                                      className="absolute top-3 right-3 w-6 h-6 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.10] transition-colors"
                                       title="Reset activity"
                                     >
-                                      <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                                      <RotateCcw className="w-3 h-3 text-slate-500" />
                                     </button>
                                   )}
                                 </div>
@@ -467,7 +467,7 @@ Return JSON with this exact structure:
             <div className="flex justify-center pt-2">
               <Button
                 onClick={() => setShowProgress(true)}
-                className="h-11 px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-600 hover:to-emerald-600 text-white font-semibold shadow-md hover:shadow-lg transition-all"
+                className="h-11 px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal transition-all"
               >
                 View Progress And Insights
               </Button>
@@ -479,7 +479,7 @@ Return JSON with this exact structure:
                 <Button
                   variant="outline"
                   onClick={() => navigate(-1)}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
                 >
                   ← Back
                 </Button>
@@ -508,7 +508,7 @@ Return JSON with this exact structure:
                     }
                     navigate(createPageUrl('Onboarding'));
                   }}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-amber-500/30 bg-transparent text-amber-400 hover:bg-amber-500/10"
                 >
                   🔄 Start Over
                 </Button>
@@ -517,7 +517,6 @@ Return JSON with this exact structure:
                 <Button
                   variant="outline"
                   onClick={async () => {
-                    // Snapshot completed activities before wiping the plan.
                     const completedSnapshot = {};
                     goalPlan?.months?.forEach((month, mIdx) => {
                       month.periods?.forEach((period, pIdx) => {
@@ -531,7 +530,7 @@ Return JSON with this exact structure:
 
                     await generateGoals(childData, concern, savedOnboarding, savedCompletedAreas, completedSnapshot);
                   }}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border-2"
+                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
                 >
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Regenerate Plan
