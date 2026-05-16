@@ -773,6 +773,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 key={area.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
+                whileTap={{ scale: 0.97, transition: { duration: 0.1, delay: 0 } }}
                 transition={{ delay: i * 0.08 }}
                 onClick={async () => {
                   debouncedPersistRecommendationsProgress.flush?.();
@@ -867,7 +868,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setStep('interactive_activity');
                   }
                 }}
-                className="p-4 rounded-2xl border border-white/[0.08] text-left transition-all bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]"
+                className="p-4 rounded-2xl border border-white/[0.08] text-left transition-colors bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]"
               >
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${area.color} flex items-center justify-center mb-3`}>
                   <Icon className="w-5 h-5 text-white" />

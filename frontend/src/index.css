@@ -84,6 +84,13 @@
     @apply bg-[#0a0a0a] text-foreground;
   }
 
+  button:not(:disabled) {
+    transition: transform 150ms ease, opacity 150ms ease;
+  }
+  button:not(:disabled):active {
+    transform: scale(0.97);
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

@@ -675,6 +675,7 @@ export default function ConversationalOnboarding({
                 key={option}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
+                whileTap={{ scale: 0.95, transition: { duration: 0.1, delay: 0 } }}
                 transition={{ delay: index * 0.08 }}
                 type="button"
                 onClick={() => handleChoiceSelect(option)}
