@@ -167,7 +167,7 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
       size="icon"
       className={`h-10 w-10 rounded-xl flex-shrink-0 ${
         isRecording
-          ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+          ? 'bg-red-500 hover:bg-red-600'
           : isTranscribing
           ? 'bg-amber-400 cursor-wait'
           : 'bg-white/[0.08] hover:bg-white/[0.12]'

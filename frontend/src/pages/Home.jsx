@@ -104,7 +104,7 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 1.2 }}
             className="text-center"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-500/10 rounded-full border border-teal-500/20 mb-8">
@@ -184,7 +184,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.08 }}
+                transition={{ delay: index * 0.12 }}
                 whileHover={{ y: -3, transition: { duration: 0.2 } }}
                 className="bg-[#141414] rounded-2xl p-6 border border-white/[0.06] hover:border-white/[0.10] transition-all duration-300 group"
                 style={{ '--pillar-glow': pillar.glow }}
@@ -239,7 +239,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.15 }}
+                transition={{ delay: index * 0.225 }}
                 className="text-center"
               >
                 <div className="w-14 h-14 mx-auto rounded-2xl bg-[#1a1a1a] border border-white/[0.08] flex items-center justify-center mb-5">

@@ -330,22 +330,26 @@ async def refresh_tokens(
     response: Response,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    access_token = request.cookies.get("access_token")
     refresh_token_val = request.cookies.get("refresh_token")
-    if not access_token or not refresh_token_val:
-        raise HTTPException(status_code=401, detail="Missing tokens")
+    if not refresh_token_val:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
 
-    access_payload = decode_access_token_ignore_exp(access_token)
     refresh_payload = decode_token_of_type(refresh_token_val, "refresh")
-    if not access_payload or not refresh_payload:
+    if not refresh_payload:
         _clear_auth_cookies(response)
-        log.warning("auth.refresh.failed reason=invalid_tokens")
+        log.warning("auth.refresh.failed reason=invalid_refresh_token")
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    if access_payload.get("sub") != refresh_payload.get("sub"):
-        _clear_auth_cookies(response)
-        log.warning("auth.refresh.failed reason=subject_mismatch sub=%s", access_payload.get("sub"))
-        raise HTTPException(status_code=401, detail="Token mismatch")
+    # Access token is optional — the browser deletes it when it expires (max_age),
+    # so it may be absent even when the refresh token is still valid. If present,
+    # validate that both tokens belong to the same user as a defence-in-depth check.
+    access_token = request.cookies.get("access_token")
+    if access_token:
+        access_payload = decode_access_token_ignore_exp(access_token)
+        if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
+            _clear_auth_cookies(response)
+            log.warning("auth.refresh.failed reason=subject_mismatch sub=%s", refresh_payload.get("sub"))
+            raise HTTPException(status_code=401, detail="Token mismatch")
 
     jti = refresh_payload.get("jti")
     if not jti:
@@ -353,7 +357,8 @@ async def refresh_tokens(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     uid = refresh_payload.get("sub")
-    raw_location = access_payload.get("location", settings.default_location)
+    # Derive location from the refresh token — the access token may be absent.
+    raw_location = refresh_payload.get("location", settings.default_location)
     location = (
         raw_location
         if isinstance(raw_location, str) and LOCATION_RE.match(raw_location)

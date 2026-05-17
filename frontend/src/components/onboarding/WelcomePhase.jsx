@@ -30,7 +30,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.3 }}
           className="text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight"
         >
           Welcome to Buddy360
@@ -39,7 +39,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          transition={{ delay: 0.45 }}
           className="text-base text-slate-400 max-w-md mx-auto leading-relaxed"
         >
           A guided journey to help your child discover their strengths and design a meaningful life
@@ -50,7 +50,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
+        transition={{ delay: 0.6 }}
         className="bg-[#1a1a1a] rounded-2xl p-6 border border-white/[0.08] max-w-md mx-auto"
       >
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">What you'll do today</p>
@@ -60,7 +60,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
               key={index}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.5 + index * 0.1 }}
+              transition={{ delay: 0.75 + index * 0.15 }}
               className="flex items-center gap-3"
             >
               <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
@@ -76,7 +76,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.7 }}
+        transition={{ delay: 1.05 }}
         className="text-center space-y-4 max-w-md mx-auto"
       >
         {isAuthenticated ? (
@@ -132,7 +132,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       <motion.p
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
+        transition={{ delay: 1.2 }}
         className="text-center text-xs text-slate-600"
       >
         ⏱️ This will take about 5–7 minutes

@@ -22,6 +22,9 @@ function buildAccThrough(flow, data, beforeStepIdx) {
   return acc;
 }
 
+let _msgIdCounter = 0;
+function newMsgId() { return ++_msgIdCounter; }
+
 function buildReplayMessages(flow, data, resumeIdx) {
   const msgs = [];
   for (let i = 0; i < resumeIdx; i++) {
@@ -29,10 +32,10 @@ function buildReplayMessages(flow, data, resumeIdx) {
     if (step.type === 'auto') break;
     const acc = buildAccThrough(flow, data, i);
     const botText = typeof step.message === 'function' ? step.message(acc) : step.message;
-    msgs.push({ role: 'bot', content: botText });
+    msgs.push({ id: newMsgId(), role: 'bot', content: botText });
     const val = data[step.field];
     const userDisplay = Array.isArray(val) ? val.join(', ') : String(val ?? '');
-    msgs.push({ role: 'user', content: userDisplay });
+    msgs.push({ id: newMsgId(), role: 'user', content: userDisplay });
   }
   return msgs;
 }
@@ -70,6 +73,7 @@ export default function ConversationalOnboarding({
   const [dotCount, setDotCount] = useState(0);
   const [allAnswered, setAllAnswered] = useState(false);
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const inputRef = useRef(null);
   const idleTimerRef = useRef(null);
   const persistTimerRef = useRef(null);
@@ -209,11 +213,11 @@ export default function ConversationalOnboarding({
   const addBotMessage = (text) => {
     setIsTyping(true);
     setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'bot', content: text }]);
+      setMessages(prev => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
       setIsTyping(false);
       speak(text);
       setWaitingForResponse(true);
-    }, 800);
+    }, 1600);
   };
 
   useEffect(() => {
@@ -313,7 +317,24 @@ export default function ConversationalOnboarding({
   };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const t = setTimeout(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const start = container.scrollTop;
+      const end = container.scrollHeight - container.clientHeight;
+      if (end <= start) return;
+      const duration = 1400;
+      const startTime = performance.now();
+      const easeInOutCubic = (t) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const step = (now) => {
+        const progress = Math.min((now - startTime) / duration, 1);
+        container.scrollTop = start + (end - start) * easeInOutCubic(progress);
+        if (progress < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }, 200);
+    return () => clearTimeout(t);
   }, [messages, isTyping]);
 
   useEffect(() => {
@@ -347,7 +368,7 @@ export default function ConversationalOnboarding({
     idleTimerRef.current = setTimeout(() => {
       setMessages(prev => [
         ...prev,
-        { role: 'bot', content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!" }
+        { id: newMsgId(), role: 'bot', content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!" }
       ]);
     }, 30000);
 
@@ -357,7 +378,7 @@ export default function ConversationalOnboarding({
   const processResponse = (response) => {
     const step = conversationFlow[currentStep];
 
-    setMessages(prev => [...prev, { role: 'user', content: response }]);
+    setMessages(prev => [...prev, { id: newMsgId(), role: 'user', content: response }]);
     userTurnCountRef.current += 1;
     setWaitingForResponse(false);
 
@@ -394,7 +415,7 @@ export default function ConversationalOnboarding({
           clearInterval(interval);
           Promise.resolve(onComplete(finalData)).catch(() => {});
         }
-      }, 55); // 55ms * 100 = 5.5 seconds
+      }, 28); // 28ms * 100 = 2.8 seconds
       return;
     }
 
@@ -405,7 +426,7 @@ export default function ConversationalOnboarding({
         ? conversationFlow[nextStep].message(nextCollected)
         : conversationFlow[nextStep].message;
 
-      setTimeout(() => addBotMessage(nextMessage), 500);
+      setTimeout(() => addBotMessage(nextMessage), 700);
 
       if (conversationFlow[nextStep].type === 'final') {
         setTimeout(() => {
@@ -553,13 +574,26 @@ export default function ConversationalOnboarding({
             const done = analyzeProgress >= s.threshold;
             const active = !done && (i === 0 || analyzeProgress >= steps[i - 1]?.threshold);
             return (
-              <div key={i} className={`flex items-center gap-3 transition-opacity ${done || active ? 'opacity-100' : 'opacity-30'}`}>
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${done ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : active ? 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30' : 'bg-white/[0.05] text-slate-500'}`}>
+              <div key={i} className={`flex items-center gap-3 transition-opacity duration-500 ${done || active ? 'opacity-100' : 'opacity-30'}`}>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-500 ${done ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : active ? 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30' : 'bg-white/[0.05] text-slate-500'}`}>
                   <Icon className="w-4 h-4" />
                 </div>
-                <span className={`text-sm ${done ? 'text-emerald-400 font-medium line-through decoration-emerald-600' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
-                  {s.label}
-                </span>
+                <div className="relative">
+                  <span className={`text-sm transition-colors duration-500 ${done ? 'text-emerald-400 font-medium' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
+                    {s.label}
+                  </span>
+                  <AnimatePresence>
+                    {done && (
+                      <motion.div
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: 1 }}
+                        transition={{ duration: 1.4, ease: 'easeInOut' }}
+                        style={{ originX: 0 }}
+                        className="absolute left-0 right-0 top-[50%] h-px bg-emerald-500"
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             );
           })}
@@ -592,41 +626,61 @@ export default function ConversationalOnboarding({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messages.map((msg) =>
+            msg.role === 'bot' ? (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  opacity: { duration: 2.0, ease: [0.0, 0.0, 0.6, 1] },
+                  y:       { duration: 1.6, ease: 'easeOut' },
+                }}
+                className="flex justify-start"
+              >
+                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-[#1e1e1e] text-slate-300 rounded-tl-sm border border-white/[0.06]">
+                  <p className="whitespace-pre-line">{msg.content}</p>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: 40 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  opacity: { duration: 1.6, ease: [0.0, 0.0, 0.6, 1] },
+                  x:       { duration: 1.4, ease: [0.22, 1, 0.36, 1] },
+                }}
+                className="flex justify-end"
+              >
+                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-teal-500 text-white rounded-tr-sm">
+                  <p className="whitespace-pre-line">{msg.content}</p>
+                </div>
+              </motion.div>
+            )
+          )}
+
         <AnimatePresence>
-          {messages.map((msg, index) => (
+          {isTyping && (
             <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 8 }}
+              key="typing-indicator"
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              exit={{ opacity: 0, y: -6, transition: { duration: 0.3, ease: 'easeIn' } }}
+              transition={{ duration: 0.45, ease: 'easeOut' }}
+              className="flex justify-start"
             >
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-teal-500 text-white rounded-tr-sm'
-                  : 'bg-[#1e1e1e] text-slate-300 rounded-tl-sm border border-white/[0.06]'
-              }`}>
-                <p className="whitespace-pre-line">{msg.content}</p>
+              <div className="bg-[#1e1e1e] rounded-2xl rounded-tl-sm px-4 py-3 border border-white/[0.06]">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
               </div>
             </motion.div>
-          ))}
+          )}
         </AnimatePresence>
-
-        {isTyping && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex justify-start"
-          >
-            <div className="bg-[#1e1e1e] rounded-2xl rounded-tl-sm px-4 py-3 border border-white/[0.06]">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </motion.div>
-        )}
 
         <div ref={messagesEndRef} />
       </div>
@@ -637,7 +691,7 @@ export default function ConversationalOnboarding({
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.375 }}
             className="flex justify-start"
           >
             <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-tl-sm border border-teal-500/20 bg-teal-500/[0.05] px-4 py-4">
@@ -676,7 +730,7 @@ export default function ConversationalOnboarding({
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileTap={{ scale: 0.95, transition: { duration: 0.1, delay: 0 } }}
-                transition={{ delay: index * 0.08 }}
+                transition={{ delay: index * 0.12, duration: 0.4, ease: 'easeOut' }}
                 type="button"
                 onClick={() => handleChoiceSelect(option)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${

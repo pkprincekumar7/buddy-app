@@ -312,7 +312,12 @@ Return JSON with this exact structure:
     <div className="min-h-screen bg-[#0a0a0a]">
       <div className="max-w-4xl mx-auto px-4 py-10">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+          className="mb-8 text-center"
+        >
           <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
             <Target className="w-7 h-7 text-white" />
           </div>
@@ -345,9 +350,9 @@ Return JSON with this exact structure:
               return (
                 <motion.div
                   key={idx}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 24 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
+                  transition={{ duration: 1.0, delay: 0.6 + idx * 0.3, ease: 'easeOut' }}
                   className="bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden"
                 >
                   {/* Month Header */}

@@ -304,7 +304,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   className="h-full bg-white rounded-full"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.3 }}
+                  transition={{ duration: 0.45 }}
                 />
               </div>
             </div>

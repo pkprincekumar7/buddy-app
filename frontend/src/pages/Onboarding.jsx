@@ -278,6 +278,10 @@ export default function Onboarding() {
   }, [isLoadingAuth, isAuthenticated, queryClient]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [currentPhase]);
+
+  useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
     clearTimeout(phasePatchTimerRef.current);
     phasePatchTimerRef.current = setTimeout(() => {
@@ -769,7 +773,7 @@ Generate:
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -50 }}
-            transition={{ duration: 0.3 }}
+            transition={{ duration: 0.45 }}
           >
             {wizardBusy ? (
               <div className="flex flex-col items-center justify-center py-20">

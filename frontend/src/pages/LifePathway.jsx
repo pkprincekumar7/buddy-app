@@ -132,7 +132,7 @@ export default function LifePathway() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30 flex items-center justify-center">
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -218,17 +218,22 @@ export default function LifePathway() {
   return (
     <div className="min-h-screen bg-[#0a0a0a]">
       <div className="max-w-6xl mx-auto px-4 py-12">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="space-y-8"
+        >
           {/* Header */}
-          <div className="text-center space-y-4">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 200 }}
-              className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm"
-            >
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+            className="text-center space-y-4"
+          >
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
               <TrendingUp className="w-8 h-8 text-white" />
-            </motion.div>
+            </div>
             <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
               Take a look at {childData?.name}'s life journey planned and powered by Buddy360
             </h1>
@@ -246,13 +251,13 @@ export default function LifePathway() {
                 ))}
               </div>
             )}
-          </div>
+          </motion.div>
 
           {/* Chart */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
             className="bg-[#141414] rounded-2xl p-6 md:p-8 border border-white/[0.08]"
           >
             <div className="text-center mb-6">
@@ -422,9 +427,9 @@ export default function LifePathway() {
           {/* Per-Growth-Area Detail Sections */}
           {completedAreas.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
+              transition={{ duration: 1.0, delay: 1.6, ease: 'easeOut' }}
               className="space-y-4"
             >
               <h2 className="text-2xl font-bold text-white tracking-tight">Growth Area Insights</h2>
@@ -436,9 +441,9 @@ export default function LifePathway() {
                 return (
                   <motion.div
                     key={area.area_id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 * idx }}
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 1.0, delay: 2.0 + idx * 0.3, ease: 'easeOut' }}
                     className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
                   >
                     <div className="flex items-center gap-3 mb-4">
@@ -478,9 +483,9 @@ export default function LifePathway() {
 
           {/* CTA */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
+            transition={{ duration: 1.0, delay: 1.8, ease: 'easeOut' }}
             className="text-center pt-8 space-y-6"
           >
             {/* Welcome Banner */}
@@ -556,7 +561,7 @@ export default function LifePathway() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: 0.3 }}
           className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
           onClick={closeConcernModal}
           role="presentation"
@@ -565,7 +570,7 @@ export default function LifePathway() {
             initial={{ opacity: 0, scale: 0.95, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 16 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+            transition={{ duration: 0.375, ease: 'easeOut' }}
             className="relative bg-[#1a1a1a] rounded-2xl p-8 pt-12 max-w-lg w-full border border-white/[0.10]"
             onClick={(e) => e.stopPropagation()}
           >
@@ -577,64 +582,79 @@ export default function LifePathway() {
             >
               <X className="w-5 h-5" />
             </button>
-            {!concernSubmitted ? (
-              <div className="space-y-5">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
-                    <Sparkles className="w-5 h-5 text-white" />
+            <AnimatePresence mode="wait">
+              {!concernSubmitted ? (
+                <motion.div
+                  key="form"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -12, transition: { duration: 0.3, ease: 'easeIn' } }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="space-y-5"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white text-lg">One last thing!</h3>
+                      <p className="text-sm text-slate-500">Buddy360 wants to know</p>
+                    </div>
+                  </div>
+                  <p className="text-slate-300 text-base leading-relaxed">
+                    Hey <span className="font-semibold text-teal-400">{user?.full_name?.split(' ')[0] || 'there'}</span>, is there anything that you want Buddy360 to work on currently with respect to <span className="font-semibold text-emerald-400">{childData?.name}</span>?
+                  </p>
+                  <TextareaWithVoice
+                    value={concernInput}
+                    onChange={(e) => setConcernInput(e.target.value)}
+                    placeholder={`e.g., I want to improve English speaking skills for ${childData?.name}.`}
+                    className="w-full min-h-[120px] p-4 rounded-xl bg-[#111111] border border-white/[0.10] text-white placeholder:text-slate-600 focus:border-teal-500/50 resize-none"
+                  />
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={handleProceedToDashboard}
+                      className="flex-1 h-11 rounded-xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+                    >
+                      Skip for now
+                    </Button>
+                    <Button
+                      onClick={handleConcernSubmit}
+                      disabled={!concernInput.trim()}
+                      className="flex-1 h-11 rounded-xl bg-gradient-to-r from-teal-500 to-teal-400 text-[#0a0a0a] font-semibold disabled:opacity-40"
+                    >
+                      Submit
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="success"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="space-y-6 text-center"
+                >
+                  <div className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+                    <span className="text-2xl">✅</span>
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-lg">One last thing!</h3>
-                    <p className="text-sm text-slate-500">Buddy360 wants to know</p>
+                    <h3 className="font-bold text-white text-lg mb-2">Got it!</h3>
+                    <p className="text-slate-400 leading-relaxed">
+                      I got that. We will work with <span className="font-semibold text-emerald-400">{childData?.name}</span> on the same.
+                    </p>
                   </div>
-                </div>
-                <p className="text-slate-300 text-base leading-relaxed">
-                  Hey <span className="font-semibold text-teal-400">{user?.full_name?.split(' ')[0] || 'there'}</span>, is there anything that you want Buddy360 to work on currently with respect to <span className="font-semibold text-emerald-400">{childData?.name}</span>?
-                </p>
-                <TextareaWithVoice
-                  value={concernInput}
-                  onChange={(e) => setConcernInput(e.target.value)}
-                  placeholder={`e.g., I want to improve English speaking skills for ${childData?.name}.`}
-                  className="w-full min-h-[120px] p-4 rounded-xl bg-[#111111] border border-white/[0.10] text-white placeholder:text-slate-600 focus:border-teal-500/50 resize-none"
-                />
-                <div className="flex gap-3">
                   <Button
-                    variant="outline"
                     onClick={handleProceedToDashboard}
-                    className="flex-1 h-11 rounded-xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+                    className="w-full h-11 rounded-xl bg-gradient-to-r from-teal-500 to-teal-400 text-[#0a0a0a] font-semibold"
                   >
-                    Skip for now
+                    Go to Dashboard
+                    <ChevronRight className="w-4 h-4 ml-2" />
                   </Button>
-                  <Button
-                    onClick={handleConcernSubmit}
-                    disabled={!concernInput.trim()}
-                    className="flex-1 h-11 rounded-xl bg-gradient-to-r from-teal-500 to-teal-400 text-[#0a0a0a] font-semibold disabled:opacity-40"
-                  >
-                    Submit
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6 text-center">
-                <div className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
-                  <span className="text-2xl">✅</span>
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-lg mb-2">Got it!</h3>
-                  <p className="text-slate-400 leading-relaxed">
-                    I got that. We will work with <span className="font-semibold text-emerald-400">{childData?.name}</span> on the same.
-                  </p>
-                </div>
-                <Button
-                  onClick={handleProceedToDashboard}
-                  className="w-full h-11 rounded-xl bg-gradient-to-r from-teal-500 to-teal-400 text-[#0a0a0a] font-semibold"
-                >
-                  Go to Dashboard
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </motion.div>
         )}

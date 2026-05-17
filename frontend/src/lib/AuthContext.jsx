@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
@@ -17,6 +17,7 @@ export const AuthProvider = ({ children }) => {
   const [childProfiles, setChildProfiles] = useState([]);
   const [authError, setAuthError] = useState(null);
   const [lastVisitedPath, setLastVisitedPath] = useState(null);
+  const silentRefreshTimerRef = useRef(null);
 
   const checkAppState = useCallback(async (options = {}) => {
     const withLoading = options.withLoading !== false;
@@ -80,6 +81,37 @@ export const AuthProvider = ({ children }) => {
     }
     return undefined;
   }, [navigate]);
+
+  // Proactive silent refresh: fires 60 s before the 30-min access token expires
+  // so the session stays alive as long as the refresh token (24 h) is valid.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const ACCESS_LIFETIME_MS = 30 * 60 * 1000;
+    const BUFFER_MS = 60 * 1000;
+
+    const schedule = () => {
+      silentRefreshTimerRef.current = setTimeout(async () => {
+        try {
+          await api.auth.silentRefresh();
+          schedule();
+        } catch (err) {
+          if (err?.status === 401) {
+            window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
+          } else {
+            // Network/server hiccup — retry in 30 s
+            silentRefreshTimerRef.current = setTimeout(schedule, 30_000);
+          }
+        }
+      }, ACCESS_LIFETIME_MS - BUFFER_MS);
+    };
+
+    schedule();
+
+    return () => {
+      if (silentRefreshTimerRef.current) clearTimeout(silentRefreshTimerRef.current);
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isAuthenticated) return;

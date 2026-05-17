@@ -364,6 +364,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [step, setStep] = useState('intro');
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [step]);
   const [selectedArea, setSelectedArea] = useState(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [parentLiked, setParentLiked] = useState(null);
@@ -657,27 +661,27 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   }, [step, profile, resumeLoaded]);
 
   const renderIntro = () => {
+    const sectionAnim = (delay) => ({
+      initial: { opacity: 0, y: 24 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 1.0, delay, ease: 'easeOut' },
+    });
+
     return (
       <div className="space-y-8">
-        {/* Header */}
-          <div className="text-center">
-          <motion.div 
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 200 }}
-            className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center"
-          >
+        {/* Section 1 — Header */}
+        <motion.div {...sectionAnim(0.1)} className="text-center">
+          <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
             <Sparkles className="w-12 h-12 text-white" />
-          </motion.div>
+          </div>
           <h2 className="text-2xl font-bold text-white mb-2">Your Personalized Journey</h2>
           <p className="text-slate-400">Here's what we've discovered about {data.name}</p>
-        </div>
+        </motion.div>
 
-        {/* Profile Summary Card */}
-          {profile && (
+        {/* Section 2 — Profile Summary Card */}
+        {profile && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
+            {...sectionAnim(0.8)}
             className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
           >
             <div className="flex items-start gap-4 mb-4">
@@ -700,7 +704,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   key={index}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
                   className="flex items-start gap-3 bg-[#1e1e1e] rounded-xl p-3 border border-white/[0.06]"
                 >
                   <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
@@ -716,11 +720,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </motion.div>
         )}
 
-        {/* Explore Growth Areas Prompt */}
+        {/* Section 3 — Explore Growth Areas Prompt */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          {...sectionAnim(1.8)}
           className="bg-[#141414] rounded-2xl p-6 border border-purple-500/20"
         >
           <div className="text-center space-y-4">
@@ -758,12 +760,18 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   };
 
   const renderAreaSelection = () => {
+    const sectionAnim = (delay) => ({
+      initial: { opacity: 0, y: 24 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 1.0, delay, ease: 'easeOut' },
+    });
+
     return (
       <div className="space-y-6">
-        <div className="text-center">
+        <motion.div {...sectionAnim(0.5)} className="text-center">
           <h2 className="text-2xl font-bold text-white mb-2">Growth Areas</h2>
           <p className="text-slate-400">Choose an area to explore for {data.name}</p>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-2 gap-3">
           {growthAreas.map((area, i) => {
@@ -775,9 +783,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 animate={{ opacity: 1, y: 0 }}
                 whileTap={{ scale: 0.97 }}
                 transition={{
-                  opacity: { delay: i * 0.08 },
-                  y: { delay: i * 0.08 },
-                  scale: { duration: 0.1, delay: 0 },
+                  opacity: { duration: 1.0, delay: 0.5 + i * 0.5, ease: 'easeOut' },
+                  y: { duration: 1.0, delay: 0.5 + i * 0.5, ease: 'easeOut' },
+                  scale: { duration: 0.15, delay: 0 },
                 }}
                 onClick={async () => {
                   debouncedPersistRecommendationsProgress.flush?.();
@@ -894,18 +902,31 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
     return (
       <div className="space-y-6">
-        <div className="text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+          className="text-center"
+        >
           <div className={`w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br ${selectedArea?.color} flex items-center justify-center mb-4`}>
             <Icon className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">{selectedArea?.name}</h2>
           <p className="text-slate-400">Choose an activity to try with {data.name}</p>
-        </div>
+        </motion.div>
 
         <div className="space-y-3">
-          {activities.map((activity) => (
-            <button
+          {activities.map((activity, i) => (
+            <motion.button
               key={activity.title}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              whileTap={{ scale: 0.98 }}
+              transition={{
+                opacity: { duration: 1.0, delay: 0.5 + i * 0.3, ease: 'easeOut' },
+                y: { duration: 1.0, delay: 0.5 + i * 0.3, ease: 'easeOut' },
+                scale: { duration: 0.15, delay: 0 },
+              }}
               type="button"
               onClick={() => {
                 setSelectedActivity(activity);
@@ -932,7 +953,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />
               </div>
-            </button>
+            </motion.button>
           ))}
         </div>
 
@@ -949,8 +970,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return (
       <div className="space-y-6">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
           className={`bg-gradient-to-br ${selectedArea?.color} rounded-2xl p-6 text-white`}
         >
           <div className="text-center space-y-3">
@@ -965,7 +987,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </div>
         </motion.div>
 
-        <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-5">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
+          className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-5"
+        >
           <h3 className="font-bold text-white text-center text-sm">Did you like this activity suggestion?</h3>
 
         <div className="flex justify-center gap-4">
@@ -991,7 +1018,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             Not quite
           </Button>
         </div>
-      </div>
+      </motion.div>
 
       <div className="text-center">
         <Button variant="ghost" onClick={() => setStep('activity_selection')} className="text-slate-500 hover:text-white">
@@ -1005,12 +1032,22 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const renderFeedback = () => {
     return (
       <div className="space-y-6">
-        <div className="text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+          className="text-center"
+        >
           <h2 className="text-2xl font-bold text-white mb-2">We'd love your feedback</h2>
           <p className="text-slate-400">What kind of activity would you like for {data.name}?</p>
-        </div>
+        </motion.div>
 
-      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
+        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4"
+      >
         <TextareaWithVoice
           placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
           value={feedback}
@@ -1032,7 +1069,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             Submit & Try Another
           </Button>
         </div>
-      </div>
+      </motion.div>
     </div>
     );
   };
@@ -1041,8 +1078,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return (
       <div className="space-y-6">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
           className="bg-[#141414] rounded-2xl p-6 border border-emerald-500/20"
         >
           <div className="text-center space-y-4">
@@ -1079,22 +1117,23 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
   const renderResults = () => (
     <div className="space-y-6">
-      <div className="text-center">
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring" }}
-          className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center"
-        >
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+        className="text-center"
+      >
+        <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
           <Award className="w-10 h-10 text-white" />
-        </motion.div>
+        </div>
         <h2 className="text-2xl font-bold text-white mb-2">Activity Results Preview</h2>
         <p className="text-slate-400">Here's what you'll see after {data.name} completes activities</p>
-      </div>
+      </motion.div>
 
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
         className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4"
       >
         <div className="text-center">
@@ -1122,9 +1161,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       </motion.div>
 
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 1.6, ease: 'easeOut' }}
         className="text-center py-4"
       >
         <p className="text-slate-400 text-sm">
@@ -1156,7 +1195,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return (
       <div className="space-y-6">
         {/* Progress */}
-        <div className="text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.3, ease: 'easeOut' }}
+          className="text-center"
+        >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 bg-teal-500/10 border border-teal-500/20">
             <AreaIcon className="w-4 h-4 text-teal-400" />
             <span className="text-sm font-medium text-teal-400">{selectedArea?.name} Activity</span>
@@ -1172,14 +1216,18 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             ))}
           </div>
           <p className="text-xs text-slate-500">Question {interactiveStep + 1} of {questions.length}</p>
-        </div>
+        </motion.div>
 
         <AnimatePresence mode="wait">
           <motion.div
             key={interactiveStep}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: 0, y: -16, transition: { duration: 0.4, ease: 'easeIn' } }}
+            transition={{
+              opacity: { duration: 1.0, ease: 'easeOut' },
+              y: { duration: 0.9, ease: 'easeOut' },
+            }}
             className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
           >
             {/* Question */}
@@ -1368,31 +1416,32 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     const questions = areaQuestions[selectedArea?.id] || areaQuestions.life_ambition;
     const AreaIcon = selectedArea?.icon || Award;
 
+    const sectionAnim = (delay) => ({
+      initial: { opacity: 0, y: 24 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 0.8, delay, ease: 'easeOut' },
+    });
+
     return (
       <div className="space-y-6">
-      <div className="text-center">
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring" }}
-          className={`w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br ${selectedArea?.color || 'from-emerald-400 to-teal-500'} flex items-center justify-center`}
-        >
+      <motion.div {...sectionAnim(0.1)} className="text-center">
+        <div className={`w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br ${selectedArea?.color || 'from-emerald-400 to-teal-500'} flex items-center justify-center`}>
           <AreaIcon className="w-10 h-10 text-white" />
-        </motion.div>
+        </div>
         <h2 className="text-2xl font-bold text-white mb-2">Great Insights!</h2>
         <p className="text-slate-400">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
-      </div>
+      </motion.div>
 
-      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
+      <motion.div {...sectionAnim(0.6)} className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
         {questions.map((q, i) => {
           const answer = interactiveAnswers[q.id];
           if (!answer) return null;
           return (
             <motion.div
               key={q.id}
-              initial={{ opacity: 0, x: -20 }}
+              initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.1 }}
+              transition={{ duration: 0.7, delay: 0.9 + i * 0.15, ease: 'easeOut' }}
               className="border-b border-white/[0.06] pb-3 last:border-0"
             >
               <p className="text-xs text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
@@ -1400,10 +1449,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       {selectedActivity && !childGameResults && (
-        <div className="bg-[#141414] rounded-2xl p-5 border border-purple-500/20 space-y-4">
+        <motion.div {...sectionAnim(1.4)} className="bg-[#141414] rounded-2xl p-5 border border-purple-500/20 space-y-4">
           <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Your selected activity</p>
           <div>
             <h3 className="text-base font-bold text-white">{selectedActivity.title}</h3>
@@ -1425,11 +1474,19 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               Pick a different activity
             </Button>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {!parentLiked && !showGame && !childGameResults && (
-        <div className="flex flex-col gap-3">
+      <AnimatePresence>
+        {!parentLiked && !showGame && !childGameResults && (
+        <motion.div
+          key="no-parent-liked-buttons"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
+          transition={{ duration: 0.8, delay: 1.4, ease: 'easeOut' }}
+          className="flex flex-col gap-3"
+        >
           <div className="flex gap-3">
             <Button
               onClick={async () => {
@@ -1471,56 +1528,73 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             <ChevronRight className="w-4 h-4 mr-2" />
             Go to Life Journey
           </Button>
-        </div>
-      )}
+        </motion.div>
+        )}
+      </AnimatePresence>
 
-      {parentLiked === true && !showGame && !childGameResults && (
-        <div className="flex flex-col gap-3">
-          <Button
-            onClick={async () => {
-              if (!selectedArea) return;
-              await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
-              setShowGame(true);
-            }}
-            className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+      <AnimatePresence>
+        {parentLiked === true && !showGame && !childGameResults && (
+          <motion.div
+            key="parent-liked-buttons"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
+            transition={{ duration: 1.0, delay: 0.3, ease: 'easeOut' }}
+            className="flex flex-col gap-3"
           >
-            Present a fun game to {data.name} on the same topic
-          </Button>
-          <Button
-            onClick={async () => {
-              if (!selectedArea) return;
-              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-              setStep('area_selection');
-              setParentLiked(null);
-              setChildActivitySelections([]);
-              setChildGameResults(null);
-              setShowGame(false);
-            }}
-            variant="outline"
-            className="w-full h-12 rounded-2xl border-2"
-          >
-            Explore Later
-          </Button>
-          <Button
-            variant="outline"
-            onClick={async () => {
-              if (!selectedArea) return;
-              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-              navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
-            }}
-            className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
-          >
-            <ChevronRight className="w-5 h-5 mr-2" />
-            Go to Life Journey
-          </Button>
-        </div>
-      )}
+            <Button
+              onClick={async () => {
+                if (!selectedArea) return;
+                await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
+                setShowGame(true);
+              }}
+              className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+            >
+              Present a fun game to {data.name} on the same topic
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!selectedArea) return;
+                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+                setStep('area_selection');
+                setParentLiked(null);
+                setChildActivitySelections([]);
+                setChildGameResults(null);
+                setShowGame(false);
+              }}
+              variant="outline"
+              className="w-full h-12 rounded-2xl border-2"
+            >
+              Explore Later
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!selectedArea) return;
+                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+                navigate(createPageUrl('LifePathway'), {
+                replace: true,
+              });
+              }}
+              className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
+            >
+              <ChevronRight className="w-5 h-5 mr-2" />
+              Go to Life Journey
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Child Game */}
-      {showGame && !childGameResults && selectedArea?.id && (
-        <div className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
+      <AnimatePresence>
+        {showGame && !childGameResults && selectedArea?.id && (
+        <motion.div
+          key="child-game"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeIn' } }}
+          transition={{ duration: 1.0, ease: 'easeOut' }}
+          className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
           <ChildActivityGame
             key={selectedArea.id}
             childName={data.name}
@@ -1556,59 +1630,99 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               setShowGame(false);
             }}
           />
-        </div>
-      )}
+        </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Results Display */}
       {childGameResults && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              <div className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
-                <div className="text-center mb-4">
+            <div className="space-y-4">
+
+              {/* Section 2 — starts immediately when section 1 finishes (2.2 s) */}
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 2.2, ease: 'easeOut' }}
+                className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20"
+              >
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.7, delay: 2.2, ease: 'easeOut' }}
+                  className="text-center mb-4"
+                >
                   <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3">
                     <Sparkles className="w-8 h-8 text-white" />
                   </div>
                   <h3 className="text-xl font-bold text-white">Recommendations for {data.name}</h3>
-                </div>
+                </motion.div>
 
-                <div className="bg-[#1a1a1a] rounded-2xl p-4 mb-4">
+                {/* What This Reveals: immediately after header (2.2+0.5=2.7) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, delay: 2.7, ease: 'easeOut' }}
+                  className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
+                >
                   <h4 className="font-semibold text-white mb-2">What This Reveals</h4>
                   <p className="text-slate-400 text-sm">{childGameResults?.summary ?? ''}</p>
-                </div>
+                </motion.div>
 
-                <div className="bg-[#1a1a1a] rounded-2xl p-4 mb-4">
+                {/* Suggested Activities: immediately after What This Reveals finishes (2.7+0.8=3.5) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, delay: 3.5, ease: 'easeOut' }}
+                  className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
+                >
                   <h4 className="font-semibold text-white mb-2">Suggested Activities</h4>
                   <ul className="space-y-2">
                     {suggestedActivitiesFromGameRecommendations(childGameResults).map((activity, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
+                      <motion.li
+                        key={i}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.6, delay: 3.7 + i * 0.15, ease: 'easeOut' }}
+                        className="flex items-start gap-2 text-sm text-slate-400"
+                      >
                         <span className="text-emerald-500 mt-1">✓</span>
                         <span>{activity}</span>
-                      </li>
+                      </motion.li>
                     ))}
                   </ul>
-                </div>
+                </motion.div>
 
-                <div className="bg-[#1a1a1a] rounded-2xl p-4">
+                {/* Strengths: immediately after Suggested Activities finishes (3.5+0.8=4.3) */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, delay: 4.3, ease: 'easeOut' }}
+                  className="bg-[#1a1a1a] rounded-2xl p-4"
+                >
                   <h4 className="font-semibold text-white mb-2">Strengths to Encourage</h4>
                   <ul className="space-y-2">
                     {(Array.isArray(childGameResults?.strengths) ? childGameResults.strengths : []).map((strength, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
+                      <motion.li
+                        key={i}
+                        initial={{ opacity: 0, x: -12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.6, delay: 4.5 + i * 0.15, ease: 'easeOut' }}
+                        className="flex items-start gap-2 text-sm text-slate-400"
+                      >
                         <span className="text-emerald-500 mt-1">★</span>
                         <span>{strength}</span>
-                      </li>
+                      </motion.li>
                     ))}
                   </ul>
-                </div>
-              </div>
+                </motion.div>
+              </motion.div>
 
-              {/* 3-Month Recommendations */}
+              {/* Section 3 — starts immediately when section 2 finishes
+                  Last strength item: 4.5 + 4*0.15 = 5.1, duration 0.6 → done at 5.7 s */}
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
+                transition={{ duration: 0.8, delay: 5.7, ease: 'easeOut' }}
                 className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/15"
               >
                 <h3 className="font-bold text-white mb-3 flex items-center gap-2">
@@ -1638,9 +1752,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     {aiRecommendations.map((rec, i) => (
                       <motion.li
                         key={i}
-                        initial={{ opacity: 0, x: -10 }}
+                        initial={{ opacity: 0, x: -16 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.08 }}
+                        transition={{ duration: 0.7, delay: i * 0.15, ease: 'easeOut' }}
                         className="flex items-start gap-3 text-sm text-slate-300"
                       >
                         <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">{i + 1}</span>
@@ -1651,7 +1765,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 )}
               </motion.div>
 
-              <div className="flex flex-col gap-3">
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 5.7, ease: 'easeOut' }}
+                className="flex flex-col gap-3"
+              >
               <Button
                 onClick={async () => {
                   if (!selectedArea) return;
@@ -1694,8 +1813,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 <ChevronRight className="w-5 h-5 mr-2" />
                 Go to Life Journey
               </Button>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           )}
     </div>
     );
@@ -1704,25 +1823,28 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const renderSkip = () => (
     <div className="space-y-6 text-center">
       <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
+        className="flex flex-col items-center gap-6"
       >
-        <Sparkles className="w-10 h-10 text-white" />
+        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
+          <Sparkles className="w-10 h-10 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-white">Ready for the Next Step!</h2>
+        <p className="text-slate-400">
+          Let's explore the Life Journey designed for {data.name}.
+        </p>
+        <Button
+          onClick={() => {
+            navigate(createPageUrl('LifePathway'), { replace: true });
+          }}
+          className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+        >
+          Continue to Life Journey
+          <ChevronRight className="w-5 h-5 ml-2" />
+        </Button>
       </motion.div>
-      <h2 className="text-2xl font-bold text-white">Ready for the Next Step!</h2>
-      <p className="text-slate-400">
-        Let's explore the Life Journey designed for {data.name}.
-      </p>
-      <Button
-        onClick={() => {
-          navigate(createPageUrl('LifePathway'), { replace: true });
-        }}
-        className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
-      >
-        Continue to Life Journey
-        <ChevronRight className="w-5 h-5 ml-2" />
-      </Button>
     </div>
   );
 
@@ -1733,7 +1855,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: 0.3 }}
       >
         {step === 'intro' && renderIntro()}
         {step === 'area_selection' && renderAreaSelection()}
