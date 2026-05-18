@@ -37,41 +37,13 @@
     --sidebar-accent-foreground: 0 0% 98%;
     --sidebar-border: 0 0% 15%;
     --sidebar-ring: 174 72% 56%;
-  }
-
-  .dark {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 174 72% 56%;
-    --primary-foreground: 0 0% 4%;
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 55%;
-    --accent: 0 0% 12%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 15%;
-    --input: 0 0% 15%;
-    --ring: 174 72% 56%;
-    --chart-1: 174 72% 56%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 43 96% 56%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-    --sidebar-background: 0 0% 6%;
-    --sidebar-foreground: 0 0% 80%;
-    --sidebar-primary: 174 72% 56%;
-    --sidebar-primary-foreground: 0 0% 4%;
-    --sidebar-accent: 0 0% 12%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 15%;
-    --sidebar-ring: 174 72% 56%;
+    --surface-elevated: 0 0% 10.2%;
+    --surface-input: 0 0% 11.8%;
+    --section-alt: 0 0% 5.1%;
+    --section-dark: 0 0% 6.7%;
+    --scrollbar-track: 0 0% 6.7%;
+    --scrollbar-thumb: 0 0% 16.5%;
+    --scrollbar-thumb-hover: 0 0% 22.7%;
   }
 }
 
@@ -81,7 +53,7 @@
   }
 
   body {
-    @apply bg-[#0a0a0a] text-foreground;
+    @apply bg-background text-foreground;
   }
 
   button:not(:disabled) {
@@ -96,14 +68,14 @@
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #111111;
+    background: hsl(var(--scrollbar-track));
   }
   ::-webkit-scrollbar-thumb {
-    background: #2a2a2a;
+    background: hsl(var(--scrollbar-thumb));
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3a3a3a;
+    background: hsl(var(--scrollbar-thumb-hover));
   }
 }
 
@@ -117,14 +89,58 @@
   .glow-amber {
     box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
   }
-  .card-dark {
-    background: #141414;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 1rem;
+  /* Dynamic per-element glow: set --pillar-glow on the element to activate. */
+  .glow-pillar {
+    box-shadow: 0 0 20px var(--pillar-glow, transparent);
   }
-  .card-dark-elevated {
-    background: #1a1a1a;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 1rem;
+
+  /* Semantic surface/border tokens — replaces repeated arbitrary opacity values */
+  .border-edge        { @apply border border-white/[0.08]; }
+  .border-edge-faint  { @apply border border-white/[0.06]; }
+  .border-edge-strong { @apply border border-white/[0.12]; }
+  .border-edge-xs     { @apply border border-white/[0.04]; }
+  .border-edge-md     { @apply border border-white/[0.10]; }
+  /* Single-side variants for dividers */
+  .border-b-edge       { @apply border-b border-white/[0.08]; }
+  .border-b-edge-faint { @apply border-b border-white/[0.06]; }
+  .border-t-edge-faint { @apply border-t border-white/[0.06]; }
+  .border-r-edge-faint { @apply border-r border-white/[0.06]; }
+  .border-t-edge-xs    { @apply border-t border-white/[0.04]; }
+  /* Color-only border aliases — use when border-width is already set (border/border-2/outline variant) */
+  .border-c-xs         { @apply border-white/[0.04]; }
+  .border-c-edge       { @apply border-white/[0.08]; }
+  .border-c-md         { @apply border-white/[0.10]; }
+  .border-c-bright     { @apply border-white/[0.18]; }
+  .bg-ghost           { @apply bg-white/[0.02]; }
+  .bg-ghost-md        { @apply bg-white/[0.04]; }
+  .bg-ghost-light     { @apply bg-white/[0.06]; }
+  .bg-ghost-strong    { @apply bg-white/[0.08]; }
+  .bg-ghost-hover     { @apply bg-white/[0.12]; }
+  .bg-na-dim          { @apply bg-white/[0.15]; }
+  .bg-subtle          { @apply bg-white/[0.05]; }
+  .bg-brand-sub       { @apply bg-teal-500/10; }
+  .bg-brand-teal      { @apply bg-teal-500/[0.07]; }
+  .bg-success-sub     { @apply bg-emerald-500/[0.07]; }
+}
+
+@layer components {
+  /* Shared form input style — use instead of repeating the same classes on every input/select */
+  .form-input {
+    @apply w-full rounded-lg border-edge-md bg-surface-input px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
+  }
+
+  /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
+  .btn-primary {
+    @apply bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold glow-teal;
+  }
+
+  /* Secondary ghost/outline button */
+  .btn-secondary {
+    @apply border-edge-strong bg-transparent text-slate-300 hover:bg-subtle hover:text-white;
+  }
+
+  /* Amber destructive-light button (Start Over, etc.) */
+  .btn-start-over {
+    @apply border border-amber-500/30 bg-transparent text-amber-400 hover:bg-amber-500/10;
   }
 }

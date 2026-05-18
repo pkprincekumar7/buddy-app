@@ -1,133 +1,126 @@
-import { useState, useEffect, useRef } from 'react';
+import { useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Trophy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { unwrapLLM } from '@/lib/llmUtils';
+import { activityQuestionsSchema } from '@/lib/llmSchemas';
+import {
+  buildActivityQuestionsPrompt,
+  buildActivityScorePrompt,
+  buildActivityNotePrompt,
+  buildProgressComparisonPrompt,
+} from '@/lib/prompts';
+
+// ── reducer ──────────────────────────────────────────────────────────────────
+
+const ACTIVITY_STEPS = {
+  LOADING:   'loading',
+  QUESTIONS: 'questions',
+  ANALYZING: 'analyzing',
+  COMPLETE:  'complete',
+};
+
+const initialActivityState = {
+  step: ACTIVITY_STEPS.LOADING,
+  questions: [],
+  currentQuestionIndex: 0,
+  direction: 1,           // 1 = forward, -1 = backward
+  responses: {},
+  currentAnswer: '',
+  aiScore: null,
+  aiNote: null,
+  aiFeedback: '',
+  parentFeedback: '',
+  isSaving: false,
+};
+
+function activityReducer(state, action) {
+  switch (action.type) {
+    case 'QUESTIONS_LOADED':
+      return { ...state, questions: action.questions, step: ACTIVITY_STEPS.QUESTIONS };
+    case 'SET_CURRENT_ANSWER':
+      return { ...state, currentAnswer: action.value };
+    case 'ADVANCE_QUESTION':
+      return {
+        ...state,
+        direction: 1,
+        currentQuestionIndex: action.index,
+        responses: action.responses,
+        currentAnswer: '',
+      };
+    case 'GO_BACK_QUESTION':
+      return {
+        ...state,
+        direction: -1,
+        currentQuestionIndex: action.index,
+        currentAnswer: action.savedAnswer,
+      };
+    case 'SET_STEP':
+      return { ...state, step: action.step };
+    case 'ANALYSIS_COMPLETE':
+      return {
+        ...state,
+        step: ACTIVITY_STEPS.COMPLETE,
+        aiScore: action.aiScore ?? null,
+        aiNote: action.aiNote ?? null,
+        aiFeedback: action.aiFeedback,
+      };
+    case 'SET_PARENT_FEEDBACK':
+      return { ...state, parentFeedback: action.value };
+    case 'SET_SAVING':
+      return { ...state, isSaving: action.value };
+    default:
+      return state;
+  }
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
+const CHOICE_FEEDBACK_DELAY_MS = 250;
+
+const buildFallbackQuestions = (activityTitle) => [
+  { id: 1, type: 'choice', question: `What part of "${activityTitle}" are you most excited about?`, options: ['Learning something new', 'Having fun with it', 'Showing my skills', 'Doing it with others'], labels: [] },
+  { id: 2, type: 'text', question: 'What do you think will be the most exciting part of this activity?', options: [], labels: [] },
+  { id: 3, type: 'scale', question: 'How excited are you about this activity?', options: [], labels: ['Not excited', 'Super excited'] },
+  { id: 4, type: 'text', question: 'What do you hope to learn or achieve from this?', options: [], labels: [] }
+];
 
 export default function ActivityModal({ activity, originalActivity, childName, onClose, onComplete }) {
   const isScorableActivity = activity.scorable !== false;
+  const [state, dispatch] = useReducer(activityReducer, initialActivityState);
+  const {
+    step, questions, currentQuestionIndex, direction,
+    responses, currentAnswer, aiScore, aiNote, aiFeedback,
+    parentFeedback, isSaving,
+  } = state;
 
-  const [step, setStep] = useState('loading');
-  const [questions, setQuestions] = useState([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [direction, setDirection] = useState(1); // 1 = forward, -1 = backward
-  const [responses, setResponses] = useState({});
-  const [currentAnswer, setCurrentAnswer] = useState('');
-  const [aiScore, setAiScore] = useState(null);
-  const [aiNote, setAiNote] = useState(null);
-  const [aiFeedback, setAiFeedback] = useState('');
-  const [parentFeedback, setParentFeedback] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const choiceTimeoutRef = useRef(null);
 
-  const fallbackQuestions = [
-    { id: 1, type: 'choice', question: `What part of "${activity.title}" are you most excited about?`, options: ['Learning something new', 'Having fun with it', 'Showing my skills', 'Doing it with others'], labels: [] },
-    { id: 2, type: 'text', question: 'What do you think will be the most exciting part of this activity?', options: [], labels: [] },
-    { id: 3, type: 'scale', question: 'How excited are you about this activity?', options: [], labels: ['Not excited', 'Super excited'] },
-    { id: 4, type: 'text', question: 'What do you hope to learn or achieve from this?', options: [], labels: [] }
-  ];
-
-  const generateQuestions = async () => {
+  const generateQuestions = useCallback(async () => {
+    const fallbackQuestions = buildFallbackQuestions(activity.title);
     try {
       const result = await api.integrations.Core.InvokeLLM({
-        prompt: `Generate 4 engaging questions for a child activity called "${activity.title}".
-Activity objective: "${activity.objective}"
-Child name: ${childName || 'the child'}
-
-Generate exactly 4 questions in this order:
-1. type "choice" — a fun multiple-choice question with exactly 4 text options. Set "options" to the 4 choices. Set "labels" to [].
-2. type "text" — an open-ended question about what excites them about this activity. Set "options" to []. Set "labels" to [].
-3. type "scale" — a 1-to-5 rating question. Set "options" to []. Set "labels" to a 2-item array [minLabel, maxLabel] (e.g. ["Hard", "Easy"]).
-4. type "text" — a short reflection question after completing the activity. Set "options" to []. Set "labels" to [].
-
-Rules:
-- Keep questions simple and child-friendly.
-- Only populate "options" for type "choice". Only populate "labels" for type "scale". Leave both as [] otherwise.
-- Do not repeat the child's name in every question — use it at most once.`,
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            questions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'number' },
-                  type: { type: 'string' },
-                  question: { type: 'string' },
-                  options: { type: 'array', items: { type: 'string' } },
-                  labels: { type: 'array', items: { type: 'string' } }
-                }
-              }
-            }
-          }
-        }
+        prompt: buildActivityQuestionsPrompt({ title: activity.title, objective: activity.objective, childName }),
+        response_json_schema: activityQuestionsSchema(),
       });
       const raw = result.properties?.questions ?? result.questions;
-      const qs = raw?.length ? raw : fallbackQuestions;
-      setQuestions(qs);
-      setStep('questions');
-    } catch {
-      setQuestions(fallbackQuestions);
-      setStep('questions');
+      dispatch({ type: 'QUESTIONS_LOADED', questions: raw?.length ? raw : fallbackQuestions });
+    } catch (err) {
+      console.warn('[ActivityModal] Question generation failed, using fallback:', err);
+      dispatch({ type: 'QUESTIONS_LOADED', questions: fallbackQuestions });
     }
-  };
+  }, [activity.title, activity.objective, childName]);
 
   useEffect(() => {
     generateQuestions();
     return () => clearTimeout(choiceTimeoutRef.current);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [generateQuestions]);
 
-  const advanceOrAnalyze = (newResponses, questionIdx) => {
-    setDirection(1);
-    if (questionIdx < questions.length - 1) {
-      setCurrentQuestionIndex(questionIdx + 1);
-    } else {
-      analyzeResponses(newResponses);
-    }
-  };
-
-  const handleAnswerQuestion = () => {
-    const question = questions[currentQuestionIndex];
-    const newResponses = {
-      ...responses,
-      [question.id]: { question: question.question, answer: currentAnswer, type: question.type }
-    };
-    setResponses(newResponses);
-    setCurrentAnswer('');
-    advanceOrAnalyze(newResponses, currentQuestionIndex);
-  };
-
-  const handleChoiceSelect = (option) => {
-    clearTimeout(choiceTimeoutRef.current);
-    const question = questions[currentQuestionIndex];
-    const idx = currentQuestionIndex;
-    const newResponses = {
-      ...responses,
-      [question.id]: { question: question.question, answer: option, type: 'choice' }
-    };
-    setCurrentAnswer(option);
-    choiceTimeoutRef.current = setTimeout(() => {
-      setResponses(newResponses);
-      setCurrentAnswer('');
-      advanceOrAnalyze(newResponses, idx);
-    }, 250);
-  };
-
-  const handleGoBack = () => {
-    clearTimeout(choiceTimeoutRef.current);
-    const prevIdx = currentQuestionIndex - 1;
-    const prevQuestion = questions[prevIdx];
-    const savedAnswer = responses[prevQuestion?.id]?.answer || '';
-    setDirection(-1);
-    setCurrentAnswer(savedAnswer);
-    setCurrentQuestionIndex(prevIdx);
-  };
-
-  const analyzeResponses = async (allResponses) => {
-    setStep('analyzing');
+  const analyzeResponses = useCallback(async (allResponses) => {
+    dispatch({ type: 'SET_STEP', step: ACTIVITY_STEPS.ANALYZING });
     try {
       const answersText = Object.values(allResponses)
         .map((r) => {
@@ -138,109 +131,118 @@ Rules:
 
       if (isScorableActivity) {
         const result = await api.integrations.Core.InvokeLLM({
-          prompt: `You are evaluating a young child's responses for the activity "${activity.title}".
-Activity objective: "${activity.objective}"
-
-Child's answers:
-${answersText}
-
-Scoring guidelines:
-- This is a young child. Short but relevant answers (even 1–2 words) are perfectly valid — do not penalise brevity.
-- For scale questions, treat the numeric rating at face value (e.g. "4" out of 5 is a strong response).
-- For choice questions, any selection shows engagement.
-- For text questions, assess both relevance/effort AND the quality and correctness of what the child said — reward answers that demonstrate genuine understanding of the activity objective over vague or off-topic ones.
-- Overall score should reflect: (a) engagement and effort, (b) quality of understanding shown, and (c) correctness and relevance of answers to the activity objective.
-- Give a score from 6–10 (never below 6 for a child who attempted all questions). Reserve 9–10 for exceptionally detailed, correct, and thoughtful answers; give 6–7 for minimal or off-topic responses.
-- Write 1–2 sentences of child-friendly encouraging feedback that references what they actually said. Start with "Great job".`,
+          prompt: buildActivityScorePrompt({ title: activity.title, objective: activity.objective, answersText }),
           response_json_schema: {
             type: 'object',
             properties: {
               score: { type: 'number' },
-              feedback: { type: 'string' }
-            }
-          }
+              feedback: { type: 'string' },
+            },
+          },
         });
         const data = result.properties ?? result;
-        setAiScore(unwrapLLM(data.score) ?? 7);
-        setAiFeedback(unwrapLLM(data.feedback) || 'Great job completing this activity!');
+        dispatch({
+          type: 'ANALYSIS_COMPLETE',
+          aiScore: unwrapLLM(data.score) ?? 7,
+          aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
+        });
       } else {
         const result = await api.integrations.Core.InvokeLLM({
-          prompt: `You are reviewing a young child's responses for the activity "${activity.title}".
-Activity objective: "${activity.objective}"
-
-Child's answers:
-${answersText}
-
-Evaluate the child's responses on:
-- Relevance: are the answers related to the activity objective?
-- Engagement: did the child put in genuine effort or give minimal/off-topic answers?
-- Quality of expression: did the child communicate their thoughts clearly, even briefly?
-
-Based on this evaluation, write two things:
-1. "note" — a short appreciation message of MAXIMUM 5 WORDS that reflects how well the child engaged. Use a stronger phrase (e.g. "Outstanding work!", "Brilliant effort today!") for high-quality, relevant responses and a gentler encouraging phrase (e.g. "Keep exploring!", "You're doing great!") for minimal or off-topic ones.
-2. "feedback" — 1–2 sentences of child-friendly encouraging feedback that references what they actually said and gently nudges improvement if needed. Start with "Great job".`,
+          prompt: buildActivityNotePrompt({ title: activity.title, objective: activity.objective, answersText }),
           response_json_schema: {
             type: 'object',
             properties: {
               note: { type: 'string' },
-              feedback: { type: 'string' }
-            }
-          }
+              feedback: { type: 'string' },
+            },
+          },
         });
         const data = result.properties ?? result;
-        setAiNote(unwrapLLM(data.note) ?? 'Great effort today!');
-        setAiFeedback(unwrapLLM(data.feedback) || 'Great job completing this activity!');
+        dispatch({
+          type: 'ANALYSIS_COMPLETE',
+          aiNote: unwrapLLM(data.note) ?? 'Great effort today!',
+          aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
+        });
       }
-      setStep('complete');
-    } catch {
-      if (isScorableActivity) {
-        setAiScore(7);
-      } else {
-        setAiNote('Great effort today!');
-      }
-      setAiFeedback('Great job completing this activity with enthusiasm!');
-      setStep('complete');
+    } catch (err) {
+      console.warn('[ActivityModal] AI analysis failed, using defaults:', err);
+      dispatch({
+        type: 'ANALYSIS_COMPLETE',
+        aiScore: isScorableActivity ? 7 : null,
+        aiNote: isScorableActivity ? null : 'Great effort today!',
+        aiFeedback: 'Great job completing this activity with enthusiasm!',
+      });
     }
-  };
+  }, [dispatch, activity.title, activity.objective, isScorableActivity]);
 
-  const handleSaveAndContinue = async () => {
-    setIsSaving(true);
+  const advanceOrAnalyze = useCallback((newResponses, questionIdx) => {
+    if (questionIdx < questions.length - 1) {
+      dispatch({ type: 'ADVANCE_QUESTION', index: questionIdx + 1, responses: newResponses });
+    } else {
+      analyzeResponses(newResponses);
+    }
+  }, [questions.length, dispatch, analyzeResponses]);
+
+  const handleAnswerQuestion = useCallback(() => {
+    const question = questions[currentQuestionIndex];
+    const newResponses = {
+      ...responses,
+      [question.id]: { question: question.question, answer: currentAnswer, type: question.type }
+    };
+    advanceOrAnalyze(newResponses, currentQuestionIndex);
+  }, [questions, currentQuestionIndex, responses, currentAnswer, advanceOrAnalyze]);
+
+  const handleChoiceSelect = useCallback((option) => {
+    clearTimeout(choiceTimeoutRef.current);
+    const question = questions[currentQuestionIndex];
+    const idx = currentQuestionIndex;
+    const newResponses = {
+      ...responses,
+      [question.id]: { question: question.question, answer: option, type: 'choice' }
+    };
+    dispatch({ type: 'SET_CURRENT_ANSWER', value: option });
+    choiceTimeoutRef.current = setTimeout(() => {
+      advanceOrAnalyze(newResponses, idx);
+    }, CHOICE_FEEDBACK_DELAY_MS);
+  }, [questions, currentQuestionIndex, responses, dispatch, advanceOrAnalyze]);
+
+  const handleGoBack = useCallback(() => {
+    clearTimeout(choiceTimeoutRef.current);
+    const prevIdx = currentQuestionIndex - 1;
+    const prevQuestion = questions[prevIdx];
+    const savedAnswer = responses[prevQuestion?.id]?.answer || '';
+    dispatch({ type: 'GO_BACK_QUESTION', index: prevIdx, savedAnswer });
+  }, [currentQuestionIndex, questions, responses, dispatch]);
+
+  const handleSaveAndContinue = useCallback(async () => {
+    dispatch({ type: 'SET_SAVING', value: true });
     let progressObservation = null;
 
     try {
-      // For non-scorable follow-up activities, compare with the original to
-      // determine progress. This result is stored and used in the progress chart.
       if (!isScorableActivity && originalActivity?.completed) {
         try {
           const result = await api.integrations.Core.InvokeLLM({
-            prompt: `Compare two assessments for the same child activity objective and determine if the child improved.
-
-Original assessment (Week 1&2):
-- Activity: "${originalActivity.title}"
-- Note: "${originalActivity.note || 'none'}"
-- AI Feedback: "${originalActivity.ai_feedback || 'none'}"
-- Parent Feedback: "${originalActivity.parent_feedback || 'none'}"
-
-Follow-up assessment (Week 3&4):
-- Activity: "${activity.title}"
-- Note: "${aiNote || 'none'}"
-- AI Feedback: "${aiFeedback || 'none'}"
-- Parent Feedback: "${parentFeedback || 'none'}"
-
-Based on the quality of engagement, effort, and expression shown across both assessments, return exactly one of:
-- "Improved" — the follow-up shows clearly better engagement, effort, or expression than the original
-- "Needs More Attention" — the follow-up shows weaker engagement or effort compared to the original
-- "No Improvement" — both assessments show similar levels of engagement and effort`,
+            prompt: buildProgressComparisonPrompt({
+              originalTitle: originalActivity.title,
+              originalNote: originalActivity.note,
+              originalAiFeedback: originalActivity.ai_feedback,
+              originalParentFeedback: originalActivity.parent_feedback,
+              followupTitle: activity.title,
+              followupNote: aiNote,
+              followupAiFeedback: aiFeedback,
+              followupParentFeedback: parentFeedback,
+            }),
             response_json_schema: {
               type: 'object',
               properties: {
-                progress_observation: { type: 'string' }
-              }
-            }
+                progress_observation: { type: 'string' },
+              },
+            },
           });
           const data = result.properties ?? result;
           progressObservation = unwrapLLM(data.progress_observation) ?? 'No Improvement';
-        } catch {
+        } catch (err) {
+          console.warn('[ActivityModal] Progress comparison failed, defaulting:', err);
           progressObservation = 'No Improvement';
         }
       }
@@ -254,9 +256,9 @@ Based on the quality of engagement, effort, and expression shown across both ass
         responses: Object.values(responses)
       });
     } finally {
-      setIsSaving(false);
+      dispatch({ type: 'SET_SAVING', value: false });
     }
-  };
+  }, [dispatch, isScorableActivity, originalActivity, activity.title, aiNote, aiFeedback, parentFeedback, aiScore, responses, onComplete]);
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
@@ -270,16 +272,20 @@ Based on the quality of engagement, effort, and expression shown across both ass
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label={activity.title}
         initial={{ opacity: 0, scale: 0.92, y: 24 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 16, transition: { duration: 0.25, ease: 'easeIn' } }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
-        className="bg-[#141414] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/[0.08]"
+        className="bg-card rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border-edge"
       >
         {/* Header */}
         <div className="p-6 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-t-3xl relative">
           <button
             onClick={onClose}
+            aria-label="Close activity"
             className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
           >
             <X className="w-5 h-5 text-white" />
@@ -295,7 +301,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
             </div>
           </div>
 
-          {step === 'questions' && questions.length > 0 && (
+          {step === ACTIVITY_STEPS.QUESTIONS && questions.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex justify-between text-white/90 text-sm">
                 <span>Question {currentQuestionIndex + 1} of {questions.length}</span>
@@ -316,24 +322,27 @@ Based on the quality of engagement, effort, and expression shown across both ass
         {/* Body */}
         <div className="p-6">
           <AnimatePresence mode="wait">
-            {step === 'loading' && (
+            {step === ACTIVITY_STEPS.LOADING && (
               <motion.div
                 key="loading"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="py-16 flex flex-col items-center gap-4"
+                aria-live="polite"
+                aria-busy="true"
               >
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                   className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full"
+                  aria-hidden="true"
                 />
                 <p className="text-slate-400 font-medium">Preparing activity...</p>
               </motion.div>
             )}
 
-            {step === 'questions' && currentQuestion && (
+            {step === ACTIVITY_STEPS.QUESTIONS && currentQuestion && (
               <motion.div
                 key={`q-${currentQuestionIndex}`}
                 initial={{ opacity: 0, x: direction * 48 }}
@@ -348,15 +357,15 @@ Based on the quality of engagement, effort, and expression shown across both ass
 
                 {currentQuestion.type === 'choice' && (
                   <div className="space-y-3">
-                    {currentQuestion.options?.map((option, i) => (
+                    {currentQuestion.options?.map((option) => (
                       <motion.button
-                        key={i}
+                        key={option}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => handleChoiceSelect(option)}
                         className={`w-full p-4 rounded-2xl border-2 text-left transition-all ${
                           currentAnswer === option
                             ? 'border-teal-500 bg-teal-500/10'
-                            : 'border-white/[0.08] hover:border-white/[0.18] bg-[#1e1e1e]'
+                            : 'border-c-edge hover:border-c-bright bg-surface-input'
                         }`}
                       >
                         <span className="font-medium text-slate-300">{option}</span>
@@ -377,7 +386,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   <div className="space-y-4">
                     <TextareaWithVoice
                       value={currentAnswer}
-                      onChange={(e) => setCurrentAnswer(e.target.value)}
+                      onChange={(e) => dispatch({ type: 'SET_CURRENT_ANSWER', value: e.target.value })}
                       placeholder="Type or speak your answer..."
                       className="min-h-[120px] rounded-2xl resize-none"
                     />
@@ -386,7 +395,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border border-white/[0.12] text-slate-400 bg-transparent hover:bg-white/[0.05]"
+                          className="h-12 rounded-2xl border-edge-strong text-slate-400 bg-transparent hover:bg-subtle"
                         >
                           <ChevronLeft className="w-5 h-5 mr-1" /> Previous
                         </Button>
@@ -411,11 +420,11 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         <motion.button
                           key={value}
                           whileTap={{ scale: 0.92 }}
-                          onClick={() => setCurrentAnswer(value.toString())}
+                          onClick={() => dispatch({ type: 'SET_CURRENT_ANSWER', value: value.toString() })}
                           className={`flex-1 h-16 rounded-2xl font-bold text-xl transition-all ${
                             currentAnswer === value.toString()
                               ? 'bg-teal-500 text-white shadow-lg'
-                              : 'bg-white/[0.06] text-slate-400 hover:bg-white/[0.10]'
+                              : 'bg-ghost-light text-slate-400 hover:bg-ghost-strong'
                           }`}
                         >
                           {value}
@@ -433,7 +442,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border border-white/[0.12] text-slate-400 bg-transparent hover:bg-white/[0.05]"
+                          className="h-12 rounded-2xl border-edge-strong text-slate-400 bg-transparent hover:bg-subtle"
                         >
                           <ChevronLeft className="w-5 h-5 mr-1" /> Previous
                         </Button>
@@ -457,25 +466,28 @@ Based on the quality of engagement, effort, and expression shown across both ass
               </motion.div>
             )}
 
-            {step === 'analyzing' && (
+            {step === ACTIVITY_STEPS.ANALYZING && (
               <motion.div
                 key="analyzing"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="py-16 flex flex-col items-center gap-4"
+                aria-live="polite"
+                aria-busy="true"
               >
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                   className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+                  aria-hidden="true"
                 />
                 <p className="text-white font-semibold text-lg">Analysing the response...</p>
                 <p className="text-slate-500 text-sm">Just a moment</p>
               </motion.div>
             )}
 
-            {step === 'complete' && (
+            {step === ACTIVITY_STEPS.COMPLETE && (
               <motion.div
                 key="complete"
                 initial={{ opacity: 0, y: 24 }}
@@ -487,7 +499,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
                     <Trophy className="w-8 h-8 text-amber-400" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white">Activity Complete! 🎉</h3>
+                  <h3 className="text-2xl font-bold text-white">Activity Complete! <span aria-hidden="true">🎉</span></h3>
                   <p className="text-slate-400">Great work, {childName || 'there'}!</p>
                 </div>
 
@@ -510,7 +522,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                       </>
                     )}
                   </div>
-                  <p className="text-emerald-300 text-sm mt-1">✅ {aiFeedback}</p>
+                  <p className="text-emerald-300 text-sm mt-1"><span aria-hidden="true">✅</span> {aiFeedback}</p>
                 </div>
 
                 <div>
@@ -520,7 +532,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   </label>
                   <TextareaWithVoice
                     value={parentFeedback}
-                    onChange={(e) => setParentFeedback(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_PARENT_FEEDBACK', value: e.target.value })}
                     placeholder="Share your observations about your child's performance..."
                     className="min-h-[100px] rounded-2xl resize-none"
                   />
@@ -531,7 +543,7 @@ Based on the quality of engagement, effort, and expression shown across both ass
                   disabled={isSaving}
                   className="w-full h-12 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white font-semibold"
                 >
-                  {isSaving ? 'Saving...' : 'Save & Continue 🚀'}
+                  {isSaving ? 'Saving...' : <>Save &amp; Continue <span aria-hidden="true">🚀</span></>}
                 </Button>
               </motion.div>
             )}
@@ -541,3 +553,21 @@ Based on the quality of engagement, effort, and expression shown across both ass
     </motion.div>
   );
 }
+
+ActivityModal.propTypes = {
+  activity: PropTypes.shape({
+    title: PropTypes.string.isRequired,
+    objective: PropTypes.string,
+    scorable: PropTypes.bool,
+  }).isRequired,
+  originalActivity: PropTypes.shape({
+    title: PropTypes.string,
+    note: PropTypes.string,
+    ai_feedback: PropTypes.string,
+    parent_feedback: PropTypes.string,
+    completed: PropTypes.bool,
+  }),
+  childName: PropTypes.string,
+  onClose: PropTypes.func.isRequired,
+  onComplete: PropTypes.func.isRequired,
+};

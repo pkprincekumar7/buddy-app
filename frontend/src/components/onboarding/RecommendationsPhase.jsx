@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { debounce } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronLeft, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare, RefreshCw, CheckCircle } from 'lucide-react';
+import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronLeft, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import TextareaWithVoice from '../shared/TextareaWithVoice';
 import { api } from '@/api/client';
@@ -361,7 +361,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     // iOS Safari sometimes pauses synthesis; resume before speaking
     if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // voiceEnabledRef and window are stable across renders — empty deps is intentional
 
   const [step, setStep] = useState('intro');
   const [qaAnimKey, setQaAnimKey] = useState(0);
@@ -472,8 +472,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
         if (p.generated_activity) setGeneratedActivity(p.generated_activity);
         if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
-      } catch {
-        /* keep defaults */
+      } catch (err) {
+        console.warn('[RecommendationsPhase] Resume load failed, keeping defaults:', err);
       } finally {
         if (!cancelled) setResumeLoaded(true);
       }
@@ -624,7 +624,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       setAiRecommendations(null);
       setChildActivitySelections([]);
       setCompletedAreaIds((prev) => { const n = new Set(prev); n.add(area.id); return n; });
-    } catch {
+    } catch (err) {
+      console.error('[RecommendationsPhase] Could not save progress:', err);
       toast.error('Could not save progress');
     }
   };
@@ -657,8 +658,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         setChildActivitySelections(Array.isArray(savedSels) ? savedSels : []);
         if (!reopenGame) setChildGameResults(null);
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn('[RecommendationsPhase] Area open failed:', err);
     }
   };
 
@@ -675,7 +676,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       speak(fullText);
       introHasSpoken.current = true;
     }
-  }, [step, profile, resumeLoaded]);
+  }, [step, profile, resumeLoaded, speak]);
 
   const renderIntro = () => {
     const sectionAnim = (delay) => ({
@@ -699,7 +700,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         {profile && (
           <motion.div
             {...sectionAnim(0.8)}
-            className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
+            className="bg-card rounded-2xl p-6 border-edge"
           >
             <div className="flex items-start gap-4 mb-4">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center flex-shrink-0 glow-teal-sm">
@@ -718,11 +719,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-3">Emerging Strengths</p>
               {profile.top_strengths?.map((strength, index) => (
                 <motion.div
-                  key={index}
+                  key={strength.strength}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
-                  className="flex items-start gap-3 bg-[#1e1e1e] rounded-xl p-3 border border-white/[0.06]"
+                  className="flex items-start gap-3 bg-surface-input rounded-xl p-3 border-edge-faint"
                 >
                   <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
                     <span className="text-amber-400 font-bold text-xs">{index + 1}</span>
@@ -740,7 +741,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         {/* Section 3 — Explore Growth Areas Prompt */}
         <motion.div
           {...sectionAnim(1.8)}
-          className="bg-[#141414] rounded-2xl p-6 border border-purple-500/20"
+          className="bg-card rounded-2xl p-6 border border-purple-500/20"
         >
           <div className="text-center space-y-4">
             <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
@@ -764,7 +765,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+                className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
               >
                 <Clock className="w-4 h-4 mr-2" />
                 Catch Up Later
@@ -882,7 +883,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       const savedSels = p.child_activity_by_area?.[area.id]?.selections;
                       setChildActivitySelections(Array.isArray(savedSels) ? savedSels : []);
                     }
-                  } catch {
+                  } catch (err) {
+                    console.warn('[RecommendationsPhase] Game load failed:', err);
                     setInteractiveStep(0);
                     setInteractiveAnswers({});
                     setCurrentAnswer('');
@@ -897,7 +899,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setStep('interactive_activity');
                   }
                 }}
-                className="p-4 rounded-2xl border border-white/[0.08] text-left transition-colors bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]"
+                className="p-4 rounded-2xl border-edge text-left transition-colors bg-card hover:border-c-bright hover:bg-surface-elevated"
               >
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${area.color} flex items-center justify-center mb-3`}>
                   <Icon className="w-5 h-5 text-white" />
@@ -952,7 +954,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               className={`w-full p-4 rounded-2xl border text-left transition-all duration-150 ${
                 selectedActivity?.title === activity.title
                   ? 'border-purple-500/50 bg-purple-500/10'
-                  : 'border-white/[0.08] bg-[#141414] hover:border-white/[0.18] hover:bg-[#1a1a1a]'
+                  : 'border-c-edge bg-card hover:border-c-bright hover:bg-surface-elevated'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -960,7 +962,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   <h4 className="font-semibold text-white text-sm">{activity.title}</h4>
                   <p className="text-xs text-slate-500 mt-1">{activity.description}</p>
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs px-2 py-0.5 bg-white/[0.06] rounded-full text-slate-400">
+                    <span className="text-xs px-2 py-0.5 bg-ghost-light rounded-full text-slate-400">
                       ⏱ {activity.duration}
                     </span>
                     <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">
@@ -1008,7 +1010,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-          className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-5"
+          className="bg-card rounded-2xl p-6 border-edge space-y-5"
         >
           <h3 className="font-bold text-white text-center text-sm">Did you like this activity suggestion?</h3>
 
@@ -1029,7 +1031,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               setParentLiked(false);
               setStep('feedback');
             }}
-            className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+            className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
           >
             <ThumbsDown className="w-4 h-4 mr-2" />
             Not quite
@@ -1063,17 +1065,17 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4"
+        className="bg-card rounded-2xl p-6 border-edge space-y-4"
       >
         <TextareaWithVoice
           placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          className="min-h-[120px] rounded-xl pr-14 bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600"
+          className="min-h-[120px] rounded-xl pr-14 bg-surface-input border-c-md text-white placeholder:text-slate-600"
         />
 
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => setStep('activity_selection')} className="border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]">
+          <Button variant="outline" onClick={() => setStep('activity_selection')} className="border-edge-strong bg-transparent text-slate-300 hover:bg-subtle">
             Go Back
           </Button>
           <Button
@@ -1098,7 +1100,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
-          className="bg-[#141414] rounded-2xl p-6 border border-emerald-500/20"
+          className="bg-card rounded-2xl p-6 border border-emerald-500/20"
         >
           <div className="text-center space-y-4">
             <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -1121,7 +1123,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             <Button
               variant="outline"
               onClick={() => navigate(createPageUrl('Home'))}
-              className="h-12 px-8 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+              className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
             >
               Catch Up Later
             </Button>
@@ -1151,7 +1153,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-4"
+        className="bg-card rounded-2xl p-6 border-edge space-y-4"
       >
         <div className="text-center">
           <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">{selectedArea?.name} Quotient</p>
@@ -1161,15 +1163,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           <p className="text-sm text-slate-600 mt-1">Score will appear after activity</p>
         </div>
 
-        <div className="border-t border-white/[0.06] pt-4">
+        <div className="border-t-edge-faint pt-4">
           <h4 className="font-semibold text-white text-sm mb-3">Personalized Recommendations</h4>
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 p-3 bg-[#1e1e1e] rounded-xl">
-                <div className="w-8 h-8 rounded-lg bg-white/[0.06] animate-pulse" />
+              <div key={i} className="flex items-center gap-3 p-3 bg-surface-input rounded-xl">
+                <div className="w-8 h-8 rounded-lg bg-ghost-light animate-pulse" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3 bg-white/[0.06] rounded animate-pulse w-3/4" />
-                  <div className="h-2.5 bg-white/[0.04] rounded animate-pulse w-1/2" />
+                  <div className="h-3 bg-ghost-light rounded animate-pulse w-3/4" />
+                  <div className="h-2.5 bg-ghost-md rounded animate-pulse w-1/2" />
                 </div>
               </div>
             ))}
@@ -1227,7 +1229,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <div
                 key={i}
                 className={`h-1.5 w-8 rounded-full transition-all ${
-                  i === interactiveStep ? 'bg-teal-400' : i < interactiveStep ? 'bg-emerald-500' : 'bg-white/[0.08]'
+                  i === interactiveStep ? 'bg-teal-400' : i < interactiveStep ? 'bg-emerald-500' : 'bg-ghost-strong'
                 }`}
               />
             ))}
@@ -1245,7 +1247,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               opacity: { duration: 1.0, ease: 'easeOut' },
               y: { duration: 0.9, ease: 'easeOut' },
             }}
-            className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
+            className="bg-card rounded-2xl p-6 border-edge"
           >
             {/* Question */}
             <div className="mb-5">
@@ -1262,7 +1264,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   value={currentAnswer}
                   onChange={(e) => setCurrentAnswer(e.target.value)}
                   placeholder={currentQuestion?.placeholder}
-                  className="min-h-[100px] rounded-xl pr-14 bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600"
+                  className="min-h-[100px] rounded-xl pr-14 bg-surface-input border-c-md text-white placeholder:text-slate-600"
                 />
               ) : (
                 <>
@@ -1279,7 +1281,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                           className={`w-full p-3.5 rounded-xl text-left transition-all border text-sm ${
                             selected
                               ? 'border-teal-500/50 bg-teal-500/10 text-teal-300'
-                              : 'bg-[#1e1e1e] border-white/[0.08] text-slate-300 hover:border-teal-500/30 hover:bg-teal-500/[0.05]'
+                              : 'bg-surface-input border-c-edge text-slate-300 hover:border-teal-500/30 hover:bg-teal-500/[0.05]'
                           }`}
                         >
                           <span className="font-medium">{option}</span>
@@ -1293,7 +1295,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         type="button"
                         variant="outline"
                         onClick={handlePreviousQuestion}
-                        className="h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05] w-full sm:w-auto"
+                        className="h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle w-full sm:w-auto"
                       >
                         <ChevronLeft className="w-4 h-4 mr-1" />
                         Previous
@@ -1313,7 +1315,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         }
                       }}
                       disabled={!answerLooksFilled(interactiveAnswers[currentQuestion.id])}
-                      className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                      className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
                     >
                       {isLastQuestion ? 'See Summary' : 'Next Question'}
                       <ChevronRight className="w-4 h-4 ml-1" />
@@ -1328,7 +1330,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       type="button"
                       variant="outline"
                       onClick={handlePreviousQuestion}
-                      className="h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05] w-full sm:w-auto"
+                      className="h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle w-full sm:w-auto"
                     >
                       <ChevronLeft className="w-4 h-4 mr-1" />
                       Previous
@@ -1349,7 +1351,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       }
                     }}
                     disabled={!currentAnswer.trim()}
-                    className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                    className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
                     <ChevronRight className="w-4 h-4 ml-1" />
@@ -1385,8 +1387,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         setAiRecommendations(air.items);
         return;
       }
-    } catch {
-      /* fall through to generator */
+    } catch (err) {
+      console.warn('[RecommendationsPhase] Could not load cached recommendations, regenerating:', err);
     }
 
     setLoadingRecommendations(true);
@@ -1420,7 +1422,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       });
       const list = result && typeof result === 'object' && Array.isArray(result.recommendations) ? result.recommendations : [];
       setAiRecommendations(list);
-    } catch {
+    } catch (err) {
+      console.error('[RecommendationsPhase] Failed to generate recommendations:', err);
       toast.error('Could not generate recommendations');
     } finally {
       setLoadingRecommendations(false);
@@ -1449,7 +1452,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         <p className="text-slate-400">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
       </motion.div>
 
-      <motion.div {...sectionAnim(0.3)} className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
+      <motion.div {...sectionAnim(0.3)} className="bg-card rounded-2xl p-6 border-edge space-y-3">
         {questions.map((q, i) => {
           const answer = interactiveAnswers[q.id];
           if (!answer) return null;
@@ -1459,7 +1462,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.7, delay: 1.1 + i * 0.15, ease: 'easeOut' }}
-              className="border-b border-white/[0.06] pb-3 last:border-0"
+              className="border-b-edge-faint pb-3 last:border-0"
             >
               <p className="text-xs text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
               <p className="text-white text-sm font-medium">{answer}</p>
@@ -1469,13 +1472,13 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       </motion.div>
 
       {selectedActivity && !childGameResults && (
-        <motion.div {...sectionAnim(1.4)} className="bg-[#141414] rounded-2xl p-5 border border-purple-500/20 space-y-4">
+        <motion.div {...sectionAnim(1.4)} className="bg-card rounded-2xl p-5 border border-purple-500/20 space-y-4">
           <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Your selected activity</p>
           <div>
             <h3 className="text-base font-bold text-white">{selectedActivity.title}</h3>
             <p className="text-sm text-slate-400 mt-1">{selectedActivity.description}</p>
             <div className="flex flex-wrap gap-2 mt-3">
-              <span className="text-xs px-2 py-0.5 bg-white/[0.06] rounded-full text-slate-400">⏱ {selectedActivity.duration}</span>
+              <span className="text-xs px-2 py-0.5 bg-ghost-light rounded-full text-slate-400">⏱ {selectedActivity.duration}</span>
               <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">{selectedActivity.type}</span>
             </div>
           </div>
@@ -1487,7 +1490,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             >
               Open activity details
             </Button>
-            <Button type="button" variant="outline" onClick={() => setStep('activity_selection')} className="rounded-2xl border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]">
+            <Button type="button" variant="outline" onClick={() => setStep('activity_selection')} className="rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle">
               Pick a different activity
             </Button>
           </div>
@@ -1511,7 +1514,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
                 setParentLiked(true);
               }}
-              className="flex-1 h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold"
+              className="flex-1 h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold"
             >
               Explore Child Activity
             </Button>
@@ -1526,7 +1529,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 setChildGameResults(null);
                 setShowGame(false);
               }}
-              className="flex-1 h-11 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
+              className="flex-1 h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
             >
               Next Growth Area
             </Button>
@@ -1611,7 +1614,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeIn' } }}
           transition={{ duration: 1.0, ease: 'easeOut' }}
-          className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20">
+          className="bg-card rounded-3xl p-6 border border-emerald-500/20">
           <ChildActivityGame
             key={selectedArea.id}
             childName={data.name}
@@ -1638,7 +1641,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   recommendations: aiRecommendations ?? null,
                   child_activity,
                 });
-              } catch {
+              } catch (err) {
+                console.error('[RecommendationsPhase] Could not save game results:', err);
                 toast.error('Could not save game results. Try again or check your connection.');
               }
 
@@ -1663,7 +1667,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
-                className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20"
+                className="bg-card rounded-3xl p-6 border border-emerald-500/20"
               >
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -1682,7 +1686,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, delay: 0.5, ease: 'easeOut' }}
-                  className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
+                  className="bg-surface-elevated rounded-2xl p-4 mb-4"
                 >
                   <h4 className="font-semibold text-white mb-2">What This Reveals</h4>
                   <p className="text-slate-400 text-sm">{childGameResults?.summary ?? ''}</p>
@@ -1693,7 +1697,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
-                  className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
+                  className="bg-surface-elevated rounded-2xl p-4 mb-4"
                 >
                   <h4 className="font-semibold text-white mb-2">Suggested Activities</h4>
                   <ul className="space-y-2">
@@ -1717,7 +1721,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, delay: 1.5, ease: 'easeOut' }}
-                  className="bg-[#1a1a1a] rounded-2xl p-4"
+                  className="bg-surface-elevated rounded-2xl p-4"
                 >
                   <h4 className="font-semibold text-white mb-2">Strengths to Encourage</h4>
                   <ul className="space-y-2">
@@ -1742,7 +1746,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
-                className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/15"
+                className="bg-card rounded-3xl p-6 border border-emerald-500/15"
               >
                 <h3 className="font-bold text-white mb-3 flex items-center gap-2">
                   <Target className="w-5 h-5 text-emerald-600" />

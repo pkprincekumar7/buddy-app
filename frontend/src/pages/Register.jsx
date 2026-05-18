@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { COUNTRIES } from '@/lib/countries';
+import { httpErrorMessage } from '@/lib/apiError';
 
 export default function Register() {
   const { checkAppState } = useAuth();
@@ -39,19 +40,15 @@ export default function Register() {
       await api.auth.register(email.trim(), password, fullName.trim(), countryCode);
       await checkAppState({ withLoading: false });
     } catch (e) {
-      if (e?.status === 409) {
-        setError('That email is already registered.');
-      } else {
-        setError(e?.message || 'Registration failed.');
-      }
+      setError(httpErrorMessage(e, { fallback: 'Registration failed.', statusMessages: { 409: 'That email is already registered.' } }));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#141414] p-8">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border-edge bg-card p-8">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
@@ -74,7 +71,7 @@ export default function Register() {
               maxLength={255}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           <div>
@@ -88,7 +85,7 @@ export default function Register() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           <div>
@@ -100,7 +97,7 @@ export default function Register() {
               required
               value={countryCode}
               onChange={(e) => setCountryCode(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             >
               <option value="" disabled>Select your country…</option>
               {COUNTRIES.map(({ code, label }) => (
@@ -122,7 +119,7 @@ export default function Register() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           <div>
@@ -136,7 +133,7 @@ export default function Register() {
               required
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}

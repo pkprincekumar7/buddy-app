@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { COUNTRIES } from '@/lib/countries';
+import { httpErrorMessage } from '@/lib/apiError';
 
 export default function Login() {
   const { checkAppState } = useAuth();
@@ -28,7 +29,7 @@ export default function Login() {
       await api.auth.google(pendingGoogleToken, googleCountry);
       await checkAppState({ withLoading: false });
     } catch (e) {
-      setError(e?.message || 'Google sign-in failed.');
+      setError(httpErrorMessage(e, { fallback: 'Google sign-in failed.' }));
       setPendingGoogleToken(null);
       setGoogleCountry('');
     } finally {
@@ -53,7 +54,7 @@ export default function Login() {
         if (e?.status === 422 && e?.detail?.code === 'country_code_required') {
           setPendingGoogleToken(idToken);
         } else {
-          const msg = e?.message || 'Google sign-in failed';
+          const msg = httpErrorMessage(e, { fallback: 'Google sign-in failed.' });
           setError(msg.includes('503') ? 'Google sign-in is not configured on the server.' : msg);
         }
       } finally {
@@ -75,7 +76,7 @@ export default function Login() {
       if (!window.google?.accounts?.id) return;
       const el = googleBtnRef.current;
       if (!el) return;
-      el.innerHTML = '';
+      el.replaceChildren();
       window.google.accounts.id.initialize({
         client_id: googleClientId,
         callback: onCredential,
@@ -106,15 +107,15 @@ export default function Login() {
       await api.auth.login(email.trim(), password);
       await checkAppState({ withLoading: false });
     } catch (e) {
-      setError(e?.status === 401 ? 'Invalid email or password.' : e?.message || 'Sign-in failed.');
+      setError(httpErrorMessage(e, { fallback: 'Sign-in failed.', statusMessages: { 401: 'Invalid email or password.' } }));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#141414] p-8">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border-edge bg-card p-8">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
@@ -135,7 +136,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           <div>
@@ -149,7 +150,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input"
             />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -165,13 +166,13 @@ export default function Login() {
           </div>
         ) : (
           <p className="mt-4 text-center text-xs text-slate-400">
-            Google sign-in: set <code className="rounded bg-white/[0.08] px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
-            <code className="rounded bg-white/[0.08] px-1">GOOGLE_CLIENT_ID</code> on the API.
+            Google sign-in: set <code className="rounded bg-ghost-strong px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
+            <code className="rounded bg-ghost-strong px-1">GOOGLE_CLIENT_ID</code> on the API.
           </p>
         )}
 
         {pendingGoogleToken ? (
-          <div className="mt-6 rounded-xl border border-teal-500/25 bg-teal-500/[0.08] p-4">
+          <div className="mt-6 rounded-xl border border-teal-500/25 bg-brand-sub p-4">
             <p className="mb-3 text-sm font-medium text-white">One more step</p>
             <p className="mb-3 text-xs text-slate-400">
               Select your country so we can store your data in the right region.
@@ -179,7 +180,7 @@ export default function Login() {
             <select
               value={googleCountry}
               onChange={(e) => setGoogleCountry(e.target.value)}
-              className="mb-3 w-full rounded-lg border border-white/[0.10] bg-[#1e1e1e] px-3 py-2 text-sm text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2"
+              className="form-input mb-3 text-sm"
             >
               <option value="" disabled>Select your country…</option>
               {COUNTRIES.map(({ code, label }) => (

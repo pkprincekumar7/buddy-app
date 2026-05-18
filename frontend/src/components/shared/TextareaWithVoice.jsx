@@ -1,12 +1,12 @@
 import { useState } from 'react';
+import PropTypes from 'prop-types';
 import { Textarea } from "@/components/ui/textarea";
-import VoiceInputButton from './VoiceInput';
+import VoiceInput from './VoiceInput';
 
 export default function TextareaWithVoice({ value, onChange, placeholder, className, ...props }) {
   const [isRecording, setIsRecording] = useState(false);
 
   const handleTranscript = (transcript) => {
-    // Append transcript to existing value or set as new value
     const newValue = value ? `${value} ${transcript}` : transcript;
     onChange({ target: { value: newValue } });
   };
@@ -22,7 +22,7 @@ export default function TextareaWithVoice({ value, onChange, placeholder, classN
         {...props}
       />
       <div className="absolute bottom-3 right-3">
-        <VoiceInputButton
+        <VoiceInput
           onTranscript={handleTranscript}
           isRecording={isRecording}
           setIsRecording={setIsRecording}
@@ -31,3 +31,10 @@ export default function TextareaWithVoice({ value, onChange, placeholder, classN
     </div>
   );
 }
+
+TextareaWithVoice.propTypes = {
+  value: PropTypes.string,
+  onChange: PropTypes.func.isRequired,
+  placeholder: PropTypes.string,
+  className: PropTypes.string,
+};

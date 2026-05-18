@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
@@ -147,8 +148,8 @@ export const AuthProvider = ({ children }) => {
     try {
       const children = await api.entities.Child.list('-created_date');
       setChildProfiles(children);
-    } catch {
-      /* keep current list */
+    } catch (err) {
+      console.warn('[AuthContext] Could not refresh children list:', err);
     }
   }, []);
 
@@ -169,23 +170,27 @@ export const AuthProvider = ({ children }) => {
     }
   }, [isLoadingAuth, isAuthenticated, location.pathname, navigate, mainPath, lastVisitedPath]);
 
+  const contextValue = useMemo(() => ({
+    user,
+    isAuthenticated,
+    isLoadingAuth,
+    authError,
+    childProfiles,
+    refreshChildren,
+    logout,
+    navigateToLogin,
+    checkAppState,
+  }), [user, isAuthenticated, isLoadingAuth, authError, childProfiles, refreshChildren, logout, navigateToLogin, checkAppState]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        isLoadingAuth,
-        authError,
-        childProfiles,
-        refreshChildren,
-        logout,
-        navigateToLogin,
-        checkAppState,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+AuthProvider.propTypes = {
+  children: PropTypes.node.isRequired,
 };
 
 export const useAuth = () => {

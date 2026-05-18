@@ -1,75 +1,77 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 
+const USER_ROLES = { ADMIN: 'admin' };
 
-export default function PageNotFound({}) {
-    const location = useLocation();
-    const pageName = location.pathname.substring(1);
+export default function PageNotFound() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pageName = location.pathname.substring(1);
 
-    const { data: authData, isFetched } = useQuery({
-        queryKey: ['user'],
-        queryFn: async () => {
-            try {
-                const user = await api.auth.me();
-                return { user, isAuthenticated: true };
-            } catch (error) {
-                return { user: null, isAuthenticated: false };
-            }
-        }
-    });
+  const { data: authData, isFetched } = useQuery({
+    queryKey: ['user'],
+    queryFn: async () => {
+      try {
+        const user = await api.auth.me();
+        return { user, isAuthenticated: true };
+      } catch (error) {
+        return { user: null, isAuthenticated: false };
+      }
+    }
+  });
 
-    return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-[#0a0a0a]">
-            <div className="max-w-md w-full">
-                <div className="text-center space-y-6">
-                    {/* 404 Error Code */}
-                    <div className="space-y-2">
-                        <h1 className="text-7xl font-light text-slate-600">404</h1>
-                        <div className="h-0.5 w-16 bg-white/[0.10] mx-auto"></div>
-                    </div>
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+      <div className="max-w-md w-full">
+        <div className="text-center space-y-6">
+          {/* 404 Error Code */}
+          <div className="space-y-2">
+            <h1 className="text-7xl font-light text-slate-600">404</h1>
+            <div className="h-0.5 w-16 border-edge mx-auto" />
+          </div>
 
-                    {/* Main Message */}
-                    <div className="space-y-3">
-                        <h2 className="text-2xl font-medium text-white">
-                            Page Not Found
-                        </h2>
-                        <p className="text-slate-400 leading-relaxed">
-                            The page <span className="font-medium text-slate-300">"{pageName}"</span> could not be found in this application.
-                        </p>
-                    </div>
+          {/* Main Message */}
+          <div className="space-y-3">
+            <h2 className="text-2xl font-medium text-white">
+              Page Not Found
+            </h2>
+            <p className="text-slate-400 leading-relaxed">
+              The page <span className="font-medium text-slate-300">"{pageName}"</span> could not be found in this application.
+            </p>
+          </div>
 
-                    {/* Admin Note */}
-                    {isFetched && authData.isAuthenticated && authData.user?.role === 'admin' && (
-                        <div className="mt-8 p-4 bg-[#1a1a1a] rounded-lg border border-white/[0.08]">
-                            <div className="flex items-start space-x-3">
-                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-orange-500/10 flex items-center justify-center mt-0.5">
-                                    <div className="w-2 h-2 rounded-full bg-orange-400"></div>
-                                </div>
-                                <div className="text-left space-y-1">
-                                    <p className="text-sm font-medium text-slate-300">Admin Note</p>
-                                    <p className="text-sm text-slate-400 leading-relaxed">
-                                        This could mean that the AI hasn't implemented this page yet. Ask it to implement it in the chat.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Action Button */}
-                    <div className="pt-6">
-                        <button
-                            onClick={() => window.location.href = '/'}
-                            className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-300 bg-[#1a1a1a] border border-white/[0.08] rounded-lg hover:bg-white/[0.05] hover:border-white/[0.14] transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/[0.20]"
-                        >
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                            </svg>
-                            Go Home
-                        </button>
-                    </div>
+          {/* Admin Note */}
+          {isFetched && authData.isAuthenticated && authData.user?.role === USER_ROLES.ADMIN && (
+            <div className="mt-8 p-4 bg-surface-elevated rounded-lg border-edge">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-orange-500/10 flex items-center justify-center mt-0.5">
+                  <div className="w-2 h-2 rounded-full bg-orange-400" />
                 </div>
+                <div className="text-left space-y-1">
+                  <p className="text-sm font-medium text-slate-300">Admin Note</p>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    This could mean that the AI hasn't implemented this page yet. Ask it to implement it in the chat.
+                  </p>
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* Action Button */}
+          <div className="pt-6">
+            <button
+              onClick={() => navigate('/')}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-slate-300 bg-surface-elevated border-edge rounded-lg hover:bg-subtle hover:border-edge-strong transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/[0.20]"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Go Home
+            </button>
+          </div>
         </div>
-    )
+      </div>
+    </div>
+  );
 }

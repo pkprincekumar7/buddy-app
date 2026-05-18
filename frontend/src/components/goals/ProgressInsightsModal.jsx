@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, CheckCircle2, AlertTriangle, Clock, Lock,
@@ -83,7 +84,7 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
     entry.obsType === 'declined'      ? 'text-red-500'     :
     entry.obsType === 'noImprovement' ? 'text-slate-500'   : 'text-blue-500';
   return (
-    <div className="bg-[#1a1a1a] border border-white/[0.08] rounded-xl px-3 py-2.5 shadow-lg text-sm max-w-[200px]">
+    <div className="bg-surface-elevated border-edge rounded-xl px-3 py-2.5 shadow-lg text-sm max-w-[200px]">
       <p className="font-semibold text-white leading-snug mb-0.5 break-words">{entry.fullLabel}</p>
       <p className="text-slate-500 text-xs">Month {entry.monthNum} · Activity {entry.actIdx + 1}</p>
       <p className={`font-medium mt-1 ${obsColor}`}>{entry.obsLabel}</p>
@@ -100,6 +101,13 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
   const [insightsData,     setInsightsData]     = useState(null);
   const [insightsLoading,  setInsightsLoading]  = useState(false);
   const [insightsError,    setInsightsError]    = useState(false);
+
+  // Keep always-current refs so the insights effect can read latest props without
+  // being listed as a dependency (re-generation is driven by insightsData reset, not prop changes).
+  const goalPlanRef = useRef(goalPlan);
+  const childNameRef = useRef(childName);
+  goalPlanRef.current = goalPlan;
+  childNameRef.current = childName;
 
   const monthData = useMemo(() => buildMonthData(goalPlan), [goalPlan]);
 
@@ -128,14 +136,18 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
   useEffect(() => {
     if (activeTab !== 'insights' || insightsData || insightsLoading || insightsError) return;
 
-    const currentCount = completedCount(goalPlan);
+    // Read always-current values via refs so this effect is not re-triggered on every prop change.
+    // Re-generation is intentionally driven only by insightsData being reset (e.g. on retry).
+    const plan = goalPlanRef.current;
+    const name = childNameRef.current;
+    const currentCount = completedCount(plan);
 
     // Valid cache: same schema version and generated after the last completed activity.
     if (
-      goalPlan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
-      goalPlan?.insights_signature === currentCount
+      plan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
+      plan?.insights_signature === currentCount
     ) {
-      setInsightsData(goalPlan.insights);
+      setInsightsData(plan.insights);
       return;
     }
 
@@ -144,24 +156,23 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const payload = await generateInsights(childName, goalPlan);
-        const updatedPlan = { ...goalPlan, insights: payload, insights_signature: currentCount };
+        const payload = await generateInsights(name, plan);
+        const updatedPlan = { ...plan, insights: payload, insights_signature: currentCount };
         try {
           await api.goals.patch({ plan: updatedPlan });
           onPlanUpdate?.(updatedPlan);
-        } catch {
-          // Save failure is non-fatal — insights still display for this session.
+        } catch (err) {
+          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
         }
         setInsightsData(payload);
-      } catch {
+      } catch (err) {
+        console.error('[ProgressInsightsModal] Failed to generate insights:', err);
         setInsightsError(true);
       }
       setInsightsLoading(false);
     };
     generate();
-  // goalPlan/childName are intentionally omitted: re-generation is driven by
-  // insightsData being reset (e.g. on retry), not by every prop change.
-  }, [activeTab, insightsData, insightsLoading, insightsError]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, insightsData, insightsLoading, insightsError]);
 
   return (
     <motion.div
@@ -172,11 +183,14 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Progress and Insights"
         initial={{ opacity: 0, scale: 0.93, y: 24 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 16, transition: { duration: 0.25, ease: 'easeIn' } }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
-        className="bg-[#141414] rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col border border-white/[0.08]"
+        className="bg-card rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col border-edge"
       >
         {/* Header */}
         <div className="bg-gradient-to-br from-teal-400 to-emerald-500 px-6 py-5 flex items-center justify-between flex-shrink-0">
@@ -191,6 +205,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
           </div>
           <button
             onClick={onClose}
+            aria-label="Close progress modal"
             className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
           >
             <X className="w-5 h-5 text-white" />
@@ -198,7 +213,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
         </div>
 
         {/* Top-level tabs */}
-        <div className="flex border-b border-white/[0.06] px-6 pt-3 flex-shrink-0 bg-[#141414]">
+        <div className="flex border-b-edge-faint px-6 pt-3 flex-shrink-0 bg-card">
           {[['progress', 'Progress'], ['insights', 'Insights']].map(([key, label]) => (
             <button
               key={key}
@@ -235,7 +250,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
                       progressTab === key
                         ? 'bg-teal-500 text-white shadow-sm'
-                        : 'bg-white/[0.06] text-slate-400 hover:bg-white/[0.10]'
+                        : 'bg-ghost-light text-slate-400 hover:bg-ghost-strong'
                     }`}
                   >
                     {label}
@@ -252,15 +267,15 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8, transition: { duration: 0.2, ease: 'easeIn' } }}
                   transition={{ duration: 0.4, ease: 'easeOut' }}
-                  className="overflow-x-auto rounded-2xl border border-white/[0.06]"
+                  className="overflow-x-auto rounded-2xl border-edge-faint"
                 >
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-[#1a1a1a]">
-                        <th className="px-4 py-3 text-left font-semibold text-slate-400 w-20 border-b border-white/[0.06]">Month</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Goal</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Objective</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b border-white/[0.06]">Observation</th>
+                      <tr className="bg-surface-elevated">
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 w-20 border-b-edge-faint">Month</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b-edge-faint">Goal</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b-edge-faint">Objective</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-400 border-b-edge-faint">Observation</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -268,12 +283,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                         pairs.map((pair, pIdx) => (
                           <tr
                             key={`${mIdx}-${pIdx}`}
-                            className="border-t border-white/[0.04] hover:bg-white/[0.02] transition-colors"
+                            className="border-t-edge-xs hover:bg-ghost transition-colors"
                           >
                             {pIdx === 0 && (
                               <td
                                 rowSpan={pairs.length}
-                                className="px-4 py-3 font-bold text-slate-300 align-middle border-r border-white/[0.06] whitespace-nowrap"
+                                className="px-4 py-3 font-bold text-slate-300 align-middle border-r-edge-faint whitespace-nowrap"
                               >
                                 Month {month.month}
                               </td>
@@ -281,12 +296,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                             {pIdx === 0 && (
                               <td
                                 rowSpan={pairs.length}
-                                className="px-4 py-3 text-slate-300 align-middle border-r border-white/[0.06] max-w-[160px]"
+                                className="px-4 py-3 text-slate-300 align-middle border-r-edge-faint max-w-[160px]"
                               >
                                 {truncate(month.goal, 42)}
                               </td>
                             )}
-                            <td className="px-4 py-3 text-slate-400 border-r border-white/[0.06] max-w-[160px]">
+                            <td className="px-4 py-3 text-slate-400 border-r-edge-faint max-w-[160px]">
                               {pair.label}
                             </td>
                             <td className="px-4 py-3">
@@ -342,9 +357,9 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
                       <Bar dataKey="score" radius={[6, 6, 0, 0]}>
                         <LabelList dataKey="score" content={<ArrowLabel />} />
-                        {chartData.map((entry, idx) => (
+                        {chartData.map((entry) => (
                           <Cell
-                            key={idx}
+                            key={entry.key}
                             fill={
                               entry.isNA    ? '#e2e8f0' :
                               entry.score > 0 ? '#6ee7b7' :
@@ -363,7 +378,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       <span className="w-3 h-3 rounded-sm bg-red-300 inline-block" /> Decline
                     </span>
                     <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <span className="w-3 h-3 rounded-sm bg-white/[0.15] inline-block" /> N/A
+                      <span className="w-3 h-3 rounded-sm bg-na-dim inline-block" /> N/A
                     </span>
                   </div>
                 </motion.div>
@@ -383,11 +398,12 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
             >
               {/* Loading */}
               {insightsLoading && (
-                <div className="py-20 flex flex-col items-center gap-4">
+                <div className="py-20 flex flex-col items-center gap-4" aria-live="polite" aria-busy="true">
                   <motion.div
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
                     className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+                    aria-hidden="true"
                   />
                   <p className="text-white font-semibold">Generating personalised insights…</p>
                   <p className="text-slate-500 text-sm">Analysing {childName ? `${childName}'s` : 'the'} assessment data</p>
@@ -409,17 +425,17 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
               {/* Insights list */}
               {insightsData && !insightsLoading && (
-                <div className="border border-white/[0.06] rounded-2xl overflow-hidden divide-y divide-white/[0.04]">
+                <div className="border-edge-faint rounded-2xl overflow-hidden divide-y divide-white/[0.04]">
                   {(insightsData.insight_items || []).map((item, idx) => {
                     const isAnomaly  = item.type === 'anomaly';
                     const isExpanded = expandedInsight === idx;
                     return (
                       <motion.div
-                        key={idx}
+                        key={`${item.type}-${idx}`}
                         initial={{ opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.5, delay: idx * 0.1, ease: 'easeOut' }}
-                        className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-[#141414]'}
+                        className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-card'}
                       >
                         {/* Row */}
                         <div className="flex items-center gap-3 px-5 py-4">
@@ -455,7 +471,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                               animate={{ opacity: 1, height: 'auto', transition: { height: { duration: 0.35, ease: 'easeOut' }, opacity: { duration: 0.4, ease: 'easeOut' } } }}
                               exit={{ opacity: 0, height: 0, transition: { height: { duration: 0.3, ease: 'easeIn' }, opacity: { duration: 0.2 } } }}
                               className={`overflow-hidden px-5 pb-5 border-t ${
-                                isAnomaly ? 'border-amber-500/15 bg-amber-500/[0.05]' : 'border-white/[0.04] bg-white/[0.02]'
+                                isAnomaly ? 'border-amber-500/15 bg-amber-500/[0.05]' : 'border-c-xs bg-ghost'
                               }`}
                             >
                               <p className="text-sm text-slate-400 leading-relaxed pt-4 pb-4">
@@ -465,7 +481,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                                 <button className="px-4 py-2 bg-teal-500 text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
                                   Start Monitoring
                                 </button>
-                                <button className="px-4 py-2 bg-white/[0.05] border border-white/[0.10] text-slate-300 text-xs font-semibold rounded-xl hover:bg-white/[0.08] transition-colors">
+                                <button className="px-4 py-2 bg-subtle border-edge-md text-slate-300 text-xs font-semibold rounded-xl hover:bg-ghost-strong transition-colors">
                                   Check-in Later
                                 </button>
                               </div>
@@ -485,3 +501,19 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
     </motion.div>
   );
 }
+
+ProgressInsightsModal.propTypes = {
+  goalPlan: PropTypes.shape({
+    months: PropTypes.arrayOf(PropTypes.shape({
+      month: PropTypes.number,
+      goal: PropTypes.string,
+      objective: PropTypes.string,
+      periods: PropTypes.array,
+    })),
+    insights: PropTypes.object,
+    insights_signature: PropTypes.number,
+  }),
+  childName: PropTypes.string,
+  onPlanUpdate: PropTypes.func,
+  onClose: PropTypes.func.isRequired,
+};

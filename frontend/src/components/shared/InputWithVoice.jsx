@@ -1,12 +1,12 @@
 import { useState } from 'react';
+import PropTypes from 'prop-types';
 import { Input } from "@/components/ui/input";
-import VoiceInputButton from './VoiceInput';
+import VoiceInput from './VoiceInput';
 
 export default function InputWithVoice({ value, onChange, placeholder, className, ...props }) {
   const [isRecording, setIsRecording] = useState(false);
 
   const handleTranscript = (transcript) => {
-    // Replace value with transcript for single-line inputs
     onChange({ target: { value: transcript } });
   };
 
@@ -20,7 +20,7 @@ export default function InputWithVoice({ value, onChange, placeholder, className
         className={className}
         {...props}
       />
-      <VoiceInputButton
+      <VoiceInput
         onTranscript={handleTranscript}
         isRecording={isRecording}
         setIsRecording={setIsRecording}
@@ -28,3 +28,10 @@ export default function InputWithVoice({ value, onChange, placeholder, className
     </div>
   );
 }
+
+InputWithVoice.propTypes = {
+  value: PropTypes.string,
+  onChange: PropTypes.func.isRequired,
+  placeholder: PropTypes.string,
+  className: PropTypes.string,
+};

@@ -1,18 +1,19 @@
+import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
-import { LogIn, Sparkles, Shield, Heart, Compass } from 'lucide-react';
+import { Sparkles, Shield, Heart, Compass } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { api } from '@/api/client';
+
+const WELCOME_FEATURES = [
+  { icon: Heart, text: 'Understand your child deeply' },
+  { icon: Compass, text: 'Create a personalized growth pathway' },
+  { icon: Sparkles, text: 'Get life changing recommendations' }
+];
 
 export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
   const handleGoogleLogin = () => {
     api.auth.redirectToLogin(window.location.href);
   };
-
-  const features = [
-    { icon: Heart, text: 'Understand your child deeply' },
-    { icon: Compass, text: 'Create a personalized growth pathway' },
-    { icon: Sparkles, text: 'Get life changing recommendations' }
-  ];
 
   return (
     <div className="space-y-8">
@@ -51,13 +52,13 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
-        className="bg-[#1a1a1a] rounded-2xl p-6 border border-white/[0.08] max-w-md mx-auto"
+        className="bg-surface-elevated rounded-2xl p-6 border-edge max-w-md mx-auto"
       >
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">What you'll do today</p>
         <div className="space-y-4">
-          {features.map((feature, index) => (
+          {WELCOME_FEATURES.map((feature, index) => (
             <motion.div
-              key={index}
+              key={feature.text}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.75 + index * 0.15 }}
@@ -81,7 +82,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       >
         {isAuthenticated ? (
           <>
-            <div className="flex items-center gap-3 p-4 bg-[#1a1a1a] rounded-2xl border border-white/[0.08]">
+            <div className="flex items-center gap-3 p-4 bg-surface-elevated rounded-2xl border-edge">
               <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-sm">{user?.full_name?.[0] || user?.email?.[0] || '?'}</span>
               </div>
@@ -93,7 +94,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
 
             <Button
               onClick={onContinue}
-              className="w-full h-13 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold text-base glow-teal transition-all duration-200"
+              className="w-full h-btn-lg rounded-2xl btn-primary text-base transition-all duration-200"
             >
               <Sparkles className="w-4 h-4 mr-2" />
               Let's Begin
@@ -101,7 +102,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
           </>
         ) : (
           <>
-            <div className="p-5 bg-[#1a1a1a] rounded-2xl border border-white/[0.08]">
+            <div className="p-5 bg-surface-elevated rounded-2xl border-edge">
               <div className="flex items-center gap-2 justify-center text-xs text-slate-500 mb-4">
                 <Shield className="w-3.5 h-3.5" />
                 <span>Sign in to save your progress securely</span>
@@ -109,7 +110,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
 
               <Button
                 onClick={handleGoogleLogin}
-                className="w-full h-12 rounded-xl bg-[#242424] hover:bg-[#2a2a2a] text-white border border-white/[0.10] text-sm font-medium transition-all duration-200"
+                className="w-full h-12 rounded-xl bg-[#242424] hover:bg-[#2a2a2a] text-white border-edge-strong text-sm font-medium transition-all duration-200"
               >
                 <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -140,3 +141,12 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
     </div>
   );
 }
+
+WelcomePhase.propTypes = {
+  onContinue: PropTypes.func.isRequired,
+  isAuthenticated: PropTypes.bool,
+  user: PropTypes.shape({
+    full_name: PropTypes.string,
+    email: PropTypes.string,
+  }),
+};
