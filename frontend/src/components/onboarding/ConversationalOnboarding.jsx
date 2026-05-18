@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import PropTypes from 'prop-types';
+import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputWithVoice from '../shared/InputWithVoice';
 import { Button } from "@/components/ui/button";
@@ -22,17 +24,17 @@ function buildAccThrough(flow, data, beforeStepIdx) {
   return acc;
 }
 
-function buildReplayMessages(flow, data, resumeIdx) {
+function buildReplayMessages(flow, data, resumeIdx, newMsgId) {
   const msgs = [];
   for (let i = 0; i < resumeIdx; i++) {
     const step = flow[i];
     if (step.type === 'auto') break;
     const acc = buildAccThrough(flow, data, i);
     const botText = typeof step.message === 'function' ? step.message(acc) : step.message;
-    msgs.push({ role: 'bot', content: botText });
+    msgs.push({ id: newMsgId(), role: 'bot', content: botText });
     const val = data[step.field];
     const userDisplay = Array.isArray(val) ? val.join(', ') : String(val ?? '');
-    msgs.push({ role: 'user', content: userDisplay });
+    msgs.push({ id: newMsgId(), role: 'user', content: userDisplay });
   }
   return msgs;
 }
@@ -46,6 +48,8 @@ function findResumeStepIndex(flow, data) {
   const autoIx = flow.findIndex((s) => s.type === 'auto');
   return autoIx >= 0 ? autoIx : flow.length - 1;
 }
+
+const ANALYZING_INITIAL = { show: false, progress: 0, name: '', showingDots: false, dotCount: 0 };
 
 export default function ConversationalOnboarding({
   user,
@@ -63,36 +67,42 @@ export default function ConversationalOnboarding({
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const voiceEnabledRef = useRef(true);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
-  const [showAnalyzing, setShowAnalyzing] = useState(false);
-  const [analyzeProgress, setAnalyzeProgress] = useState(0);
-  const [analyzingName, setAnalyzingName] = useState('');
-  const [showingLoadingDots, setShowingLoadingDots] = useState(false);
-  const [dotCount, setDotCount] = useState(0);
+  // Five tightly-coupled analyzing-phase states kept in one object to avoid split-state bugs.
+  const [analyzingState, setAnalyzingState] = useState(ANALYZING_INITIAL);
+  const { show: showAnalyzing, progress: analyzeProgress, name: analyzingName, showingDots: showingLoadingDots, dotCount } = analyzingState;
   const [allAnswered, setAllAnswered] = useState(false);
+
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const inputRef = useRef(null);
   const idleTimerRef = useRef(null);
   const persistTimerRef = useRef(null);
+  const botMsgTimerRef = useRef(null);
   const chatSessionStartedRef = useRef(false);
   const allowEmptySessionRecoveryRef = useRef(false);
   const userTurnCountRef = useRef(0);
+  // Stable ref to current collectedData — lets effects read the latest value without listing
+  // collectedData as a dependency, avoiding unnecessary effect re-runs.
+  const collectedDataRef = useRef({});
+  // Counter in a ref so the ID generator is stable and never shared across instances.
+  const msgIdCounterRef = useRef(0);
+  const newMsgId = useCallback(() => `${Date.now()}-${++msgIdCounterRef.current}`, []);
 
-  const persistQuestionnaireDraft = (mergedCollected) => {
-    // Update parent state immediately so the wizard reflects the latest answers
+  useEffect(() => { collectedDataRef.current = collectedData; }, [collectedData]);
+
+  const persistQuestionnaireDraft = useCallback((mergedCollected) => {
     onQuestionnairePersisted?.(mergedCollected);
-
-    // Debounce the API round-trip: GET + PATCH fires once after the user stops answering
     clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(async () => {
       try {
         const s = await api.onboarding.get();
         const prev = s.child_data && typeof s.child_data === 'object' ? { ...s.child_data } : {};
         await api.onboarding.patch({ child_data: { ...prev, ...mergedCollected } });
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn('[ConversationalOnboarding] Auto-persist child data failed:', err);
       }
     }, 500);
-  };
+  }, [onQuestionnairePersisted]);
 
   const parentName = user?.full_name?.split(' ')[0] || 'there';
 
@@ -189,32 +199,38 @@ export default function ConversationalOnboarding({
   );
 
 
-  const speak = (text) => {
+  // All deps are refs or module-level globals — stable across renders.
+  const speak = useCallback((text) => {
     if (!voiceEnabledRef.current || typeof window === 'undefined') return;
-    
+
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/[👋🎉💪😊🌟🚀]/g, '').replace(/\n/g, ' ');
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 0.9;
     utterance.pitch = 1.0;
     utterance.volume = 1;
-    
+
     const voice = pickPreferredVoice();
     if (voice) utterance.voice = voice;
     // iOS Safari sometimes pauses synthesis; resume before speaking
     if (window.speechSynthesis.paused) window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
-  };
+  }, []);
 
-  const addBotMessage = (text) => {
+  const addBotMessage = useCallback((text) => {
     setIsTyping(true);
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'bot', content: text }]);
+    clearTimeout(botMsgTimerRef.current);
+    botMsgTimerRef.current = setTimeout(() => {
+      setMessages(prev => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
       setIsTyping(false);
       speak(text);
       setWaitingForResponse(true);
-    }, 800);
-  };
+    }, 1600);
+  }, [speak, newMsgId]);
+
+  useEffect(() => {
+    return () => clearTimeout(botMsgTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!resumeHydrationReady) return;
@@ -253,13 +269,12 @@ export default function ConversationalOnboarding({
           CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
 
         if (hasSaved && answered && autoIx >= 0) {
-          const replay = buildReplayMessages(conversationFlow, slim, autoIx);
+          const replay = buildReplayMessages(conversationFlow, slim, autoIx, newMsgId);
           setCollectedData({ ...slim });
           setMessages(replay);
           setCurrentStep(autoIx);
           setWaitingForResponse(false);
-          setShowingLoadingDots(false);
-          setShowAnalyzing(false);
+          setAnalyzingState(ANALYZING_INITIAL);
           setAllAnswered(true);
           return;
         }
@@ -274,7 +289,7 @@ export default function ConversationalOnboarding({
         }
 
         const resumeIdx = findResumeStepIndex(conversationFlow, slim);
-        const replay = buildReplayMessages(conversationFlow, slim, resumeIdx);
+        const replay = buildReplayMessages(conversationFlow, slim, resumeIdx, newMsgId);
         setCollectedData({ ...slim });
         setMessages(replay);
         setCurrentStep(resumeIdx);
@@ -282,8 +297,7 @@ export default function ConversationalOnboarding({
         const stepAt = conversationFlow[resumeIdx];
         if (stepAt.type === 'auto') {
           setWaitingForResponse(false);
-          setShowingLoadingDots(false);
-          setShowAnalyzing(false);
+          setAnalyzingState(ANALYZING_INITIAL);
           setAllAnswered(true);
           return;
         }
@@ -292,28 +306,45 @@ export default function ConversationalOnboarding({
         const nextBot =
           typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
         addBotMessage(nextBot);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn('[ConversationalOnboarding] Resume hydration failed:', err);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [resumeHydrationReady, conversationFlow]);
+  }, [resumeHydrationReady, conversationFlow, addBotMessage, newMsgId]);
 
-  const persistVoiceToggle = async () => {
-    const next = !voiceEnabled;
+  const persistVoiceToggle = useCallback(async () => {
+    const next = !voiceEnabledRef.current;
     voiceEnabledRef.current = next;
     setVoiceEnabled(next);
     if (!next && typeof window !== 'undefined') window.speechSynthesis?.cancel?.();
     try {
       await api.preferences.patch({ tts_enabled: next });
-    } catch {
-      /* keep optimistic toggle */
+    } catch (err) {
+      console.warn('[ConversationalOnboarding] Could not persist TTS preference:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const t = setTimeout(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      const start = container.scrollTop;
+      const end = container.scrollHeight - container.clientHeight;
+      if (end <= start) return;
+      const duration = 1400;
+      const startTime = performance.now();
+      const easeInOutCubic = (t) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const step = (now) => {
+        const progress = Math.min((now - startTime) / duration, 1);
+        container.scrollTop = start + (end - start) * easeInOutCubic(progress);
+        if (progress < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }, 200);
+    return () => clearTimeout(t);
   }, [messages, isTyping]);
 
   useEffect(() => {
@@ -347,17 +378,17 @@ export default function ConversationalOnboarding({
     idleTimerRef.current = setTimeout(() => {
       setMessages(prev => [
         ...prev,
-        { role: 'bot', content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!" }
+        { id: newMsgId(), role: 'bot', content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!" }
       ]);
     }, 30000);
 
     return () => clearTimeout(idleTimerRef.current);
-  }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered]);
+  }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered, newMsgId]);
 
-  const processResponse = (response) => {
+  const processResponse = useCallback((response) => {
     const step = conversationFlow[currentStep];
 
-    setMessages(prev => [...prev, { role: 'user', content: response }]);
+    setMessages(prev => [...prev, { id: newMsgId(), role: 'user', content: response }]);
     userTurnCountRef.current += 1;
     setWaitingForResponse(false);
 
@@ -380,21 +411,17 @@ export default function ConversationalOnboarding({
     // Auto-trigger on the final step
     if (step.id === 'complete') {
       const finalData = nextCollected;
-      setAnalyzingName(finalData.name || 'your child');
-      setShowingLoadingDots(false);
-      setShowAnalyzing(true);
-      setAnalyzeProgress(0);
+      setAnalyzingState({ show: true, progress: 0, name: finalData.name || 'your child', showingDots: false, dotCount: 0 });
 
-      // Animate progress over 5+ seconds then call onComplete
       let progress = 0;
       const interval = setInterval(() => {
         progress += 1;
-        setAnalyzeProgress(progress);
+        setAnalyzingState(s => ({ ...s, progress }));
         if (progress >= 100) {
           clearInterval(interval);
           Promise.resolve(onComplete(finalData)).catch(() => {});
         }
-      }, 55); // 55ms * 100 = 5.5 seconds
+      }, 28); // 28ms * 100 = 2.8 seconds
       return;
     }
 
@@ -405,7 +432,7 @@ export default function ConversationalOnboarding({
         ? conversationFlow[nextStep].message(nextCollected)
         : conversationFlow[nextStep].message;
 
-      setTimeout(() => addBotMessage(nextMessage), 500);
+      setTimeout(() => addBotMessage(nextMessage), 700);
 
       if (conversationFlow[nextStep].type === 'final') {
         setTimeout(() => {
@@ -413,27 +440,27 @@ export default function ConversationalOnboarding({
         }, 2000);
       }
     }
-  };
+  }, [conversationFlow, currentStep, collectedData, addBotMessage, persistQuestionnaireDraft, onComplete, newMsgId]);
 
-  const resetIdleTimer = () => {
+  const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-  };
+  }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e?.preventDefault();
     if (!currentInput.trim() || !waitingForResponse) return;
     resetIdleTimer();
     processResponse(currentInput.trim());
     setCurrentInput('');
-  };
+  }, [currentInput, waitingForResponse, resetIdleTimer, processResponse]);
 
-  const handleChoiceSelect = (choice) => {
+  const handleChoiceSelect = useCallback((choice) => {
     if (!waitingForResponse) return;
     resetIdleTimer();
     processResponse(choice);
-  };
+  }, [waitingForResponse, resetIdleTimer, processResponse]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     window.speechSynthesis.cancel();
     chatSessionStartedRef.current = false;
     allowEmptySessionRecoveryRef.current = false;
@@ -444,10 +471,7 @@ export default function ConversationalOnboarding({
     setCurrentInput('');
     setIsTyping(false);
     setWaitingForResponse(false);
-    setShowAnalyzing(false);
-    setAnalyzeProgress(0);
-    setShowingLoadingDots(false);
-    setDotCount(0);
+    setAnalyzingState(ANALYZING_INITIAL);
     setAllAnswered(false);
     void (async () => {
       try {
@@ -458,8 +482,8 @@ export default function ConversationalOnboarding({
           child_data: Object.keys(prev).length ? prev : {},
         });
         onQuestionnaireCleared?.();
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.warn('[ConversationalOnboarding] Questionnaire clear failed:', err);
       }
     })();
     // Re-trigger the first message
@@ -469,46 +493,42 @@ export default function ConversationalOnboarding({
         : conversationFlow[0].message;
       addBotMessage(firstMessage);
     }, 100);
-  };
+  }, [conversationFlow, addBotMessage, onQuestionnaireCleared]);
 
   const currentStepData = conversationFlow[currentStep];
 
-  // Auto-proceed on 'auto' type steps after showing animated dots (live flow only — not when resuming with full questionnaire)
+  // Auto-proceed on 'auto' type steps after showing animated dots (live flow only — not when resuming with full questionnaire).
+  // Uses collectedDataRef to read the latest collected data without adding it as a dependency.
   useEffect(() => {
     if (!waitingForResponse || currentStepData?.type !== 'auto' || allAnswered) return;
-      setShowingLoadingDots(true);
-      setDotCount(0);
+    setAnalyzingState(s => ({ ...s, showingDots: true, dotCount: 0 }));
 
-      let count = 0;
-      const dotInterval = setInterval(() => {
-        count += 1;
-        setDotCount(count);
-        if (count >= 12) {
-          clearInterval(dotInterval);
-          setShowingLoadingDots(false);
-          setWaitingForResponse(false);
-          // Directly trigger analyzing phase
-          setCollectedData(prev => {
-            const finalData = { ...prev };
-            setAnalyzingName(finalData.name || 'your child');
-            setShowAnalyzing(true);
-            setAnalyzeProgress(0);
-            let progress = 0;
-            const interval = setInterval(() => {
-              progress += 1;
-              setAnalyzeProgress(progress);
-              if (progress >= 100) {
-                clearInterval(interval);
-                Promise.resolve(onComplete(finalData)).catch(() => {});
-              }
-            }, 55);
-            return prev;
-          });
-        }
-      }, 200);
+    let progressInterval = null;
+    let count = 0;
+    const dotInterval = setInterval(() => {
+      count += 1;
+      setAnalyzingState(s => ({ ...s, dotCount: count }));
+      if (count >= 12) {
+        clearInterval(dotInterval);
+        const finalData = { ...collectedDataRef.current };
+        setAnalyzingState({ show: true, progress: 0, name: finalData.name || 'your child', showingDots: false, dotCount: 0 });
+        let progress = 0;
+        progressInterval = setInterval(() => {
+          progress += 1;
+          setAnalyzingState(s => ({ ...s, progress }));
+          if (progress >= 100) {
+            clearInterval(progressInterval);
+            Promise.resolve(onComplete(finalData)).catch(() => {});
+          }
+        }, 55);
+      }
+    }, 200);
 
-    return () => clearInterval(dotInterval);
-  }, [waitingForResponse, currentStep, currentStepData?.type, allAnswered]);
+    return () => {
+      clearInterval(dotInterval);
+      if (progressInterval) clearInterval(progressInterval);
+    };
+  }, [waitingForResponse, currentStep, currentStepData?.type, allAnswered, onComplete]);
 
   if (showAnalyzing) {
     const steps = [
@@ -521,7 +541,7 @@ export default function ConversationalOnboarding({
     const currentLabel = steps[activeStep >= 0 ? activeStep : steps.length - 1].label;
 
     return (
-      <div className="flex flex-col items-center justify-center h-[600px] max-h-[80vh] rounded-2xl border border-white/[0.08] bg-[#141414] overflow-hidden px-6 sm:px-10 py-10 sm:py-12 space-y-8">
+      <div className="flex flex-col items-center justify-center h-[600px] max-h-[80vh] rounded-2xl border-edge bg-card overflow-hidden px-6 sm:px-10 py-10 sm:py-12 space-y-8">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
@@ -537,7 +557,7 @@ export default function ConversationalOnboarding({
 
         {/* Progress Bar */}
         <div className="w-full max-w-md space-y-2">
-          <div className="w-full bg-white/[0.06] rounded-full h-2 overflow-hidden">
+          <div className="w-full bg-ghost-light rounded-full h-2 overflow-hidden">
             <div
               className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-teal-300 transition-all duration-100"
               style={{ width: `${analyzeProgress}%` }}
@@ -553,13 +573,31 @@ export default function ConversationalOnboarding({
             const done = analyzeProgress >= s.threshold;
             const active = !done && (i === 0 || analyzeProgress >= steps[i - 1]?.threshold);
             return (
-              <div key={i} className={`flex items-center gap-3 transition-opacity ${done || active ? 'opacity-100' : 'opacity-30'}`}>
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${done ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : active ? 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30' : 'bg-white/[0.05] text-slate-500'}`}>
+              <div key={s.label} className={`flex items-center gap-3 transition-opacity duration-500 ${done || active ? 'opacity-100' : 'opacity-30'}`}>
+                <div className={cn(
+                  'w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-500',
+                  done  && 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white',
+                  active && 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30',
+                  !done && !active && 'bg-subtle text-slate-500',
+                )}>
                   <Icon className="w-4 h-4" />
                 </div>
-                <span className={`text-sm ${done ? 'text-emerald-400 font-medium line-through decoration-emerald-600' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
-                  {s.label}
-                </span>
+                <div className="relative">
+                  <span className={`text-sm transition-colors duration-500 ${done ? 'text-emerald-400 font-medium' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
+                    {s.label}
+                  </span>
+                  <AnimatePresence>
+                    {done && (
+                      <motion.div
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: 1 }}
+                        transition={{ duration: 1.4, ease: 'easeInOut' }}
+                        style={{ originX: 0 }}
+                        className="absolute left-0 right-0 top-[50%] h-px bg-emerald-500"
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             );
           })}
@@ -569,9 +607,9 @@ export default function ConversationalOnboarding({
   }
 
   return (
-    <div className="flex flex-col h-[600px] max-h-[80vh] bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden">
+    <div className="flex flex-col h-[600px] max-h-[80vh] bg-card rounded-2xl border-edge overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] bg-[#1a1a1a]">
+      <div className="flex items-center justify-between px-5 py-4 border-b-edge-faint bg-surface-elevated">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-teal-500/20 flex items-center justify-center">
             <span className="text-lg">🌱</span>
@@ -585,59 +623,82 @@ export default function ConversationalOnboarding({
           variant="ghost"
           size="icon"
           onClick={persistVoiceToggle}
-          className="text-slate-400 hover:text-white hover:bg-white/[0.06]"
+          className="text-slate-400 hover:text-white hover:bg-ghost-light"
         >
           {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
         </Button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messages.map((msg) =>
+            msg.role === 'bot' ? (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  opacity: { duration: 2.0, ease: [0.0, 0.0, 0.6, 1] },
+                  y:       { duration: 1.6, ease: 'easeOut' },
+                }}
+                className="flex justify-start"
+              >
+                <div className={cn(
+                  'max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm',
+                  'bg-surface-input text-slate-300 border-edge-faint',
+                )}>
+                  <p className="whitespace-pre-line">{msg.content}</p>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: 40 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  opacity: { duration: 1.6, ease: [0.0, 0.0, 0.6, 1] },
+                  x:       { duration: 1.4, ease: [0.22, 1, 0.36, 1] },
+                }}
+                className="flex justify-end"
+              >
+                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-teal-500 text-white rounded-tr-sm">
+                  <p className="whitespace-pre-line">{msg.content}</p>
+                </div>
+              </motion.div>
+            )
+          )}
+
         <AnimatePresence>
-          {messages.map((msg, index) => (
+          {isTyping && (
             <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 8 }}
+              key="typing-indicator"
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              exit={{ opacity: 0, y: -6, transition: { duration: 0.3, ease: 'easeIn' } }}
+              transition={{ duration: 0.45, ease: 'easeOut' }}
+              className="flex justify-start"
             >
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-teal-500 text-white rounded-tr-sm'
-                  : 'bg-[#1e1e1e] text-slate-300 rounded-tl-sm border border-white/[0.06]'
-              }`}>
-                <p className="whitespace-pre-line">{msg.content}</p>
+              <div className="bg-surface-input rounded-2xl rounded-tl-sm px-4 py-3 border-edge-faint">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
               </div>
             </motion.div>
-          ))}
+          )}
         </AnimatePresence>
-
-        {isTyping && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex justify-start"
-          >
-            <div className="bg-[#1e1e1e] rounded-2xl rounded-tl-sm px-4 py-3 border border-white/[0.06]">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </motion.div>
-        )}
 
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area */}
       {showingLoadingDots && !allAnswered && (
-        <div className="px-4 pb-4 pt-2 border-t border-white/[0.06]">
+        <div className="px-4 pb-4 pt-2 border-t-edge-faint">
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.375 }}
             className="flex justify-start"
           >
             <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-tl-sm border border-teal-500/20 bg-teal-500/[0.05] px-4 py-4">
@@ -665,24 +726,24 @@ export default function ConversationalOnboarding({
       )}
 
       {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-        <div className="px-4 pb-4 border-t border-white/[0.06] pt-3">
+        <div className="px-4 pb-4 border-t-edge-faint pt-3">
           <div className="flex flex-wrap gap-2">
             {currentStepData.options.map((option, index) => {
               const chosen = collectedData[currentStepData.field];
               const isSelected = chosen === option;
               return (
               <motion.button
-                key={option}
+                key={`${currentStep}-${option}`}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 whileTap={{ scale: 0.95, transition: { duration: 0.1, delay: 0 } }}
-                transition={{ delay: index * 0.08 }}
+                transition={{ delay: index * 0.12, duration: 0.4, ease: 'easeOut' }}
                 type="button"
                 onClick={() => handleChoiceSelect(option)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                   isSelected
                     ? 'border-teal-500 bg-teal-500/15 text-teal-300'
-                    : 'bg-white/[0.04] border-white/[0.10] text-slate-400 hover:border-teal-500/50 hover:bg-teal-500/10 hover:text-teal-300'
+                    : 'bg-ghost-md border-c-md text-slate-400 hover:border-teal-500/50 hover:bg-teal-500/10 hover:text-teal-300'
                 }`}
               >
                 {option}
@@ -704,7 +765,7 @@ export default function ConversationalOnboarding({
       )}
 
       {waitingForResponse && !allAnswered && (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-        <form onSubmit={handleSubmit} className="p-4 border-t border-white/[0.06]">
+        <form onSubmit={handleSubmit} className="p-4 border-t-edge-faint">
           {currentStepData.hint && (
             <p className="text-xs text-slate-500 mb-2">{currentStepData.hint}</p>
           )}
@@ -714,18 +775,18 @@ export default function ConversationalOnboarding({
               value={currentInput}
               onChange={(e) => setCurrentInput(e.target.value)}
               placeholder={currentStepData.placeholder || 'Type your response...'}
-              className="flex-1 h-11 rounded-xl bg-[#1e1e1e] border-white/[0.10] text-white placeholder:text-slate-600 focus:border-teal-500/50"
+              className="flex-1 h-btn-md rounded-xl bg-surface-input border-edge-md text-white placeholder:text-slate-600 focus:border-teal-500/50"
             />
             <Button
               type="button"
               variant="outline"
               onClick={handleReset}
-              className="h-11 px-3 rounded-xl border-white/[0.10] bg-transparent text-slate-500 hover:text-red-400 hover:border-red-500/30"
+              className="h-btn-md px-3 rounded-xl border-edge-md bg-transparent text-slate-500 hover:text-red-400 hover:border-red-500/30"
               title="Reset conversation"
             >
               <RotateCcw className="w-4 h-4" />
             </Button>
-            <Button type="submit" className="h-11 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-[#0a0a0a]">
+            <Button type="submit" className="h-btn-md px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-primary-foreground">
               <Send className="w-4 h-4" />
             </Button>
           </div>
@@ -733,10 +794,10 @@ export default function ConversationalOnboarding({
       )}
 
       {allAnswered && typeof onContinueToPersonality === 'function' && (
-        <div className="p-4 border-t border-white/[0.06] shrink-0">
+        <div className="p-4 border-t-edge-faint shrink-0">
           <Button
             type="button"
-            className="w-full h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold"
+            className="w-full h-btn-md rounded-2xl btn-primary"
             onClick={() => onContinueToPersonality()}
           >
             Continue to personality analysis
@@ -746,3 +807,14 @@ export default function ConversationalOnboarding({
     </div>
   );
 }
+
+ConversationalOnboarding.propTypes = {
+  user: PropTypes.shape({
+    full_name: PropTypes.string,
+  }),
+  onComplete: PropTypes.func.isRequired,
+  resumeHydrationReady: PropTypes.bool,
+  onContinueToPersonality: PropTypes.func,
+  onQuestionnairePersisted: PropTypes.func,
+  onQuestionnaireCleared: PropTypes.func,
+};

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,7 +31,7 @@ function extFromMimeType(mimeType) {
   return 'mp4';
 }
 
-export default function VoiceInputButton({ onTranscript, isRecording, setIsRecording }) {
+export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 'aria-label': ariaLabel }) {
   const recognitionRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -159,18 +160,21 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
 
   if (!isAvailable) return null;
 
+  const defaultLabel = isTranscribing ? 'Transcribing…' : isRecording ? 'Stop recording' : 'Start voice input';
+
   return (
     <Button
       type="button"
       onClick={toggleRecording}
       disabled={isTranscribing}
       size="icon"
+      aria-label={ariaLabel ?? defaultLabel}
       className={`h-10 w-10 rounded-xl flex-shrink-0 ${
         isRecording
-          ? 'bg-red-500 hover:bg-red-600 animate-pulse'
+          ? 'bg-red-500 hover:bg-red-600'
           : isTranscribing
           ? 'bg-amber-400 cursor-wait'
-          : 'bg-white/[0.08] hover:bg-white/[0.12]'
+          : 'bg-ghost-strong hover:bg-ghost-hover'
       }`}
     >
       {isTranscribing ? (
@@ -183,3 +187,10 @@ export default function VoiceInputButton({ onTranscript, isRecording, setIsRecor
     </Button>
   );
 }
+
+VoiceInput.propTypes = {
+  onTranscript: PropTypes.func.isRequired,
+  isRecording: PropTypes.bool.isRequired,
+  setIsRecording: PropTypes.func.isRequired,
+  'aria-label': PropTypes.string,
+};

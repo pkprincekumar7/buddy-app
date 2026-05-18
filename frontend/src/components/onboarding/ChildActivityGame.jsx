@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
@@ -129,7 +130,7 @@ export default function ChildActivityGame({
 
   const ids = Array.isArray(selectedIds) ? selectedIds : [];
 
-  const toggleSelection = (id) => {
+  const toggleSelection = useCallback((id) => {
     const notify = onSelectedIdsChange || (() => {});
     if (ids.includes(id)) {
       notify(ids.filter((s) => s !== id));
@@ -138,7 +139,7 @@ export default function ChildActivityGame({
     } else {
       toast.error(`You can select maximum ${game.maxSelections} options`);
     }
-  };
+  }, [ids, game.maxSelections, onSelectedIdsChange]);
 
   const handleSubmit = async () => {
     if (ids.length === 0) {
@@ -159,8 +160,8 @@ export default function ChildActivityGame({
         setIsSubmitting(false);
         return;
       }
-    } catch {
-      /* fall through to LLM */
+    } catch (err) {
+      console.warn('[ChildActivityGame] Cached result fetch failed, falling through to LLM:', err);
     }
 
     const selectedLabels = ids.map((id) => game.options.find((o) => o.id === id)?.label).join(', ');
@@ -181,7 +182,8 @@ export default function ChildActivityGame({
       const recommendations = normalizeChildGameRecommendations(raw);
       const done = onComplete({ selections: ids, recommendations });
       if (done != null && typeof done.then === 'function') await done;
-    } catch {
+    } catch (err) {
+      console.error('[ChildActivityGame] Recommendation generation failed:', err);
       toast.error('Could not generate recommendations. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -205,7 +207,7 @@ export default function ChildActivityGame({
             className={`relative rounded-2xl overflow-hidden border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
               ids.includes(option.id)
                 ? 'border-emerald-500 shadow-lg'
-                : 'border-white/[0.08] hover:border-emerald-500/50'
+                : 'border-c-edge hover:border-emerald-500/50'
             }`}
           >
             {option.image && !failedImages.has(option.id) ? (
@@ -244,3 +246,11 @@ export default function ChildActivityGame({
     </div>
   );
 }
+
+ChildActivityGame.propTypes = {
+  childName: PropTypes.string,
+  areaId: PropTypes.string,
+  selectedIds: PropTypes.arrayOf(PropTypes.string),
+  onSelectedIdsChange: PropTypes.func,
+  onComplete: PropTypes.func.isRequired,
+};

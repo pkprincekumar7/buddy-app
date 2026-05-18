@@ -137,6 +137,11 @@ export const api = {
         body: { confirm_email: confirmEmail },
       });
     },
+
+    /** Proactive silent refresh — called by AuthContext timer before access token expires. */
+    async silentRefresh() {
+      return refreshTokenPair();
+    },
   },
 
   integrations: {

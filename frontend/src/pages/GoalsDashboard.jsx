@@ -1,318 +1,240 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useCallback, createContext, useContext, lazy, Suspense, Component } from 'react';
+import PropTypes from 'prop-types';
+import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/lib/AuthContext';
-import { createPageUrl } from '@/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
-import { Target, ChevronDown, ChevronUp, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';
+import { Target, ChevronDown, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import ActivityModal from '@/components/goals/ActivityModal';
-import ProgressInsightsModal from '@/components/goals/ProgressInsightsModal';
+import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
+import { SPINNER, slideUp } from '@/lib/animations';
+import PageActions from '@/components/shared/PageActions';
+
+// Animation timing constants
+const ANIM_MONTH_BASE  = 0.6;
+const ANIM_MONTH_STEP  = 0.3;
+const ANIM_DURATION    = 1.0;
+const ANIM_ACCORDION   = 0.55;
+
+const ActivityModal = lazy(() => import('@/components/goals/ActivityModal'));
+const ProgressInsightsModal = lazy(() => import('@/components/goals/ProgressInsightsModal'));
+
+// Catches render errors inside modals so a crash doesn't take down the whole dashboard.
+class ModalErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err) {
+    console.error('[ModalErrorBoundary]', err);
+    toast.error('Modal failed to load. Please try again.');
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
+
+// Context shared between GoalsDashboard and MonthCard — avoids 4 extra props on every card.
+const GoalPlanContext = createContext(null);
+
+function ActivityCardIcon({ completed, isLocked, colorDot, index }) {
+  if (completed) return <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />;
+  if (isLocked) return (
+    <div className="w-5 h-5 rounded-full bg-ghost-strong flex items-center justify-center flex-shrink-0 mt-0.5">
+      <Lock className="w-3 h-3 text-slate-600" />
+    </div>
+  );
+  return (
+    <div className={`w-5 h-5 rounded-full ${colorDot} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+      <span className="text-white text-[10px] font-bold">{index + 1}</span>
+    </div>
+  );
+}
+
+function getActivityCardClasses(completed, isLocked) {
+  if (completed) return 'bg-emerald-500/[0.07] border-emerald-500/20';
+  if (isLocked) return 'bg-ghost border-edge-xs border-dashed';
+  return 'bg-surface-elevated border-c-edge';
+}
+
+function MonthCard({ month, idx, color, isOpen, onToggle }) {
+  const { flatIndexMap, firstActiveFlat, onStartActivity, onResetActivity } = useContext(GoalPlanContext);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: ANIM_DURATION, delay: ANIM_MONTH_BASE + idx * ANIM_MONTH_STEP, ease: 'easeOut' }}
+      className="bg-card rounded-2xl border-edge"
+    >
+      <button onClick={onToggle} className="w-full text-left">
+        <div className={`bg-gradient-to-r ${color.bg} px-6 py-4 flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+              <span className="text-white font-bold">{month.month}</span>
+            </div>
+            <div>
+              <p className="text-white/70 text-xs font-medium uppercase tracking-widest">Month {month.month}</p>
+              <h3 className="text-white font-bold">{month.goal}</h3>
+            </div>
+          </div>
+          <motion.div animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: ANIM_ACCORDION, ease: 'easeInOut' }}>
+            <ChevronDown className="w-5 h-5 text-white/70" />
+          </motion.div>
+        </div>
+        {month.objective && (
+          <div className={`px-6 py-2.5 ${color.light} border-b-edge-faint`}>
+            <p className={`text-sm font-medium ${color.text}`}><span aria-hidden="true">🎯</span> {month.objective}</p>
+          </div>
+        )}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key="periods"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: ANIM_ACCORDION, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 py-5 space-y-5">
+              {month.periods?.map((period, pIdx) => (
+                <div key={`${idx}-${pIdx}`}>
+                  <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${color.text}`}>{period.label}</p>
+                  <div className="space-y-2.5">
+                    {period.activities?.map((act, aIdx) => {
+                      const flatIdx = flatIndexMap.get(`${idx}-${pIdx}-${aIdx}`);
+                      const isActive = flatIdx === firstActiveFlat;
+                      const isLocked = flatIdx > firstActiveFlat;
+                      return (
+                        <div
+                          key={`${idx}-${pIdx}-${aIdx}`}
+                          className={cn(
+                            'relative flex items-start gap-3 p-4 rounded-xl border transition-all',
+                            getActivityCardClasses(act.completed, isLocked),
+                          )}
+                        >
+                          <ActivityCardIcon completed={act.completed} isLocked={isLocked} colorDot={color.dot} index={aIdx} />
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-semibold text-sm ${isLocked ? 'text-slate-600' : 'text-white'}`}>{act.title}</p>
+                            <p className={`text-xs mt-0.5 ${isLocked ? 'text-slate-700' : 'text-slate-500'}`}>{act.objective}</p>
+                            {act.completed ? (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-xs font-semibold text-emerald-400">
+                                  <span aria-hidden="true">✅</span> {act.ai_feedback}
+                                </p>
+                                {act.scorable !== false ? (
+                                  <p className="text-xs font-bold text-slate-300">Score: {act.score}/10</p>
+                                ) : (
+                                  <p className="text-xs font-bold text-slate-300">Note: {act.note}</p>
+                                )}
+                                {act.parent_feedback && (
+                                  <p className="text-xs italic text-slate-500">Parent: {act.parent_feedback}</p>
+                                )}
+                              </div>
+                            ) : isActive ? (
+                              <button
+                                onClick={() => {
+                                  const originalAct = pIdx > 0 ? month.periods[0]?.activities?.[aIdx] : null;
+                                  onStartActivity({ activity: act, monthIdx: idx, periodIdx: pIdx, actIdx: aIdx, originalActivity: originalAct });
+                                }}
+                                className={`mt-1.5 text-xs font-medium ${color.text} hover:underline`}
+                              >
+                                Tap to start activity →
+                              </button>
+                            ) : null}
+                          </div>
+                          {act.completed && (
+                            <button
+                              onClick={() => onResetActivity(idx, pIdx, aIdx)}
+                              aria-label="Reset activity"
+                              className="absolute top-3 right-3 w-6 h-6 rounded-full bg-ghost-light border-edge flex items-center justify-center hover:bg-ghost-strong transition-colors"
+                            >
+                              <RotateCcw className="w-3 h-3 text-slate-500" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+MonthCard.propTypes = {
+  month: PropTypes.shape({
+    month: PropTypes.number,
+    goal: PropTypes.string,
+    objective: PropTypes.string,
+    periods: PropTypes.array,
+  }).isRequired,
+  idx: PropTypes.number.isRequired,
+  color: PropTypes.shape({
+    bg: PropTypes.string,
+    light: PropTypes.string,
+    text: PropTypes.string,
+    dot: PropTypes.string,
+  }).isRequired,
+  isOpen: PropTypes.bool,
+  onToggle: PropTypes.func.isRequired,
+};
+
+const monthColors = [
+  { bg: 'from-teal-600 to-teal-500', light: 'bg-teal-500/10 border-teal-500/25', text: 'text-teal-400', dot: 'bg-teal-500' },
+  { bg: 'from-blue-600 to-blue-500', light: 'bg-blue-500/10 border-blue-500/25', text: 'text-blue-400', dot: 'bg-blue-500' },
+  { bg: 'from-purple-600 to-purple-500', light: 'bg-purple-500/10 border-purple-500/25', text: 'text-purple-400', dot: 'bg-purple-500' },
+];
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [childData, setChildData] = useState(null);
-  const [concern, setConcern] = useState('');
-  const [goalPlan, setGoalPlan] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    childData,
+    concern,
+    goalPlan,
+    setGoalPlan,
+    isLoading,
+    saveActivityCompletion,
+    handleActivityReset,
+    handleStartOver,
+    handleRegenerate,
+  } = useGoalPlan();
+
   const [expandedMonths, setExpandedMonths] = useState({ 0: true, 1: false, 2: false });
-  const [savedOnboarding, setSavedOnboarding] = useState(null);
-  const [savedCompletedAreas, setSavedCompletedAreas] = useState([]);
-  const [activeActivity, setActiveActivity] = useState(null); // { activity, monthIdx, periodIdx, actIdx }
+  const [activeActivity, setActiveActivity] = useState(null);
   const [showProgress, setShowProgress] = useState(false);
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const [onboarding, goals, completedData, children] = await Promise.all([
-          api.onboarding.get(),
-          api.goals.get(),
-          api.completedGrowthAreas.list(),
-          api.entities.Child.list('-created_date', 1),
-        ]);
-
-        const child = children?.[0] || onboarding?.child_data || null;
-        setChildData(child);
-
-        const areas = completedData?.areas || [];
-        setSavedOnboarding(onboarding);
-        setSavedCompletedAreas(areas);
-
-        const savedConcern = typeof goals.parent_concern === 'string' ? goals.parent_concern : '';
-        setConcern(savedConcern);
-
-        if (goals.plan) {
-          setGoalPlan(goals.plan);
-          setIsLoading(false);
-          return;
-        }
-
-        await generateGoals(child, savedConcern, onboarding, areas);
-      } catch (e) {
-        console.error(e);
-        setIsLoading(false);
-      }
-    };
-    init();
-  }, []);
-
-  const generateGoals = async (child, parentConcern, onboarding, completedAreas, completedSnapshot = {}) => {
-    setIsLoading(true);
-    try {
-      let ob = onboarding;
-      let areas = completedAreas;
-      if (!ob || !areas) {
-        const [freshOnboarding, freshCompleted] = await Promise.all([
-          api.onboarding.get(),
-          api.completedGrowthAreas.list(),
-        ]);
-        ob = freshOnboarding;
-        areas = freshCompleted?.areas || [];
-      }
-
-      const vm = ob?.personality?.view_model;
-      const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
-      const areasContext = areas.map(a => `${a.area_name}: ${(a.recommendations || []).join('; ')}`).join('\n');
-      const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
-
-      const prompt = `Create a focused 3-month goal plan for ${child?.name || 'the child'}, age ${child?.age || 'unknown'}.
-
-${concernContext}
-Personality: ${profile?.personality_type || 'Unknown'}
-Growth areas explored: ${areasContext || 'General holistic development'}
-
-Generate a structured 3-month plan. Each month has a theme/goal and is split into 2 bi-weekly periods (Week 1&2 and Week 3&4). Each period has exactly 2 activities with clear objectives.
-
-STRICT follow-up rule — you MUST follow this for every month without exception:
-- Period 1 (Week 1 & 2): introduce Activity A and Activity B.
-- Period 2 (Week 3 & 4): Activity 1 MUST be a direct progression of Activity A (same skill, one level deeper). Activity 2 MUST be a direct progression of Activity B (same skill, one level deeper).
-- NEVER place a new unrelated activity in Week 3 & 4. Both slots must follow up on Week 1 & 2.
-
-SCORABLE vs NON-SCORABLE activities:
-- Each activity MUST include a "scorable" field (true or false).
-- Across the full 3-month plan, include a MIX — some activities scorable: true, some scorable: false. Do not make all activities the same type.
-- The "scorable" value of a follow-up (Week 3&4) MUST exactly match its Week 1&2 counterpart:
-  - If Week 1&2 Activity A is scorable: true → Week 3&4 Activity 1 must be scorable: true.
-  - If Week 1&2 Activity B is scorable: false → Week 3&4 Activity 2 must be scorable: false.
-- Use scorable: true for structured skill-building activities where measurable progress is clear (e.g. speaking, reading, problem-solving).
-- Use scorable: false for open-ended, creative, emotional, or reflective activities where a numeric score is not meaningful (e.g. journaling feelings, imaginative play, self-expression).
-
-Example of correct follow-up pairing (with scorable):
-  Week 1&2 Activity 1: { "title": "Picture Description Warm-Up", "objective": "child describes a single image using 1–2 sentences", "scorable": true }
-  Week 3&4 Activity 1: { "title": "Picture Story Extension", "objective": "child describes the same image using 3–4 sentences and answers follow-up questions", "scorable": true }
-
-  Week 1&2 Activity 2: { "title": "Feelings Journaling", "objective": "child identifies and names 2 emotions they felt this week", "scorable": false }
-  Week 3&4 Activity 2: { "title": "Feelings Discussion", "objective": "child describes their emotions and shares why they felt that way", "scorable": false }
-
-Make sure the concern "${parentConcern}" is prominently addressed throughout.
-
-Return JSON with this exact structure:
-{
-  "months": [
-    {
-      "month": 1,
-      "goal": "Monthly goal title",
-      "objective": "One sentence objective",
-      "periods": [
-        {
-          "label": "Week 1 & 2",
-          "activities": [
-            { "title": "Activity title", "objective": "What child will achieve", "scorable": true },
-            { "title": "Activity title", "objective": "What child will achieve", "scorable": false }
-          ]
-        },
-        {
-          "label": "Week 3 & 4",
-          "activities": [
-            { "title": "Activity title", "objective": "What child will achieve", "scorable": true },
-            { "title": "Activity title", "objective": "What child will achieve", "scorable": false }
-          ]
-        }
-      ]
-    }
-  ]
-}`;
-
-      const result = await api.integrations.Core.InvokeLLM({
-        prompt,
-        response_json_schema: {
-          type: "object",
-          properties: {
-            months: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  month: { type: "number" },
-                  goal: { type: "string" },
-                  objective: { type: "string" },
-                  periods: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        label: { type: "string" },
-                        activities: {
-                          type: "array",
-                          items: {
-                            type: "object",
-                            properties: {
-                              title: { type: "string" },
-                              objective: { type: "string" },
-                              scorable: { type: "boolean" }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      });
-
-      const plan = result;
-
-      // Restore completed activities at their original positions so progress is preserved.
-      if (Object.keys(completedSnapshot).length > 0) {
-        plan.months?.forEach((month, mIdx) => {
-          month.periods?.forEach((period, pIdx) => {
-            period.activities?.forEach((act, aIdx) => {
-              const snap = completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`];
-              if (snap) {
-                act.title = snap.title;
-                act.objective = snap.objective;
-                act.scorable = snap.scorable;
-                act.completed = snap.completed;
-                act.score = snap.score;
-                act.note = snap.note;
-                act.progress_observation = snap.progress_observation;
-                act.ai_feedback = snap.ai_feedback;
-                act.parent_feedback = snap.parent_feedback;
-              }
-            });
-          });
-        });
-      }
-
-      await api.goals.patch({ plan: plan });
-      setGoalPlan(plan);
-    } catch (e) {
-      console.error(e);
-      toast.error('Failed to generate plan. Please try again.');
-    }
-    setIsLoading(false);
-  };
-
-  const handleActivityComplete = async ({ score, note, progress_observation, ai_feedback, parent_feedback }) => {
+  // Wraps saveActivityCompletion: resolves active UI state then delegates to the hook.
+  const handleActivityComplete = useCallback(async (result) => {
     if (!activeActivity) return;
     const { monthIdx, periodIdx, actIdx } = activeActivity;
-
-    const updatedPlan = JSON.parse(JSON.stringify(goalPlan));
-    const act = updatedPlan.months[monthIdx].periods[periodIdx].activities[actIdx];
-    act.completed = true;
-    act.score = score;
-    act.note = note;
-    act.progress_observation = progress_observation;
-    act.ai_feedback = ai_feedback;
-    act.parent_feedback = parent_feedback;
-
-    try {
-      await api.goals.patch({ plan: updatedPlan });
-      setGoalPlan(updatedPlan);
-    } catch {
-      toast.error('Failed to save activity. Please try again.');
-    }
+    await saveActivityCompletion(monthIdx, periodIdx, actIdx, result);
     setActiveActivity(null);
-  };
+  }, [activeActivity, saveActivityCompletion]);
 
-  const handleActivityReset = async (monthIdx, periodIdx, actIdx) => {
-    const updatedPlan = JSON.parse(JSON.stringify(goalPlan));
-
-    // Find the flat index of the activity being reset.
-    let resetFlatIdx = 0;
-    let counted = 0;
-    outer: for (let m = 0; m < updatedPlan.months.length; m++) {
-      for (let p = 0; p < (updatedPlan.months[m].periods?.length || 0); p++) {
-        for (let a = 0; a < (updatedPlan.months[m].periods[p].activities?.length || 0); a++) {
-          if (m === monthIdx && p === periodIdx && a === actIdx) {
-            resetFlatIdx = counted;
-            break outer;
-          }
-          counted++;
-        }
-      }
-    }
-
-    // Clear completion data on the target activity and every activity after it.
-    let flatIdx = 0;
-    for (let m = 0; m < updatedPlan.months.length; m++) {
-      for (let p = 0; p < (updatedPlan.months[m].periods?.length || 0); p++) {
-        for (let a = 0; a < (updatedPlan.months[m].periods[p].activities?.length || 0); a++) {
-          if (flatIdx >= resetFlatIdx) {
-            const act = updatedPlan.months[m].periods[p].activities[a];
-            delete act.completed;
-            delete act.score;
-            delete act.note;
-            delete act.progress_observation;
-            delete act.ai_feedback;
-            delete act.parent_feedback;
-          }
-          flatIdx++;
-        }
-      }
-    }
-
-    try {
-      await api.goals.patch({ plan: updatedPlan });
-      setGoalPlan(updatedPlan);
-    } catch {
-      toast.error('Failed to reset activity.');
-    }
-  };
-
-  const toggleMonth = (idx) => {
+  const toggleMonth = useCallback((idx) => {
     setExpandedMonths(prev => ({ ...prev, [idx]: !prev[idx] }));
-  };
+  }, []);
 
-  const monthColors = [
-    { bg: 'from-teal-600 to-teal-500', light: 'bg-teal-500/10 border-teal-500/25', text: 'text-teal-400', dot: 'bg-teal-500' },
-    { bg: 'from-blue-600 to-blue-500', light: 'bg-blue-500/10 border-blue-500/25', text: 'text-blue-400', dot: 'bg-blue-500' },
-    { bg: 'from-purple-600 to-purple-500', light: 'bg-purple-500/10 border-purple-500/25', text: 'text-purple-400', dot: 'bg-purple-500' },
-  ];
+  const { flatIndexMap, firstActiveFlat } = useMemo(() => buildGoalPlanIndex(goalPlan), [goalPlan]);
 
-  // Precompute flat index for every activity and find the first incomplete one.
-  // Order: M1·W1&2·G1 → M1·W1&2·G2 → M1·W3&4·G1 → M1·W3&4·G2 → M2… → M3·W3&4·G2
-  const flatIndexMap = new Map(); // key: "mIdx-pIdx-aIdx" → flatIndex
-  let firstActiveFlat = 0;
-  if (goalPlan?.months) {
-    let idx = 0;
-    let foundFirst = false;
-    for (let m = 0; m < goalPlan.months.length; m++) {
-      for (let p = 0; p < (goalPlan.months[m].periods?.length || 0); p++) {
-        for (let a = 0; a < (goalPlan.months[m].periods[p].activities?.length || 0); a++) {
-          flatIndexMap.set(`${m}-${p}-${a}`, idx);
-          if (!foundFirst && !goalPlan.months[m].periods[p].activities[a].completed) {
-            firstActiveFlat = idx;
-            foundFirst = true;
-          }
-          idx++;
-        }
-      }
-    }
-    if (!foundFirst) firstActiveFlat = idx; // all complete
-  }
+  const contextValue = useMemo(() => ({
+    flatIndexMap,
+    firstActiveFlat,
+    onStartActivity: setActiveActivity,
+    onResetActivity: handleActivityReset,
+  }), [flatIndexMap, firstActiveFlat, handleActivityReset]);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 py-10">
-        {/* Header */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 text-center">
+        <motion.div {...slideUp(0.1)} className="mb-8 text-center">
           <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
             <Target className="w-7 h-7 text-white" />
           </div>
@@ -329,236 +251,84 @@ Return JSON with this exact structure:
         </motion.div>
 
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-24 space-y-4">
+          <div className="flex flex-col items-center justify-center py-24 space-y-4" aria-live="polite" aria-busy="true">
             <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+              {...SPINNER}
               className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full"
+              aria-hidden="true"
             />
             <p className="text-slate-500">Building your 3-month plan...</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {goalPlan?.months?.map((month, idx) => {
-              const color = monthColors[idx] || monthColors[0];
-              const isOpen = expandedMonths[idx];
-              return (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden"
+          <GoalPlanContext.Provider value={contextValue}>
+            <div className="space-y-4">
+              {goalPlan?.months?.map((month, idx) => (
+                <MonthCard
+                  key={month.month}
+                  month={month}
+                  idx={idx}
+                  color={monthColors[idx] || monthColors[0]}
+                  isOpen={!!expandedMonths[idx]}
+                  onToggle={() => toggleMonth(idx)}
+                />
+              ))}
+
+              <div className="flex justify-center pt-2">
+                <Button
+                  onClick={() => setShowProgress(true)}
+                  className="h-11 px-8 rounded-2xl btn-primary transition-all"
                 >
-                  {/* Month Header */}
-                  <button onClick={() => toggleMonth(idx)} className="w-full text-left">
-                    <div className={`bg-gradient-to-r ${color.bg} px-6 py-4 flex items-center justify-between`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                          <span className="text-white font-bold">{month.month}</span>
-                        </div>
-                        <div>
-                          <p className="text-white/70 text-xs font-medium uppercase tracking-widest">Month {month.month}</p>
-                          <h3 className="text-white font-bold">{month.goal}</h3>
-                        </div>
-                      </div>
-                      {isOpen ? <ChevronUp className="w-5 h-5 text-white/70" /> : <ChevronDown className="w-5 h-5 text-white/70" />}
-                    </div>
-                    {month.objective && (
-                      <div className={`px-6 py-2.5 ${color.light} border-b border-white/[0.06]`}>
-                        <p className={`text-sm font-medium ${color.text}`}>🎯 {month.objective}</p>
-                      </div>
-                    )}
-                  </button>
+                  View Progress And Insights
+                </Button>
+              </div>
 
-                  {/* Expanded Periods */}
-                  {isOpen && (
-                    <div className="px-5 py-5 space-y-5">
-                      {month.periods?.map((period, pIdx) => (
-                        <div key={pIdx}>
-                          <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${color.text}`}>{period.label}</p>
-                          <div className="space-y-2.5">
-                            {period.activities?.map((act, aIdx) => {
-                              const flatIdx = flatIndexMap.get(`${idx}-${pIdx}-${aIdx}`);
-                              const isActive = flatIdx === firstActiveFlat;
-                              const isLocked = flatIdx > firstActiveFlat;
-
-                              return (
-                                <div
-                                  key={aIdx}
-                                  className={`relative flex items-start gap-3 p-4 rounded-xl border transition-all ${
-                                    act.completed
-                                      ? 'bg-emerald-500/[0.07] border-emerald-500/20'
-                                      : isLocked
-                                      ? 'bg-white/[0.02] border-white/[0.04] border-dashed'
-                                      : 'bg-[#1a1a1a] border-white/[0.08]'
-                                  }`}
-                                >
-                                  {act.completed ? (
-                                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                                  ) : isLocked ? (
-                                    <div className="w-5 h-5 rounded-full bg-white/[0.08] flex items-center justify-center flex-shrink-0 mt-0.5">
-                                      <Lock className="w-3 h-3 text-slate-600" />
-                                    </div>
-                                  ) : (
-                                    <div className={`w-5 h-5 rounded-full ${color.dot} flex items-center justify-center flex-shrink-0 mt-0.5`}>
-                                      <span className="text-white text-[10px] font-bold">{aIdx + 1}</span>
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <p className={`font-semibold text-sm ${isLocked ? 'text-slate-600' : 'text-white'}`}>{act.title}</p>
-                                    <p className={`text-xs mt-0.5 ${isLocked ? 'text-slate-700' : 'text-slate-500'}`}>{act.objective}</p>
-                                    {act.completed ? (
-                                      <div className="mt-2 space-y-1">
-                                        <p className="text-xs font-semibold text-emerald-400">
-                                          ✅ {act.ai_feedback}
-                                        </p>
-                                        {act.scorable !== false ? (
-                                          <p className="text-xs font-bold text-slate-300">
-                                            Score: {act.score}/10
-                                          </p>
-                                        ) : (
-                                          <p className="text-xs font-bold text-slate-300">
-                                            Note: {act.note}
-                                          </p>
-                                        )}
-                                        {act.parent_feedback && (
-                                          <p className="text-xs italic text-slate-500">
-                                            Parent: {act.parent_feedback}
-                                          </p>
-                                        )}
-                                      </div>
-                                    ) : isActive ? (
-                                      <button
-                                        onClick={() => {
-                                          const originalAct = pIdx > 0
-                                            ? month.periods[0]?.activities?.[aIdx]
-                                            : null;
-                                          setActiveActivity({ activity: act, monthIdx: idx, periodIdx: pIdx, actIdx: aIdx, originalActivity: originalAct });
-                                        }}
-                                        className={`mt-1.5 text-xs font-medium ${color.text} hover:underline`}
-                                      >
-                                        Tap to start activity →
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                  {act.completed && (
-                                    <button
-                                      onClick={() => handleActivityReset(idx, pIdx, aIdx)}
-                                      className="absolute top-3 right-3 w-6 h-6 rounded-full bg-white/[0.06] border border-white/[0.08] flex items-center justify-center hover:bg-white/[0.10] transition-colors"
-                                      title="Reset activity"
-                                    >
-                                      <RotateCcw className="w-3 h-3 text-slate-500" />
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
-
-            {/* View Progress & Insights */}
-            <div className="flex justify-center pt-2">
-              <Button
-                onClick={() => setShowProgress(true)}
-                className="h-11 px-8 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal transition-all"
-              >
-                View Progress And Insights
-              </Button>
+              <PageActions
+                className="pt-4"
+                left={
+                  <Button variant="outline" onClick={() => navigate(-1)} className="h-11 w-full sm:w-auto px-6 rounded-2xl btn-secondary">
+                    ← Back
+                  </Button>
+                }
+                center={
+                  <Button variant="outline" onClick={handleStartOver} className="h-11 w-full sm:w-auto px-6 rounded-2xl btn-start-over">
+                    <span aria-hidden="true">🔄</span> Start Over
+                  </Button>
+                }
+                right={
+                  <Button variant="outline" onClick={handleRegenerate} className="h-11 w-full sm:w-auto px-6 rounded-2xl btn-secondary">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Regenerate Plan
+                  </Button>
+                }
+              />
             </div>
-
-            {/* sm+: left | center | right; mobile: stacked full-width */}
-            <div className="grid w-full grid-cols-1 gap-3 pt-4 sm:grid-cols-3 sm:items-center">
-              <div className="flex w-full sm:justify-start">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate(-1)}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
-                >
-                  ← Back
-                </Button>
-              </div>
-              <div className="flex w-full sm:justify-center">
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      if (childData?.id) {
-                        try { await api.entities.Child.delete(childData.id); } catch { /* 404 ok */ }
-                      }
-                      await Promise.all([
-                        api.onboarding.patch({
-                          phase: 0,
-                          clear_child_data: true,
-                          clear_personality: true,
-                          clear_recommendations: true,
-                        }),
-                        api.recommendationsProgress.patch({ step: 'intro' }),
-                        api.goals.patch({ clear_plan: true, clear_concern: true }),
-                        api.completedGrowthAreas.clear(),
-                      ]);
-                    } catch {
-                      /* ignore */
-                    }
-                    navigate(createPageUrl('Onboarding'));
-                  }}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-amber-500/30 bg-transparent text-amber-400 hover:bg-amber-500/10"
-                >
-                  🔄 Start Over
-                </Button>
-              </div>
-              <div className="flex w-full sm:justify-end">
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    const completedSnapshot = {};
-                    goalPlan?.months?.forEach((month, mIdx) => {
-                      month.periods?.forEach((period, pIdx) => {
-                        period.activities?.forEach((act, aIdx) => {
-                          if (act.completed) {
-                            completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`] = { ...act };
-                          }
-                        });
-                      });
-                    });
-
-                    await generateGoals(childData, concern, savedOnboarding, savedCompletedAreas, completedSnapshot);
-                  }}
-                  className="h-11 w-full sm:w-auto px-6 rounded-2xl border border-white/[0.12] bg-transparent text-slate-300 hover:bg-white/[0.05]"
-                >
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Regenerate Plan
-                </Button>
-              </div>
-            </div>
-          </div>
+          </GoalPlanContext.Provider>
         )}
       </div>
-      <AnimatePresence>
-        {activeActivity && (
-          <ActivityModal
-            activity={activeActivity.activity}
-            originalActivity={activeActivity.originalActivity}
-            childName={childData?.name}
-            onClose={() => setActiveActivity(null)}
-            onComplete={handleActivityComplete}
-          />
-        )}
-        {showProgress && (
-          <ProgressInsightsModal
-            goalPlan={goalPlan}
-            childName={childData?.name}
-            onPlanUpdate={setGoalPlan}
-            onClose={() => setShowProgress(false)}
-          />
-        )}
-      </AnimatePresence>
+
+      <ModalErrorBoundary>
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            {activeActivity && (
+              <ActivityModal
+                activity={activeActivity.activity}
+                originalActivity={activeActivity.originalActivity}
+                childName={childData?.name}
+                onClose={() => setActiveActivity(null)}
+                onComplete={handleActivityComplete}
+              />
+            )}
+            {showProgress && (
+              <ProgressInsightsModal
+                goalPlan={goalPlan}
+                childName={childData?.name}
+                onPlanUpdate={setGoalPlan}
+                onClose={() => setShowProgress(false)}
+              />
+            )}
+          </AnimatePresence>
+        </Suspense>
+      </ModalErrorBoundary>
     </div>
   );
 }

@@ -1,6 +1,19 @@
+import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
-import { Target, Users, Lightbulb, Heart, Zap, Sparkles, Sprout } from 'lucide-react';
+import { Sparkles, Sprout } from 'lucide-react';
 import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
+
+const FAMOUS_LABEL = {
+  Ambitious:        'Achievers',
+  Determined:       'Strivers',
+  Outgoing:         'Socializers',
+  Creative:         'Creators',
+  Enthusiastic:     'Enthusiasts',
+  Restless:         'Explorers',
+  'Highly Energetic': 'Energizers',
+  Thinker:          'Thinkers',
+  Playful:          'Players',
+};
 
 // New Personality Framework
 const personalityCategories = {
@@ -349,6 +362,14 @@ export function adaptAiPersonalityToViewModel(ai, childName) {
   };
 }
 
+// Animation timing constants — centralised so adjusting the cascade is a one-line change.
+const ANIM_TRAIT_BASE    = 1.0;  const ANIM_TRAIT_STEP    = 0.20;
+const ANIM_BAR_BASE      = 1.9;  const ANIM_BAR_STEP      = 0.25;
+const ANIM_BAR_W_BASE    = 2.0;  const ANIM_BAR_W_STEP    = 0.30;
+const ANIM_FAMOUS_BASE   = 2.7;  const ANIM_FAMOUS_STEP   = 0.30;
+const ANIM_STRENGTH_BASE = 3.5;  const ANIM_STRENGTH_STEP = 0.15;
+const ANIM_GROWTH_BASE   = 4.3;  const ANIM_GROWTH_STEP   = 0.15;
+
 export default function PersonalityAnalysis({ mbtiResult, childName }) {
   const { type, scores, profile } = mbtiResult;
   const category = personalityCategories[profile?.category] || personalityCategories.creatives;
@@ -362,34 +383,33 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
 
   const growthAreasList = Array.isArray(profile?.growth_areas) ? profile.growth_areas : [];
 
+  const sectionAnim = (delay) => ({
+    initial: { opacity: 0, y: 24 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 1.0, delay, ease: 'easeOut' },
+  });
+
   return (
     <div className="space-y-6">
-      {/* Category Badge */}
+      {/* Section 1 — Category Badge */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
+        {...sectionAnim(0.1)}
         className={`bg-gradient-to-r ${category.color} rounded-2xl p-4 text-white text-center`}
       >
         <p className="text-sm font-medium opacity-90">{category.name}</p>
         <p className="text-xs opacity-75 mt-1">{category.description}</p>
       </motion.div>
 
-      {/* Main Type Card */}
+      {/* Section 2 — Main Type Card */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]"
+        {...sectionAnim(0.8)}
+        className="bg-card rounded-2xl p-6 border-edge"
       >
         <div className="text-center mb-4">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring" }}
-            className="flex items-center justify-center gap-2 mb-3"
-          >
+          <div className="flex items-center justify-center gap-2 mb-3">
             <Sparkles className="w-6 h-6 text-teal-400" />
             <h3 className="text-2xl font-bold text-white">{profile.name}</h3>
-          </motion.div>
+          </div>
           <p className="text-slate-500 text-sm">{childName}'s personality type</p>
         </div>
 
@@ -399,8 +419,8 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
               key={trait}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + i * 0.1 }}
-              className="px-3 py-1 bg-white/[0.06] text-slate-300 rounded-full text-xs border border-white/[0.06]"
+              transition={{ duration: 0.7, delay: ANIM_TRAIT_BASE + i * ANIM_TRAIT_STEP }}
+              className="px-3 py-1 bg-ghost-light text-slate-300 rounded-full text-xs border-edge-faint"
             >
               {trait}
             </motion.span>
@@ -412,33 +432,34 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
         </p>
       </motion.div>
 
-      {/* Personality Balance */}
-      <div className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08]">
+      {/* Section 3 — Personality Profile Breakdown */}
+      <motion.div
+        {...sectionAnim(1.6)}
+        className="bg-card rounded-2xl p-6 border-edge"
+      >
         <h4 className="font-semibold text-white mb-4 text-sm">Personality Profile Breakdown</h4>
         <div className="space-y-4">
           {topTypes.map((item, index) => {
             const maxScore = topTypes[0].score;
             const percentage = maxScore > 0 ? (item.score / maxScore) * 100 : 0;
             const itemProfile = personalityTypes[item.name];
-
             if (!itemProfile) return null;
-
             return (
               <motion.div
                 key={item.name}
-                initial={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, x: -16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.1 }}
+                transition={{ duration: 0.8, delay: ANIM_BAR_BASE + index * ANIM_BAR_STEP }}
               >
                 <div className="flex justify-between text-xs mb-1.5">
                   <span className="font-medium text-slate-300">{itemProfile.name}</span>
                   <span className="text-slate-500">{Math.round(percentage)}%</span>
                 </div>
-                <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
+                <div className="h-2 bg-ghost-light rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${percentage}%` }}
-                    transition={{ duration: 0.8, delay: index * 0.1 }}
+                    transition={{ duration: 2.4, delay: ANIM_BAR_W_BASE + index * ANIM_BAR_W_STEP, ease: 'easeInOut' }}
                     className={`h-full bg-gradient-to-r ${itemProfile.color} rounded-full`}
                   />
                 </div>
@@ -446,33 +467,25 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
-      {/* Famous People */}
-      <div className="bg-[#1a1a1a] rounded-2xl p-6 border border-white/[0.08]">
-        <h4 className="font-semibold text-white mb-1 text-sm">Famous {
-          profile.name === 'Ambitious' ? 'Achievers' :
-          profile.name === 'Determined' ? 'Strivers' :
-          profile.name === 'Outgoing' ? 'Socializers' :
-          profile.name === 'Creative' ? 'Creators' :
-          profile.name === 'Enthusiastic' ? 'Enthusiasts' :
-          profile.name === 'Restless' ? 'Explorers' :
-          profile.name === 'Highly Energetic' ? 'Energizers' :
-          profile.name === 'Thinker' ? 'Thinkers' :
-          profile.name === 'Playful' ? 'Players' :
-          profile.name + 's'
-        }</h4>
+      {/* Section 4 — Famous People */}
+      <motion.div
+        {...sectionAnim(2.4)}
+        className="bg-surface-elevated rounded-2xl p-6 border-edge"
+      >
+        <h4 className="font-semibold text-white mb-1 text-sm">Famous {FAMOUS_LABEL[profile.name] ?? `${profile.name}s`}</h4>
         <p className="text-xs text-slate-500 mb-5">People {childName} may relate to</p>
         <div className="flex flex-wrap justify-center gap-6">
           {profile.famous_people.map((person, i) => (
             <motion.div
-              key={i}
-              initial={{ opacity: 0, scale: 0.8 }}
+              key={person.name}
+              initial={{ opacity: 0, scale: 0.85 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1 * i }}
+              transition={{ duration: 0.8, delay: ANIM_FAMOUS_BASE + i * ANIM_FAMOUS_STEP }}
               className="flex flex-col items-center gap-2"
             >
-              <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white/[0.10]">
+              <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-c-md">
                 <img
                   src={person.image}
                   alt={person.name}
@@ -488,28 +501,35 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
             </motion.div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
-      {/* Strengths */}
-      <div className="bg-[#141414] rounded-2xl p-5 border border-emerald-500/15">
+      {/* Section 5 — Strengths */}
+      <motion.div
+        {...sectionAnim(3.2)}
+        className="bg-card rounded-2xl p-5 border border-emerald-500/15"
+      >
         <h4 className="font-semibold text-emerald-400 mb-3 text-sm">💪 Strengths</h4>
         <ul className="space-y-2">
           {profile.strengths.map((s, i) => (
-            <li key={i} className="text-sm text-slate-400 flex items-center gap-2.5">
+            <motion.li
+              key={s}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.7, delay: ANIM_STRENGTH_BASE + i * ANIM_STRENGTH_STEP }}
+              className="text-sm text-slate-400 flex items-center gap-2.5"
+            >
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
               {s}
-            </li>
+            </motion.li>
           ))}
         </ul>
-      </div>
+      </motion.div>
 
-      {/* Growth Areas */}
+      {/* Section 6 — Growth Areas */}
       {growthAreasList.length > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="bg-[#141414] rounded-2xl p-5 border border-amber-500/15"
+          {...sectionAnim(4.0)}
+          className="bg-card rounded-2xl p-5 border border-amber-500/15"
         >
           <h4 className="font-semibold text-amber-400 mb-3 flex items-center gap-2 text-sm">
             <Sprout className="w-4 h-4 shrink-0" aria-hidden />
@@ -521,7 +541,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
                 key={`${item}-${i}`}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.05 * i }}
+                transition={{ duration: 0.7, delay: ANIM_GROWTH_BASE + i * ANIM_GROWTH_STEP }}
                 className="text-sm text-slate-400 flex items-start gap-2.5"
               >
                 <span className="w-1.5 h-1.5 mt-1.5 bg-amber-500 rounded-full shrink-0" aria-hidden />
@@ -534,5 +554,25 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
     </div>
   );
 }
+
+PersonalityAnalysis.propTypes = {
+  mbtiResult: PropTypes.shape({
+    type: PropTypes.string.isRequired,
+    scores: PropTypes.objectOf(PropTypes.number).isRequired,
+    profile: PropTypes.shape({
+      name: PropTypes.string,
+      category: PropTypes.string,
+      traits: PropTypes.arrayOf(PropTypes.string),
+      description: PropTypes.string,
+      famous_people: PropTypes.arrayOf(PropTypes.shape({
+        name: PropTypes.string,
+        image: PropTypes.string,
+      })),
+      strengths: PropTypes.arrayOf(PropTypes.string),
+      growth_areas: PropTypes.arrayOf(PropTypes.string),
+    }).isRequired,
+  }).isRequired,
+  childName: PropTypes.string,
+};
 
 export { personalityTypes, personalityCategories, PERSONALITY_TYPE_KEYS };

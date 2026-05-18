@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { createPageUrl } from "@/utils";
 import { api } from '@/api/client';
@@ -10,6 +10,15 @@ import {
   Dumbbell, Palette, Star, Rocket, Shield, Users
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+
+const PILLARS = [
+  { icon: Brain, label: 'Mind', color: 'from-blue-500 to-blue-700', glow: 'rgba(59,130,246,0.15)', description: 'Cognitive growth & curiosity' },
+  { icon: Heart, label: 'Heart', color: 'from-rose-500 to-rose-700', glow: 'rgba(244,63,94,0.15)', description: 'Emotional intelligence' },
+  { icon: Dumbbell, label: 'Body', color: 'from-emerald-500 to-emerald-700', glow: 'rgba(16,185,129,0.15)', description: 'Physical wellbeing' },
+  { icon: Palette, label: 'Talents', color: 'from-purple-500 to-purple-700', glow: 'rgba(168,85,247,0.15)', description: 'Skill discovery' },
+  { icon: Star, label: 'Character', color: 'from-amber-500 to-amber-700', glow: 'rgba(245,158,11,0.15)', description: 'Values & integrity' },
+  { icon: Rocket, label: 'Future', color: 'from-teal-500 to-teal-700', glow: 'rgba(20,184,166,0.15)', description: 'Life direction' }
+];
 
 export default function Home() {
   const navigate = useNavigate();
@@ -45,9 +54,7 @@ export default function Home() {
       for (const c of (Array.isArray(existingChildren) ? existingChildren : [])) {
         try {
           await api.entities.Child.delete(c.id);
-        } catch {
-          // ignore 404s
-        }
+        } catch (err) { if (err?.status !== 404) console.warn('[Home] Child delete failed:', err); }
       }
 
       await api.onboarding.patch({
@@ -70,18 +77,9 @@ export default function Home() {
     }
   };
 
-  const pillars = [
-    { icon: Brain, label: 'Mind', color: 'from-blue-500 to-blue-700', glow: 'rgba(59,130,246,0.15)', description: 'Cognitive growth & curiosity' },
-    { icon: Heart, label: 'Heart', color: 'from-rose-500 to-rose-700', glow: 'rgba(244,63,94,0.15)', description: 'Emotional intelligence' },
-    { icon: Dumbbell, label: 'Body', color: 'from-emerald-500 to-emerald-700', glow: 'rgba(16,185,129,0.15)', description: 'Physical wellbeing' },
-    { icon: Palette, label: 'Talents', color: 'from-purple-500 to-purple-700', glow: 'rgba(168,85,247,0.15)', description: 'Skill discovery' },
-    { icon: Star, label: 'Character', color: 'from-amber-500 to-amber-700', glow: 'rgba(245,158,11,0.15)', description: 'Values & integrity' },
-    { icon: Rocket, label: 'Future', color: 'from-teal-500 to-teal-700', glow: 'rgba(20,184,166,0.15)', description: 'Life direction' }
-  ];
-
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -92,7 +90,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       {/* Hero */}
       <section className="relative overflow-hidden">
         {/* Ambient glows */}
@@ -104,7 +102,7 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 1.2 }}
             className="text-center"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-500/10 rounded-full border border-teal-500/20 mb-8">
@@ -130,7 +128,7 @@ export default function Home() {
                 <>
                   <Button
                     onClick={() => navigate(createPageUrl('Onboarding'))}
-                    className="h-13 px-8 text-base rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal transition-all duration-200"
+                    className="h-btn-lg px-8 text-base rounded-2xl btn-primary transition-all duration-200"
                   >
                     <Sparkles className="w-4 h-4 mr-2" />
                     Continue Onboarding
@@ -140,7 +138,7 @@ export default function Home() {
                     onClick={handleStartFresh}
                     disabled={isResetting}
                     variant="outline"
-                    className="h-13 px-8 text-base rounded-2xl border border-white/[0.12] text-slate-300 bg-transparent hover:bg-white/[0.05] hover:text-white transition-all duration-200"
+                    className="h-btn-lg px-8 text-base rounded-2xl btn-secondary transition-all duration-200"
                   >
                     {isResetting ? 'Resetting…' : 'Start Fresh'}
                   </Button>
@@ -148,7 +146,7 @@ export default function Home() {
               ) : (
                 <Button
                   onClick={handleStartJourney}
-                  className="h-13 px-8 text-base rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal transition-all duration-200"
+                  className="h-btn-lg px-8 text-base rounded-2xl btn-primary transition-all duration-200"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
                   Start Your Journey
@@ -178,19 +176,19 @@ export default function Home() {
           </motion.div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pillars.map((pillar, index) => (
+            {PILLARS.map((pillar, index) => (
               <motion.div
                 key={pillar.label}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.08 }}
+                transition={{ delay: index * 0.12 }}
                 whileHover={{ y: -3, transition: { duration: 0.2 } }}
-                className="bg-[#141414] rounded-2xl p-6 border border-white/[0.06] hover:border-white/[0.10] transition-all duration-300 group"
-                style={{ '--pillar-glow': pillar.glow }}
+                className="bg-card rounded-2xl p-6 border-edge-faint hover:border-edge transition-all duration-300 group"
               >
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${pillar.color} flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110`}
-                  style={{ boxShadow: `0 0 20px ${pillar.glow}` }}
+                <div
+                  className={`w-12 h-12 rounded-xl bg-gradient-to-br ${pillar.color} flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110 glow-pillar`}
+                  style={{ '--pillar-glow': pillar.glow }}
                 >
                   <pillar.icon className="w-6 h-6 text-white" />
                 </div>
@@ -203,7 +201,7 @@ export default function Home() {
       </section>
 
       {/* How It Works */}
-      <section className="py-20 md:py-28 bg-[#0d0d0d]">
+      <section className="py-20 md:py-28 bg-section-alt">
         <div className="max-w-6xl mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -239,10 +237,10 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.15 }}
+                transition={{ delay: index * 0.225 }}
                 className="text-center"
               >
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-[#1a1a1a] border border-white/[0.08] flex items-center justify-center mb-5">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-surface-elevated border-edge flex items-center justify-center mb-5">
                   <feature.icon className="w-6 h-6 text-teal-400" />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
@@ -260,7 +258,7 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.97 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            className="bg-[#111111] rounded-3xl p-10 md:p-16 text-center relative overflow-hidden border border-white/[0.06]"
+            className="bg-section-dark rounded-3xl p-10 md:p-16 text-center relative overflow-hidden border-edge-faint"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-teal-500/[0.04] via-transparent to-purple-500/[0.04] pointer-events-none" />
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-teal-500/[0.06] blur-3xl rounded-full pointer-events-none" />
@@ -273,7 +271,7 @@ export default function Home() {
               </p>
               <Button
                 onClick={handleStartJourney}
-                className="h-13 px-10 text-base rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-[#0a0a0a] font-semibold glow-teal transition-all duration-200"
+                className="h-btn-lg px-10 text-base rounded-2xl btn-primary transition-all duration-200"
               >
                 Get Started Free
                 <ArrowRight className="w-4 h-4 ml-2" />
@@ -284,7 +282,7 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 border-t border-white/[0.06]">
+      <footer className="py-8 border-t-edge-faint">
         <div className="max-w-6xl mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <div className="w-5 h-5 rounded-md bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center">

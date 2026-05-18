@@ -140,7 +140,7 @@ All routes are prefixed `/api/v1`. Auth endpoints use rate limiting (slowapi).
 - `POST /auth/register` — create account, returns token pair (rate-limited: 5/min)
 - `POST /auth/login` — email/password login, returns token pair (rate-limited: 10/min)
 - `POST /auth/google` — Google ID-token login/register, returns token pair (rate-limited: 10/min)
-- `POST /auth/refresh` — exchange an expired access token + valid refresh token for a new pair
+- `POST /auth/refresh` — issue a new token pair using only the refresh token cookie (access token cookie is optional — included as a defence-in-depth subject check when present)
 - `POST /auth/logout` — revoke the current session (deletes the refresh token)
 - `GET /auth/me` — return current user (`id`, `email`, `full_name`, `role`)
 - `DELETE /user/me` *(path: `/api/v1/user/me`)* — permanently delete the authenticated user's account
@@ -232,39 +232,60 @@ Three custom Tailwind utilities are defined in `index.css`:
 
 ## Frontend animations
 
-All animations use **Framer Motion**. The design system follows a consistent dark/cosmic aesthetic: elements fade in and slide up on entry, lists stagger by a fixed delay per item, and modals scale in from slightly below center.
+All animations use **Framer Motion**. The design system follows a consistent dark/cosmic aesthetic: elements fade in and slide up on entry with deliberate, unhurried timing; lists stagger by a fixed delay per item; modals crossfade with `AnimatePresence`. Spring-scale pops are no longer used — all entries are fade + slide.
 
 ### Page / section entry
 
 | Location | Duration | Effect |
 |---|---|---|
-| Home — hero | `0.8s` | Fade + slide up (`y: 30 → 0`) |
-| Home — pillar cards | `0.08s` stagger per card | Fade + slide up, triggered on scroll (`whileInView`) |
-| Home — "How It Works" cards | `0.15s` stagger per card | Fade + slide up, triggered on scroll |
-| Home — CTA section | `0.3s` (Framer default) | Fade + scale (`0.97 → 1`) |
-| Onboarding — phase transition | `0.3s` | Slide left/right (`x: ±50 → 0`), `AnimatePresence mode="wait"` |
-| LifePathway — page entry | `0.3s` (Framer default) | Fade + slide up |
-| LifePathway — sections (stagger) | `0.1s` per section | Slide from left (`x: -20 → 0`) |
-| GoalsDashboard — month cards | `0.1s` stagger per card | Fade + slide up |
+| Home — hero | `1.2s` ease-out | Fade + slide up (`y: 30 → 0`) |
+| Home — pillar cards | `0.12s` stagger per card | Fade + slide up, triggered on scroll (`whileInView`) |
+| Home — "How It Works" cards | `0.225s` stagger per card | Fade + slide up, triggered on scroll |
+| Onboarding — phase transition | `0.45s` | Slide left/right (`x: ±50 → 0`), `AnimatePresence mode="wait"` |
+| LifePathway — page fade-in | `0.6s` ease-out | Fade only (wrapper) |
+| LifePathway — header | `1.0s`, `0.1s` delay, ease-out | Fade + slide up (`y: 24 → 0`) |
+| LifePathway — chart card | `1.0s`, `0.8s` delay, ease-out | Fade + slide up |
+| LifePathway — growth area insights | `1.0s`, `1.6s` delay, ease-out | Fade + slide up; items stagger `2.0 + idx * 0.3s` |
+| LifePathway — CTA | `1.0s`, `1.8s` delay, ease-out | Fade + slide up |
+| GoalsDashboard — header | `1.0s`, `0.1s` delay, ease-out | Fade + slide up (`y: 24 → 0`) |
+| GoalsDashboard — month cards | `1.0s`, `0.6 + idx * 0.3s` delay | Fade + slide up |
 
 ### Component-level
 
 | Location | Duration | Effect |
 |---|---|---|
-| WelcomePhase — logo icon | spring (`stiffness: 200`) | Scale pop (`0 → 1`) |
-| WelcomePhase — elements (stagger) | `0.2s – 0.8s` sequential delays | Fade + slide up |
-| ConversationalOnboarding — chat messages | `0.3s` (Framer default) | Fade + slide up (`y: 8 → 0`), `AnimatePresence` |
-| ConversationalOnboarding — choice buttons | `0.08s` stagger per button | Fade + scale (`0.9 → 1`) |
-| ConversationalOnboarding — typing dots | CSS `animate-bounce` (built-in) | Staggered bounce (`0ms / 150ms / 300ms` delay) |
-| RecommendationsPhase — area cards | `0.08s` stagger per card | Fade + slide up |
-| RecommendationsPhase — question transition | `0.2s`, `AnimatePresence mode="wait"` | Fade + slide up/down (`y: 20 → 0 / 0 → -20`) |
-| RecommendationsPhase — answer items | `0.1s` stagger per item | Slide from left (`x: -20 → 0`) |
-| RecommendationsPhase — recommendations list | `0.08s` stagger per item | Slide from left (`x: -10 → 0`) |
-| PersonalityAnalysis — main card | `0.3s` (Framer default) | Fade + scale (`0.95 → 1`) |
-| PersonalityAnalysis — type icon | spring, `0.2s` delay | Scale pop (`0 → 1`) |
-| PersonalityAnalysis — trait chips | `0.1s` stagger per chip | Fade + slide up (`y: 10 → 0`) |
-| PersonalityAnalysis — progress bars | `0.8s` per bar, `0.1s` stagger | Width fill (`0 → actual%`) |
-| PersonalityAnalysis — famous people | `0.1s` stagger per image | Fade + scale (`0.8 → 1`) |
+| WelcomePhase — heading | `0.3s` delay | Fade + slide up |
+| WelcomePhase — subtitle | `0.45s` delay | Fade + slide up |
+| WelcomePhase — "what you'll do" card | `0.6s` delay | Fade + slide up |
+| WelcomePhase — step items | `0.75 + idx * 0.15s` delay | Fade + slide left (`x: -20 → 0`) |
+| WelcomePhase — CTA button area | `1.05s` delay | Fade + slide up |
+| WelcomePhase — footer note | `1.2s` delay | Fade in |
+| ConversationalOnboarding — bot messages | `2.0s` fade / `1.6s` y, ease-out | Fade + slide up (`y: 16 → 0`); messages assigned stable IDs as React keys |
+| ConversationalOnboarding — user messages | `1.6s` fade / `1.4s` x | Fade + slide in from right (`x: 40 → 0`) |
+| ConversationalOnboarding — typing indicator | `0.45s` in / `0.3s` out | Fade + slide up, `AnimatePresence` exit |
+| ConversationalOnboarding — bot typing delay | `1.6s` pause before message appears | Simulates natural reply cadence |
+| ConversationalOnboarding — choice buttons | `0.12s` stagger, `0.4s` ease-out | Fade + scale (`0.9 → 1`) |
+| ConversationalOnboarding — progress step strikethrough | `1.4s` ease-in-out | Animated horizontal line draws from left (`scaleX: 0 → 1`), `AnimatePresence` |
+| ConversationalOnboarding — scroll | RAF-based cubic ease-in-out, `1.4s` | Custom smooth scroll on the messages container (not `scrollIntoView`) |
+| ConversationalOnboarding — analysis counter | `2.8s` total (`28ms × 100` ticks) | Progress counter |
+| RecommendationsPhase — intro sections | `sectionAnim` helper: `1.0s`, staggered `0.1 / 0.8 / 1.8s` | Fade + slide up (`y: 24 → 0`) |
+| RecommendationsPhase — profile strengths | `0.8s`, `1.1 + idx * 0.25s` delay | Fade + slide up |
+| RecommendationsPhase — area cards | `1.0s`, `0.5 + i * 0.5s` delay | Fade + slide up |
+| RecommendationsPhase — activity buttons | `1.0s`, `0.5 + i * 0.3s` delay | `motion.button` fade + slide up |
+| RecommendationsPhase — question transition | `1.0s` in / `0.4s` out, `AnimatePresence mode="wait"` | Fade + slide up/down (`y: 20 → 0 / 0 → -16`) |
+| RecommendationsPhase — answer items | `0.7s`, `0.9 + i * 0.15s` delay | Slide from left (`x: -16 → 0`) |
+| RecommendationsPhase — conditional button groups | `AnimatePresence` | Animated entry/exit when `parentLiked`, `showGame`, `childGameResults` states change |
+| RecommendationsPhase — child game results (sequential) | Deeply staggered: `2.2 / 2.7 / 3.5 / 4.3 / 5.7s` | Each sub-section appears after the previous finishes |
+| RecommendationsPhase — recommendations list | `0.7s`, `i * 0.15s` delay | Slide from left (`x: -16 → 0`) |
+| RecommendationsPhase — step change | `window.scrollTo` instant | Scroll to top on every `step` state change |
+| PersonalityAnalysis — sections (`sectionAnim`) | `1.0s` ease-out, staggered `0.1 / 0.8 / 1.6 / 2.4 / 3.2 / 4.0s` | Fade + slide up (`y: 24 → 0`) for all 6 sections |
+| PersonalityAnalysis — trait chips | `0.7s`, `1.0 + i * 0.2s` delay | Fade + slide up (`y: 10 → 0`) |
+| PersonalityAnalysis — profile bars | `2.4s` ease-in-out, `2.0 + i * 0.3s` delay | Width fill (`0 → actual%`) |
+| PersonalityAnalysis — famous people | `0.8s`, `2.7 + i * 0.3s` delay | Fade + scale (`0.85 → 1`) |
+| PersonalityAnalysis — strengths list items | `0.7s`, `3.5 + i * 0.15s` delay | Slide from left (`x: -8 → 0`) |
+| PersonalityAnalysis — growth area items | `0.7s`, `4.3 + i * 0.15s` delay | Slide from left (`x: -8 → 0`) |
+| ActivityModal — progress bar fill | `0.45s` | Width fill |
+| VoiceInput — recording button | No animation | `animate-pulse` removed; button stays solid red while recording |
 
 ### Modals
 
@@ -272,24 +293,35 @@ All animations use **Framer Motion**. The design system follows a consistent dar
 |---|---|---|
 | ActivityModal | `0.3s` (Framer default) | Scale + slide up (`scale: 0.9, y: 20 → 1, 0`), `AnimatePresence` |
 | ProgressInsightsModal | `0.3s` (Framer default) | Scale + slide up (`scale: 0.95, y: 20 → 1, 0`), `AnimatePresence` |
-| LifePathway — concern modal (backdrop) | `0.2s` | Fade (`opacity: 0 → 1`), `AnimatePresence` |
-| LifePathway — concern modal (card) | `0.25s` ease-out | Scale + slide up (`scale: 0.95, y: 16 → 1, 0`) |
+| shadcn Dialog / AlertDialog | `300ms` | Radix built-in fade + zoom, updated from 200ms |
+| LifePathway — concern modal (backdrop) | `0.3s` | Fade (`opacity: 0 → 1`), `AnimatePresence` |
+| LifePathway — concern modal (card) | `0.375s` ease-out | Scale + slide up (`scale: 0.95, y: 16 → 1, 0`) |
+| LifePathway — concern modal (form ↔ success) | `0.5s` in / `0.3s` out, `AnimatePresence mode="wait"` | Crossfade between form and success state |
 
 ### Loaders / repeating
 
 | Location | Duration | Effect |
 |---|---|---|
 | All page/section spinners | `1.2s – 2s` infinite | Rotate 360° (`ease: linear`) |
+| LifePathway loading state | Dark background `#0a0a0a` | Consistent with page theme |
 | Analyzing screen spinner (ConversationalOnboarding) | `3s` infinite | Slow rotate 360° |
-| Typing indicator dots | CSS `animate-bounce` | Staggered bounce |
+| Typing indicator dots | CSS `animate-bounce` | Staggered bounce (`0ms / 150ms / 300ms` delay) |
+
+### Scroll behaviour
+
+- **Route change**: `ScrollToTop` component in `App.jsx` fires `window.scrollTo({ top: 0, behavior: 'instant' })` on every React Router path change.
+- **Onboarding phase change**: `window.scrollTo` instant on `currentPhase` update.
+- **RecommendationsPhase step change**: `window.scrollTo` instant on `step` state update.
+- **Conversational chat**: custom RAF-based cubic ease-in-out scroll (1.4 s, 200 ms debounced) on the messages container after each new message or typing-indicator change.
 
 ### Design rules
 
-- **Default card entry**: `initial={{ opacity: 0, y: 20 }}` → `animate={{ opacity: 1, y: 0 }}`
-- **Default list stagger**: `delay: index * 0.08` (fast lists) or `index * 0.1` (slower reveals)
-- **Icon spring**: `transition={{ type: "spring", stiffness: 200 }}` — used for logo/icon pops
+- **Default card entry**: `initial={{ opacity: 0, y: 24 }}` → `animate={{ opacity: 1, y: 0 }}`, `duration: 1.0`, `ease: 'easeOut'`
+- **Default list stagger**: `delay: 0.12s` per item (general) or component-specific base delay + `index * step`
+- **Spring animations**: removed throughout — all entries use fade + slide
 - **Phase transitions**: always use `AnimatePresence mode="wait"` so the exiting element completes before the entering one starts
-- **Exit animations**: modals exit with the reverse of their entry (`scale: 0.95, y: 16, opacity: 0`)
+- **Exit animations**: modals and conditional sections exit with `opacity: 0, y: -12/16` over `0.3–0.6s` ease-in
+- **Stable React keys for chat messages**: messages use a module-level counter (`newMsgId()`) rather than array index to avoid key collisions on re-render
 
 ## GitHub Actions
 
@@ -384,6 +416,7 @@ At least one LLM API key must be set to enable LLM features.
 
 - **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-4o-mini`, `claude-sonnet-4-6`, `gemini-1.5-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
 - **Rate limiting**: `POST /auth/register` is capped at 5 requests/minute per IP; login and Google auth at 10/minute. LLM calls are also rate-limited per-user (sliding window, default 200 calls/hour) via Redis — set `REDIS_URL` to a Redis instance; without it the rate limiter falls back to an in-process counter that breaks under multiple containers.
+- **Session management**: the access token has a 30-minute lifetime; the refresh token lasts 24 hours. `AuthContext` schedules a proactive silent refresh 60 seconds before the access token would expire, so sessions stay alive automatically without requiring any user interaction. If the silent refresh returns 401 (refresh token expired or revoked), the app dispatches a `buddy360:auth-expired` custom event and the user is logged out. Network hiccups retry after 30 seconds.
 
 ## Tests
 
