@@ -470,6 +470,15 @@ export default function Onboarding() {
                   Next
                   <ChevronRight className="w-5 h-5 ml-1" />
                 </Button>
+              ) : currentPhase === 3 ? (
+                <Button
+                  onClick={handleComplete}
+                  disabled={completionBusy}
+                  className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
+                >
+                  Finish
+                  <ChevronRight className="w-5 h-5 ml-1" />
+                </Button>
               ) : null
             }
           />
