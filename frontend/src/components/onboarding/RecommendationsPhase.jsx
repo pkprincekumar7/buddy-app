@@ -364,9 +364,13 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [step, setStep] = useState('intro');
+  const [qaAnimKey, setQaAnimKey] = useState(0);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (step === 'activity_summary') {
+      setQaAnimKey(k => k + 1);
+    }
   }, [step]);
   const [selectedArea, setSelectedArea] = useState(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
@@ -532,6 +536,19 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
   const growthAreaSaveChainRef = useRef(Promise.resolve());
+  const resultsRef = useRef(null);
+
+  // Scroll to "Recommendations for {name}" heading when childGameResults first appears.
+  // Delay must exceed the game's AnimatePresence exit animation (400ms) so the layout
+  // has fully settled before we measure — otherwise the game is still in the DOM and
+  // shifts the anchor position after exit, landing the scroll too far down.
+  useEffect(() => {
+    if (!childGameResults || !resultsRef.current) return;
+    const t = setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [!!childGameResults]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-persist recommendations wizard progress to server
   useEffect(() => {
@@ -1432,16 +1449,16 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
         <p className="text-slate-400">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
       </motion.div>
 
-      <motion.div {...sectionAnim(0.6)} className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
+      <motion.div {...sectionAnim(0.3)} className="bg-[#141414] rounded-2xl p-6 border border-white/[0.08] space-y-3">
         {questions.map((q, i) => {
           const answer = interactiveAnswers[q.id];
           if (!answer) return null;
           return (
             <motion.div
-              key={q.id}
+              key={`${qaAnimKey}-${q.id}`}
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.7, delay: 0.9 + i * 0.15, ease: 'easeOut' }}
+              transition={{ duration: 0.7, delay: 1.1 + i * 0.15, ease: 'easeOut' }}
               className="border-b border-white/[0.06] pb-3 last:border-0"
             >
               <p className="text-xs text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
@@ -1638,17 +1655,20 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       {childGameResults && (
             <div className="space-y-4">
 
-              {/* Section 2 — starts immediately when section 1 finishes (2.2 s) */}
+              {/* Section 2 — delays are relative to when childGameResults first mounts
+                  so they work correctly both on resume (page load) and after game submit */}
+              {/* Plain div anchor for scroll target — not affected by framer transforms */}
+              <div ref={resultsRef} />
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 2.2, ease: 'easeOut' }}
+                transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
                 className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/20"
               >
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.7, delay: 2.2, ease: 'easeOut' }}
+                  transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' }}
                   className="text-center mb-4"
                 >
                   <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3">
@@ -1657,22 +1677,22 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   <h3 className="text-xl font-bold text-white">Recommendations for {data.name}</h3>
                 </motion.div>
 
-                {/* What This Reveals: immediately after header (2.2+0.5=2.7) */}
+                {/* What This Reveals */}
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 2.7, ease: 'easeOut' }}
+                  transition={{ duration: 0.8, delay: 0.5, ease: 'easeOut' }}
                   className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
                 >
                   <h4 className="font-semibold text-white mb-2">What This Reveals</h4>
                   <p className="text-slate-400 text-sm">{childGameResults?.summary ?? ''}</p>
                 </motion.div>
 
-                {/* Suggested Activities: immediately after What This Reveals finishes (2.7+0.8=3.5) */}
+                {/* Suggested Activities */}
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 3.5, ease: 'easeOut' }}
+                  transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
                   className="bg-[#1a1a1a] rounded-2xl p-4 mb-4"
                 >
                   <h4 className="font-semibold text-white mb-2">Suggested Activities</h4>
@@ -1682,7 +1702,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         key={i}
                         initial={{ opacity: 0, x: -12 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.6, delay: 3.7 + i * 0.15, ease: 'easeOut' }}
+                        transition={{ duration: 0.6, delay: 1.0 + i * 0.13, ease: 'easeOut' }}
                         className="flex items-start gap-2 text-sm text-slate-400"
                       >
                         <span className="text-emerald-500 mt-1">✓</span>
@@ -1692,11 +1712,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   </ul>
                 </motion.div>
 
-                {/* Strengths: immediately after Suggested Activities finishes (3.5+0.8=4.3) */}
+                {/* Strengths */}
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 4.3, ease: 'easeOut' }}
+                  transition={{ duration: 0.8, delay: 1.5, ease: 'easeOut' }}
                   className="bg-[#1a1a1a] rounded-2xl p-4"
                 >
                   <h4 className="font-semibold text-white mb-2">Strengths to Encourage</h4>
@@ -1706,7 +1726,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                         key={i}
                         initial={{ opacity: 0, x: -12 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.6, delay: 4.5 + i * 0.15, ease: 'easeOut' }}
+                        transition={{ duration: 0.6, delay: 1.65 + i * 0.13, ease: 'easeOut' }}
                         className="flex items-start gap-2 text-sm text-slate-400"
                       >
                         <span className="text-emerald-500 mt-1">★</span>
@@ -1717,12 +1737,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 </motion.div>
               </motion.div>
 
-              {/* Section 3 — starts immediately when section 2 finishes
-                  Last strength item: 4.5 + 4*0.15 = 5.1, duration 0.6 → done at 5.7 s */}
+              {/* Section 3 — last strength: 1.65 + 2*0.13 = 1.91, + 0.6 = 2.51 → delay 2.5 */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 5.7, ease: 'easeOut' }}
+                transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
                 className="bg-[#141414] rounded-3xl p-6 border border-emerald-500/15"
               >
                 <h3 className="font-bold text-white mb-3 flex items-center gap-2">
@@ -1741,9 +1760,16 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                 )}
 
                 {loadingRecommendations && (
-                  <div className="flex items-center gap-3 py-4">
-                    <RefreshCw className="w-5 h-5 text-emerald-500 animate-spin" />
-                    <p className="text-slate-400 text-sm">Generating personalized recommendations...</p>
+                  <div className="flex flex-col items-center justify-center py-10 gap-5">
+                    <div className="relative w-16 h-16">
+                      <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20" />
+                      <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-500 animate-spin" />
+                      <div className="absolute inset-2 rounded-full border-4 border-transparent border-t-teal-400 animate-spin" style={{ animationDuration: '0.7s', animationDirection: 'reverse' }} />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-white font-semibold text-sm">Building your 3-Month Plan</p>
+                      <p className="text-slate-500 text-xs">Personalising recommendations for {data?.name}…</p>
+                    </div>
                   </div>
                 )}
 
@@ -1768,7 +1794,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 5.7, ease: 'easeOut' }}
+                transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
                 className="flex flex-col gap-3"
               >
               <Button

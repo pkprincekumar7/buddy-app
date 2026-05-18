@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, CheckCircle2, AlertTriangle, Clock, Lock,
   Minus, BarChart3, RefreshCw,
@@ -168,12 +168,14 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
       <motion.div
-        initial={{ scale: 0.95, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.93, y: 24 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16, transition: { duration: 0.25, ease: 'easeIn' } }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
         className="bg-[#141414] rounded-3xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col border border-white/[0.08]"
       >
         {/* Header */}
@@ -214,10 +216,17 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto p-6">
+          <AnimatePresence mode="wait">
 
           {/* ── PROGRESS TAB ── */}
           {activeTab === 'progress' && (
-            <div>
+            <motion.div
+              key="tab-progress"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12, transition: { duration: 0.2, ease: 'easeIn' } }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            >
               <div className="flex gap-2 mb-5">
                 {[['monthly', 'Monthly'], ['3months', '3-Months']].map(([key, label]) => (
                   <button
@@ -234,9 +243,17 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                 ))}
               </div>
 
+              <AnimatePresence mode="wait">
               {/* Monthly table */}
               {progressTab === 'monthly' && (
-                <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+                <motion.div
+                  key="sub-monthly"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8, transition: { duration: 0.2, ease: 'easeIn' } }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                  className="overflow-x-auto rounded-2xl border border-white/[0.06]"
+                >
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-[#1a1a1a]">
@@ -280,12 +297,18 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       )}
                     </tbody>
                   </table>
-                </div>
+                </motion.div>
               )}
 
               {/* 3-Months chart — one bar per objective pair */}
               {progressTab === '3months' && (
-                <div>
+                <motion.div
+                  key="sub-3months"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8, transition: { duration: 0.2, ease: 'easeIn' } }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
+                >
                   <p className="text-sm text-slate-400 mb-4 text-center">
                     Per-objective comparison: original (Week 1&amp;2) vs follow-up (Week 3&amp;4)
                   </p>
@@ -343,14 +366,21 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                       <span className="w-3 h-3 rounded-sm bg-white/[0.15] inline-block" /> N/A
                     </span>
                   </div>
-                </div>
+                </motion.div>
               )}
-            </div>
+              </AnimatePresence>
+            </motion.div>
           )}
 
           {/* ── INSIGHTS TAB ── */}
           {activeTab === 'insights' && (
-            <div>
+            <motion.div
+              key="tab-insights"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12, transition: { duration: 0.2, ease: 'easeIn' } }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            >
               {/* Loading */}
               {insightsLoading && (
                 <div className="py-20 flex flex-col items-center gap-4">
@@ -384,7 +414,13 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                     const isAnomaly  = item.type === 'anomaly';
                     const isExpanded = expandedInsight === idx;
                     return (
-                      <div key={idx} className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-[#141414]'}>
+                      <motion.div
+                        key={idx}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: idx * 0.1, ease: 'easeOut' }}
+                        className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-[#141414]'}
+                      >
                         {/* Row */}
                         <div className="flex items-center gap-3 px-5 py-4">
                           <div className="flex-shrink-0">
@@ -411,35 +447,39 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
                         </div>
 
                         {/* Expanded details */}
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className={`px-5 pb-5 border-t ${
-                              isAnomaly ? 'border-amber-500/15 bg-amber-500/[0.05]' : 'border-white/[0.04] bg-white/[0.02]'
-                            }`}
-                          >
-                            <p className="text-sm text-slate-400 leading-relaxed pt-4 pb-4">
-                              {item.details}
-                            </p>
-                            <div className="flex gap-2 flex-wrap">
-                              <button className="px-4 py-2 bg-teal-500 text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
-                                Start Monitoring
-                              </button>
-                              <button className="px-4 py-2 bg-white/[0.05] border border-white/[0.10] text-slate-300 text-xs font-semibold rounded-xl hover:bg-white/[0.08] transition-colors">
-                                Check-in Later
-                              </button>
-                            </div>
-                          </motion.div>
-                        )}
-                      </div>
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              key="expanded"
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto', transition: { height: { duration: 0.35, ease: 'easeOut' }, opacity: { duration: 0.4, ease: 'easeOut' } } }}
+                              exit={{ opacity: 0, height: 0, transition: { height: { duration: 0.3, ease: 'easeIn' }, opacity: { duration: 0.2 } } }}
+                              className={`overflow-hidden px-5 pb-5 border-t ${
+                                isAnomaly ? 'border-amber-500/15 bg-amber-500/[0.05]' : 'border-white/[0.04] bg-white/[0.02]'
+                              }`}
+                            >
+                              <p className="text-sm text-slate-400 leading-relaxed pt-4 pb-4">
+                                {item.details}
+                              </p>
+                              <div className="flex gap-2 flex-wrap">
+                                <button className="px-4 py-2 bg-teal-500 text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
+                                  Start Monitoring
+                                </button>
+                                <button className="px-4 py-2 bg-white/[0.05] border border-white/[0.10] text-slate-300 text-xs font-semibold rounded-xl hover:bg-white/[0.08] transition-colors">
+                                  Check-in Later
+                                </button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
                     );
                   })}
                 </div>
               )}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </div>
       </motion.div>
     </motion.div>

@@ -353,7 +353,7 @@ Return JSON with this exact structure:
                   initial={{ opacity: 0, y: 24 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 1.0, delay: 0.6 + idx * 0.3, ease: 'easeOut' }}
-                  className="bg-[#141414] rounded-2xl border border-white/[0.08] overflow-hidden"
+                  className="bg-[#141414] rounded-2xl border border-white/[0.08]"
                 >
                   {/* Month Header */}
                   <button onClick={() => toggleMonth(idx)} className="w-full text-left">
@@ -367,7 +367,9 @@ Return JSON with this exact structure:
                           <h3 className="text-white font-bold">{month.goal}</h3>
                         </div>
                       </div>
-                      {isOpen ? <ChevronUp className="w-5 h-5 text-white/70" /> : <ChevronDown className="w-5 h-5 text-white/70" />}
+                      <motion.div animate={{ rotate: isOpen ? 180 : 0 }} transition={{ duration: 0.55, ease: 'easeInOut' }}>
+                        <ChevronDown className="w-5 h-5 text-white/70" />
+                      </motion.div>
                     </div>
                     {month.objective && (
                       <div className={`px-6 py-2.5 ${color.light} border-b border-white/[0.06]`}>
@@ -377,7 +379,16 @@ Return JSON with this exact structure:
                   </button>
 
                   {/* Expanded Periods */}
+                  <AnimatePresence initial={false}>
                   {isOpen && (
+                    <motion.div
+                      key="periods"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.55, ease: 'easeInOut' }}
+                      style={{ overflow: 'hidden' }}
+                    >
                     <div className="px-5 py-5 space-y-5">
                       {month.periods?.map((period, pIdx) => (
                         <div key={pIdx}>
@@ -463,7 +474,9 @@ Return JSON with this exact structure:
                         </div>
                       ))}
                     </div>
+                    </motion.div>
                   )}
+                  </AnimatePresence>
                 </motion.div>
               );
             })}

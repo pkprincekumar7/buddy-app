@@ -169,7 +169,16 @@ export const generateInsights = async (childName, plan) => {
     schema_version:   INSIGHTS_SCHEMA_VERSION,
     overall_summary:  unwrapLLM(data.overall_summary)  || '',
     monthly_insights: Array.isArray(data.monthly_insights) ? data.monthly_insights : [],
-    recommendations:  Array.isArray(data.recommendations)  ? data.recommendations  : [],
+    // LLM occasionally returns [{string: "..."}, ...] instead of plain strings
+    // when the JSON schema uses items: { type: 'string' }. Normalise defensively.
+    recommendations: Array.isArray(data.recommendations)
+      ? data.recommendations.map(r =>
+          typeof r === 'string' ? r
+          : typeof r === 'object' && r !== null
+            ? (r.string ?? r.value ?? r.text ?? Object.values(r)[0] ?? '')
+            : String(r ?? '')
+        )
+      : [],
     strongest_area:   unwrapLLM(data.strongest_area) || null,
     focus_area:       unwrapLLM(data.focus_area)     || null,
     insight_items:    Array.isArray(data.insight_items) ? data.insight_items : [],

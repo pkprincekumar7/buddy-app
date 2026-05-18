@@ -266,12 +266,14 @@ Based on the quality of engagement, effort, and expression shown across both ass
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
     >
       <motion.div
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 20 }}
+        initial={{ opacity: 0, scale: 0.92, y: 24 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 16, transition: { duration: 0.25, ease: 'easeIn' } }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
         className="bg-[#141414] rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-white/[0.08]"
       >
         {/* Header */}
@@ -334,9 +336,10 @@ Based on the quality of engagement, effort, and expression shown across both ass
             {step === 'questions' && currentQuestion && (
               <motion.div
                 key={`q-${currentQuestionIndex}`}
-                initial={{ opacity: 0, x: direction * 40 }}
+                initial={{ opacity: 0, x: direction * 48 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: direction * -40 }}
+                exit={{ opacity: 0, x: direction * -48, transition: { duration: 0.3, ease: 'easeIn' } }}
+                transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="py-4"
               >
                 <h3 className="text-lg font-bold text-white mb-6 leading-snug">
@@ -475,8 +478,9 @@ Based on the quality of engagement, effort, and expression shown across both ass
             {step === 'complete' && (
               <motion.div
                 key="complete"
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
                 className="py-4 space-y-5"
               >
                 <div className="flex flex-col items-center gap-2">
