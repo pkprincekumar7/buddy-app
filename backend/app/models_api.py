@@ -303,7 +303,7 @@ class ChildResponse(BaseModel):
     age: str | int | None = None
     school: str | None = None
     date_of_birth: str | None = None
-    current_phase: int | None = None
+    current_phase: str | int | None = None
     onboarding_completed: bool | None = None
     personality_traits: list | None = None
     interests: list | None = None
@@ -333,7 +333,7 @@ class ChildCreate(BaseModel):
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
     date_of_birth: str | None = None
-    current_phase: int | None = None
+    current_phase: str | int | None = None
     onboarding_completed: bool | None = None
     personality_traits: list | None = None
     interests: list | None = None
