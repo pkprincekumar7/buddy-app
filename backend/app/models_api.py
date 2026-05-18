@@ -220,16 +220,23 @@ class RecommendationsProgress(BaseModel):
 # Goals
 # ---------------------------------------------------------------------------
 
+class ActivityResponse(BaseModel):
+    question: str
+    answer: str | None = None
+    type: str | None = None
+
+
 class GoalsActivity(BaseModel):
     title: str
     objective: str
     scorable: bool = True
     completed: bool | None = None
-    score: int | None = None
+    score: float | None = None
     note: str | None = None
     progress_observation: str | None = None
     ai_feedback: str | None = None
     parent_feedback: str | None = None
+    responses: list[ActivityResponse] = []
 
 
 class GoalsPeriod(BaseModel):
