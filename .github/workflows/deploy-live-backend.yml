@@ -129,7 +129,7 @@ jobs:
             -t "$IMAGE_SHA" \
             -t "$IMAGE_LATEST" \
             -f backend/Dockerfile \
-            backend/
+            .
 
           docker push "$IMAGE_SHA"
           docker push "$IMAGE_LATEST"

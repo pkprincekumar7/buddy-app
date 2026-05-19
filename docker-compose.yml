@@ -22,7 +22,9 @@ services:
       start_period: 5s
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}

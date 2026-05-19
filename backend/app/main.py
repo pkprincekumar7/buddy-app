@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import re
+import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -29,6 +30,25 @@ from app.settings import settings
 log = logging.getLogger(__name__)
 
 _REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9\-_]{1,64}$')
+
+
+def _git_info() -> dict:
+    def _run(args: list[str]) -> str:
+        try:
+            return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True).strip()
+        except Exception:
+            return "unknown"
+
+    tag = _run(["git", "describe", "--tags", "--exact-match", "HEAD"])
+    return {
+        "commit": _run(["git", "rev-parse", "--short", "HEAD"]),
+        "branch": _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
+        "committed_at": _run(["git", "log", "-1", "--format=%cI"]),
+        "tag": tag if tag != "unknown" else None,
+    }
+
+
+_GIT_INFO = _git_info()
 
 # ---------------------------------------------------------------------------
 # Background task: expired-session cleanup
@@ -171,6 +191,10 @@ app.include_router(audio_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health")
-@app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/health")
+def api_health_check():
+    return {"status": "ok", **_GIT_INFO}
