@@ -171,12 +171,6 @@ export const api = {
    * All reads/writes use api.entities.Child.get() / Child.update().
    */
 
-  /** Recommendations progress: sub-step UI state during the growth area flow (child-scoped). */
-  recommendationsProgress: {
-    get: (childId) => request(`/user/recommendations-progress?child_id=${encodeURIComponent(childId)}`),
-    patch: (childId, body) => request(`/user/recommendations-progress?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
-  },
-
   /** Completed growth areas: persistent record of each finished area (child-scoped). */
   completedGrowthAreas: {
     list: (childId) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`),

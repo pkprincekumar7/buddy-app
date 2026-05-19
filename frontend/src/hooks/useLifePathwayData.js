@@ -28,7 +28,9 @@ export function useLifePathwayData() {
         const vm = child.personality?.view_model;
         if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
 
-        if (completedData?.areas?.length) setCompletedAreas(completedData.areas);
+        // Filter to finalised areas only; legacy docs without a status field are treated as completed.
+        const completedOnly = (completedData?.areas || []).filter((a) => a.status === 'completed' || !a.status);
+        if (completedOnly.length) setCompletedAreas(completedOnly);
 
         setSavedConcern(typeof goals?.parent_concern === 'string' ? goals.parent_concern.trim() : '');
       } catch (err) {

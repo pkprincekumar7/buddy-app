@@ -603,12 +603,9 @@ async def delete_account(
             await db[models.CHILDREN].delete_many(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
-            # goals/recommendations/growth_areas are all child-scoped and store user_id,
+            # goals/growth_areas are child-scoped and store user_id,
             # so delete_many by user_id covers every document in one pass.
             await db[models.GOALS].delete_many(
-                {"user_id": user_id, "location": location}, session=mongo_session
-            )
-            await db[models.RECOMMENDATIONS].delete_many(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
             await db[models.GROWTH_AREAS].delete_many(

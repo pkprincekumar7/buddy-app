@@ -58,6 +58,22 @@ class CompletedGrowthArea(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
     recommendations: list[str] | None = None
     child_activity: ChildActivity | None = None
+    # Status: "in_progress" while wizard is active, "completed" once the area is finalised.
+    # Legacy docs without this field are treated as completed.
+    status: str | None = None
+    # Per-area wizard state — only present when status == "in_progress"
+    step: str | None = None
+    selected_activity: dict | None = None
+    parent_liked: bool | None = None
+    want_child_activity: bool | None = None
+    feedback: str | None = None
+    interactive_step: int | None = None
+    interactive_answers: dict | None = None
+    interactive_draft: dict | None = None
+    generated_activity: dict | None = None
+    show_game: bool | None = None
+    child_activity_selections: list | None = None
+    ai_three_month_recommendations: list | None = None
 
 
 class CompletedGrowthAreasResponse(BaseModel):
@@ -71,59 +87,25 @@ class AppendGrowthAreaRequest(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict, max_length=100)
     recommendations: list[str] | None = Field(None, max_length=50)
     child_activity: ChildActivity | None = None
+    # Status + per-area wizard state
+    status: str | None = None
+    step: str | None = None
+    selected_activity: dict | None = None
+    parent_liked: bool | None = None
+    want_child_activity: bool | None = None
+    feedback: str | None = None
+    interactive_step: int | None = None
+    interactive_answers: dict | None = None
+    interactive_draft: dict | None = None
+    generated_activity: dict | None = None
+    show_game: bool | None = None
+    child_activity_selections: list | None = None
+    ai_three_month_recommendations: list | None = None
 
 
 # ---------------------------------------------------------------------------
 # Recommendations progress
 # ---------------------------------------------------------------------------
-
-class GrowthAreaRef(BaseModel):
-    id: str
-    name: str
-    color: str
-    description: str = ""
-
-
-class SelectedActivity(BaseModel):
-    title: str
-    description: str = ""
-    duration: str = ""
-    type: str = ""
-
-
-class GeneratedActivity(BaseModel):
-    title: str = ""
-    description: str = ""
-    instructions: list[str] = Field(default_factory=list)
-    estimated_time: str = ""
-
-
-class InteractiveDraft(BaseModel):
-    question_id: str
-    text: str
-
-
-class AiThreeMonthRecs(BaseModel):
-    area_id: str
-    items: list[str]
-
-
-class RecommendationsProgress(BaseModel):
-    step: str = "intro"
-    selected_area: GrowthAreaRef | None = None
-    selected_activity: SelectedActivity | None = None
-    parent_liked: bool | None = None
-    want_child_activity: bool | None = None
-    feedback: str = ""
-    current_area_index: int = 0
-    interactive_step: int = 0
-    interactive_answers: dict[str, str] = Field(default_factory=dict, max_length=50)
-    interactive_draft: InteractiveDraft | None = None
-    generated_activity: GeneratedActivity | None = None
-    show_game: bool = False
-    child_activity_by_area: dict[str, ChildActivity] = Field(default_factory=dict, max_length=10)
-    ai_three_month_recommendations: AiThreeMonthRecs | None = None
-
 
 # ---------------------------------------------------------------------------
 # Goals
@@ -205,6 +187,11 @@ class ChildResponse(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    # Global wizard navigation — replaces the old wizard_progress blob.
+    # wizard_step: current sub-step inside the recommendations phase (intro, area_selection, etc.)
+    # wizard_area_index: index into the growthAreas array for the currently active area.
+    wizard_step: str | None = None
+    wizard_area_index: int | None = None
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
@@ -258,6 +245,8 @@ class ChildPatch(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    wizard_step: str | None = None
+    wizard_area_index: int | None = None
 
     @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildPatch":

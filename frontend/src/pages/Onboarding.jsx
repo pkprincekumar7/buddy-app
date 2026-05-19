@@ -43,7 +43,6 @@ const initialWizardState = {
   mbtiResult: null,
   generatedProfile: null,
   recommendations: null,
-  recPhaseHasNext: false,
   activeChildId: null,
 };
 
@@ -82,8 +81,6 @@ function wizardReducer(state, action) {
       return { ...state, generatedProfile: action.payload };
     case 'SET_RECOMMENDATIONS':
       return { ...state, recommendations: action.payload };
-    case 'SET_REC_PHASE_HAS_NEXT':
-      return { ...state, recPhaseHasNext: action.payload };
     case 'SET_ACTIVE_CHILD_ID':
       return { ...state, activeChildId: action.payload };
     case 'RESET_WIZARD':
@@ -109,12 +106,11 @@ export default function Onboarding() {
     currentPhase, hydrated, appStateReady, conversationBootKey,
     personalityBusy, journeyBusy, completionBusy,
     childData, mbtiResult, generatedProfile, recommendations,
-    recPhaseHasNext, activeChildId,
+    activeChildId,
   } = state;
   const wizardBusy = personalityBusy || journeyBusy || completionBusy;
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const recPhaseBackRef = useRef(null);
-  const recPhaseNextRef = useRef(null);
 
   // Delegate phase-specific LLM effects to dedicated hooks.
   usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, dispatch });
@@ -217,8 +213,9 @@ export default function Onboarding() {
           onboarding_completed: false,
           personality: null,
           recommendations: null,
+          wizard_step: null,
+          wizard_area_index: null,
         });
-        await api.recommendationsProgress.patch(childId, { step: 'intro' });
       }
     } catch (err) {
       console.warn('[Onboarding] Could not update child after chatbot:', err);
@@ -229,7 +226,7 @@ export default function Onboarding() {
   }, [childData, activeChildId, dispatch]);
 
   const handleWizardStartOver = useCallback(async () => {
-    // Deleting the child cascades all related data (goals, recommendations, growth_areas).
+    // Deleting the child cascades all related data (goals and growth_areas).
     // No separate onboarding reset needed — all state lives on the child record.
     if (activeChildId) {
       try { await api.entities.Child.delete(activeChildId); } catch (err) { if (err?.status !== 404) console.warn('[Onboarding] Child delete failed:', err); }
@@ -241,10 +238,7 @@ export default function Onboarding() {
   const handleNext = useCallback(async () => {
     if (currentPhase === 2 && activeChildId) {
       try {
-        await Promise.all([
-          api.recommendationsProgress.patch(activeChildId, { step: 'intro' }),
-          api.entities.Child.update(activeChildId, { onboarding_phase: 3 }),
-        ]);
+        await api.entities.Child.update(activeChildId, { onboarding_phase: 3, wizard_step: null, wizard_area_index: null });
       } catch (err) {
         console.warn('[Onboarding] Could not advance to phase 3:', err);
       }
@@ -259,15 +253,6 @@ export default function Onboarding() {
 
   const handleRegisterBack = useCallback((fn) => {
     recPhaseBackRef.current = fn;
-  }, []);
-
-  const handleRegisterNext = useCallback((fn) => {
-    recPhaseNextRef.current = fn;
-    dispatch({ type: 'SET_REC_PHASE_HAS_NEXT', payload: !!fn });
-  }, []);
-
-  const handleRecNext = useCallback(() => {
-    recPhaseNextRef.current?.();
   }, []);
 
   const canProceed = useMemo(() => {
@@ -381,7 +366,6 @@ export default function Onboarding() {
                   activeChildId={activeChildId}
                   onFinish={handleComplete}
                   onRegisterBack={handleRegisterBack}
-                  onRegisterNext={handleRegisterNext}
                   onPhaseBack={handleBack}
                 />
               ) : (
@@ -423,24 +407,6 @@ export default function Onboarding() {
                   className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
                 >
                   Continue
-                  <ChevronRight className="w-5 h-5 ml-1" />
-                </Button>
-              ) : currentPhase === 3 && recPhaseHasNext ? (
-                <Button
-                  onClick={handleRecNext}
-                  disabled={completionBusy}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
-                >
-                  Finish
-                  <ChevronRight className="w-5 h-5 ml-1" />
-                </Button>
-              ) : currentPhase === 3 ? (
-                <Button
-                  onClick={handleComplete}
-                  disabled={completionBusy}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
-                >
-                  Finish
                   <ChevronRight className="w-5 h-5 ml-1" />
                 </Button>
               ) : null

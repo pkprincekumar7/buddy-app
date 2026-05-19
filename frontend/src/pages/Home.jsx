@@ -40,7 +40,7 @@ export default function Home() {
     if (isResetting) return;
     setIsResetting(true);
     try {
-      // Deleting each child cascades goals, recommendations, and growth_areas.
+      // Deleting each child cascades goals and growth_areas.
       const existingChildren = await api.entities.Child.list('-created_date');
       for (const c of (Array.isArray(existingChildren) ? existingChildren : [])) {
         try { await api.entities.Child.delete(c.id); } catch (err) { if (err?.status !== 404) console.warn('[Home] Child delete failed:', err); }

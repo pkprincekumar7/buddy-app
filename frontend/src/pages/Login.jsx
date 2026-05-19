@@ -97,7 +97,7 @@ export default function Login() {
     } else {
       script.addEventListener('load', run, { once: true });
     }
-  }, [googleClientId, checkAppState]);
+  }, [googleClientId, checkAppState, pendingGoogleToken]);
 
   const onSubmit = async (ev) => {
     ev.preventDefault();
@@ -124,51 +124,55 @@ export default function Login() {
           <p className="mt-1 text-sm text-slate-400">Buddy360 — continue to your pathway</p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-300">
-              Username (email)
-            </label>
-            <input
-              id="login-email"
-              type="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="form-input"
-            />
-          </div>
-          <div>
-            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-300">
-              Password
-            </label>
-            <input
-              id="login-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="form-input"
-            />
-          </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </Button>
-        </form>
+        {!pendingGoogleToken && (
+          <>
+            <form onSubmit={onSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-300">
+                  Username (email)
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div>
+                <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-300">
+                  Password
+                </label>
+                <input
+                  id="login-password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={busy}>
+                {busy ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
 
-        {googleClientId ? (
-          <div className="mt-6 flex flex-col items-center gap-2">
-            <p className="text-xs text-slate-500">or</p>
-            <div ref={googleBtnRef} className="flex min-h-[40px] justify-center" />
-          </div>
-        ) : (
-          <p className="mt-4 text-center text-xs text-slate-400">
-            Google sign-in: set <code className="rounded bg-ghost-strong px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
-            <code className="rounded bg-ghost-strong px-1">GOOGLE_CLIENT_ID</code> on the API.
-          </p>
+            {googleClientId ? (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <p className="text-xs text-slate-500">or</p>
+                <div ref={googleBtnRef} className="flex min-h-[40px] justify-center" />
+              </div>
+            ) : (
+              <p className="mt-4 text-center text-xs text-slate-400">
+                Google sign-in: set <code className="rounded bg-ghost-strong px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
+                <code className="rounded bg-ghost-strong px-1">GOOGLE_CLIENT_ID</code> on the API.
+              </p>
+            )}
+          </>
         )}
 
         {pendingGoogleToken ? (
@@ -177,6 +181,7 @@ export default function Login() {
             <p className="mb-3 text-xs text-slate-400">
               Select your country so we can store your data in the right region.
             </p>
+            {error ? <p className="mb-3 text-sm text-red-400">{error}</p> : null}
             <select
               value={googleCountry}
               onChange={(e) => setGoogleCountry(e.target.value)}

@@ -149,11 +149,10 @@ async def delete_child(
     if not existing:
         raise HTTPException(status_code=404, detail="Child not found")
     loc = existing["location"]
-    # All four collections are sharded by location, so they land on the same shard
+    # All three collections are sharded by location, so they land on the same shard
     # and can be included in a single transaction — identical pattern to account deletion.
     async with await db.client.start_session() as session:
         async with session.start_transaction():
             await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
-            await db[models.RECOMMENDATIONS].delete_one({"_id": child_id, "location": loc}, session=session)
             await db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}, session=session)
             await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)

@@ -15,7 +15,6 @@ from app.models_api import (
     CompletedGrowthArea,
     CompletedGrowthAreasResponse,
     GoalsPlan,
-    RecommendationsProgress,
     UserGoals,
     UserGoalsPatch,
     UserPreferences,
@@ -48,6 +47,19 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
         answers=doc.get("answers") or {},
         recommendations=doc.get("recommendations"),
         child_activity=child_activity,
+        status=doc.get("status"),
+        step=doc.get("step"),
+        selected_activity=doc.get("selected_activity"),
+        parent_liked=doc.get("parent_liked"),
+        want_child_activity=doc.get("want_child_activity"),
+        feedback=doc.get("feedback"),
+        interactive_step=doc.get("interactive_step"),
+        interactive_answers=doc.get("interactive_answers"),
+        interactive_draft=doc.get("interactive_draft"),
+        generated_activity=doc.get("generated_activity"),
+        show_game=doc.get("show_game"),
+        child_activity_selections=doc.get("child_activity_selections"),
+        ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
     )
 
 
@@ -88,50 +100,6 @@ async def patch_preferences(
 
 
 # ---------------------------------------------------------------------------
-# Recommendations progress
-# ---------------------------------------------------------------------------
-
-@router.get("/user/recommendations-progress", response_model=RecommendationsProgress)
-@user_limiter.limit("60/minute")
-async def get_recommendations_progress(
-    request: Request,
-    child_id: str = Query(...),
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-):
-    doc = await db[models.RECOMMENDATIONS].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
-    )
-    if not doc or not doc.get("progress"):
-        return RecommendationsProgress()
-    return RecommendationsProgress.model_validate(doc["progress"])
-
-
-@router.patch("/user/recommendations-progress", response_model=RecommendationsProgress)
-@user_limiter.limit("30/minute")
-async def patch_recommendations_progress(
-    request: Request,
-    body: RecommendationsProgress,
-    child_id: str = Query(...),
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-):
-    now = datetime.now(timezone.utc)
-    set_fields: dict = {
-        "progress": body.model_dump(),
-        "updated_at": now,
-    }
-    set_on_insert: dict = {"created_at": now, "user_id": user["_id"]}
-    doc = await db[models.RECOMMENDATIONS].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
-        {"$set": set_fields, "$setOnInsert": set_on_insert},
-        upsert=True,
-        return_document=True,
-    )
-    return RecommendationsProgress.model_validate(doc["progress"]) if doc and doc.get("progress") else body
-
-
-# ---------------------------------------------------------------------------
 # Completed growth areas
 # ---------------------------------------------------------------------------
 
@@ -156,7 +124,7 @@ async def list_completed_growth_areas(
 
 
 @router.post("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
-@user_limiter.limit("20/minute")
+@user_limiter.limit("60/minute")
 async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
@@ -170,9 +138,26 @@ async def append_completed_growth_area(
         "area_color": body.area_color,
         "answers": body.answers,
         "recommendations": body.recommendations,
-        "child_activity": body.child_activity.model_dump() if body.child_activity else None,
         "updated_at": now,
+        # Status + per-area wizard state
+        "status": body.status,
+        "step": body.step,
+        "selected_activity": body.selected_activity,
+        "parent_liked": body.parent_liked,
+        "want_child_activity": body.want_child_activity,
+        "feedback": body.feedback,
+        "interactive_step": body.interactive_step,
+        "interactive_answers": body.interactive_answers,
+        "interactive_draft": body.interactive_draft,
+        "generated_activity": body.generated_activity,
+        "show_game": body.show_game,
+        "child_activity_selections": body.child_activity_selections,
+        "ai_three_month_recommendations": body.ai_three_month_recommendations,
     }
+    # Only write child_activity when explicitly provided. Never overwrite saved game
+    # results with null — callers that don't carry game data simply omit the field.
+    if body.child_activity is not None:
+        set_fields["child_activity"] = body.child_activity.model_dump()
     # user_id, child_id, area_id, location are equality conditions in the filter.
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
     await db[models.GROWTH_AREAS].update_one(

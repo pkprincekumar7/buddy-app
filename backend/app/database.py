@@ -35,12 +35,9 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["sessions"].create_index([("location", ASCENDING), ("expires_at", ASCENDING)])
     await db["sessions"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
-    # goals / recommendations: single-document-per-child, keyed by child_id.
+    # goals: single-document-per-child, keyed by child_id.
     await db["goals"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     await db["goals"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
-
-    await db["recommendations"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
-    await db["recommendations"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
     # growth_areas: unique per (user, child, area) — child_id added to the compound key.
     await db["growth_areas"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)

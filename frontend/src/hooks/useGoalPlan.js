@@ -68,7 +68,9 @@ export function useGoalPlan() {
           api.completedGrowthAreas.list(childId),
         ]);
         ob = freshChild;
-        areas = freshCompleted?.areas || [];
+        // Use only finalised areas for goal generation; legacy docs without status are treated as completed.
+        const allAreas = freshCompleted?.areas || [];
+        areas = allAreas.filter((a) => a.status === 'completed' || !a.status);
       }
 
       const vm = ob?.personality?.view_model;
@@ -123,7 +125,9 @@ export function useGoalPlan() {
           api.completedGrowthAreas.list(childId),
         ]);
 
-        const areas = completedData?.areas || [];
+        // Use only finalised areas; legacy docs without status are treated as completed.
+        const allFetched = completedData?.areas || [];
+        const areas = allFetched.filter((a) => a.status === 'completed' || !a.status);
         setSavedCompletedAreas(areas);
 
         const savedConcern = typeof goals.parent_concern === 'string' ? goals.parent_concern : '';
@@ -190,7 +194,7 @@ export function useGoalPlan() {
 
   const handleStartOver = useCallback(async () => {
     try {
-      // Deleting the child cascades goals, recommendations, and growth_areas.
+      // Deleting the child cascades goals and growth_areas.
       if (childData?.id) {
         try { await api.entities.Child.delete(childData.id); } catch (err) { if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err); }
       }
