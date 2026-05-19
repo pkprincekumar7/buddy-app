@@ -253,12 +253,11 @@ export default function ActivityModal({ activity, originalActivity, childName, o
         progress_observation: progressObservation,
         ai_feedback: aiFeedback,
         parent_feedback: parentFeedback,
-        responses: Object.values(responses)
       });
     } finally {
       dispatch({ type: 'SET_SAVING', value: false });
     }
-  }, [dispatch, isScorableActivity, originalActivity, activity.title, aiNote, aiFeedback, parentFeedback, aiScore, responses, onComplete]);
+  }, [dispatch, isScorableActivity, originalActivity, activity.title, aiNote, aiFeedback, parentFeedback, aiScore, onComplete]);
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;

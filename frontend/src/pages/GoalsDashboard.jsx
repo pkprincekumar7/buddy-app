@@ -321,6 +321,7 @@ export default function GoalsDashboard() {
             {showProgress && (
               <ProgressInsightsModal
                 goalPlan={goalPlan}
+                childId={childData?.id}
                 childName={childData?.name}
                 onPlanUpdate={setGoalPlan}
                 onClose={() => setShowProgress(false)}

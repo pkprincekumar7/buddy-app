@@ -29,18 +29,8 @@ export default function Home() {
     queryFn: () => api.entities.Child.list('-created_date')
   });
 
-  const { data: onboarding = {}, isSuccess: onboardingLoaded } = useQuery({
-    queryKey: ['onboarding'],
-    queryFn: () => api.onboarding.get(),
-    staleTime: 30_000,
-  });
-
-  const phaseRaw = onboarding?.phase;
-  const onboardingInProgress =
-    onboardingLoaded &&
-    phaseRaw !== undefined &&
-    phaseRaw !== null &&
-    phaseRaw > 0;
+  // Onboarding is in progress if there's a child that hasn't completed it yet.
+  const onboardingInProgress = children.some(c => !c.onboarding_completed);
 
   const handleStartJourney = () => {
     navigate(createPageUrl('Onboarding'));
@@ -50,25 +40,12 @@ export default function Home() {
     if (isResetting) return;
     setIsResetting(true);
     try {
+      // Deleting each child cascades goals, recommendations, and growth_areas.
       const existingChildren = await api.entities.Child.list('-created_date');
       for (const c of (Array.isArray(existingChildren) ? existingChildren : [])) {
-        try {
-          await api.entities.Child.delete(c.id);
-        } catch (err) { if (err?.status !== 404) console.warn('[Home] Child delete failed:', err); }
+        try { await api.entities.Child.delete(c.id); } catch (err) { if (err?.status !== 404) console.warn('[Home] Child delete failed:', err); }
       }
-
-      await api.onboarding.patch({
-        phase: 0,
-        clear_child_data: true,
-        clear_personality: true,
-        clear_recommendations: true,
-      });
-      await api.recommendationsProgress.patch({ step: 'intro' });
-      await api.goals.patch({ clear_plan: true, clear_concern: true });
-      await api.completedGrowthAreas.clear();
-
       queryClient.invalidateQueries({ queryKey: ['children'] });
-      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
       navigate(createPageUrl('Onboarding'));
     } catch (e) {
       console.error('[Start Fresh] Reset failed:', e);

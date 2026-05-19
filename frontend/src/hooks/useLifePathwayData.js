@@ -13,17 +13,19 @@ export function useLifePathwayData() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [onboarding, completedData, children, goals] = await Promise.all([
-          api.onboarding.get(),
-          api.completedGrowthAreas.list(),
-          api.entities.Child.list('-created_date', 1),
-          api.goals.get(),
+        const children = await api.entities.Child.list('-created_date', 1);
+        const child = children?.[0] || null;
+        if (child) setChildData(child);
+
+        const childId = child?.id;
+        if (!childId) { setIsLoading(false); return; }
+
+        const [completedData, goals] = await Promise.all([
+          api.completedGrowthAreas.list(childId),
+          api.goals.get(childId),
         ]);
 
-        const resolvedChild = children?.[0] || onboarding?.child_data || null;
-        if (resolvedChild) setChildData(resolvedChild);
-
-        const vm = onboarding?.personality?.view_model;
+        const vm = child.personality?.view_model;
         if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
 
         if (completedData?.areas?.length) setCompletedAreas(completedData.areas);

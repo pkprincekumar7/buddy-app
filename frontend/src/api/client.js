@@ -166,29 +166,28 @@ export const api = {
     patch: (body) => request('/user/preferences', { method: 'PATCH', body }),
   },
 
-  /** Onboarding: phase, child data, personality, journey recommendations */
-  onboarding: {
-    get: () => request('/user/onboarding'),
-    patch: (body) => request('/user/onboarding', { method: 'PATCH', body }),
-  },
+  /**
+   * Onboarding data now lives directly on the child record.
+   * All reads/writes use api.entities.Child.get() / Child.update().
+   */
 
-  /** Recommendations progress: sub-step UI state during the growth area flow */
+  /** Recommendations progress: sub-step UI state during the growth area flow (child-scoped). */
   recommendationsProgress: {
-    get: () => request('/user/recommendations-progress'),
-    patch: (body) => request('/user/recommendations-progress', { method: 'PATCH', body }),
+    get: (childId) => request(`/user/recommendations-progress?child_id=${encodeURIComponent(childId)}`),
+    patch: (childId, body) => request(`/user/recommendations-progress?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
   },
 
-  /** Completed growth areas: persistent record of each finished area */
+  /** Completed growth areas: persistent record of each finished area (child-scoped). */
   completedGrowthAreas: {
-    list: () => request('/user/completed-growth-areas'),
-    append: (body) => request('/user/completed-growth-areas', { method: 'POST', body }),
-    clear: () => request('/user/completed-growth-areas', { method: 'DELETE' }),
+    list: (childId) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`),
+    append: (childId, body) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, { method: 'POST', body }),
+    clear: (childId) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, { method: 'DELETE' }),
   },
 
-  /** Goals: parent concern + 3-month plan */
+  /** Goals: parent concern + 3-month plan (child-scoped). */
   goals: {
-    get: () => request('/user/goals'),
-    patch: (body) => request('/user/goals', { method: 'PATCH', body }),
+    get: (childId) => request(`/user/goals?child_id=${encodeURIComponent(childId)}`),
+    patch: (childId, body) => request(`/user/goals?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
   },
 
   entities: {
@@ -200,19 +199,10 @@ export const api = {
         const q = qs.toString();
         return request(`/children${q ? `?${q}` : ''}`);
       },
+      get: (id) => request(`/children/${encodeURIComponent(id)}`),
       create: (payload) => request('/children', { method: 'POST', body: payload }),
       update: (id, patch) => request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
       delete: (id) => request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    },
-
-    GrowthMission: {
-      async filter(filters, sort = '-created_date', limit = 50) {
-        const qs = new URLSearchParams({ sort });
-        if (filters?.child_id) qs.set('child_id', filters.child_id);
-        qs.set('limit', String(limit));
-        return request(`/growth-missions?${qs.toString()}`);
-      },
-      bulkCreate: (items) => request('/growth-missions/bulk', { method: 'POST', body: { items } }),
     },
   },
 

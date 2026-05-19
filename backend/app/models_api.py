@@ -37,97 +37,6 @@ class UserPreferencesPatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding — child data
-# ---------------------------------------------------------------------------
-
-class OnboardingChildData(BaseModel):
-    name: str = Field(default="", max_length=100)
-    age: str = Field(default="", max_length=20)
-    school: str = Field(default="", max_length=200)
-    strengths: list[str] = Field(default_factory=list, max_length=20)
-    hobbies: list[str] = Field(default_factory=list, max_length=20)
-    thinking_pattern: str = Field(default="", max_length=100)
-    communication_style: str = Field(default="", max_length=100)
-    energy_level: str = Field(default="", max_length=100)
-    social_behaviour: str = Field(default="", max_length=100)
-    emotional_behaviour: str = Field(default="", max_length=100)
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — personality analysis
-# ---------------------------------------------------------------------------
-
-class FamousPerson(BaseModel):
-    name: str
-    image: str = ""
-
-
-class PersonalityProfile(BaseModel):
-    name: str
-    category: str
-    description: str
-    color: str = ""
-    traits: list[str] = Field(default_factory=list)
-    strengths: list[str] = Field(default_factory=list)
-    growth_areas: list[str] = Field(default_factory=list)
-    famous_people: list[FamousPerson] = Field(default_factory=list)
-
-
-class PersonalityViewModel(BaseModel):
-    type: str
-    scores: dict[str, int] = Field(default_factory=dict, max_length=20)
-    profile: PersonalityProfile
-
-
-class PersonalityAnalysis(BaseModel):
-    source: str
-    view_model: PersonalityViewModel
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — journey recommendations
-# ---------------------------------------------------------------------------
-
-class FocusArea(BaseModel):
-    pillar: str
-    focus: str
-    why: str
-
-
-class InitialMission(BaseModel):
-    title: str
-    description: str
-    pillar: str
-
-
-class JourneyRecommendations(BaseModel):
-    pathway_overview: str
-    focus_areas: list[FocusArea]
-    initial_missions: list[InitialMission]
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — aggregate state and patch
-# ---------------------------------------------------------------------------
-
-class OnboardingState(BaseModel):
-    phase: int = 0
-    child_data: OnboardingChildData | None = None
-    personality: PersonalityAnalysis | None = None
-    recommendations: JourneyRecommendations | None = None
-
-
-class OnboardingPatch(BaseModel):
-    phase: int | None = None
-    child_data: OnboardingChildData | None = None
-    personality: PersonalityAnalysis | None = None
-    recommendations: JourneyRecommendations | None = None
-    clear_child_data: bool = False
-    clear_personality: bool = False
-    clear_recommendations: bool = False
-
-
-# ---------------------------------------------------------------------------
 # Completed growth areas
 # ---------------------------------------------------------------------------
 
@@ -220,12 +129,6 @@ class RecommendationsProgress(BaseModel):
 # Goals
 # ---------------------------------------------------------------------------
 
-class ActivityResponse(BaseModel):
-    question: str
-    answer: str | None = None
-    type: str | None = None
-
-
 class GoalsActivity(BaseModel):
     title: str
     objective: str
@@ -236,7 +139,6 @@ class GoalsActivity(BaseModel):
     progress_observation: str | None = None
     ai_feedback: str | None = None
     parent_feedback: str | None = None
-    responses: list[ActivityResponse] = []
 
 
 class GoalsPeriod(BaseModel):
@@ -251,11 +153,6 @@ class GoalsMonth(BaseModel):
     periods: list[GoalsPeriod]
 
 
-class GoalsPlanMonthInsight(BaseModel):
-    month: int
-    insight: str
-
-
 class InsightItem(BaseModel):
     text: str
     type: str
@@ -264,11 +161,6 @@ class InsightItem(BaseModel):
 
 class GoalsPlanInsights(BaseModel):
     schema_version: int | None = None
-    overall_summary: str = ''
-    monthly_insights: list[GoalsPlanMonthInsight] = []
-    recommendations: list[str] = []
-    strongest_area: str | None = None
-    focus_area: str | None = None
     insight_items: list[InsightItem] = []
 
 
@@ -302,14 +194,9 @@ class ChildResponse(BaseModel):
     name: str = ""
     age: str | int | None = None
     school: str | None = None
-    date_of_birth: str | None = None
-    current_phase: str | int | None = None
+    onboarding_phase: int = 0
     onboarding_completed: bool | None = None
-    personality_traits: list | None = None
-    interests: list | None = None
-    mbti_type: str | None = None
-    avatar_style: str | None = None
-    generated_profile: dict | None = None
+    personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
@@ -329,17 +216,12 @@ class ChildCreate(BaseModel):
     # (id, created_date, user_id) must be stripped by the route handler before storage.
     model_config = {"extra": "allow"}
 
-    name: str = Field(min_length=1, max_length=255)
+    name: str | None = Field(None, max_length=255)
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
-    date_of_birth: str | None = None
-    current_phase: str | int | None = None
+    onboarding_phase: int = 0
     onboarding_completed: bool | None = None
-    personality_traits: list | None = None
-    interests: list | None = None
-    mbti_type: str | None = None
-    avatar_style: str | None = None
-    generated_profile: dict | None = None
+    personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
@@ -365,17 +247,17 @@ class ChildPatch(BaseModel):
     # Promoted columns — declared explicitly so max_length validation applies on the patch path.
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
-    pillar_scores: dict | None = None
-    total_missions_completed: int | None = None
-    parent_interactions: list | None = None
-    avatar_style: str | None = None
-
-    @field_validator("pillar_scores")
-    @classmethod
-    def validate_pillar_scores(cls, v: dict | None) -> dict | None:
-        if v is not None and len(v) > 20:
-            raise ValueError("pillar_scores must not exceed 20 entries")
-        return v
+    onboarding_phase: int | None = None
+    onboarding_completed: bool | None = None
+    personality: dict | None = None
+    recommendations: dict | None = None
+    strengths: list | None = None
+    hobbies: list | None = None
+    thinking_pattern: str | None = None
+    communication_style: str | None = None
+    energy_level: str | None = None
+    social_behaviour: str | None = None
+    emotional_behaviour: str | None = None
 
     @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildPatch":
@@ -383,48 +265,3 @@ class ChildPatch(BaseModel):
             if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self
-
-
-# ---------------------------------------------------------------------------
-# Growth missions
-# ---------------------------------------------------------------------------
-
-class GrowthMissionResponse(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    id: str
-    child_id: str
-    created_date: str
-    title: str = ""
-    description: str | None = None
-    pillar: str | None = None
-    status: str = "active"
-    difficulty: str = "easy"
-    week_number: int | None = None
-    activity_type: str | None = None
-    activity_data: dict | None = None
-
-
-class GrowthMissionCreate(BaseModel):
-    model_config = {"extra": "allow"}
-
-    child_id: str = Field(max_length=36)
-    title: str = Field(max_length=255)
-    description: str | None = None
-    pillar: str | None = Field(None, max_length=100)
-    status: str = Field("active", max_length=50)
-    difficulty: str = Field("easy", max_length=50)
-    week_number: int | None = None
-    activity_type: str | None = Field(None, max_length=100)
-    activity_data: dict | None = None
-
-    @model_validator(mode="after")
-    def limit_extra_payload_size(self) -> "GrowthMissionCreate":
-        if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
-                raise ValueError("Mission payload exceeds maximum allowed size (64 KB)")
-        return self
-
-
-class BulkMissionBody(BaseModel):
-    items: list[GrowthMissionCreate] = Field(min_length=1, max_length=50)

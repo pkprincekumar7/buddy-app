@@ -218,13 +218,24 @@ async def register(
     response: Response,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    # Registration uses a two-step compensating pattern instead of a transaction.
+    # Reason: email_index is an unsharded collection (global uniqueness guard) and
+    # users is sharded by location.  Including both in one transaction would make it
+    # a cross-shard transaction, which Atlas M0/M2/M5 does not support — the same
+    # constraint that keeps email_index outside the transaction in delete_account.
+    #
+    # Pattern:
+    #   Step 1 — reserve the email in email_index (unsharded, outside any transaction).
+    #   Step 2 — create the user document on the correct location shard.
+    #   Compensating action — if Step 2 fails, release the Step 1 reservation so the
+    #   address can be retried. This is the manual equivalent of a transaction rollback.
+
     location = resolve_region(body.country_code or "")
     now = datetime.now(timezone.utc)
     new_user_id = str(uuid.uuid4())
 
-    # email_index is the global uniqueness guard (unsharded collection).
-    # Insert here first — if it succeeds we own the email and can safely
-    # create the user document on the correct shard.
+    # Step 1 — reserve the email address (unsharded, outside any transaction).
+    # Inserting first means we own the email before touching any sharded collection.
     try:
         await db[models.EMAIL_INDEX].insert_one({
             "_id": body.email,
@@ -232,31 +243,31 @@ async def register(
             "location": location,
         })
     except DuplicateKeyError:
-        # Check whether the existing entry is an orphan left by a failed
-        # delete_account rollback (email_index exists but user doc is gone).
+        # The email already exists in the index.  Check whether the user document is
+        # also present — if not, this is an orphaned reservation left by a failed
+        # delete_account (see Step 5 of delete_account; that path is best-effort).
+        # Reclaim the orphan and let registration proceed; otherwise reject.
         existing_entry = await db[models.EMAIL_INDEX].find_one({"_id": body.email})
-        if existing_entry:
-            orphaned_user = await db[models.USERS].find_one({
+        orphaned_user = (
+            await db[models.USERS].find_one({
                 "_id": existing_entry["user_id"],
                 "location": existing_entry["location"],
             })
-            if not orphaned_user:
-                # Reclaim the orphaned reservation and continue registration.
-                await db[models.EMAIL_INDEX].update_one(
-                    {"_id": body.email},
-                    {"$set": {"user_id": new_user_id, "location": location}},
-                )
-                log.info(
-                    "register: reclaimed orphaned email_index entry for email=%s", body.email
-                )
-            else:
-                # Live user exists — constant-time path to prevent email enumeration.
-                await async_verify_password(body.password, _DUMMY_HASH)
-                raise HTTPException(status_code=409, detail="Email already registered")
+            if existing_entry else None
+        )
+        if existing_entry and not orphaned_user:
+            # Reclaim orphaned reservation — update it to point to the new user_id.
+            await db[models.EMAIL_INDEX].update_one(
+                {"_id": body.email},
+                {"$set": {"user_id": new_user_id, "location": location}},
+            )
+            log.info("register: reclaimed orphaned email_index entry for email=%s", body.email)
         else:
+            # Live user exists — constant-time dummy hash to prevent email enumeration.
             await async_verify_password(body.password, _DUMMY_HASH)
             raise HTTPException(status_code=409, detail="Email already registered")
 
+    # Step 2 — create the user document on the correct location shard.
     user_doc = {
         "_id": new_user_id,
         "email": body.email,
@@ -274,9 +285,17 @@ async def register(
     try:
         await db[models.USERS].insert_one(user_doc)
     except Exception:
-        # Roll back the email reservation so the address can be retried.
-        await db[models.EMAIL_INDEX].delete_one({"_id": body.email})
-        log.exception("register: users insert failed; rolled back email_index for email=%s", body.email)
+        # Compensating action — release the Step 1 reservation so the address can
+        # be retried.  Mirrors the orphan-reclaim logic above (and in delete_account).
+        try:
+            await db[models.EMAIL_INDEX].delete_one({"_id": body.email})
+        except Exception:
+            log.exception(
+                "register: failed to release email_index reservation after users insert "
+                "failure for email=%s — orphaned entry will be reclaimed on next attempt",
+                body.email,
+            )
+        log.exception("register: users insert failed; released email reservation for email=%s", body.email)
         raise HTTPException(status_code=500, detail="Registration failed — please try again")
 
     log.info("user.register id=%s location=%s", new_user_id, location)
@@ -580,44 +599,28 @@ async def delete_account(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
 
-            # Step 2 — cascade delete: missions belonging to this user's children
-            child_docs = await db[models.CHILDREN].find(
-                {"user_id": user_id, "location": location},
-                {"_id": 1},
-                session=mongo_session,
-            ).to_list(None)
-            child_ids = [c["_id"] for c in child_docs]
-            if child_ids:
-                await db[models.MISSIONS].delete_many(
-                    {"child_id": {"$in": child_ids}, "location": location}, session=mongo_session
-                )
-
-            # Step 3 — delete all other owned collections
+            # Step 2 — delete all other owned collections
             await db[models.CHILDREN].delete_many(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
-            await db[models.MISSIONS].delete_many(
+            # goals/recommendations/growth_areas are all child-scoped and store user_id,
+            # so delete_many by user_id covers every document in one pass.
+            await db[models.GOALS].delete_many(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
-            await db[models.ONBOARDING].delete_one(
-                {"_id": user_id, "location": location}, session=mongo_session
-            )
-            await db[models.GOALS].delete_one(
-                {"_id": user_id, "location": location}, session=mongo_session
-            )
-            await db[models.RECOMMENDATIONS].delete_one(
-                {"_id": user_id, "location": location}, session=mongo_session
+            await db[models.RECOMMENDATIONS].delete_many(
+                {"user_id": user_id, "location": location}, session=mongo_session
             )
             await db[models.GROWTH_AREAS].delete_many(
                 {"user_id": user_id, "location": location}, session=mongo_session
             )
 
-            # Step 4 — delete the user document
+            # Step 3 — delete the user document
             await db[models.USERS].delete_one(
                 {"_id": user_id, "location": location}, session=mongo_session
             )
 
-    # Step 5 — release the email (outside the transaction: email_index is
+    # Step 4 — release the email (outside the transaction: email_index is
     # unsharded and must not be included in a single-zone shard transaction).
     # If this delete fails, the orphaned entry is reclaimed on the next
     # registration attempt for the same address (see /auth/register).

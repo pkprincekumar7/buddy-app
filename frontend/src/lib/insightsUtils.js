@@ -115,13 +115,7 @@ const buildInsightsPrompt = (childName, monthData) => {
     lines.push('');
   });
 
-  lines.push(`Based on the data above, provide all of the following:`);
-  lines.push(`1. overall_summary: 2–3 sentences personalised to ${name}'s specific results, referencing actual activities and outcomes. Be warm and encouraging.`);
-  lines.push(`2. monthly_insights: An array of 3 objects, one per month. Each has "month" (1/2/3) and "insight" (1–2 sentences specific to that month's actual data).`);
-  lines.push(`3. recommendations: An array of 3–5 specific, actionable strings tailored to this child's strengths and areas needing attention.`);
-  lines.push(`4. strongest_area: A short phrase naming the activity or skill where ${name} showed the most progress (null if insufficient data).`);
-  lines.push(`5. focus_area: A short phrase naming the activity or skill that needs the most attention going forward (null if insufficient data).`);
-  lines.push(`6. insight_items: An array of exactly 3 objects. The first 2 must highlight ${name}'s clear strengths (type: "strength"). The third must identify a potential improvement area (type: "anomaly"). Each object has: "text" (a single complete, warm sentence starting with ${name}'s first name describing the insight), "type" ("strength" or "anomaly"), "details" (2–3 sentences of expanded detail; for the anomaly, frame it in a very positive and constructive manner focused on growth opportunity, celebrating small wins and encouraging next steps).`);
+  lines.push(`Based on the data above, generate insight_items: an array of exactly 3 objects. The first 2 must highlight ${name}'s clear strengths (type: "strength"). The third must identify a potential improvement area (type: "anomaly"). Each object has: "text" (a single complete, warm sentence starting with ${name}'s first name describing the insight), "type" ("strength" or "anomaly"), "details" (2–3 sentences of expanded detail; for the anomaly, frame it in a very positive and constructive manner focused on growth opportunity, celebrating small wins and encouraging next steps).`);
 
   return lines.join('\n');
 };
@@ -135,20 +129,6 @@ export const generateInsights = async (childName, plan) => {
     response_json_schema: {
       type: 'object',
       properties: {
-        overall_summary:  { type: 'string' },
-        monthly_insights: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              month:   { type: 'number' },
-              insight: { type: 'string' },
-            },
-          },
-        },
-        recommendations: { type: 'array', items: { type: 'string' } },
-        strongest_area:  { type: 'string' },
-        focus_area:      { type: 'string' },
         insight_items: {
           type: 'array',
           items: {
@@ -166,21 +146,7 @@ export const generateInsights = async (childName, plan) => {
 
   const data = result.properties ?? result;
   return {
-    schema_version:   INSIGHTS_SCHEMA_VERSION,
-    overall_summary:  unwrapLLM(data.overall_summary)  || '',
-    monthly_insights: Array.isArray(data.monthly_insights) ? data.monthly_insights : [],
-    // LLM occasionally returns [{string: "..."}, ...] instead of plain strings
-    // when the JSON schema uses items: { type: 'string' }. Normalise defensively.
-    recommendations: Array.isArray(data.recommendations)
-      ? data.recommendations.map(r =>
-          typeof r === 'string' ? r
-          : typeof r === 'object' && r !== null
-            ? (r.string ?? r.value ?? r.text ?? Object.values(r)[0] ?? '')
-            : String(r ?? '')
-        )
-      : [],
-    strongest_area:   unwrapLLM(data.strongest_area) || null,
-    focus_area:       unwrapLLM(data.focus_area)     || null,
-    insight_items:    Array.isArray(data.insight_items) ? data.insight_items : [],
+    schema_version: INSIGHTS_SCHEMA_VERSION,
+    insight_items:  Array.isArray(data.insight_items) ? data.insight_items : [],
   };
 };

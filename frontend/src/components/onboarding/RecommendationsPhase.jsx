@@ -345,7 +345,7 @@ function applyTileEntryInteractivePreference(area, d) {
   return { step: d.step, interactiveStep: d.interactiveStep, currentAnswer: d.currentAnswer };
 }
 
-export default function RecommendationsPhase({ data, profile, recommendations, onActivityAdd, onRegisterBack, onRegisterNext, onPhaseBack }) {
+export default function RecommendationsPhase({ data, profile, recommendations, activeChildId, onFinish, onRegisterBack, onRegisterNext, onPhaseBack }) {
   const navigate = useNavigate();
   // voiceEnabledRef is a stable ref — safe to use with empty deps
   const speak = useCallback((text) => {
@@ -399,8 +399,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       try {
         debouncedPersistRecommendationsProgress.cancel();
         const [p, completedData, prefs] = await Promise.all([
-          api.recommendationsProgress.get(),
-          api.completedGrowthAreas.list(),
+          api.recommendationsProgress.get(activeChildId),
+          api.completedGrowthAreas.list(activeChildId),
           api.preferences.get(),
         ]);
         if (cancelled) return;
@@ -486,9 +486,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const debouncedPersistRecommendationsProgress = useMemo(
     () =>
       debounce((progress) => {
-        api.recommendationsProgress.patch(progress).catch(() => {});
+        api.recommendationsProgress.patch(activeChildId, progress).catch(() => {});
       }, 400),
-    []
+    [activeChildId]
   );
 
   useEffect(() => {
@@ -521,22 +521,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   }, [step, selectedArea, interactiveAnswers, interactiveStep, onRegisterBack, onPhaseBack]);
 
-  // Register/unregister the "Next" handler with the parent nav bar
-  useEffect(() => {
-    if (!onRegisterNext) return;
-    if (step === 'area_selection' && completedAreaIds.size > 0) {
-      onRegisterNext(() => navigate(createPageUrl('LifePathway'), { replace: true }));
-    } else {
-      onRegisterNext(null);
-    }
-    return () => { onRegisterNext?.(null); };
-  }, [step, completedAreaIds, onRegisterNext]);
 
   // Refs for voice control
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
   const growthAreaSaveChainRef = useRef(Promise.resolve());
   const resultsRef = useRef(null);
+  // Always-current ref so the onRegisterNext effect can register a stable wrapper
+  // without re-firing on every render (which would cause a dispatch loop).
+  const handleFinishRef = useRef(null);
 
   // Scroll to "Recommendations for {name}" heading when childGameResults first appears.
   // Delay must exceed the game's AnimatePresence exit animation (400ms) so the layout
@@ -616,7 +609,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       recommendations: recs,
       ...(childActivity ? { child_activity: childActivity } : {}),
     };
-    const task = growthAreaSaveChainRef.current.then(() => api.completedGrowthAreas.append(payload));
+    const task = growthAreaSaveChainRef.current.then(() => api.completedGrowthAreas.append(activeChildId, payload));
     growthAreaSaveChainRef.current = task.catch(() => {});
     try {
       await task;
@@ -630,14 +623,39 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   };
 
+  // Updated every render so the stable ref wrapper always runs with current state.
+  handleFinishRef.current = async () => {
+    if (selectedArea && step !== 'area_selection') {
+      const recs = childGameResults ? aiRecommendations : null;
+      const childActivity = childGameResults
+        ? { selections: childActivitySelections, results: childGameResults }
+        : undefined;
+      await saveCompletedGrowthArea(selectedArea, interactiveAnswers, recs, childActivity);
+    }
+    if (onFinish) await onFinish();
+    else navigate(createPageUrl('LifePathway'), { replace: true });
+  };
+
+  // Register/unregister the Finish handler with the parent nav bar.
+  // Uses a stable ref wrapper to avoid re-registering (and re-dispatching) on every render.
+  useEffect(() => {
+    if (!onRegisterNext) return;
+    if ((step === 'area_selection' && completedAreaIds.size > 0) || step === 'activity_summary') {
+      onRegisterNext(() => handleFinishRef.current?.());
+    } else {
+      onRegisterNext(null);
+    }
+    return () => { onRegisterNext?.(null); };
+  }, [step, completedAreaIds, onRegisterNext]);
+
   /** Fetch completed area from DB and restore child game UI state. */
   const mergeChildGameFromServer = async (areaId, { reopenGame } = {}) => {
     if (!areaId) return;
     try {
       debouncedPersistRecommendationsProgress.flush?.();
       const [completedData, progressData] = await Promise.all([
-        api.completedGrowthAreas.list(),
-        api.recommendationsProgress.get(),
+        api.completedGrowthAreas.list(activeChildId),
+        api.recommendationsProgress.get(activeChildId),
       ]);
       const completedArea = completedData?.areas?.find((a) => a.area_id === areaId);
       const ca = completedArea?.child_activity;
@@ -667,7 +685,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   useEffect(() => {
     if (!resumeLoaded) return;
     if (step === 'intro' && !introHasSpoken.current && profile) {
-      const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s.strength}. ${s.description}`).join('. ') || '';
+      const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s}`).join('. ') || '';
       const primaryType = profile.personality_type?.split(' - ')[1] || profile.personality_type || '';
       const summaryAlreadyContainsType = primaryType && profile.summary?.toLowerCase().includes(primaryType.toLowerCase());
       const fullText = summaryAlreadyContainsType
@@ -719,7 +737,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-3">Emerging Strengths</p>
               {profile.top_strengths?.map((strength, index) => (
                 <motion.div
-                  key={strength.strength}
+                  key={strength}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
@@ -728,10 +746,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
                     <span className="text-amber-400 font-bold text-xs">{index + 1}</span>
                   </div>
-                  <div>
-                    <p className="font-semibold text-white text-sm">{strength.strength}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{strength.description}</p>
-                  </div>
+                  <p className="font-semibold text-white text-sm">{strength}</p>
                 </motion.div>
               ))}
             </div>
@@ -812,8 +827,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
                   try {
                     const [p, completedData] = await Promise.all([
-                      api.recommendationsProgress.get(),
-                      api.completedGrowthAreas.list(),
+                      api.recommendationsProgress.get(activeChildId),
+                      api.completedGrowthAreas.list(activeChildId),
                     ]);
                     const completedList = Array.isArray(completedData?.areas) ? completedData.areas : [];
                     const areaMatchesPersisted = p?.selected_area?.id === area.id;
@@ -1370,13 +1385,13 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   const generateAiRecommendations = async (childResults) => {
     try {
       // Check completed area record first (most durable), then progress blob
-      const completedData = await api.completedGrowthAreas.list();
+      const completedData = await api.completedGrowthAreas.list(activeChildId);
       const existing = completedData?.areas?.find((a) => a.area_id === selectedArea?.id);
       if (existing?.recommendations?.length > 0) {
         setAiRecommendations(existing.recommendations);
         return;
       }
-      const p = await api.recommendationsProgress.get();
+      const p = await api.recommendationsProgress.get(activeChildId);
       const air = p?.ai_three_month_recommendations;
       if (
         selectedArea?.id &&
@@ -1536,13 +1551,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </div>
           <Button
             variant="outline"
-            onClick={async () => {
-              if (!selectedArea) return;
-              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-              navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
-            }}
+            onClick={() => handleFinishRef.current?.()}
             className="w-full h-11 rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
           >
             <ChevronRight className="w-4 h-4 mr-2" />
@@ -1589,13 +1598,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             </Button>
             <Button
               variant="outline"
-              onClick={async () => {
-                if (!selectedArea) return;
-                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-                navigate(createPageUrl('LifePathway'), {
-                replace: true,
-              });
-              }}
+              onClick={() => handleFinishRef.current?.()}
               className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
             >
               <ChevronRight className="w-5 h-5 mr-2" />
@@ -1619,6 +1622,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             key={selectedArea.id}
             childName={data.name}
             areaId={selectedArea.id}
+            activeChildId={activeChildId}
             selectedIds={childActivitySelections}
             onSelectedIdsChange={setChildActivitySelections}
             onComplete={async (results) => {
@@ -1633,7 +1637,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               };
 
               try {
-                await api.completedGrowthAreas.append({
+                await api.completedGrowthAreas.append(activeChildId, {
                   area_id: area.id,
                   area_name: area.name,
                   area_color: area.color,
@@ -1828,16 +1832,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               </Button>
               <Button
                 variant="outline"
-                onClick={async () => {
-                  if (!selectedArea) return;
-                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, {
-                    selections: childActivitySelections,
-                    results: childGameResults,
-                  });
-                  navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
-                }}
+                onClick={() => handleFinishRef.current?.()}
                 className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
               >
                 <ChevronRight className="w-5 h-5 mr-2" />

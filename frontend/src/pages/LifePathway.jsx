@@ -101,9 +101,9 @@ export default function LifePathway() {
   };
 
   const handleConcernSubmit = async () => {
-    if (!concernInput.trim()) return;
+    if (!concernInput.trim() || !childData?.id) return;
     try {
-      await api.goals.patch({ parent_concern: concernInput.trim() });
+      await api.goals.patch(childData?.id, { parent_concern: concernInput.trim() });
       setSavedConcern(concernInput.trim());
     } catch (err) {
       console.warn('[LifePathway] Could not persist concern, proceeding anyway:', err);
@@ -125,12 +125,7 @@ export default function LifePathway() {
           if (err?.status !== 404) console.warn('[LifePathway] Child delete failed:', err);
         }
       }
-      await Promise.all([
-        api.onboarding.patch({ phase: 0, clear_child_data: true, clear_personality: true, clear_recommendations: true }),
-        api.recommendationsProgress.patch({ step: 'intro' }),
-        api.goals.patch({ clear_plan: true, clear_concern: true }),
-        api.completedGrowthAreas.clear(),
-      ]);
+      // Child deletion cascades all related data — no additional resets needed.
     } catch (err) {
       console.warn('[LifePathway] Start over cleanup had errors:', err);
     }
@@ -140,7 +135,7 @@ export default function LifePathway() {
   const handleBack = () => navigate(createPageUrl('Onboarding'));
 
   const strengths = useMemo(() =>
-    profile?.top_strengths?.map(s => s.strength) || [
+    profile?.top_strengths || [
       'Creative problem solver',
       'Strong leadership qualities',
       'Excellent communication skills',

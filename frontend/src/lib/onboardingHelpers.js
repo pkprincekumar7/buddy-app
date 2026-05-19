@@ -19,8 +19,6 @@ export const DEFAULT_CHILD_STATE = {
   energy_level: '',
   social_behaviour: '',
   emotional_behaviour: '',
-  avatar_style: 'explorer',
-  pillar_scores: { cognitive: 25, emotional: 25, physical: 25, talent: 25, character: 25, future: 25 },
   current_phase: 'foundation',
   onboarding_completed: false,
 };

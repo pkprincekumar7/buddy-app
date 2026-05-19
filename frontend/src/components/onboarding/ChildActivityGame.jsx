@@ -120,6 +120,7 @@ export function normalizeChildGameRecommendations(raw) {
 export default function ChildActivityGame({
   childName,
   areaId = 'life_ambition',
+  activeChildId,
   selectedIds = [],
   onSelectedIdsChange,
   onComplete,
@@ -151,7 +152,7 @@ export default function ChildActivityGame({
 
     try {
       // Check DB first — skip LLM if results already saved for this area
-      const completedData = await api.completedGrowthAreas.list();
+      const completedData = await api.completedGrowthAreas.list(activeChildId);
       const existing = completedData?.areas?.find((a) => a.area_id === areaId);
       if (existing?.child_activity?.results) {
         const recommendations = normalizeChildGameRecommendations(existing.child_activity.results);

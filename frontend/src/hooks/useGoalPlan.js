@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
@@ -48,24 +49,25 @@ export function buildGoalPlanIndex(goalPlan) {
 
 export function useGoalPlan() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [childData, setChildData] = useState(null);
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [savedOnboarding, setSavedOnboarding] = useState(null);
   const [savedCompletedAreas, setSavedCompletedAreas] = useState([]);
 
-  const generateGoals = useCallback(async (child, parentConcern, onboarding, completedAreas, completedSnapshot = {}) => {
+  const generateGoals = useCallback(async (child, parentConcern, completedAreas, completedSnapshot = {}) => {
     setIsLoading(true);
+    const childId = child?.id;
     try {
-      let ob = onboarding;
+      let ob = child;
       let areas = completedAreas;
-      if (!ob || !areas) {
-        const [freshOnboarding, freshCompleted] = await Promise.all([
-          api.onboarding.get(),
-          api.completedGrowthAreas.list(),
+      if (!areas && childId) {
+        const [freshChild, freshCompleted] = await Promise.all([
+          api.entities.Child.get(childId),
+          api.completedGrowthAreas.list(childId),
         ]);
-        ob = freshOnboarding;
+        ob = freshChild;
         areas = freshCompleted?.areas || [];
       }
 
@@ -97,7 +99,7 @@ export function useGoalPlan() {
         });
       }
 
-      await api.goals.patch({ plan });
+      if (childId) await api.goals.patch(childId, { plan });
       setGoalPlan(plan);
     } catch (err) {
       console.error('[useGoalPlan] Failed to generate plan:', err);
@@ -109,18 +111,19 @@ export function useGoalPlan() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [onboarding, goals, completedData, children] = await Promise.all([
-          api.onboarding.get(),
-          api.goals.get(),
-          api.completedGrowthAreas.list(),
-          api.entities.Child.list('-created_date', 1),
-        ]);
-
-        const child = children?.[0] || onboarding?.child_data || null;
+        const children = await api.entities.Child.list('-created_date', 1);
+        const child = children?.[0] || null;
         setChildData(child);
 
+        const childId = child?.id;
+        if (!childId) { setIsLoading(false); return; }
+
+        const [goals, completedData] = await Promise.all([
+          api.goals.get(childId),
+          api.completedGrowthAreas.list(childId),
+        ]);
+
         const areas = completedData?.areas || [];
-        setSavedOnboarding(onboarding);
         setSavedCompletedAreas(areas);
 
         const savedConcern = typeof goals.parent_concern === 'string' ? goals.parent_concern : '';
@@ -132,7 +135,7 @@ export function useGoalPlan() {
           return;
         }
 
-        await generateGoals(child, savedConcern, onboarding, areas);
+        await generateGoals(child, savedConcern, areas);
       } catch (err) {
         console.error('[useGoalPlan] Init failed:', err);
         setIsLoading(false);
@@ -149,13 +152,13 @@ export function useGoalPlan() {
       ...result,
     });
     try {
-      await api.goals.patch({ plan: updatedPlan });
+      if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
       setGoalPlan(updatedPlan);
     } catch (err) {
       console.error('[useGoalPlan] Failed to save activity:', err);
       toast.error('Failed to save activity. Please try again.');
     }
-  }, [goalPlan]);
+  }, [goalPlan, childData]);
 
   // Clears completion data from the target activity and every activity after it.
   const handleActivityReset = useCallback(async (monthIdx, periodIdx, actIdx) => {
@@ -177,34 +180,26 @@ export function useGoalPlan() {
     });
 
     try {
-      await api.goals.patch({ plan: updatedPlan });
+      if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
       setGoalPlan(updatedPlan);
     } catch (err) {
       console.error('[useGoalPlan] Failed to reset activity:', err);
       toast.error('Failed to reset activity.');
     }
-  }, [goalPlan]);
+  }, [goalPlan, childData]);
 
   const handleStartOver = useCallback(async () => {
     try {
+      // Deleting the child cascades goals, recommendations, and growth_areas.
       if (childData?.id) {
-        try {
-          await api.entities.Child.delete(childData.id);
-        } catch (err) {
-          if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err);
-        }
+        try { await api.entities.Child.delete(childData.id); } catch (err) { if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err); }
       }
-      await Promise.all([
-        api.onboarding.patch({ phase: 0, clear_child_data: true, clear_personality: true, clear_recommendations: true }),
-        api.recommendationsProgress.patch({ step: 'intro' }),
-        api.goals.patch({ clear_plan: true, clear_concern: true }),
-        api.completedGrowthAreas.clear(),
-      ]);
+      queryClient.invalidateQueries({ queryKey: ['children'] });
     } catch (err) {
       console.warn('[useGoalPlan] Start over cleanup had errors:', err);
     }
     navigate(createPageUrl('Onboarding'));
-  }, [childData, navigate]);
+  }, [childData, queryClient, navigate]);
 
   const handleRegenerate = useCallback(async () => {
     const completedSnapshot = {};
@@ -215,8 +210,8 @@ export function useGoalPlan() {
         });
       });
     });
-    await generateGoals(childData, concern, savedOnboarding, savedCompletedAreas, completedSnapshot);
-  }, [goalPlan, childData, concern, savedOnboarding, savedCompletedAreas, generateGoals]);
+    await generateGoals(childData, concern, savedCompletedAreas, completedSnapshot);
+  }, [goalPlan, childData, concern, savedCompletedAreas, generateGoals]);
 
   return {
     childData,
