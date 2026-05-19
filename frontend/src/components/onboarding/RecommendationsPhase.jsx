@@ -114,14 +114,14 @@ function answerLooksFilled(value) {
   return true;
 }
 
-function buildRecommendationsProgressPayload({
+/** Build the per-area wizard state payload for in-progress saves to growth_areas. */
+function buildAreaProgressPayload({
+  area,
   step,
-  selectedArea,
   selectedActivity,
   parentLiked,
   wantChildActivity,
   feedback,
-  currentAreaIndex,
   interactiveStep,
   interactiveAnswers,
   currentAnswer,
@@ -129,43 +129,41 @@ function buildRecommendationsProgressPayload({
   showGame,
   childActivitySelections,
   aiRecommendations,
+  childGameResults,
 }) {
   const cq =
-    step === 'interactive_activity' && selectedArea
-      ? (areaQuestions[selectedArea.id] || areaQuestions.life_ambition)[interactiveStep]
+    step === 'interactive_activity' && area
+      ? (areaQuestions[area.id] || areaQuestions.life_ambition)[interactiveStep]
       : null;
   const interactive_draft =
     cq?.type === 'text' ? { question_id: cq.id, text: currentAnswer ?? '' } : null;
 
   return {
+    area_id: area.id,
+    area_name: area.name,
+    area_color: area.color,
+    answers: interactiveAnswers || {},
+    recommendations: null,
+    status: 'in_progress',
     step,
-    selected_area: selectedArea
-      ? {
-          id: selectedArea.id,
-          name: selectedArea.name,
-          color: selectedArea.color,
-          description: selectedArea.description,
-        }
-      : null,
     selected_activity: selectedActivity,
     parent_liked: parentLiked,
     want_child_activity: wantChildActivity,
     feedback,
-    current_area_index: currentAreaIndex,
     interactive_step: interactiveStep,
     interactive_answers: interactiveAnswers,
     interactive_draft,
     generated_activity: generatedActivity,
     show_game: showGame,
-    child_activity_by_area: selectedArea && Array.isArray(childActivitySelections) && childActivitySelections.length > 0
-      ? { [selectedArea.id]: { selections: childActivitySelections } }
-      : {},
-    ai_three_month_recommendations:
-      selectedArea &&
-      Array.isArray(aiRecommendations) &&
-      aiRecommendations.length > 0
-        ? { area_id: selectedArea.id, items: aiRecommendations }
-        : null,
+    // Preserve game results in every auto-save. Without this, the backend $set would write
+    // child_activity: null (Pydantic default) and overwrite previously saved results.
+    child_activity: childGameResults
+      ? { selections: Array.isArray(childActivitySelections) ? childActivitySelections : [], results: childGameResults }
+      : null,
+    child_activity_selections: Array.isArray(childActivitySelections) ? childActivitySelections : [],
+    ai_three_month_recommendations: Array.isArray(aiRecommendations) && aiRecommendations.length > 0
+      ? aiRecommendations
+      : null,
   };
 }
 
@@ -185,13 +183,6 @@ function answersForArea(areaId, rawAnswers) {
 function choiceAnswersEqual(saved, option) {
   if (saved === undefined || saved === null) return false;
   return String(saved).trim() === String(option).trim();
-}
-
-/** Root selections from a child_activity_by_area entry. */
-function coalesceChildActivitySelections(entry) {
-  if (!entry || typeof entry !== 'object') return [];
-  const root = Array.isArray(entry.selections) ? entry.selections : [];
-  return [...root];
 }
 
 function extractAnswersFromCompletedGrowthAreas(completedList, areaId) {
@@ -228,7 +219,7 @@ function deriveInteractiveUiFromProgress(area, p, completedGrowthAreas = []) {
   const mergedRaw = { ...fromCompleted, ...rawProgress };
   const mergedAnswers = answersForArea(area.id, mergedRaw);
 
-  const areaMatchesPersisted = p.selected_area?.id === area.id;
+  const areaMatchesPersisted = p.area_id === area.id;
   const stepVal = p.step || 'intro';
 
   const completedHasArea = Array.isArray(completedGrowthAreas)
@@ -345,7 +336,7 @@ function applyTileEntryInteractivePreference(area, d) {
   return { step: d.step, interactiveStep: d.interactiveStep, currentAnswer: d.currentAnswer };
 }
 
-export default function RecommendationsPhase({ data, profile, recommendations, onActivityAdd, onRegisterBack, onRegisterNext, onPhaseBack }) {
+export default function RecommendationsPhase({ data, profile, recommendations, activeChildId, onFinish, onRegisterBack, onPhaseBack }) {
   const navigate = useNavigate();
   // voiceEnabledRef is a stable ref — safe to use with empty deps
   const speak = useCallback((text) => {
@@ -397,10 +388,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     let cancelled = false;
     (async () => {
       try {
-        debouncedPersistRecommendationsProgress.cancel();
-        const [p, completedData, prefs] = await Promise.all([
-          api.recommendationsProgress.get(),
-          api.completedGrowthAreas.list(),
+        debouncedSaveAreaProgress.cancel();
+        debouncedSaveGlobalStep.cancel();
+        const [childFresh, completedData, prefs] = await Promise.all([
+          api.entities.Child.get(activeChildId),
+          api.completedGrowthAreas.list(activeChildId),
           api.preferences.get(),
         ]);
         if (cancelled) return;
@@ -410,36 +402,52 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           setVoiceEnabled(prefs.tts_enabled);
         }
 
-        const completedList = Array.isArray(completedData?.areas) ? completedData.areas : [];
+        const allDocs = Array.isArray(completedData?.areas) ? completedData.areas : [];
 
-        if (completedList.length > 0) {
-          setCompletedAreaIds(new Set(completedList.map((a) => a.area_id)));
+        // Build completedAreaIds from docs that are finalised (status === 'completed' or legacy docs with no status)
+        const completedDocs = allDocs.filter((a) => a.status === 'completed' || !a.status);
+        if (completedDocs.length > 0) {
+          setCompletedAreaIds(new Set(completedDocs.map((a) => a.area_id)));
         }
 
-        if (!p || p.step === 'intro') return;
+        // Restore global wizard navigation from the child record
+        const wizardStep = childFresh?.wizard_step ?? null;
+        const wizardAreaIndex = childFresh?.wizard_area_index ?? null;
 
+        if (!wizardStep || wizardStep === 'intro') return;
+
+        // Find the in-progress area doc (if any) — this is the source of truth for per-area state
+        const inProgressDoc = allDocs.find((a) => a.status === 'in_progress') || null;
+
+        // Resolve the area object from the in-progress doc or from wizard_area_index
         let areaObj = null;
-        if (p.selected_area?.id) {
-          areaObj = growthAreas.find((a) => a.id === p.selected_area.id) || null;
-          if (areaObj) setSelectedArea(areaObj);
+        if (inProgressDoc?.area_id) {
+          areaObj = growthAreas.find((a) => a.id === inProgressDoc.area_id) || null;
+        }
+        if (!areaObj && typeof wizardAreaIndex === 'number') {
+          areaObj = growthAreas[wizardAreaIndex] || null;
         }
 
-        if (p.selected_activity) setSelectedActivity(p.selected_activity);
-        if (p.parent_liked != null) setParentLiked(p.parent_liked);
-        if (p.want_child_activity != null) setWantChildActivity(p.want_child_activity);
-        if (typeof p.feedback === 'string') setFeedback(p.feedback);
-        if (typeof p.current_area_index === 'number') setCurrentAreaIndex(p.current_area_index);
+        if (typeof wizardAreaIndex === 'number') setCurrentAreaIndex(wizardAreaIndex);
 
         if (areaObj) {
-          const d = deriveInteractiveUiFromProgress(areaObj, p, completedList);
+          setSelectedArea(areaObj);
+          // p is the per-area doc (in-progress or completed) for this area
+          const p = inProgressDoc || allDocs.find((a) => a.area_id === areaObj.id) || {};
+
+          if (p.selected_activity) setSelectedActivity(p.selected_activity);
+          if (p.parent_liked != null) setParentLiked(p.parent_liked);
+          if (p.want_child_activity != null) setWantChildActivity(p.want_child_activity);
+          if (typeof p.feedback === 'string') setFeedback(p.feedback);
+
+          const d = deriveInteractiveUiFromProgress(areaObj, p, allDocs);
           setInteractiveAnswers(d.mergedAnswers);
           setStep(d.step);
           setInteractiveStep(d.interactiveStep);
           setCurrentAnswer(d.currentAnswer);
 
-          // Restore child game state from completed area record (source of truth)
-          const completedArea = completedList.find((a) => a.area_id === areaObj.id);
-          const ca = completedArea?.child_activity;
+          // Restore child game state — child_activity (completed) takes priority over child_activity_selections (in-progress)
+          const ca = p.child_activity;
           if (ca) {
             const sels = Array.isArray(ca.selections) ? ca.selections : [];
             setChildActivitySelections(sels);
@@ -449,29 +457,22 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               setParentLiked(true);
             }
           } else {
-            const savedSels = p.child_activity_by_area?.[areaObj.id]?.selections;
+            const savedSels = p.child_activity_selections;
             if (Array.isArray(savedSels)) setChildActivitySelections(savedSels);
           }
 
-          const air = p.ai_three_month_recommendations;
-          let aiRec =
-            air?.area_id === areaObj.id && Array.isArray(air.items) && air.items.length > 0
-              ? air.items
-              : null;
-          if (!aiRec) aiRec = extractAiRecommendationsFromCompleted(completedList, areaObj.id);
+          if (p.generated_activity) setGeneratedActivity(p.generated_activity);
+          if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
+
+          // AI recommendations: prefer the in-progress doc's field, fall back to completed doc's recommendations
+          let aiRec = Array.isArray(p.ai_three_month_recommendations) && p.ai_three_month_recommendations.length > 0
+            ? p.ai_three_month_recommendations
+            : null;
+          if (!aiRec) aiRec = extractAiRecommendationsFromCompleted(completedDocs, areaObj.id);
           setAiRecommendations(aiRec);
         } else {
-          const mergedAnswers =
-            p.interactive_answers && typeof p.interactive_answers === 'object'
-              ? { ...p.interactive_answers }
-              : {};
-          setInteractiveAnswers(mergedAnswers);
-          setStep(p.step || 'intro');
-          if (typeof p.interactive_step === 'number') setInteractiveStep(p.interactive_step);
+          setStep(wizardStep || 'intro');
         }
-
-        if (p.generated_activity) setGeneratedActivity(p.generated_activity);
-        if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
       } catch (err) {
         console.warn('[RecommendationsPhase] Resume load failed, keeping defaults:', err);
       } finally {
@@ -483,17 +484,33 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     };
   }, []);
 
-  const debouncedPersistRecommendationsProgress = useMemo(
+  // Debounced save of per-area wizard state to growth_areas (status: 'in_progress')
+  const debouncedSaveAreaProgress = useMemo(
     () =>
-      debounce((progress) => {
-        api.recommendationsProgress.patch(progress).catch(() => {});
+      debounce((payload) => {
+        api.completedGrowthAreas.append(activeChildId, payload).catch(() => {});
       }, 400),
-    []
+    [activeChildId]
+  );
+
+  // Debounced save of global wizard navigation to the child record
+  const debouncedSaveGlobalStep = useMemo(
+    () =>
+      debounce((wizStep, wizAreaIdx) => {
+        api.entities.Child.update(activeChildId, {
+          wizard_step: wizStep,
+          wizard_area_index: wizAreaIdx,
+        }).catch(() => {});
+      }, 400),
+    [activeChildId]
   );
 
   useEffect(() => {
-    return () => debouncedPersistRecommendationsProgress.cancel();
-  }, [debouncedPersistRecommendationsProgress]);
+    return () => {
+      debouncedSaveAreaProgress.cancel();
+      debouncedSaveGlobalStep.cancel();
+    };
+  }, [debouncedSaveAreaProgress, debouncedSaveGlobalStep]);
 
   // Register back handler with parent
   useEffect(() => {
@@ -521,22 +538,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   }, [step, selectedArea, interactiveAnswers, interactiveStep, onRegisterBack, onPhaseBack]);
 
-  // Register/unregister the "Next" handler with the parent nav bar
-  useEffect(() => {
-    if (!onRegisterNext) return;
-    if (step === 'area_selection' && completedAreaIds.size > 0) {
-      onRegisterNext(() => navigate(createPageUrl('LifePathway'), { replace: true }));
-    } else {
-      onRegisterNext(null);
-    }
-    return () => { onRegisterNext?.(null); };
-  }, [step, completedAreaIds, onRegisterNext]);
 
   // Refs for voice control
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
   const growthAreaSaveChainRef = useRef(Promise.resolve());
   const resultsRef = useRef(null);
+  // Always-current ref — "Go to Life Journey" buttons call this so they always
+  // have the latest closure state without needing to re-bind on every render.
+  const handleFinishRef = useRef(null);
 
   // Scroll to "Recommendations for {name}" heading when childGameResults first appears.
   // Delay must exceed the game's AnimatePresence exit animation (400ms) so the layout
@@ -550,18 +560,17 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     return () => clearTimeout(t);
   }, [!!childGameResults]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-persist recommendations wizard progress to server
+  // Auto-persist per-area wizard state to growth_areas (in_progress)
   useEffect(() => {
-    if (!resumeLoaded) return;
+    if (!resumeLoaded || !selectedArea) return;
 
-    const progress = buildRecommendationsProgressPayload({
+    const payload = buildAreaProgressPayload({
+      area: selectedArea,
       step,
-      selectedArea,
       selectedActivity,
       parentLiked,
       wantChildActivity,
       feedback,
-      currentAreaIndex,
       interactiveStep,
       interactiveAnswers,
       currentAnswer,
@@ -569,17 +578,17 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
       showGame,
       childActivitySelections,
       aiRecommendations,
+      childGameResults,
     });
-    debouncedPersistRecommendationsProgress(progress);
+    debouncedSaveAreaProgress(payload);
   }, [
     resumeLoaded,
-    step,
     selectedArea,
+    step,
     selectedActivity,
     parentLiked,
     wantChildActivity,
     feedback,
-    currentAreaIndex,
     interactiveStep,
     interactiveAnswers,
     currentAnswer,
@@ -588,8 +597,14 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     childActivitySelections,
     childGameResults,
     aiRecommendations,
-    debouncedPersistRecommendationsProgress,
+    debouncedSaveAreaProgress,
   ]);
+
+  // Auto-persist global wizard navigation to child record
+  useEffect(() => {
+    if (!resumeLoaded) return;
+    debouncedSaveGlobalStep(step, currentAreaIndex);
+  }, [resumeLoaded, step, currentAreaIndex, debouncedSaveGlobalStep]);
 
   useEffect(() => {
     if (!resumeLoaded || step !== 'interactive_activity' || !selectedArea) return;
@@ -607,19 +622,41 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   }, [resumeLoaded, step, selectedArea?.id, interactiveStep, interactiveAnswers]);
 
   const saveCompletedGrowthArea = async (area, answers, recs, childActivity = undefined) => {
-    debouncedPersistRecommendationsProgress.flush?.();
+    // Cancel (not flush) the in-progress debounce — the completion payload supersedes it.
+    // Flushing would race the completion call on the wire and could overwrite status:'completed'
+    // with status:'in_progress' if the debounced request arrives last.
+    debouncedSaveAreaProgress.cancel?.();
+    debouncedSaveGlobalStep.flush?.();
     const payload = {
       area_id: area.id,
       area_name: area.name,
       area_color: area.color,
       answers,
       recommendations: recs,
+      status: 'completed',
+      // Clear wizard state fields on completion
+      step: null,
+      selected_activity: null,
+      parent_liked: null,
+      want_child_activity: null,
+      feedback: null,
+      interactive_step: null,
+      interactive_answers: null,
+      interactive_draft: null,
+      generated_activity: null,
+      show_game: null,
+      child_activity_selections: null,
+      ai_three_month_recommendations: null,
       ...(childActivity ? { child_activity: childActivity } : {}),
     };
-    const task = growthAreaSaveChainRef.current.then(() => api.completedGrowthAreas.append(payload));
+    const task = growthAreaSaveChainRef.current.then(() => api.completedGrowthAreas.append(activeChildId, payload));
     growthAreaSaveChainRef.current = task.catch(() => {});
     try {
       await task;
+      // Clear selectedArea first so the auto-save effect's guard (if (!selectedArea) return)
+      // blocks any in_progress write that would otherwise overwrite status:'completed'.
+      setSelectedArea(null);
+      debouncedSaveAreaProgress.cancel?.(); // belt-and-suspenders: cancel any debounce queued during the await
       setInteractiveAnswers({});
       setAiRecommendations(null);
       setChildActivitySelections([]);
@@ -630,17 +667,27 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
     }
   };
 
-  /** Fetch completed area from DB and restore child game UI state. */
+  // Updated every render so the stable ref wrapper always runs with current state.
+  handleFinishRef.current = async () => {
+    if (selectedArea && step !== 'area_selection') {
+      const recs = childGameResults ? aiRecommendations : null;
+      const childActivity = childGameResults
+        ? { selections: childActivitySelections, results: childGameResults }
+        : undefined;
+      await saveCompletedGrowthArea(selectedArea, interactiveAnswers, recs, childActivity);
+    }
+    if (onFinish) await onFinish();
+    else navigate(createPageUrl('LifePathway'), { replace: true });
+  };
+
+  /** Fetch area doc from DB and restore child game UI state. */
   const mergeChildGameFromServer = async (areaId, { reopenGame } = {}) => {
     if (!areaId) return;
     try {
-      debouncedPersistRecommendationsProgress.flush?.();
-      const [completedData, progressData] = await Promise.all([
-        api.completedGrowthAreas.list(),
-        api.recommendationsProgress.get(),
-      ]);
-      const completedArea = completedData?.areas?.find((a) => a.area_id === areaId);
-      const ca = completedArea?.child_activity;
+      debouncedSaveAreaProgress.flush?.();
+      const completedData = await api.completedGrowthAreas.list(activeChildId);
+      const areaDoc = completedData?.areas?.find((a) => a.area_id === areaId);
+      const ca = areaDoc?.child_activity;
       if (ca) {
         setChildActivitySelections(Array.isArray(ca.selections) ? ca.selections : []);
         if (!reopenGame) {
@@ -653,8 +700,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           }
         }
       } else {
-        // Fall back to partial selections saved in the progress blob (pre-submit state)
-        const savedSels = progressData?.child_activity_by_area?.[areaId]?.selections;
+        // Fall back to in-progress selections stored on the growth_areas doc
+        const savedSels = areaDoc?.child_activity_selections;
         setChildActivitySelections(Array.isArray(savedSels) ? savedSels : []);
         if (!reopenGame) setChildGameResults(null);
       }
@@ -667,7 +714,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
   useEffect(() => {
     if (!resumeLoaded) return;
     if (step === 'intro' && !introHasSpoken.current && profile) {
-      const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s.strength}. ${s.description}`).join('. ') || '';
+      const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s}`).join('. ') || '';
       const primaryType = profile.personality_type?.split(' - ')[1] || profile.personality_type || '';
       const summaryAlreadyContainsType = primaryType && profile.summary?.toLowerCase().includes(primaryType.toLowerCase());
       const fullText = summaryAlreadyContainsType
@@ -719,7 +766,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-3">Emerging Strengths</p>
               {profile.top_strengths?.map((strength, index) => (
                 <motion.div
-                  key={strength.strength}
+                  key={strength}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
@@ -728,10 +775,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
                     <span className="text-amber-400 font-bold text-xs">{index + 1}</span>
                   </div>
-                  <div>
-                    <p className="font-semibold text-white text-sm">{strength.strength}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{strength.description}</p>
-                  </div>
+                  <p className="font-semibold text-white text-sm">{strength}</p>
                 </motion.div>
               ))}
             </div>
@@ -806,19 +850,21 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                   scale: { duration: 0.15, delay: 0 },
                 }}
                 onClick={async () => {
-                  debouncedPersistRecommendationsProgress.flush?.();
+                  debouncedSaveAreaProgress.flush?.();
+                  debouncedSaveGlobalStep.flush?.();
                   setSelectedArea(area);
                   setCurrentAreaIndex(i);
 
                   try {
-                    const [p, completedData] = await Promise.all([
-                      api.recommendationsProgress.get(),
-                      api.completedGrowthAreas.list(),
-                    ]);
-                    const completedList = Array.isArray(completedData?.areas) ? completedData.areas : [];
-                    const areaMatchesPersisted = p?.selected_area?.id === area.id;
+                    const completedData = await api.completedGrowthAreas.list(activeChildId);
+                    const allDocs = Array.isArray(completedData?.areas) ? completedData.areas : [];
+                    // Per-area doc: in-progress takes priority over completed
+                    const p = allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress')
+                      || allDocs.find((a) => a.area_id === area.id)
+                      || {};
+                    const isInProgress = p.status === 'in_progress';
 
-                    const d = deriveInteractiveUiFromProgress(area, p || {}, completedList);
+                    const d = deriveInteractiveUiFromProgress(area, p, allDocs);
                     const nav = applyTileEntryInteractivePreference(area, d);
 
                     setInteractiveAnswers(d.mergedAnswers);
@@ -826,19 +872,24 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setCurrentAnswer(nav.currentAnswer);
                     setStep(nav.step);
 
+                    // AI recommendations: prefer in-progress cached recs, fall back to completed doc recommendations.
+                    // Also fall back to current in-memory state when re-opening the SAME area — guards against
+                    // the flush→list race where the debounced append hasn't reached the DB by the time list returns.
+                    const isSameArea = area.id === selectedArea?.id;
+                    const completedDocs = allDocs.filter((a) => a.status === 'completed' || !a.status);
+                    const dbRecs =
+                      Array.isArray(p.ai_three_month_recommendations) && p.ai_three_month_recommendations.length > 0
+                        ? p.ai_three_month_recommendations
+                        : extractAiRecommendationsFromCompleted(completedDocs, area.id);
                     const airMerged =
-                      p?.ai_three_month_recommendations &&
-                      typeof p.ai_three_month_recommendations === 'object' &&
-                      p.ai_three_month_recommendations.area_id === area.id &&
-                      Array.isArray(p.ai_three_month_recommendations.items) &&
-                      p.ai_three_month_recommendations.items.length > 0
-                        ? p.ai_three_month_recommendations.items
-                        : extractAiRecommendationsFromCompleted(completedList, area.id);
-                    setAiRecommendations(
-                      airMerged && Array.isArray(airMerged) && airMerged.length > 0 ? airMerged : null,
-                    );
+                      Array.isArray(dbRecs) && dbRecs.length > 0
+                        ? dbRecs
+                        : (isSameArea && Array.isArray(aiRecommendations) && aiRecommendations.length > 0
+                            ? aiRecommendations
+                            : null);
+                    setAiRecommendations(airMerged);
 
-                    if (areaMatchesPersisted) {
+                    if (isInProgress) {
                       if (p.selected_activity) setSelectedActivity(p.selected_activity);
                       else setSelectedActivity(null);
                       if (p.parent_liked != null) setParentLiked(p.parent_liked);
@@ -849,9 +900,8 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                       else setGeneratedActivity(null);
                       if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
 
-                      // Restore child game state from DB for this area
-                      const matchedArea = completedList.find((a) => a.area_id === area.id);
-                      const ca = matchedArea?.child_activity;
+                      // Restore child game state — child_activity (finalised) takes priority
+                      const ca = p.child_activity;
                       if (ca) {
                         setChildActivitySelections(Array.isArray(ca.selections) ? ca.selections : []);
                         if (ca.results && nav.step === 'activity_summary') {
@@ -860,8 +910,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                           setParentLiked(true);
                         }
                       } else {
-                        const savedSels = p.child_activity_by_area?.[area.id]?.selections;
-                        setChildActivitySelections(Array.isArray(savedSels) ? savedSels : []);
+                        setChildActivitySelections(Array.isArray(p.child_activity_selections) ? p.child_activity_selections : []);
                       }
                       return;
                     }
@@ -874,14 +923,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
                     setWantChildActivity(null);
                     setFeedback('');
 
-                    // Restore saved selections for this area from DB
-                    const freshArea = completedList.find((a) => a.area_id === area.id);
-                    const freshCa = freshArea?.child_activity;
-                    if (freshCa) {
-                      setChildActivitySelections(Array.isArray(freshCa.selections) ? freshCa.selections : []);
+                    // Restore saved selections from any existing doc for this area
+                    const ca = p.child_activity;
+                    if (ca) {
+                      setChildActivitySelections(Array.isArray(ca.selections) ? ca.selections : []);
                     } else {
-                      const savedSels = p.child_activity_by_area?.[area.id]?.selections;
-                      setChildActivitySelections(Array.isArray(savedSels) ? savedSels : []);
+                      setChildActivitySelections(Array.isArray(p.child_activity_selections) ? p.child_activity_selections : []);
                     }
                   } catch (err) {
                     console.warn('[RecommendationsPhase] Game load failed:', err);
@@ -1080,7 +1127,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </Button>
           <Button
             onClick={() => {
-              debouncedPersistRecommendationsProgress.flush?.();
+              debouncedSaveAreaProgress.flush?.();
               setStep('activity_selection');
             }}
             className="bg-purple-500 hover:bg-purple-400 text-white"
@@ -1369,22 +1416,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
 
   const generateAiRecommendations = async (childResults) => {
     try {
-      // Check completed area record first (most durable), then progress blob
-      const completedData = await api.completedGrowthAreas.list();
+      // Check the area doc first: prefer finalised recommendations, then in-progress cached recs
+      const completedData = await api.completedGrowthAreas.list(activeChildId);
       const existing = completedData?.areas?.find((a) => a.area_id === selectedArea?.id);
       if (existing?.recommendations?.length > 0) {
         setAiRecommendations(existing.recommendations);
         return;
       }
-      const p = await api.recommendationsProgress.get();
-      const air = p?.ai_three_month_recommendations;
-      if (
-        selectedArea?.id &&
-        air?.area_id === selectedArea.id &&
-        Array.isArray(air.items) &&
-        air.items.length > 0
-      ) {
-        setAiRecommendations(air.items);
+      if (Array.isArray(existing?.ai_three_month_recommendations) && existing.ai_three_month_recommendations.length > 0) {
+        setAiRecommendations(existing.ai_three_month_recommendations);
         return;
       }
     } catch (err) {
@@ -1536,13 +1576,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
           </div>
           <Button
             variant="outline"
-            onClick={async () => {
-              if (!selectedArea) return;
-              await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-              navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
-            }}
+            onClick={() => handleFinishRef.current?.()}
             className="w-full h-11 rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
           >
             <ChevronRight className="w-4 h-4 mr-2" />
@@ -1589,13 +1623,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             </Button>
             <Button
               variant="outline"
-              onClick={async () => {
-                if (!selectedArea) return;
-                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-                navigate(createPageUrl('LifePathway'), {
-                replace: true,
-              });
-              }}
+              onClick={() => handleFinishRef.current?.()}
               className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
             >
               <ChevronRight className="w-5 h-5 mr-2" />
@@ -1619,13 +1647,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
             key={selectedArea.id}
             childName={data.name}
             areaId={selectedArea.id}
+            activeChildId={activeChildId}
             selectedIds={childActivitySelections}
             onSelectedIdsChange={setChildActivitySelections}
             onComplete={async (results) => {
               const area = selectedArea;
               if (!area?.id) return;
 
-              debouncedPersistRecommendationsProgress.cancel();
+              debouncedSaveAreaProgress.cancel();
+              debouncedSaveGlobalStep.cancel();
 
               const child_activity = {
                 selections: Array.isArray(results.selections) ? [...results.selections] : [],
@@ -1633,7 +1663,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               };
 
               try {
-                await api.completedGrowthAreas.append({
+                await api.completedGrowthAreas.append(activeChildId, {
                   area_id: area.id,
                   area_name: area.name,
                   area_color: area.color,
@@ -1828,16 +1858,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, o
               </Button>
               <Button
                 variant="outline"
-                onClick={async () => {
-                  if (!selectedArea) return;
-                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, {
-                    selections: childActivitySelections,
-                    results: childGameResults,
-                  });
-                  navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
-                }}
+                onClick={() => handleFinishRef.current?.()}
                 className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
               >
                 <ChevronRight className="w-5 h-5 mr-2" />

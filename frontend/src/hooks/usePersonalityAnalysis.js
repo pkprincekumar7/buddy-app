@@ -13,24 +13,23 @@ import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 
 // Fires when the wizard reaches the personality phase (phase 2).
-// Fetches fresh server state, reuses an existing result if present, or calls the LLM
-// with a rule-based fallback. Dispatches results to the Onboarding reducer.
-export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
+// Reads from and writes to the child record directly — no separate onboarding collection.
+export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, dispatch }) {
   useEffect(() => {
-    if (!hydrated || currentPhase !== 2) return;
+    if (!hydrated || currentPhase !== 2 || !activeChildId) return;
     let cancelled = false;
 
     const run = async () => {
+      dispatch({ type: 'SET_PERSONALITY_BUSY', payload: true });
       try {
-        const s = await api.onboarding.get();
+        const child = await api.entities.Child.get(activeChildId);
         if (cancelled) return;
 
-        const normalized = normalizeOnboardingChildDataBlob(s.child_data);
-        const mergedFromServer = mergeChildDraft(normalized || {});
+        const mergedFromServer = mergeChildDraft(normalizeOnboardingChildDataBlob(child) || {});
 
-        if (s.personality?.view_model?.type && s.personality?.view_model?.profile) {
-          const clampedReuse = maybeClampStoredPersonalityDescription(s.personality.view_model, {
-            analysisSource: s.personality.source,
+        if (child.personality?.view_model?.type && child.personality?.view_model?.profile) {
+          const clampedReuse = maybeClampStoredPersonalityDescription(child.personality.view_model, {
+            analysisSource: child.personality.source,
           });
           dispatch({ type: 'SET_MBTI_RESULT', payload: clampedReuse });
           dispatch({ type: 'SET_GENERATED_PROFILE', payload: onboardingProfileFromViewModel(clampedReuse) });
@@ -44,7 +43,6 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
         }
 
         if (cancelled) return;
-        dispatch({ type: 'SET_PERSONALITY_BUSY', payload: true });
 
         try {
           const prompt = buildPersonalityAnalysisPrompt({
@@ -61,7 +59,9 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
 
           const vm = adaptAiPersonalityToViewModel(ai || {}, mergedFromServer.name);
           const prof = onboardingProfileFromViewModel(vm);
-          await api.onboarding.patch({ personality: { source: 'llm', view_model: vm } });
+          await api.entities.Child.update(activeChildId, {
+            personality: { source: 'llm', view_model: vm },
+          });
           if (cancelled) return;
 
           dispatch({ type: 'SET_MBTI_RESULT', payload: vm });
@@ -73,7 +73,9 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
           const ruleVm = calculateMBTI(mergedFromServer);
           const prof = onboardingProfileFromViewModel(ruleVm);
           try {
-            await api.onboarding.patch({ personality: { source: 'rule_fallback', view_model: ruleVm } });
+            await api.entities.Child.update(activeChildId, {
+              personality: { source: 'rule_fallback', view_model: ruleVm },
+            });
           } catch (patchErr) {
             console.warn('[usePersonalityAnalysis] Could not persist rule-based personality:', patchErr);
           }
@@ -86,6 +88,8 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
         }
       } catch (err) {
         console.warn('[usePersonalityAnalysis] Server fetch failed:', err);
+      } finally {
+        if (!cancelled) dispatch({ type: 'SET_PERSONALITY_BUSY', payload: false });
       }
     };
 
@@ -94,5 +98,5 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, dispatch }) {
       cancelled = true;
       dispatch({ type: 'SET_PERSONALITY_BUSY', payload: false });
     };
-  }, [hydrated, currentPhase, dispatch]);
+  }, [hydrated, currentPhase, activeChildId, dispatch]);
 }

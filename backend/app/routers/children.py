@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pymongo import ASCENDING, DESCENDING
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -12,20 +12,23 @@ from app.deps import get_current_user
 from app.limiter import user_limiter
 from app import models
 from app.models_api import (
-    BulkMissionBody,
     ChildCreate,
     ChildPatch,
     ChildResponse,
-    GrowthMissionResponse,
 )
 
 router = APIRouter(tags=["children"])
 log = logging.getLogger(__name__)
 
-_CHILD_SYSTEM_FIELDS = {"id", "created_date", "user_id"}
-# Fields stripped from the client payload: server-generated (id, created_date) or
-# re-set from authoritative server state (child_id after ownership check, user_id from auth).
-_MISSION_STRIPPED_FIELDS = {"id", "created_date", "child_id", "user_id"}
+# Fields that the server assigns — must never be accepted from client input.
+# Stripping these before the **data spread ensures user-supplied values cannot
+# overwrite server-controlled fields (especially `location`, which is the shard
+# key and the foundation of all owner-scoped queries).
+_CHILD_SYSTEM_FIELDS = {
+    "id", "created_date",             # API aliases
+    "_id", "user_id", "location",     # DB identity / shard key
+    "created_at", "updated_at",       # server-managed timestamps
+}
 
 
 # ---------------------------------------------------------------------------
@@ -33,16 +36,6 @@ _MISSION_STRIPPED_FIELDS = {"id", "created_date", "child_id", "user_id"}
 # ---------------------------------------------------------------------------
 
 def _child_to_api(doc: dict) -> dict:
-    out = {
-        k: v for k, v in doc.items()
-        if k not in ("_id", "user_id", "location", "created_at", "updated_at")
-    }
-    out["id"] = doc["_id"]
-    out["created_date"] = doc["created_at"].isoformat() if doc.get("created_at") else ""
-    return out
-
-
-def _mission_to_api(doc: dict) -> dict:
     out = {
         k: v for k, v in doc.items()
         if k not in ("_id", "user_id", "location", "created_at", "updated_at")
@@ -80,7 +73,7 @@ async def list_children(
     return [_child_to_api(d) for d in docs]
 
 
-@router.post("/children", response_model=ChildResponse)
+@router.post("/children", response_model=ChildResponse, status_code=201)
 @user_limiter.limit("20/minute")
 async def create_child(
     request: Request,
@@ -88,6 +81,12 @@ async def create_child(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    count = await db[models.CHILDREN].count_documents(
+        {"user_id": user["_id"], "location": user["location"]}
+    )
+    if count >= 10:
+        raise HTTPException(status_code=422, detail="Maximum of 10 children allowed per account")
+
     now = datetime.now(timezone.utc)
     data = payload.model_dump(exclude_none=True)
     for f in _CHILD_SYSTEM_FIELDS:
@@ -106,19 +105,29 @@ async def create_child(
     return _child_to_api(doc)
 
 
+@router.get("/children/{child_id}", response_model=ChildResponse)
+@user_limiter.limit("60/minute")
+async def get_child(
+    request: Request,
+    child_id: str = Path(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    doc = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Child not found")
+    return _child_to_api(doc)
+
+
 @router.patch("/children/{child_id}", response_model=ChildResponse)
 @user_limiter.limit("30/minute")
 async def update_child(
     request: Request,
-    child_id: str,
-    patch: ChildPatch,
+    child_id: str = Path(..., min_length=1, max_length=100),
+    patch: ChildPatch = Body(...),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    existing = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Child not found")
-
     updates = patch.model_dump(exclude_unset=True)
     set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
     for k, v in updates.items():
@@ -142,88 +151,18 @@ async def update_child(
 @user_limiter.limit("10/minute")
 async def delete_child(
     request: Request,
-    child_id: str,
+    child_id: str = Path(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     existing = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
     if not existing:
         raise HTTPException(status_code=404, detail="Child not found")
-    await db[models.MISSIONS].delete_many({"child_id": child_id, "location": existing["location"]})
-    await db[models.CHILDREN].delete_one({"_id": child_id, "location": existing["location"]})
-
-
-# ---------------------------------------------------------------------------
-# Growth missions
-# ---------------------------------------------------------------------------
-
-@router.get("/growth-missions", response_model=list[GrowthMissionResponse])
-@user_limiter.limit("60/minute")
-async def list_missions(
-    request: Request,
-    child_id: str | None = None,
-    sort: Literal["created_date", "-created_date"] | None = Query(default="-created_date"),
-    limit: int = Query(default=50, ge=1, le=200),
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-):
-    if not child_id:
-        return []
-    child = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
-    if not child:
-        raise HTTPException(status_code=404, detail="Child not found")
-    sort_dir = DESCENDING if (sort or "").startswith("-") else ASCENDING
-    docs = await (
-        db[models.MISSIONS]
-        .find({"child_id": child_id, "location": child["location"]})
-        .sort("created_at", sort_dir)
-        .to_list(limit)
-    )
-    return [_mission_to_api(d) for d in docs]
-
-
-@router.post("/growth-missions/bulk", response_model=list[GrowthMissionResponse])
-@user_limiter.limit("10/minute")
-async def bulk_missions(
-    request: Request,
-    body: BulkMissionBody,
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-):
-    child_ids = {p.child_id for p in body.items if p.child_id}
-    owned_docs = await (
-        db[models.CHILDREN]
-        .find(
-            {"_id": {"$in": list(child_ids)}, "user_id": user["_id"], "location": user["location"]},
-            {"_id": 1},
-        )
-        .to_list(None)
-    )
-    owned_ids = {c["_id"] for c in owned_docs}
-
-    now = datetime.now(timezone.utc)
-    docs = []
-    for item in body.items:
-        cid = item.child_id
-        if not cid or cid not in owned_ids:
-            raise HTTPException(status_code=400, detail="Invalid or unauthorized child_id")
-
-        data = item.model_dump(exclude_none=True)
-        for f in _MISSION_STRIPPED_FIELDS:
-            data.pop(f, None)
-
-        mission_id = str(uuid.uuid4())
-        doc = {
-            "_id": mission_id,
-            "child_id": cid,
-            "user_id": user["_id"],
-            "location": user["location"],
-            "created_at": now,
-            "updated_at": now,
-            **data,
-        }
-        docs.append(doc)
-
-    if docs:
-        await db[models.MISSIONS].insert_many(docs)
-    return [_mission_to_api(d) for d in docs]
+    loc = existing["location"]
+    # All three collections are sharded by location, so they land on the same shard
+    # and can be included in a single transaction — identical pattern to account deletion.
+    async with await db.client.start_session() as session:
+        async with session.start_transaction():
+            await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
+            await db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}, session=session)
+            await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)

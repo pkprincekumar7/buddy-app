@@ -94,7 +94,7 @@ const buildCustomTooltip = (chartData) => function CustomTooltip({ active, paylo
 
 // ── main component ────────────────────────────────────────────────────────────
 
-export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdate, onClose }) {
+export default function ProgressInsightsModal({ goalPlan, childId, childName, onPlanUpdate, onClose }) {
   const [activeTab,        setActiveTab]        = useState('progress');
   const [progressTab,      setProgressTab]      = useState('monthly');
   const [expandedInsight,  setExpandedInsight]  = useState(null);
@@ -159,7 +159,7 @@ export default function ProgressInsightsModal({ goalPlan, childName, onPlanUpdat
         const payload = await generateInsights(name, plan);
         const updatedPlan = { ...plan, insights: payload, insights_signature: currentCount };
         try {
-          await api.goals.patch({ plan: updatedPlan });
+          await api.goals.patch(childId, { plan: updatedPlan });
           onPlanUpdate?.(updatedPlan);
         } catch (err) {
           console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
@@ -513,6 +513,7 @@ ProgressInsightsModal.propTypes = {
     insights: PropTypes.object,
     insights_signature: PropTypes.number,
   }),
+  childId: PropTypes.string,
   childName: PropTypes.string,
   onPlanUpdate: PropTypes.func,
   onClose: PropTypes.func.isRequired,

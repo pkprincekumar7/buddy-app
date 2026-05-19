@@ -35,23 +35,18 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["sessions"].create_index([("location", ASCENDING), ("expires_at", ASCENDING)])
     await db["sessions"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
-    # Compound (location, _id) unique on single-document-per-user collections ensures
-    # queries are shard-key-aware on an Atlas Global Cluster and provides a
-    # covering index on unsharded Atlas clusters.
-    await db["onboarding"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
+    # goals: single-document-per-child, keyed by child_id.
     await db["goals"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
+    await db["goals"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
-    await db["recommendations"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
-    await db["recommendations"].create_index([("location", ASCENDING), ("step", ASCENDING)])
-    await db["recommendations"].create_index([("location", ASCENDING), ("current_area_index", ASCENDING)])
-
-    # Unique index must include the location shard-key prefix for Atlas Global Clusters.
+    # growth_areas: unique per (user, child, area) — child_id added to the compound key.
     await db["growth_areas"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     await db["growth_areas"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("area_id", ASCENDING)], unique=True
+        [("location", ASCENDING), ("user_id", ASCENDING), ("child_id", ASCENDING), ("area_id", ASCENDING)],
+        unique=True,
     )
     await db["growth_areas"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("created_at", ASCENDING)]
+        [("location", ASCENDING), ("user_id", ASCENDING), ("child_id", ASCENDING), ("created_at", ASCENDING)]
     )
 
     await db["children"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
@@ -61,14 +56,5 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["children"].create_index(
         [("location", ASCENDING), ("user_id", ASCENDING), ("name", ASCENDING)]
     )
-
-    await db["missions"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
-    await db["missions"].create_index(
-        [("location", ASCENDING), ("child_id", ASCENDING), ("created_at", DESCENDING)]
-    )
-    await db["missions"].create_index(
-        [("location", ASCENDING), ("child_id", ASCENDING), ("status", ASCENDING)]
-    )
-    await db["missions"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
     log.info("database: MongoDB indexes ensured")

@@ -53,6 +53,7 @@ const ANALYZING_INITIAL = { show: false, progress: 0, name: '', showingDots: fal
 
 export default function ConversationalOnboarding({
   user,
+  activeChildId,
   onComplete,
   resumeHydrationReady = true,
   onContinueToPersonality,
@@ -94,10 +95,9 @@ export default function ConversationalOnboarding({
     onQuestionnairePersisted?.(mergedCollected);
     clearTimeout(persistTimerRef.current);
     persistTimerRef.current = setTimeout(async () => {
+      if (!activeChildId) return;
       try {
-        const s = await api.onboarding.get();
-        const prev = s.child_data && typeof s.child_data === 'object' ? { ...s.child_data } : {};
-        await api.onboarding.patch({ child_data: { ...prev, ...mergedCollected } });
+        await api.entities.Child.update(activeChildId, mergedCollected);
       } catch (err) {
         console.warn('[ConversationalOnboarding] Auto-persist child data failed:', err);
       }
@@ -240,10 +240,11 @@ export default function ConversationalOnboarding({
     (async () => {
       try {
         let slim = {};
-        const [onboarding, prefs] = await Promise.all([api.onboarding.get(), api.preferences.get()]);
-        slim = pickSavedQuestionnaireForChatbot(
-          normalizeOnboardingChildDataBlob(onboarding.child_data) || {}
-        );
+        const [child, prefs] = await Promise.all([
+          activeChildId ? api.entities.Child.get(activeChildId) : Promise.resolve(null),
+          api.preferences.get(),
+        ]);
+        slim = child ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) || {}) : {};
         if (typeof prefs.tts_enabled === 'boolean') {
           voiceEnabledRef.current = prefs.tts_enabled;
           setVoiceEnabled(prefs.tts_enabled);
@@ -475,12 +476,11 @@ export default function ConversationalOnboarding({
     setAllAnswered(false);
     void (async () => {
       try {
-        const s = await api.onboarding.get();
-        const prev = s.child_data && typeof s.child_data === 'object' ? { ...s.child_data } : {};
-        for (const k of CHATBOT_CAPTURED_FIELDS) delete prev[k];
-        await api.onboarding.patch({
-          child_data: Object.keys(prev).length ? prev : {},
-        });
+        if (activeChildId) {
+          const cleared = {};
+          for (const k of CHATBOT_CAPTURED_FIELDS) cleared[k] = null;
+          await api.entities.Child.update(activeChildId, cleared);
+        }
         onQuestionnaireCleared?.();
       } catch (err) {
         console.warn('[ConversationalOnboarding] Questionnaire clear failed:', err);
@@ -812,6 +812,7 @@ ConversationalOnboarding.propTypes = {
   user: PropTypes.shape({
     full_name: PropTypes.string,
   }),
+  activeChildId: PropTypes.string,
   onComplete: PropTypes.func.isRequired,
   resumeHydrationReady: PropTypes.bool,
   onContinueToPersonality: PropTypes.func,

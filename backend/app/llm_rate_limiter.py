@@ -9,6 +9,7 @@ Both backends share the same public interface: enforce(user_id).
 Raises HTTPException(429) when the limit is exceeded.
 """
 import logging
+import random
 import time
 from collections import deque
 from threading import Lock
@@ -33,13 +34,28 @@ def _max_calls() -> int:
 # ---------------------------------------------------------------------------
 _mem_log: dict[str, deque] = {}
 _mem_lock = Lock()
+_mem_sweep_counter = 0
+_MEM_SWEEP_EVERY = 500  # sweep stale keys every N enforce calls
 
 
 def _enforce_memory(user_id: str) -> None:
+    global _mem_sweep_counter
     limit = _max_calls()
-    now = time.monotonic()
+    # Use time.time() (wall clock) to match the Redis backend's semantics.
+    # time.monotonic() is process-local and resets on restart, which would
+    # let users bypass their hourly quota after a process restart.
+    now = time.time()
     cutoff = now - _WINDOW_SECONDS
     with _mem_lock:
+        # Periodically evict keys whose most recent request is outside the window
+        # so inactive-user entries don't accumulate indefinitely.
+        _mem_sweep_counter += 1
+        if _mem_sweep_counter >= _MEM_SWEEP_EVERY:
+            _mem_sweep_counter = 0
+            stale = [k for k, dq in _mem_log.items() if not dq or dq[-1] < cutoff]
+            for k in stale:
+                del _mem_log[k]
+
         dq = _mem_log.pop(user_id, deque())
         while dq and dq[0] < cutoff:
             dq.popleft()
@@ -58,26 +74,30 @@ def _enforce_memory(user_id: str) -> None:
 # ---------------------------------------------------------------------------
 _redis_client: "_redis_type.Redis | None" = None
 _redis_init_attempted = False
+_redis_init_lock = Lock()
 
 
 def _get_redis() -> "_redis_type.Redis | None":
     global _redis_client, _redis_init_attempted
     if _redis_init_attempted:
         return _redis_client
-    _redis_init_attempted = True
-    from app.settings import settings
-    if not settings.redis_url:
-        return None
-    try:
-        import redis
-        client = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=2)
-        client.ping()
-        _redis_client = client
-        log.info("llm_rate_limiter: Redis connected (%s)", settings.redis_url)
-    except Exception as exc:
-        log.warning("llm_rate_limiter: Redis unavailable — falling back to in-memory. error=%s", exc)
-        _redis_client = None
-    return _redis_client
+    with _redis_init_lock:
+        if _redis_init_attempted:  # re-check after acquiring lock
+            return _redis_client
+        _redis_init_attempted = True
+        from app.settings import settings
+        if not settings.redis_url:
+            return None
+        try:
+            import redis
+            client = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
+            client.ping()
+            _redis_client = client
+            log.info("llm_rate_limiter: Redis connected (%s)", settings.redis_url)
+        except Exception as exc:
+            log.warning("llm_rate_limiter: Redis unavailable — falling back to in-memory. error=%s", exc)
+            _redis_client = None
+        return _redis_client
 
 
 # Lua script that atomically removes expired entries, checks the count, and
@@ -103,12 +123,11 @@ return 1
 
 
 def _enforce_redis(r: "_redis_type.Redis", user_id: str) -> None:
-    import random
     limit = _max_calls()
     key = f"llm_rate:{user_id}"
     now = time.time()
     cutoff = now - _WINDOW_SECONDS
-    member = f"{now:.6f}:{random.getrandbits(16)}"
+    member = f"{now:.6f}:{random.getrandbits(64)}"
     allowed = r.eval(_ENFORCE_LUA, 1, key, now, cutoff, limit, member, _WINDOW_SECONDS)
     if not int(allowed):
         raise HTTPException(

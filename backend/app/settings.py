@@ -142,10 +142,12 @@ class Settings(BaseSettings):
 
     llm_timeout_seconds: int = Field(
         default=60,
+        gt=0,
         validation_alias=AliasChoices("LLM_TIMEOUT_SECONDS", "llm_timeout_seconds"),
     )
     llm_hourly_limit: int = Field(
         default=200,
+        gt=0,
         validation_alias=AliasChoices("LLM_HOURLY_LIMIT", "llm_hourly_limit"),
     )
 

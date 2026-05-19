@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -37,108 +38,17 @@ class UserPreferencesPatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding — child data
-# ---------------------------------------------------------------------------
-
-class OnboardingChildData(BaseModel):
-    name: str = Field(default="", max_length=100)
-    age: str = Field(default="", max_length=20)
-    school: str = Field(default="", max_length=200)
-    strengths: list[str] = Field(default_factory=list, max_length=20)
-    hobbies: list[str] = Field(default_factory=list, max_length=20)
-    thinking_pattern: str = Field(default="", max_length=100)
-    communication_style: str = Field(default="", max_length=100)
-    energy_level: str = Field(default="", max_length=100)
-    social_behaviour: str = Field(default="", max_length=100)
-    emotional_behaviour: str = Field(default="", max_length=100)
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — personality analysis
-# ---------------------------------------------------------------------------
-
-class FamousPerson(BaseModel):
-    name: str
-    image: str = ""
-
-
-class PersonalityProfile(BaseModel):
-    name: str
-    category: str
-    description: str
-    color: str = ""
-    traits: list[str] = Field(default_factory=list)
-    strengths: list[str] = Field(default_factory=list)
-    growth_areas: list[str] = Field(default_factory=list)
-    famous_people: list[FamousPerson] = Field(default_factory=list)
-
-
-class PersonalityViewModel(BaseModel):
-    type: str
-    scores: dict[str, int] = Field(default_factory=dict, max_length=20)
-    profile: PersonalityProfile
-
-
-class PersonalityAnalysis(BaseModel):
-    source: str
-    view_model: PersonalityViewModel
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — journey recommendations
-# ---------------------------------------------------------------------------
-
-class FocusArea(BaseModel):
-    pillar: str
-    focus: str
-    why: str
-
-
-class InitialMission(BaseModel):
-    title: str
-    description: str
-    pillar: str
-
-
-class JourneyRecommendations(BaseModel):
-    pathway_overview: str
-    focus_areas: list[FocusArea]
-    initial_missions: list[InitialMission]
-
-
-# ---------------------------------------------------------------------------
-# Onboarding — aggregate state and patch
-# ---------------------------------------------------------------------------
-
-class OnboardingState(BaseModel):
-    phase: int = 0
-    child_data: OnboardingChildData | None = None
-    personality: PersonalityAnalysis | None = None
-    recommendations: JourneyRecommendations | None = None
-
-
-class OnboardingPatch(BaseModel):
-    phase: int | None = None
-    child_data: OnboardingChildData | None = None
-    personality: PersonalityAnalysis | None = None
-    recommendations: JourneyRecommendations | None = None
-    clear_child_data: bool = False
-    clear_personality: bool = False
-    clear_recommendations: bool = False
-
-
-# ---------------------------------------------------------------------------
 # Completed growth areas
 # ---------------------------------------------------------------------------
 
 class ChildActivityResults(BaseModel):
-    summary: str = ""
-    strengths: list[str] = Field(default_factory=list)
-    suggested_activities: list[str] = Field(default_factory=list)
+    summary: str = Field(default="", max_length=2000)
+    strengths: list[str] = Field(default_factory=list, max_length=20)
+    suggested_activities: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ChildActivity(BaseModel):
-    selections: list[str] = Field(default_factory=list)
+    selections: list[str] = Field(default_factory=list, max_length=50)
     results: ChildActivityResults | None = None
 
 
@@ -149,133 +59,127 @@ class CompletedGrowthArea(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
     recommendations: list[str] | None = None
     child_activity: ChildActivity | None = None
+    # Status: "in_progress" while wizard is active, "completed" once the area is finalised.
+    # Legacy docs without this field are treated as completed.
+    status: str | None = None
+    # Per-area wizard state — only present when status == "in_progress"
+    step: str | None = None
+    selected_activity: dict | None = None
+    parent_liked: bool | None = None
+    want_child_activity: bool | None = None
+    feedback: str | None = None
+    interactive_step: int | None = None
+    interactive_answers: dict | None = None
+    interactive_draft: dict | None = None
+    generated_activity: dict | None = None
+    show_game: bool | None = None
+    child_activity_selections: list | None = None
+    ai_three_month_recommendations: list | None = None
 
 
 class CompletedGrowthAreasResponse(BaseModel):
     areas: list[CompletedGrowthArea]
 
 
+_GROWTH_AREA_MAX_BYTES = 65_536  # 64 KB cap on the total serialised dict payload
+
+
 class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
     area_color: str = Field(max_length=100)
-    answers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(default_factory=dict, max_length=100)
     recommendations: list[str] | None = Field(None, max_length=50)
     child_activity: ChildActivity | None = None
-
-
-# ---------------------------------------------------------------------------
-# Recommendations progress
-# ---------------------------------------------------------------------------
-
-class GrowthAreaRef(BaseModel):
-    id: str
-    name: str
-    color: str
-    description: str = ""
-
-
-class SelectedActivity(BaseModel):
-    title: str
-    description: str = ""
-    duration: str = ""
-    type: str = ""
-
-
-class GeneratedActivity(BaseModel):
-    title: str = ""
-    description: str = ""
-    instructions: list[str] = Field(default_factory=list)
-    estimated_time: str = ""
-
-
-class InteractiveDraft(BaseModel):
-    question_id: str
-    text: str
-
-
-class AiThreeMonthRecs(BaseModel):
-    area_id: str
-    items: list[str]
-
-
-class RecommendationsProgress(BaseModel):
-    step: str = "intro"
-    selected_area: GrowthAreaRef | None = None
-    selected_activity: SelectedActivity | None = None
+    # Status + per-area wizard state
+    status: str | None = Field(None, max_length=50)
+    step: str | None = Field(None, max_length=100)
+    selected_activity: dict | None = None
     parent_liked: bool | None = None
     want_child_activity: bool | None = None
-    feedback: str = ""
-    current_area_index: int = 0
-    interactive_step: int = 0
-    interactive_answers: dict[str, str] = Field(default_factory=dict, max_length=50)
-    interactive_draft: InteractiveDraft | None = None
-    generated_activity: GeneratedActivity | None = None
-    show_game: bool = False
-    child_activity_by_area: dict[str, ChildActivity] = Field(default_factory=dict, max_length=10)
-    ai_three_month_recommendations: AiThreeMonthRecs | None = None
+    feedback: str | None = Field(None, max_length=2000)
+    interactive_step: int | None = None
+    interactive_answers: dict | None = None
+    interactive_draft: dict | None = None
+    generated_activity: dict | None = None
+    show_game: bool | None = None
+    child_activity_selections: list | None = None
+    ai_three_month_recommendations: list | None = None
+
+    @model_validator(mode="after")
+    def limit_dict_payload_size(self) -> "AppendGrowthAreaRequest":
+        """Guard against deeply-nested or oversized fields bloating MongoDB documents."""
+        serialisable_fields = (
+            self.answers,  # max_length=100 caps key count, not value byte size
+            self.recommendations,
+            self.child_activity.model_dump() if self.child_activity else None,
+            self.selected_activity,
+            self.interactive_answers,
+            self.interactive_draft,
+            self.generated_activity,
+            self.ai_three_month_recommendations,
+            self.child_activity_selections,
+        )
+        try:
+            total = sum(len(json.dumps(f)) for f in serialisable_fields if f is not None)
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError("Growth area payload contains an invalid or too-deeply nested structure")
+        for str_field in (self.feedback, self.step, self.status):
+            if str_field is not None:
+                total += len(str_field)
+        if total > _GROWTH_AREA_MAX_BYTES:
+            raise ValueError(
+                f"Growth area payload exceeds maximum allowed size ({_GROWTH_AREA_MAX_BYTES // 1024} KB)"
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------
 # Goals
 # ---------------------------------------------------------------------------
 
-class ActivityResponse(BaseModel):
-    question: str
-    answer: str | None = None
-    type: str | None = None
-
-
 class GoalsActivity(BaseModel):
-    title: str
-    objective: str
+    title: str = Field(max_length=200)
+    objective: str = Field(max_length=500)
     scorable: bool = True
     completed: bool | None = None
     score: float | None = None
-    note: str | None = None
-    progress_observation: str | None = None
-    ai_feedback: str | None = None
-    parent_feedback: str | None = None
-    responses: list[ActivityResponse] = []
+    note: str | None = Field(None, max_length=1000)
+    progress_observation: str | None = Field(None, max_length=1000)
+    ai_feedback: str | None = Field(None, max_length=2000)
+    parent_feedback: str | None = Field(None, max_length=2000)
 
 
 class GoalsPeriod(BaseModel):
-    label: str
-    activities: list[GoalsActivity]
+    label: str = Field(max_length=100)
+    activities: list[GoalsActivity] = Field(max_length=20)
 
 
 class GoalsMonth(BaseModel):
     month: int
-    goal: str
-    objective: str
-    periods: list[GoalsPeriod]
-
-
-class GoalsPlanMonthInsight(BaseModel):
-    month: int
-    insight: str
+    goal: str = Field(max_length=500)
+    objective: str = Field(max_length=500)
+    periods: list[GoalsPeriod] = Field(max_length=10)
 
 
 class InsightItem(BaseModel):
-    text: str
-    type: str
-    details: str
+    text: str = Field(max_length=1000)
+    type: str = Field(max_length=50)
+    details: str = Field(max_length=1000)
 
 
 class GoalsPlanInsights(BaseModel):
     schema_version: int | None = None
-    overall_summary: str = ''
-    monthly_insights: list[GoalsPlanMonthInsight] = []
-    recommendations: list[str] = []
-    strongest_area: str | None = None
-    focus_area: str | None = None
-    insight_items: list[InsightItem] = []
+    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
 
 
 class GoalsPlan(BaseModel):
-    months: list[GoalsMonth]
+    months: list[GoalsMonth] = Field(max_length=12)
     insights: GoalsPlanInsights | None = None
     insights_signature: int | None = None
+
+
+_GOALS_PLAN_MAX_BYTES = 262_144  # 256 KB cap on the total serialised goals plan
 
 
 class UserGoals(BaseModel):
@@ -284,10 +188,23 @@ class UserGoals(BaseModel):
 
 
 class UserGoalsPatch(BaseModel):
-    parent_concern: str | None = None
+    parent_concern: str | None = Field(None, max_length=2000)
     plan: GoalsPlan | None = None
     clear_plan: bool = False
     clear_concern: bool = False
+
+    @model_validator(mode="after")
+    def limit_goals_plan_size(self) -> "UserGoalsPatch":
+        if self.plan is not None:
+            try:
+                size = len(json.dumps(self.plan.model_dump()))
+            except (RecursionError, ValueError, TypeError):
+                raise ValueError("Goals plan contains an invalid or too-deeply nested structure")
+            if size > _GOALS_PLAN_MAX_BYTES:
+                raise ValueError(
+                    f"Goals plan exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+                )
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -302,14 +219,9 @@ class ChildResponse(BaseModel):
     name: str = ""
     age: str | int | None = None
     school: str | None = None
-    date_of_birth: str | None = None
-    current_phase: str | int | None = None
+    onboarding_phase: int = 0
     onboarding_completed: bool | None = None
-    personality_traits: list | None = None
-    interests: list | None = None
-    mbti_type: str | None = None
-    avatar_style: str | None = None
-    generated_profile: dict | None = None
+    personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
@@ -318,6 +230,11 @@ class ChildResponse(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    # Global wizard navigation — replaces the old wizard_progress blob.
+    # wizard_step: current sub-step inside the recommendations phase (intro, area_selection, etc.)
+    # wizard_area_index: index into the growthAreas array for the currently active area.
+    wizard_step: str | None = None
+    wizard_area_index: int | None = None
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
@@ -329,17 +246,12 @@ class ChildCreate(BaseModel):
     # (id, created_date, user_id) must be stripped by the route handler before storage.
     model_config = {"extra": "allow"}
 
-    name: str = Field(min_length=1, max_length=255)
+    name: str | None = Field(None, max_length=255)
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
-    date_of_birth: str | None = None
-    current_phase: str | int | None = None
+    onboarding_phase: int = 0
     onboarding_completed: bool | None = None
-    personality_traits: list | None = None
-    interests: list | None = None
-    mbti_type: str | None = None
-    avatar_style: str | None = None
-    generated_profile: dict | None = None
+    personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
@@ -350,9 +262,21 @@ class ChildCreate(BaseModel):
     emotional_behaviour: str | None = None
 
     @model_validator(mode="after")
+    def reject_unsafe_extra_keys(self) -> "ChildCreate":
+        if self.__pydantic_extra__:
+            for key in self.__pydantic_extra__:
+                if key.startswith("$") or "." in key:
+                    raise ValueError(f"Field name {key!r} is not allowed")
+        return self
+
+    @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildCreate":
         if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+            try:
+                size = len(json.dumps(self.__pydantic_extra__))
+            except (RecursionError, TypeError, ValueError):
+                raise ValueError("Child payload contains invalid or non-serialisable data")
+            if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self
 
@@ -361,70 +285,39 @@ class ChildPatch(BaseModel):
     # extra="allow": same payload-blob design as ChildCreate.
     model_config = {"extra": "allow"}
 
-    name: str | None = None
+    name: str | None = Field(None, max_length=255)
     # Promoted columns — declared explicitly so max_length validation applies on the patch path.
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
-    pillar_scores: dict | None = None
-    total_missions_completed: int | None = None
-    parent_interactions: list | None = None
-    avatar_style: str | None = None
+    onboarding_phase: int | None = None
+    onboarding_completed: bool | None = None
+    personality: dict | None = None
+    recommendations: dict | None = None
+    strengths: list | None = None
+    hobbies: list | None = None
+    thinking_pattern: str | None = None
+    communication_style: str | None = None
+    energy_level: str | None = None
+    social_behaviour: str | None = None
+    emotional_behaviour: str | None = None
+    wizard_step: str | None = None
+    wizard_area_index: int | None = None
 
-    @field_validator("pillar_scores")
-    @classmethod
-    def validate_pillar_scores(cls, v: dict | None) -> dict | None:
-        if v is not None and len(v) > 20:
-            raise ValueError("pillar_scores must not exceed 20 entries")
-        return v
+    @model_validator(mode="after")
+    def reject_unsafe_extra_keys(self) -> "ChildPatch":
+        if self.__pydantic_extra__:
+            for key in self.__pydantic_extra__:
+                if key.startswith("$") or "." in key:
+                    raise ValueError(f"Field name {key!r} is not allowed")
+        return self
 
     @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildPatch":
         if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+            try:
+                size = len(json.dumps(self.__pydantic_extra__))
+            except (RecursionError, TypeError, ValueError):
+                raise ValueError("Child payload contains invalid or non-serialisable data")
+            if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self
-
-
-# ---------------------------------------------------------------------------
-# Growth missions
-# ---------------------------------------------------------------------------
-
-class GrowthMissionResponse(BaseModel):
-    model_config = {"extra": "ignore"}
-
-    id: str
-    child_id: str
-    created_date: str
-    title: str = ""
-    description: str | None = None
-    pillar: str | None = None
-    status: str = "active"
-    difficulty: str = "easy"
-    week_number: int | None = None
-    activity_type: str | None = None
-    activity_data: dict | None = None
-
-
-class GrowthMissionCreate(BaseModel):
-    model_config = {"extra": "allow"}
-
-    child_id: str = Field(max_length=36)
-    title: str = Field(max_length=255)
-    description: str | None = None
-    pillar: str | None = Field(None, max_length=100)
-    status: str = Field("active", max_length=50)
-    difficulty: str = Field("easy", max_length=50)
-    week_number: int | None = None
-    activity_type: str | None = Field(None, max_length=100)
-    activity_data: dict | None = None
-
-    @model_validator(mode="after")
-    def limit_extra_payload_size(self) -> "GrowthMissionCreate":
-        if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
-                raise ValueError("Mission payload exceeds maximum allowed size (64 KB)")
-        return self
-
-
-class BulkMissionBody(BaseModel):
-    items: list[GrowthMissionCreate] = Field(min_length=1, max_length=50)

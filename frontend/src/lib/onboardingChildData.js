@@ -51,22 +51,6 @@ export function conversationDraftFromChildRecord(child) {
 	if (questionnaireFieldHasValue('name', child)) out.name = child.name;
 	if (questionnaireFieldHasValue('school', child)) out.school = child.school;
 	if (questionnaireFieldHasValue('age', child)) out.age = String(child.age);
-	else if (child.date_of_birth) {
-		const d = new Date(String(child.date_of_birth));
-		if (!Number.isNaN(d.getTime())) {
-			const ageYears = Math.max(
-				1,
-				Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000)),
-			);
-			out.age = String(ageYears);
-		}
-	}
-	if (Array.isArray(child.personality_traits) && child.personality_traits.length) {
-		out.strengths = child.personality_traits;
-	}
-	if (Array.isArray(child.interests) && child.interests.length) {
-		out.hobbies = child.interests;
-	}
 	for (const k of [
 		'thinking_pattern',
 		'communication_style',

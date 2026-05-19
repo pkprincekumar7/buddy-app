@@ -12,7 +12,7 @@ import WelcomePhase from '../components/onboarding/WelcomePhase';
 import ConversationalOnboarding from '../components/onboarding/ConversationalOnboarding';
 import PersonalityAnalysis from '../components/shared/PersonalityAnalysis';
 import RecommendationsPhase from '../components/onboarding/RecommendationsPhase';
-import { slimChildConversationForStorage, pickSavedQuestionnaireForChatbot, CHATBOT_CAPTURED_FIELDS, normalizeOnboardingChildDataBlob, conversationDraftFromChildRecord } from '@/lib/onboardingChildData';
+import { CHATBOT_CAPTURED_FIELDS, normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
 import { DEFAULT_CHILD_STATE, mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -43,8 +43,7 @@ const initialWizardState = {
   mbtiResult: null,
   generatedProfile: null,
   recommendations: null,
-  pendingActivities: [],
-  recPhaseHasNext: false,
+  activeChildId: null,
 };
 
 function wizardReducer(state, action) {
@@ -82,15 +81,15 @@ function wizardReducer(state, action) {
       return { ...state, generatedProfile: action.payload };
     case 'SET_RECOMMENDATIONS':
       return { ...state, recommendations: action.payload };
-    case 'ADD_PENDING_ACTIVITY':
-      return { ...state, pendingActivities: [...state.pendingActivities, action.payload] };
-    case 'SET_REC_PHASE_HAS_NEXT':
-      return { ...state, recPhaseHasNext: action.payload };
+    case 'SET_ACTIVE_CHILD_ID':
+      return { ...state, activeChildId: action.payload };
     case 'RESET_WIZARD':
       return {
         ...initialWizardState,
+        // Preserve auth/hydration state — user is still logged in and the page is already initialized.
+        hydrated: state.hydrated,
+        appStateReady: state.appStateReady,
         conversationBootKey: state.conversationBootKey + 1,
-        currentPhase: 1,
       };
     default:
       return state;
@@ -107,47 +106,23 @@ export default function Onboarding() {
     currentPhase, hydrated, appStateReady, conversationBootKey,
     personalityBusy, journeyBusy, completionBusy,
     childData, mbtiResult, generatedProfile, recommendations,
-    pendingActivities, recPhaseHasNext,
+    activeChildId,
   } = state;
   const wizardBusy = personalityBusy || journeyBusy || completionBusy;
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const recPhaseBackRef = useRef(null);
-  const recPhaseNextRef = useRef(null);
-  const phasePatchTimerRef = useRef(null);
 
   // Delegate phase-specific LLM effects to dedicated hooks.
-  usePersonalityAnalysis({ hydrated, currentPhase, dispatch });
-  useJourneyRecommendations({ hydrated, currentPhase, dispatch });
+  usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, dispatch });
+  useJourneyRecommendations({ hydrated, currentPhase, activeChildId, dispatch });
 
   const handleComplete = useOnboardingComplete({
-    dispatch, childData, mbtiResult, generatedProfile, recommendations, pendingActivities,
+    dispatch, activeChildId, childData, recommendations,
   });
 
   useEffect(() => {
     if (isLoadingAuth) return;
     let cancelled = false;
-
-    const applyServerState = (s) => {
-      if (typeof s.phase === 'number') dispatch({ type: 'SET_PHASE', payload: s.phase });
-
-      if (s.child_data) {
-        const normalizedChild = normalizeOnboardingChildDataBlob(s.child_data);
-        if (normalizedChild) dispatch({ type: 'SET_CHILD_DATA', payload: mergeChildDraft(normalizedChild) });
-      }
-
-      if (s.personality?.view_model) {
-        const vm = s.personality.view_model;
-        if (vm?.type && vm?.profile) {
-          const clampedVm = maybeClampStoredPersonalityDescription(vm, {
-            analysisSource: s.personality.source,
-          });
-          dispatch({ type: 'SET_MBTI_RESULT', payload: clampedVm });
-          dispatch({ type: 'SET_GENERATED_PROFILE', payload: onboardingProfileFromViewModel(clampedVm) });
-        }
-      }
-
-      if (s.recommendations) dispatch({ type: 'SET_RECOMMENDATIONS', payload: s.recommendations });
-    };
 
     const hydrateFromServer = async () => {
       if (!isAuthenticated) {
@@ -158,36 +133,29 @@ export default function Onboarding() {
       }
       dispatch({ type: 'SET_APP_STATE_READY', payload: false });
       try {
-        const s = await api.onboarding.get();
+        // All state lives on the child record — resume with the most recent child.
+        const list = await api.entities.Child.list('-created_date', 1);
         if (cancelled) return;
-        queryClient.setQueryData(['onboarding'], s);
-        applyServerState(s);
+        const child = list?.[0];
 
-        const normalized = normalizeOnboardingChildDataBlob(s.child_data);
-        let mergedForChat = mergeChildDraft(normalized || {});
-        let slimCheck = pickSavedQuestionnaireForChatbot(mergedForChat);
-        if (Object.keys(slimCheck).length === 0) {
-          let childRecord = null;
-          try {
-            const list = await api.entities.Child.list('-created_date', 1);
-            if (list?.length) childRecord = list[0];
-          } catch (err) {
-            console.warn('[Onboarding] Could not fetch child list during hydration:', err);
+        if (child) {
+          dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: child.id });
+          dispatch({ type: 'SET_PHASE', payload: child.onboarding_phase || 1 });
+
+          // Restore child data from the child record fields.
+          const normalized = normalizeOnboardingChildDataBlob(child);
+          if (normalized) dispatch({ type: 'SET_CHILD_DATA', payload: mergeChildDraft(normalized) });
+
+          // Restore personality if already analysed.
+          if (child.personality?.view_model?.type && child.personality?.view_model?.profile) {
+            const clampedVm = maybeClampStoredPersonalityDescription(child.personality.view_model, {
+              analysisSource: child.personality.source,
+            });
+            dispatch({ type: 'SET_MBTI_RESULT', payload: clampedVm });
+            dispatch({ type: 'SET_GENERATED_PROFILE', payload: onboardingProfileFromViewModel(clampedVm) });
           }
-          const fromChild = conversationDraftFromChildRecord(childRecord);
-          if (fromChild) {
-            mergedForChat = mergeChildDraft({ ...(fromChild || {}), ...(normalized || {}) });
-            slimCheck = pickSavedQuestionnaireForChatbot(mergedForChat);
-            if (Object.keys(slimCheck).length > 0) {
-              dispatch({ type: 'SET_CHILD_DATA', payload: mergedForChat });
-              const slim = slimChildConversationForStorage(mergedForChat);
-              if (Object.keys(slim).length > 0) {
-                void api.onboarding.patch({ child_data: slim }).catch((err) => {
-                  console.warn('[Onboarding] Auto-save child data failed:', err);
-                });
-              }
-            }
-          }
+
+          if (child.recommendations) dispatch({ type: 'SET_RECOMMENDATIONS', payload: child.recommendations });
         }
 
         if (!cancelled) dispatch({ type: 'BUMP_CONVERSATION_KEY' });
@@ -209,87 +177,74 @@ export default function Onboarding() {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [currentPhase]);
 
-  useEffect(() => {
-    if (!hydrated || !isAuthenticated) return;
-    clearTimeout(phasePatchTimerRef.current);
-    phasePatchTimerRef.current = setTimeout(() => {
-      api.onboarding.patch({ phase: currentPhase }).catch((err) => {
-        console.warn('[Onboarding] Auto-save phase failed:', err);
-      });
-    }, 500);
-    return () => clearTimeout(phasePatchTimerRef.current);
-  }, [currentPhase, hydrated, isAuthenticated]);
+  // Creates a child stub at chatbot start; all subsequent writes go directly to the child record.
+  const handleStartChat = useCallback(async () => {
+    if (!isAuthenticated) { dispatch({ type: 'SET_PHASE', payload: 1 }); return; }
+    let childId = activeChildId;
+    try {
+      if (!childId) {
+        const created = await api.entities.Child.create({ onboarding_phase: 1, onboarding_completed: false });
+        childId = created?.id;
+        if (childId) dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: childId });
+      }
+    } catch (err) {
+      console.warn('[Onboarding] Could not create child stub, proceeding anyway:', err);
+    }
+    dispatch({ type: 'SET_PHASE', payload: 1 });
+  }, [isAuthenticated, activeChildId, dispatch]);
 
   const handleConversationComplete = useCallback(async (conversationData) => {
     const mergedDraft = mergeChildDraft({
       ...childData,
       ...conversationData,
-      personality_traits: conversationData.strengths || [],
-      interests: conversationData.hobbies || [],
     });
-    const slim = slimChildConversationForStorage(mergedDraft);
 
     dispatch({ type: 'SET_MBTI_RESULT', payload: null });
     dispatch({ type: 'SET_GENERATED_PROFILE', payload: null });
     dispatch({ type: 'SET_RECOMMENDATIONS', payload: null });
 
+    const childId = activeChildId;
     try {
-      await Promise.all([
-        api.onboarding.patch({
-          child_data: slim,
-          clear_personality: true,
-          clear_recommendations: true,
-        }),
-        api.recommendationsProgress.patch({ step: 'intro' }),
-      ]);
+      if (childId) {
+        // Update stub with real chatbot data and advance phase; everything lives on the child record.
+        await api.entities.Child.update(childId, {
+          ...mergedDraft,
+          onboarding_phase: 2,
+          onboarding_completed: false,
+          personality: null,
+          recommendations: null,
+          wizard_step: null,
+          wizard_area_index: null,
+        });
+      }
     } catch (err) {
-      console.warn('[Onboarding] Could not persist conversation data, still advancing wizard:', err);
+      console.warn('[Onboarding] Could not update child after chatbot:', err);
     }
 
     dispatch({ type: 'SET_CHILD_DATA', payload: mergedDraft });
     dispatch({ type: 'SET_PHASE', payload: 2 });
-  }, [childData, dispatch]);
+  }, [childData, activeChildId, dispatch]);
 
   const handleWizardStartOver = useCallback(async () => {
-    try {
-      if (childData?.name) {
-        const existingChildren = await api.entities.Child.list('-created_date');
-        const match = existingChildren?.find(
-          c => c.name?.toLowerCase() === childData.name.toLowerCase()
-        );
-        if (match) {
-          try { await api.entities.Child.delete(match.id); } catch (err) { if (err?.status !== 404) console.warn('[Onboarding] Child delete failed:', err); }
-        }
-      }
-      await Promise.all([
-        api.onboarding.patch({
-          phase: 0,
-          clear_child_data: true,
-          clear_personality: true,
-          clear_recommendations: true,
-        }),
-        api.recommendationsProgress.patch({ step: 'intro' }),
-        api.goals.patch({ clear_plan: true, clear_concern: true }),
-        api.completedGrowthAreas.clear(),
-      ]);
-      queryClient.invalidateQueries({ queryKey: ['children'] });
-      queryClient.invalidateQueries({ queryKey: ['onboarding'] });
-    } catch (err) {
-      console.warn('[Onboarding] Start over cleanup had errors:', err);
+    // Deleting the child cascades all related data (goals and growth_areas).
+    // No separate onboarding reset needed — all state lives on the child record.
+    if (activeChildId) {
+      try { await api.entities.Child.delete(activeChildId); } catch (err) { if (err?.status !== 404) console.warn('[Onboarding] Child delete failed:', err); }
     }
+    queryClient.invalidateQueries({ queryKey: ['children'] });
     dispatch({ type: 'RESET_WIZARD' });
-  }, [childData, queryClient, dispatch]);
+  }, [activeChildId, queryClient, dispatch]);
 
   const handleNext = useCallback(async () => {
-    if (currentPhase === 2) {
+    if (currentPhase === 2 && activeChildId) {
       try {
-        await api.recommendationsProgress.patch({ step: 'intro' });
+        await api.entities.Child.update(activeChildId, { onboarding_phase: 3, wizard_step: null, wizard_area_index: null });
       } catch (err) {
-        console.warn('[Onboarding] Could not patch recommendations progress:', err);
+        console.warn('[Onboarding] Could not advance to phase 3:', err);
       }
     }
     dispatch({ type: 'INCREMENT_PHASE' });
-  }, [currentPhase, dispatch]);
+  }, [currentPhase, activeChildId, dispatch]);
 
   const handleBack = useCallback(() => {
     dispatch({ type: 'DECREMENT_PHASE' });
@@ -298,15 +253,6 @@ export default function Onboarding() {
 
   const handleRegisterBack = useCallback((fn) => {
     recPhaseBackRef.current = fn;
-  }, []);
-
-  const handleRegisterNext = useCallback((fn) => {
-    recPhaseNextRef.current = fn;
-    dispatch({ type: 'SET_REC_PHASE_HAS_NEXT', payload: !!fn });
-  }, []);
-
-  const handleRecNext = useCallback(() => {
-    recPhaseNextRef.current?.();
   }, []);
 
   const canProceed = useMemo(() => {
@@ -322,12 +268,13 @@ export default function Onboarding() {
   const renderPhase = () => {
     switch(currentPhase) {
       case 0:
-        return <WelcomePhase onContinue={() => dispatch({ type: 'SET_PHASE', payload: 1 })} isAuthenticated={isAuthenticated} user={user} />;
+        return <WelcomePhase onContinue={handleStartChat} isAuthenticated={isAuthenticated} user={user} />;
       case 1:
         return (
           <ConversationalOnboarding
             key={conversationBootKey}
             user={user}
+            activeChildId={activeChildId}
             resumeHydrationReady={hydrated && !isLoadingAuth && appStateReady}
             onContinueToPersonality={() => dispatch({ type: 'SET_PHASE', payload: 2 })}
             onQuestionnairePersisted={(slice) => dispatch({ type: 'MERGE_CHILD_DATA', payload: slice })}
@@ -416,9 +363,9 @@ export default function Onboarding() {
                   data={childData}
                   profile={generatedProfile}
                   recommendations={recommendations}
-                  onActivityAdd={(activity) => dispatch({ type: 'ADD_PENDING_ACTIVITY', payload: activity })}
+                  activeChildId={activeChildId}
+                  onFinish={handleComplete}
                   onRegisterBack={handleRegisterBack}
-                  onRegisterNext={handleRegisterNext}
                   onPhaseBack={handleBack}
                 />
               ) : (
@@ -460,23 +407,6 @@ export default function Onboarding() {
                   className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
                 >
                   Continue
-                  <ChevronRight className="w-5 h-5 ml-1" />
-                </Button>
-              ) : currentPhase === 3 && recPhaseHasNext ? (
-                <Button
-                  onClick={handleRecNext}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary"
-                >
-                  Next
-                  <ChevronRight className="w-5 h-5 ml-1" />
-                </Button>
-              ) : currentPhase === 3 ? (
-                <Button
-                  onClick={handleComplete}
-                  disabled={completionBusy}
-                  className="h-12 w-full sm:w-auto px-8 rounded-2xl btn-primary disabled:opacity-50"
-                >
-                  Finish
                   <ChevronRight className="w-5 h-5 ml-1" />
                 </Button>
               ) : null

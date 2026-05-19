@@ -7,32 +7,30 @@ import { mergeChildDraft, determinePhase } from '@/lib/onboardingHelpers';
 import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
 
 // Fires when the wizard reaches the journey/recommendations phase (phase 3).
-// Reuses cached recommendations if present, otherwise invokes the LLM.
-// Dispatches results to the Onboarding reducer.
-export function useJourneyRecommendations({ hydrated, currentPhase, dispatch }) {
+// Reads from and writes to the child record directly — no separate onboarding collection.
+export function useJourneyRecommendations({ hydrated, currentPhase, activeChildId, dispatch }) {
   useEffect(() => {
-    if (!hydrated || currentPhase !== 3) return;
+    if (!hydrated || currentPhase !== 3 || !activeChildId) return;
     let cancelled = false;
 
     const run = async () => {
       try {
-        const s = await api.onboarding.get();
+        const child = await api.entities.Child.get(activeChildId);
         if (cancelled) return;
 
         if (
-          s.recommendations &&
-          (typeof s.recommendations.pathway_overview === 'string' ||
-            (Array.isArray(s.recommendations.focus_areas) && s.recommendations.focus_areas.length > 0))
+          child.recommendations &&
+          (typeof child.recommendations.pathway_overview === 'string' ||
+            (Array.isArray(child.recommendations.focus_areas) && child.recommendations.focus_areas.length > 0))
         ) {
-          dispatch({ type: 'SET_RECOMMENDATIONS', payload: s.recommendations });
+          dispatch({ type: 'SET_RECOMMENDATIONS', payload: child.recommendations });
           return;
         }
 
-        const normalizedChild = normalizeOnboardingChildDataBlob(s.child_data);
-        const mergedChild = mergeChildDraft(normalizedChild || {});
+        const mergedChild = mergeChildDraft(normalizeOnboardingChildDataBlob(child) || {});
         if (!mergedChild.name?.trim?.()) return;
 
-        const vmJ = s.personality?.view_model;
+        const vmJ = child.personality?.view_model;
         const gp = vmJ?.type && vmJ?.profile ? onboardingProfileFromViewModel(vmJ) : null;
 
         dispatch({ type: 'SET_JOURNEY_BUSY', payload: true });
@@ -60,7 +58,7 @@ export function useJourneyRecommendations({ hydrated, currentPhase, dispatch }) 
           if (cancelled) return;
 
           dispatch({ type: 'SET_RECOMMENDATIONS', payload: result });
-          if (result) await api.onboarding.patch({ recommendations: result });
+          if (result) await api.entities.Child.update(activeChildId, { recommendations: result, onboarding_phase: 3 });
         } catch (err) {
           console.error('[useJourneyRecommendations] Failed to generate recommendations:', err);
         } finally {
@@ -76,5 +74,5 @@ export function useJourneyRecommendations({ hydrated, currentPhase, dispatch }) 
       cancelled = true;
       dispatch({ type: 'SET_JOURNEY_BUSY', payload: false });
     };
-  }, [hydrated, currentPhase, dispatch]);
+  }, [hydrated, currentPhase, activeChildId, dispatch]);
 }
