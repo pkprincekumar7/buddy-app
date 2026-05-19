@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 import secrets
@@ -31,6 +32,7 @@ from app.auth_utils import (
     decode_token_of_type,
     hash_password,
 )
+from app.constants import API_V1_PREFIX
 from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import limiter, user_limiter
@@ -43,7 +45,7 @@ log = logging.getLogger(__name__)
 
 _DUMMY_HASH: str = hash_password("__dummy_constant_time__")
 
-_REFRESH_COOKIE_PATH = "/api/v1/auth/"
+_REFRESH_COOKIE_PATH = f"{API_V1_PREFIX}/auth/"
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +71,17 @@ class RegisterBody(BaseModel):
         except EmailNotValidError as exc:
             raise ValueError(str(exc))
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_complexity(cls, v: str) -> str:
+        if len(set(v)) == 1:
+            raise ValueError("Password must not consist of a single repeated character")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain at least one letter")
+        return v
+
     @field_validator("country_code", mode="before")
     @classmethod
     def normalise_country_code(cls, v: object) -> object:
@@ -82,7 +95,15 @@ class LoginBody(BaseModel):
     @field_validator("email")
     @classmethod
     def normalise_email(cls, v: str) -> str:
-        return v.strip().lower()
+        # Use the same RFC normalisation as RegisterBody (IDNA / punycode) so
+        # that internationalised domain addresses resolve to the same stored key.
+        # Fall back to a simple strip+lower for inputs that fail validation —
+        # the subsequent lookup will simply return no result and auth will fail.
+        try:
+            info = _validate_email(v.strip(), check_deliverability=False)
+            return info.normalized
+        except EmailNotValidError:
+            return v.strip().lower()
 
 
 class GoogleAuthBody(BaseModel):
@@ -188,29 +209,14 @@ def _verify_google_token(id_token_str: str) -> dict:
             "Google ID token verification failed: %s: %s",
             type(exc).__name__, exc, exc_info=True,
         )
-        msg = str(exc).lower()
-        if "audience" in msg or "wrong audience" in msg:
-            detail = (
-                "Google token does not match GOOGLE_CLIENT_ID on this server. "
-                "Set GOOGLE_CLIENT_ID to the same OAuth Web client ID as VITE_GOOGLE_CLIENT_ID."
-            )
-        elif "expired" in msg or "too late" in msg:
-            detail = "Google sign-in token has expired. Use a fresh credential from the browser."
-        elif any(x in msg for x in ("certificate", "urlopen", "connection", "ssl", "timeout", "resolve")):
-            detail = (
-                "Could not verify Google sign-in (failed to reach Google). "
-                "Check outbound HTTPS from the API (e.g. Docker network) and try again."
-            )
-        else:
-            detail = "Invalid Google credential."
-        raise HTTPException(status_code=401, detail=detail) from exc
+        raise HTTPException(status_code=401, detail="Invalid Google credential.") from exc
 
 
 # ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/auth/register", status_code=200)
+@router.post("/auth/register", status_code=201)
 @limiter.limit("5/minute")
 async def register(
     request: Request,
@@ -257,11 +263,17 @@ async def register(
         )
         if existing_entry and not orphaned_user:
             # Reclaim orphaned reservation — update it to point to the new user_id.
-            await db[models.EMAIL_INDEX].update_one(
-                {"_id": body.email},
+            # The filter includes the old user_id so the update is a no-op if a
+            # concurrent registration already claimed this slot after our check
+            # (TOCTOU guard).  modified_count == 0 means the slot is now live.
+            reclaim = await db[models.EMAIL_INDEX].update_one(
+                {"_id": body.email, "user_id": existing_entry["user_id"]},
                 {"$set": {"user_id": new_user_id, "location": location}},
             )
-            log.info("register: reclaimed orphaned email_index entry for email=%s", body.email)
+            if reclaim.modified_count == 0:
+                await async_verify_password(body.password, _DUMMY_HASH)
+                raise HTTPException(status_code=409, detail="Email already registered")
+            log.info("register: reclaimed orphaned email_index entry for email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
         else:
             # Live user exists — constant-time dummy hash to prevent email enumeration.
             await async_verify_password(body.password, _DUMMY_HASH)
@@ -292,10 +304,10 @@ async def register(
         except Exception:
             log.exception(
                 "register: failed to release email_index reservation after users insert "
-                "failure for email=%s — orphaned entry will be reclaimed on next attempt",
-                body.email,
+                "failure for email_hash=%s — orphaned entry will be reclaimed on next attempt",
+                hashlib.sha256(body.email.encode()).hexdigest()[:16],
             )
-        log.exception("register: users insert failed; released email reservation for email=%s", body.email)
+        log.exception("register: users insert failed; released email reservation for email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
         raise HTTPException(status_code=500, detail="Registration failed — please try again")
 
     log.info("user.register id=%s location=%s", new_user_id, location)
@@ -328,12 +340,14 @@ async def login(
         await async_verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # .get() guards against Google-only accounts that have no password_hash.
-    target_hash = user.get("password_hash") or _DUMMY_HASH if user else _DUMMY_HASH
+    # Explicit None-check: an empty string password_hash (malformed record) must not
+    # fall through to _DUMMY_HASH via truthiness, as that would alter error semantics.
+    pw_hash = user.get("password_hash") if user else None
+    target_hash = pw_hash if pw_hash is not None else _DUMMY_HASH
     password_ok = await async_verify_password(body.password, target_hash)
 
     if not user or not password_ok:
-        log.warning("auth.login.failed email=%s", body.email)
+        log.warning("auth.login.failed email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     location = user.get("location", settings.default_location)
@@ -398,6 +412,31 @@ async def refresh_tokens(
         _clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=db_expiry sub=%s", uid)
         raise HTTPException(status_code=401, detail="Session expired")
+
+    # Fetch the user and enforce token revocation.  This mirrors get_current_user so
+    # that revoking tokens (e.g. on account compromise) also blocks refresh flows and
+    # prevents an attacker from minting new access tokens with a stolen refresh cookie.
+    refresh_user = await db[models.USERS].find_one({"_id": uid, "location": location})
+    if not refresh_user:
+        _clear_auth_cookies(response)
+        log.warning("auth.refresh.failed reason=user_not_found sub=%s", uid)
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if refresh_user.get("tokens_revoked_at") is not None:
+        iat = refresh_payload.get("iat")
+        if iat is None:
+            await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
+            _clear_auth_cookies(response)
+            raise HTTPException(status_code=401, detail="Session revoked")
+        token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+        revoked_at = refresh_user["tokens_revoked_at"]
+        if revoked_at.tzinfo is None:
+            revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+        if token_issued_at <= revoked_at:
+            await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
+            _clear_auth_cookies(response)
+            log.warning("auth.refresh.revoked sub=%s", uid)
+            raise HTTPException(status_code=401, detail="Session revoked")
 
     # Insert new session before deleting old: if the process crashes after the insert
     # but before the HTTP response is sent, the client retries with the old cookies
@@ -520,12 +559,21 @@ async def google_auth(
                 if race_doc:
                     # Orphaned reservation from a failed delete_account rollback.
                     # Reclaim the entry and continue registration.
-                    await db[models.EMAIL_INDEX].update_one(
-                        {"_id": email},
+                    # Filter on the old user_id so the update is a no-op if a
+                    # concurrent registration already claimed this slot after our
+                    # check (TOCTOU guard).
+                    reclaim = await db[models.EMAIL_INDEX].update_one(
+                        {"_id": email, "user_id": race_doc["user_id"]},
                         {"$set": {"user_id": new_user_id, "location": location}},
                     )
+                    if reclaim.modified_count == 0:
+                        # Slot was claimed by another concurrent registration or
+                        # the original in-flight registration just committed its
+                        # user doc — ask the client to retry.
+                        raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
                     log.info(
-                        "google_auth: reclaimed orphaned email_index entry for email=%s", email
+                        "google_auth: reclaimed orphaned email_index entry for email_hash=%s",
+                        hashlib.sha256(email.encode()).hexdigest()[:16],
                     )
                 else:
                     # email_index entry exists but user doc not yet committed —
@@ -544,7 +592,7 @@ async def google_auth(
             await db[models.USERS].insert_one(user_doc)
         except Exception:
             await db[models.EMAIL_INDEX].delete_one({"_id": email})
-            log.exception("google_auth: users insert failed; rolled back email_index for email=%s", email)
+            log.exception("google_auth: users insert failed; rolled back email_index for email_hash=%s", hashlib.sha256(email.encode()).hexdigest()[:16])
             raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
 
         log.info("google_auth.register id=%s location=%s", new_user_id, location)
@@ -559,8 +607,8 @@ async def auth_me(request: Request, user: dict = Depends(get_current_user)):
     return MeResponse(
         id=user["_id"],
         email=user["email"],
-        full_name=user["full_name"],
-        role=user["role"],
+        full_name=user.get("full_name") or "",
+        role=user.get("role", "parent"),
     )
 
 
@@ -573,7 +621,11 @@ async def delete_account(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    if body.confirm_email.strip().lower() != user["email"]:
+    try:
+        normalized_confirm = _validate_email(body.confirm_email.strip(), check_deliverability=False).normalized
+    except EmailNotValidError:
+        normalized_confirm = body.confirm_email.strip().lower()
+    if normalized_confirm != user["email"]:
         raise HTTPException(status_code=400, detail="Email confirmation does not match")
 
     user_id = user["_id"]

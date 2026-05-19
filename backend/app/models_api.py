@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -41,13 +42,13 @@ class UserPreferencesPatch(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ChildActivityResults(BaseModel):
-    summary: str = ""
-    strengths: list[str] = Field(default_factory=list)
-    suggested_activities: list[str] = Field(default_factory=list)
+    summary: str = Field(default="", max_length=2000)
+    strengths: list[str] = Field(default_factory=list, max_length=20)
+    suggested_activities: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ChildActivity(BaseModel):
-    selections: list[str] = Field(default_factory=list)
+    selections: list[str] = Field(default_factory=list, max_length=50)
     results: ChildActivityResults | None = None
 
 
@@ -80,20 +81,23 @@ class CompletedGrowthAreasResponse(BaseModel):
     areas: list[CompletedGrowthArea]
 
 
+_GROWTH_AREA_MAX_BYTES = 65_536  # 64 KB cap on the total serialised dict payload
+
+
 class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
     area_color: str = Field(max_length=100)
-    answers: dict[str, str] = Field(default_factory=dict, max_length=100)
+    answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(default_factory=dict, max_length=100)
     recommendations: list[str] | None = Field(None, max_length=50)
     child_activity: ChildActivity | None = None
     # Status + per-area wizard state
-    status: str | None = None
-    step: str | None = None
+    status: str | None = Field(None, max_length=50)
+    step: str | None = Field(None, max_length=100)
     selected_activity: dict | None = None
     parent_liked: bool | None = None
     want_child_activity: bool | None = None
-    feedback: str | None = None
+    feedback: str | None = Field(None, max_length=2000)
     interactive_step: int | None = None
     interactive_answers: dict | None = None
     interactive_draft: dict | None = None
@@ -102,54 +106,80 @@ class AppendGrowthAreaRequest(BaseModel):
     child_activity_selections: list | None = None
     ai_three_month_recommendations: list | None = None
 
+    @model_validator(mode="after")
+    def limit_dict_payload_size(self) -> "AppendGrowthAreaRequest":
+        """Guard against deeply-nested or oversized fields bloating MongoDB documents."""
+        serialisable_fields = (
+            self.answers,  # max_length=100 caps key count, not value byte size
+            self.recommendations,
+            self.child_activity.model_dump() if self.child_activity else None,
+            self.selected_activity,
+            self.interactive_answers,
+            self.interactive_draft,
+            self.generated_activity,
+            self.ai_three_month_recommendations,
+            self.child_activity_selections,
+        )
+        try:
+            total = sum(len(json.dumps(f)) for f in serialisable_fields if f is not None)
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError("Growth area payload contains an invalid or too-deeply nested structure")
+        for str_field in (self.feedback, self.step, self.status):
+            if str_field is not None:
+                total += len(str_field)
+        if total > _GROWTH_AREA_MAX_BYTES:
+            raise ValueError(
+                f"Growth area payload exceeds maximum allowed size ({_GROWTH_AREA_MAX_BYTES // 1024} KB)"
+            )
+        return self
 
-# ---------------------------------------------------------------------------
-# Recommendations progress
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Goals
 # ---------------------------------------------------------------------------
 
 class GoalsActivity(BaseModel):
-    title: str
-    objective: str
+    title: str = Field(max_length=200)
+    objective: str = Field(max_length=500)
     scorable: bool = True
     completed: bool | None = None
     score: float | None = None
-    note: str | None = None
-    progress_observation: str | None = None
-    ai_feedback: str | None = None
-    parent_feedback: str | None = None
+    note: str | None = Field(None, max_length=1000)
+    progress_observation: str | None = Field(None, max_length=1000)
+    ai_feedback: str | None = Field(None, max_length=2000)
+    parent_feedback: str | None = Field(None, max_length=2000)
 
 
 class GoalsPeriod(BaseModel):
-    label: str
-    activities: list[GoalsActivity]
+    label: str = Field(max_length=100)
+    activities: list[GoalsActivity] = Field(max_length=20)
 
 
 class GoalsMonth(BaseModel):
     month: int
-    goal: str
-    objective: str
-    periods: list[GoalsPeriod]
+    goal: str = Field(max_length=500)
+    objective: str = Field(max_length=500)
+    periods: list[GoalsPeriod] = Field(max_length=10)
 
 
 class InsightItem(BaseModel):
-    text: str
-    type: str
-    details: str
+    text: str = Field(max_length=1000)
+    type: str = Field(max_length=50)
+    details: str = Field(max_length=1000)
 
 
 class GoalsPlanInsights(BaseModel):
     schema_version: int | None = None
-    insight_items: list[InsightItem] = []
+    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
 
 
 class GoalsPlan(BaseModel):
-    months: list[GoalsMonth]
+    months: list[GoalsMonth] = Field(max_length=12)
     insights: GoalsPlanInsights | None = None
     insights_signature: int | None = None
+
+
+_GOALS_PLAN_MAX_BYTES = 262_144  # 256 KB cap on the total serialised goals plan
 
 
 class UserGoals(BaseModel):
@@ -158,10 +188,23 @@ class UserGoals(BaseModel):
 
 
 class UserGoalsPatch(BaseModel):
-    parent_concern: str | None = None
+    parent_concern: str | None = Field(None, max_length=2000)
     plan: GoalsPlan | None = None
     clear_plan: bool = False
     clear_concern: bool = False
+
+    @model_validator(mode="after")
+    def limit_goals_plan_size(self) -> "UserGoalsPatch":
+        if self.plan is not None:
+            try:
+                size = len(json.dumps(self.plan.model_dump()))
+            except (RecursionError, ValueError, TypeError):
+                raise ValueError("Goals plan contains an invalid or too-deeply nested structure")
+            if size > _GOALS_PLAN_MAX_BYTES:
+                raise ValueError(
+                    f"Goals plan exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+                )
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +262,21 @@ class ChildCreate(BaseModel):
     emotional_behaviour: str | None = None
 
     @model_validator(mode="after")
+    def reject_unsafe_extra_keys(self) -> "ChildCreate":
+        if self.__pydantic_extra__:
+            for key in self.__pydantic_extra__:
+                if key.startswith("$") or "." in key:
+                    raise ValueError(f"Field name {key!r} is not allowed")
+        return self
+
+    @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildCreate":
         if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+            try:
+                size = len(json.dumps(self.__pydantic_extra__))
+            except (RecursionError, TypeError, ValueError):
+                raise ValueError("Child payload contains invalid or non-serialisable data")
+            if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self
 
@@ -230,7 +285,7 @@ class ChildPatch(BaseModel):
     # extra="allow": same payload-blob design as ChildCreate.
     model_config = {"extra": "allow"}
 
-    name: str | None = None
+    name: str | None = Field(None, max_length=255)
     # Promoted columns — declared explicitly so max_length validation applies on the patch path.
     age: str | int | None = Field(None, max_length=20)
     school: str | None = Field(None, max_length=300)
@@ -249,8 +304,20 @@ class ChildPatch(BaseModel):
     wizard_area_index: int | None = None
 
     @model_validator(mode="after")
+    def reject_unsafe_extra_keys(self) -> "ChildPatch":
+        if self.__pydantic_extra__:
+            for key in self.__pydantic_extra__:
+                if key.startswith("$") or "." in key:
+                    raise ValueError(f"Field name {key!r} is not allowed")
+        return self
+
+    @model_validator(mode="after")
     def limit_extra_payload_size(self) -> "ChildPatch":
         if self.__pydantic_extra__:
-            if len(json.dumps(self.__pydantic_extra__)) > _PAYLOAD_MAX_BYTES:
+            try:
+                size = len(json.dumps(self.__pydantic_extra__))
+            except (RecursionError, TypeError, ValueError):
+                raise ValueError("Child payload contains invalid or non-serialisable data")
+            if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self

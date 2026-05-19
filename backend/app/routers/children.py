@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pymongo import ASCENDING, DESCENDING
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -20,7 +20,15 @@ from app.models_api import (
 router = APIRouter(tags=["children"])
 log = logging.getLogger(__name__)
 
-_CHILD_SYSTEM_FIELDS = {"id", "created_date", "user_id"}
+# Fields that the server assigns — must never be accepted from client input.
+# Stripping these before the **data spread ensures user-supplied values cannot
+# overwrite server-controlled fields (especially `location`, which is the shard
+# key and the foundation of all owner-scoped queries).
+_CHILD_SYSTEM_FIELDS = {
+    "id", "created_date",             # API aliases
+    "_id", "user_id", "location",     # DB identity / shard key
+    "created_at", "updated_at",       # server-managed timestamps
+}
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +73,7 @@ async def list_children(
     return [_child_to_api(d) for d in docs]
 
 
-@router.post("/children", response_model=ChildResponse)
+@router.post("/children", response_model=ChildResponse, status_code=201)
 @user_limiter.limit("20/minute")
 async def create_child(
     request: Request,
@@ -73,6 +81,12 @@ async def create_child(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    count = await db[models.CHILDREN].count_documents(
+        {"user_id": user["_id"], "location": user["location"]}
+    )
+    if count >= 10:
+        raise HTTPException(status_code=422, detail="Maximum of 10 children allowed per account")
+
     now = datetime.now(timezone.utc)
     data = payload.model_dump(exclude_none=True)
     for f in _CHILD_SYSTEM_FIELDS:
@@ -95,7 +109,7 @@ async def create_child(
 @user_limiter.limit("60/minute")
 async def get_child(
     request: Request,
-    child_id: str,
+    child_id: str = Path(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
@@ -109,15 +123,11 @@ async def get_child(
 @user_limiter.limit("30/minute")
 async def update_child(
     request: Request,
-    child_id: str,
-    patch: ChildPatch,
+    child_id: str = Path(..., min_length=1, max_length=100),
+    patch: ChildPatch = Body(...),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    existing = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Child not found")
-
     updates = patch.model_dump(exclude_unset=True)
     set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
     for k, v in updates.items():
@@ -141,7 +151,7 @@ async def update_child(
 @user_limiter.limit("10/minute")
 async def delete_child(
     request: Request,
-    child_id: str,
+    child_id: str = Path(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):

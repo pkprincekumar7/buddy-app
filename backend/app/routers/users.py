@@ -2,7 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.database import get_db
@@ -23,6 +23,29 @@ from app.models_api import (
 
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
+
+# Hard cap on growth-area documents returned in a single response.
+# Exceeding this is extremely unlikely in practice but logged so it's visible.
+_GROWTH_AREAS_MAX = 500
+
+# Optional fields in AppendGrowthAreaRequest that must only be written when
+# explicitly set by the caller — prevents silently null-overwriting existing data.
+_GROWTH_AREA_OPTIONAL_FIELDS = (
+    "recommendations", "status", "step", "selected_activity",
+    "parent_liked", "want_child_activity", "feedback",
+    "interactive_step", "interactive_answers", "interactive_draft",
+    "generated_activity", "show_game", "child_activity_selections",
+    "ai_three_month_recommendations",
+)
+
+
+async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> None:
+    """Raise 404 if child_id does not belong to the authenticated user."""
+    child = await db[models.CHILDREN].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +130,13 @@ async def patch_preferences(
 @user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
     request: Request,
-    child_id: str = Query(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    await _require_child(db, child_id, user)
     docs = await (
         db[models.GROWTH_AREAS]
         .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
@@ -128,34 +152,25 @@ async def list_completed_growth_areas(
 async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
-    child_id: str = Query(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    await _require_child(db, child_id, user)
     now = datetime.now(timezone.utc)
+    # Always write the required fields (area_name, area_color, answers).
     set_fields: dict = {
         "area_name": body.area_name,
         "area_color": body.area_color,
         "answers": body.answers,
-        "recommendations": body.recommendations,
         "updated_at": now,
-        # Status + per-area wizard state
-        "status": body.status,
-        "step": body.step,
-        "selected_activity": body.selected_activity,
-        "parent_liked": body.parent_liked,
-        "want_child_activity": body.want_child_activity,
-        "feedback": body.feedback,
-        "interactive_step": body.interactive_step,
-        "interactive_answers": body.interactive_answers,
-        "interactive_draft": body.interactive_draft,
-        "generated_activity": body.generated_activity,
-        "show_game": body.show_game,
-        "child_activity_selections": body.child_activity_selections,
-        "ai_three_month_recommendations": body.ai_three_month_recommendations,
     }
-    # Only write child_activity when explicitly provided. Never overwrite saved game
-    # results with null — callers that don't carry game data simply omit the field.
+    # Only write optional fields when explicitly included in the request — avoids
+    # silently overwriting existing data with null when the caller omits the field.
+    for field in _GROWTH_AREA_OPTIONAL_FIELDS:
+        if field in body.model_fields_set:
+            set_fields[field] = getattr(body, field)
+    # child_activity is a nested model — only write when explicitly provided.
     if body.child_activity is not None:
         set_fields["child_activity"] = body.child_activity.model_dump()
     # user_id, child_id, area_id, location are equality conditions in the filter.
@@ -169,8 +184,13 @@ async def append_completed_growth_area(
         db[models.GROWTH_AREAS]
         .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
         .sort("created_at", 1)
-        .to_list(200)
+        .to_list(_GROWTH_AREAS_MAX)
     )
+    if len(docs) == _GROWTH_AREAS_MAX:
+        log.warning(
+            "append_completed_growth_area: hit _GROWTH_AREAS_MAX cap (%d) for user=%s child=%s",
+            _GROWTH_AREAS_MAX, user["_id"], child_id,
+        )
     return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
@@ -178,10 +198,11 @@ async def append_completed_growth_area(
 @user_limiter.limit("10/minute")
 async def clear_completed_growth_areas(
     request: Request,
-    child_id: str = Query(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    await _require_child(db, child_id, user)
     await db[models.GROWTH_AREAS].delete_many(
         {"user_id": user["_id"], "child_id": child_id, "location": user["location"]}
     )
@@ -195,10 +216,11 @@ async def clear_completed_growth_areas(
 @user_limiter.limit("60/minute")
 async def get_goals(
     request: Request,
-    child_id: str = Query(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    await _require_child(db, child_id, user)
     doc = await db[models.GOALS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )
@@ -213,10 +235,11 @@ async def get_goals(
 async def patch_goals(
     request: Request,
     body: UserGoalsPatch,
-    child_id: str = Query(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    await _require_child(db, child_id, user)
     now = datetime.now(timezone.utc)
     set_fields: dict = {"updated_at": now}
     set_on_insert: dict = {"created_at": now, "user_id": user["_id"]}

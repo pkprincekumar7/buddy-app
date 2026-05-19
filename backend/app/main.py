@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -14,14 +15,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.constants import API_V1_PREFIX
 from app.database import init_indexes
 from app.limiter import limiter, user_limiter
 from app.llm_rate_limiter import get_redis_client
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
 from app.routers.children import router as children_router
-from app.routers.audio import router as audio_router
 from app.routers.llm import router as llm_router
+from app.routers.audio import router as audio_router
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -61,9 +63,19 @@ async def _cleanup_expired_sessions(db) -> None:
                 log.debug("session_cleanup: lock held by another instance — skipping this cycle")
                 continue
             lock_acquired = True
+        else:
+            # No Redis lock available — all instances will run cleanup.  Add per-cycle
+            # jitter so pod restarts don't produce a synchronised wave of DB deletes.
+            await asyncio.sleep(random.uniform(0, 300))
 
         try:
             now = datetime.now(timezone.utc)
+            # NOTE: The `sessions` collection is sharded by `location`.  Querying
+            # without the shard key triggers a scatter-gather fan-out across all
+            # shards.  This is intentional and acceptable for a once-hourly
+            # maintenance task.  If cleanup latency becomes a concern, replace this
+            # with one delete_many per known location value (see routing.py for
+            # the full set of valid location strings).
             result = await db["sessions"].delete_many({"expires_at": {"$lt": now}})
             if result.deleted_count:
                 log.info("session_cleanup: removed %d expired sessions", result.deleted_count)
@@ -74,10 +86,15 @@ async def _cleanup_expired_sessions(db) -> None:
         finally:
             if lock_acquired:
                 try:
-                    if not asyncio.current_task().cancelling():
+                    task = asyncio.current_task()
+                    is_cancelling = task is not None and getattr(task, "cancelling", lambda: False)()
+                    if not is_cancelling:
                         await loop.run_in_executor(None, r.delete, _CLEANUP_LOCK_KEY)
                 except Exception:
-                    pass  # TTL will expire the lock naturally
+                    log.warning(
+                        "session_cleanup: failed to release Redis lock — "
+                        "will expire naturally in %ds", _CLEANUP_LOCK_TTL,
+                    )
 
 
 @asynccontextmanager
@@ -121,13 +138,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+_HEALTH_PATHS = {"/health", "/api/health"}
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     client_id = request.headers.get("X-Request-Id", "")
     request_id = client_id if _REQUEST_ID_RE.match(client_id) else str(uuid.uuid4())
     response = await call_next(request)
     response.headers["X-Request-Id"] = request_id
-    response.headers["Cache-Control"] = "no-store"
+    # Suppress caching for all API responses except the health check, which is
+    # called frequently by load balancers and carries no sensitive data.
+    if request.url.path not in _HEALTH_PATHS:
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -140,11 +163,11 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
 )
 
-app.include_router(auth_router, prefix="/api/v1")
-app.include_router(users_router, prefix="/api/v1")
-app.include_router(children_router, prefix="/api/v1")
-app.include_router(llm_router, prefix="/api/v1")
-app.include_router(audio_router, prefix="/api/v1")
+app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(users_router, prefix=API_V1_PREFIX)
+app.include_router(children_router, prefix=API_V1_PREFIX)
+app.include_router(llm_router, prefix=API_V1_PREFIX)
+app.include_router(audio_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health")
