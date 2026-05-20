@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useReducer, useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Trophy, Sparkles } from 'lucide-react';
@@ -17,17 +17,17 @@ import {
 // ── reducer ──────────────────────────────────────────────────────────────────
 
 const ACTIVITY_STEPS = {
-  LOADING:   'loading',
+  LOADING: 'loading',
   QUESTIONS: 'questions',
   ANALYZING: 'analyzing',
-  COMPLETE:  'complete',
+  COMPLETE: 'complete',
 };
 
 const initialActivityState = {
   step: ACTIVITY_STEPS.LOADING,
   questions: [],
   currentQuestionIndex: 0,
-  direction: 1,           // 1 = forward, -1 = backward
+  direction: 1, // 1 = forward, -1 = backward
   responses: {},
   currentAnswer: '',
   aiScore: null,
@@ -37,6 +37,11 @@ const initialActivityState = {
   isSaving: false,
 };
 
+/**
+ * @param {typeof initialActivityState} state
+ * @param {{ type: string, [key: string]: any }} action
+ * @returns {typeof initialActivityState}
+ */
 function activityReducer(state, action) {
   switch (action.type) {
     case 'QUESTIONS_LOADED':
@@ -82,19 +87,62 @@ function activityReducer(state, action) {
 const CHOICE_FEEDBACK_DELAY_MS = 250;
 
 const buildFallbackQuestions = (activityTitle) => [
-  { id: 1, type: 'choice', question: `What part of "${activityTitle}" are you most excited about?`, options: ['Learning something new', 'Having fun with it', 'Showing my skills', 'Doing it with others'], labels: [] },
-  { id: 2, type: 'text', question: 'What do you think will be the most exciting part of this activity?', options: [], labels: [] },
-  { id: 3, type: 'scale', question: 'How excited are you about this activity?', options: [], labels: ['Not excited', 'Super excited'] },
-  { id: 4, type: 'text', question: 'What do you hope to learn or achieve from this?', options: [], labels: [] }
+  {
+    id: 1,
+    type: 'choice',
+    question: `What part of "${activityTitle}" are you most excited about?`,
+    options: [
+      'Learning something new',
+      'Having fun with it',
+      'Showing my skills',
+      'Doing it with others',
+    ],
+    labels: [],
+  },
+  {
+    id: 2,
+    type: 'text',
+    question: 'What do you think will be the most exciting part of this activity?',
+    options: [],
+    labels: [],
+  },
+  {
+    id: 3,
+    type: 'scale',
+    question: 'How excited are you about this activity?',
+    options: [],
+    labels: ['Not excited', 'Super excited'],
+  },
+  {
+    id: 4,
+    type: 'text',
+    question: 'What do you hope to learn or achieve from this?',
+    options: [],
+    labels: [],
+  },
 ];
 
-export default function ActivityModal({ activity, originalActivity, childName, onClose, onComplete }) {
+export default function ActivityModal({
+  activity,
+  originalActivity,
+  childName,
+  onClose,
+  onComplete,
+}) {
   const isScorableActivity = activity.scorable !== false;
   const [state, dispatch] = useReducer(activityReducer, initialActivityState);
   const {
-    step, questions, currentQuestionIndex, direction,
-    responses, currentAnswer, aiScore, aiNote, aiFeedback,
-    parentFeedback, isSaving,
+    step,
+    questions,
+    currentQuestionIndex,
+    direction,
+    responses,
+    currentAnswer,
+    aiScore,
+    aiNote,
+    aiFeedback,
+    parentFeedback,
+    isSaving,
   } = state;
 
   const choiceTimeoutRef = useRef(null);
@@ -103,7 +151,11 @@ export default function ActivityModal({ activity, originalActivity, childName, o
     const fallbackQuestions = buildFallbackQuestions(activity.title);
     try {
       const result = await api.integrations.Core.InvokeLLM({
-        prompt: buildActivityQuestionsPrompt({ title: activity.title, objective: activity.objective, childName }),
+        prompt: buildActivityQuestionsPrompt({
+          title: activity.title,
+          objective: activity.objective,
+          childName,
+        }),
         response_json_schema: activityQuestionsSchema(),
       });
       const raw = result.properties?.questions ?? result.questions;
@@ -119,92 +171,109 @@ export default function ActivityModal({ activity, originalActivity, childName, o
     return () => clearTimeout(choiceTimeoutRef.current);
   }, [generateQuestions]);
 
-  const analyzeResponses = useCallback(async (allResponses) => {
-    dispatch({ type: 'SET_STEP', step: ACTIVITY_STEPS.ANALYZING });
-    try {
-      const answersText = Object.values(allResponses)
-        .map((r) => {
-          const typeHint = r.type === 'scale' ? ' (rated on a scale of 1–5)' : '';
-          return `Q: ${r.question}\nA: ${r.answer}${typeHint}`;
-        })
-        .join('\n\n');
+  const analyzeResponses = useCallback(
+    async (allResponses) => {
+      dispatch({ type: 'SET_STEP', step: ACTIVITY_STEPS.ANALYZING });
+      try {
+        const answersText = Object.values(allResponses)
+          .map((r) => {
+            const typeHint = r.type === 'scale' ? ' (rated on a scale of 1–5)' : '';
+            return `Q: ${r.question}\nA: ${r.answer}${typeHint}`;
+          })
+          .join('\n\n');
 
-      if (isScorableActivity) {
-        const result = await api.integrations.Core.InvokeLLM({
-          prompt: buildActivityScorePrompt({ title: activity.title, objective: activity.objective, answersText }),
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              score: { type: 'number' },
-              feedback: { type: 'string' },
+        if (isScorableActivity) {
+          const result = await api.integrations.Core.InvokeLLM({
+            prompt: buildActivityScorePrompt({
+              title: activity.title,
+              objective: activity.objective,
+              answersText,
+            }),
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                score: { type: 'number' },
+                feedback: { type: 'string' },
+              },
             },
-          },
-        });
-        const data = result.properties ?? result;
+          });
+          const data = result.properties ?? result;
+          dispatch({
+            type: 'ANALYSIS_COMPLETE',
+            aiScore: unwrapLLM(data.score) ?? 7,
+            aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
+          });
+        } else {
+          const result = await api.integrations.Core.InvokeLLM({
+            prompt: buildActivityNotePrompt({
+              title: activity.title,
+              objective: activity.objective,
+              answersText,
+            }),
+            response_json_schema: {
+              type: 'object',
+              properties: {
+                note: { type: 'string' },
+                feedback: { type: 'string' },
+              },
+            },
+          });
+          const data = result.properties ?? result;
+          dispatch({
+            type: 'ANALYSIS_COMPLETE',
+            aiNote: unwrapLLM(data.note) ?? 'Great effort today!',
+            aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
+          });
+        }
+      } catch (err) {
+        console.warn('[ActivityModal] AI analysis failed, using defaults:', err);
         dispatch({
           type: 'ANALYSIS_COMPLETE',
-          aiScore: unwrapLLM(data.score) ?? 7,
-          aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
-        });
-      } else {
-        const result = await api.integrations.Core.InvokeLLM({
-          prompt: buildActivityNotePrompt({ title: activity.title, objective: activity.objective, answersText }),
-          response_json_schema: {
-            type: 'object',
-            properties: {
-              note: { type: 'string' },
-              feedback: { type: 'string' },
-            },
-          },
-        });
-        const data = result.properties ?? result;
-        dispatch({
-          type: 'ANALYSIS_COMPLETE',
-          aiNote: unwrapLLM(data.note) ?? 'Great effort today!',
-          aiFeedback: unwrapLLM(data.feedback) || 'Great job completing this activity!',
+          aiScore: isScorableActivity ? 7 : null,
+          aiNote: isScorableActivity ? null : 'Great effort today!',
+          aiFeedback: 'Great job completing this activity with enthusiasm!',
         });
       }
-    } catch (err) {
-      console.warn('[ActivityModal] AI analysis failed, using defaults:', err);
-      dispatch({
-        type: 'ANALYSIS_COMPLETE',
-        aiScore: isScorableActivity ? 7 : null,
-        aiNote: isScorableActivity ? null : 'Great effort today!',
-        aiFeedback: 'Great job completing this activity with enthusiasm!',
-      });
-    }
-  }, [dispatch, activity.title, activity.objective, isScorableActivity]);
+    },
+    [dispatch, activity.title, activity.objective, isScorableActivity],
+  );
 
-  const advanceOrAnalyze = useCallback((newResponses, questionIdx) => {
-    if (questionIdx < questions.length - 1) {
-      dispatch({ type: 'ADVANCE_QUESTION', index: questionIdx + 1, responses: newResponses });
-    } else {
-      analyzeResponses(newResponses);
-    }
-  }, [questions.length, dispatch, analyzeResponses]);
+  const advanceOrAnalyze = useCallback(
+    (newResponses, questionIdx) => {
+      if (questionIdx < questions.length - 1) {
+        dispatch({ type: 'ADVANCE_QUESTION', index: questionIdx + 1, responses: newResponses });
+      } else {
+        analyzeResponses(newResponses);
+      }
+    },
+    [questions.length, dispatch, analyzeResponses],
+  );
 
   const handleAnswerQuestion = useCallback(() => {
     const question = questions[currentQuestionIndex];
     const newResponses = {
       ...responses,
-      [question.id]: { question: question.question, answer: currentAnswer, type: question.type }
+      [question.id]: { question: question.question, answer: currentAnswer, type: question.type },
     };
     advanceOrAnalyze(newResponses, currentQuestionIndex);
   }, [questions, currentQuestionIndex, responses, currentAnswer, advanceOrAnalyze]);
 
-  const handleChoiceSelect = useCallback((option) => {
-    clearTimeout(choiceTimeoutRef.current);
-    const question = questions[currentQuestionIndex];
-    const idx = currentQuestionIndex;
-    const newResponses = {
-      ...responses,
-      [question.id]: { question: question.question, answer: option, type: 'choice' }
-    };
-    dispatch({ type: 'SET_CURRENT_ANSWER', value: option });
-    choiceTimeoutRef.current = setTimeout(() => {
-      advanceOrAnalyze(newResponses, idx);
-    }, CHOICE_FEEDBACK_DELAY_MS);
-  }, [questions, currentQuestionIndex, responses, dispatch, advanceOrAnalyze]);
+  const handleChoiceSelect = useCallback(
+    (option) => {
+      clearTimeout(choiceTimeoutRef.current);
+      const question = questions[currentQuestionIndex];
+      const idx = currentQuestionIndex;
+      const newResponses = {
+        ...responses,
+        [question.id]: { question: question.question, answer: option, type: 'choice' },
+      };
+      dispatch({ type: 'SET_CURRENT_ANSWER', value: option });
+      choiceTimeoutRef.current = setTimeout(() => {
+        advanceOrAnalyze(newResponses, idx);
+      }, CHOICE_FEEDBACK_DELAY_MS);
+    },
+    [questions, currentQuestionIndex, responses, dispatch, advanceOrAnalyze],
+  );
 
   const handleGoBack = useCallback(() => {
     clearTimeout(choiceTimeoutRef.current);
@@ -257,7 +326,17 @@ export default function ActivityModal({ activity, originalActivity, childName, o
     } finally {
       dispatch({ type: 'SET_SAVING', value: false });
     }
-  }, [dispatch, isScorableActivity, originalActivity, activity.title, aiNote, aiFeedback, parentFeedback, aiScore, onComplete]);
+  }, [
+    dispatch,
+    isScorableActivity,
+    originalActivity,
+    activity.title,
+    aiNote,
+    aiFeedback,
+    parentFeedback,
+    aiScore,
+    onComplete,
+  ]);
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = questions.length > 0 ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
@@ -268,7 +347,7 @@ export default function ActivityModal({ activity, originalActivity, childName, o
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
     >
       <motion.div
         role="dialog"
@@ -278,37 +357,39 @@ export default function ActivityModal({ activity, originalActivity, childName, o
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 16, transition: { duration: 0.25, ease: 'easeIn' } }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
-        className="bg-card rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border-edge"
+        className="border-edge max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-card shadow-2xl"
       >
         {/* Header */}
-        <div className="p-6 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-t-3xl relative">
+        <div className="relative rounded-t-3xl bg-gradient-to-br from-teal-400 to-emerald-500 p-6">
           <button
             onClick={onClose}
             aria-label="Close activity"
-            className="absolute top-4 right-4 w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
+            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
           >
-            <X className="w-5 h-5 text-white" />
+            <X className="h-5 w-5 text-white" />
           </button>
 
-          <div className="flex items-start gap-4 mb-4 pr-10">
-            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0 backdrop-blur-sm">
-              <Sparkles className="w-7 h-7 text-white" />
+          <div className="mb-4 flex items-start gap-4 pr-10">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+              <Sparkles className="h-7 w-7 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white leading-tight">{activity.title}</h2>
-              <p className="text-white/90 text-sm mt-0.5 leading-snug">{activity.objective}</p>
+              <h2 className="text-xl font-bold leading-tight text-white">{activity.title}</h2>
+              <p className="mt-0.5 text-sm leading-snug text-white/90">{activity.objective}</p>
             </div>
           </div>
 
           {step === ACTIVITY_STEPS.QUESTIONS && questions.length > 0 && (
             <div className="space-y-1.5">
-              <div className="flex justify-between text-white/90 text-sm">
-                <span>Question {currentQuestionIndex + 1} of {questions.length}</span>
+              <div className="flex justify-between text-sm text-white/90">
+                <span>
+                  Question {currentQuestionIndex + 1} of {questions.length}
+                </span>
                 <span>{Math.round(progress)}%</span>
               </div>
-              <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
                 <motion.div
-                  className="h-full bg-white rounded-full"
+                  className="h-full rounded-full bg-white"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ duration: 0.45 }}
@@ -327,17 +408,17 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="py-16 flex flex-col items-center gap-4"
+                className="flex flex-col items-center gap-4 py-16"
                 aria-live="polite"
                 aria-busy="true"
               >
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                  className="w-10 h-10 border-4 border-teal-500 border-t-transparent rounded-full"
+                  className="h-10 w-10 rounded-full border-4 border-teal-500 border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="text-slate-400 font-medium">Preparing activity...</p>
+                <p className="font-medium text-slate-400">Preparing activity...</p>
               </motion.div>
             )}
 
@@ -346,11 +427,15 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                 key={`q-${currentQuestionIndex}`}
                 initial={{ opacity: 0, x: direction * 48 }}
                 animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: direction * -48, transition: { duration: 0.3, ease: 'easeIn' } }}
+                exit={{
+                  opacity: 0,
+                  x: direction * -48,
+                  transition: { duration: 0.3, ease: 'easeIn' },
+                }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="py-4"
               >
-                <h3 className="text-lg font-bold text-white mb-6 leading-snug">
+                <h3 className="mb-6 text-lg font-bold leading-snug text-white">
                   {currentQuestion.question}
                 </h3>
 
@@ -361,7 +446,7 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                         key={option}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => handleChoiceSelect(option)}
-                        className={`w-full p-4 rounded-2xl border-2 text-left transition-all ${
+                        className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
                           currentAnswer === option
                             ? 'border-teal-500 bg-teal-500/10'
                             : 'border-c-edge hover:border-c-bright bg-surface-input'
@@ -373,9 +458,9 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                     {currentQuestionIndex > 0 && (
                       <button
                         onClick={handleGoBack}
-                        className="mt-2 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+                        className="mt-2 flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-300"
                       >
-                        <ChevronLeft className="w-4 h-4" /> Previous
+                        <ChevronLeft className="h-4 w-4" /> Previous
                       </button>
                     )}
                   </div>
@@ -385,18 +470,20 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                   <div className="space-y-4">
                     <TextareaWithVoice
                       value={currentAnswer}
-                      onChange={(e) => dispatch({ type: 'SET_CURRENT_ANSWER', value: e.target.value })}
+                      onChange={(e) =>
+                        dispatch({ type: 'SET_CURRENT_ANSWER', value: e.target.value })
+                      }
                       placeholder="Type or speak your answer..."
-                      className="min-h-[120px] rounded-2xl resize-none"
+                      className="min-h-[120px] resize-none rounded-2xl"
                     />
                     <div className="grid grid-cols-2 gap-3">
                       {currentQuestionIndex > 0 ? (
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border-edge-strong text-slate-400 bg-transparent hover:bg-subtle"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
                         >
-                          <ChevronLeft className="w-5 h-5 mr-1" /> Previous
+                          <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
                       ) : (
                         <div />
@@ -404,9 +491,9 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="h-12 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white font-semibold disabled:opacity-50"
+                        className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
                       >
-                        Next <ChevronRight className="w-5 h-5 ml-1" />
+                        Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>
                     </div>
                   </div>
@@ -414,16 +501,18 @@ export default function ActivityModal({ activity, originalActivity, childName, o
 
                 {currentQuestion.type === 'scale' && (
                   <div className="space-y-6">
-                    <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center justify-between gap-2">
                       {[1, 2, 3, 4, 5].map((value) => (
                         <motion.button
                           key={value}
                           whileTap={{ scale: 0.92 }}
-                          onClick={() => dispatch({ type: 'SET_CURRENT_ANSWER', value: value.toString() })}
-                          className={`flex-1 h-16 rounded-2xl font-bold text-xl transition-all ${
+                          onClick={() =>
+                            dispatch({ type: 'SET_CURRENT_ANSWER', value: value.toString() })
+                          }
+                          className={`h-16 flex-1 rounded-2xl text-xl font-bold transition-all ${
                             currentAnswer === value.toString()
                               ? 'bg-teal-500 text-white shadow-lg'
-                              : 'bg-ghost-light text-slate-400 hover:bg-ghost-strong'
+                              : 'bg-ghost-light hover:bg-ghost-strong text-slate-400'
                           }`}
                         >
                           {value}
@@ -431,7 +520,7 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                       ))}
                     </div>
                     {currentQuestion.labels?.length > 0 && (
-                      <div className="flex justify-between text-sm text-slate-500 px-1">
+                      <div className="flex justify-between px-1 text-sm text-slate-500">
                         <span>{currentQuestion.labels[0]}</span>
                         <span>{currentQuestion.labels[1]}</span>
                       </div>
@@ -441,9 +530,9 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="h-12 rounded-2xl border-edge-strong text-slate-400 bg-transparent hover:bg-subtle"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
                         >
-                          <ChevronLeft className="w-5 h-5 mr-1" /> Previous
+                          <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
                       ) : (
                         <div />
@@ -453,11 +542,11 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                         disabled={!currentAnswer}
                         className={`h-12 rounded-2xl font-semibold transition-all ${
                           currentAnswer
-                            ? 'bg-teal-500 hover:bg-teal-600 text-white'
-                            : 'bg-teal-200 text-white cursor-not-allowed'
+                            ? 'bg-teal-500 text-white hover:bg-teal-600'
+                            : 'cursor-not-allowed bg-teal-200 text-white'
                         }`}
                       >
-                        Next <ChevronRight className="w-5 h-5 ml-1" />
+                        Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>
                     </div>
                   </div>
@@ -471,18 +560,18 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="py-16 flex flex-col items-center gap-4"
+                className="flex flex-col items-center gap-4 py-16"
                 aria-live="polite"
                 aria-busy="true"
               >
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                  className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full"
+                  className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="text-white font-semibold text-lg">Analysing the response...</p>
-                <p className="text-slate-500 text-sm">Just a moment</p>
+                <p className="text-lg font-semibold text-white">Analysing the response...</p>
+                <p className="text-sm text-slate-500">Just a moment</p>
               </motion.div>
             )}
 
@@ -492,57 +581,68 @@ export default function ActivityModal({ activity, originalActivity, childName, o
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, ease: 'easeOut' }}
-                className="py-4 space-y-5"
+                className="space-y-5 py-4"
               >
                 <div className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
-                    <Trophy className="w-8 h-8 text-amber-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
+                    <Trophy className="h-8 w-8 text-amber-400" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white">Activity Complete! <span aria-hidden="true">🎉</span></h3>
+                  <h3 className="text-2xl font-bold text-white">
+                    Activity Complete! <span aria-hidden="true">🎉</span>
+                  </h3>
                   <p className="text-slate-400">Great work, {childName || 'there'}!</p>
                 </div>
 
-                <div className="bg-emerald-500/[0.08] border border-emerald-500/20 rounded-2xl p-4 flex gap-4 items-start">
+                <div className="flex items-start gap-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] p-4">
                   <div className="flex-shrink-0">
                     {isScorableActivity ? (
                       <>
-                        <p className="text-xs font-semibold text-emerald-400 mb-0.5">AI Score</p>
-                        <p className="text-3xl font-bold text-emerald-300 leading-none">
+                        <p className="mb-0.5 text-xs font-semibold text-emerald-400">AI Score</p>
+                        <p className="text-3xl font-bold leading-none text-emerald-300">
                           {aiScore}
                           <span className="text-base font-normal text-emerald-500">/10</span>
                         </p>
                       </>
                     ) : (
                       <>
-                        <p className="text-xs font-semibold text-emerald-400 mb-0.5">Note</p>
-                        <p className="text-base font-bold text-emerald-300 leading-snug max-w-[120px]">
+                        <p className="mb-0.5 text-xs font-semibold text-emerald-400">Note</p>
+                        <p className="max-w-[120px] text-base font-bold leading-snug text-emerald-300">
                           {aiNote}
                         </p>
                       </>
                     )}
                   </div>
-                  <p className="text-emerald-300 text-sm mt-1"><span aria-hidden="true">✅</span> {aiFeedback}</p>
+                  <p className="mt-1 text-sm text-emerald-300">
+                    <span aria-hidden="true">✅</span> {aiFeedback}
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1.5">
-                    Parent Feedback{' '}
-                    <span className="font-normal text-slate-400">(optional)</span>
+                  <label className="mb-1.5 block font-semibold text-slate-300">
+                    Parent Feedback <span className="font-normal text-slate-400">(optional)</span>
                   </label>
                   <TextareaWithVoice
                     value={parentFeedback}
-                    onChange={(e) => dispatch({ type: 'SET_PARENT_FEEDBACK', value: e.target.value })}
+                    onChange={(e) =>
+                      dispatch({ type: 'SET_PARENT_FEEDBACK', value: e.target.value })
+                    }
                     placeholder="Share your observations about your child's performance..."
-                    className="min-h-[100px] rounded-2xl resize-none"
+                    className="min-h-[100px] resize-none rounded-2xl"
                   />
                 </div>
 
                 <Button
                   onClick={handleSaveAndContinue}
                   disabled={isSaving}
-                  className="w-full h-12 rounded-2xl bg-teal-500 hover:bg-teal-600 text-white font-semibold"
+                  className="h-12 w-full rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600"
                 >
-                  {isSaving ? 'Saving...' : <>Save &amp; Continue <span aria-hidden="true">🚀</span></>}
+                  {isSaving ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      Save &amp; Continue <span aria-hidden="true">🚀</span>
+                    </>
+                  )}
                 </Button>
               </motion.div>
             )}

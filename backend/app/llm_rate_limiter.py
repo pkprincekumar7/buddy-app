@@ -8,6 +8,7 @@ Two backends:
 Both backends share the same public interface: enforce(user_id).
 Raises HTTPException(429) when the limit is exceeded.
 """
+
 import logging
 import random
 import time
@@ -27,7 +28,9 @@ _WINDOW_SECONDS = 3600  # 1 hour
 
 def _max_calls() -> int:
     from app.settings import settings
+
     return settings.llm_hourly_limit
+
 
 # ---------------------------------------------------------------------------
 # In-memory fallback
@@ -86,16 +89,25 @@ def _get_redis() -> "_redis_type.Redis | None":
             return _redis_client
         _redis_init_attempted = True
         from app.settings import settings
+
         if not settings.redis_url:
             return None
         try:
             import redis
-            client = redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
+
+            client = redis.Redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+            )
             client.ping()
             _redis_client = client
             log.info("llm_rate_limiter: Redis connected (%s)", settings.redis_url)
         except Exception as exc:
-            log.warning("llm_rate_limiter: Redis unavailable — falling back to in-memory. error=%s", exc)
+            log.warning(
+                "llm_rate_limiter: Redis unavailable — falling back to in-memory. error=%s", exc
+            )
             _redis_client = None
         return _redis_client
 
@@ -127,9 +139,11 @@ def _enforce_redis(r: "_redis_type.Redis", user_id: str) -> None:
     key = f"llm_rate:{user_id}"
     now = time.time()
     cutoff = now - _WINDOW_SECONDS
-    member = f"{now:.6f}:{random.getrandbits(64)}"
-    allowed = r.eval(_ENFORCE_LUA, 1, key, now, cutoff, limit, member, _WINDOW_SECONDS)
-    if not int(allowed):
+    member = f"{now:.6f}:{random.getrandbits(64)}"  # nosec B311
+    allowed = r.eval(
+        _ENFORCE_LUA, 1, key, str(now), str(cutoff), str(limit), member, str(_WINDOW_SECONDS)
+    )
+    if not int(allowed):  # type: ignore[arg-type]  # redis eval returns ResponseT which includes Awaitable
         raise HTTPException(
             status_code=429,
             detail=f"LLM rate limit exceeded: max {limit} requests per hour.",
@@ -139,6 +153,7 @@ def _enforce_redis(r: "_redis_type.Redis", user_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Public entry points
 # ---------------------------------------------------------------------------
+
 
 def get_redis_client() -> "_redis_type.Redis | None":
     """Return the shared Redis client, or None if Redis is unavailable."""

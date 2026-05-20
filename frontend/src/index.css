@@ -57,7 +57,9 @@
   }
 
   button:not(:disabled) {
-    transition: transform 150ms ease, opacity 150ms ease;
+    transition:
+      transform 150ms ease,
+      opacity 150ms ease;
   }
   button:not(:disabled):active {
     transform: scale(0.97);
@@ -81,7 +83,9 @@
 
 @layer utilities {
   .glow-teal {
-    box-shadow: 0 0 20px rgba(45, 212, 191, 0.15), 0 0 40px rgba(45, 212, 191, 0.05);
+    box-shadow:
+      0 0 20px rgba(45, 212, 191, 0.15),
+      0 0 40px rgba(45, 212, 191, 0.05);
   }
   .glow-teal-sm {
     box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
@@ -95,48 +99,96 @@
   }
 
   /* Semantic surface/border tokens — replaces repeated arbitrary opacity values */
-  .border-edge        { @apply border border-white/[0.08]; }
-  .border-edge-faint  { @apply border border-white/[0.06]; }
-  .border-edge-strong { @apply border border-white/[0.12]; }
-  .border-edge-xs     { @apply border border-white/[0.04]; }
-  .border-edge-md     { @apply border border-white/[0.10]; }
+  .border-edge {
+    @apply border border-white/[0.08];
+  }
+  .border-edge-faint {
+    @apply border border-white/[0.06];
+  }
+  .border-edge-strong {
+    @apply border border-white/[0.12];
+  }
+  .border-edge-xs {
+    @apply border border-white/[0.04];
+  }
+  .border-edge-md {
+    @apply border border-white/[0.10];
+  }
   /* Single-side variants for dividers */
-  .border-b-edge       { @apply border-b border-white/[0.08]; }
-  .border-b-edge-faint { @apply border-b border-white/[0.06]; }
-  .border-t-edge-faint { @apply border-t border-white/[0.06]; }
-  .border-r-edge-faint { @apply border-r border-white/[0.06]; }
-  .border-t-edge-xs    { @apply border-t border-white/[0.04]; }
+  .border-b-edge {
+    @apply border-b border-white/[0.08];
+  }
+  .border-b-edge-faint {
+    @apply border-b border-white/[0.06];
+  }
+  .border-t-edge-faint {
+    @apply border-t border-white/[0.06];
+  }
+  .border-r-edge-faint {
+    @apply border-r border-white/[0.06];
+  }
+  .border-t-edge-xs {
+    @apply border-t border-white/[0.04];
+  }
   /* Color-only border aliases — use when border-width is already set (border/border-2/outline variant) */
-  .border-c-xs         { @apply border-white/[0.04]; }
-  .border-c-edge       { @apply border-white/[0.08]; }
-  .border-c-md         { @apply border-white/[0.10]; }
-  .border-c-bright     { @apply border-white/[0.18]; }
-  .bg-ghost           { @apply bg-white/[0.02]; }
-  .bg-ghost-md        { @apply bg-white/[0.04]; }
-  .bg-ghost-light     { @apply bg-white/[0.06]; }
-  .bg-ghost-strong    { @apply bg-white/[0.08]; }
-  .bg-ghost-hover     { @apply bg-white/[0.12]; }
-  .bg-na-dim          { @apply bg-white/[0.15]; }
-  .bg-subtle          { @apply bg-white/[0.05]; }
-  .bg-brand-sub       { @apply bg-teal-500/10; }
-  .bg-brand-teal      { @apply bg-teal-500/[0.07]; }
-  .bg-success-sub     { @apply bg-emerald-500/[0.07]; }
+  .border-c-xs {
+    @apply border-white/[0.04];
+  }
+  .border-c-edge {
+    @apply border-white/[0.08];
+  }
+  .border-c-md {
+    @apply border-white/[0.10];
+  }
+  .border-c-bright {
+    @apply border-white/[0.18];
+  }
+  .bg-ghost {
+    @apply bg-white/[0.02];
+  }
+  .bg-ghost-md {
+    @apply bg-white/[0.04];
+  }
+  .bg-ghost-light {
+    @apply bg-white/[0.06];
+  }
+  .bg-ghost-strong {
+    @apply bg-white/[0.08];
+  }
+  .bg-ghost-hover {
+    @apply bg-white/[0.12];
+  }
+  .bg-na-dim {
+    @apply bg-white/[0.15];
+  }
+  .bg-subtle {
+    @apply bg-white/[0.05];
+  }
+  .bg-brand-sub {
+    @apply bg-teal-500/10;
+  }
+  .bg-brand-teal {
+    @apply bg-teal-500/[0.07];
+  }
+  .bg-success-sub {
+    @apply bg-emerald-500/[0.07];
+  }
 }
 
 @layer components {
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
-    @apply w-full rounded-lg border-edge-md bg-surface-input px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
+    @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
   }
 
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
   .btn-primary {
-    @apply bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold glow-teal;
+    @apply glow-teal bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300;
   }
 
   /* Secondary ghost/outline button */
   .btn-secondary {
-    @apply border-edge-strong bg-transparent text-slate-300 hover:bg-subtle hover:text-white;
+    @apply border-edge-strong hover:bg-subtle bg-transparent text-slate-300 hover:text-white;
   }
 
   /* Amber destructive-light button (Start Over, etc.) */

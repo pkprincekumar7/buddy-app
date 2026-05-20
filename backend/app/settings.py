@@ -125,9 +125,7 @@ class Settings(BaseSettings):
                     "Specify explicit origins (e.g. https://yourapp.com)."
                 )
             if not (origin.startswith("http://") or origin.startswith("https://")):
-                raise ValueError(
-                    f"CORS origin must start with http:// or https://: {origin!r}"
-                )
+                raise ValueError(f"CORS origin must start with http:// or https://: {origin!r}")
         return v
 
     app_env: str = Field(
@@ -194,7 +192,7 @@ class Settings(BaseSettings):
             log.warning(
                 "JWT_SECRET is only %d characters. In production, use a randomly "
                 "generated secret of at least 64 characters "
-                "(e.g. python -c \"import secrets; print(secrets.token_hex(32))\").",
+                '(e.g. python -c "import secrets; print(secrets.token_hex(32))").',
                 len(self.jwt_secret),
             )
         return self
@@ -219,4 +217,4 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]  # pydantic-settings loads required fields from env

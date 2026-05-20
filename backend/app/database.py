@@ -1,8 +1,8 @@
 import logging
 
-from pymongo import ASCENDING, DESCENDING
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from fastapi import Request
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ASCENDING, DESCENDING
 
 log = logging.getLogger(__name__)
 
@@ -40,13 +40,25 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["goals"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
     # growth_areas: unique per (user, child, area) — child_id added to the compound key.
-    await db["growth_areas"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     await db["growth_areas"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("child_id", ASCENDING), ("area_id", ASCENDING)],
+        [("location", ASCENDING), ("_id", ASCENDING)], unique=True
+    )
+    await db["growth_areas"].create_index(
+        [
+            ("location", ASCENDING),
+            ("user_id", ASCENDING),
+            ("child_id", ASCENDING),
+            ("area_id", ASCENDING),
+        ],
         unique=True,
     )
     await db["growth_areas"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("child_id", ASCENDING), ("created_at", ASCENDING)]
+        [
+            ("location", ASCENDING),
+            ("user_id", ASCENDING),
+            ("child_id", ASCENDING),
+            ("created_at", ASCENDING),
+        ]
     )
 
     await db["children"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)

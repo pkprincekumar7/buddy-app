@@ -1,18 +1,18 @@
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { Sparkles, Shield, Heart, Compass } from 'lucide-react';
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 
 const WELCOME_FEATURES = [
   { icon: Heart, text: 'Understand your child deeply' },
   { icon: Compass, text: 'Create a personalized growth pathway' },
-  { icon: Sparkles, text: 'Get life changing recommendations' }
+  { icon: Sparkles, text: 'Get life changing recommendations' },
 ];
 
 export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
   const handleGoogleLogin = () => {
-    api.auth.redirectToLogin(window.location.href);
+    api.auth.redirectToLogin();
   };
 
   return (
@@ -22,17 +22,17 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
-          transition={{ type: "spring", stiffness: 200 }}
-          className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal"
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
         >
-          <span className="text-white font-bold text-2xl">B</span>
+          <span className="text-2xl font-bold text-white">B</span>
         </motion.div>
 
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="text-3xl md:text-4xl font-bold text-white mb-3 tracking-tight"
+          className="mb-3 text-3xl font-bold tracking-tight text-white md:text-4xl"
         >
           Welcome to Buddy360
         </motion.h1>
@@ -41,7 +41,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
-          className="text-base text-slate-400 max-w-md mx-auto leading-relaxed"
+          className="mx-auto max-w-md text-base leading-relaxed text-slate-400"
         >
           A guided journey to help your child discover their strengths and design a meaningful life
         </motion.p>
@@ -52,9 +52,11 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
-        className="bg-surface-elevated rounded-2xl p-6 border-edge max-w-md mx-auto"
+        className="border-edge mx-auto max-w-md rounded-2xl bg-surface-elevated p-6"
       >
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-5">What you'll do today</p>
+        <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          What you'll do today
+        </p>
         <div className="space-y-4">
           {WELCOME_FEATURES.map((feature, index) => (
             <motion.div
@@ -64,10 +66,10 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
               transition={{ delay: 0.75 + index * 0.15 }}
               className="flex items-center gap-3"
             >
-              <div className="w-9 h-9 rounded-xl bg-teal-500/10 flex items-center justify-center shrink-0">
-                <feature.icon className="w-4 h-4 text-teal-400" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
+                <feature.icon className="h-4 w-4 text-teal-400" />
               </div>
-              <span className="text-slate-300 text-sm">{feature.text}</span>
+              <span className="text-sm text-slate-300">{feature.text}</span>
             </motion.div>
           ))}
         </div>
@@ -78,45 +80,59 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1.05 }}
-        className="text-center space-y-4 max-w-md mx-auto"
+        className="mx-auto max-w-md space-y-4 text-center"
       >
         {isAuthenticated ? (
           <>
-            <div className="flex items-center gap-3 p-4 bg-surface-elevated rounded-2xl border-edge">
-              <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-sm">{user?.full_name?.[0] || user?.email?.[0] || '?'}</span>
+            <div className="border-edge flex items-center gap-3 rounded-2xl bg-surface-elevated p-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-500">
+                <span className="text-sm font-bold text-white">
+                  {user?.full_name?.[0] || user?.email?.[0] || '?'}
+                </span>
               </div>
               <div className="text-left">
-                <p className="font-medium text-white text-sm">{user?.full_name || 'Welcome!'}</p>
+                <p className="text-sm font-medium text-white">{user?.full_name || 'Welcome!'}</p>
                 <p className="text-xs text-slate-500">{user?.email}</p>
               </div>
             </div>
 
             <Button
               onClick={onContinue}
-              className="w-full h-btn-lg rounded-2xl btn-primary text-base transition-all duration-200"
+              className="btn-primary h-btn-lg w-full rounded-2xl text-base transition-all duration-200"
             >
-              <Sparkles className="w-4 h-4 mr-2" />
+              <Sparkles className="mr-2 h-4 w-4" />
               Let's Begin
             </Button>
           </>
         ) : (
           <>
-            <div className="p-5 bg-surface-elevated rounded-2xl border-edge">
-              <div className="flex items-center gap-2 justify-center text-xs text-slate-500 mb-4">
-                <Shield className="w-3.5 h-3.5" />
+            <div className="border-edge rounded-2xl bg-surface-elevated p-5">
+              <div className="mb-4 flex items-center justify-center gap-2 text-xs text-slate-500">
+                <Shield className="h-3.5 w-3.5" />
                 <span>Sign in to save your progress securely</span>
               </div>
 
               <Button
                 onClick={handleGoogleLogin}
-                className="w-full h-12 rounded-xl bg-[#242424] hover:bg-[#2a2a2a] text-white border-edge-strong text-sm font-medium transition-all duration-200"
+                className="border-edge-strong h-12 w-full rounded-xl bg-[#242424] text-sm font-medium text-white transition-all duration-200 hover:bg-[#2a2a2a]"
               >
-                <svg className="w-4 h-4 mr-3" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                <svg className="mr-3 h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  />
                 </svg>
                 Continue with Google
               </Button>

@@ -1,11 +1,19 @@
-import React, { createContext, useState, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '../pages.config';
 
-const AuthContext = createContext();
+const AuthContext = createContext(/** @type {any} */ (null));
 
 const BLOCKED_REDIRECT_PATHS = ['/Login', '/Register', '/Onboarding'];
 
@@ -137,7 +145,7 @@ export const AuthProvider = ({ children }) => {
         navigate('/Login', { replace: true });
       }
     },
-    [navigate]
+    [navigate],
   );
 
   const navigateToLogin = useCallback(() => {
@@ -170,23 +178,32 @@ export const AuthProvider = ({ children }) => {
     }
   }, [isLoadingAuth, isAuthenticated, location.pathname, navigate, mainPath, lastVisitedPath]);
 
-  const contextValue = useMemo(() => ({
-    user,
-    isAuthenticated,
-    isLoadingAuth,
-    authError,
-    childProfiles,
-    refreshChildren,
-    logout,
-    navigateToLogin,
-    checkAppState,
-  }), [user, isAuthenticated, isLoadingAuth, authError, childProfiles, refreshChildren, logout, navigateToLogin, checkAppState]);
-
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
+  const contextValue = useMemo(
+    () => ({
+      user,
+      isAuthenticated,
+      isLoadingAuth,
+      authError,
+      childProfiles,
+      refreshChildren,
+      logout,
+      navigateToLogin,
+      checkAppState,
+    }),
+    [
+      user,
+      isAuthenticated,
+      isLoadingAuth,
+      authError,
+      childProfiles,
+      refreshChildren,
+      logout,
+      navigateToLogin,
+      checkAppState,
+    ],
   );
+
+  return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 };
 
 AuthProvider.propTypes = {

@@ -45,7 +45,9 @@ def _get_user_id(request: Request) -> str:
             if sub and payload.get("type") == "access":
                 return f"user:{sub}"
         except jwt.PyJWTError as exc:
-            log.debug("rate_limit: JWT decode failed (%s), falling back to IP bucket", type(exc).__name__)
+            log.debug(
+                "rate_limit: JWT decode failed (%s), falling back to IP bucket", type(exc).__name__
+            )
     return f"ip:{_get_client_ip(request)}"
 
 

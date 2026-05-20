@@ -1,29 +1,29 @@
 /**
  * pages.config.js - Page routing configuration
- * 
+ *
  * This file is AUTO-GENERATED. Do not add imports or modify PAGES manually.
  * Pages are auto-registered when you create files in the ./pages/ folder.
- * 
+ *
  * THE ONLY EDITABLE VALUE: mainPage
  * This controls which page is the landing page (shown when users visit the app).
- * 
+ *
  * Example file structure:
- * 
+ *
  *   import HomePage from './pages/HomePage';
  *   import Dashboard from './pages/Dashboard';
  *   import Settings from './pages/Settings';
- *   
+ *
  *   export const PAGES = {
  *       "HomePage": HomePage,
  *       "Dashboard": Dashboard,
  *       "Settings": Settings,
  *   }
- *   
+ *
  *   export const pagesConfig = {
  *       mainPage: "HomePage",
  *       Pages: PAGES,
  *   };
- * 
+ *
  * Example with Layout (wraps all pages):
  *
  *   import Home from './pages/Home';
@@ -53,16 +53,15 @@ import Onboarding from './pages/Onboarding';
 import GoalsDashboard from './pages/GoalsDashboard';
 import __Layout from './Layout.jsx';
 
-
 export const PAGES = {
-    "Home": Home,
-    "LifePathway": LifePathway,
-    "Onboarding": Onboarding,
-    "GoalsDashboard": GoalsDashboard,
-}
+  Home: Home,
+  LifePathway: LifePathway,
+  Onboarding: Onboarding,
+  GoalsDashboard: GoalsDashboard,
+};
 
 export const pagesConfig = {
-    mainPage: "Onboarding",
-    Pages: PAGES,
-    Layout: __Layout,
+  mainPage: 'Onboarding',
+  Pages: PAGES,
+  Layout: __Layout,
 };

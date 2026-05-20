@@ -18,7 +18,10 @@ export function useLifePathwayData() {
         if (child) setChildData(child);
 
         const childId = child?.id;
-        if (!childId) { setIsLoading(false); return; }
+        if (!childId) {
+          setIsLoading(false);
+          return;
+        }
 
         const [completedData, goals] = await Promise.all([
           api.completedGrowthAreas.list(childId),
@@ -29,10 +32,14 @@ export function useLifePathwayData() {
         if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
 
         // Filter to finalised areas only; legacy docs without a status field are treated as completed.
-        const completedOnly = (completedData?.areas || []).filter((a) => a.status === 'completed' || !a.status);
+        const completedOnly = (completedData?.areas || []).filter(
+          (a) => a.status === 'completed' || !a.status,
+        );
         if (completedOnly.length) setCompletedAreas(completedOnly);
 
-        setSavedConcern(typeof goals?.parent_concern === 'string' ? goals.parent_concern.trim() : '');
+        setSavedConcern(
+          typeof goals?.parent_concern === 'string' ? goals.parent_concern.trim() : '',
+        );
       } catch (err) {
         console.error('[useLifePathwayData] Failed to load:', err);
         toast.error('Failed to load your data. Please refresh and try again.');

@@ -1,10 +1,10 @@
-fastapi==0.115.8
+fastapi==0.125.0
 uvicorn[standard]==0.34.0
 motor==3.7.0
-pymongo[srv]==4.10.1
-PyJWT[cryptography]==2.10.1
+pymongo==4.10.1
+PyJWT==2.12.1
 bcrypt==4.2.1
-python-multipart==0.0.20
+python-multipart==0.0.27
 openai==1.68.2
 anthropic==0.49.0
 google-generativeai==0.8.3
@@ -13,3 +13,28 @@ google-auth[requests]==2.38.0
 slowapi==0.1.9
 redis==5.2.1
 email-validator==2.2.0
+
+# ---- transitive CVE floor pins ------------------------------------------------
+# starlette: GHSA-7f5h-v6xp-fcq8 (Range header DoS) + GHSA-2c2j-9gv5-cj73 (upload
+# event-loop block). Fixed by fastapi>=0.125.0, which allows starlette>=0.49.1.
+starlette>=0.49.1
+
+# urllib3: GHSA-qccp-gfcp-xxvc + GHSA-mf9v-mfxr-j63j (redirect header leak +
+# Brotli decompression bomb). Pulled in by openai / anthropic / google-auth SDKs.
+urllib3>=2.7.0
+
+# requests: GHSA-gc5v-m9x4-r6x2 (predictable temp file in extract_zipped_paths).
+# Not exploitable via current code paths, but pin for defence in depth.
+# Pulled in by google-auth[requests].
+requests>=2.33.0
+
+# python-dotenv: GHSA-mf9w-mj56-hr94 (symlink follow in set_key/unset_key).
+# Not called at runtime; only affects local dev .env writes.
+python-dotenv>=1.2.2
+
+# ---- disputed / no-fix CVE suppressions --------------------------------------
+# PyJWT PYSEC-2025-183: "weak encryption" advisory — DISPUTED by PyJWT maintainers.
+# The finding is that callers may supply short HMAC keys; the library does not enforce
+# a minimum key length.  Not applicable here: Settings.validate_jwt_secret enforces
+# ≥32 chars (dev) and ≥64 chars (prod) at startup, raising ValueError on violation.
+# No fixed version exists; the advisory is suppressed via --ignore-vuln in pip-audit.

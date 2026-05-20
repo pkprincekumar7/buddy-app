@@ -21,7 +21,8 @@ export function useJourneyRecommendations({ hydrated, currentPhase, activeChildI
         if (
           child.recommendations &&
           (typeof child.recommendations.pathway_overview === 'string' ||
-            (Array.isArray(child.recommendations.focus_areas) && child.recommendations.focus_areas.length > 0))
+            (Array.isArray(child.recommendations.focus_areas) &&
+              child.recommendations.focus_areas.length > 0))
         ) {
           dispatch({ type: 'SET_RECOMMENDATIONS', payload: child.recommendations });
           return;
@@ -49,7 +50,8 @@ export function useJourneyRecommendations({ hydrated, currentPhase, activeChildI
               childData: mergedChild,
               age,
               lifePhase,
-              personalityType: gp?.personality_type || `${vmJ?.type || 'Unknown'} (${vmJ?.profile?.name || ''})`,
+              personalityType:
+                gp?.personality_type || `${vmJ?.type || 'Unknown'} (${vmJ?.profile?.name || ''})`,
               personalityNarrative: gp?.summary,
               growthAreas: gp?.growth_areas,
             }),
@@ -58,7 +60,11 @@ export function useJourneyRecommendations({ hydrated, currentPhase, activeChildI
           if (cancelled) return;
 
           dispatch({ type: 'SET_RECOMMENDATIONS', payload: result });
-          if (result) await api.entities.Child.update(activeChildId, { recommendations: result, onboarding_phase: 3 });
+          if (result)
+            await api.entities.Child.update(activeChildId, {
+              recommendations: result,
+              onboarding_phase: 3,
+            });
         } catch (err) {
           console.error('[useJourneyRecommendations] Failed to generate recommendations:', err);
         } finally {

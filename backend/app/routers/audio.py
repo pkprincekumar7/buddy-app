@@ -56,7 +56,7 @@ async def transcribe_audio(
     raw_name = audio.filename or "recording.webm"
     # Strip null bytes and control characters before parsing the extension so
     # a filename like "file.webm\x00.exe" cannot trick the allowlist check.
-    filename = re.sub(r'[\x00-\x1f\x7f]', '', raw_name) or "recording.webm"
+    filename = re.sub(r"[\x00-\x1f\x7f]", "", raw_name) or "recording.webm"
     raw_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
     if raw_ext not in _ALLOWED_AUDIO_EXTS:
         raise HTTPException(
@@ -75,4 +75,6 @@ async def transcribe_audio(
         return {"transcript": transcript.text}
     except Exception as e:
         log.warning("audio.transcribe.error: %s", e)
-        raise HTTPException(status_code=502, detail="Transcription service is temporarily unavailable.") from e
+        raise HTTPException(
+            status_code=502, detail="Transcription service is temporarily unavailable."
+        ) from e

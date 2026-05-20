@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
-import { Input } from "@/components/ui/input";
+import { Input } from '@/components/ui/input';
 import VoiceInput from './VoiceInput';
 
 export default function InputWithVoice({ value, onChange, placeholder, className, ...props }) {
@@ -11,11 +11,11 @@ export default function InputWithVoice({ value, onChange, placeholder, className
   };
 
   return (
-    <div className="flex gap-2 items-center">
+    <div className="flex items-center gap-2">
       <Input
         value={value}
         onChange={onChange}
-        placeholder={isRecording ? "Listening..." : placeholder}
+        placeholder={isRecording ? 'Listening...' : placeholder}
         disabled={isRecording}
         className={className}
         {...props}

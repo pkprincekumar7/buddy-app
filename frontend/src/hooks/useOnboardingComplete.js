@@ -4,12 +4,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
 
-export function useOnboardingComplete({
-  dispatch,
-  activeChildId,
-  childData,
-  recommendations,
-}) {
+export function useOnboardingComplete({ dispatch, activeChildId, childData, recommendations }) {
   const navigate = useNavigate();
 
   return useCallback(async () => {

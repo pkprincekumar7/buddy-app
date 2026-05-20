@@ -1,23 +1,67 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { createPageUrl } from "@/utils";
+import { createPageUrl } from '@/utils';
 import { api } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Sparkles, ArrowRight, Brain, Heart,
-  Dumbbell, Palette, Star, Rocket, Shield, Users
+  Sparkles,
+  ArrowRight,
+  Brain,
+  Heart,
+  Dumbbell,
+  Palette,
+  Star,
+  Rocket,
+  Shield,
+  Users,
 } from 'lucide-react';
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 
 const PILLARS = [
-  { icon: Brain, label: 'Mind', color: 'from-blue-500 to-blue-700', glow: 'rgba(59,130,246,0.15)', description: 'Cognitive growth & curiosity' },
-  { icon: Heart, label: 'Heart', color: 'from-rose-500 to-rose-700', glow: 'rgba(244,63,94,0.15)', description: 'Emotional intelligence' },
-  { icon: Dumbbell, label: 'Body', color: 'from-emerald-500 to-emerald-700', glow: 'rgba(16,185,129,0.15)', description: 'Physical wellbeing' },
-  { icon: Palette, label: 'Talents', color: 'from-purple-500 to-purple-700', glow: 'rgba(168,85,247,0.15)', description: 'Skill discovery' },
-  { icon: Star, label: 'Character', color: 'from-amber-500 to-amber-700', glow: 'rgba(245,158,11,0.15)', description: 'Values & integrity' },
-  { icon: Rocket, label: 'Future', color: 'from-teal-500 to-teal-700', glow: 'rgba(20,184,166,0.15)', description: 'Life direction' }
+  {
+    icon: Brain,
+    label: 'Mind',
+    color: 'from-blue-500 to-blue-700',
+    glow: 'rgba(59,130,246,0.15)',
+    description: 'Cognitive growth & curiosity',
+  },
+  {
+    icon: Heart,
+    label: 'Heart',
+    color: 'from-rose-500 to-rose-700',
+    glow: 'rgba(244,63,94,0.15)',
+    description: 'Emotional intelligence',
+  },
+  {
+    icon: Dumbbell,
+    label: 'Body',
+    color: 'from-emerald-500 to-emerald-700',
+    glow: 'rgba(16,185,129,0.15)',
+    description: 'Physical wellbeing',
+  },
+  {
+    icon: Palette,
+    label: 'Talents',
+    color: 'from-purple-500 to-purple-700',
+    glow: 'rgba(168,85,247,0.15)',
+    description: 'Skill discovery',
+  },
+  {
+    icon: Star,
+    label: 'Character',
+    color: 'from-amber-500 to-amber-700',
+    glow: 'rgba(245,158,11,0.15)',
+    description: 'Values & integrity',
+  },
+  {
+    icon: Rocket,
+    label: 'Future',
+    color: 'from-teal-500 to-teal-700',
+    glow: 'rgba(20,184,166,0.15)',
+    description: 'Life direction',
+  },
 ];
 
 export default function Home() {
@@ -26,11 +70,11 @@ export default function Home() {
   const [isResetting, setIsResetting] = useState(false);
   const { data: children = [], isLoading } = useQuery({
     queryKey: ['children'],
-    queryFn: () => api.entities.Child.list('-created_date')
+    queryFn: () => api.entities.Child.list('-created_date'),
   });
 
   // Onboarding is in progress if there's a child that hasn't completed it yet.
-  const onboardingInProgress = children.some(c => !c.onboarding_completed);
+  const onboardingInProgress = children.some((c) => !c.onboarding_completed);
 
   const handleStartJourney = () => {
     navigate(createPageUrl('Onboarding'));
@@ -42,8 +86,12 @@ export default function Home() {
     try {
       // Deleting each child cascades goals and growth_areas.
       const existingChildren = await api.entities.Child.list('-created_date');
-      for (const c of (Array.isArray(existingChildren) ? existingChildren : [])) {
-        try { await api.entities.Child.delete(c.id); } catch (err) { if (err?.status !== 404) console.warn('[Home] Child delete failed:', err); }
+      for (const c of Array.isArray(existingChildren) ? existingChildren : []) {
+        try {
+          await api.entities.Child.delete(c.id);
+        } catch (err) {
+          if (err?.status !== 404) console.warn('[Home] Child delete failed:', err);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['children'] });
       navigate(createPageUrl('Onboarding'));
@@ -56,11 +104,11 @@ export default function Home() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <motion.div
           animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-          className="w-10 h-10 border-2 border-teal-500 border-t-transparent rounded-full"
+          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
         />
       </div>
     );
@@ -71,51 +119,54 @@ export default function Home() {
       {/* Hero */}
       <section className="relative overflow-hidden">
         {/* Ambient glows */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-teal-500/[0.04] rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute top-40 left-10 w-72 h-72 bg-teal-400/[0.05] rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-10 w-96 h-96 bg-purple-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+        <div className="pointer-events-none absolute left-1/2 top-0 h-[400px] w-[600px] -translate-x-1/2 rounded-full bg-teal-500/[0.04] blur-3xl" />
+        <div className="pointer-events-none absolute left-10 top-40 h-72 w-72 rounded-full bg-teal-400/[0.05] blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-purple-500/[0.04] blur-3xl" />
 
-        <div className="relative max-w-6xl mx-auto px-4 py-24 md:py-36">
+        <div className="relative mx-auto max-w-6xl px-4 py-24 md:py-36">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1.2 }}
             className="text-center"
           >
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-teal-500/10 rounded-full border border-teal-500/20 mb-8">
-              <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-pulse" />
-              <span className="text-sm font-medium text-teal-400">A Growth Companion for Families</span>
+            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-400" />
+              <span className="text-sm font-medium text-teal-400">
+                A Growth Companion for Families
+              </span>
             </div>
 
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight tracking-tight">
-              Nurture Self-Aware,<br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-teal-300">
+            <h1 className="mb-6 text-4xl font-bold leading-tight tracking-tight text-white md:text-6xl lg:text-7xl">
+              Nurture Self-Aware,
+              <br />
+              <span className="bg-gradient-to-r from-teal-400 to-teal-300 bg-clip-text text-transparent">
                 Purpose-Driven
-              </span>
-              {' '}Children
+              </span>{' '}
+              Children
             </h1>
 
-            <p className="text-lg md:text-xl text-slate-400 max-w-3xl mx-auto mb-10 leading-relaxed">
-              A 9-year guided journey helping your child discover strengths,
-              build character, and design a meaningful life.
+            <p className="mx-auto mb-10 max-w-3xl text-lg leading-relaxed text-slate-400 md:text-xl">
+              A 9-year guided journey helping your child discover strengths, build character, and
+              design a meaningful life.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col justify-center gap-4 sm:flex-row">
               {onboardingInProgress ? (
                 <>
                   <Button
                     onClick={() => navigate(createPageUrl('Onboarding'))}
-                    className="h-btn-lg px-8 text-base rounded-2xl btn-primary transition-all duration-200"
+                    className="btn-primary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
                   >
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles className="mr-2 h-4 w-4" />
                     Continue Onboarding
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                   <Button
                     onClick={handleStartFresh}
                     disabled={isResetting}
                     variant="outline"
-                    className="h-btn-lg px-8 text-base rounded-2xl btn-secondary transition-all duration-200"
+                    className="btn-secondary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
                   >
                     {isResetting ? 'Resetting…' : 'Start Fresh'}
                   </Button>
@@ -123,11 +174,11 @@ export default function Home() {
               ) : (
                 <Button
                   onClick={handleStartJourney}
-                  className="h-btn-lg px-8 text-base rounded-2xl btn-primary transition-all duration-200"
+                  className="btn-primary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
                 >
-                  <Sparkles className="w-4 h-4 mr-2" />
+                  <Sparkles className="mr-2 h-4 w-4" />
                   Start Your Journey
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -137,22 +188,23 @@ export default function Home() {
 
       {/* 6 Pillars */}
       <section className="py-20 md:py-28">
-        <div className="max-w-6xl mx-auto px-4">
+        <div className="mx-auto max-w-6xl px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-14"
+            className="mb-14 text-center"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            <h2 className="mb-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
               6 Pillars of Holistic Growth
             </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              We nurture every dimension of your child's development for balanced, sustainable growth.
+            <p className="mx-auto max-w-2xl text-slate-400">
+              We nurture every dimension of your child's development for balanced, sustainable
+              growth.
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {PILLARS.map((pillar, index) => (
               <motion.div
                 key={pillar.label}
@@ -161,16 +213,20 @@ export default function Home() {
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.12 }}
                 whileHover={{ y: -3, transition: { duration: 0.2 } }}
-                className="bg-card rounded-2xl p-6 border-edge-faint hover:border-edge transition-all duration-300 group"
+                className="border-edge-faint hover:border-edge group rounded-2xl bg-card p-6 transition-all duration-300"
               >
                 <div
-                  className={`w-12 h-12 rounded-xl bg-gradient-to-br ${pillar.color} flex items-center justify-center mb-4 transition-all duration-300 group-hover:scale-110 glow-pillar`}
-                  style={{ '--pillar-glow': pillar.glow }}
+                  className={`h-12 w-12 rounded-xl bg-gradient-to-br ${pillar.color} glow-pillar mb-4 flex items-center justify-center transition-all duration-300 group-hover:scale-110`}
+                  style={
+                    /** @type {React.CSSProperties & Record<string, any>} */ ({
+                      '--pillar-glow': pillar.glow,
+                    })
+                  }
                 >
-                  <pillar.icon className="w-6 h-6 text-white" />
+                  <pillar.icon className="h-6 w-6 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1.5">{pillar.label}</h3>
-                <p className="text-slate-500 text-sm">{pillar.description}</p>
+                <h3 className="mb-1.5 text-lg font-semibold text-white">{pillar.label}</h3>
+                <p className="text-sm text-slate-500">{pillar.description}</p>
               </motion.div>
             ))}
           </div>
@@ -178,36 +234,39 @@ export default function Home() {
       </section>
 
       {/* How It Works */}
-      <section className="py-20 md:py-28 bg-section-alt">
-        <div className="max-w-6xl mx-auto px-4">
+      <section className="bg-section-alt py-20 md:py-28">
+        <div className="mx-auto max-w-6xl px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="text-center mb-14"
+            className="mb-14 text-center"
           >
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+            <h2 className="mb-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
               How It Works
             </h2>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid gap-8 md:grid-cols-3">
             {[
               {
                 icon: Users,
-                title: "Parent Onboarding",
-                description: "Share insights about your child's personality, interests, and your family values to create their unique baseline profile."
+                title: 'Parent Onboarding',
+                description:
+                  "Share insights about your child's personality, interests, and your family values to create their unique baseline profile.",
               },
               {
                 icon: Sparkles,
-                title: "Weekly Missions",
-                description: "Balanced activities across all 6 pillars keep growth consistent, fun, and achievable without overwhelm."
+                title: 'Weekly Missions',
+                description:
+                  'Balanced activities across all 6 pillars keep growth consistent, fun, and achievable without overwhelm.',
               },
               {
                 icon: Shield,
-                title: "Growth Insights",
-                description: "Receive observations about emerging strengths, patterns, and conversation prompts to deepen connection."
-              }
+                title: 'Growth Insights',
+                description:
+                  'Receive observations about emerging strengths, patterns, and conversation prompts to deepen connection.',
+              },
             ].map((feature, index) => (
               <motion.div
                 key={feature.title}
@@ -217,11 +276,11 @@ export default function Home() {
                 transition={{ delay: index * 0.225 }}
                 className="text-center"
               >
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-surface-elevated border-edge flex items-center justify-center mb-5">
-                  <feature.icon className="w-6 h-6 text-teal-400" />
+                <div className="border-edge mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-elevated">
+                  <feature.icon className="h-6 w-6 text-teal-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{feature.description}</p>
+                <h3 className="mb-2 text-lg font-semibold text-white">{feature.title}</h3>
+                <p className="text-sm leading-relaxed text-slate-500">{feature.description}</p>
               </motion.div>
             ))}
           </div>
@@ -230,28 +289,29 @@ export default function Home() {
 
       {/* CTA */}
       <section className="py-20 md:py-28">
-        <div className="max-w-4xl mx-auto px-4">
+        <div className="mx-auto max-w-4xl px-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            className="bg-section-dark rounded-3xl p-10 md:p-16 text-center relative overflow-hidden border-edge-faint"
+            className="border-edge-faint relative overflow-hidden rounded-3xl bg-section-dark p-10 text-center md:p-16"
           >
-            <div className="absolute inset-0 bg-gradient-to-br from-teal-500/[0.04] via-transparent to-purple-500/[0.04] pointer-events-none" />
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-32 bg-teal-500/[0.06] blur-3xl rounded-full pointer-events-none" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal-500/[0.04] via-transparent to-purple-500/[0.04]" />
+            <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-96 -translate-x-1/2 rounded-full bg-teal-500/[0.06] blur-3xl" />
             <div className="relative">
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
+              <h2 className="mb-4 text-3xl font-bold tracking-tight text-white md:text-4xl">
                 Begin Your Child's Journey Today
               </h2>
-              <p className="text-slate-400 mb-8 max-w-2xl mx-auto leading-relaxed">
-                No pressure. No comparisons. Just guided, consistent growth towards becoming their best self.
+              <p className="mx-auto mb-8 max-w-2xl leading-relaxed text-slate-400">
+                No pressure. No comparisons. Just guided, consistent growth towards becoming their
+                best self.
               </p>
               <Button
                 onClick={handleStartJourney}
-                className="h-btn-lg px-10 text-base rounded-2xl btn-primary transition-all duration-200"
+                className="btn-primary h-btn-lg rounded-2xl px-10 text-base transition-all duration-200"
               >
                 Get Started Free
-                <ArrowRight className="w-4 h-4 ml-2" />
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </motion.div>
@@ -259,13 +319,13 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 border-t-edge-faint">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center">
-              <span className="text-white font-bold text-[10px]">B</span>
+      <footer className="border-t-edge-faint py-8">
+        <div className="mx-auto max-w-6xl px-4 text-center">
+          <div className="mb-2 flex items-center justify-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-teal-400 to-teal-600">
+              <span className="text-[10px] font-bold text-white">B</span>
             </div>
-            <span className="font-semibold text-white text-sm">Buddy360</span>
+            <span className="text-sm font-semibold text-white">Buddy360</span>
           </div>
           <p className="text-xs text-slate-600">
             A Growth Companion for Raising Self-Aware, Capable, and Purpose-Driven Humans

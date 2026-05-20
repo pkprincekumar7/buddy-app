@@ -7,3 +7,6 @@ dist/
 *.pyc
 .DS_Store
 .docx_extract/
+.mypy_cache/
+.ruff_cache/
+.claude/worktrees/

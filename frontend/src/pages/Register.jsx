@@ -40,15 +40,20 @@ export default function Register() {
       await api.auth.register(email.trim(), password, fullName.trim(), countryCode);
       await checkAppState({ withLoading: false });
     } catch (e) {
-      setError(httpErrorMessage(e, { fallback: 'Registration failed.', statusMessages: { 409: 'That email is already registered.' } }));
+      setError(
+        httpErrorMessage(e, {
+          fallback: 'Registration failed.',
+          statusMessages: { 409: 'That email is already registered.' },
+        }),
+      );
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border-edge bg-card p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
+      <div className="border-edge w-full max-w-md rounded-2xl bg-card p-8">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
@@ -99,9 +104,13 @@ export default function Register() {
               onChange={(e) => setCountryCode(e.target.value)}
               className="form-input"
             >
-              <option value="" disabled>Select your country…</option>
+              <option value="" disabled>
+                Select your country…
+              </option>
               {COUNTRIES.map(({ code, label }) => (
-                <option key={code} value={code}>{label}</option>
+                <option key={code} value={code}>
+                  {label}
+                </option>
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">
