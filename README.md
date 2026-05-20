@@ -168,7 +168,7 @@ The frontend hooks invoke `npx eslint` / `npx prettier` from `frontend/node_modu
 
 ## Local checks (check.sh)
 
-[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. All 11 backend and frontend checks always run even if an earlier one fails; 1 Terraform fmt check runs if `terraform` is found in `PATH`, and 3 tflint checks run if `tflint` is found in `PATH` — the two are independent. A colour-coded summary is printed at the end.
+[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. **12 checks always run** even if an earlier one fails: 3 backend lint checks (rows 1–3), 5 frontend lint and build checks (rows 4–8), and 4 security checks that need no external tools (rows 9–12). Optional checks run if the relevant tool is found in `PATH` — each is independent: 5 extended security scans (`gitleaks`, `hadolint`, `semgrep`, `trivy` ×2) and 4 Terraform checks (`terraform`, `tflint`). A colour-coded summary is printed at the end.
 
 ```bash
 ./check.sh
@@ -180,7 +180,16 @@ No manual setup required for backend and frontend checks. On every run the scrip
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
 
-**Terraform checks (optional):** `terraform fmt` and `tflint` checks are skipped with a hint if the tools are not installed. To enable them on macOS:
+**Extended security checks (optional):** each tool is checked independently — install only the ones you need. To enable all on macOS:
+
+```bash
+brew install gitleaks
+brew install hadolint
+pip install semgrep
+brew install aquasecurity/trivy/trivy
+```
+
+**Terraform checks (optional):** skipped with a hint if the tools are not installed. To enable on macOS:
 
 ```bash
 brew install terraform
@@ -194,20 +203,27 @@ brew install terraform-linters/tap/tflint
 | 1 | `ruff check` | ruff 0.11.2 | `backend/` — linting (unused imports, bugbear, naming, …) |
 | 2 | `ruff format` | ruff 0.11.2 | `backend/` — formatting (black-compatible, line-length 100) |
 | 3 | `mypy` | mypy 1.15.0 | `backend/app/` — static type checking (Python 3.12) |
-| 4 | `bandit` | bandit 1.9.4 | `backend/app/` — static security analysis (medium+ severity) |
-| 5 | `pip-audit` | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PYSEC-2025-183 suppressed — disputed, no fix version) |
-| 6 | `eslint` | ESLint (via npm) | `frontend/src/**` (excl. `components/ui/`) — React/hooks rules, unused imports, security |
-| 7 | `prettier` | Prettier (via npx) | `frontend/src/**` — JS/JSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
-| 8 | `typecheck` | tsc (via npm) | `frontend/src/**` (excl. `components/ui/`) — JSDoc type checking via `checkJs` |
-| 9 | `npm audit` | npm | `frontend/` — dependency CVE scan (high/critical only) |
-| 10 | `build` | Vite (via npm) | `frontend/` — production build |
-| 11 | bundle size | bash + `wc` | `frontend/dist/` — main JS bundle must be ≤ 1.4 MB |
-| 12 ¹ | terraform fmt | terraform | All `infra-live-*/terraform/` dirs — formatting check (`-check -recursive`) |
-| 13 ¹ | tflint (infra-live-backend) | tflint | `infra-live-backend/terraform/` — deprecated syntax, wrong types, best-practice violations |
-| 14 ¹ | tflint (infra-live-edge) | tflint | `infra-live-edge/terraform/` — same |
-| 15 ¹ | tflint (infra-live-frontend) | tflint | `infra-live-frontend/terraform/` — same |
+| 4 | `eslint` | ESLint (via npm) | `frontend/src/**` (excl. `components/ui/`) — React/hooks rules, unused imports, security |
+| 5 | `prettier` | Prettier (via npx) | `frontend/src/**` — JS/JSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
+| 6 | `typecheck` | tsc (via npm) | `frontend/src/**` (excl. `components/ui/`) — JSDoc type checking via `checkJs` |
+| 7 | `build` | Vite (via npm) | `frontend/` — production build |
+| 8 | bundle size | bash + `wc` | `frontend/dist/` — main JS bundle must be ≤ 1.4 MB |
+| 9 | `bandit` | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
+| 10 | `pip-audit` | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PYSEC-2025-183 suppressed — disputed, no fix version) |
+| 11 | `npm audit` | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
+| 12 | retire.js | retire (via npx) | `frontend/` — browser library CVEs, including client-side JS libraries not always caught by npm audit |
+| 13 ² | gitleaks | gitleaks | Entire repo git history — accidentally committed secrets, API keys, tokens |
+| 14 ² | hadolint | hadolint | `backend/Dockerfile` — Dockerfile best practices and security misconfigurations |
+| 15 ² | semgrep | semgrep | `backend/app/` + `frontend/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset) |
+| 16 ² | trivy (backend) | trivy | `backend/` — HIGH/CRITICAL CVEs in Python packages (complements pip-audit with a second CVE database) |
+| 17 ² | trivy (frontend) | trivy | `frontend/` — HIGH/CRITICAL CVEs in npm packages (complements npm audit with a second CVE database) |
+| 18 ¹ | terraform fmt | terraform | All `infra-live-*/terraform/` dirs — formatting check (`-check -recursive`) |
+| 19 ¹ | tflint (infra-live-backend) | tflint | `infra-live-backend/terraform/` — deprecated syntax, wrong types, best-practice violations |
+| 20 ¹ | tflint (infra-live-edge) | tflint | `infra-live-edge/terraform/` — same |
+| 21 ¹ | tflint (infra-live-frontend) | tflint | `infra-live-frontend/terraform/` — same |
 
 ¹ Skipped with an install hint if `terraform` / `tflint` is not found in `PATH`.
+² Skipped with an install hint if the respective tool is not found in `PATH`.
 
 The exit code is non-zero if any check fails, making it safe to call from other scripts or a pre-push hook.
 
@@ -457,7 +473,7 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `lint.yml` | Push / PR to `main` | Code quality gate — lint, format, types, security, build, bundle size, Terraform fmt + tflint |
+| `lint.yml` | Push / PR to `main` | Code quality gate — lint, format, types, build, bundle size, Terraform lint, secret detection, Dockerfile lint, SAST, CVE scan |
 | `terraform-live-all.yml` | Manual | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
@@ -468,19 +484,17 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 ### Code quality workflow (lint.yml)
 
-[`lint.yml`](.github/workflows/lint.yml) runs on pushes and pull requests targeting `main` only — feature branch pushes do not trigger it. It has three parallel jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes.
+[`lint.yml`](.github/workflows/lint.yml) runs on pushes and pull requests targeting `main` only — feature branch pushes do not trigger it. It has four parallel jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes.
 
 **`backend-lint`** (Python 3.12):
 
-The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0 bandit==1.9.4 pip-audit==2.9.0`, pinning dev-tool versions to match `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`.
+The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0`, pinning dev-tool versions to match `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`.
 
 | Step | Tool | What it checks |
 |---|---|---|
 | `ruff check` | ruff 0.11.2 | Linting — unused imports, bugbear, naming, isort, … |
 | `ruff format --check` | ruff 0.11.2 | Formatting (black-compatible, line-length 100) — fails if any file is unformatted |
 | `mypy` | mypy 1.15.0 | Static type checking of `app/` against real package stubs (Python 3.12, `check_untyped_defs`) |
-| `bandit` | bandit 1.9.4 | Static security analysis — medium-and-above findings only (`-ll`) |
-| `pip-audit` | pip-audit 2.9.0 | Dependency CVE scan against `requirements.txt` — PYSEC-2025-183 (PyJWT disputed advisory, no fix version) is suppressed via `--ignore-vuln`; see comment in `requirements.txt` |
 
 **`frontend-lint`** (Node.js 22):
 
@@ -489,7 +503,6 @@ The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0
 | `eslint` | ESLint (via `npm run lint`) | React/hooks rules, unused imports, security (`eslint-plugin-security`) — covers `src/**` excl. `components/ui/` |
 | `prettier --check` | Prettier (via npx) | JS/JSX/CSS formatting across `src/**` — fails if any file is unformatted or has unsorted Tailwind classes (`prettier-plugin-tailwindcss`) |
 | `typecheck` | tsc (via `npm run typecheck`) | JSDoc type checking (`checkJs`) across `src/**` excl. `components/ui/` |
-| `npm audit` | npm | Dependency CVE scan — fails on high or critical findings |
 | `build` | Vite (via `npm run build`) | Production build — catches import errors and missing assets |
 | bundle size | bash + `wc` | Ensures the main JS bundle stays ≤ 1.4 MB (current: ~1.08 MB) |
 
@@ -501,6 +514,22 @@ The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0
 | `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
 | `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
 | `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
+
+**`security-scan`**:
+
+All steps run without cloud credentials and without building the Docker image — purely static analysis. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Steps are grouped by the runtime they require.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Gitleaks | gitleaks-action 2.3.9 | Full git history — accidentally committed secrets, API keys, private keys, tokens |
+| Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
+| Bandit | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
+| pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 suppressed — disputed, no fix version |
+| Semgrep | semgrep (`p/security-audit`) | `backend/app/` + `frontend/src/` — advanced Python and JavaScript/React SAST patterns |
+| npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
+| Retire.js | retire (via npx) | `frontend/` — browser library CVEs not always caught by npm audit |
+| Trivy (backend) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
+| Trivy (frontend) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
 
 ### One-time AWS setup: GitHub OIDC identity provider
 
