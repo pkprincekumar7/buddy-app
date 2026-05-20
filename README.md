@@ -168,17 +168,24 @@ The frontend hooks invoke `npx eslint` / `npx prettier` from `frontend/node_modu
 
 ## Local checks (check.sh)
 
-[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. All 11 checks run even if an earlier one fails, and a colour-coded summary is printed at the end.
+[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. All 11 backend and frontend checks always run even if an earlier one fails; 1 Terraform fmt check runs if `terraform` is found in `PATH`, and 3 tflint checks run if `tflint` is found in `PATH` — the two are independent. A colour-coded summary is printed at the end.
 
 ```bash
 ./check.sh
 ```
 
-No manual setup required. On every run the script automatically:
+No manual setup required for backend and frontend checks. On every run the script automatically:
 - Creates `backend/.venv` if it does not exist, then syncs all Python packages (`requirements.txt` + dev tools). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs.
 - Runs `npm install` in `frontend/`. This is fast when `node_modules` already exists and ensures any `package.json` change is always reflected.
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
+
+**Terraform checks (optional):** `terraform fmt` and `tflint` checks are skipped with a hint if the tools are not installed. To enable them on macOS:
+
+```bash
+brew install terraform
+brew install terraform-linters/tap/tflint
+```
 
 **Checks run:**
 
@@ -195,6 +202,12 @@ The script looks for each tool in `backend/.venv/bin/` first, then falls back to
 | 9 | `npm audit` | npm | `frontend/` — dependency CVE scan (high/critical only) |
 | 10 | `build` | Vite (via npm) | `frontend/` — production build |
 | 11 | bundle size | bash + `wc` | `frontend/dist/` — main JS bundle must be ≤ 1.4 MB |
+| 12 ¹ | terraform fmt | terraform | All `infra-live-*/terraform/` dirs — formatting check (`-check -recursive`) |
+| 13 ¹ | tflint (infra-live-backend) | tflint | `infra-live-backend/terraform/` — deprecated syntax, wrong types, best-practice violations |
+| 14 ¹ | tflint (infra-live-edge) | tflint | `infra-live-edge/terraform/` — same |
+| 15 ¹ | tflint (infra-live-frontend) | tflint | `infra-live-frontend/terraform/` — same |
+
+¹ Skipped with an install hint if `terraform` / `tflint` is not found in `PATH`.
 
 The exit code is non-zero if any check fails, making it safe to call from other scripts or a pre-push hook.
 
@@ -444,7 +457,7 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `lint.yml` | Every push / PR | Code quality gate — lint, format, types, security, build, bundle size |
+| `lint.yml` | Push / PR to `main` | Code quality gate — lint, format, types, security, build, bundle size, Terraform fmt + tflint |
 | `terraform-live-all.yml` | Manual | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
@@ -455,7 +468,7 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 ### Code quality workflow (lint.yml)
 
-[`lint.yml`](.github/workflows/lint.yml) runs on every push and pull request. It has two parallel jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes.
+[`lint.yml`](.github/workflows/lint.yml) runs on pushes and pull requests targeting `main` only — feature branch pushes do not trigger it. It has three parallel jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes.
 
 **`backend-lint`** (Python 3.12):
 
@@ -479,6 +492,15 @@ The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0
 | `npm audit` | npm | Dependency CVE scan — fails on high or critical findings |
 | `build` | Vite (via `npm run build`) | Production build — catches import errors and missing assets |
 | bundle size | bash + `wc` | Ensures the main JS bundle stays ≤ 1.4 MB (current: ~1.08 MB) |
+
+**`terraform-lint`**:
+
+| Step | Tool | What it checks |
+|---|---|---|
+| `terraform fmt -check -recursive` | Terraform 1.13.0 | Formatting across all three infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`) — fails if any `.tf` file is unformatted |
+| `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
+| `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
+| `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
 
 ### One-time AWS setup: GitHub OIDC identity provider
 

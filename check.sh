@@ -116,6 +116,32 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
+# ── terraform ─────────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ TERRAFORM ════${RESET}"
+
+TERRAFORM="$(command -v terraform 2>/dev/null || true)"
+TFLINT="$(command -v tflint 2>/dev/null || true)"
+
+if [ -z "$TERRAFORM" ]; then
+  echo -e "${CYAN}⚠ terraform not found in PATH — skipping fmt check.${RESET}"
+  echo -e "${CYAN}  Install: https://developer.hashicorp.com/terraform/install${RESET}"
+else
+  run "terraform fmt check" \
+      bash -c "cd '$ROOT' && '$TERRAFORM' fmt -check -recursive"
+fi
+
+if [ -z "$TFLINT" ]; then
+  echo -e "${CYAN}⚠ tflint not found in PATH — skipping tflint checks.${RESET}"
+  echo -e "${CYAN}  Install: https://github.com/terraform-linters/tflint${RESET}"
+else
+  run "tflint (infra-live-backend)" \
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-backend/terraform'"
+  run "tflint (infra-live-edge)" \
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-edge/terraform'"
+  run "tflint (infra-live-frontend)" \
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-frontend/terraform'"
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}════ SUMMARY ════${RESET}"
