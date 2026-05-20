@@ -78,12 +78,6 @@ run "ruff format (check)" \
 run "mypy" \
     bash -c "cd '$BACKEND' && '$MYPY' app/"
 
-run "bandit" \
-    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ -ll -q"
-
-run "pip-audit" \
-    bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183"
-
 # ── frontend ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
 
@@ -95,9 +89,6 @@ run "prettier (check)" \
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
-
-run "npm audit" \
-    bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
 run "build" \
     bash -c "cd '$FRONTEND' && npm run build"
@@ -116,6 +107,62 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
+# ── security ──────────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ SECURITY ════${RESET}"
+
+# ---- always-run: tools available from the bootstrapped venv / npm ----------------
+run "bandit" \
+    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ -ll -q"
+
+run "pip-audit" \
+    bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183"
+
+run "npm audit" \
+    bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
+
+run "retire.js (browser library CVE scan)" \
+    bash -c "cd '$FRONTEND' && npx retire --path . --exitwith 1"
+
+# ---- optional: external tools — skipped with an install hint if absent ----------
+GITLEAKS="$(command -v gitleaks 2>/dev/null || true)"
+HADOLINT="$(command -v hadolint 2>/dev/null || true)"
+SEMGREP="$(command -v semgrep 2>/dev/null || true)"
+TRIVY="$(command -v trivy 2>/dev/null || true)"
+
+if [ -z "$GITLEAKS" ]; then
+  echo -e "${CYAN}⚠ gitleaks not found in PATH — skipping secret detection.${RESET}"
+  echo -e "${CYAN}  Install: brew install gitleaks${RESET}"
+else
+  run "gitleaks (secret detection)" \
+      bash -c "cd '$ROOT' && '$GITLEAKS' detect"
+fi
+
+if [ -z "$HADOLINT" ]; then
+  echo -e "${CYAN}⚠ hadolint not found in PATH — skipping Dockerfile lint.${RESET}"
+  echo -e "${CYAN}  Install: brew install hadolint${RESET}"
+else
+  run "hadolint (Dockerfile)" \
+      bash -c "'$HADOLINT' '$BACKEND/Dockerfile'"
+fi
+
+if [ -z "$SEMGREP" ]; then
+  echo -e "${CYAN}⚠ semgrep not found in PATH — skipping SAST.${RESET}"
+  echo -e "${CYAN}  Install: pip install semgrep${RESET}"
+else
+  run "semgrep (SAST)" \
+      bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$ROOT/frontend/src/'"
+fi
+
+if [ -z "$TRIVY" ]; then
+  echo -e "${CYAN}⚠ trivy not found in PATH — skipping dependency CVE scan.${RESET}"
+  echo -e "${CYAN}  Install: brew install aquasecurity/trivy/trivy${RESET}"
+else
+  run "trivy (backend CVE scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$BACKEND/'"
+  run "trivy (frontend CVE scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$FRONTEND/'"
+fi
+
 # ── terraform ─────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ TERRAFORM ════${RESET}"
 
@@ -124,7 +171,7 @@ TFLINT="$(command -v tflint 2>/dev/null || true)"
 
 if [ -z "$TERRAFORM" ]; then
   echo -e "${CYAN}⚠ terraform not found in PATH — skipping fmt check.${RESET}"
-  echo -e "${CYAN}  Install: https://developer.hashicorp.com/terraform/install${RESET}"
+  echo -e "${CYAN}  Install: brew install terraform${RESET}"
 else
   run "terraform fmt check" \
       bash -c "cd '$ROOT' && '$TERRAFORM' fmt -check -recursive"
@@ -132,7 +179,7 @@ fi
 
 if [ -z "$TFLINT" ]; then
   echo -e "${CYAN}⚠ tflint not found in PATH — skipping tflint checks.${RESET}"
-  echo -e "${CYAN}  Install: https://github.com/terraform-linters/tflint${RESET}"
+  echo -e "${CYAN}  Install: brew install terraform-linters/tap/tflint${RESET}"
 else
   run "tflint (infra-live-backend)" \
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-backend/terraform'"
