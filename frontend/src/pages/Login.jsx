@@ -65,24 +65,25 @@ export default function Login() {
     const existing = document.querySelector('script[data-buddy-google-gsi]');
     const script = existing || document.createElement('script');
     if (!existing) {
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.dataset.buddyGoogleGsi = 'true';
+      const scriptEl = /** @type {HTMLScriptElement} */ (script);
+      scriptEl.src = 'https://accounts.google.com/gsi/client';
+      scriptEl.async = true;
+      scriptEl.defer = true;
+      scriptEl.dataset.buddyGoogleGsi = 'true';
       document.body.appendChild(script);
     }
 
     const init = () => {
-      if (!window.google?.accounts?.id) return;
+      if (!(/** @type {any} */ (window).google?.accounts?.id)) return;
       const el = googleBtnRef.current;
       if (!el) return;
       el.replaceChildren();
-      window.google.accounts.id.initialize({
+      /** @type {any} */ (window).google.accounts.id.initialize({
         client_id: googleClientId,
         callback: onCredential,
         auto_select: false,
       });
-      window.google.accounts.id.renderButton(el, {
+      /** @type {any} */ (window).google.accounts.id.renderButton(el, {
         theme: 'outline',
         size: 'large',
         width: 320,
@@ -92,7 +93,7 @@ export default function Login() {
 
     const run = () => requestAnimationFrame(init);
 
-    if (window.google?.accounts?.id) {
+    if (/** @type {any} */ (window).google?.accounts?.id) {
       run();
     } else {
       script.addEventListener('load', run, { once: true });
@@ -107,15 +108,20 @@ export default function Login() {
       await api.auth.login(email.trim(), password);
       await checkAppState({ withLoading: false });
     } catch (e) {
-      setError(httpErrorMessage(e, { fallback: 'Sign-in failed.', statusMessages: { 401: 'Invalid email or password.' } }));
+      setError(
+        httpErrorMessage(e, {
+          fallback: 'Sign-in failed.',
+          statusMessages: { 401: 'Invalid email or password.' },
+        }),
+      );
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border-edge bg-card p-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
+      <div className="border-edge w-full max-w-md rounded-2xl bg-card p-8">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
@@ -128,7 +134,10 @@ export default function Login() {
           <>
             <form onSubmit={onSubmit} className="space-y-4">
               <div>
-                <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-slate-300">
+                <label
+                  htmlFor="login-email"
+                  className="mb-1 block text-sm font-medium text-slate-300"
+                >
                   Username (email)
                 </label>
                 <input
@@ -142,7 +151,10 @@ export default function Login() {
                 />
               </div>
               <div>
-                <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-300">
+                <label
+                  htmlFor="login-password"
+                  className="mb-1 block text-sm font-medium text-slate-300"
+                >
                   Password
                 </label>
                 <input
@@ -156,7 +168,11 @@ export default function Login() {
                 />
               </div>
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={busy}>
+              <Button
+                type="submit"
+                className="w-full bg-teal-600 hover:bg-teal-700"
+                disabled={busy}
+              >
                 {busy ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
@@ -168,15 +184,16 @@ export default function Login() {
               </div>
             ) : (
               <p className="mt-4 text-center text-xs text-slate-400">
-                Google sign-in: set <code className="rounded bg-ghost-strong px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
-                <code className="rounded bg-ghost-strong px-1">GOOGLE_CLIENT_ID</code> on the API.
+                Google sign-in: set{' '}
+                <code className="bg-ghost-strong rounded px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
+                <code className="bg-ghost-strong rounded px-1">GOOGLE_CLIENT_ID</code> on the API.
               </p>
             )}
           </>
         )}
 
         {pendingGoogleToken ? (
-          <div className="mt-6 rounded-xl border border-teal-500/25 bg-brand-sub p-4">
+          <div className="bg-brand-sub mt-6 rounded-xl border border-teal-500/25 p-4">
             <p className="mb-3 text-sm font-medium text-white">One more step</p>
             <p className="mb-3 text-xs text-slate-400">
               Select your country so we can store your data in the right region.
@@ -187,22 +204,30 @@ export default function Login() {
               onChange={(e) => setGoogleCountry(e.target.value)}
               className="form-input mb-3 text-sm"
             >
-              <option value="" disabled>Select your country…</option>
+              <option value="" disabled>
+                Select your country…
+              </option>
               {COUNTRIES.map(({ code, label }) => (
-                <option key={code} value={code}>{label}</option>
+                <option key={code} value={code}>
+                  {label}
+                </option>
               ))}
             </select>
             <div className="flex gap-2">
               <Button
                 onClick={onGoogleCountrySubmit}
                 disabled={!googleCountry || googleCountryBusy}
-                className="flex-1 bg-teal-600 hover:bg-teal-700 text-sm"
+                className="flex-1 bg-teal-600 text-sm hover:bg-teal-700"
               >
                 {googleCountryBusy ? 'Signing in…' : 'Continue'}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => { setPendingGoogleToken(null); setGoogleCountry(''); setError(''); }}
+                onClick={() => {
+                  setPendingGoogleToken(null);
+                  setGoogleCountry('');
+                  setError('');
+                }}
                 disabled={googleCountryBusy}
                 className="text-sm"
               >

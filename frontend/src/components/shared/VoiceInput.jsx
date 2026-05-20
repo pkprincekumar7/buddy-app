@@ -1,26 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 
-const NativeSpeechRecognition = typeof window !== 'undefined'
-  ? (window.SpeechRecognition || window.webkitSpeechRecognition)
-  : null;
+const NativeSpeechRecognition =
+  typeof window !== 'undefined'
+    ? /** @type {any} */ (window).SpeechRecognition ||
+      /** @type {any} */ (window).webkitSpeechRecognition
+    : null;
 
 // Check only that MediaRecorder exists (iOS 14.5+).
 // Do NOT check navigator.mediaDevices here — on iOS it is undefined over HTTP
 // (evaluated at module load) even though it works fine over HTTPS at runtime.
 // The actual mediaDevices availability is checked inside startMediaRecorder.
-const canMediaRecord =
-  typeof window !== 'undefined' &&
-  typeof MediaRecorder !== 'undefined';
+const canMediaRecord = typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined';
 
 // Fix #5: prefer audio/mp4 first — Safari/iOS don't support audio/webm
 function getBestMimeType() {
   const types = ['audio/mp4', 'audio/webm', 'audio/ogg'];
-  return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) || '';
 }
 
 function extFromMimeType(mimeType) {
@@ -31,7 +31,12 @@ function extFromMimeType(mimeType) {
   return 'mp4';
 }
 
-export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 'aria-label': ariaLabel }) {
+export default function VoiceInput({
+  onTranscript,
+  isRecording,
+  setIsRecording,
+  'aria-label': ariaLabel,
+}) {
   const recognitionRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -101,7 +106,7 @@ export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 
       };
 
       recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
+        stream.getTracks().forEach((t) => t.stop());
         // iOS Safari often reports recorder.mimeType as '' even when recording mp4.
         // Fall back to the mimeType we requested, then 'audio/mp4' as the iOS default.
         const resolvedMime = recorder.mimeType || mimeType || 'audio/mp4';
@@ -127,12 +132,11 @@ export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 
       setIsRecording(true);
     } catch (err) {
       // Fix #1: inform the user when mic access is denied or unavailable
-      const isDenied =
-        err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+      const isDenied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
       toast.error(
         isDenied
           ? 'Microphone access was denied. Please allow mic access and try again.'
-          : 'Could not start recording. Please check your microphone.'
+          : 'Could not start recording. Please check your microphone.',
       );
       setIsRecording(false);
     }
@@ -160,7 +164,11 @@ export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 
 
   if (!isAvailable) return null;
 
-  const defaultLabel = isTranscribing ? 'Transcribing…' : isRecording ? 'Stop recording' : 'Start voice input';
+  const defaultLabel = isTranscribing
+    ? 'Transcribing…'
+    : isRecording
+      ? 'Stop recording'
+      : 'Start voice input';
 
   return (
     <Button
@@ -169,20 +177,20 @@ export default function VoiceInput({ onTranscript, isRecording, setIsRecording, 
       disabled={isTranscribing}
       size="icon"
       aria-label={ariaLabel ?? defaultLabel}
-      className={`h-10 w-10 rounded-xl flex-shrink-0 ${
+      className={`h-10 w-10 flex-shrink-0 rounded-xl ${
         isRecording
           ? 'bg-red-500 hover:bg-red-600'
           : isTranscribing
-          ? 'bg-amber-400 cursor-wait'
-          : 'bg-ghost-strong hover:bg-ghost-hover'
+            ? 'cursor-wait bg-amber-400'
+            : 'bg-ghost-strong hover:bg-ghost-hover'
       }`}
     >
       {isTranscribing ? (
-        <Loader2 className="w-4 h-4 text-white animate-spin" />
+        <Loader2 className="h-4 w-4 animate-spin text-white" />
       ) : isRecording ? (
-        <MicOff className="w-4 h-4 text-white" />
+        <MicOff className="h-4 w-4 text-white" />
       ) : (
-        <Mic className="w-4 h-4 text-slate-400" />
+        <Mic className="h-4 w-4 text-slate-400" />
       )}
     </Button>
   );

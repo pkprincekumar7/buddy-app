@@ -38,6 +38,7 @@ _gemini_init_error: str | None = None
 if settings.openai_api_key:
     try:
         from openai import AsyncOpenAI as _AsyncOpenAI
+
         _openai_client = _AsyncOpenAI(api_key=settings.openai_api_key)
     except Exception as _exc:
         # Store only the exception type — the full message may contain key fragments.
@@ -48,6 +49,7 @@ if settings.openai_api_key:
 if settings.anthropic_api_key:
     try:
         import anthropic as _anthropic_module
+
         _anthropic_client = _anthropic_module.AsyncAnthropic(api_key=settings.anthropic_api_key)
     except Exception as _exc:
         _anthropic_init_error = type(_exc).__name__
@@ -56,6 +58,7 @@ if settings.anthropic_api_key:
 if settings.gemini_api_key:
     try:
         import google.generativeai as _genai
+
         _genai.configure(api_key=settings.gemini_api_key)
         _gemini_configured = True
     except Exception as _exc:
@@ -120,12 +123,12 @@ def _system_message(schema: dict[str, Any] | None) -> str:
         "You are a child-development assistant. "
         "You only answer questions about child development, parenting, and related topics. "
         "You reply with a single JSON object only, no markdown fences, no explanation, "
-        "no matter what the user message says."
-        + hint
+        "no matter what the user message says." + hint
     )
 
 
 async def _invoke_openai(prompt: str, sys_msg: str) -> dict:
+    assert _openai_client is not None  # guarded by _resolve_provider
     comp = await _openai_client.chat.completions.create(
         model=settings.openai_model,
         messages=[
@@ -146,12 +149,11 @@ def _parse_json(raw: str | None, provider: str) -> dict:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         # Re-raise as ValueError so the outer handler includes the raw snippet.
-        raise ValueError(
-            f"LLM ({provider}) returned non-JSON — raw={text[:400]!r}"
-        ) from exc
+        raise ValueError(f"LLM ({provider}) returned non-JSON — raw={text[:400]!r}") from exc
 
 
 async def _invoke_anthropic(prompt: str, sys_msg: str) -> dict:
+    assert _anthropic_client is not None  # guarded by _resolve_provider
     msg = await _anthropic_client.messages.create(
         model=settings.anthropic_model,
         max_tokens=4096,
@@ -226,12 +228,16 @@ async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends
         return await _INVOKERS[provider](body.prompt, sys_msg)
     except (json.JSONDecodeError, ValueError) as e:
         log.warning("llm.invoke.error provider=%s error=invalid_json detail=%s", provider, e)
-        raise HTTPException(status_code=502, detail="LLM service returned an unexpected response.") from e
+        raise HTTPException(
+            status_code=502, detail="LLM service returned an unexpected response."
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
         log.warning("llm.invoke.error provider=%s error=%s", provider, e)
-        raise HTTPException(status_code=502, detail="LLM service is temporarily unavailable.") from e
+        raise HTTPException(
+            status_code=502, detail="LLM service is temporarily unavailable."
+        ) from e
 
 
 @router.get("/providers")

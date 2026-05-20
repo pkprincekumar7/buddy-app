@@ -1,3 +1,4 @@
+// @ts-nocheck
 function joinApi(path) {
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
   const suffix = path.startsWith('/') ? path : `/${path}`;
@@ -13,7 +14,9 @@ let _redirectingToLogin = false;
 
 function ensureRefreshed() {
   if (!refreshPromise) {
-    refreshPromise = refreshTokenPair().finally(() => { refreshPromise = null; });
+    refreshPromise = refreshTokenPair().finally(() => {
+      refreshPromise = null;
+    });
   }
   return refreshPromise;
 }
@@ -61,7 +64,9 @@ async function request(path, { method = 'GET', body } = {}, _retry = false) {
     } catch {
       /* ignore */
     }
-    const err = new Error(typeof detail === 'string' ? detail : (detail?.msg || JSON.stringify(detail)));
+    const err = new Error(
+      typeof detail === 'string' ? detail : detail?.msg || JSON.stringify(detail),
+    );
     err.status = res.status;
     err.detail = detail;
     throw err;
@@ -85,7 +90,12 @@ export const api = {
   auth: {
     /** True auth check — verifies session cookie with the server. */
     async isAuthenticated() {
-      try { await request('/auth/me'); return true; } catch { return false; }
+      try {
+        await request('/auth/me');
+        return true;
+      } catch {
+        return false;
+      }
     },
 
     async me() {
@@ -173,15 +183,24 @@ export const api = {
 
   /** Completed growth areas: persistent record of each finished area (child-scoped). */
   completedGrowthAreas: {
-    list: (childId) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`),
-    append: (childId, body) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, { method: 'POST', body }),
-    clear: (childId) => request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, { method: 'DELETE' }),
+    list: (childId) =>
+      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`),
+    append: (childId, body) =>
+      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
+        method: 'POST',
+        body,
+      }),
+    clear: (childId) =>
+      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
+        method: 'DELETE',
+      }),
   },
 
   /** Goals: parent concern + 3-month plan (child-scoped). */
   goals: {
     get: (childId) => request(`/user/goals?child_id=${encodeURIComponent(childId)}`),
-    patch: (childId, body) => request(`/user/goals?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
+    patch: (childId, body) =>
+      request(`/user/goals?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
   },
 
   entities: {
@@ -195,12 +214,13 @@ export const api = {
       },
       get: (id) => request(`/children/${encodeURIComponent(id)}`),
       create: (payload) => request('/children', { method: 'POST', body: payload }),
-      update: (id, patch) => request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
+      update: (id, patch) =>
+        request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
       delete: (id) => request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
   },
 
   appLogs: {
-    logUserInApp: () => Promise.resolve(),
+    logUserInApp: (_pageName) => Promise.resolve(),
   },
 };

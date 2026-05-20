@@ -9,10 +9,16 @@ import { slimChildConversationForStorage } from '@/lib/onboardingChildData';
 export function questionnaireMarkdown(mergedDraft) {
   const slim = slimChildConversationForStorage(mergedDraft);
   const labelFor = {
-    name: 'Name', age: 'Age', school: 'School', strengths: 'Top strengths',
-    hobbies: 'Hobbies', thinking_pattern: 'Thinking pattern',
-    communication_style: 'Communication style', energy_level: 'Energy level',
-    social_behaviour: 'Social behaviour', emotional_behaviour: 'Emotional behaviour',
+    name: 'Name',
+    age: 'Age',
+    school: 'School',
+    strengths: 'Top strengths',
+    hobbies: 'Hobbies',
+    thinking_pattern: 'Thinking pattern',
+    communication_style: 'Communication style',
+    energy_level: 'Energy level',
+    social_behaviour: 'Social behaviour',
+    emotional_behaviour: 'Emotional behaviour',
   };
   const pairs = [];
   for (const [k, v] of Object.entries(slim)) {
@@ -46,11 +52,19 @@ Requirements:
 Stay evidence-led; acknowledge uncertainty subtly when extrapolating.`;
 }
 
-export function buildJourneyRecommendationsPrompt({ childData, age, lifePhase, personalityType, personalityNarrative, growthAreas }) {
+export function buildJourneyRecommendationsPrompt({
+  childData,
+  age,
+  lifePhase,
+  personalityType,
+  personalityNarrative,
+  growthAreas,
+}) {
   const questionnaireMd = questionnaireMarkdown(childData);
-  const growthAreasBullets = Array.isArray(growthAreas) && growthAreas.length
-    ? growthAreas.map((x) => `• ${x}`).join('\n')
-    : '(not captured)';
+  const growthAreasBullets =
+    Array.isArray(growthAreas) && growthAreas.length
+      ? growthAreas.map((x) => `• ${x}`).join('\n')
+      : '(not captured)';
   return `Based on this child's onboarding questionnaire responses and synthesized personality briefing, propose personalized Buddy360 journey scaffolding.
 
 Structured answers we already persisted:
@@ -77,7 +91,13 @@ Generate:
 3. Three attainable starter weekly missions referencing strengths or hobbies cues when plausible`;
 }
 
-export function buildGoalsMonthlyPlanPrompt({ childName, childAge, parentConcern, personalityType, areasContext }) {
+export function buildGoalsMonthlyPlanPrompt({
+  childName,
+  childAge,
+  parentConcern,
+  personalityType,
+  areasContext,
+}) {
   const concernContext = parentConcern ? `Parent's primary concern: "${parentConcern}"` : '';
   return `Create a focused 3-month goal plan for ${childName || 'the child'}, age ${childAge || 'unknown'}.
 
@@ -190,8 +210,14 @@ Based on this evaluation, write two things:
 }
 
 export function buildProgressComparisonPrompt({
-  originalTitle, originalNote, originalAiFeedback, originalParentFeedback,
-  followupTitle, followupNote, followupAiFeedback, followupParentFeedback,
+  originalTitle,
+  originalNote,
+  originalAiFeedback,
+  originalParentFeedback,
+  followupTitle,
+  followupNote,
+  followupAiFeedback,
+  followupParentFeedback,
 }) {
   return `Compare two assessments for the same child activity objective and determine if the child improved.
 

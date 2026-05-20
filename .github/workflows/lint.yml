@@ -1,0 +1,89 @@
+name: Lint & Format Check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  backend-lint:
+    name: Backend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies + dev tools
+        run: pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0 bandit==1.9.4 pip-audit==2.9.0
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: ruff format (check only)
+        run: ruff format --check .
+
+      - name: mypy type check
+        run: mypy app/
+
+      - name: bandit (static security analysis)
+        run: bandit -r app/ -ll -q
+
+      - name: pip-audit (dependency CVEs)
+        run: pip-audit -r requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183
+
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier (check only)
+        run: npx prettier --check "src/**/*.{js,jsx,css}"
+
+      - name: TypeScript type check
+        run: npm run typecheck
+
+      - name: npm audit (dependency CVEs)
+        run: npm audit --audit-level=high
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle size budget (main JS ≤ 1.4 MB)
+        run: |
+          BUNDLE=$(ls dist/assets/index-*.js 2>/dev/null | head -1)
+          if [ -z "$BUNDLE" ]; then echo "No bundle found"; exit 1; fi
+          SIZE=$(wc -c < "$BUNDLE")
+          LIMIT=1468006
+          echo "Bundle: $BUNDLE — ${SIZE} bytes (limit ${LIMIT})"
+          [ "$SIZE" -le "$LIMIT" ] || { echo "Main bundle exceeds 1.4 MB limit"; exit 1; }

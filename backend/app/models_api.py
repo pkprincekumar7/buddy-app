@@ -15,6 +15,7 @@ _SAFE_PATH_RE = re.compile(r'^/(?!/)[^\x00-\x1f\\<>"\':`]*$')
 # Preferences
 # ---------------------------------------------------------------------------
 
+
 class UserPreferences(BaseModel):
     tts_enabled: bool = True
     last_visited_path: str | None = None
@@ -40,6 +41,7 @@ class UserPreferencesPatch(BaseModel):
 # ---------------------------------------------------------------------------
 # Completed growth areas
 # ---------------------------------------------------------------------------
+
 
 class ChildActivityResults(BaseModel):
     summary: str = Field(default="", max_length=2000)
@@ -88,7 +90,9 @@ class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
     area_color: str = Field(max_length=100)
-    answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(default_factory=dict, max_length=100)
+    answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(
+        default_factory=dict, max_length=100
+    )
     recommendations: list[str] | None = Field(None, max_length=50)
     child_activity: ChildActivity | None = None
     # Status + per-area wizard state
@@ -107,7 +111,7 @@ class AppendGrowthAreaRequest(BaseModel):
     ai_three_month_recommendations: list | None = None
 
     @model_validator(mode="after")
-    def limit_dict_payload_size(self) -> "AppendGrowthAreaRequest":
+    def limit_dict_payload_size(self) -> AppendGrowthAreaRequest:
         """Guard against deeply-nested or oversized fields bloating MongoDB documents."""
         serialisable_fields = (
             self.answers,  # max_length=100 caps key count, not value byte size
@@ -123,7 +127,9 @@ class AppendGrowthAreaRequest(BaseModel):
         try:
             total = sum(len(json.dumps(f)) for f in serialisable_fields if f is not None)
         except (RecursionError, ValueError, TypeError):
-            raise ValueError("Growth area payload contains an invalid or too-deeply nested structure")
+            raise ValueError(
+                "Growth area payload contains an invalid or too-deeply nested structure"
+            ) from None
         for str_field in (self.feedback, self.step, self.status):
             if str_field is not None:
                 total += len(str_field)
@@ -137,6 +143,7 @@ class AppendGrowthAreaRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Goals
 # ---------------------------------------------------------------------------
+
 
 class GoalsActivity(BaseModel):
     title: str = Field(max_length=200)
@@ -194,12 +201,14 @@ class UserGoalsPatch(BaseModel):
     clear_concern: bool = False
 
     @model_validator(mode="after")
-    def limit_goals_plan_size(self) -> "UserGoalsPatch":
+    def limit_goals_plan_size(self) -> UserGoalsPatch:
         if self.plan is not None:
             try:
                 size = len(json.dumps(self.plan.model_dump()))
             except (RecursionError, ValueError, TypeError):
-                raise ValueError("Goals plan contains an invalid or too-deeply nested structure")
+                raise ValueError(
+                    "Goals plan contains an invalid or too-deeply nested structure"
+                ) from None
             if size > _GOALS_PLAN_MAX_BYTES:
                 raise ValueError(
                     f"Goals plan exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
@@ -210,6 +219,7 @@ class UserGoalsPatch(BaseModel):
 # ---------------------------------------------------------------------------
 # Children
 # ---------------------------------------------------------------------------
+
 
 class ChildResponse(BaseModel):
     model_config = {"extra": "ignore"}
@@ -262,7 +272,7 @@ class ChildCreate(BaseModel):
     emotional_behaviour: str | None = None
 
     @model_validator(mode="after")
-    def reject_unsafe_extra_keys(self) -> "ChildCreate":
+    def reject_unsafe_extra_keys(self) -> ChildCreate:
         if self.__pydantic_extra__:
             for key in self.__pydantic_extra__:
                 if key.startswith("$") or "." in key:
@@ -270,12 +280,14 @@ class ChildCreate(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def limit_extra_payload_size(self) -> "ChildCreate":
+    def limit_extra_payload_size(self) -> ChildCreate:
         if self.__pydantic_extra__:
             try:
                 size = len(json.dumps(self.__pydantic_extra__))
             except (RecursionError, TypeError, ValueError):
-                raise ValueError("Child payload contains invalid or non-serialisable data")
+                raise ValueError(
+                    "Child payload contains invalid or non-serialisable data"
+                ) from None
             if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self
@@ -304,7 +316,7 @@ class ChildPatch(BaseModel):
     wizard_area_index: int | None = None
 
     @model_validator(mode="after")
-    def reject_unsafe_extra_keys(self) -> "ChildPatch":
+    def reject_unsafe_extra_keys(self) -> ChildPatch:
         if self.__pydantic_extra__:
             for key in self.__pydantic_extra__:
                 if key.startswith("$") or "." in key:
@@ -312,12 +324,14 @@ class ChildPatch(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def limit_extra_payload_size(self) -> "ChildPatch":
+    def limit_extra_payload_size(self) -> ChildPatch:
         if self.__pydantic_extra__:
             try:
                 size = len(json.dumps(self.__pydantic_extra__))
             except (RecursionError, TypeError, ValueError):
-                raise ValueError("Child payload contains invalid or non-serialisable data")
+                raise ValueError(
+                    "Child payload contains invalid or non-serialisable data"
+                ) from None
             if size > _PAYLOAD_MAX_BYTES:
                 raise ValueError("Child payload exceeds maximum allowed size (64 KB)")
         return self

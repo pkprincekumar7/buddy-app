@@ -1,11 +1,12 @@
 import asyncio
+import functools
 import logging
 import random
 import re
-import subprocess
+import subprocess  # nosec B404
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -20,22 +21,22 @@ from app.constants import API_V1_PREFIX
 from app.database import init_indexes
 from app.limiter import limiter, user_limiter
 from app.llm_rate_limiter import get_redis_client
+from app.routers.audio import router as audio_router
 from app.routers.auth import router as auth_router
-from app.routers.users import router as users_router
 from app.routers.children import router as children_router
 from app.routers.llm import router as llm_router
-from app.routers.audio import router as audio_router
+from app.routers.users import router as users_router
 from app.settings import settings
 
 log = logging.getLogger(__name__)
 
-_REQUEST_ID_RE = re.compile(r'^[a-zA-Z0-9\-_]{1,64}$')
+_REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9\-_]{1,64}$")
 
 
 def _git_info() -> dict:
     def _run(args: list[str]) -> str:
         try:
-            return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True).strip()
+            return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True).strip()  # nosec B603
         except Exception:
             return "unknown"
 
@@ -77,7 +78,8 @@ async def _cleanup_expired_sessions(db) -> None:
             # SET key 1 NX EX ttl — atomic acquire; returns True only if the key
             # did not exist, ensuring exactly one instance runs the cleanup.
             acquired = await loop.run_in_executor(
-                None, lambda: r.set(_CLEANUP_LOCK_KEY, "1", nx=True, ex=_CLEANUP_LOCK_TTL)
+                None,
+                functools.partial(r.set, _CLEANUP_LOCK_KEY, "1", nx=True, ex=_CLEANUP_LOCK_TTL),
             )
             if not acquired:
                 log.debug("session_cleanup: lock held by another instance — skipping this cycle")
@@ -86,10 +88,10 @@ async def _cleanup_expired_sessions(db) -> None:
         else:
             # No Redis lock available — all instances will run cleanup.  Add per-cycle
             # jitter so pod restarts don't produce a synchronised wave of DB deletes.
-            await asyncio.sleep(random.uniform(0, 300))
+            await asyncio.sleep(random.uniform(0, 300))  # nosec B311
 
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             # NOTE: The `sessions` collection is sharded by `location`.  Querying
             # without the shard key triggers a scatter-gather fan-out across all
             # shards.  This is intentional and acceptable for a once-hourly
@@ -107,19 +109,23 @@ async def _cleanup_expired_sessions(db) -> None:
             if lock_acquired:
                 try:
                     task = asyncio.current_task()
-                    is_cancelling = task is not None and getattr(task, "cancelling", lambda: False)()
+                    is_cancelling = (
+                        task is not None and getattr(task, "cancelling", lambda: False)()
+                    )
                     if not is_cancelling:
+                        assert r is not None  # lock_acquired is only True when r was set
                         await loop.run_in_executor(None, r.delete, _CLEANUP_LOCK_KEY)
                 except Exception:
                     log.warning(
                         "session_cleanup: failed to release Redis lock — "
-                        "will expire naturally in %ds", _CLEANUP_LOCK_TTL,
+                        "will expire naturally in %ds",
+                        _CLEANUP_LOCK_TTL,
                     )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    client = AsyncIOMotorClient(settings.mongodb_uri)
+    client: AsyncIOMotorClient = AsyncIOMotorClient(settings.mongodb_uri)
     db = client[settings.mongodb_db_name]
     await init_indexes(db)
     app.state.db = db
@@ -138,7 +144,7 @@ app = FastAPI(title="Buddy360 API", lifespan=lifespan)
 
 app.state.limiter = limiter
 app.state.user_limiter = user_limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]  # handler is correctly typed for RateLimitExceeded, a subclass of Exception
 # SlowAPIMiddleware is registered first so that CORSMiddleware (registered below)
 # becomes the outermost layer.  Starlette executes middleware in reverse
 # registration order (last-added = first-executed), so CORS runs before the
@@ -171,6 +177,9 @@ async def request_id_middleware(request: Request, call_next):
     # called frequently by load balancers and carries no sensitive data.
     if request.url.path not in _HEALTH_PATHS:
         response.headers["Cache-Control"] = "no-store"
+    # Prevent MIME-type sniffing and framing on all responses.
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
     return response
 
 

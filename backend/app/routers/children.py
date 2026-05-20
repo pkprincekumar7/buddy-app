@@ -1,16 +1,16 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
-from pymongo import ASCENDING, DESCENDING
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ASCENDING, DESCENDING
 
+from app import models
 from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import user_limiter
-from app import models
 from app.models_api import (
     ChildCreate,
     ChildPatch,
@@ -25,9 +25,13 @@ log = logging.getLogger(__name__)
 # overwrite server-controlled fields (especially `location`, which is the shard
 # key and the foundation of all owner-scoped queries).
 _CHILD_SYSTEM_FIELDS = {
-    "id", "created_date",             # API aliases
-    "_id", "user_id", "location",     # DB identity / shard key
-    "created_at", "updated_at",       # server-managed timestamps
+    "id",
+    "created_date",  # API aliases
+    "_id",
+    "user_id",
+    "location",  # DB identity / shard key
+    "created_at",
+    "updated_at",  # server-managed timestamps
 }
 
 
@@ -35,9 +39,11 @@ _CHILD_SYSTEM_FIELDS = {
 # Document → API helpers
 # ---------------------------------------------------------------------------
 
+
 def _child_to_api(doc: dict) -> dict:
     out = {
-        k: v for k, v in doc.items()
+        k: v
+        for k, v in doc.items()
         if k not in ("_id", "user_id", "location", "created_at", "updated_at")
     }
     out["id"] = doc["_id"]
@@ -49,11 +55,14 @@ def _child_to_api(doc: dict) -> dict:
 # Children
 # ---------------------------------------------------------------------------
 
+
 @router.get("/children", response_model=list[ChildResponse])
 @user_limiter.limit("60/minute")
 async def list_children(
     request: Request,
-    sort: Literal["created_date", "-created_date", "name", "-name"] | None = Query(default="-created_date"),
+    sort: Literal["created_date", "-created_date", "name", "-name"] | None = Query(
+        default="-created_date"
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
@@ -87,7 +96,7 @@ async def create_child(
     if count >= 10:
         raise HTTPException(status_code=422, detail="Maximum of 10 children allowed per account")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     data = payload.model_dump(exclude_none=True)
     for f in _CHILD_SYSTEM_FIELDS:
         data.pop(f, None)
@@ -113,7 +122,9 @@ async def get_child(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    doc = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
+    doc = await db[models.CHILDREN].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
     return _child_to_api(doc)
@@ -129,7 +140,7 @@ async def update_child(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     updates = patch.model_dump(exclude_unset=True)
-    set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    set_fields: dict = {"updated_at": datetime.now(UTC)}
     for k, v in updates.items():
         if k in _CHILD_SYSTEM_FIELDS:
             continue
@@ -155,14 +166,17 @@ async def delete_child(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    existing = await db[models.CHILDREN].find_one({"_id": child_id, "user_id": user["_id"], "location": user["location"]})
+    existing = await db[models.CHILDREN].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
     if not existing:
         raise HTTPException(status_code=404, detail="Child not found")
     loc = existing["location"]
     # All three collections are sharded by location, so they land on the same shard
     # and can be included in a single transaction — identical pattern to account deletion.
-    async with await db.client.start_session() as session:
-        async with session.start_transaction():
-            await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
-            await db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}, session=session)
-            await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)
+    async with await db.client.start_session() as session, session.start_transaction():
+        await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
+        await db[models.GROWTH_AREAS].delete_many(
+            {"child_id": child_id, "location": loc}, session=session
+        )
+        await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)

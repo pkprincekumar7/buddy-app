@@ -1,7 +1,7 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 import bcrypt as _bcrypt
 import jwt
@@ -38,7 +38,7 @@ def create_access_token(
     location: str = settings.default_location,
     extra: dict[str, Any] | None = None,
 ) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=settings.jwt_access_expire_minutes)
     payload: dict[str, Any] = {
         "sub": sub,
@@ -48,8 +48,8 @@ def create_access_token(
         "location": location,
     }
     if extra:
-        _RESERVED = {"sub", "iat", "exp", "type", "location"}
-        overlap = _RESERVED & extra.keys()
+        _reserved = {"sub", "iat", "exp", "type", "location"}
+        overlap = _reserved & extra.keys()
         if overlap:
             raise ValueError(f"extra must not override reserved JWT claims: {overlap}")
         payload.update(extra)
@@ -58,8 +58,10 @@ def create_access_token(
 
 def create_refresh_token(sub: str, location: str = settings.default_location) -> tuple[str, str]:
     jti = str(uuid.uuid4())
-    expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_refresh_expire_hours)
-    token = _encode({"sub": sub, "exp": expire, "type": "refresh", "jti": jti, "location": location})
+    expire = datetime.now(UTC) + timedelta(hours=settings.jwt_refresh_expire_hours)
+    token = _encode(
+        {"sub": sub, "exp": expire, "type": "refresh", "jti": jti, "location": location}
+    )
     return token, jti
 
 
@@ -70,7 +72,9 @@ def decode_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def decode_token_of_type(token: str, expected: Literal["access", "refresh"]) -> dict[str, Any] | None:
+def decode_token_of_type(
+    token: str, expected: Literal["access", "refresh"]
+) -> dict[str, Any] | None:
     payload = decode_token(token)
     if not payload or payload.get("type") != expected:
         return None

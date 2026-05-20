@@ -1,14 +1,14 @@
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app import models
 from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import user_limiter
-from app import models
 from app.models_api import (
     AppendGrowthAreaRequest,
     ChildActivity,
@@ -31,10 +31,19 @@ _GROWTH_AREAS_MAX = 500
 # Optional fields in AppendGrowthAreaRequest that must only be written when
 # explicitly set by the caller — prevents silently null-overwriting existing data.
 _GROWTH_AREA_OPTIONAL_FIELDS = (
-    "recommendations", "status", "step", "selected_activity",
-    "parent_liked", "want_child_activity", "feedback",
-    "interactive_step", "interactive_answers", "interactive_draft",
-    "generated_activity", "show_game", "child_activity_selections",
+    "recommendations",
+    "status",
+    "step",
+    "selected_activity",
+    "parent_liked",
+    "want_child_activity",
+    "feedback",
+    "interactive_step",
+    "interactive_answers",
+    "interactive_draft",
+    "generated_activity",
+    "show_game",
+    "child_activity_selections",
     "ai_three_month_recommendations",
 )
 
@@ -51,6 +60,7 @@ async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) ->
 # ---------------------------------------------------------------------------
 # Document → schema helpers
 # ---------------------------------------------------------------------------
+
 
 def _doc_to_preferences(user: dict) -> UserPreferences:
     prefs = user.get("preferences") or {}
@@ -90,6 +100,7 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
 # Preferences
 # ---------------------------------------------------------------------------
 
+
 @router.get("/user/preferences", response_model=UserPreferences)
 @user_limiter.limit("60/minute")
 async def get_preferences(
@@ -108,7 +119,7 @@ async def patch_preferences(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    set_fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    set_fields: dict = {"updated_at": datetime.now(UTC)}
     if "tts_enabled" in body.model_fields_set:
         set_fields["preferences.tts_enabled"] = body.tts_enabled
     if "last_visited_path" in body.model_fields_set:
@@ -125,6 +136,7 @@ async def patch_preferences(
 # ---------------------------------------------------------------------------
 # Completed growth areas
 # ---------------------------------------------------------------------------
+
 
 @router.get("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
 @user_limiter.limit("60/minute")
@@ -157,7 +169,7 @@ async def append_completed_growth_area(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Always write the required fields (area_name, area_color, answers).
     set_fields: dict = {
         "area_name": body.area_name,
@@ -176,7 +188,12 @@ async def append_completed_growth_area(
     # user_id, child_id, area_id, location are equality conditions in the filter.
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
     await db[models.GROWTH_AREAS].update_one(
-        {"user_id": user["_id"], "child_id": child_id, "area_id": body.area_id, "location": user["location"]},
+        {
+            "user_id": user["_id"],
+            "child_id": child_id,
+            "area_id": body.area_id,
+            "location": user["location"],
+        },
         {"$set": set_fields, "$setOnInsert": set_on_insert},
         upsert=True,
     )
@@ -189,7 +206,9 @@ async def append_completed_growth_area(
     if len(docs) == _GROWTH_AREAS_MAX:
         log.warning(
             "append_completed_growth_area: hit _GROWTH_AREAS_MAX cap (%d) for user=%s child=%s",
-            _GROWTH_AREAS_MAX, user["_id"], child_id,
+            _GROWTH_AREAS_MAX,
+            user["_id"],
+            child_id,
         )
     return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
@@ -211,6 +230,7 @@ async def clear_completed_growth_areas(
 # ---------------------------------------------------------------------------
 # Goals
 # ---------------------------------------------------------------------------
+
 
 @router.get("/user/goals", response_model=UserGoals)
 @user_limiter.limit("60/minute")
@@ -240,7 +260,7 @@ async def patch_goals(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
     set_on_insert: dict = {"created_at": now, "user_id": user["_id"]}
 

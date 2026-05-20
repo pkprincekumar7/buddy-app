@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from '@/components/ui/textarea';
 import VoiceInput from './VoiceInput';
 
 export default function TextareaWithVoice({ value, onChange, placeholder, className, ...props }) {
@@ -16,7 +16,7 @@ export default function TextareaWithVoice({ value, onChange, placeholder, classN
       <Textarea
         value={value}
         onChange={onChange}
-        placeholder={isRecording ? "Listening..." : placeholder}
+        placeholder={isRecording ? 'Listening...' : placeholder}
         disabled={isRecording}
         className={className}
         {...props}

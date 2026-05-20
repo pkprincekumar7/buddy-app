@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (undefined names, unused imports)
+    "I",   # isort
+    "B",   # flake8-bugbear (common bugs + opinionated style)
+    "UP",  # pyupgrade (modernise syntax for py312)
+    "C4",  # flake8-comprehensions (simplify comprehensions)
+    "RET", # flake8-return (unnecessary else after return)
+    "SIM", # flake8-simplify
+    "N",   # pep8 naming
+]
+ignore = [
+    "E501",   # line too long — enforced by ruff format, not ruff check
+    "N818",   # exception class names (we use HTTPException which ends in Exception)
+    "SIM108", # ternary operator suggestion — project uses them deliberately
+    "B008",   # do not perform function calls in default arguments (FastAPI Depends pattern)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+strict = false
+warn_unused_ignores = true
+warn_return_any = false
+disallow_untyped_defs = false
+check_untyped_defs = true

@@ -3,18 +3,18 @@ import logging
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from email_validator import validate_email as _validate_email, EmailNotValidError
-
+from email_validator import EmailNotValidError
+from email_validator import validate_email as _validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field, field_validator
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 try:
-    from google.oauth2 import id_token as _google_id_token
     from google.auth.transport import requests as _google_requests
+    from google.oauth2 import id_token as _google_id_token
 except ImportError:
     _google_id_token = None  # type: ignore[assignment]
     _google_requests = None  # type: ignore[assignment]
@@ -23,6 +23,7 @@ except ImportError:
         "return 503.  Install with: pip install 'google-auth[requests]'"
     )
 
+from app import models
 from app.auth_utils import (
     async_hash_password,
     async_verify_password,
@@ -36,8 +37,7 @@ from app.constants import API_V1_PREFIX
 from app.database import get_db
 from app.deps import get_current_user
 from app.limiter import limiter, user_limiter
-from app import models
-from app.routing import resolve_region, LOCATION_RE
+from app.routing import LOCATION_RE, resolve_region
 from app.settings import settings
 
 router = APIRouter(tags=["auth"])
@@ -51,6 +51,7 @@ _REFRESH_COOKIE_PATH = f"{API_V1_PREFIX}/auth/"
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
+
 
 class RegisterBody(BaseModel):
     email: str = Field(max_length=255)
@@ -69,7 +70,7 @@ class RegisterBody(BaseModel):
             info = _validate_email(v.strip(), check_deliverability=False)
             return info.normalized
         except EmailNotValidError as exc:
-            raise ValueError(str(exc))
+            raise ValueError(str(exc)) from exc
 
     @field_validator("password")
     @classmethod
@@ -136,13 +137,14 @@ class MeResponse(BaseModel):
 # Cookie helpers
 # ---------------------------------------------------------------------------
 
+
 def _cookie_kwargs() -> dict:
-    return dict(
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
-        domain=settings.cookie_domain or None,
-    )
+    return {
+        "httponly": True,
+        "secure": settings.cookie_secure,
+        "samesite": settings.cookie_samesite,
+        "domain": settings.cookie_domain or None,
+    }
 
 
 async def _set_auth_cookies(
@@ -160,13 +162,15 @@ async def _set_auth_cookies(
         **kw,
     )
     refresh_token, jti = create_refresh_token(user_id, location=location)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_refresh_expire_hours)
-    await db[models.SESSIONS].insert_one({
-        "_id": jti,
-        "user_id": user_id,
-        "location": location,
-        "expires_at": expires_at,
-    })
+    expires_at = datetime.now(UTC) + timedelta(hours=settings.jwt_refresh_expire_hours)
+    await db[models.SESSIONS].insert_one(
+        {
+            "_id": jti,
+            "user_id": user_id,
+            "location": location,
+            "expires_at": expires_at,
+        }
+    )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -185,6 +189,7 @@ def _clear_auth_cookies(response: Response) -> None:
 # ---------------------------------------------------------------------------
 # Google token verification helper
 # ---------------------------------------------------------------------------
+
 
 def _verify_google_token(id_token_str: str) -> dict:
     if not settings.google_client_id:
@@ -207,7 +212,9 @@ def _verify_google_token(id_token_str: str) -> dict:
     except Exception as exc:
         log.warning(
             "Google ID token verification failed: %s: %s",
-            type(exc).__name__, exc, exc_info=True,
+            type(exc).__name__,
+            exc,
+            exc_info=True,
         )
         raise HTTPException(status_code=401, detail="Invalid Google credential.") from exc
 
@@ -215,6 +222,7 @@ def _verify_google_token(id_token_str: str) -> dict:
 # ---------------------------------------------------------------------------
 # Auth endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/register", status_code=201)
 @limiter.limit("5/minute")
@@ -237,17 +245,19 @@ async def register(
     #   address can be retried. This is the manual equivalent of a transaction rollback.
 
     location = resolve_region(body.country_code or "")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     new_user_id = str(uuid.uuid4())
 
     # Step 1 — reserve the email address (unsharded, outside any transaction).
     # Inserting first means we own the email before touching any sharded collection.
     try:
-        await db[models.EMAIL_INDEX].insert_one({
-            "_id": body.email,
-            "user_id": new_user_id,
-            "location": location,
-        })
+        await db[models.EMAIL_INDEX].insert_one(
+            {
+                "_id": body.email,
+                "user_id": new_user_id,
+                "location": location,
+            }
+        )
     except DuplicateKeyError:
         # The email already exists in the index.  Check whether the user document is
         # also present — if not, this is an orphaned reservation left by a failed
@@ -255,11 +265,14 @@ async def register(
         # Reclaim the orphan and let registration proceed; otherwise reject.
         existing_entry = await db[models.EMAIL_INDEX].find_one({"_id": body.email})
         orphaned_user = (
-            await db[models.USERS].find_one({
-                "_id": existing_entry["user_id"],
-                "location": existing_entry["location"],
-            })
-            if existing_entry else None
+            await db[models.USERS].find_one(
+                {
+                    "_id": existing_entry["user_id"],
+                    "location": existing_entry["location"],
+                }
+            )
+            if existing_entry
+            else None
         )
         if existing_entry and not orphaned_user:
             # Reclaim orphaned reservation — update it to point to the new user_id.
@@ -272,12 +285,15 @@ async def register(
             )
             if reclaim.modified_count == 0:
                 await async_verify_password(body.password, _DUMMY_HASH)
-                raise HTTPException(status_code=409, detail="Email already registered")
-            log.info("register: reclaimed orphaned email_index entry for email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
+                raise HTTPException(status_code=409, detail="Email already registered") from None
+            log.info(
+                "register: reclaimed orphaned email_index entry for email_hash=%s",
+                hashlib.sha256(body.email.encode()).hexdigest()[:16],
+            )
         else:
             # Live user exists — constant-time dummy hash to prevent email enumeration.
             await async_verify_password(body.password, _DUMMY_HASH)
-            raise HTTPException(status_code=409, detail="Email already registered")
+            raise HTTPException(status_code=409, detail="Email already registered") from None
 
     # Step 2 — create the user document on the correct location shard.
     user_doc = {
@@ -307,8 +323,13 @@ async def register(
                 "failure for email_hash=%s — orphaned entry will be reclaimed on next attempt",
                 hashlib.sha256(body.email.encode()).hexdigest()[:16],
             )
-        log.exception("register: users insert failed; released email reservation for email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
-        raise HTTPException(status_code=500, detail="Registration failed — please try again")
+        log.exception(
+            "register: users insert failed; released email reservation for email_hash=%s",
+            hashlib.sha256(body.email.encode()).hexdigest()[:16],
+        )
+        raise HTTPException(
+            status_code=500, detail="Registration failed — please try again"
+        ) from None
 
     log.info("user.register id=%s location=%s", new_user_id, location)
     await _set_auth_cookies(response, new_user_id, location, db)
@@ -331,10 +352,12 @@ async def login(
     email_doc = await db[models.EMAIL_INDEX].find_one({"_id": body.email})
     user = None
     if email_doc:
-        user = await db[models.USERS].find_one({
-            "_id": email_doc["user_id"],
-            "location": email_doc["location"],
-        })
+        user = await db[models.USERS].find_one(
+            {
+                "_id": email_doc["user_id"],
+                "location": email_doc["location"],
+            }
+        )
 
     if user and user.get("is_being_deleted"):
         await async_verify_password(body.password, _DUMMY_HASH)
@@ -347,7 +370,9 @@ async def login(
     password_ok = await async_verify_password(body.password, target_hash)
 
     if not user or not password_ok:
-        log.warning("auth.login.failed email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
+        log.warning(
+            "auth.login.failed email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16]
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     location = user.get("location", settings.default_location)
@@ -381,7 +406,9 @@ async def refresh_tokens(
         access_payload = decode_access_token_ignore_exp(access_token)
         if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
             _clear_auth_cookies(response)
-            log.warning("auth.refresh.failed reason=subject_mismatch sub=%s", refresh_payload.get("sub"))
+            log.warning(
+                "auth.refresh.failed reason=subject_mismatch sub=%s", refresh_payload.get("sub")
+            )
             raise HTTPException(status_code=401, detail="Token mismatch")
 
     jti = refresh_payload.get("jti")
@@ -390,6 +417,9 @@ async def refresh_tokens(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     uid = refresh_payload.get("sub")
+    if not uid:
+        _clear_auth_cookies(response)
+        raise HTTPException(status_code=401, detail="Invalid token")
     # Derive location from the refresh token — the access token may be absent.
     raw_location = refresh_payload.get("location", settings.default_location)
     location = (
@@ -406,8 +436,8 @@ async def refresh_tokens(
 
     expires_at = session["expires_at"]
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at < datetime.now(UTC):
         await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
         _clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=db_expiry sub=%s", uid)
@@ -428,10 +458,10 @@ async def refresh_tokens(
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
             _clear_auth_cookies(response)
             raise HTTPException(status_code=401, detail="Session revoked")
-        token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+        token_issued_at = datetime.fromtimestamp(iat, tz=UTC)
         revoked_at = refresh_user["tokens_revoked_at"]
         if revoked_at.tzinfo is None:
-            revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+            revoked_at = revoked_at.replace(tzinfo=UTC)
         if token_issued_at <= revoked_at:
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
             _clear_auth_cookies(response)
@@ -464,7 +494,11 @@ async def logout(
                     _clear_auth_cookies(response)
                     raise HTTPException(status_code=401, detail="Token mismatch")
             raw_loc = refresh_payload.get("location", "")
-            location = raw_loc if isinstance(raw_loc, str) and LOCATION_RE.match(raw_loc) else settings.default_location
+            location = (
+                raw_loc
+                if isinstance(raw_loc, str) and LOCATION_RE.match(raw_loc)
+                else settings.default_location
+            )
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
     _clear_auth_cookies(response)
 
@@ -487,16 +521,18 @@ async def google_auth(
     try:
         email = _validate_email(raw_email, check_deliverability=False).normalized
     except EmailNotValidError:
-        raise HTTPException(status_code=400, detail="Google did not return a valid email")
+        raise HTTPException(status_code=400, detail="Google did not return a valid email") from None
 
     # Two-phase lookup via email_index — same pattern as /auth/login.
     email_doc = await db[models.EMAIL_INDEX].find_one({"_id": email})
     existing = None
     if email_doc:
-        existing = await db[models.USERS].find_one({
-            "_id": email_doc["user_id"],
-            "location": email_doc["location"],
-        })
+        existing = await db[models.USERS].find_one(
+            {
+                "_id": email_doc["user_id"],
+                "location": email_doc["location"],
+            }
+        )
 
     if existing:
         if existing.get("is_being_deleted"):
@@ -520,9 +556,9 @@ async def google_auth(
             )
 
         location = resolve_region(body.country_code)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         new_user_id = str(uuid.uuid4())
-        raw_name = re.sub(r'[\x00-\x1f\x7f]', '', (info.get("name") or "").strip())
+        raw_name = re.sub(r"[\x00-\x1f\x7f]", "", (info.get("name") or "").strip())
         full_name = (raw_name or email.split("@")[0])[:255]
         user_doc = {
             "_id": new_user_id,
@@ -541,19 +577,24 @@ async def google_auth(
 
         # Reserve the email globally before writing the user document.
         try:
-            await db[models.EMAIL_INDEX].insert_one({
-                "_id": email,
-                "user_id": new_user_id,
-                "location": location,
-            })
+            await db[models.EMAIL_INDEX].insert_one(
+                {
+                    "_id": email,
+                    "user_id": new_user_id,
+                    "location": location,
+                }
+            )
         except DuplicateKeyError:
             race_doc = await db[models.EMAIL_INDEX].find_one({"_id": email})
             race_user = (
-                await db[models.USERS].find_one({
-                    "_id": race_doc["user_id"],
-                    "location": race_doc["location"],
-                })
-                if race_doc else None
+                await db[models.USERS].find_one(
+                    {
+                        "_id": race_doc["user_id"],
+                        "location": race_doc["location"],
+                    }
+                )
+                if race_doc
+                else None
             )
             if not race_user:
                 if race_doc:
@@ -570,7 +611,9 @@ async def google_auth(
                         # Slot was claimed by another concurrent registration or
                         # the original in-flight registration just committed its
                         # user doc — ask the client to retry.
-                        raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
+                        raise HTTPException(
+                            status_code=500, detail="Sign-in failed — please try again"
+                        ) from None
                     log.info(
                         "google_auth: reclaimed orphaned email_index entry for email_hash=%s",
                         hashlib.sha256(email.encode()).hexdigest()[:16],
@@ -578,22 +621,34 @@ async def google_auth(
                 else:
                     # email_index entry exists but user doc not yet committed —
                     # extremely narrow window; ask the client to retry.
-                    raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
+                    raise HTTPException(  # noqa: B904
+                        status_code=500, detail="Sign-in failed — please try again"
+                    ) from None
             else:
                 if race_user.get("is_being_deleted"):
                     raise HTTPException(
                         status_code=409,
                         detail="This account is temporarily unavailable. Please try again shortly.",
-                    )
-                await _set_auth_cookies(response, race_user["_id"], race_user.get("location", settings.default_location), db)
+                    ) from None
+                await _set_auth_cookies(
+                    response,
+                    race_user["_id"],
+                    race_user.get("location", settings.default_location),
+                    db,
+                )
                 return {"status": "ok"}
 
         try:
             await db[models.USERS].insert_one(user_doc)
         except Exception:
             await db[models.EMAIL_INDEX].delete_one({"_id": email})
-            log.exception("google_auth: users insert failed; rolled back email_index for email_hash=%s", hashlib.sha256(email.encode()).hexdigest()[:16])
-            raise HTTPException(status_code=500, detail="Sign-in failed — please try again")
+            log.exception(
+                "google_auth: users insert failed; rolled back email_index for email_hash=%s",
+                hashlib.sha256(email.encode()).hexdigest()[:16],
+            )
+            raise HTTPException(
+                status_code=500, detail="Sign-in failed — please try again"
+            ) from None
 
         log.info("google_auth.register id=%s location=%s", new_user_id, location)
         await _set_auth_cookies(response, new_user_id, location, db)
@@ -622,7 +677,9 @@ async def delete_account(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     try:
-        normalized_confirm = _validate_email(body.confirm_email.strip(), check_deliverability=False).normalized
+        normalized_confirm = _validate_email(
+            body.confirm_email.strip(), check_deliverability=False
+        ).normalized
     except EmailNotValidError:
         normalized_confirm = body.confirm_email.strip().lower()
     if normalized_confirm != user["email"]:
@@ -630,7 +687,7 @@ async def delete_account(
 
     user_id = user["_id"]
     location = user.get("location", settings.default_location)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # All sharded collections share the same location value, so this
     # transaction touches only one zone shard — supported on all Atlas tiers
@@ -639,35 +696,34 @@ async def delete_account(
     # this a cross-shard transaction, which Atlas M0/M2/M5 does not support.
     # If the post-commit email_index delete fails, the orphaned entry is cleaned
     # up automatically the next time someone registers with the same address.
-    async with await db.client.start_session() as mongo_session:
-        async with mongo_session.start_transaction():
-            # Step 1 — revoke all tokens and mark deletion in progress
-            await db[models.USERS].update_one(
-                {"_id": user_id, "location": location},
-                {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
-                session=mongo_session,
-            )
-            await db[models.SESSIONS].delete_many(
-                {"user_id": user_id, "location": location}, session=mongo_session
-            )
+    async with await db.client.start_session() as mongo_session, mongo_session.start_transaction():
+        # Step 1 — revoke all tokens and mark deletion in progress
+        await db[models.USERS].update_one(
+            {"_id": user_id, "location": location},
+            {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
+            session=mongo_session,
+        )
+        await db[models.SESSIONS].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
 
-            # Step 2 — delete all other owned collections
-            await db[models.CHILDREN].delete_many(
-                {"user_id": user_id, "location": location}, session=mongo_session
-            )
-            # goals/growth_areas are child-scoped and store user_id,
-            # so delete_many by user_id covers every document in one pass.
-            await db[models.GOALS].delete_many(
-                {"user_id": user_id, "location": location}, session=mongo_session
-            )
-            await db[models.GROWTH_AREAS].delete_many(
-                {"user_id": user_id, "location": location}, session=mongo_session
-            )
+        # Step 2 — delete all other owned collections
+        await db[models.CHILDREN].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
+        # goals/growth_areas are child-scoped and store user_id,
+        # so delete_many by user_id covers every document in one pass.
+        await db[models.GOALS].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
+        await db[models.GROWTH_AREAS].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
 
-            # Step 3 — delete the user document
-            await db[models.USERS].delete_one(
-                {"_id": user_id, "location": location}, session=mongo_session
-            )
+        # Step 3 — delete the user document
+        await db[models.USERS].delete_one(
+            {"_id": user_id, "location": location}, session=mongo_session
+        )
 
     # Step 4 — release the email (outside the transaction: email_index is
     # unsharded and must not be included in a single-zone shard transaction).

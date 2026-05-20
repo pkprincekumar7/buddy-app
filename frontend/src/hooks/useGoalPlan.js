@@ -56,59 +56,62 @@ export function useGoalPlan() {
   const [isLoading, setIsLoading] = useState(true);
   const [savedCompletedAreas, setSavedCompletedAreas] = useState([]);
 
-  const generateGoals = useCallback(async (child, parentConcern, completedAreas, completedSnapshot = {}) => {
-    setIsLoading(true);
-    const childId = child?.id;
-    try {
-      let ob = child;
-      let areas = completedAreas;
-      if (!areas && childId) {
-        const [freshChild, freshCompleted] = await Promise.all([
-          api.entities.Child.get(childId),
-          api.completedGrowthAreas.list(childId),
-        ]);
-        ob = freshChild;
-        // Use only finalised areas for goal generation; legacy docs without status are treated as completed.
-        const allAreas = freshCompleted?.areas || [];
-        areas = allAreas.filter((a) => a.status === 'completed' || !a.status);
-      }
+  const generateGoals = useCallback(
+    async (child, parentConcern, completedAreas, completedSnapshot = {}) => {
+      setIsLoading(true);
+      const childId = child?.id;
+      try {
+        let ob = child;
+        let areas = completedAreas;
+        if (!areas && childId) {
+          const [freshChild, freshCompleted] = await Promise.all([
+            api.entities.Child.get(childId),
+            api.completedGrowthAreas.list(childId),
+          ]);
+          ob = freshChild;
+          // Use only finalised areas for goal generation; legacy docs without status are treated as completed.
+          const allAreas = freshCompleted?.areas || [];
+          areas = allAreas.filter((a) => a.status === 'completed' || !a.status);
+        }
 
-      const vm = ob?.personality?.view_model;
-      const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
-      const areasContext = areas
-        .map(a => `${a.area_name}: ${(a.recommendations || []).join('; ')}`)
-        .join('\n');
+        const vm = ob?.personality?.view_model;
+        const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
+        const areasContext = areas
+          .map((a) => `${a.area_name}: ${(a.recommendations || []).join('; ')}`)
+          .join('\n');
 
-      const plan = await api.integrations.Core.InvokeLLM({
-        prompt: buildGoalsMonthlyPlanPrompt({
-          childName: child?.name,
-          childAge: child?.age,
-          parentConcern,
-          personalityType: profile?.personality_type,
-          areasContext,
-        }),
-        response_json_schema: goalsMonthlyPlanSchema(),
-      });
+        const plan = await api.integrations.Core.InvokeLLM({
+          prompt: buildGoalsMonthlyPlanPrompt({
+            childName: child?.name,
+            childAge: child?.age,
+            parentConcern,
+            personalityType: profile?.personality_type,
+            areasContext,
+          }),
+          response_json_schema: goalsMonthlyPlanSchema(),
+        });
 
-      if (Object.keys(completedSnapshot).length > 0) {
-        plan.months?.forEach((month, mIdx) => {
-          month.periods?.forEach((period, pIdx) => {
-            period.activities?.forEach((act, aIdx) => {
-              const snap = completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`];
-              if (snap) Object.assign(act, snap);
+        if (Object.keys(completedSnapshot).length > 0) {
+          plan.months?.forEach((month, mIdx) => {
+            month.periods?.forEach((period, pIdx) => {
+              period.activities?.forEach((act, aIdx) => {
+                const snap = completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`];
+                if (snap) Object.assign(act, snap);
+              });
             });
           });
-        });
-      }
+        }
 
-      if (childId) await api.goals.patch(childId, { plan });
-      setGoalPlan(plan);
-    } catch (err) {
-      console.error('[useGoalPlan] Failed to generate plan:', err);
-      toast.error('Failed to generate plan. Please try again.');
-    }
-    setIsLoading(false);
-  }, []);
+        if (childId) await api.goals.patch(childId, { plan });
+        setGoalPlan(plan);
+      } catch (err) {
+        console.error('[useGoalPlan] Failed to generate plan:', err);
+        toast.error('Failed to generate plan. Please try again.');
+      }
+      setIsLoading(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     const init = async () => {
@@ -118,7 +121,10 @@ export function useGoalPlan() {
         setChildData(child);
 
         const childId = child?.id;
-        if (!childId) { setIsLoading(false); return; }
+        if (!childId) {
+          setIsLoading(false);
+          return;
+        }
 
         const [goals, completedData] = await Promise.all([
           api.goals.get(childId),
@@ -149,54 +155,64 @@ export function useGoalPlan() {
   }, [generateGoals]);
 
   // Saves completion data for a single activity by its position in the plan.
-  const saveActivityCompletion = useCallback(async (monthIdx, periodIdx, actIdx, result) => {
-    const updatedPlan = structuredClone(goalPlan);
-    Object.assign(updatedPlan.months[monthIdx].periods[periodIdx].activities[actIdx], {
-      completed: true,
-      ...result,
-    });
-    try {
-      if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
-      setGoalPlan(updatedPlan);
-    } catch (err) {
-      console.error('[useGoalPlan] Failed to save activity:', err);
-      toast.error('Failed to save activity. Please try again.');
-    }
-  }, [goalPlan, childData]);
+  const saveActivityCompletion = useCallback(
+    async (monthIdx, periodIdx, actIdx, result) => {
+      const updatedPlan = structuredClone(goalPlan);
+      Object.assign(updatedPlan.months[monthIdx].periods[periodIdx].activities[actIdx], {
+        completed: true,
+        ...result,
+      });
+      try {
+        if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
+        setGoalPlan(updatedPlan);
+      } catch (err) {
+        console.error('[useGoalPlan] Failed to save activity:', err);
+        toast.error('Failed to save activity. Please try again.');
+      }
+    },
+    [goalPlan, childData],
+  );
 
   // Clears completion data from the target activity and every activity after it.
-  const handleActivityReset = useCallback(async (monthIdx, periodIdx, actIdx) => {
-    const updatedPlan = structuredClone(goalPlan);
-    const flatMap = buildFlatIndexMap(updatedPlan);
-    const resetFlatIdx = flatMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
+  const handleActivityReset = useCallback(
+    async (monthIdx, periodIdx, actIdx) => {
+      const updatedPlan = structuredClone(goalPlan);
+      const flatMap = buildFlatIndexMap(updatedPlan);
+      const resetFlatIdx = flatMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
 
-    flatMap.forEach((flatIdx, key) => {
-      if (flatIdx >= resetFlatIdx) {
-        const [m, p, a] = key.split('-').map(Number);
-        const act = updatedPlan.months[m].periods[p].activities[a];
-        delete act.completed;
-        delete act.score;
-        delete act.note;
-        delete act.progress_observation;
-        delete act.ai_feedback;
-        delete act.parent_feedback;
+      flatMap.forEach((flatIdx, key) => {
+        if (flatIdx >= resetFlatIdx) {
+          const [m, p, a] = key.split('-').map(Number);
+          const act = updatedPlan.months[m].periods[p].activities[a];
+          delete act.completed;
+          delete act.score;
+          delete act.note;
+          delete act.progress_observation;
+          delete act.ai_feedback;
+          delete act.parent_feedback;
+        }
+      });
+
+      try {
+        if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
+        setGoalPlan(updatedPlan);
+      } catch (err) {
+        console.error('[useGoalPlan] Failed to reset activity:', err);
+        toast.error('Failed to reset activity.');
       }
-    });
-
-    try {
-      if (childData?.id) await api.goals.patch(childData.id, { plan: updatedPlan });
-      setGoalPlan(updatedPlan);
-    } catch (err) {
-      console.error('[useGoalPlan] Failed to reset activity:', err);
-      toast.error('Failed to reset activity.');
-    }
-  }, [goalPlan, childData]);
+    },
+    [goalPlan, childData],
+  );
 
   const handleStartOver = useCallback(async () => {
     try {
       // Deleting the child cascades goals and growth_areas.
       if (childData?.id) {
-        try { await api.entities.Child.delete(childData.id); } catch (err) { if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err); }
+        try {
+          await api.entities.Child.delete(childData.id);
+        } catch (err) {
+          if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['children'] });
     } catch (err) {

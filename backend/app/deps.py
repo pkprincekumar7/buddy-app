@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app import models
 from app.auth_utils import decode_token
 from app.database import get_db
-from app import models
 from app.routing import LOCATION_RE
 from app.settings import settings
 
@@ -37,10 +37,10 @@ async def get_current_user(
         iat = payload.get("iat")
         if iat is None:
             raise HTTPException(status_code=401, detail="Session revoked")
-        token_issued_at = datetime.fromtimestamp(iat, tz=timezone.utc)
+        token_issued_at = datetime.fromtimestamp(iat, tz=UTC)
         revoked_at = user["tokens_revoked_at"]
         if revoked_at.tzinfo is None:
-            revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+            revoked_at = revoked_at.replace(tzinfo=UTC)
         if token_issued_at <= revoked_at:
             raise HTTPException(status_code=401, detail="Session revoked")
 

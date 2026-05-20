@@ -28,11 +28,17 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
         const mergedFromServer = mergeChildDraft(normalizeOnboardingChildDataBlob(child) || {});
 
         if (child.personality?.view_model?.type && child.personality?.view_model?.profile) {
-          const clampedReuse = maybeClampStoredPersonalityDescription(child.personality.view_model, {
-            analysisSource: child.personality.source,
-          });
+          const clampedReuse = maybeClampStoredPersonalityDescription(
+            child.personality.view_model,
+            {
+              analysisSource: child.personality.source,
+            },
+          );
           dispatch({ type: 'SET_MBTI_RESULT', payload: clampedReuse });
-          dispatch({ type: 'SET_GENERATED_PROFILE', payload: onboardingProfileFromViewModel(clampedReuse) });
+          dispatch({
+            type: 'SET_GENERATED_PROFILE',
+            payload: onboardingProfileFromViewModel(clampedReuse),
+          });
           return;
         }
 
@@ -77,7 +83,10 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
               personality: { source: 'rule_fallback', view_model: ruleVm },
             });
           } catch (patchErr) {
-            console.warn('[usePersonalityAnalysis] Could not persist rule-based personality:', patchErr);
+            console.warn(
+              '[usePersonalityAnalysis] Could not persist rule-based personality:',
+              patchErr,
+            );
           }
           if (cancelled) return;
 

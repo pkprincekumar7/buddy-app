@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputWithVoice from '../shared/InputWithVoice';
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import { Volume2, VolumeX, Send, Brain, Sparkles, Star, RotateCcw } from 'lucide-react';
 import { api } from '@/api/client';
 import {
@@ -70,7 +70,13 @@ export default function ConversationalOnboarding({
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   // Five tightly-coupled analyzing-phase states kept in one object to avoid split-state bugs.
   const [analyzingState, setAnalyzingState] = useState(ANALYZING_INITIAL);
-  const { show: showAnalyzing, progress: analyzeProgress, name: analyzingName, showingDots: showingLoadingDots, dotCount } = analyzingState;
+  const {
+    show: showAnalyzing,
+    progress: analyzeProgress,
+    name: analyzingName,
+    showingDots: showingLoadingDots,
+    dotCount,
+  } = analyzingState;
   const [allAnswered, setAllAnswered] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -89,115 +95,135 @@ export default function ConversationalOnboarding({
   const msgIdCounterRef = useRef(0);
   const newMsgId = useCallback(() => `${Date.now()}-${++msgIdCounterRef.current}`, []);
 
-  useEffect(() => { collectedDataRef.current = collectedData; }, [collectedData]);
+  useEffect(() => {
+    collectedDataRef.current = collectedData;
+  }, [collectedData]);
 
-  const persistQuestionnaireDraft = useCallback((mergedCollected) => {
-    onQuestionnairePersisted?.(mergedCollected);
-    clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(async () => {
-      if (!activeChildId) return;
-      try {
-        await api.entities.Child.update(activeChildId, mergedCollected);
-      } catch (err) {
-        console.warn('[ConversationalOnboarding] Auto-persist child data failed:', err);
-      }
-    }, 500);
-  }, [onQuestionnairePersisted]);
+  const persistQuestionnaireDraft = useCallback(
+    (mergedCollected) => {
+      onQuestionnairePersisted?.(mergedCollected);
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = setTimeout(async () => {
+        if (!activeChildId) return;
+        try {
+          await api.entities.Child.update(activeChildId, mergedCollected);
+        } catch (err) {
+          console.warn('[ConversationalOnboarding] Auto-persist child data failed:', err);
+        }
+      }, 500);
+    },
+    [onQuestionnairePersisted],
+  );
 
   const parentName = user?.full_name?.split(' ')[0] || 'there';
 
   const conversationFlow = useMemo(
     () => [
-    {
-      id: 'greeting',
-      message: `Hey ${parentName}! Hope your day is going well.\nLet's start.\nWhat is your child's name?`,
-      field: 'name',
-      type: 'text',
-      phase: 1
-    },
-    {
-      id: 'age',
-      message: (data) => `Wonderful! And how old is ${data.name}?`,
-      field: 'age',
-      type: 'text',
-      placeholder: 'e.g., 10 years',
-      phase: 1
-    },
-    {
-      id: 'school',
-      message: (data) => `Great! Which school does ${data.name} go to?`,
-      field: 'school',
-      type: 'text',
-      phase: 1
-    },
-    {
-      id: 'ready_check',
-      message: (data) => `Fantastic, Let's start exploring ${data.name}'s best version for life right away.\nMention the top 3 strengths that ${data.name} has from your perspective.`,
-      field: 'strengths',
-      type: 'multi_text',
-      placeholder: 'e.g., Intelligent, Energetic, Well-mannered',
-      hint: 'Separate with commas',
-      phase: 1
-    },
-    {
-      id: 'strengths_response',
-      message: (data) => `Happy to know that! You are a lucky parent 😊.\n\nMention the top 3 hobbies where ${data.name} spends their time.`,
-      field: 'hobbies',
-      type: 'multi_text',
-      placeholder: 'e.g., Cricket, Drawing, Reading',
-      phase: 1
-    },
-    {
-      id: 'thinking_pattern',
-      message: (data) => `Choose the kind of thinking pattern that ${data.name} predominantly has:`,
-      field: 'thinking_pattern',
-      type: 'choice',
-      options: ['Visual', 'Analytical', 'Imaginative', 'Not sure'],
-      phase: 1
-    },
-    {
-      id: 'communication_style',
-      message: (data) => `Choose the kind of communication style that ${data.name} predominantly has:`,
-      field: 'communication_style',
-      type: 'choice',
-      options: ['Talkative', 'Deep Listener', 'Communicates through gestures', 'Silent', 'Observant', 'Not Sure'],
-      phase: 1
-    },
-    {
-      id: 'energy_level',
-      message: (data) => `How would you describe ${data.name}'s energy level?`,
-      field: 'energy_level',
-      type: 'choice',
-      options: ['High energy - always active', 'Moderate - balanced', 'Calm and composed', 'Variable - depends on interest'],
-      phase: 1
-    },
-    {
-      id: 'social_behaviour',
-      message: (data) => `How does ${data.name} behave in social situations?`,
-      field: 'social_behaviour',
-      type: 'choice',
-      options: ['Confident','Friendly','Reserved','Expressive','Withdrawn'],
-      phase: 1
-    },
-    {
-      id: 'emotional_behaviour',
-      message: (data) => `What kind of a child ${data.name} emotionally is?`,
-      field: 'emotional_behaviour',
-      type: 'choice',
-      options: ['Calm','Sensitive','Reserved','Impulsive','Moody'],
-      phase: 1
-    },
-    {
-      id: 'complete',
-      message: () => '',
-      field: 'start_analysis',
-      type: 'auto',
-      phase: 1
-    },
+      {
+        id: 'greeting',
+        message: `Hey ${parentName}! Hope your day is going well.\nLet's start.\nWhat is your child's name?`,
+        field: 'name',
+        type: 'text',
+        phase: 1,
+      },
+      {
+        id: 'age',
+        message: (data) => `Wonderful! And how old is ${data.name}?`,
+        field: 'age',
+        type: 'text',
+        placeholder: 'e.g., 10 years',
+        phase: 1,
+      },
+      {
+        id: 'school',
+        message: (data) => `Great! Which school does ${data.name} go to?`,
+        field: 'school',
+        type: 'text',
+        phase: 1,
+      },
+      {
+        id: 'ready_check',
+        message: (data) =>
+          `Fantastic, Let's start exploring ${data.name}'s best version for life right away.\nMention the top 3 strengths that ${data.name} has from your perspective.`,
+        field: 'strengths',
+        type: 'multi_text',
+        placeholder: 'e.g., Intelligent, Energetic, Well-mannered',
+        hint: 'Separate with commas',
+        phase: 1,
+      },
+      {
+        id: 'strengths_response',
+        message: (data) =>
+          `Happy to know that! You are a lucky parent 😊.\n\nMention the top 3 hobbies where ${data.name} spends their time.`,
+        field: 'hobbies',
+        type: 'multi_text',
+        placeholder: 'e.g., Cricket, Drawing, Reading',
+        phase: 1,
+      },
+      {
+        id: 'thinking_pattern',
+        message: (data) =>
+          `Choose the kind of thinking pattern that ${data.name} predominantly has:`,
+        field: 'thinking_pattern',
+        type: 'choice',
+        options: ['Visual', 'Analytical', 'Imaginative', 'Not sure'],
+        phase: 1,
+      },
+      {
+        id: 'communication_style',
+        message: (data) =>
+          `Choose the kind of communication style that ${data.name} predominantly has:`,
+        field: 'communication_style',
+        type: 'choice',
+        options: [
+          'Talkative',
+          'Deep Listener',
+          'Communicates through gestures',
+          'Silent',
+          'Observant',
+          'Not Sure',
+        ],
+        phase: 1,
+      },
+      {
+        id: 'energy_level',
+        message: (data) => `How would you describe ${data.name}'s energy level?`,
+        field: 'energy_level',
+        type: 'choice',
+        options: [
+          'High energy - always active',
+          'Moderate - balanced',
+          'Calm and composed',
+          'Variable - depends on interest',
+        ],
+        phase: 1,
+      },
+      {
+        id: 'social_behaviour',
+        message: (data) => `How does ${data.name} behave in social situations?`,
+        field: 'social_behaviour',
+        type: 'choice',
+        options: ['Confident', 'Friendly', 'Reserved', 'Expressive', 'Withdrawn'],
+        phase: 1,
+      },
+      {
+        id: 'emotional_behaviour',
+        message: (data) => `What kind of a child ${data.name} emotionally is?`,
+        field: 'emotional_behaviour',
+        type: 'choice',
+        options: ['Calm', 'Sensitive', 'Reserved', 'Impulsive', 'Moody'],
+        phase: 1,
+      },
+      {
+        id: 'complete',
+        message: () => '',
+        field: 'start_analysis',
+        type: 'auto',
+        phase: 1,
+      },
     ],
     [parentName],
   );
-
 
   // All deps are refs or module-level globals — stable across renders.
   const speak = useCallback((text) => {
@@ -217,16 +243,19 @@ export default function ConversationalOnboarding({
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  const addBotMessage = useCallback((text) => {
-    setIsTyping(true);
-    clearTimeout(botMsgTimerRef.current);
-    botMsgTimerRef.current = setTimeout(() => {
-      setMessages(prev => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
-      setIsTyping(false);
-      speak(text);
-      setWaitingForResponse(true);
-    }, 1600);
-  }, [speak, newMsgId]);
+  const addBotMessage = useCallback(
+    (text) => {
+      setIsTyping(true);
+      clearTimeout(botMsgTimerRef.current);
+      botMsgTimerRef.current = setTimeout(() => {
+        setMessages((prev) => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
+        setIsTyping(false);
+        speak(text);
+        setWaitingForResponse(true);
+      }, 1600);
+    },
+    [speak, newMsgId],
+  );
 
   useEffect(() => {
     return () => clearTimeout(botMsgTimerRef.current);
@@ -239,12 +268,17 @@ export default function ConversationalOnboarding({
 
     (async () => {
       try {
+        /** @type {Record<string, unknown>} */
         let slim = {};
         const [child, prefs] = await Promise.all([
           activeChildId ? api.entities.Child.get(activeChildId) : Promise.resolve(null),
           api.preferences.get(),
         ]);
-        slim = child ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) || {}) : {};
+        slim = /** @type {Record<string, unknown>} */ (
+          child
+            ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) || {})
+            : {}
+        );
         if (typeof prefs.tts_enabled === 'boolean') {
           voiceEnabledRef.current = prefs.tts_enabled;
           setVoiceEnabled(prefs.tts_enabled);
@@ -266,8 +300,7 @@ export default function ConversationalOnboarding({
 
         const autoIx = conversationFlow.findIndex((s) => s.type === 'auto');
         const answered =
-          autoIx >= 0 &&
-          CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
+          autoIx >= 0 && CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
 
         if (hasSaved && answered && autoIx >= 0) {
           const replay = buildReplayMessages(conversationFlow, slim, autoIx, newMsgId);
@@ -312,7 +345,9 @@ export default function ConversationalOnboarding({
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [resumeHydrationReady, conversationFlow, addBotMessage, newMsgId]);
 
   const persistVoiceToggle = useCallback(async () => {
@@ -336,8 +371,7 @@ export default function ConversationalOnboarding({
       if (end <= start) return;
       const duration = 1400;
       const startTime = performance.now();
-      const easeInOutCubic = (t) =>
-        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
       const step = (now) => {
         const progress = Math.min((now - startTime) / duration, 1);
         container.scrollTop = start + (end - start) * easeInOutCubic(progress);
@@ -377,89 +411,122 @@ export default function ConversationalOnboarding({
     if (!waitingForResponse || showAnalyzing || showingLoadingDots || allAnswered) return;
 
     idleTimerRef.current = setTimeout(() => {
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
-        { id: newMsgId(), role: 'bot', content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!" }
+        {
+          id: newMsgId(),
+          role: 'bot',
+          content: "Just checking in 😊 — whenever you're ready, go ahead and share your answer!",
+        },
       ]);
     }, 30000);
 
     return () => clearTimeout(idleTimerRef.current);
   }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered, newMsgId]);
 
-  const processResponse = useCallback((response) => {
-    const step = conversationFlow[currentStep];
+  const processResponse = useCallback(
+    (response) => {
+      const step = conversationFlow[currentStep];
 
-    setMessages(prev => [...prev, { id: newMsgId(), role: 'user', content: response }]);
-    userTurnCountRef.current += 1;
-    setWaitingForResponse(false);
+      setMessages((prev) => [...prev, { id: newMsgId(), role: 'user', content: response }]);
+      userTurnCountRef.current += 1;
+      setWaitingForResponse(false);
 
-    if (response === 'Maybe later' || response === 'Catch up later') {
-      addBotMessage(`No problem! Take your time. Your progress is saved and you can continue whenever you're ready. See you soon! 👋`);
-      return;
-    }
-
-    let nextCollected = collectedData;
-    if (step.field) {
-      let value = response;
-      if (step.type === 'multi_text') {
-        value = response.split(',').map(s => s.trim()).filter(Boolean);
+      if (response === 'Maybe later' || response === 'Catch up later') {
+        addBotMessage(
+          `No problem! Take your time. Your progress is saved and you can continue whenever you're ready. See you soon! 👋`,
+        );
+        return;
       }
-      nextCollected = { ...collectedData, [step.field]: value };
-      setCollectedData(nextCollected);
-      persistQuestionnaireDraft(nextCollected);
-    }
 
-    // Auto-trigger on the final step
-    if (step.id === 'complete') {
-      const finalData = nextCollected;
-      setAnalyzingState({ show: true, progress: 0, name: finalData.name || 'your child', showingDots: false, dotCount: 0 });
-
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 1;
-        setAnalyzingState(s => ({ ...s, progress }));
-        if (progress >= 100) {
-          clearInterval(interval);
-          Promise.resolve(onComplete(finalData)).catch(() => {});
+      let nextCollected = collectedData;
+      if (step.field) {
+        let value = response;
+        if (step.type === 'multi_text') {
+          value = response
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         }
-      }, 28); // 28ms * 100 = 2.8 seconds
-      return;
-    }
-
-    const nextStep = currentStep + 1;
-    if (nextStep < conversationFlow.length) {
-      setCurrentStep(nextStep);
-      const nextMessage = typeof conversationFlow[nextStep].message === 'function'
-        ? conversationFlow[nextStep].message(nextCollected)
-        : conversationFlow[nextStep].message;
-
-      setTimeout(() => addBotMessage(nextMessage), 700);
-
-      if (conversationFlow[nextStep].type === 'final') {
-        setTimeout(() => {
-          onComplete(nextCollected);
-        }, 2000);
+        nextCollected = { ...collectedData, [step.field]: value };
+        setCollectedData(nextCollected);
+        persistQuestionnaireDraft(nextCollected);
       }
-    }
-  }, [conversationFlow, currentStep, collectedData, addBotMessage, persistQuestionnaireDraft, onComplete, newMsgId]);
+
+      // Auto-trigger on the final step
+      if (step.id === 'complete') {
+        const finalData = /** @type {Record<string, any>} */ (nextCollected);
+        setAnalyzingState({
+          show: true,
+          progress: 0,
+          name: finalData.name || 'your child',
+          showingDots: false,
+          dotCount: 0,
+        });
+
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += 1;
+          setAnalyzingState((s) => ({ ...s, progress }));
+          if (progress >= 100) {
+            clearInterval(interval);
+            Promise.resolve(onComplete(finalData)).catch(() => {});
+          }
+        }, 28); // 28ms * 100 = 2.8 seconds
+        return;
+      }
+
+      const nextStep = currentStep + 1;
+      if (nextStep < conversationFlow.length) {
+        setCurrentStep(nextStep);
+        const nextMessage =
+          typeof conversationFlow[nextStep].message === 'function'
+            ? conversationFlow[nextStep].message(nextCollected)
+            : conversationFlow[nextStep].message;
+
+        setTimeout(() => addBotMessage(nextMessage), 700);
+
+        if (conversationFlow[nextStep].type === 'final') {
+          setTimeout(() => {
+            onComplete(nextCollected);
+          }, 2000);
+        }
+      }
+    },
+    [
+      conversationFlow,
+      currentStep,
+      collectedData,
+      addBotMessage,
+      persistQuestionnaireDraft,
+      onComplete,
+      newMsgId,
+    ],
+  );
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
   }, []);
 
-  const handleSubmit = useCallback((e) => {
-    e?.preventDefault();
-    if (!currentInput.trim() || !waitingForResponse) return;
-    resetIdleTimer();
-    processResponse(currentInput.trim());
-    setCurrentInput('');
-  }, [currentInput, waitingForResponse, resetIdleTimer, processResponse]);
+  const handleSubmit = useCallback(
+    (e) => {
+      e?.preventDefault();
+      if (!currentInput.trim() || !waitingForResponse) return;
+      resetIdleTimer();
+      processResponse(currentInput.trim());
+      setCurrentInput('');
+    },
+    [currentInput, waitingForResponse, resetIdleTimer, processResponse],
+  );
 
-  const handleChoiceSelect = useCallback((choice) => {
-    if (!waitingForResponse) return;
-    resetIdleTimer();
-    processResponse(choice);
-  }, [waitingForResponse, resetIdleTimer, processResponse]);
+  const handleChoiceSelect = useCallback(
+    (choice) => {
+      if (!waitingForResponse) return;
+      resetIdleTimer();
+      processResponse(choice);
+    },
+    [waitingForResponse, resetIdleTimer, processResponse],
+  );
 
   const handleReset = useCallback(() => {
     window.speechSynthesis.cancel();
@@ -488,9 +555,10 @@ export default function ConversationalOnboarding({
     })();
     // Re-trigger the first message
     setTimeout(() => {
-      const firstMessage = typeof conversationFlow[0].message === 'function'
-        ? conversationFlow[0].message({})
-        : conversationFlow[0].message;
+      const firstMessage =
+        typeof conversationFlow[0].message === 'function'
+          ? conversationFlow[0].message({})
+          : conversationFlow[0].message;
       addBotMessage(firstMessage);
     }, 100);
   }, [conversationFlow, addBotMessage, onQuestionnaireCleared]);
@@ -501,21 +569,27 @@ export default function ConversationalOnboarding({
   // Uses collectedDataRef to read the latest collected data without adding it as a dependency.
   useEffect(() => {
     if (!waitingForResponse || currentStepData?.type !== 'auto' || allAnswered) return;
-    setAnalyzingState(s => ({ ...s, showingDots: true, dotCount: 0 }));
+    setAnalyzingState((s) => ({ ...s, showingDots: true, dotCount: 0 }));
 
     let progressInterval = null;
     let count = 0;
     const dotInterval = setInterval(() => {
       count += 1;
-      setAnalyzingState(s => ({ ...s, dotCount: count }));
+      setAnalyzingState((s) => ({ ...s, dotCount: count }));
       if (count >= 12) {
         clearInterval(dotInterval);
-        const finalData = { ...collectedDataRef.current };
-        setAnalyzingState({ show: true, progress: 0, name: finalData.name || 'your child', showingDots: false, dotCount: 0 });
+        const finalData = /** @type {Record<string, any>} */ ({ ...collectedDataRef.current });
+        setAnalyzingState({
+          show: true,
+          progress: 0,
+          name: finalData.name || 'your child',
+          showingDots: false,
+          dotCount: 0,
+        });
         let progress = 0;
         progressInterval = setInterval(() => {
           progress += 1;
-          setAnalyzingState(s => ({ ...s, progress }));
+          setAnalyzingState((s) => ({ ...s, progress }));
           if (progress >= 100) {
             clearInterval(progressInterval);
             Promise.resolve(onComplete(finalData)).catch(() => {});
@@ -537,33 +611,35 @@ export default function ConversationalOnboarding({
       { label: 'Building growth profile...', icon: Sparkles, threshold: 80 },
       { label: 'Finalizing personalized journey...', icon: Sparkles, threshold: 100 },
     ];
-    const activeStep = steps.findIndex(s => analyzeProgress < s.threshold);
+    const activeStep = steps.findIndex((s) => analyzeProgress < s.threshold);
     const currentLabel = steps[activeStep >= 0 ? activeStep : steps.length - 1].label;
 
     return (
-      <div className="flex flex-col items-center justify-center h-[600px] max-h-[80vh] rounded-2xl border-edge bg-card overflow-hidden px-6 sm:px-10 py-10 sm:py-12 space-y-8">
+      <div className="border-edge flex h-[600px] max-h-[80vh] flex-col items-center justify-center space-y-8 overflow-hidden rounded-2xl bg-card px-6 py-10 sm:px-10 sm:py-12">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-          className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal"
+          className="glow-teal flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
         >
-          <Brain className="w-8 h-8 text-white" />
+          <Brain className="h-8 w-8 text-white" />
         </motion.div>
 
-        <div className="text-center space-y-2">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Analyzing {analyzingName}'s personality</h2>
-          <p className="text-sm text-teal-400 font-medium">{currentLabel}</p>
+        <div className="space-y-2 text-center">
+          <h2 className="text-xl font-bold text-white sm:text-2xl">
+            Analyzing {analyzingName}'s personality
+          </h2>
+          <p className="text-sm font-medium text-teal-400">{currentLabel}</p>
         </div>
 
         {/* Progress Bar */}
         <div className="w-full max-w-md space-y-2">
-          <div className="w-full bg-ghost-light rounded-full h-2 overflow-hidden">
+          <div className="bg-ghost-light h-2 w-full overflow-hidden rounded-full">
             <div
               className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-teal-300 transition-all duration-100"
               style={{ width: `${analyzeProgress}%` }}
             />
           </div>
-          <p className="text-right text-xs text-slate-500 font-medium">{analyzeProgress}%</p>
+          <p className="text-right text-xs font-medium text-slate-500">{analyzeProgress}%</p>
         </div>
 
         {/* Step indicators */}
@@ -573,17 +649,24 @@ export default function ConversationalOnboarding({
             const done = analyzeProgress >= s.threshold;
             const active = !done && (i === 0 || analyzeProgress >= steps[i - 1]?.threshold);
             return (
-              <div key={s.label} className={`flex items-center gap-3 transition-opacity duration-500 ${done || active ? 'opacity-100' : 'opacity-30'}`}>
-                <div className={cn(
-                  'w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-500',
-                  done  && 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white',
-                  active && 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30',
-                  !done && !active && 'bg-subtle text-slate-500',
-                )}>
-                  <Icon className="w-4 h-4" />
+              <div
+                key={s.label}
+                className={`flex items-center gap-3 transition-opacity duration-500 ${done || active ? 'opacity-100' : 'opacity-30'}`}
+              >
+                <div
+                  className={cn(
+                    'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-500',
+                    done && 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white',
+                    active && 'bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30',
+                    !done && !active && 'bg-subtle text-slate-500',
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
                 </div>
                 <div className="relative">
-                  <span className={`text-sm transition-colors duration-500 ${done ? 'text-emerald-400 font-medium' : active ? 'text-white font-semibold' : 'text-slate-500'}`}>
+                  <span
+                    className={`text-sm transition-colors duration-500 ${done ? 'font-medium text-emerald-400' : active ? 'font-semibold text-white' : 'text-slate-500'}`}
+                  >
                     {s.label}
                   </span>
                   <AnimatePresence>
@@ -607,15 +690,15 @@ export default function ConversationalOnboarding({
   }
 
   return (
-    <div className="flex flex-col h-[600px] max-h-[80vh] bg-card rounded-2xl border-edge overflow-hidden">
+    <div className="border-edge flex h-[600px] max-h-[80vh] flex-col overflow-hidden rounded-2xl bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b-edge-faint bg-surface-elevated">
+      <div className="border-b-edge-faint flex items-center justify-between bg-surface-elevated px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-teal-500/20 flex items-center justify-center">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/20">
             <span className="text-lg">🌱</span>
           </div>
           <div>
-            <h3 className="font-semibold text-white text-sm">Buddy360 Guide</h3>
+            <h3 className="text-sm font-semibold text-white">Buddy360 Guide</h3>
             <p className="text-xs text-slate-500">Your growth companion</p>
           </div>
         </div>
@@ -623,50 +706,52 @@ export default function ConversationalOnboarding({
           variant="ghost"
           size="icon"
           onClick={persistVoiceToggle}
-          className="text-slate-400 hover:text-white hover:bg-ghost-light"
+          className="hover:bg-ghost-light text-slate-400 hover:text-white"
         >
-          {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
         </Button>
       </div>
 
       {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.map((msg) =>
-            msg.role === 'bot' ? (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  opacity: { duration: 2.0, ease: [0.0, 0.0, 0.6, 1] },
-                  y:       { duration: 1.6, ease: 'easeOut' },
-                }}
-                className="flex justify-start"
-              >
-                <div className={cn(
+      <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+        {messages.map((msg) =>
+          msg.role === 'bot' ? (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                opacity: { duration: 2.0, ease: [0.0, 0.0, 0.6, 1] },
+                y: { duration: 1.6, ease: 'easeOut' },
+              }}
+              className="flex justify-start"
+            >
+              <div
+                className={cn(
                   'max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm',
-                  'bg-surface-input text-slate-300 border-edge-faint',
-                )}>
-                  <p className="whitespace-pre-line">{msg.content}</p>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, x: 40 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{
-                  opacity: { duration: 1.6, ease: [0.0, 0.0, 0.6, 1] },
-                  x:       { duration: 1.4, ease: [0.22, 1, 0.36, 1] },
-                }}
-                className="flex justify-end"
+                  'border-edge-faint bg-surface-input text-slate-300',
+                )}
               >
-                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm bg-teal-500 text-white rounded-tr-sm">
-                  <p className="whitespace-pre-line">{msg.content}</p>
-                </div>
-              </motion.div>
-            )
-          )}
+                <p className="whitespace-pre-line">{msg.content}</p>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{
+                opacity: { duration: 1.6, ease: [0.0, 0.0, 0.6, 1] },
+                x: { duration: 1.4, ease: [0.22, 1, 0.36, 1] },
+              }}
+              className="flex justify-end"
+            >
+              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-teal-500 px-4 py-2.5 text-sm text-white">
+                <p className="whitespace-pre-line">{msg.content}</p>
+              </div>
+            </motion.div>
+          ),
+        )}
 
         <AnimatePresence>
           {isTyping && (
@@ -678,11 +763,20 @@ export default function ConversationalOnboarding({
               transition={{ duration: 0.45, ease: 'easeOut' }}
               className="flex justify-start"
             >
-              <div className="bg-surface-input rounded-2xl rounded-tl-sm px-4 py-3 border-edge-faint">
+              <div className="border-edge-faint rounded-2xl rounded-tl-sm bg-surface-input px-4 py-3">
                 <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-600"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <span
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-600"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-600"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               </div>
             </motion.div>
@@ -694,29 +788,38 @@ export default function ConversationalOnboarding({
 
       {/* Input Area */}
       {showingLoadingDots && !allAnswered && (
-        <div className="px-4 pb-4 pt-2 border-t-edge-faint">
+        <div className="border-t-edge-faint px-4 pb-4 pt-2">
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.375 }}
             className="flex justify-start"
           >
-            <div className="max-w-[90%] sm:max-w-[85%] rounded-2xl rounded-tl-sm border border-teal-500/20 bg-teal-500/[0.05] px-4 py-4">
+            <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-teal-500/20 bg-teal-500/[0.05] px-4 py-4 sm:max-w-[85%]">
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shrink-0 glow-teal-sm">
-                  <Sparkles className="w-4 h-4 text-white" />
+                <div className="glow-teal-sm flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                  <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <div className="min-w-0 pt-0.5">
-                  <p className="text-white font-semibold text-sm leading-snug">
+                  <p className="text-sm font-semibold leading-snug text-white">
                     Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
                   </p>
-                  <p className="text-xs text-teal-400 mt-1.5">
+                  <p className="mt-1.5 text-xs text-teal-400">
                     Getting things ready — almost there
                   </p>
-                  <div className="flex gap-1.5 mt-3">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <div className="mt-3 flex gap-1.5">
+                    <span
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-400"
+                      style={{ animationDelay: '0ms' }}
+                    />
+                    <span
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-500"
+                      style={{ animationDelay: '150ms' }}
+                    />
+                    <span
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-600"
+                      style={{ animationDelay: '300ms' }}
+                    />
                   </div>
                 </div>
               </div>
@@ -726,78 +829,83 @@ export default function ConversationalOnboarding({
       )}
 
       {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-        <div className="px-4 pb-4 border-t-edge-faint pt-3">
+        <div className="border-t-edge-faint px-4 pb-4 pt-3">
           <div className="flex flex-wrap gap-2">
             {currentStepData.options.map((option, index) => {
               const chosen = collectedData[currentStepData.field];
               const isSelected = chosen === option;
               return (
-              <motion.button
-                key={`${currentStep}-${option}`}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                whileTap={{ scale: 0.95, transition: { duration: 0.1, delay: 0 } }}
-                transition={{ delay: index * 0.12, duration: 0.4, ease: 'easeOut' }}
-                type="button"
-                onClick={() => handleChoiceSelect(option)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-                  isSelected
-                    ? 'border-teal-500 bg-teal-500/15 text-teal-300'
-                    : 'bg-ghost-md border-c-md text-slate-400 hover:border-teal-500/50 hover:bg-teal-500/10 hover:text-teal-300'
-                }`}
-              >
-                {option}
-              </motion.button>
+                <motion.button
+                  key={`${currentStep}-${option}`}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  whileTap={{ scale: 0.95, transition: { duration: 0.1, delay: 0 } }}
+                  transition={{ delay: index * 0.12, duration: 0.4, ease: 'easeOut' }}
+                  type="button"
+                  onClick={() => handleChoiceSelect(option)}
+                  className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'border-teal-500 bg-teal-500/15 text-teal-300'
+                      : 'bg-ghost-md border-c-md text-slate-400 hover:border-teal-500/50 hover:bg-teal-500/10 hover:text-teal-300'
+                  }`}
+                >
+                  {option}
+                </motion.button>
               );
             })}
           </div>
-          <div className="flex justify-end mt-2">
+          <div className="mt-2 flex justify-end">
             <button
               onClick={handleReset}
               title="Reset conversation"
-              className="flex items-center gap-1 text-xs text-slate-600 hover:text-red-400 transition-colors"
+              className="flex items-center gap-1 text-xs text-slate-600 transition-colors hover:text-red-400"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="h-3 w-3" />
               Reset
             </button>
           </div>
         </div>
       )}
 
-      {waitingForResponse && !allAnswered && (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-        <form onSubmit={handleSubmit} className="p-4 border-t-edge-faint">
-          {currentStepData.hint && (
-            <p className="text-xs text-slate-500 mb-2">{currentStepData.hint}</p>
-          )}
-          <div className="flex gap-2">
-            <InputWithVoice
-              ref={inputRef}
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              placeholder={currentStepData.placeholder || 'Type your response...'}
-              className="flex-1 h-btn-md rounded-xl bg-surface-input border-edge-md text-white placeholder:text-slate-600 focus:border-teal-500/50"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleReset}
-              className="h-btn-md px-3 rounded-xl border-edge-md bg-transparent text-slate-500 hover:text-red-400 hover:border-red-500/30"
-              title="Reset conversation"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </Button>
-            <Button type="submit" className="h-btn-md px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-primary-foreground">
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
-        </form>
-      )}
+      {waitingForResponse &&
+        !allAnswered &&
+        (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
+          <form onSubmit={handleSubmit} className="border-t-edge-faint p-4">
+            {currentStepData.hint && (
+              <p className="mb-2 text-xs text-slate-500">{currentStepData.hint}</p>
+            )}
+            <div className="flex gap-2">
+              <InputWithVoice
+                ref={inputRef}
+                value={currentInput}
+                onChange={(e) => setCurrentInput(e.target.value)}
+                placeholder={currentStepData.placeholder || 'Type your response...'}
+                className="border-edge-md h-btn-md flex-1 rounded-xl bg-surface-input text-white placeholder:text-slate-600 focus:border-teal-500/50"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleReset}
+                className="border-edge-md h-btn-md rounded-xl bg-transparent px-3 text-slate-500 hover:border-red-500/30 hover:text-red-400"
+                title="Reset conversation"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              <Button
+                type="submit"
+                className="h-btn-md rounded-xl bg-teal-500 px-4 text-primary-foreground hover:bg-teal-400"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </form>
+        )}
 
       {allAnswered && typeof onContinueToPersonality === 'function' && (
-        <div className="p-4 border-t-edge-faint shrink-0">
+        <div className="border-t-edge-faint shrink-0 p-4">
           <Button
             type="button"
-            className="w-full h-btn-md rounded-2xl btn-primary"
+            className="btn-primary h-btn-md w-full rounded-2xl"
             onClick={() => onContinueToPersonality()}
           >
             Continue to personality analysis

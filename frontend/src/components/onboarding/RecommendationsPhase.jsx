@@ -2,8 +2,26 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { debounce } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Star, Rocket, Clock, ThumbsUp, ThumbsDown, ChevronLeft, ChevronRight, Brain, Heart, Dumbbell, Palette, Target, Compass, Zap, Award, MessageSquare } from 'lucide-react';
-import { Button } from "@/components/ui/button";
+import {
+  Sparkles,
+  Star,
+  Rocket,
+  Clock,
+  ThumbsUp,
+  ThumbsDown,
+  ChevronLeft,
+  ChevronRight,
+  Brain,
+  Heart,
+  Dumbbell,
+  Palette,
+  Target,
+  Compass,
+  Zap,
+  Award,
+  MessageSquare,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '../shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
@@ -18,90 +36,412 @@ function suggestedActivitiesFromGameRecommendations(rec) {
 }
 
 const growthAreas = [
-  { id: 'life_ambition', name: 'Life Ambition', icon: Rocket, color: 'from-purple-500 to-indigo-600', description: 'Discovering purpose and future goals' },
-  { id: 'self_care', name: 'Self Care', icon: Heart, color: 'from-rose-500 to-pink-600', description: 'Building healthy habits and emotional wellness' },
-  { id: 'critical_thinking', name: 'Critical Thinking', icon: Brain, color: 'from-blue-500 to-cyan-600', description: 'Problem solving and analytical skills' },
-  { id: 'creativity', name: 'Creativity', icon: Palette, color: 'from-amber-500 to-orange-600', description: 'Imagination and creative expression' },
-  { id: 'physical_wellness', name: 'Physical Wellness', icon: Dumbbell, color: 'from-emerald-500 to-teal-600', description: 'Body awareness and physical health' },
-  { id: 'social_skills', name: 'Social Skills', icon: MessageSquare, color: 'from-violet-500 to-purple-600', description: 'Communication and relationship building' }
+  {
+    id: 'life_ambition',
+    name: 'Life Ambition',
+    icon: Rocket,
+    color: 'from-purple-500 to-indigo-600',
+    description: 'Discovering purpose and future goals',
+  },
+  {
+    id: 'self_care',
+    name: 'Self Care',
+    icon: Heart,
+    color: 'from-rose-500 to-pink-600',
+    description: 'Building healthy habits and emotional wellness',
+  },
+  {
+    id: 'critical_thinking',
+    name: 'Critical Thinking',
+    icon: Brain,
+    color: 'from-blue-500 to-cyan-600',
+    description: 'Problem solving and analytical skills',
+  },
+  {
+    id: 'creativity',
+    name: 'Creativity',
+    icon: Palette,
+    color: 'from-amber-500 to-orange-600',
+    description: 'Imagination and creative expression',
+  },
+  {
+    id: 'physical_wellness',
+    name: 'Physical Wellness',
+    icon: Dumbbell,
+    color: 'from-emerald-500 to-teal-600',
+    description: 'Body awareness and physical health',
+  },
+  {
+    id: 'social_skills',
+    name: 'Social Skills',
+    icon: MessageSquare,
+    color: 'from-violet-500 to-purple-600',
+    description: 'Communication and relationship building',
+  },
 ];
 
 const sampleActivities = {
   life_ambition: [
-    { title: 'Dream Board Creation', description: 'Create a visual board of future dreams and goals', duration: '20 mins', type: 'creative' },
-    { title: 'Career Explorer Quiz', description: 'Fun quiz to discover interests and potential paths', duration: '10 mins', type: 'game' },
-    { title: 'Future Self Letter', description: 'Write a letter to yourself 10 years from now', duration: '15 mins', type: 'reflection' }
+    {
+      title: 'Dream Board Creation',
+      description: 'Create a visual board of future dreams and goals',
+      duration: '20 mins',
+      type: 'creative',
+    },
+    {
+      title: 'Career Explorer Quiz',
+      description: 'Fun quiz to discover interests and potential paths',
+      duration: '10 mins',
+      type: 'game',
+    },
+    {
+      title: 'Future Self Letter',
+      description: 'Write a letter to yourself 10 years from now',
+      duration: '15 mins',
+      type: 'reflection',
+    },
   ],
   self_care: [
-    { title: 'Emotion Detective', description: 'Identify and name different emotions through scenarios', duration: '10 mins', type: 'game' },
-    { title: 'Mindful Breathing Adventure', description: 'Learn calming techniques through a fun story', duration: '8 mins', type: 'activity' },
-    { title: 'Gratitude Treasure Hunt', description: 'Find 5 things to be grateful for today', duration: '10 mins', type: 'challenge' }
+    {
+      title: 'Emotion Detective',
+      description: 'Identify and name different emotions through scenarios',
+      duration: '10 mins',
+      type: 'game',
+    },
+    {
+      title: 'Mindful Breathing Adventure',
+      description: 'Learn calming techniques through a fun story',
+      duration: '8 mins',
+      type: 'activity',
+    },
+    {
+      title: 'Gratitude Treasure Hunt',
+      description: 'Find 5 things to be grateful for today',
+      duration: '10 mins',
+      type: 'challenge',
+    },
   ],
   critical_thinking: [
-    { title: 'Mystery Solver', description: 'Solve fun logic puzzles and riddles', duration: '15 mins', type: 'game' },
-    { title: 'What Would You Do?', description: 'Decision-making scenarios with multiple outcomes', duration: '12 mins', type: 'interactive' },
-    { title: 'Pattern Detective', description: 'Find patterns and predict what comes next', duration: '10 mins', type: 'puzzle' }
+    {
+      title: 'Mystery Solver',
+      description: 'Solve fun logic puzzles and riddles',
+      duration: '15 mins',
+      type: 'game',
+    },
+    {
+      title: 'What Would You Do?',
+      description: 'Decision-making scenarios with multiple outcomes',
+      duration: '12 mins',
+      type: 'interactive',
+    },
+    {
+      title: 'Pattern Detective',
+      description: 'Find patterns and predict what comes next',
+      duration: '10 mins',
+      type: 'puzzle',
+    },
   ],
   creativity: [
-    { title: 'Story Remix', description: 'Take a familiar story and give it a creative twist', duration: '15 mins', type: 'creative' },
-    { title: 'Invention Challenge', description: 'Design a solution for an everyday problem', duration: '20 mins', type: 'challenge' },
-    { title: 'Music & Mood', description: 'Create sounds that match different emotions', duration: '10 mins', type: 'interactive' }
+    {
+      title: 'Story Remix',
+      description: 'Take a familiar story and give it a creative twist',
+      duration: '15 mins',
+      type: 'creative',
+    },
+    {
+      title: 'Invention Challenge',
+      description: 'Design a solution for an everyday problem',
+      duration: '20 mins',
+      type: 'challenge',
+    },
+    {
+      title: 'Music & Mood',
+      description: 'Create sounds that match different emotions',
+      duration: '10 mins',
+      type: 'interactive',
+    },
   ],
   physical_wellness: [
-    { title: 'Body Scan Adventure', description: 'Fun guided body awareness activity', duration: '8 mins', type: 'activity' },
-    { title: 'Movement Challenge', description: 'Quick fun physical challenges to try', duration: '10 mins', type: 'game' },
-    { title: 'Healthy Habits Hero', description: 'Track and celebrate healthy daily habits', duration: '5 mins', type: 'tracker' }
+    {
+      title: 'Body Scan Adventure',
+      description: 'Fun guided body awareness activity',
+      duration: '8 mins',
+      type: 'activity',
+    },
+    {
+      title: 'Movement Challenge',
+      description: 'Quick fun physical challenges to try',
+      duration: '10 mins',
+      type: 'game',
+    },
+    {
+      title: 'Healthy Habits Hero',
+      description: 'Track and celebrate healthy daily habits',
+      duration: '5 mins',
+      type: 'tracker',
+    },
   ],
   social_skills: [
-    { title: 'Conversation Starter', description: 'Practice starting and maintaining conversations', duration: '10 mins', type: 'interactive' },
-    { title: 'Empathy Explorer', description: 'Understand how others might feel in situations', duration: '12 mins', type: 'game' },
-    { title: 'Teamwork Challenge', description: 'Activities that require collaboration', duration: '15 mins', type: 'challenge' }
-  ]
+    {
+      title: 'Conversation Starter',
+      description: 'Practice starting and maintaining conversations',
+      duration: '10 mins',
+      type: 'interactive',
+    },
+    {
+      title: 'Empathy Explorer',
+      description: 'Understand how others might feel in situations',
+      duration: '12 mins',
+      type: 'game',
+    },
+    {
+      title: 'Teamwork Challenge',
+      description: 'Activities that require collaboration',
+      duration: '15 mins',
+      type: 'challenge',
+    },
+  ],
 };
 
 const areaQuestions = {
   life_ambition: [
-    { id: "dream_career", question: "What does {name} dream of becoming when he/she grows up?", type: "text", placeholder: "e.g., Doctor, Teacher, Astronaut, Artist...", followUp: "That's wonderful! Dreams are the seeds of future achievements." },
-    { id: "interests_alignment", question: "Are his/her interests & hobbies in line with his/her dream?", type: "choice", options: ["Yes", "No", "Not Sure at this point"], followUp: "Understanding this helps us guide their journey better." },
-    { id: "support_type", question: "What kind of support are you willing to give to support his/her dream at this point?", type: "choice", options: ["In every aspect", "Financially", "Moral support", "Not sure at this point"], followUp: "Your support is crucial in nurturing their aspirations." },
-    { id: "explore_options", question: "Do you think {name} should explore other career options as well?", type: "choice", options: ["Yes", "No", "Not sure at this point"], followUp: "Exploration helps children discover their true passions." },
-    { id: "revisit_timeline", question: "When do you want to re-visit {name}'s life aspirations?", type: "choice", options: ["After 1 year", "After 3 years", "After 5 years", "Not sure at this point"], followUp: "Regular check-ins help keep dreams aligned with growth." }
+    {
+      id: 'dream_career',
+      question: 'What does {name} dream of becoming when he/she grows up?',
+      type: 'text',
+      placeholder: 'e.g., Doctor, Teacher, Astronaut, Artist...',
+      followUp: "That's wonderful! Dreams are the seeds of future achievements.",
+    },
+    {
+      id: 'interests_alignment',
+      question: 'Are his/her interests & hobbies in line with his/her dream?',
+      type: 'choice',
+      options: ['Yes', 'No', 'Not Sure at this point'],
+      followUp: 'Understanding this helps us guide their journey better.',
+    },
+    {
+      id: 'support_type',
+      question:
+        'What kind of support are you willing to give to support his/her dream at this point?',
+      type: 'choice',
+      options: ['In every aspect', 'Financially', 'Moral support', 'Not sure at this point'],
+      followUp: 'Your support is crucial in nurturing their aspirations.',
+    },
+    {
+      id: 'explore_options',
+      question: 'Do you think {name} should explore other career options as well?',
+      type: 'choice',
+      options: ['Yes', 'No', 'Not sure at this point'],
+      followUp: 'Exploration helps children discover their true passions.',
+    },
+    {
+      id: 'revisit_timeline',
+      question: "When do you want to re-visit {name}'s life aspirations?",
+      type: 'choice',
+      options: ['After 1 year', 'After 3 years', 'After 5 years', 'Not sure at this point'],
+      followUp: 'Regular check-ins help keep dreams aligned with growth.',
+    },
   ],
   self_care: [
-    { id: "emotional_awareness", question: "How well does {name} recognize and name their own emotions?", type: "choice", options: ["Very well", "Somewhat", "Needs support", "Not sure"], followUp: "Emotional awareness is the first step to self-care." },
-    { id: "stress_response", question: "How does {name} typically respond when stressed or overwhelmed?", type: "text", placeholder: "e.g., withdraws, cries, talks about it...", followUp: "Understanding stress responses helps us build better coping strategies." },
-    { id: "sleep_habits", question: "How would you describe {name}'s sleep habits?", type: "choice", options: ["Very consistent", "Somewhat consistent", "Irregular", "Problematic"], followUp: "Good sleep is fundamental to emotional and physical well-being." },
-    { id: "self_soothing", question: "Does {name} have any self-soothing or relaxation activities?", type: "choice", options: ["Yes, several", "One or two", "Not really", "Not sure"], followUp: "Self-soothing skills are important tools for lifelong wellness." },
-    { id: "self_care_goals", question: "What self-care habit would you most like {name} to develop?", type: "text", placeholder: "e.g., morning routine, mindfulness, journaling...", followUp: "Great goal! Small daily habits create lasting change." }
+    {
+      id: 'emotional_awareness',
+      question: 'How well does {name} recognize and name their own emotions?',
+      type: 'choice',
+      options: ['Very well', 'Somewhat', 'Needs support', 'Not sure'],
+      followUp: 'Emotional awareness is the first step to self-care.',
+    },
+    {
+      id: 'stress_response',
+      question: 'How does {name} typically respond when stressed or overwhelmed?',
+      type: 'text',
+      placeholder: 'e.g., withdraws, cries, talks about it...',
+      followUp: 'Understanding stress responses helps us build better coping strategies.',
+    },
+    {
+      id: 'sleep_habits',
+      question: "How would you describe {name}'s sleep habits?",
+      type: 'choice',
+      options: ['Very consistent', 'Somewhat consistent', 'Irregular', 'Problematic'],
+      followUp: 'Good sleep is fundamental to emotional and physical well-being.',
+    },
+    {
+      id: 'self_soothing',
+      question: 'Does {name} have any self-soothing or relaxation activities?',
+      type: 'choice',
+      options: ['Yes, several', 'One or two', 'Not really', 'Not sure'],
+      followUp: 'Self-soothing skills are important tools for lifelong wellness.',
+    },
+    {
+      id: 'self_care_goals',
+      question: 'What self-care habit would you most like {name} to develop?',
+      type: 'text',
+      placeholder: 'e.g., morning routine, mindfulness, journaling...',
+      followUp: 'Great goal! Small daily habits create lasting change.',
+    },
   ],
   critical_thinking: [
-    { id: "problem_approach", question: "How does {name} typically approach a problem they can't solve immediately?", type: "choice", options: ["Tries different strategies", "Asks for help", "Gets frustrated", "Gives up"], followUp: "Problem-solving persistence is a key thinking skill." },
-    { id: "curiosity_level", question: "How curious is {name} about how things work?", type: "choice", options: ["Very curious", "Moderately curious", "Not particularly curious", "Depends on the topic"], followUp: "Curiosity is the engine of critical thinking!" },
-    { id: "decision_making", question: "Can {name} make decisions independently, weighing pros and cons?", type: "choice", options: ["Yes, quite well", "Sometimes", "Rarely", "Not yet"], followUp: "Decision-making is a skill that grows with practice." },
-    { id: "question_asking", question: "Does {name} ask a lot of 'why' or 'how' questions?", type: "choice", options: ["All the time", "Often", "Occasionally", "Rarely"], followUp: "Asking questions is a sign of an active, thinking mind." },
-    { id: "thinking_goals", question: "What critical thinking skill would you most like {name} to strengthen?", type: "text", placeholder: "e.g., logical reasoning, creative solutions, evaluating information...", followUp: "Excellent focus area! We'll build activities around this." }
+    {
+      id: 'problem_approach',
+      question: "How does {name} typically approach a problem they can't solve immediately?",
+      type: 'choice',
+      options: ['Tries different strategies', 'Asks for help', 'Gets frustrated', 'Gives up'],
+      followUp: 'Problem-solving persistence is a key thinking skill.',
+    },
+    {
+      id: 'curiosity_level',
+      question: 'How curious is {name} about how things work?',
+      type: 'choice',
+      options: [
+        'Very curious',
+        'Moderately curious',
+        'Not particularly curious',
+        'Depends on the topic',
+      ],
+      followUp: 'Curiosity is the engine of critical thinking!',
+    },
+    {
+      id: 'decision_making',
+      question: 'Can {name} make decisions independently, weighing pros and cons?',
+      type: 'choice',
+      options: ['Yes, quite well', 'Sometimes', 'Rarely', 'Not yet'],
+      followUp: 'Decision-making is a skill that grows with practice.',
+    },
+    {
+      id: 'question_asking',
+      question: "Does {name} ask a lot of 'why' or 'how' questions?",
+      type: 'choice',
+      options: ['All the time', 'Often', 'Occasionally', 'Rarely'],
+      followUp: 'Asking questions is a sign of an active, thinking mind.',
+    },
+    {
+      id: 'thinking_goals',
+      question: 'What critical thinking skill would you most like {name} to strengthen?',
+      type: 'text',
+      placeholder: 'e.g., logical reasoning, creative solutions, evaluating information...',
+      followUp: "Excellent focus area! We'll build activities around this.",
+    },
   ],
   creativity: [
-    { id: "creative_outlets", question: "What creative activities does {name} enjoy most?", type: "text", placeholder: "e.g., drawing, storytelling, building, music...", followUp: "Wonderful! Creative outlets are essential for expression and growth." },
-    { id: "imagination_use", question: "How often does {name} engage in imaginative play or storytelling?", type: "choice", options: ["Daily", "Several times a week", "Occasionally", "Rarely"], followUp: "Imagination is the birthplace of all creativity." },
-    { id: "creative_confidence", question: "Does {name} feel confident sharing their creative work with others?", type: "choice", options: ["Very confident", "Somewhat confident", "Hesitant", "Avoids sharing"], followUp: "Building creative confidence takes a supportive environment." },
-    { id: "open_ended_play", question: "Does {name} prefer structured activities or open-ended creative play?", type: "choice", options: ["Prefers structured", "Prefers open-ended", "Enjoys both equally", "Not sure"], followUp: "Both styles have value — balance is key." },
-    { id: "creativity_goals", question: "How would you like to nurture {name}'s creativity in the next 3 months?", type: "text", placeholder: "e.g., art classes, music lessons, creative writing...", followUp: "We'll use this to craft the perfect creative missions!" }
+    {
+      id: 'creative_outlets',
+      question: 'What creative activities does {name} enjoy most?',
+      type: 'text',
+      placeholder: 'e.g., drawing, storytelling, building, music...',
+      followUp: 'Wonderful! Creative outlets are essential for expression and growth.',
+    },
+    {
+      id: 'imagination_use',
+      question: 'How often does {name} engage in imaginative play or storytelling?',
+      type: 'choice',
+      options: ['Daily', 'Several times a week', 'Occasionally', 'Rarely'],
+      followUp: 'Imagination is the birthplace of all creativity.',
+    },
+    {
+      id: 'creative_confidence',
+      question: 'Does {name} feel confident sharing their creative work with others?',
+      type: 'choice',
+      options: ['Very confident', 'Somewhat confident', 'Hesitant', 'Avoids sharing'],
+      followUp: 'Building creative confidence takes a supportive environment.',
+    },
+    {
+      id: 'open_ended_play',
+      question: 'Does {name} prefer structured activities or open-ended creative play?',
+      type: 'choice',
+      options: ['Prefers structured', 'Prefers open-ended', 'Enjoys both equally', 'Not sure'],
+      followUp: 'Both styles have value — balance is key.',
+    },
+    {
+      id: 'creativity_goals',
+      question: "How would you like to nurture {name}'s creativity in the next 3 months?",
+      type: 'text',
+      placeholder: 'e.g., art classes, music lessons, creative writing...',
+      followUp: "We'll use this to craft the perfect creative missions!",
+    },
   ],
   physical_wellness: [
-    { id: "activity_level", question: "How physically active is {name} on a typical day?", type: "choice", options: ["Very active", "Moderately active", "Somewhat sedentary", "Very sedentary"], followUp: "Physical activity is a cornerstone of holistic wellness." },
-    { id: "preferred_activities", question: "What physical activities does {name} enjoy most?", type: "text", placeholder: "e.g., swimming, cycling, football, dancing...", followUp: "Linking movement to enjoyment makes it sustainable." },
-    { id: "body_awareness", question: "Is {name} aware of their body's signals (hunger, tiredness, discomfort)?", type: "choice", options: ["Very aware", "Somewhat aware", "Not very aware", "Not sure"], followUp: "Body awareness is the foundation of physical self-care." },
-    { id: "screen_time", question: "How much screen time does {name} typically have per day?", type: "choice", options: ["Less than 1 hour", "1-2 hours", "3-4 hours", "More than 4 hours"], followUp: "Balancing screen time with physical activity is a key wellness goal." },
-    { id: "wellness_goals", question: "What physical wellness goal would you set for {name} over the next 3 months?", type: "text", placeholder: "e.g., learn to swim, improve stamina, develop a sport...", followUp: "A clear physical goal gives movement real purpose!" }
+    {
+      id: 'activity_level',
+      question: 'How physically active is {name} on a typical day?',
+      type: 'choice',
+      options: ['Very active', 'Moderately active', 'Somewhat sedentary', 'Very sedentary'],
+      followUp: 'Physical activity is a cornerstone of holistic wellness.',
+    },
+    {
+      id: 'preferred_activities',
+      question: 'What physical activities does {name} enjoy most?',
+      type: 'text',
+      placeholder: 'e.g., swimming, cycling, football, dancing...',
+      followUp: 'Linking movement to enjoyment makes it sustainable.',
+    },
+    {
+      id: 'body_awareness',
+      question: "Is {name} aware of their body's signals (hunger, tiredness, discomfort)?",
+      type: 'choice',
+      options: ['Very aware', 'Somewhat aware', 'Not very aware', 'Not sure'],
+      followUp: 'Body awareness is the foundation of physical self-care.',
+    },
+    {
+      id: 'screen_time',
+      question: 'How much screen time does {name} typically have per day?',
+      type: 'choice',
+      options: ['Less than 1 hour', '1-2 hours', '3-4 hours', 'More than 4 hours'],
+      followUp: 'Balancing screen time with physical activity is a key wellness goal.',
+    },
+    {
+      id: 'wellness_goals',
+      question: 'What physical wellness goal would you set for {name} over the next 3 months?',
+      type: 'text',
+      placeholder: 'e.g., learn to swim, improve stamina, develop a sport...',
+      followUp: 'A clear physical goal gives movement real purpose!',
+    },
   ],
   social_skills: [
-    { id: "friendship_quality", question: "How would you describe {name}'s friendships?", type: "choice", options: ["Has many close friends", "Has a few close friends", "Mostly acquaintances", "Struggles to connect"], followUp: "The quality of friendships matters more than quantity." },
-    { id: "conflict_handling", question: "How does {name} handle disagreements or conflicts with peers?", type: "choice", options: ["Resolves calmly", "Needs some guidance", "Gets upset easily", "Avoids conflict entirely"], followUp: "Healthy conflict resolution is a powerful life skill." },
-    { id: "empathy_level", question: "Does {name} show empathy and concern for others' feelings?", type: "choice", options: ["Consistently", "Often", "Sometimes", "Rarely"], followUp: "Empathy is the foundation of all meaningful relationships." },
-    { id: "group_participation", question: "How does {name} behave in group settings (school, teams, clubs)?", type: "choice", options: ["Natural leader", "Active participant", "Observer", "Withdraws"], followUp: "Understanding group dynamics helps us tailor the right activities." },
-    { id: "social_goals", question: "What social skill would you most like {name} to build in the next 3 months?", type: "text", placeholder: "e.g., starting conversations, teamwork, expressing feelings...", followUp: "Wonderful focus! Social skills open doors throughout life." }
-  ]
+    {
+      id: 'friendship_quality',
+      question: "How would you describe {name}'s friendships?",
+      type: 'choice',
+      options: [
+        'Has many close friends',
+        'Has a few close friends',
+        'Mostly acquaintances',
+        'Struggles to connect',
+      ],
+      followUp: 'The quality of friendships matters more than quantity.',
+    },
+    {
+      id: 'conflict_handling',
+      question: 'How does {name} handle disagreements or conflicts with peers?',
+      type: 'choice',
+      options: [
+        'Resolves calmly',
+        'Needs some guidance',
+        'Gets upset easily',
+        'Avoids conflict entirely',
+      ],
+      followUp: 'Healthy conflict resolution is a powerful life skill.',
+    },
+    {
+      id: 'empathy_level',
+      question: "Does {name} show empathy and concern for others' feelings?",
+      type: 'choice',
+      options: ['Consistently', 'Often', 'Sometimes', 'Rarely'],
+      followUp: 'Empathy is the foundation of all meaningful relationships.',
+    },
+    {
+      id: 'group_participation',
+      question: 'How does {name} behave in group settings (school, teams, clubs)?',
+      type: 'choice',
+      options: ['Natural leader', 'Active participant', 'Observer', 'Withdraws'],
+      followUp: 'Understanding group dynamics helps us tailor the right activities.',
+    },
+    {
+      id: 'social_goals',
+      question: 'What social skill would you most like {name} to build in the next 3 months?',
+      type: 'text',
+      placeholder: 'e.g., starting conversations, teamwork, expressing feelings...',
+      followUp: 'Wonderful focus! Social skills open doors throughout life.',
+    },
+  ],
 };
 
 // Keep backward compatibility
@@ -158,12 +498,16 @@ function buildAreaProgressPayload({
     // Preserve game results in every auto-save. Without this, the backend $set would write
     // child_activity: null (Pydantic default) and overwrite previously saved results.
     child_activity: childGameResults
-      ? { selections: Array.isArray(childActivitySelections) ? childActivitySelections : [], results: childGameResults }
+      ? {
+          selections: Array.isArray(childActivitySelections) ? childActivitySelections : [],
+          results: childGameResults,
+        }
       : null,
-    child_activity_selections: Array.isArray(childActivitySelections) ? childActivitySelections : [],
-    ai_three_month_recommendations: Array.isArray(aiRecommendations) && aiRecommendations.length > 0
-      ? aiRecommendations
-      : null,
+    child_activity_selections: Array.isArray(childActivitySelections)
+      ? childActivitySelections
+      : [],
+    ai_three_month_recommendations:
+      Array.isArray(aiRecommendations) && aiRecommendations.length > 0 ? aiRecommendations : null,
   };
 }
 
@@ -214,7 +558,9 @@ function deriveInteractiveUiFromProgress(area, p, completedGrowthAreas = []) {
 
   const qs = areaQuestions[area.id] || areaQuestions.life_ambition;
   const rawProgress =
-    p.interactive_answers && typeof p.interactive_answers === 'object' ? { ...p.interactive_answers } : {};
+    p.interactive_answers && typeof p.interactive_answers === 'object'
+      ? { ...p.interactive_answers }
+      : {};
   const fromCompleted = extractAnswersFromCompletedGrowthAreas(completedGrowthAreas, area.id);
   const mergedRaw = { ...fromCompleted, ...rawProgress };
   const mergedAnswers = answersForArea(area.id, mergedRaw);
@@ -336,7 +682,15 @@ function applyTileEntryInteractivePreference(area, d) {
   return { step: d.step, interactiveStep: d.interactiveStep, currentAnswer: d.currentAnswer };
 }
 
-export default function RecommendationsPhase({ data, profile, recommendations, activeChildId, onFinish, onRegisterBack, onPhaseBack }) {
+export default function RecommendationsPhase({
+  data,
+  profile,
+  recommendations,
+  activeChildId,
+  onFinish,
+  onRegisterBack,
+  onPhaseBack,
+}) {
   const navigate = useNavigate();
   // voiceEnabledRef is a stable ref — safe to use with empty deps
   const speak = useCallback((text) => {
@@ -360,7 +714,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     if (step === 'activity_summary') {
-      setQaAnimKey(k => k + 1);
+      setQaAnimKey((k) => k + 1);
     }
   }, [step]);
   const [selectedArea, setSelectedArea] = useState(null);
@@ -465,9 +819,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
 
           // AI recommendations: prefer the in-progress doc's field, fall back to completed doc's recommendations
-          let aiRec = Array.isArray(p.ai_three_month_recommendations) && p.ai_three_month_recommendations.length > 0
-            ? p.ai_three_month_recommendations
-            : null;
+          let aiRec =
+            Array.isArray(p.ai_three_month_recommendations) &&
+            p.ai_three_month_recommendations.length > 0
+              ? p.ai_three_month_recommendations
+              : null;
           if (!aiRec) aiRec = extractAiRecommendationsFromCompleted(completedDocs, areaObj.id);
           setAiRecommendations(aiRec);
         } else {
@@ -490,7 +846,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       debounce((payload) => {
         api.completedGrowthAreas.append(activeChildId, payload).catch(() => {});
       }, 400),
-    [activeChildId]
+    [activeChildId],
   );
 
   // Debounced save of global wizard navigation to the child record
@@ -502,7 +858,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           wizard_area_index: wizAreaIdx,
         }).catch(() => {});
       }, 400),
-    [activeChildId]
+    [activeChildId],
   );
 
   useEffect(() => {
@@ -538,7 +894,6 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
     }
   }, [step, selectedArea, interactiveAnswers, interactiveStep, onRegisterBack, onPhaseBack]);
 
-
   // Refs for voice control
   const introHasSpoken = useRef(false);
   const summaryHasSpoken = useRef(false);
@@ -558,7 +913,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 600);
     return () => clearTimeout(t);
-  }, [!!childGameResults]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!childGameResults]);
 
   // Auto-persist per-area wizard state to growth_areas (in_progress)
   useEffect(() => {
@@ -614,7 +969,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
 
     const saved = interactiveAnswers[cq.id];
     const savedStr =
-      saved === undefined || saved === null ? '' : typeof saved === 'string' ? saved : String(saved);
+      saved === undefined || saved === null
+        ? ''
+        : typeof saved === 'string'
+          ? saved
+          : String(saved);
 
     if (savedStr.trim() !== '') {
       setCurrentAnswer(savedStr);
@@ -649,7 +1008,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       ai_three_month_recommendations: null,
       ...(childActivity ? { child_activity: childActivity } : {}),
     };
-    const task = growthAreaSaveChainRef.current.then(() => api.completedGrowthAreas.append(activeChildId, payload));
+    const task = growthAreaSaveChainRef.current.then(() =>
+      api.completedGrowthAreas.append(activeChildId, payload),
+    );
     growthAreaSaveChainRef.current = task.catch(() => {});
     try {
       await task;
@@ -660,7 +1021,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       setInteractiveAnswers({});
       setAiRecommendations(null);
       setChildActivitySelections([]);
-      setCompletedAreaIds((prev) => { const n = new Set(prev); n.add(area.id); return n; });
+      setCompletedAreaIds((prev) => {
+        const n = new Set(prev);
+        n.add(area.id);
+        return n;
+      });
     } catch (err) {
       console.error('[RecommendationsPhase] Could not save progress:', err);
       toast.error('Could not save progress');
@@ -681,7 +1046,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
   };
 
   /** Fetch area doc from DB and restore child game UI state. */
-  const mergeChildGameFromServer = async (areaId, { reopenGame } = {}) => {
+  const mergeChildGameFromServer = async (
+    areaId,
+    /** @type {{ reopenGame?: boolean }} */ { reopenGame } = {},
+  ) => {
     if (!areaId) return;
     try {
       debouncedSaveAreaProgress.flush?.();
@@ -714,9 +1082,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
   useEffect(() => {
     if (!resumeLoaded) return;
     if (step === 'intro' && !introHasSpoken.current && profile) {
-      const strengthsText = profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s}`).join('. ') || '';
-      const primaryType = profile.personality_type?.split(' - ')[1] || profile.personality_type || '';
-      const summaryAlreadyContainsType = primaryType && profile.summary?.toLowerCase().includes(primaryType.toLowerCase());
+      const strengthsText =
+        profile.top_strengths?.map((s, i) => `Strength ${i + 1}: ${s}`).join('. ') || '';
+      const primaryType =
+        profile.personality_type?.split(' - ')[1] || profile.personality_type || '';
+      const summaryAlreadyContainsType =
+        primaryType && profile.summary?.toLowerCase().includes(primaryType.toLowerCase());
       const fullText = summaryAlreadyContainsType
         ? `${data.name}'s profile. ${profile.summary}. Emerging strengths: ${strengthsText}`
         : `${data.name}'s personality type is ${primaryType}. ${profile.summary}. Emerging strengths: ${strengthsText}`;
@@ -736,46 +1107,47 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       <div className="space-y-8">
         {/* Section 1 — Header */}
         <motion.div {...sectionAnim(0.1)} className="text-center">
-          <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
-            <Sparkles className="w-12 h-12 text-white" />
+          <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500">
+            <Sparkles className="h-12 w-12 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Your Personalized Journey</h2>
+          <h2 className="mb-2 text-2xl font-bold text-white">Your Personalized Journey</h2>
           <p className="text-slate-400">Here's what we've discovered about {data.name}</p>
         </motion.div>
 
         {/* Section 2 — Profile Summary Card */}
         {profile && (
-          <motion.div
-            {...sectionAnim(0.8)}
-            className="bg-card rounded-2xl p-6 border-edge"
-          >
-            <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center flex-shrink-0 glow-teal-sm">
-                <Star className="w-6 h-6 text-white" />
+          <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
+            <div className="mb-4 flex items-start gap-4">
+              <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                <Star className="h-6 w-6 text-white" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-white">{data.name}'s Profile</h3>
-                <p className="text-teal-400 text-sm font-medium">{profile.personality_type?.split(' - ')[1] || profile.personality_type}</p>
+                <p className="text-sm font-medium text-teal-400">
+                  {profile.personality_type?.split(' - ')[1] || profile.personality_type}
+                </p>
               </div>
             </div>
 
-            <p className="text-slate-400 mb-5 leading-relaxed text-sm">{profile.summary}</p>
+            <p className="mb-5 text-sm leading-relaxed text-slate-400">{profile.summary}</p>
 
             {/* Top Strengths */}
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-3">Emerging Strengths</p>
+              <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">
+                Emerging Strengths
+              </p>
               {profile.top_strengths?.map((strength, index) => (
                 <motion.div
                   key={strength}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
-                  className="flex items-start gap-3 bg-surface-input rounded-xl p-3 border-edge-faint"
+                  className="border-edge-faint flex items-start gap-3 rounded-xl bg-surface-input p-3"
                 >
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <span className="text-amber-400 font-bold text-xs">{index + 1}</span>
+                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-amber-500/15">
+                    <span className="text-xs font-bold text-amber-400">{index + 1}</span>
                   </div>
-                  <p className="font-semibold text-white text-sm">{strength}</p>
+                  <p className="text-sm font-semibold text-white">{strength}</p>
                 </motion.div>
               ))}
             </div>
@@ -785,33 +1157,34 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
         {/* Section 3 — Explore Growth Areas Prompt */}
         <motion.div
           {...sectionAnim(1.8)}
-          className="bg-card rounded-2xl p-6 border border-purple-500/20"
+          className="rounded-2xl border border-purple-500/20 bg-card p-6"
         >
-          <div className="text-center space-y-4">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
-              <Compass className="w-7 h-7 text-white" />
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600">
+              <Compass className="h-7 w-7 text-white" />
             </div>
             <h3 className="text-lg font-bold text-white">
-              Do you want to explore the specific growth areas for {data.name} to become their best version?
+              Do you want to explore the specific growth areas for {data.name} to become their best
+              version?
             </h3>
-            <p className="text-slate-400 text-sm">
+            <p className="text-sm text-slate-400">
               Discover personalized activities to help {data.name} develop key life skills
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
               <Button
                 onClick={() => setStep('area_selection')}
-                className="h-12 px-8 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white"
+                className="h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
               >
-                <Zap className="w-4 h-4 mr-2" />
+                <Zap className="mr-2 h-4 w-4" />
                 Continue Now
               </Button>
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
+                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
               >
-                <Clock className="w-4 h-4 mr-2" />
+                <Clock className="mr-2 h-4 w-4" />
                 Catch Up Later
               </Button>
             </div>
@@ -831,7 +1204,7 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
     return (
       <div className="space-y-6">
         <motion.div {...sectionAnim(0.5)} className="text-center">
-          <h2 className="text-2xl font-bold text-white mb-2">Growth Areas</h2>
+          <h2 className="mb-2 text-2xl font-bold text-white">Growth Areas</h2>
           <p className="text-slate-400">Choose an area to explore for {data.name}</p>
         </motion.div>
 
@@ -859,9 +1232,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                     const completedData = await api.completedGrowthAreas.list(activeChildId);
                     const allDocs = Array.isArray(completedData?.areas) ? completedData.areas : [];
                     // Per-area doc: in-progress takes priority over completed
-                    const p = allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress')
-                      || allDocs.find((a) => a.area_id === area.id)
-                      || {};
+                    const p =
+                      allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ||
+                      allDocs.find((a) => a.area_id === area.id) ||
+                      {};
                     const isInProgress = p.status === 'in_progress';
 
                     const d = deriveInteractiveUiFromProgress(area, p, allDocs);
@@ -876,24 +1250,30 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                     // Also fall back to current in-memory state when re-opening the SAME area — guards against
                     // the flush→list race where the debounced append hasn't reached the DB by the time list returns.
                     const isSameArea = area.id === selectedArea?.id;
-                    const completedDocs = allDocs.filter((a) => a.status === 'completed' || !a.status);
+                    const completedDocs = allDocs.filter(
+                      (a) => a.status === 'completed' || !a.status,
+                    );
                     const dbRecs =
-                      Array.isArray(p.ai_three_month_recommendations) && p.ai_three_month_recommendations.length > 0
+                      Array.isArray(p.ai_three_month_recommendations) &&
+                      p.ai_three_month_recommendations.length > 0
                         ? p.ai_three_month_recommendations
                         : extractAiRecommendationsFromCompleted(completedDocs, area.id);
                     const airMerged =
                       Array.isArray(dbRecs) && dbRecs.length > 0
                         ? dbRecs
-                        : (isSameArea && Array.isArray(aiRecommendations) && aiRecommendations.length > 0
-                            ? aiRecommendations
-                            : null);
+                        : isSameArea &&
+                            Array.isArray(aiRecommendations) &&
+                            aiRecommendations.length > 0
+                          ? aiRecommendations
+                          : null;
                     setAiRecommendations(airMerged);
 
                     if (isInProgress) {
                       if (p.selected_activity) setSelectedActivity(p.selected_activity);
                       else setSelectedActivity(null);
                       if (p.parent_liked != null) setParentLiked(p.parent_liked);
-                      if (p.want_child_activity != null) setWantChildActivity(p.want_child_activity);
+                      if (p.want_child_activity != null)
+                        setWantChildActivity(p.want_child_activity);
                       if (typeof p.feedback === 'string') setFeedback(p.feedback);
 
                       if (p.generated_activity) setGeneratedActivity(p.generated_activity);
@@ -903,14 +1283,20 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                       // Restore child game state — child_activity (finalised) takes priority
                       const ca = p.child_activity;
                       if (ca) {
-                        setChildActivitySelections(Array.isArray(ca.selections) ? ca.selections : []);
+                        setChildActivitySelections(
+                          Array.isArray(ca.selections) ? ca.selections : [],
+                        );
                         if (ca.results && nav.step === 'activity_summary') {
                           setChildGameResults(ca.results);
                           setShowGame(false);
                           setParentLiked(true);
                         }
                       } else {
-                        setChildActivitySelections(Array.isArray(p.child_activity_selections) ? p.child_activity_selections : []);
+                        setChildActivitySelections(
+                          Array.isArray(p.child_activity_selections)
+                            ? p.child_activity_selections
+                            : [],
+                        );
                       }
                       return;
                     }
@@ -928,7 +1314,11 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                     if (ca) {
                       setChildActivitySelections(Array.isArray(ca.selections) ? ca.selections : []);
                     } else {
-                      setChildActivitySelections(Array.isArray(p.child_activity_selections) ? p.child_activity_selections : []);
+                      setChildActivitySelections(
+                        Array.isArray(p.child_activity_selections)
+                          ? p.child_activity_selections
+                          : [],
+                      );
                     }
                   } catch (err) {
                     console.warn('[RecommendationsPhase] Game load failed:', err);
@@ -946,18 +1336,19 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                     setStep('interactive_activity');
                   }
                 }}
-                className="p-4 rounded-2xl border-edge text-left transition-colors bg-card hover:border-c-bright hover:bg-surface-elevated"
+                className="border-edge hover:border-c-bright rounded-2xl bg-card p-4 text-left transition-colors hover:bg-surface-elevated"
               >
-                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${area.color} flex items-center justify-center mb-3`}>
-                  <Icon className="w-5 h-5 text-white" />
+                <div
+                  className={`h-11 w-11 rounded-xl bg-gradient-to-br ${area.color} mb-3 flex items-center justify-center`}
+                >
+                  <Icon className="h-5 w-5 text-white" />
                 </div>
-                <h4 className="font-semibold text-white text-sm">{area.name}</h4>
-                <p className="text-xs text-slate-500 mt-1">{area.description}</p>
+                <h4 className="text-sm font-semibold text-white">{area.name}</h4>
+                <p className="mt-1 text-xs text-slate-500">{area.description}</p>
               </motion.button>
             );
           })}
         </div>
-
       </div>
     );
   };
@@ -974,10 +1365,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
           className="text-center"
         >
-          <div className={`w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br ${selectedArea?.color} flex items-center justify-center mb-4`}>
-            <Icon className="w-8 h-8 text-white" />
+          <div
+            className={`mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br ${selectedArea?.color} mb-4 flex items-center justify-center`}
+          >
+            <Icon className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">{selectedArea?.name}</h2>
+          <h2 className="mb-2 text-2xl font-bold text-white">{selectedArea?.name}</h2>
           <p className="text-slate-400">Choose an activity to try with {data.name}</p>
         </motion.div>
 
@@ -998,33 +1391,37 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                 setSelectedActivity(activity);
                 setStep('parent_activity');
               }}
-              className={`w-full p-4 rounded-2xl border text-left transition-all duration-150 ${
+              className={`w-full rounded-2xl border p-4 text-left transition-all duration-150 ${
                 selectedActivity?.title === activity.title
                   ? 'border-purple-500/50 bg-purple-500/10'
-                  : 'border-c-edge bg-card hover:border-c-bright hover:bg-surface-elevated'
+                  : 'border-c-edge hover:border-c-bright bg-card hover:bg-surface-elevated'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h4 className="font-semibold text-white text-sm">{activity.title}</h4>
-                  <p className="text-xs text-slate-500 mt-1">{activity.description}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs px-2 py-0.5 bg-ghost-light rounded-full text-slate-400">
+                  <h4 className="text-sm font-semibold text-white">{activity.title}</h4>
+                  <p className="mt-1 text-xs text-slate-500">{activity.description}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="bg-ghost-light rounded-full px-2 py-0.5 text-xs text-slate-400">
                       ⏱ {activity.duration}
                     </span>
-                    <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">
+                    <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-xs capitalize text-purple-400">
                       {activity.type}
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-600" />
               </div>
             </motion.button>
           ))}
         </div>
 
-        <div className="text-center pt-2">
-          <Button variant="ghost" onClick={() => setStep('area_selection')} className="text-slate-500 hover:text-white">
+        <div className="pt-2 text-center">
+          <Button
+            variant="ghost"
+            onClick={() => setStep('area_selection')}
+            className="text-slate-500 hover:text-white"
+          >
             ← Back to Growth Areas
           </Button>
         </div>
@@ -1041,12 +1438,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
           className={`bg-gradient-to-br ${selectedArea?.color} rounded-2xl p-6 text-white`}
         >
-          <div className="text-center space-y-3">
-            <Award className="w-10 h-10 mx-auto" />
+          <div className="space-y-3 text-center">
+            <Award className="mx-auto h-10 w-10" />
             <h2 className="text-xl font-bold">{selectedActivity?.title}</h2>
-            <p className="text-white/80 text-sm">{selectedActivity?.description}</p>
+            <p className="text-sm text-white/80">{selectedActivity?.description}</p>
             <div className="flex justify-center gap-4 pt-1">
-              <span className="px-3 py-1 bg-white/20 rounded-full text-xs">
+              <span className="rounded-full bg-white/20 px-3 py-1 text-xs">
                 ⏱ {selectedActivity?.duration}
               </span>
             </div>
@@ -1057,41 +1454,47 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-          className="bg-card rounded-2xl p-6 border-edge space-y-5"
+          className="border-edge space-y-5 rounded-2xl bg-card p-6"
         >
-          <h3 className="font-bold text-white text-center text-sm">Did you like this activity suggestion?</h3>
+          <h3 className="text-center text-sm font-bold text-white">
+            Did you like this activity suggestion?
+          </h3>
 
-        <div className="flex justify-center gap-4">
+          <div className="flex justify-center gap-4">
+            <Button
+              onClick={() => {
+                setParentLiked(true);
+                setStep('child_activity_prompt');
+              }}
+              className="h-12 rounded-2xl bg-emerald-500 px-8 text-white hover:bg-emerald-400"
+            >
+              <ThumbsUp className="mr-2 h-4 w-4" />
+              Yes, I like it!
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setParentLiked(false);
+                setStep('feedback');
+              }}
+              className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+            >
+              <ThumbsDown className="mr-2 h-4 w-4" />
+              Not quite
+            </Button>
+          </div>
+        </motion.div>
+
+        <div className="text-center">
           <Button
-            onClick={() => {
-              setParentLiked(true);
-              setStep('child_activity_prompt');
-            }}
-            className="h-12 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white"
+            variant="ghost"
+            onClick={() => setStep('activity_selection')}
+            className="text-slate-500 hover:text-white"
           >
-            <ThumbsUp className="w-4 h-4 mr-2" />
-            Yes, I like it!
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setParentLiked(false);
-              setStep('feedback');
-            }}
-            className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
-          >
-            <ThumbsDown className="w-4 h-4 mr-2" />
-            Not quite
+            ← Choose Different Activity
           </Button>
         </div>
-      </motion.div>
-
-      <div className="text-center">
-        <Button variant="ghost" onClick={() => setStep('activity_selection')} className="text-slate-500 hover:text-white">
-          ← Choose Different Activity
-        </Button>
       </div>
-    </div>
     );
   };
 
@@ -1104,39 +1507,43 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
           className="text-center"
         >
-          <h2 className="text-2xl font-bold text-white mb-2">We'd love your feedback</h2>
+          <h2 className="mb-2 text-2xl font-bold text-white">We'd love your feedback</h2>
           <p className="text-slate-400">What kind of activity would you like for {data.name}?</p>
         </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-        className="bg-card rounded-2xl p-6 border-edge space-y-4"
-      >
-        <TextareaWithVoice
-          placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          className="min-h-[120px] rounded-xl pr-14 bg-surface-input border-c-md text-white placeholder:text-slate-600"
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
+          className="border-edge space-y-4 rounded-2xl bg-card p-6"
+        >
+          <TextareaWithVoice
+            placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            className="border-c-md min-h-[120px] rounded-xl bg-surface-input pr-14 text-white placeholder:text-slate-600"
+          />
 
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => setStep('activity_selection')} className="border-edge-strong bg-transparent text-slate-300 hover:bg-subtle">
-            Go Back
-          </Button>
-          <Button
-            onClick={() => {
-              debouncedSaveAreaProgress.flush?.();
-              setStep('activity_selection');
-            }}
-            className="bg-purple-500 hover:bg-purple-400 text-white"
-          >
-            Submit & Try Another
-          </Button>
-        </div>
-      </motion.div>
-    </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setStep('activity_selection')}
+              className="border-edge-strong hover:bg-subtle bg-transparent text-slate-300"
+            >
+              Go Back
+            </Button>
+            <Button
+              onClick={() => {
+                debouncedSaveAreaProgress.flush?.();
+                setStep('activity_selection');
+              }}
+              className="bg-purple-500 text-white hover:bg-purple-400"
+            >
+              Submit & Try Another
+            </Button>
+          </div>
+        </motion.div>
+      </div>
     );
   };
 
@@ -1147,37 +1554,37 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
-          className="bg-card rounded-2xl p-6 border border-emerald-500/20"
+          className="rounded-2xl border border-emerald-500/20 bg-card p-6"
         >
-          <div className="text-center space-y-4">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Zap className="w-7 h-7 text-white" />
+          <div className="space-y-4 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600">
+              <Zap className="h-7 w-7 text-white" />
             </div>
             <h2 className="text-lg font-bold text-white">
               Do you want {data.name} to take a fun activity on {selectedArea?.name}?
             </h2>
-          <p className="text-slate-400 text-sm">
-            {data.name} can complete this as a game on their device
-          </p>
+            <p className="text-sm text-slate-400">
+              {data.name} can complete this as a game on their device
+            </p>
 
-          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-            <Button
-              onClick={() => setStep('results')}
-              className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white"
-            >
-              Yes, Start Activity
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => navigate(createPageUrl('Home'))}
-              className="h-12 px-8 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
-            >
-              Catch Up Later
-            </Button>
+            <div className="flex flex-col justify-center gap-3 pt-4 sm:flex-row">
+              <Button
+                onClick={() => setStep('results')}
+                className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8 text-white hover:from-emerald-400 hover:to-teal-500"
+              >
+                Yes, Start Activity
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate(createPageUrl('Home'))}
+                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+              >
+                Catch Up Later
+              </Button>
+            </div>
           </div>
-        </div>
-      </motion.div>
-    </div>
+        </motion.div>
+      </div>
     );
   };
 
@@ -1189,36 +1596,40 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
         transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
         className="text-center"
       >
-        <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
-          <Award className="w-10 h-10 text-white" />
+        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500">
+          <Award className="h-10 w-10 text-white" />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2">Activity Results Preview</h2>
-        <p className="text-slate-400">Here's what you'll see after {data.name} completes activities</p>
+        <h2 className="mb-2 text-2xl font-bold text-white">Activity Results Preview</h2>
+        <p className="text-slate-400">
+          Here's what you'll see after {data.name} completes activities
+        </p>
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1.0, delay: 0.8, ease: 'easeOut' }}
-        className="bg-card rounded-2xl p-6 border-edge space-y-4"
+        className="border-edge space-y-4 rounded-2xl bg-card p-6"
       >
         <div className="text-center">
-          <p className="text-xs text-slate-500 uppercase tracking-widest mb-2">{selectedArea?.name} Quotient</p>
-          <div className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">
+          <p className="mb-2 text-xs uppercase tracking-widest text-slate-500">
+            {selectedArea?.name} Quotient
+          </p>
+          <div className="bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-5xl font-bold text-transparent">
             --
           </div>
-          <p className="text-sm text-slate-600 mt-1">Score will appear after activity</p>
+          <p className="mt-1 text-sm text-slate-600">Score will appear after activity</p>
         </div>
 
         <div className="border-t-edge-faint pt-4">
-          <h4 className="font-semibold text-white text-sm mb-3">Personalized Recommendations</h4>
+          <h4 className="mb-3 text-sm font-semibold text-white">Personalized Recommendations</h4>
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-3 p-3 bg-surface-input rounded-xl">
-                <div className="w-8 h-8 rounded-lg bg-ghost-light animate-pulse" />
+              <div key={i} className="flex items-center gap-3 rounded-xl bg-surface-input p-3">
+                <div className="bg-ghost-light h-8 w-8 animate-pulse rounded-lg" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3 bg-ghost-light rounded animate-pulse w-3/4" />
-                  <div className="h-2.5 bg-ghost-md rounded animate-pulse w-1/2" />
+                  <div className="bg-ghost-light h-3 w-3/4 animate-pulse rounded" />
+                  <div className="bg-ghost-md h-2.5 w-1/2 animate-pulse rounded" />
                 </div>
               </div>
             ))}
@@ -1230,10 +1641,12 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1.0, delay: 1.6, ease: 'easeOut' }}
-        className="text-center py-4"
+        className="py-4 text-center"
       >
-        <p className="text-slate-400 text-sm">
-          🎉 You're all set! Click <span className="font-semibold text-teal-400">"Start the Journey"</span> to go to your dashboard.
+        <p className="text-sm text-slate-400">
+          🎉 You're all set! Click{' '}
+          <span className="font-semibold text-teal-400">"Start the Journey"</span> to go to your
+          dashboard.
         </p>
       </motion.div>
     </div>
@@ -1254,7 +1667,9 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       const prevStep = interactiveStep - 1;
       const prevQuestion = questions[prevStep];
       const savedAns = interactiveAnswers[prevQuestion?.id];
-      setCurrentAnswer(prevQuestion?.type === 'text' && typeof savedAns === 'string' ? savedAns : '');
+      setCurrentAnswer(
+        prevQuestion?.type === 'text' && typeof savedAns === 'string' ? savedAns : '',
+      );
       setInteractiveStep(prevStep);
     };
 
@@ -1267,21 +1682,27 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
           transition={{ duration: 1.0, delay: 0.3, ease: 'easeOut' }}
           className="text-center"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 bg-teal-500/10 border border-teal-500/20">
-            <AreaIcon className="w-4 h-4 text-teal-400" />
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2">
+            <AreaIcon className="h-4 w-4 text-teal-400" />
             <span className="text-sm font-medium text-teal-400">{selectedArea?.name} Activity</span>
           </div>
-          <div className="flex justify-center gap-1 mb-2">
+          <div className="mb-2 flex justify-center gap-1">
             {questions.map((_, i) => (
               <div
                 key={i}
                 className={`h-1.5 w-8 rounded-full transition-all ${
-                  i === interactiveStep ? 'bg-teal-400' : i < interactiveStep ? 'bg-emerald-500' : 'bg-ghost-strong'
+                  i === interactiveStep
+                    ? 'bg-teal-400'
+                    : i < interactiveStep
+                      ? 'bg-emerald-500'
+                      : 'bg-ghost-strong'
                 }`}
               />
             ))}
           </div>
-          <p className="text-xs text-slate-500">Question {interactiveStep + 1} of {questions.length}</p>
+          <p className="text-xs text-slate-500">
+            Question {interactiveStep + 1} of {questions.length}
+          </p>
         </motion.div>
 
         <AnimatePresence mode="wait">
@@ -1294,14 +1715,14 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
               opacity: { duration: 1.0, ease: 'easeOut' },
               y: { duration: 0.9, ease: 'easeOut' },
             }}
-            className="bg-card rounded-2xl p-6 border-edge"
+            className="border-edge rounded-2xl bg-card p-6"
           >
             {/* Question */}
             <div className="mb-5">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center mb-4">
-                <MessageSquare className="w-5 h-5 text-white" />
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-teal-700">
+                <MessageSquare className="h-5 w-5 text-white" />
               </div>
-              <h3 className="text-lg font-bold text-white mb-1">{questionText}</h3>
+              <h3 className="mb-1 text-lg font-bold text-white">{questionText}</h3>
             </div>
 
             {/* Answer Input */}
@@ -1311,24 +1732,30 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                   value={currentAnswer}
                   onChange={(e) => setCurrentAnswer(e.target.value)}
                   placeholder={currentQuestion?.placeholder}
-                  className="min-h-[100px] rounded-xl pr-14 bg-surface-input border-c-md text-white placeholder:text-slate-600"
+                  className="border-c-md min-h-[100px] rounded-xl bg-surface-input pr-14 text-white placeholder:text-slate-600"
                 />
               ) : (
                 <>
                   <div className="space-y-2">
                     {currentQuestion?.options?.map((option) => {
-                      const selected = choiceAnswersEqual(interactiveAnswers[currentQuestion.id], option);
+                      const selected = choiceAnswersEqual(
+                        interactiveAnswers[currentQuestion.id],
+                        option,
+                      );
                       return (
                         <button
                           key={option}
                           type="button"
                           onClick={() => {
-                            setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: option });
+                            setInteractiveAnswers({
+                              ...interactiveAnswers,
+                              [currentQuestion.id]: option,
+                            });
                           }}
-                          className={`w-full p-3.5 rounded-xl text-left transition-all border text-sm ${
+                          className={`w-full rounded-xl border p-3.5 text-left text-sm transition-all ${
                             selected
                               ? 'border-teal-500/50 bg-teal-500/10 text-teal-300'
-                              : 'bg-surface-input border-c-edge text-slate-300 hover:border-teal-500/30 hover:bg-teal-500/[0.05]'
+                              : 'border-c-edge bg-surface-input text-slate-300 hover:border-teal-500/30 hover:bg-teal-500/[0.05]'
                           }`}
                         >
                           <span className="font-medium">{option}</span>
@@ -1336,15 +1763,15 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                       );
                     })}
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                  <div className="flex flex-col gap-3 pt-1 sm:flex-row">
                     {!isFirstQuestion && (
                       <Button
                         type="button"
                         variant="outline"
                         onClick={handlePreviousQuestion}
-                        className="h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle w-full sm:w-auto"
+                        className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-slate-300 sm:w-auto"
                       >
-                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        <ChevronLeft className="mr-1 h-4 w-4" />
                         Previous
                       </Button>
                     )}
@@ -1362,31 +1789,34 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                         }
                       }}
                       disabled={!answerLooksFilled(interactiveAnswers[currentQuestion.id])}
-                      className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                      className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
                     >
                       {isLastQuestion ? 'See Summary' : 'Next Question'}
-                      <ChevronRight className="w-4 h-4 ml-1" />
+                      <ChevronRight className="ml-1 h-4 w-4" />
                     </Button>
                   </div>
                 </>
               )}
               {currentQuestion?.type === 'text' && (
-                <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                <div className="flex flex-col gap-3 pt-1 sm:flex-row">
                   {!isFirstQuestion && (
                     <Button
                       type="button"
                       variant="outline"
                       onClick={handlePreviousQuestion}
-                      className="h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle w-full sm:w-auto"
+                      className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-slate-300 sm:w-auto"
                     >
-                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      <ChevronLeft className="mr-1 h-4 w-4" />
                       Previous
                     </Button>
                   )}
                   <Button
                     onClick={() => {
                       if (currentAnswer.trim()) {
-                        setInteractiveAnswers({ ...interactiveAnswers, [currentQuestion.id]: currentAnswer });
+                        setInteractiveAnswers({
+                          ...interactiveAnswers,
+                          [currentQuestion.id]: currentAnswer,
+                        });
                         setCurrentAnswer('');
                         if (isLastQuestion) {
                           setChildGameResults(null);
@@ -1398,10 +1828,10 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                       }
                     }}
                     disabled={!currentAnswer.trim()}
-                    className={`h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold disabled:opacity-40 w-full ${!isFirstQuestion ? 'sm:w-auto sm:ml-auto' : ''}`}
+                    className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
-                    <ChevronRight className="w-4 h-4 ml-1" />
+                    <ChevronRight className="ml-1 h-4 w-4" />
                   </Button>
                 </div>
               )}
@@ -1423,20 +1853,26 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
         setAiRecommendations(existing.recommendations);
         return;
       }
-      if (Array.isArray(existing?.ai_three_month_recommendations) && existing.ai_three_month_recommendations.length > 0) {
+      if (
+        Array.isArray(existing?.ai_three_month_recommendations) &&
+        existing.ai_three_month_recommendations.length > 0
+      ) {
         setAiRecommendations(existing.ai_three_month_recommendations);
         return;
       }
     } catch (err) {
-      console.warn('[RecommendationsPhase] Could not load cached recommendations, regenerating:', err);
+      console.warn(
+        '[RecommendationsPhase] Could not load cached recommendations, regenerating:',
+        err,
+      );
     }
 
     setLoadingRecommendations(true);
     try {
       const questions = areaQuestions[selectedArea?.id] || areaQuestions.life_ambition;
       const qaContext = questions
-        .filter(q => interactiveAnswers[q.id])
-        .map(q => `Q: ${q.question.replace('{name}', data.name)}\nA: ${interactiveAnswers[q.id]}`)
+        .filter((q) => interactiveAnswers[q.id])
+        .map((q) => `Q: ${q.question.replace('{name}', data.name)}\nA: ${interactiveAnswers[q.id]}`)
         .join('\n\n');
 
       const childContext = childResults
@@ -1454,13 +1890,16 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
       const result = await api.integrations.Core.InvokeLLM({
         prompt: `Based on the following parent responses and child's game activity responses about "${data.name}" in the growth area "${selectedArea?.name}", generate 5 practical 3-month recommendations that synthesize both perspectives.\n\nParent responses:\n${qaContext}${childContext}${feedbackContext}\n\nReturn ONLY a JSON object with a "recommendations" array of 5 short, actionable bullet points (1-2 sentences each) specific to the "${selectedArea?.name}" growth area.`,
         response_json_schema: {
-          type: "object",
+          type: 'object',
           properties: {
-            recommendations: { type: "array", items: { type: "string" } }
-          }
-        }
+            recommendations: { type: 'array', items: { type: 'string' } },
+          },
+        },
       });
-      const list = result && typeof result === 'object' && Array.isArray(result.recommendations) ? result.recommendations : [];
+      const list =
+        result && typeof result === 'object' && Array.isArray(result.recommendations)
+          ? result.recommendations
+          : [];
       setAiRecommendations(list);
     } catch (err) {
       console.error('[RecommendationsPhase] Failed to generate recommendations:', err);
@@ -1484,254 +1923,275 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
 
     return (
       <div className="space-y-6">
-      <motion.div {...sectionAnim(0.1)} className="text-center">
-        <div className={`w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br ${selectedArea?.color || 'from-emerald-400 to-teal-500'} flex items-center justify-center`}>
-          <AreaIcon className="w-10 h-10 text-white" />
-        </div>
-        <h2 className="text-2xl font-bold text-white mb-2">Great Insights!</h2>
-        <p className="text-slate-400">Here's what we learned about {data.name}'s {selectedArea?.name}</p>
-      </motion.div>
-
-      <motion.div {...sectionAnim(0.3)} className="bg-card rounded-2xl p-6 border-edge space-y-3">
-        {questions.map((q, i) => {
-          const answer = interactiveAnswers[q.id];
-          if (!answer) return null;
-          return (
-            <motion.div
-              key={`${qaAnimKey}-${q.id}`}
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.7, delay: 1.1 + i * 0.15, ease: 'easeOut' }}
-              className="border-b-edge-faint pb-3 last:border-0"
-            >
-              <p className="text-xs text-slate-500 mb-1">{q.question.replace('{name}', data.name)}</p>
-              <p className="text-white text-sm font-medium">{answer}</p>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-
-      {selectedActivity && !childGameResults && (
-        <motion.div {...sectionAnim(1.4)} className="bg-card rounded-2xl p-5 border border-purple-500/20 space-y-4">
-          <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest">Your selected activity</p>
-          <div>
-            <h3 className="text-base font-bold text-white">{selectedActivity.title}</h3>
-            <p className="text-sm text-slate-400 mt-1">{selectedActivity.description}</p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <span className="text-xs px-2 py-0.5 bg-ghost-light rounded-full text-slate-400">⏱ {selectedActivity.duration}</span>
-              <span className="text-xs px-2 py-0.5 bg-purple-500/15 rounded-full text-purple-400 capitalize">{selectedActivity.type}</span>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              type="button"
-              onClick={() => setStep('parent_activity')}
-              className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white"
-            >
-              Open activity details
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setStep('activity_selection')} className="rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle">
-              Pick a different activity
-            </Button>
-          </div>
-        </motion.div>
-      )}
-
-      <AnimatePresence>
-        {!parentLiked && !showGame && !childGameResults && (
-        <motion.div
-          key="no-parent-liked-buttons"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
-          transition={{ duration: 0.8, delay: 1.4, ease: 'easeOut' }}
-          className="flex flex-col gap-3"
-        >
-          <div className="flex gap-3">
-            <Button
-              onClick={async () => {
-                if (!selectedArea) return;
-                await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
-                setParentLiked(true);
-              }}
-              className="flex-1 h-11 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 hover:from-teal-400 hover:to-teal-300 text-primary-foreground font-semibold"
-            >
-              Explore Child Activity
-            </Button>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                if (!selectedArea) return;
-                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-                setStep('area_selection');
-                setParentLiked(null);
-                setChildActivitySelections([]);
-                setChildGameResults(null);
-                setShowGame(false);
-              }}
-              className="flex-1 h-11 rounded-2xl border-edge-strong bg-transparent text-slate-300 hover:bg-subtle"
-            >
-              Next Growth Area
-            </Button>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => handleFinishRef.current?.()}
-            className="w-full h-11 rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
+        <motion.div {...sectionAnim(0.1)} className="text-center">
+          <div
+            className={`mx-auto mb-4 h-20 w-20 rounded-2xl bg-gradient-to-br ${selectedArea?.color || 'from-emerald-400 to-teal-500'} flex items-center justify-center`}
           >
-            <ChevronRight className="w-4 h-4 mr-2" />
-            Go to Life Journey
-          </Button>
+            <AreaIcon className="h-10 w-10 text-white" />
+          </div>
+          <h2 className="mb-2 text-2xl font-bold text-white">Great Insights!</h2>
+          <p className="text-slate-400">
+            Here's what we learned about {data.name}'s {selectedArea?.name}
+          </p>
         </motion.div>
-        )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {parentLiked === true && !showGame && !childGameResults && (
+        <motion.div {...sectionAnim(0.3)} className="border-edge space-y-3 rounded-2xl bg-card p-6">
+          {questions.map((q, i) => {
+            const answer = interactiveAnswers[q.id];
+            if (!answer) return null;
+            return (
+              <motion.div
+                key={`${qaAnimKey}-${q.id}`}
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.7, delay: 1.1 + i * 0.15, ease: 'easeOut' }}
+                className="border-b-edge-faint pb-3 last:border-0"
+              >
+                <p className="mb-1 text-xs text-slate-500">
+                  {q.question.replace('{name}', data.name)}
+                </p>
+                <p className="text-sm font-medium text-white">{answer}</p>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+
+        {selectedActivity && !childGameResults && (
           <motion.div
-            key="parent-liked-buttons"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
-            transition={{ duration: 1.0, delay: 0.3, ease: 'easeOut' }}
-            className="flex flex-col gap-3"
+            {...sectionAnim(1.4)}
+            className="space-y-4 rounded-2xl border border-purple-500/20 bg-card p-5"
           >
-            <Button
-              onClick={async () => {
-                if (!selectedArea) return;
-                await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
-                setShowGame(true);
-              }}
-              className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
-            >
-              Present a fun game to {data.name} on the same topic
-            </Button>
-            <Button
-              onClick={async () => {
-                if (!selectedArea) return;
-                await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
-                setStep('area_selection');
-                setParentLiked(null);
-                setChildActivitySelections([]);
-                setChildGameResults(null);
-                setShowGame(false);
-              }}
-              variant="outline"
-              className="w-full h-12 rounded-2xl border-2"
-            >
-              Explore Later
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleFinishRef.current?.()}
-              className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
-            >
-              <ChevronRight className="w-5 h-5 mr-2" />
-              Go to Life Journey
-            </Button>
+            <p className="text-xs font-semibold uppercase tracking-widest text-purple-400">
+              Your selected activity
+            </p>
+            <div>
+              <h3 className="text-base font-bold text-white">{selectedActivity.title}</h3>
+              <p className="mt-1 text-sm text-slate-400">{selectedActivity.description}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="bg-ghost-light rounded-full px-2 py-0.5 text-xs text-slate-400">
+                  ⏱ {selectedActivity.duration}
+                </span>
+                <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-xs capitalize text-purple-400">
+                  {selectedActivity.type}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                onClick={() => setStep('parent_activity')}
+                className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-400 hover:to-indigo-500"
+              >
+                Open activity details
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep('activity_selection')}
+                className="border-edge-strong hover:bg-subtle rounded-2xl bg-transparent text-slate-300"
+              >
+                Pick a different activity
+              </Button>
+            </div>
           </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* Child Game */}
-      <AnimatePresence>
-        {showGame && !childGameResults && selectedArea?.id && (
-        <motion.div
-          key="child-game"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeIn' } }}
-          transition={{ duration: 1.0, ease: 'easeOut' }}
-          className="bg-card rounded-3xl p-6 border border-emerald-500/20">
-          <ChildActivityGame
-            key={selectedArea.id}
-            childName={data.name}
-            areaId={selectedArea.id}
-            activeChildId={activeChildId}
-            selectedIds={childActivitySelections}
-            onSelectedIdsChange={setChildActivitySelections}
-            onComplete={async (results) => {
-              const area = selectedArea;
-              if (!area?.id) return;
-
-              debouncedSaveAreaProgress.cancel();
-              debouncedSaveGlobalStep.cancel();
-
-              const child_activity = {
-                selections: Array.isArray(results.selections) ? [...results.selections] : [],
-                results: results.recommendations ?? null,
-              };
-
-              try {
-                await api.completedGrowthAreas.append(activeChildId, {
-                  area_id: area.id,
-                  area_name: area.name,
-                  area_color: area.color,
-                  answers: interactiveAnswers,
-                  recommendations: aiRecommendations ?? null,
-                  child_activity,
-                });
-              } catch (err) {
-                console.error('[RecommendationsPhase] Could not save game results:', err);
-                toast.error('Could not save game results. Try again or check your connection.');
-              }
-
-              setChildActivitySelections(child_activity.selections);
-              setChildGameResults(results.recommendations);
-              setShowGame(false);
-            }}
-          />
-        </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Results Display */}
-      {childGameResults && (
-            <div className="space-y-4">
-
-              {/* Section 2 — delays are relative to when childGameResults first mounts
-                  so they work correctly both on resume (page load) and after game submit */}
-              {/* Plain div anchor for scroll target — not affected by framer transforms */}
-              <div ref={resultsRef} />
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
-                className="bg-card rounded-3xl p-6 border border-emerald-500/20"
+        <AnimatePresence>
+          {!parentLiked && !showGame && !childGameResults && (
+            <motion.div
+              key="no-parent-liked-buttons"
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
+              transition={{ duration: 0.8, delay: 1.4, ease: 'easeOut' }}
+              className="flex flex-col gap-3"
+            >
+              <div className="flex gap-3">
+                <Button
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
+                    setParentLiked(true);
+                  }}
+                  className="h-11 flex-1 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300"
+                >
+                  Explore Child Activity
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!selectedArea) return;
+                    await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+                    setStep('area_selection');
+                    setParentLiked(null);
+                    setChildActivitySelections([]);
+                    setChildGameResults(null);
+                    setShowGame(false);
+                  }}
+                  className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-2xl bg-transparent text-slate-300"
+                >
+                  Next Growth Area
+                </Button>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => handleFinishRef.current?.()}
+                className="h-11 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
               >
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' }}
-                  className="text-center mb-4"
-                >
-                  <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mb-3">
-                    <Sparkles className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-white">Recommendations for {data.name}</h3>
-                </motion.div>
+                <ChevronRight className="mr-2 h-4 w-4" />
+                Go to Life Journey
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                {/* What This Reveals */}
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 0.5, ease: 'easeOut' }}
-                  className="bg-surface-elevated rounded-2xl p-4 mb-4"
-                >
-                  <h4 className="font-semibold text-white mb-2">What This Reveals</h4>
-                  <p className="text-slate-400 text-sm">{childGameResults?.summary ?? ''}</p>
-                </motion.div>
+        <AnimatePresence>
+          {parentLiked === true && !showGame && !childGameResults && (
+            <motion.div
+              key="parent-liked-buttons"
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16, transition: { duration: 0.6, ease: 'easeIn' } }}
+              transition={{ duration: 1.0, delay: 0.3, ease: 'easeOut' }}
+              className="flex flex-col gap-3"
+            >
+              <Button
+                onClick={async () => {
+                  if (!selectedArea) return;
+                  await mergeChildGameFromServer(selectedArea.id, { reopenGame: true });
+                  setShowGame(true);
+                }}
+                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+              >
+                Present a fun game to {data.name} on the same topic
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!selectedArea) return;
+                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, null);
+                  setStep('area_selection');
+                  setParentLiked(null);
+                  setChildActivitySelections([]);
+                  setChildGameResults(null);
+                  setShowGame(false);
+                }}
+                variant="outline"
+                className="h-12 w-full rounded-2xl border-2"
+              >
+                Explore Later
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleFinishRef.current?.()}
+                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
+              >
+                <ChevronRight className="mr-2 h-5 w-5" />
+                Go to Life Journey
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                {/* Suggested Activities */}
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
-                  className="bg-surface-elevated rounded-2xl p-4 mb-4"
-                >
-                  <h4 className="font-semibold text-white mb-2">Suggested Activities</h4>
-                  <ul className="space-y-2">
-                    {suggestedActivitiesFromGameRecommendations(childGameResults).map((activity, i) => (
+        {/* Child Game */}
+        <AnimatePresence>
+          {showGame && !childGameResults && selectedArea?.id && (
+            <motion.div
+              key="child-game"
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.4, ease: 'easeIn' } }}
+              transition={{ duration: 1.0, ease: 'easeOut' }}
+              className="rounded-3xl border border-emerald-500/20 bg-card p-6"
+            >
+              <ChildActivityGame
+                key={selectedArea.id}
+                childName={data.name}
+                areaId={selectedArea.id}
+                activeChildId={activeChildId}
+                selectedIds={childActivitySelections}
+                onSelectedIdsChange={setChildActivitySelections}
+                onComplete={async (results) => {
+                  const area = selectedArea;
+                  if (!area?.id) return;
+
+                  debouncedSaveAreaProgress.cancel();
+                  debouncedSaveGlobalStep.cancel();
+
+                  const child_activity = {
+                    selections: Array.isArray(results.selections) ? [...results.selections] : [],
+                    results: results.recommendations ?? null,
+                  };
+
+                  try {
+                    await api.completedGrowthAreas.append(activeChildId, {
+                      area_id: area.id,
+                      area_name: area.name,
+                      area_color: area.color,
+                      answers: interactiveAnswers,
+                      recommendations: aiRecommendations ?? null,
+                      child_activity,
+                    });
+                  } catch (err) {
+                    console.error('[RecommendationsPhase] Could not save game results:', err);
+                    toast.error('Could not save game results. Try again or check your connection.');
+                  }
+
+                  setChildActivitySelections(child_activity.selections);
+                  setChildGameResults(results.recommendations);
+                  setShowGame(false);
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Results Display */}
+        {childGameResults && (
+          <div className="space-y-4">
+            {/* Section 2 — delays are relative to when childGameResults first mounts
+                  so they work correctly both on resume (page load) and after game submit */}
+            {/* Plain div anchor for scroll target — not affected by framer transforms */}
+            <div ref={resultsRef} />
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
+              className="rounded-3xl border border-emerald-500/20 bg-card p-6"
+            >
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.7, delay: 0.2, ease: 'easeOut' }}
+                className="mb-4 text-center"
+              >
+                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600">
+                  <Sparkles className="h-8 w-8 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-white">Recommendations for {data.name}</h3>
+              </motion.div>
+
+              {/* What This Reveals */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.5, ease: 'easeOut' }}
+                className="mb-4 rounded-2xl bg-surface-elevated p-4"
+              >
+                <h4 className="mb-2 font-semibold text-white">What This Reveals</h4>
+                <p className="text-sm text-slate-400">{childGameResults?.summary ?? ''}</p>
+              </motion.div>
+
+              {/* Suggested Activities */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
+                className="mb-4 rounded-2xl bg-surface-elevated p-4"
+              >
+                <h4 className="mb-2 font-semibold text-white">Suggested Activities</h4>
+                <ul className="space-y-2">
+                  {suggestedActivitiesFromGameRecommendations(childGameResults).map(
+                    (activity, i) => (
                       <motion.li
                         key={i}
                         initial={{ opacity: 0, x: -12 }}
@@ -1739,105 +2199,121 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                         transition={{ duration: 0.6, delay: 1.0 + i * 0.13, ease: 'easeOut' }}
                         className="flex items-start gap-2 text-sm text-slate-400"
                       >
-                        <span className="text-emerald-500 mt-1">✓</span>
+                        <span className="mt-1 text-emerald-500">✓</span>
                         <span>{activity}</span>
                       </motion.li>
-                    ))}
-                  </ul>
-                </motion.div>
+                    ),
+                  )}
+                </ul>
+              </motion.div>
 
-                {/* Strengths */}
-                <motion.div
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 1.5, ease: 'easeOut' }}
-                  className="bg-surface-elevated rounded-2xl p-4"
+              {/* Strengths */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 1.5, ease: 'easeOut' }}
+                className="rounded-2xl bg-surface-elevated p-4"
+              >
+                <h4 className="mb-2 font-semibold text-white">Strengths to Encourage</h4>
+                <ul className="space-y-2">
+                  {(Array.isArray(childGameResults?.strengths)
+                    ? childGameResults.strengths
+                    : []
+                  ).map((strength, i) => (
+                    <motion.li
+                      key={i}
+                      initial={{ opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.6, delay: 1.65 + i * 0.13, ease: 'easeOut' }}
+                      className="flex items-start gap-2 text-sm text-slate-400"
+                    >
+                      <span className="mt-1 text-emerald-500">★</span>
+                      <span>{strength}</span>
+                    </motion.li>
+                  ))}
+                </ul>
+              </motion.div>
+            </motion.div>
+
+            {/* Section 3 — last strength: 1.65 + 2*0.13 = 1.91, + 0.6 = 2.51 → delay 2.5 */}
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
+              className="rounded-3xl border border-emerald-500/15 bg-card p-6"
+            >
+              <h3 className="mb-3 flex items-center gap-2 font-bold text-white">
+                <Target className="h-5 w-5 text-emerald-600" />
+                3-Month Recommendations for {selectedArea?.name}
+              </h3>
+
+              {!aiRecommendations && !loadingRecommendations && (
+                <Button
+                  onClick={() => generateAiRecommendations(childGameResults)}
+                  className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
                 >
-                  <h4 className="font-semibold text-white mb-2">Strengths to Encourage</h4>
-                  <ul className="space-y-2">
-                    {(Array.isArray(childGameResults?.strengths) ? childGameResults.strengths : []).map((strength, i) => (
-                      <motion.li
-                        key={i}
-                        initial={{ opacity: 0, x: -12 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.6, delay: 1.65 + i * 0.13, ease: 'easeOut' }}
-                        className="flex items-start gap-2 text-sm text-slate-400"
-                      >
-                        <span className="text-emerald-500 mt-1">★</span>
-                        <span>{strength}</span>
-                      </motion.li>
-                    ))}
-                  </ul>
-                </motion.div>
-              </motion.div>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate Recommendations
+                </Button>
+              )}
 
-              {/* Section 3 — last strength: 1.65 + 2*0.13 = 1.91, + 0.6 = 2.51 → delay 2.5 */}
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
-                className="bg-card rounded-3xl p-6 border border-emerald-500/15"
-              >
-                <h3 className="font-bold text-white mb-3 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-emerald-600" />
-                  3-Month Recommendations for {selectedArea?.name}
-                </h3>
-
-                {!aiRecommendations && !loadingRecommendations && (
-                  <Button
-                    onClick={() => generateAiRecommendations(childGameResults)}
-                    className="w-full h-11 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Recommendations
-                  </Button>
-                )}
-
-                {loadingRecommendations && (
-                  <div className="flex flex-col items-center justify-center py-10 gap-5">
-                    <div className="relative w-16 h-16">
-                      <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20" />
-                      <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-500 animate-spin" />
-                      <div className="absolute inset-2 rounded-full border-4 border-transparent border-t-teal-400 animate-spin" style={{ animationDuration: '0.7s', animationDirection: 'reverse' }} />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <p className="text-white font-semibold text-sm">Building your 3-Month Plan</p>
-                      <p className="text-slate-500 text-xs">Personalising recommendations for {data?.name}…</p>
-                    </div>
+              {loadingRecommendations && (
+                <div className="flex flex-col items-center justify-center gap-5 py-10">
+                  <div className="relative h-16 w-16">
+                    <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20" />
+                    <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-emerald-500" />
+                    <div
+                      className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-teal-400"
+                      style={{ animationDuration: '0.7s', animationDirection: 'reverse' }}
+                    />
                   </div>
-                )}
+                  <div className="space-y-1 text-center">
+                    <p className="text-sm font-semibold text-white">Building your 3-Month Plan</p>
+                    <p className="text-xs text-slate-500">
+                      Personalising recommendations for {data?.name}…
+                    </p>
+                  </div>
+                </div>
+              )}
 
-                {Array.isArray(aiRecommendations) && aiRecommendations.length > 0 && (
-                  <ul className="space-y-3">
-                    {aiRecommendations.map((rec, i) => (
-                      <motion.li
-                        key={i}
-                        initial={{ opacity: 0, x: -16 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.7, delay: i * 0.15, ease: 'easeOut' }}
-                        className="flex items-start gap-3 text-sm text-slate-300"
-                      >
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">{i + 1}</span>
-                        <span>{rec}</span>
-                      </motion.li>
-                    ))}
-                  </ul>
-                )}
-              </motion.div>
+              {Array.isArray(aiRecommendations) && aiRecommendations.length > 0 && (
+                <ul className="space-y-3">
+                  {aiRecommendations.map((rec, i) => (
+                    <motion.li
+                      key={i}
+                      initial={{ opacity: 0, x: -16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.7, delay: i * 0.15, ease: 'easeOut' }}
+                      className="flex items-start gap-3 text-sm text-slate-300"
+                    >
+                      <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+                        {i + 1}
+                      </span>
+                      <span>{rec}</span>
+                    </motion.li>
+                  ))}
+                </ul>
+              )}
+            </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
-                className="flex flex-col gap-3"
-              >
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
+              className="flex flex-col gap-3"
+            >
               <Button
                 onClick={async () => {
                   if (!selectedArea) return;
-                  await saveCompletedGrowthArea(selectedArea, interactiveAnswers, aiRecommendations, {
-                    selections: childActivitySelections,
-                    results: childGameResults,
-                  });
+                  await saveCompletedGrowthArea(
+                    selectedArea,
+                    interactiveAnswers,
+                    aiRecommendations,
+                    {
+                      selections: childActivitySelections,
+                      results: childGameResults,
+                    },
+                  );
                   if (currentAreaIndex < growthAreas.length - 1) {
                     setCurrentAreaIndex(currentAreaIndex + 1);
                     setStep('area_selection');
@@ -1848,26 +2324,28 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
                     setParentLiked(null);
                   } else {
                     navigate(createPageUrl('LifePathway'), {
-              replace: true,
-            });
+                      replace: true,
+                    });
                   }
                 }}
-                className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
               >
-                {currentAreaIndex < growthAreas.length - 1 ? 'Explore More Growth Areas' : 'Explore Life Journey'}
+                {currentAreaIndex < growthAreas.length - 1
+                  ? 'Explore More Growth Areas'
+                  : 'Explore Life Journey'}
               </Button>
               <Button
                 variant="outline"
                 onClick={() => handleFinishRef.current?.()}
-                className="w-full h-12 rounded-2xl border border-teal-500/30 text-teal-400 bg-transparent hover:bg-teal-500/10"
+                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
               >
-                <ChevronRight className="w-5 h-5 mr-2" />
+                <ChevronRight className="mr-2 h-5 w-5" />
                 Go to Life Journey
               </Button>
-              </motion.div>
-            </div>
-          )}
-    </div>
+            </motion.div>
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -1879,21 +2357,19 @@ export default function RecommendationsPhase({ data, profile, recommendations, a
         transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
         className="flex flex-col items-center gap-6"
       >
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center">
-          <Sparkles className="w-10 h-10 text-white" />
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-emerald-500">
+          <Sparkles className="h-10 w-10 text-white" />
         </div>
         <h2 className="text-2xl font-bold text-white">Ready for the Next Step!</h2>
-        <p className="text-slate-400">
-          Let's explore the Life Journey designed for {data.name}.
-        </p>
+        <p className="text-slate-400">Let's explore the Life Journey designed for {data.name}.</p>
         <Button
           onClick={() => {
             navigate(createPageUrl('LifePathway'), { replace: true });
           }}
-          className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+          className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8"
         >
           Continue to Life Journey
-          <ChevronRight className="w-5 h-5 ml-2" />
+          <ChevronRight className="ml-2 h-5 w-5" />
         </Button>
       </motion.div>
     </div>

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { createPageUrl } from "@/utils";
+import { createPageUrl } from '@/utils';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useAuth } from '@/lib/AuthContext';
@@ -8,9 +8,7 @@ import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { Home, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const NAV_ITEMS = [
-  { label: 'Home', icon: Home, path: 'Home' },
-];
+const NAV_ITEMS = [{ label: 'Home', icon: Home, path: 'Home' }];
 
 export default function Layout({ children, currentPageName }) {
   const { user, isAuthenticated, childProfiles, logout } = useAuth();
@@ -83,7 +81,6 @@ export default function Layout({ children, currentPageName }) {
     }
   }, []);
 
-
   const handleLogout = useCallback(() => {
     logout(true);
   }, [logout]);
@@ -91,39 +88,41 @@ export default function Layout({ children, currentPageName }) {
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
-      <nav className="bg-sidebar/90 backdrop-blur-xl border-b-edge-faint sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+      <nav className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center glow-teal-sm">
-                <span className="text-white font-bold text-sm">B</span>
+              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                <span className="text-sm font-bold text-white">B</span>
               </div>
-              <span className="font-bold text-white text-lg hidden sm:block tracking-tight">Buddy360</span>
+              <span className="hidden text-lg font-bold tracking-tight text-white sm:block">
+                Buddy360
+              </span>
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center gap-1">
-              {NAV_ITEMS.map(item => (
+            <div className="hidden items-center gap-1 md:flex">
+              {NAV_ITEMS.map((item) => (
                 <Link
                   key={item.path}
                   to={createPageUrl(item.path)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 ${
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2 transition-all duration-200 ${
                     currentPageName === item.path
-                      ? 'bg-teal-500/10 text-teal-400 font-medium'
-                      : 'text-slate-400 hover:bg-subtle hover:text-white'
+                      ? 'bg-teal-500/10 font-medium text-teal-400'
+                      : 'hover:bg-subtle text-slate-400 hover:text-white'
                   }`}
                 >
-                  <item.icon className="w-4 h-4" />
+                  <item.icon className="h-4 w-4" />
                   <span>{item.label}</span>
                 </Link>
               ))}
               {isAuthenticated && (
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-200 text-slate-400 hover:bg-subtle hover:text-red-400"
+                  className="hover:bg-subtle flex items-center gap-2 rounded-xl px-4 py-2 text-slate-400 transition-all duration-200 hover:text-red-400"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="h-4 w-4" />
                   <span>Logout</span>
                 </button>
               )}
@@ -132,7 +131,7 @@ export default function Layout({ children, currentPageName }) {
                   variant="outline"
                   size="sm"
                   onClick={() => api.auth.redirectToLogin()}
-                  className="border-edge-strong text-slate-300 hover:bg-subtle hover:text-white"
+                  className="border-edge-strong hover:bg-subtle text-slate-300 hover:text-white"
                 >
                   Sign In
                 </Button>
@@ -146,10 +145,10 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="sm"
                 onClick={handleToggleTts}
-                className="text-slate-400 hover:text-white hover:bg-subtle"
-                title={ttsEnabled ? "Turn off voice" : "Turn on voice"}
+                className="hover:bg-subtle text-slate-400 hover:text-white"
+                title={ttsEnabled ? 'Turn off voice' : 'Turn on voice'}
               >
-                {ttsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </Button>
 
               {/* Mobile Menu Button */}
@@ -157,9 +156,9 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="icon"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="md:hidden text-slate-400 hover:text-white hover:bg-subtle"
+                className="hover:bg-subtle text-slate-400 hover:text-white md:hidden"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
             </div>
           </div>
@@ -167,35 +166,41 @@ export default function Layout({ children, currentPageName }) {
 
         {/* Mobile / Tablet Menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t-edge-faint bg-sidebar">
-            <div className="px-4 py-3 space-y-1">
-              {NAV_ITEMS.map(item => (
+          <div className="border-t-edge-faint bg-sidebar md:hidden">
+            <div className="space-y-1 px-4 py-3">
+              {NAV_ITEMS.map((item) => (
                 <Link
                   key={item.path}
                   to={createPageUrl(item.path)}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                  className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${
                     currentPageName === item.path
-                      ? 'bg-teal-500/10 text-teal-400 font-medium'
-                      : 'text-slate-400 hover:bg-subtle hover:text-white'
+                      ? 'bg-teal-500/10 font-medium text-teal-400'
+                      : 'hover:bg-subtle text-slate-400 hover:text-white'
                   }`}
                 >
-                  <item.icon className="w-5 h-5" />
+                  <item.icon className="h-5 w-5" />
                   <span>{item.label}</span>
                 </Link>
               ))}
               {isAuthenticated ? (
                 <button
-                  onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-subtle hover:text-red-400 transition-all duration-200"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="hover:bg-subtle flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 transition-all duration-200 hover:text-red-400"
                 >
-                  <LogOut className="w-5 h-5" />
+                  <LogOut className="h-5 w-5" />
                   <span>Logout</span>
                 </button>
               ) : (
                 <button
-                  onClick={() => { setMobileMenuOpen(false); api.auth.redirectToLogin(); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-subtle hover:text-white transition-all duration-200"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    api.auth.redirectToLogin();
+                  }}
+                  className="hover:bg-subtle flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 transition-all duration-200 hover:text-white"
                 >
                   <span>Sign In</span>
                 </button>
