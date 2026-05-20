@@ -10,6 +10,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
+# Opt into Node.js 24 runner for all actions (actions/checkout@v4 and
+# actions/setup-node@v4 still ship Node 20 binaries; this silences the
+# deprecation warning and future-proofs the workflow ahead of the forced
+# migration on June 2 2026).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   backend-lint:
     name: Backend Lint
