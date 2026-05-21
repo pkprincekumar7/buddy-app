@@ -115,6 +115,8 @@ resource "aws_ecs_task_definition" "backend" {
 }
 
 resource "aws_ecs_service" "backend" {
+  #checkov:skip=CKV_AWS_333:Tasks need public IPs for ECR image pulls and LLM API egress — no NAT Gateway provisioned yet due to cost (~$32/month); ALB SG lockdown prevents direct inbound exposure
+
   name            = "${var.app_name}-backend-${var.environment}"
   cluster         = aws_ecs_cluster.backend.id
   task_definition = aws_ecs_task_definition.backend.arn

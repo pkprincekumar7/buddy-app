@@ -3,12 +3,16 @@
 # Accepts HTTPS (443) from CloudFront IPs only.
 # ---------------------------------------------------------------------------
 
+#trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "alb_sg" {
+  #checkov:skip=CKV_AWS_382:Unrestricted egress is standard for ALB — it needs to forward requests to ECS tasks on dynamic ports
+
   name        = "${var.app_name}-backend-alb-sg-${var.environment}"
   description = "Allow HTTPS from CloudFront only"
   vpc_id      = aws_vpc.main.id
 
   egress {
+    description = "All outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -35,12 +39,16 @@ resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
 # and MongoDB Atlas (external, accessed over the internet).
 # ---------------------------------------------------------------------------
 
+#trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "ecs_task_sg" {
+  #checkov:skip=CKV_AWS_382:Unrestricted egress required — ECS tasks need outbound access to ECR (image pulls), Secrets Manager, CloudWatch, MongoDB Atlas, and LLM APIs (OpenAI/Anthropic/Gemini) on arbitrary ports
+
   name        = "${var.app_name}-ecs-task-sg-${var.environment}"
   description = "Allow port 8000 from ALB; unrestricted egress"
   vpc_id      = aws_vpc.main.id
 
   egress {
+    description = "All outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

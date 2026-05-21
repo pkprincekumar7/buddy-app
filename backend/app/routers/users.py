@@ -101,7 +101,11 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/user/preferences", response_model=UserPreferences)
+@router.get(
+    "/user/preferences",
+    response_model=UserPreferences,
+    description="Retrieve the authenticated user's app preferences.",
+)
 @user_limiter.limit("60/minute")
 async def get_preferences(
     request: Request,
@@ -111,7 +115,11 @@ async def get_preferences(
     return _doc_to_preferences(user)
 
 
-@router.patch("/user/preferences", response_model=UserPreferences)
+@router.patch(
+    "/user/preferences",
+    response_model=UserPreferences,
+    description="Update one or more of the authenticated user's app preferences.",
+)
 @user_limiter.limit("30/minute")
 async def patch_preferences(
     request: Request,
@@ -138,7 +146,11 @@ async def patch_preferences(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
+@router.get(
+    "/user/completed-growth-areas",
+    response_model=CompletedGrowthAreasResponse,
+    description="List completed growth areas for a given child, with pagination.",
+)
 @user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
     request: Request,
@@ -159,7 +171,11 @@ async def list_completed_growth_areas(
     return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
-@router.post("/user/completed-growth-areas", response_model=CompletedGrowthAreasResponse)
+@router.post(
+    "/user/completed-growth-areas",
+    response_model=CompletedGrowthAreasResponse,
+    description="Record a growth area as completed for a given child.",
+)
 @user_limiter.limit("60/minute")
 async def append_completed_growth_area(
     request: Request,
@@ -213,7 +229,11 @@ async def append_completed_growth_area(
     return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
-@router.delete("/user/completed-growth-areas", status_code=204)
+@router.delete(
+    "/user/completed-growth-areas",
+    status_code=204,
+    description="Clear all completed growth areas for a given child.",
+)
 @user_limiter.limit("10/minute")
 async def clear_completed_growth_areas(
     request: Request,
@@ -232,7 +252,11 @@ async def clear_completed_growth_areas(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/user/goals", response_model=UserGoals)
+@router.get(
+    "/user/goals",
+    response_model=UserGoals,
+    description="Retrieve the goals plan for a given child.",
+)
 @user_limiter.limit("60/minute")
 async def get_goals(
     request: Request,
@@ -250,7 +274,11 @@ async def get_goals(
     return UserGoals(parent_concern=doc.get("parent_concern"), plan=plan)
 
 
-@router.patch("/user/goals", response_model=UserGoals)
+@router.patch(
+    "/user/goals",
+    response_model=UserGoals,
+    description="Update the parent concern or goals plan for a given child.",
+)
 @user_limiter.limit("20/minute")
 async def patch_goals(
     request: Request,

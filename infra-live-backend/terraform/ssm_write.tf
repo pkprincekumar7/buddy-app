@@ -5,6 +5,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_ssm_parameter" "alb_internal_fqdn" {
+  #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ALB hostname) — encryption not required; SecureString adds cost and IAM complexity without security benefit
   provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/alb_internal_fqdn"
@@ -15,6 +16,7 @@ resource "aws_ssm_parameter" "alb_internal_fqdn" {
 }
 
 resource "aws_ssm_parameter" "ecr_repository_url" {
+  #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ECR URL) — encryption not required; SecureString adds cost and IAM complexity without security benefit
   provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/ecr_repository_url"
@@ -25,6 +27,7 @@ resource "aws_ssm_parameter" "ecr_repository_url" {
 }
 
 resource "aws_ssm_parameter" "ecs_cluster_name" {
+  #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ECS cluster name) — encryption not required; SecureString adds cost and IAM complexity without security benefit
   provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/ecs_cluster_name"
@@ -35,6 +38,7 @@ resource "aws_ssm_parameter" "ecs_cluster_name" {
 }
 
 resource "aws_ssm_parameter" "ecs_service_name" {
+  #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ECS service name) — encryption not required; SecureString adds cost and IAM complexity without security benefit
   provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/ecs_service_name"

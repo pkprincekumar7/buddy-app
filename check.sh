@@ -42,7 +42,9 @@ fi
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
   -r "$BACKEND/requirements.txt" \
-  ruff==0.11.2 mypy==1.15.0 bandit==1.9.4 pip-audit==2.9.0 \
+  -r "$BACKEND/requirements-lint.txt" \
+  -r "$BACKEND/requirements-security.txt" \
+  -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or requirements.txt${RESET}"; exit 1; }
 
 # Frontend: npm install is fast when node_modules already exists (it checks
@@ -65,6 +67,9 @@ RUFF="$(_tool ruff)"
 MYPY="$(_tool mypy)"
 BANDIT="$(_tool bandit)"
 PIP_AUDIT="$(_tool pip-audit)"
+SEMGREP="$(_tool semgrep)"
+CHECKOV="$(_tool checkov)"
+PYTEST="$(_tool pytest)"
 
 # ── backend ───────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ BACKEND ════${RESET}"
@@ -107,6 +112,13 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
+# ── tests ─────────────────────────────────────────────────────────────────────
+# Requires MONGODB_URI and JWT_SECRET in backend/.env (same env used by the dev server).
+echo -e "\n${BOLD}════ TESTS ════${RESET}"
+
+run "pytest + coverage (backend)" \
+    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-report=term-missing --cov-fail-under=0 -q; rc=\$?; [ \$rc -eq 5 ] && { echo 'No tests collected yet — pass until baseline suite is written'; exit 0; } || exit \$rc"
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
@@ -123,64 +135,147 @@ run "npm audit" \
 run "retire.js (browser library CVE scan)" \
     bash -c "cd '$FRONTEND' && npx retire --path . --exitwith 1"
 
-# ---- optional: external tools — skipped with an install hint if absent ----------
-GITLEAKS="$(command -v gitleaks 2>/dev/null || true)"
-HADOLINT="$(command -v hadolint 2>/dev/null || true)"
-SEMGREP="$(command -v semgrep 2>/dev/null || true)"
-TRIVY="$(command -v trivy 2>/dev/null || true)"
+# ---- mandatory: external tools — check.sh fails if any are absent ----------------
+# semgrep and checkov are installed into .venv via requirements-security.txt above.
+# The tools below must be installed on the host; see install hints on failure.
+# Docker must also be running — it is required for the trivy image scan.
+require_tool() {
+  local path
+  path="$(command -v "$1" 2>/dev/null || true)"
+  if [ -z "$path" ]; then
+    echo -e "${RED}✗ $1 not found in PATH — install: $3${RESET}"
+    FAILED+=("$1 (not installed)")
+    return 1
+  fi
+  printf -v "$2" '%s' "$path"
+  return 0
+}
 
-if [ -z "$GITLEAKS" ]; then
-  echo -e "${CYAN}⚠ gitleaks not found in PATH — skipping secret detection.${RESET}"
-  echo -e "${CYAN}  Install: brew install gitleaks${RESET}"
-else
+GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
+
+if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
   run "gitleaks (secret detection)" \
       bash -c "cd '$ROOT' && '$GITLEAKS' detect"
 fi
 
-if [ -z "$HADOLINT" ]; then
-  echo -e "${CYAN}⚠ hadolint not found in PATH — skipping Dockerfile lint.${RESET}"
-  echo -e "${CYAN}  Install: brew install hadolint${RESET}"
-else
+run "semgrep (SAST)" \
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$ROOT/frontend/src/'"
+
+if require_tool hadolint HADOLINT "brew install hadolint"; then
   run "hadolint (Dockerfile)" \
       bash -c "'$HADOLINT' '$BACKEND/Dockerfile'"
 fi
 
-if [ -z "$SEMGREP" ]; then
-  echo -e "${CYAN}⚠ semgrep not found in PATH — skipping SAST.${RESET}"
-  echo -e "${CYAN}  Install: pip install semgrep${RESET}"
-else
-  run "semgrep (SAST)" \
-      bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$ROOT/frontend/src/'"
-fi
+run "checkov (Terraform IaC)" \
+    bash -c "'$CHECKOV' \
+      -d '$ROOT/infra-live-backend/terraform' \
+      -d '$ROOT/infra-live-edge/terraform' \
+      -d '$ROOT/infra-live-frontend/terraform' \
+      --framework terraform --quiet --compact --skip-download"
 
-if [ -z "$TRIVY" ]; then
-  echo -e "${CYAN}⚠ trivy not found in PATH — skipping dependency CVE scan.${RESET}"
-  echo -e "${CYAN}  Install: brew install aquasecurity/trivy/trivy${RESET}"
-else
+if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
   run "trivy (backend CVE scan)" \
       bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$BACKEND/'"
   run "trivy (frontend CVE scan)" \
       bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$FRONTEND/'"
+
+  run "trivy (backend license scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners license '$BACKEND/'"
+  run "trivy (frontend license scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners license '$FRONTEND/'"
+
+  run "trivy (frontend SBOM)" \
+      bash -c "'$TRIVY' fs --format cyclonedx --output '$ROOT/sbom-frontend.cyclonedx.json' '$FRONTEND/' \
+        && echo 'Frontend SBOM → sbom-frontend.cyclonedx.json'"
+
+  run "trivy config (infra-live-backend)" \
+      bash -c "'$TRIVY' config '$ROOT/infra-live-backend/terraform' --exit-code 1 --severity HIGH,CRITICAL"
+  run "trivy config (infra-live-edge)" \
+      bash -c "'$TRIVY' config '$ROOT/infra-live-edge/terraform' --exit-code 1 --severity HIGH,CRITICAL"
+  run "trivy config (infra-live-frontend)" \
+      bash -c "'$TRIVY' config '$ROOT/infra-live-frontend/terraform' --exit-code 1 --severity HIGH,CRITICAL"
+
+  if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
+    DOCKLE=""; _SCAN_IMAGE="buddy-backend:check-scan"; _IMAGE_OK=0
+
+    # Build the image once — shared by trivy image scan, SBOM generation, and dockle.
+    build_image_for_scan() {
+      echo "Building backend Docker image for scan..."
+      docker build -t "$_SCAN_IMAGE" -f "$BACKEND/Dockerfile" "$ROOT" && _IMAGE_OK=1
+    }
+    run "docker build (image scan)" build_image_for_scan
+
+    if [ "$_IMAGE_OK" -eq 1 ]; then
+      run "trivy (backend image scan)" \
+          bash -c "'$TRIVY' image --exit-code 1 --severity HIGH,CRITICAL \
+            --scanners vuln --ignore-unfixed '$_SCAN_IMAGE'"
+
+      run "trivy (backend image SBOM)" \
+          bash -c "'$TRIVY' image --format cyclonedx \
+            --output '$ROOT/sbom-backend.cyclonedx.json' '$_SCAN_IMAGE' \
+            && echo 'Backend SBOM → sbom-backend.cyclonedx.json'"
+
+      if require_tool dockle DOCKLE "brew install goodwithtech/r/dockle"; then
+        run "dockle (CIS Docker Benchmark)" \
+            bash -c "'$DOCKLE' \
+              -af settings.py \
+              --ignore DKL-DI-0005 \
+              '$_SCAN_IMAGE'"
+      fi
+
+      docker rmi "$_SCAN_IMAGE" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
+# ── dast & api spec ───────────────────────────────────────────────────────────
+# spectral: exports the OpenAPI spec from the FastAPI app without a running server.
+# nuclei:   requires the backend to be running at http://localhost:8000.
+#           Start it first: cd backend && source .venv/bin/activate && uvicorn app.main:app
+echo -e "\n${BOLD}════ DAST & API SPEC ════${RESET}"
+
+# spectral is a local devDependency in frontend/ — available after npm install (bootstrap),
+# no global install required.
+SPECTRAL="$FRONTEND/node_modules/.bin/spectral"
+NUCLEI=""
+
+spectral_api_lint() {
+  local spec="$ROOT/openapi.json"
+  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" > "$spec" \
+    || { echo "Failed to export OpenAPI spec — check backend imports and env vars"; return 1; }
+  "$SPECTRAL" lint "$spec" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
+  local rc=$?
+  rm -f "$spec"
+  return $rc
+}
+run "spectral (OpenAPI lint)" spectral_api_lint
+
+if require_tool nuclei NUCLEI "brew install nuclei"; then
+  nuclei_dast() {
+    if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+      echo "Backend not running at http://localhost:8000 — start it first:"
+      echo "  cd backend && source .venv/bin/activate && uvicorn app.main:app"
+      return 1
+    fi
+    "$NUCLEI" -u http://localhost:8000 \
+      -t http/misconfiguration,http/exposures,http/technologies \
+      -severity medium,high,critical \
+      -silent -no-color
+  }
+  run "nuclei (DAST)" nuclei_dast
 fi
 
 # ── terraform ─────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ TERRAFORM ════${RESET}"
 
-TERRAFORM="$(command -v terraform 2>/dev/null || true)"
-TFLINT="$(command -v tflint 2>/dev/null || true)"
+TERRAFORM=""; TFLINT=""
 
-if [ -z "$TERRAFORM" ]; then
-  echo -e "${CYAN}⚠ terraform not found in PATH — skipping fmt check.${RESET}"
-  echo -e "${CYAN}  Install: brew install terraform${RESET}"
-else
+if require_tool terraform TERRAFORM "brew install terraform"; then
   run "terraform fmt check" \
       bash -c "cd '$ROOT' && '$TERRAFORM' fmt -check -recursive"
 fi
 
-if [ -z "$TFLINT" ]; then
-  echo -e "${CYAN}⚠ tflint not found in PATH — skipping tflint checks.${RESET}"
-  echo -e "${CYAN}  Install: brew install terraform-linters/tap/tflint${RESET}"
-else
+if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
   run "tflint (infra-live-backend)" \
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-backend/terraform'"
   run "tflint (infra-live-edge)" \

@@ -56,7 +56,11 @@ def _child_to_api(doc: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/children", response_model=list[ChildResponse])
+@router.get(
+    "/children",
+    response_model=list[ChildResponse],
+    description="List all children linked to the authenticated user's account.",
+)
 @user_limiter.limit("60/minute")
 async def list_children(
     request: Request,
@@ -82,7 +86,12 @@ async def list_children(
     return [_child_to_api(d) for d in docs]
 
 
-@router.post("/children", response_model=ChildResponse, status_code=201)
+@router.post(
+    "/children",
+    response_model=ChildResponse,
+    status_code=201,
+    description="Add a new child profile to the authenticated user's account (maximum 10).",
+)
 @user_limiter.limit("20/minute")
 async def create_child(
     request: Request,
@@ -114,7 +123,11 @@ async def create_child(
     return _child_to_api(doc)
 
 
-@router.get("/children/{child_id}", response_model=ChildResponse)
+@router.get(
+    "/children/{child_id}",
+    response_model=ChildResponse,
+    description="Retrieve a single child profile by ID.",
+)
 @user_limiter.limit("60/minute")
 async def get_child(
     request: Request,
@@ -130,7 +143,11 @@ async def get_child(
     return _child_to_api(doc)
 
 
-@router.patch("/children/{child_id}", response_model=ChildResponse)
+@router.patch(
+    "/children/{child_id}",
+    response_model=ChildResponse,
+    description="Update details of an existing child profile.",
+)
 @user_limiter.limit("30/minute")
 async def update_child(
     request: Request,
@@ -158,7 +175,11 @@ async def update_child(
     return _child_to_api(doc)
 
 
-@router.delete("/children/{child_id}", status_code=204)
+@router.delete(
+    "/children/{child_id}",
+    status_code=204,
+    description="Remove a child profile and all associated data.",
+)
 @user_limiter.limit("10/minute")
 async def delete_child(
     request: Request,

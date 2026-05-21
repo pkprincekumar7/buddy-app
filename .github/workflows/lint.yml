@@ -5,10 +5,14 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   TF_VERSION: "1.13.0"
@@ -17,6 +21,7 @@ jobs:
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -30,10 +35,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-lint.txt
 
       - name: Install dependencies + dev tools
-        run: pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0
+        run: pip install -r requirements.txt -r requirements-lint.txt
 
       - name: ruff check
         run: ruff check .
@@ -44,9 +51,61 @@ jobs:
       - name: mypy type check
         run: mypy app/
 
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend-lint]
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-test.txt
+
+      - name: Install dependencies + test tools
+        run: pip install -r requirements.txt -r requirements-test.txt
+
+      - name: pytest + coverage
+        run: |
+          set +e
+          pytest --cov=app --cov-report=term-missing --cov-fail-under=0 -q
+          RC=$?
+          set -e
+          if [ "$RC" -eq 5 ]; then
+            echo "No tests collected yet — treating as pass until baseline suite is written"
+            exit 0
+          fi
+          exit "$RC"
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
+          REDIS_URL: redis://localhost:6379
+          APP_ENV: dev
+
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
@@ -89,6 +148,7 @@ jobs:
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -119,6 +179,7 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [backend-lint, frontend-lint]
 
     steps:
@@ -127,16 +188,24 @@ jobs:
         with:
           fetch-depth: 0  # gitleaks needs full git history to scan past commits
 
-      # ── secret & infra scanning (no runtime setup required) ─────────────────
+      # ── secret & infra scanning ──────────────────────────────────────────────
       - name: Install gitleaks
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz -C /usr/local/bin gitleaks
+            -o /tmp/gitleaks.tar.gz
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/checksums.txt \
+            -o /tmp/gitleaks_checksums.txt
+          grep gitleaks_8.30.1_linux_x64.tar.gz /tmp/gitleaks_checksums.txt | sha256sum --check --status
+          tar -xz -C /usr/local/bin gitleaks < /tmp/gitleaks.tar.gz
 
       - name: Gitleaks (secret detection)
+        id: gitleaks
+        continue-on-error: true
         run: gitleaks detect --source . --redact
 
       - name: Hadolint (Dockerfile lint)
+        id: hadolint
+        continue-on-error: true
         uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: backend/Dockerfile
@@ -146,18 +215,36 @@ jobs:
         uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-security.txt
 
       - name: Install Python security tools
-        run: pip install semgrep bandit==1.9.4 pip-audit==2.9.0
+        run: pip install -r backend/requirements-security.txt
 
       - name: Bandit (Python SAST)
+        id: bandit
+        continue-on-error: true
         run: bandit -r backend/app/ -ll -q
 
+      - name: Semgrep (SAST)
+        id: semgrep
+        continue-on-error: true
+        run: semgrep --config p/security-audit --error backend/app/ frontend/src/
+
       - name: pip-audit (backend dependency CVEs)
+        id: pip_audit
+        continue-on-error: true
         run: pip-audit -r backend/requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183
 
-      - name: Semgrep (SAST)
-        run: semgrep --config p/security-audit --error backend/app/ frontend/src/
+      - name: Checkov (Terraform IaC security)
+        id: checkov
+        continue-on-error: true
+        run: |
+          checkov \
+            -d infra-live-backend/terraform \
+            -d infra-live-edge/terraform \
+            -d infra-live-frontend/terraform \
+            --framework terraform --quiet --compact --skip-download
 
       # ── Node.js security tools ───────────────────────────────────────────────
       - name: Set up Node
@@ -172,15 +259,21 @@ jobs:
         working-directory: frontend
 
       - name: npm audit (frontend dependency CVEs)
+        id: npm_audit
+        continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
 
       - name: Retire.js (browser library CVE scan)
+        id: retire
+        continue-on-error: true
         run: npx retire --path . --exitwith 1
         working-directory: frontend
 
       # ── CVE scanning (Trivy advisory DB) ────────────────────────────────────
       - name: Trivy (backend dependency CVE scan)
+        id: trivy_backend_vuln
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -190,6 +283,8 @@ jobs:
           scanners: vuln
 
       - name: Trivy (frontend dependency CVE scan)
+        id: trivy_frontend_vuln
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -197,3 +292,292 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: '1'
           scanners: vuln
+
+      # ── license compliance (Trivy) ───────────────────────────────────────────
+      - name: Trivy (backend license scan)
+        id: trivy_backend_license
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: backend/
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: license
+
+      - name: Trivy (frontend license scan)
+        id: trivy_frontend_license
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend/
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: license
+
+      # ── IaC config security scan (tfsec rule set via trivy config) ───────────
+      # Runs a different rule set than checkov — catches infra misconfigurations
+      # that checkov's AWS-focused rules can miss (network exposure, open ports, etc.)
+      # trivy config accepts exactly one DIR; run once per infra module.
+      - name: Trivy config (infra-live-backend)
+        id: trivy_config_backend
+        continue-on-error: true
+        run: trivy config infra-live-backend/terraform --exit-code 1 --severity HIGH,CRITICAL
+
+      - name: Trivy config (infra-live-edge)
+        id: trivy_config_edge
+        continue-on-error: true
+        run: trivy config infra-live-edge/terraform --exit-code 1 --severity HIGH,CRITICAL
+
+      - name: Trivy config (infra-live-frontend)
+        id: trivy_config_frontend
+        continue-on-error: true
+        run: trivy config infra-live-frontend/terraform --exit-code 1 --severity HIGH,CRITICAL
+
+      # ── Docker image scan (OS-level CVEs inside the built image) ────────────
+      - name: Build backend Docker image
+        run: docker build -t buddy-backend:scan -f backend/Dockerfile .
+
+      - name: Trivy (backend image scan)
+        id: trivy_image
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: buddy-backend:scan
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: vuln
+          ignore-unfixed: true
+
+      # ── CIS Docker Benchmark ─────────────────────────────────────────────────
+      # Checks image configuration (root user, exposed secrets in layers,
+      # missing HEALTHCHECK, etc.) — separate concern from CVE scanning.
+      - name: Install Dockle
+        run: |
+          curl -sSfL https://github.com/goodwithtech/dockle/releases/download/v0.4.15/dockle_Linux-64bit.tar.gz \
+            -o /tmp/dockle.tar.gz
+          tar -xz -C /usr/local/bin dockle < /tmp/dockle.tar.gz
+
+      - name: Dockle (CIS Docker Benchmark)
+        id: dockle
+        continue-on-error: true
+        run: |
+          dockle \
+            -af settings.py \
+            --ignore DKL-DI-0005 \
+            buddy-backend:scan
+
+      # ── SBOM generation ──────────────────────────────────────────────────────
+      - name: Generate SBOM (backend image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: buddy-backend:scan
+          format: cyclonedx
+          output: sbom-backend.cyclonedx.json
+
+      - name: Upload SBOM artifact (backend)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-backend
+          path: sbom-backend.cyclonedx.json
+          retention-days: 90
+
+      - name: Generate SBOM (frontend filesystem)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend/
+          format: cyclonedx
+          output: sbom-frontend.cyclonedx.json
+
+      - name: Upload SBOM artifact (frontend)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-frontend
+          path: sbom-frontend.cyclonedx.json
+          retention-days: 90
+
+      # ── fail gate: surface all check results before failing the job ──────────
+      - name: Fail if any security check failed
+        if: always()
+        run: |
+          FAILED_CHECKS=()
+          [[ "${{ steps.gitleaks.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
+          [[ "${{ steps.hadolint.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(hadolint)
+          [[ "${{ steps.bandit.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
+          [[ "${{ steps.semgrep.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
+          [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
+          [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
+          [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
+          [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
+          [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
+          [[ "${{ steps.trivy_frontend_vuln.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
+          [[ "${{ steps.trivy_backend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
+          [[ "${{ steps.trivy_frontend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
+          [[ "${{ steps.trivy_config_backend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
+          [[ "${{ steps.trivy_config_edge.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
+          [[ "${{ steps.trivy_config_frontend.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
+          [[ "${{ steps.trivy_image.outcome }}"           == "failure" ]] && FAILED_CHECKS+=(trivy-image)
+          [[ "${{ steps.dockle.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
+          if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+            echo "Failed security checks: ${FAILED_CHECKS[*]}"
+            exit 1
+          fi
+          echo "All security checks passed."
+
+  dast:
+    name: DAST & API Spec
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend-lint, frontend-lint]
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Start backend
+        run: |
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/backend.pid
+        env:
+          MONGODB_URI: mongodb://localhost:27017
+          JWT_SECRET: ${{ secrets.JWT_SECRET || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
+          REDIS_URL: redis://localhost:6379
+          APP_ENV: dev
+
+      - name: Wait for backend to be healthy
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "Backend is up"
+              exit 0
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+          echo "Backend failed to start within 60 s"
+          exit 1
+
+      - name: Export OpenAPI spec
+        run: curl -sf http://localhost:8000/openapi.json -o openapi.json
+
+      # ── OpenAPI spec linting (Spectral) ──────────────────────────────────────
+      # spectral-cli is a devDependency in frontend/package.json — no global install needed.
+      - name: Set up Node (for spectral)
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies (includes spectral)
+        run: npm ci
+        working-directory: frontend
+
+      - name: Spectral (OpenAPI lint)
+        id: spectral
+        continue-on-error: true
+        run: frontend/node_modules/.bin/spectral lint openapi.json --ruleset .spectral.yaml --fail-severity error
+
+      # ── Dynamic Application Security Testing (Nuclei) ────────────────────────
+      - name: Install Nuclei
+        run: |
+          curl -sSfL https://github.com/projectdiscovery/nuclei/releases/download/v3.3.9/nuclei_3.3.9_linux_amd64.zip \
+            -o /tmp/nuclei.zip
+          unzip -q /tmp/nuclei.zip -d /tmp/nuclei-bin
+          mv /tmp/nuclei-bin/nuclei /usr/local/bin/nuclei
+
+      - name: Nuclei (DAST)
+        id: nuclei
+        continue-on-error: true
+        run: |
+          nuclei -u http://localhost:8000 \
+            -t http/misconfiguration,http/exposures,http/technologies \
+            -severity medium,high,critical \
+            -silent -no-color
+
+      # ── fail gate ────────────────────────────────────────────────────────────
+      - name: Fail if any DAST check failed
+        if: always()
+        run: |
+          FAILED_CHECKS=()
+          [[ "${{ steps.spectral.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral)
+          [[ "${{ steps.nuclei.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
+          if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
+            echo "Failed DAST checks: ${FAILED_CHECKS[*]}"
+            exit 1
+          fi
+          echo "All DAST checks passed."
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend-lint, frontend-lint]
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

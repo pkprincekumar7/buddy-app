@@ -112,30 +112,56 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Build and push to ECR.
-      # Tagged with both :latest and :<git-sha> for traceability.
+      # Tagged with :<git-sha> only — ECR repository uses IMMUTABLE tags so
+      # each tag can only be pushed once. :latest is intentionally omitted;
+      # the SHA tag provides full traceability and safe rollbacks without
+      # ever needing to overwrite a tag.
+      # Git metadata is resolved here and passed as build args so the image
+      # can serve it from /api/health without needing .git or the git binary.
       # -------------------------------------------------------------------------
       - name: Login to Amazon ECR
         id: ecr_login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Resolve git metadata
+        id: git_meta
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)"                                   >> "$GITHUB_OUTPUT"
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)"                           >> "$GITHUB_OUTPUT"
+          echo "committed_at=$(git log -1 --format=%cI)"                             >> "$GITHUB_OUTPUT"
+          echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         id: build
         env:
           IMAGE_SHA: ${{ steps.tf_outputs.outputs.ecr_url }}:${{ github.sha }}
-          IMAGE_LATEST: ${{ steps.tf_outputs.outputs.ecr_url }}:latest
         run: |
           docker build \
             --platform linux/amd64 \
+            --build-arg GIT_SHA="${{ steps.git_meta.outputs.sha }}" \
+            --build-arg GIT_BRANCH="${{ steps.git_meta.outputs.branch }}" \
+            --build-arg GIT_COMMITTED_AT="${{ steps.git_meta.outputs.committed_at }}" \
+            --build-arg GIT_TAG="${{ steps.git_meta.outputs.tag }}" \
             -t "$IMAGE_SHA" \
-            -t "$IMAGE_LATEST" \
             -f backend/Dockerfile \
             .
 
-          docker push "$IMAGE_SHA"
-          docker push "$IMAGE_LATEST"
+          # ECR repository uses IMMUTABLE tags — pushing the same SHA twice
+          # (e.g., re-running a failed workflow) would error. If the tag already
+          # exists the image is identical, so skip the push and proceed.
+          REPO="${{ steps.tf_outputs.outputs.ecr_url }}"
+          TAG="${{ github.sha }}"
+          REPO_NAME="${REPO##*/}"   # strip registry host, keep <app>/<env>/backend
+          if aws ecr describe-images \
+               --repository-name "$REPO_NAME" \
+               --image-ids imageTag="$TAG" \
+               --output text &>/dev/null; then
+            echo "Image $IMAGE_SHA already exists in ECR — skipping push."
+          else
+            docker push "$IMAGE_SHA"
+            echo "Pushed: $IMAGE_SHA"
+          fi
           echo "image=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Pushed: $IMAGE_SHA"
-          echo "Pushed: $IMAGE_LATEST"
 
       # -------------------------------------------------------------------------
       # Register a new task definition that pins the image to the git SHA.
