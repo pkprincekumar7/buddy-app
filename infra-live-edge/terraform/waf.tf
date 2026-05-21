@@ -11,6 +11,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_wafv2_web_acl" "frontend" {
+  #checkov:skip=CKV2_AWS_31:WAF logging not configured — Firehose/S3 log destination deferred until production; CloudWatch application logs cover request-level visibility for now
   provider    = aws.us_east_1
   name        = "${var.app_name}-frontend-waf-${var.environment}"
   description = "WAF for ${var.app_name} CloudFront distribution - ${var.environment}"

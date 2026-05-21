@@ -1,9 +1,9 @@
 import asyncio
 import functools
 import logging
+import os
 import random
 import re
-import subprocess  # nosec B404
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -34,18 +34,15 @@ _REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9\-_]{1,64}$")
 
 
 def _git_info() -> dict:
-    def _run(args: list[str]) -> str:
-        try:
-            return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True).strip()  # nosec B603
-        except Exception:
-            return "unknown"
-
-    tag = _run(["git", "describe", "--tags", "--exact-match", "HEAD"])
+    # Values are baked into the image at build time via --build-arg / ENV.
+    # CI (deploy-live-backend.yml) resolves real git metadata before docker build.
+    # Local builds and scan builds default to "unknown" / empty string.
+    tag = os.getenv("GIT_TAG") or None
     return {
-        "commit": _run(["git", "rev-parse", "--short", "HEAD"]),
-        "branch": _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
-        "committed_at": _run(["git", "log", "-1", "--format=%cI"]),
-        "tag": tag if tag != "unknown" else None,
+        "commit": os.getenv("GIT_SHA", "unknown"),
+        "branch": os.getenv("GIT_BRANCH", "unknown"),
+        "committed_at": os.getenv("GIT_COMMITTED_AT", "unknown"),
+        "tag": tag,
     }
 
 
@@ -140,7 +137,30 @@ async def lifespan(app: FastAPI):
         log.info("mongodb: connection closed")
 
 
-app = FastAPI(title="Buddy360 API", lifespan=lifespan)
+_OPENAPI_TAGS = [
+    {"name": "auth", "description": "Authentication, session management, and account deletion."},
+    {
+        "name": "users",
+        "description": "User preferences and child-scoped data (goals, growth areas).",
+    },
+    {"name": "children", "description": "Child profiles linked to a parent account."},
+    {"name": "llm", "description": "Large-language-model invocation and provider availability."},
+    {"name": "audio", "description": "Audio processing and speech-to-text transcription."},
+    {"name": "system", "description": "Health checks and service build metadata."},
+]
+
+app = FastAPI(
+    title="Buddy360 API",
+    description=(
+        "Backend API for the Buddy360 parenting-companion app. "
+        "Provides authentication, child-profile management, LLM-powered guidance, "
+        "and audio transcription."
+    ),
+    contact={"name": "Buddy360 Engineering", "email": "prince.kumar@pearson.com"},
+    servers=[{"url": "/", "description": "Current environment"}],
+    openapi_tags=_OPENAPI_TAGS,
+    lifespan=lifespan,
+)
 
 app.state.limiter = limiter
 app.state.user_limiter = user_limiter
@@ -199,11 +219,19 @@ app.include_router(llm_router, prefix=API_V1_PREFIX)
 app.include_router(audio_router, prefix=API_V1_PREFIX)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["system"],
+    description="Liveness probe — returns 200 OK when the process is running.",
+)
 def health_check():
     return {"status": "ok"}
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    tags=["system"],
+    description="Health check with build metadata (git SHA, branch, commit timestamp, tag).",
+)
 def api_health_check():
     return {"status": "ok", **_GIT_INFO}

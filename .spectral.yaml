@@ -1,0 +1,14 @@
+extends: ["spectral:oas"]
+rules:
+  # Every operation must declare which security schemes apply
+  # (or explicitly set security: [] to opt out for public routes)
+  # FastAPI emits OAS3 — use the oas3-prefixed variant.
+  oas3-operation-security-defined: error
+  # Every operation must have a unique operationId — required for SDK generation and test tooling
+  operation-operationId: error
+  # Operations should be tagged for grouping in generated docs and client SDKs
+  operation-tags: warn
+  # Each operation should carry a human-readable description
+  operation-description: warn
+  # The API info block should declare a contact for responsible-disclosure
+  info-contact: warn

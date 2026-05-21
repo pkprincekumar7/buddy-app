@@ -47,6 +47,10 @@ resource "aws_elasticache_parameter_group" "redis7" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
+  #checkov:skip=CKV_AWS_31:No auth_token — Redis is VPC-internal only; TLS (transit_encryption_mode=required) provides transport security without a password, which is intentional for this private service
+  #checkov:skip=CKV_AWS_191:AWS-managed AES-256 at-rest encryption is sufficient for ephemeral rate-limit counters; CMK not required at this scale
+  #checkov:skip=CKV2_AWS_50:Single-AZ is intentional — Redis holds only ephemeral rate-limit counters with no persistent data worth a Multi-AZ failover cost
+
   replication_group_id = "${var.app_name}-backend-redis-${var.environment}"
   description          = "Redis for ${var.app_name} LLM rate limiter (${var.environment})"
 

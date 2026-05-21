@@ -26,6 +26,9 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "app" {
+  #checkov:skip=CKV_AWS_149:AWS-managed encryption is sufficient for this threat model; CMK rotation and key policy overhead deferred
+  #checkov:skip=CKV2_AWS_57:Automatic rotation requires a dedicated Lambda rotator function; deferred — secrets are rotated manually via CLI when needed
+
   name        = "${var.app_name}/${var.environment}/backend-secrets"
   description = "Application secrets for ${var.app_name} backend ECS tasks (${var.environment})"
 

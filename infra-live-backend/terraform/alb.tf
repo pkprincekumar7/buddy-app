@@ -8,14 +8,20 @@
 # ALB→ECS traffic stays within the VPC on HTTP port 8000.
 # ---------------------------------------------------------------------------
 
+#trivy:ignore:AVD-AWS-0053
 resource "aws_lb" "backend" {
+  #checkov:skip=CKV2_AWS_28:WAF not required at this scale; CloudFront WAF handles edge-layer filtering before traffic reaches this ALB
+  #checkov:skip=CKV_AWS_150:Deletion protection disabled intentionally — environments are torn down via terraform destroy; enabling it would require a manual disable step before every destroy
+  #checkov:skip=CKV_AWS_91:ALB access logs not enabled — S3 log bucket and associated costs deferred; application-level logs go to CloudWatch
+
   name               = "${var.app_name}-backend-alb-${var.environment}"
   load_balancer_type = "application"
   subnets = [
     aws_subnet.public_1.id,
     aws_subnet.public_2.id,
   ]
-  security_groups = [aws_security_group.alb_sg.id]
+  security_groups            = [aws_security_group.alb_sg.id]
+  drop_invalid_header_fields = true
 
   tags = {
     Name = "${var.app_name}-backend-alb-${var.environment}"

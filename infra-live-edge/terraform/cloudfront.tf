@@ -15,10 +15,13 @@ locals {
   cache_policy_disabled                 = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
   origin_request_cors_s3                = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
   origin_request_all_viewer_except_host = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
-  response_headers_security             = "67f7725c-6f97-4210-82d7-5512b31e9d03"
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
+  #checkov:skip=CKV_AWS_86:CloudFront access logs not enabled — S3 logging bucket deferred; application-level logs go to CloudWatch
+  #checkov:skip=CKV_AWS_310:Origin failover not configured — single-region deployment; a second origin requires a second ALB in another region which is not provisioned yet
+  #checkov:skip=CKV_AWS_374:Geo restriction disabled intentionally — app serves a global audience; blocking regions would lock out legitimate users
+  #checkov:skip=CKV2_AWS_47:Log4j AMR rule not added — the backend is Python, not Java; Log4Shell does not apply; Core Rule Set already covers OWASP Top 10
   enabled             = true
   is_ipv6_enabled     = true
   comment             = "${var.app_name} frontend (${var.environment})"
@@ -59,7 +62,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 
     cache_policy_id            = local.cache_policy_optimized
     origin_request_policy_id   = local.origin_request_cors_s3
-    response_headers_policy_id = local.response_headers_security
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
   }
 
   # -- /api/* behaviour: proxy to ALB backend ---------------------------------

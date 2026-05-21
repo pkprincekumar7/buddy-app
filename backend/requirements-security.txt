@@ -1,0 +1,4 @@
+semgrep==1.163.0
+bandit==1.9.4
+pip-audit==2.9.0
+checkov==3.2.529

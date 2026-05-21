@@ -7,6 +7,9 @@ data "aws_availability_zones" "available" {
 # ---------------------------------------------------------------------------
 
 resource "aws_vpc" "main" {
+  #checkov:skip=CKV2_AWS_11:VPC flow logging disabled — incurs CloudWatch/S3 storage costs; deferred until traffic volume justifies the expense
+  #checkov:skip=CKV2_AWS_12:Default SG is not explicitly managed in Terraform; traffic is controlled via dedicated alb_sg and ecs_task_sg security groups
+
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -20,7 +23,10 @@ resource "aws_vpc" "main" {
 # Public subnets — ALB and ECS tasks (assign_public_ip = true)
 # ---------------------------------------------------------------------------
 
+#trivy:ignore:AVD-AWS-0164
 resource "aws_subnet" "public_1" {
+  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets by design; ECS task public IPs are separately controlled via assign_public_ip in the ECS service
+
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_1_cidr
   availability_zone       = data.aws_availability_zones.available.names[0]
@@ -31,7 +37,10 @@ resource "aws_subnet" "public_1" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0164
 resource "aws_subnet" "public_2" {
+  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets by design; ECS task public IPs are separately controlled via assign_public_ip in the ECS service
+
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_2_cidr
   availability_zone       = data.aws_availability_zones.available.names[1]

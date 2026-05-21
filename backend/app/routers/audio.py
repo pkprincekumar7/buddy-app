@@ -29,7 +29,11 @@ class TranscribeResponse(BaseModel):
     transcript: str
 
 
-@router.post("/transcribe", response_model=TranscribeResponse)
+@router.post(
+    "/transcribe",
+    response_model=TranscribeResponse,
+    description="Transcribe an uploaded audio file to text using speech-to-text.",
+)
 @user_limiter.limit("10/minute")
 async def transcribe_audio(
     request: Request,

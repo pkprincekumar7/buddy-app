@@ -168,32 +168,33 @@ The frontend hooks invoke `npx eslint` / `npx prettier` from `frontend/node_modu
 
 ## Local checks (check.sh)
 
-[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. **12 checks always run** even if an earlier one fails: 3 backend lint checks (rows 1–3), 5 frontend lint and build checks (rows 4–8), and 4 security checks that need no external tools (rows 9–12). Optional checks run if the relevant tool is found in `PATH` — each is independent: 5 extended security scans (`gitleaks`, `hadolint`, `semgrep`, `trivy` ×2) and 4 Terraform checks (`terraform`, `tflint`). A colour-coded summary is printed at the end.
+[`check.sh`](check.sh) is a convenience script at the repo root that runs every check the CI pipeline runs, **locally**, in a single command. **All 35 checks are mandatory** — the script fails at the summary if any tool is missing or any check fails, even if earlier checks passed. The 16 venv/npm-based checks (rows 1–16) are available automatically after bootstrap — no host tool installation needed for these. The 19 host-tool checks (rows 17–35) require external tools to be pre-installed — see **Required host tools** below. **CodeQL and dependency-review run only in GitHub Actions CI** — they require GitHub's infrastructure and are not part of `check.sh`. A colour-coded summary is printed at the end.
 
 ```bash
 ./check.sh
 ```
 
 No manual setup required for backend and frontend checks. On every run the script automatically:
-- Creates `backend/.venv` if it does not exist, then syncs all Python packages (`requirements.txt` + dev tools). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs.
+- Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements.txt`, `requirements-lint.txt` (ruff, mypy), `requirements-security.txt` (bandit, semgrep, pip-audit, checkov), and `requirements-test.txt` (pytest, pytest-cov). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
 - Runs `npm install` in `frontend/`. This is fast when `node_modules` already exists and ensures any `package.json` change is always reflected.
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
 
-**Extended security checks (optional):** each tool is checked independently — install only the ones you need. To enable all on macOS:
+**Required host tools:** `check.sh` fails if any of these are absent — install all of them before running the script. `semgrep` and `checkov` are installed automatically into the venv via `requirements-security.txt` and do not need a separate step.
 
 ```bash
 brew install gitleaks
 brew install hadolint
-pip install semgrep
 brew install aquasecurity/trivy/trivy
-```
-
-**Terraform checks (optional):** skipped with a hint if the tools are not installed. To enable on macOS:
-
-```bash
+brew install goodwithtech/r/dockle
+brew install nuclei
 brew install terraform
 brew install terraform-linters/tap/tflint
+# Trivy image scan also requires Docker to be installed AND running:
+# https://docs.docker.com/get-docker/
+# nuclei DAST check also requires the backend to be running at http://localhost:8000 — see check.sh output for the start command.
+# spectral is NOT listed here — it is a devDependency in frontend/package.json and is
+# installed automatically by the npm install bootstrap step. No manual install needed.
 ```
 
 **Checks run:**
@@ -208,22 +209,41 @@ brew install terraform-linters/tap/tflint
 | 6 | `typecheck` | tsc (via npm) | `frontend/src/**` (excl. `components/ui/`) — JSDoc type checking via `checkJs` |
 | 7 | `build` | Vite (via npm) | `frontend/` — production build |
 | 8 | bundle size | bash + `wc` | `frontend/dist/` — main JS bundle must be ≤ 1.4 MB |
-| 9 | `bandit` | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
-| 10 | `pip-audit` | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PYSEC-2025-183 suppressed — disputed, no fix version) |
-| 11 | `npm audit` | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
-| 12 | retire.js | retire (via npx) | `frontend/` — browser library CVEs, including client-side JS libraries not always caught by npm audit |
-| 13 ² | gitleaks | gitleaks | Entire repo git history — accidentally committed secrets, API keys, tokens |
-| 14 ² | hadolint | hadolint | `backend/Dockerfile` — Dockerfile best practices and security misconfigurations |
-| 15 ² | semgrep | semgrep | `backend/app/` + `frontend/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset) |
-| 16 ² | trivy (backend) | trivy | `backend/` — HIGH/CRITICAL CVEs in Python packages (complements pip-audit with a second CVE database) |
-| 17 ² | trivy (frontend) | trivy | `frontend/` — HIGH/CRITICAL CVEs in npm packages (complements npm audit with a second CVE database) |
-| 18 ¹ | terraform fmt | terraform | All `infra-live-*/terraform/` dirs — formatting check (`-check -recursive`) |
-| 19 ¹ | tflint (infra-live-backend) | tflint | `infra-live-backend/terraform/` — deprecated syntax, wrong types, best-practice violations |
-| 20 ¹ | tflint (infra-live-edge) | tflint | `infra-live-edge/terraform/` — same |
-| 21 ¹ | tflint (infra-live-frontend) | tflint | `infra-live-frontend/terraform/` — same |
+| 9 | pytest + coverage | pytest + pytest-cov | `backend/` — unit and integration tests; coverage is reported but not yet gated (raise `--cov-fail-under` as the test suite grows) |
+| 10 | `bandit` | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
+| 11 | `pip-audit` | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PYSEC-2025-183 suppressed — disputed, no fix version) |
+| 12 | `npm audit` | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
+| 13 | retire.js | retire (via npx) | `frontend/` — browser library CVEs, including client-side JS libraries not always caught by npm audit |
+| 14 | semgrep | semgrep 1.163.0 | `backend/app/` + `frontend/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset); venv-installed via `requirements-security.txt` |
+| 15 | checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM); venv-installed via `requirements-security.txt` |
+| 16 ² | gitleaks | gitleaks | Entire repo git history — accidentally committed secrets, API keys, tokens |
+| 17 ² | hadolint | hadolint | `backend/Dockerfile` — Dockerfile best practices and security misconfigurations |
+| 18 ² | trivy (backend fs) | trivy | `backend/` — HIGH/CRITICAL CVEs in Python packages (complements pip-audit with a second CVE database) |
+| 19 ² | trivy (frontend fs) | trivy | `frontend/` — HIGH/CRITICAL CVEs in npm packages (complements npm audit with a second CVE database) |
+| 20 ² | trivy (backend license) | trivy | `backend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) in Python packages |
+| 21 ² | trivy (frontend license) | trivy | `frontend/` — HIGH/CRITICAL license violations in npm packages |
+| 22 ² | trivy (frontend SBOM) | trivy | `frontend/` — generates `sbom-frontend.cyclonedx.json` in CycloneDX format for software supply-chain audits |
+| 23 ² | trivy config (infra-live-backend) | trivy | `infra-live-backend/terraform/` — IaC security misconfigurations using Trivy's built-in Terraform rule set (tfsec successor); `trivy config` accepts one dir at a time |
+| 24 ² | trivy config (infra-live-edge) | trivy | `infra-live-edge/terraform/` — same |
+| 25 ² | trivy config (infra-live-frontend) | trivy | `infra-live-frontend/terraform/` — same |
+| 26 ³ | docker build (image scan) | docker | Builds `buddy-backend` image locally — prerequisite for the three image-level checks below |
+| 27 ³ | trivy (backend image) | trivy + docker | Built `buddy-backend` image — OS-level HIGH/CRITICAL CVEs in the Debian base layer (unfixed only) |
+| 28 ³ | trivy (backend image SBOM) | trivy + docker | Built image — generates `sbom-backend.cyclonedx.json` in CycloneDX format |
+| 29 ³ | dockle | dockle + docker | Built image — CIS Docker Benchmark: checks for root user, secrets baked into layers, missing `HEALTHCHECK`, other hardening rules |
+| 30 | spectral (OpenAPI lint) | spectral (via `frontend/node_modules/.bin/`) | Exports the FastAPI OpenAPI spec via `backend/tools/export-openapi.py` (no running server needed) and lints it against `.spectral.yaml` — security schemes, operationId, tags; installed automatically as a `devDependency` |
+| 31 ⁵ | nuclei (DAST) | nuclei | Runs dynamic application security tests against `http://localhost:8000` — misconfiguration, exposure, and technology probes (medium/high/critical severity) |
+| 32 ¹ | terraform fmt | terraform | All `infra-live-*/terraform/` dirs — formatting check (`-check -recursive`) |
+| 33 ¹ | tflint (infra-live-backend) | tflint | `infra-live-backend/terraform/` — deprecated syntax, wrong types, best-practice violations |
+| 34 ¹ | tflint (infra-live-edge) | tflint | `infra-live-edge/terraform/` — same |
+| 35 ¹ | tflint (infra-live-frontend) | tflint | `infra-live-frontend/terraform/` — same |
 
-¹ Skipped with an install hint if `terraform` / `tflint` is not found in `PATH`.
-² Skipped with an install hint if the respective tool is not found in `PATH`.
+¹ Required — `check.sh` fails with an install hint if `terraform` / `tflint` is not found in `PATH`.
+² Required — `check.sh` fails with an install hint if the respective tool (`gitleaks`, `hadolint`, or `trivy`) is not found in `PATH`.
+³ Required — `check.sh` fails with an install hint if `trivy` or `docker` is not found in `PATH`. Docker must be installed **and running** for the image scan.
+⁴ No manual install — `@stoplight/spectral-cli` is a `devDependency` in `frontend/package.json`. It is installed automatically during the `npm install` bootstrap step and invoked directly from `frontend/node_modules/.bin/spectral`.
+⁵ Required — `check.sh` fails with an install hint if `nuclei` is not found in `PATH`. This check also requires the backend to be running at `http://localhost:8000` before `check.sh` is invoked — start it with `cd backend && source .venv/bin/activate && uvicorn app.main:app`.
+
+**Note:** CodeQL (dataflow/taint analysis for Python and JavaScript) and dependency-review (PR lockfile CVE diffing) run only in GitHub Actions CI — they require GitHub's infrastructure and are not included in `check.sh`.
 
 The exit code is non-zero if any check fails, making it safe to call from other scripts or a pre-push hook.
 
@@ -317,7 +337,7 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 
 **Health**
 - `GET /health` — returns `{"status": "ok"}` (no auth)
-- `GET /api/health` — same as above; use this when accessing via the frontend proxy (e.g. `https://your-domain.com/api/health`)
+- `GET /api/health` — returns `{"status": "ok", "commit": "<git-sha>", "branch": "<branch>", "committed_at": "<iso-timestamp>", "tag": "<tag>|null"}` — git metadata is baked into the image at build time via Docker build args (CI sets real values; local/scan builds return `"unknown"`)
 
 ## Frontend pages
 
@@ -473,7 +493,7 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `lint.yml` | Push / PR to `main` | Code quality gate — lint, format, types, build, bundle size, Terraform lint, secret detection, Dockerfile lint, SAST, CVE scan |
+| `lint.yml` | Push / PR to `main`; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
 | `terraform-live-all.yml` | Manual | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
@@ -484,11 +504,11 @@ Eight workflows live under [`.github/workflows/`](.github/workflows/). Deploymen
 
 ### Code quality workflow (lint.yml)
 
-[`lint.yml`](.github/workflows/lint.yml) runs on pushes and pull requests targeting `main` only — feature branch pushes do not trigger it. It has four parallel jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes.
+[`lint.yml`](.github/workflows/lint.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has eight jobs. `backend-lint`, `frontend-lint`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` all start once both `backend-lint` and `frontend-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 **`backend-lint`** (Python 3.12):
 
-The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0`, pinning dev-tool versions to match `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`.
+The install step runs `pip install -r requirements.txt -r requirements-lint.txt`, picking up `ruff` and `mypy` versions from `backend/requirements-lint.txt` — the single source of truth shared with `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`. The pip cache key covers both files so a change to either invalidates the cache.
 
 | Step | Tool | What it checks |
 |---|---|---|
@@ -515,21 +535,70 @@ The install step runs `pip install -r requirements.txt ruff==0.11.2 mypy==1.15.0
 | `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
 | `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
 
-**`security-scan`**:
+**`backend-test`** (Python 3.12, needs: backend-lint):
 
-All steps run without cloud credentials and without building the Docker image — purely static analysis. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Steps are grouped by the runtime they require.
+Runs after `backend-lint` passes. Spins up MongoDB and Redis as Docker service containers so the FastAPI app can connect to real dependencies — identical to the dev environment. `JWT_SECRET` is set from the GitHub secret with a hard-coded 64-character fallback so the job never fails due to a missing secret configuration.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| Gitleaks | gitleaks-action 2.3.9 | Full git history — accidentally committed secrets, API keys, private keys, tokens |
+| `pytest --cov=app --cov-report=term-missing --cov-fail-under=0` | pytest 8.3.4 + pytest-cov 6.0.0 | All tests under `backend/tests/` — coverage is reported on every run; gate is set to 0 until a baseline test suite exists (raise `--cov-fail-under` incrementally as tests are added) |
+
+Coverage reports are printed to the job log with `--cov-report=term-missing` so uncovered lines are visible without downloading an artifact.
+
+**`dast`** (needs: backend-lint + frontend-lint):
+
+Runs dynamic application security testing against a live backend instance. Like `backend-test`, it spins up MongoDB and Redis service containers and starts FastAPI with `uvicorn` in the background, then polls `GET /health` for up to 60 seconds before running any scan. All scan steps carry `continue-on-error: true`; a final gate step collects outcomes and fails the job after all tools complete.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Spectral (OpenAPI lint) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Fetches the live OpenAPI spec from the running backend (`GET /openapi.json`), then lints against `.spectral.yaml` — every operation must declare a security scheme, have a unique `operationId`, and be tagged |
+| Nuclei (DAST) | nuclei v3.3.9 | Probes `http://localhost:8000` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
+
+**`security-scan`**:
+
+All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The final group builds the backend Docker image to scan OS-level CVEs inside the Debian base layer. Steps are grouped by the runtime they require.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Gitleaks | gitleaks v8.30.1 (CLI) | Full git history — accidentally committed secrets, API keys, private keys, tokens |
 | Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
 | Bandit | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
+| Semgrep | semgrep 1.163.0 (`p/security-audit`) | `backend/app/` + `frontend/src/` — advanced Python and JavaScript/React SAST patterns |
 | pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 suppressed — disputed, no fix version |
-| Semgrep | semgrep (`p/security-audit`) | `backend/app/` + `frontend/src/` — advanced Python and JavaScript/React SAST patterns |
+| Checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
 | npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
 | Retire.js | retire (via npx) | `frontend/` — browser library CVEs not always caught by npm audit |
-| Trivy (backend) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
-| Trivy (frontend) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
+| Trivy (backend fs) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
+| Trivy (frontend fs) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
+| Trivy (backend license) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) in Python packages |
+| Trivy (frontend license) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL license violations in npm packages |
+| Trivy (frontend SBOM) | trivy-action 0.36.0 | `frontend/` — generates `sbom-frontend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
+| Trivy config (infra-live-backend) | trivy (CLI) | `infra-live-backend/terraform/` — IaC security misconfigurations using Trivy's built-in Terraform rule set (tfsec successor); complements Checkov with a second rule database; `trivy config` accepts one directory at a time |
+| Trivy config (infra-live-edge) | trivy (CLI) | `infra-live-edge/terraform/` — same |
+| Trivy config (infra-live-frontend) | trivy (CLI) | `infra-live-frontend/terraform/` — same |
+| Docker build (image scan) | docker | Builds `buddy-backend` image once; shared by the three image-level checks below |
+| Trivy (backend image) | trivy-action 0.36.0 | Built `buddy-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
+| Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `buddy-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
+| Dockle | dockle (installed from release tarball) | Built image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+
+**`codeql`**:
+
+Runs two matrix jobs in parallel after `backend-lint` and `frontend-lint` pass. Results are uploaded to the GitHub Security tab and are visible under **Security → Code scanning**. `fail-fast: false` ensures both languages complete independently — a failure in one does not abort the other.
+
+| Matrix | Language | What it checks |
+|---|---|---|
+| `python` | Python 3.12 | `backend/app/` — dataflow and taint analysis, injection flaws, insecure API usage (`security-extended` query suite) |
+| `javascript-typescript` | JavaScript/JSX | `frontend/src/` — XSS, prototype pollution, unsafe regex, DOM-based vulnerabilities (`security-extended` query suite) |
+
+CodeQL requires `security-events: write` permission (set at the job level) to upload SARIF results. It cannot be run locally — it runs only in GitHub Actions CI.
+
+**`dependency-review`**:
+
+Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v4` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. Posts a summary comment on the PR. It runs independently of other jobs and does not block push pipelines.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Dependency Review | dependency-review-action v4 | Newly added or changed dependencies in `package-lock.json` / `requirements.txt` that have HIGH/CRITICAL CVEs — blocks merge if any are found |
 
 ### One-time AWS setup: GitHub OIDC identity provider
 

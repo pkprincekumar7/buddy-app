@@ -224,7 +224,11 @@ def _verify_google_token(id_token_str: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/auth/register", status_code=201)
+@router.post(
+    "/auth/register",
+    status_code=201,
+    description="Create a new user account. Sets access and refresh token cookies on success.",
+)
 @limiter.limit("5/minute")
 async def register(
     request: Request,
@@ -336,7 +340,11 @@ async def register(
     return {"status": "ok"}
 
 
-@router.post("/auth/login", status_code=200)
+@router.post(
+    "/auth/login",
+    status_code=200,
+    description="Authenticate with email and password. Sets access and refresh token cookies on success.",
+)
 @limiter.limit("10/minute")
 async def login(
     request: Request,
@@ -381,7 +389,11 @@ async def login(
     return {"status": "ok"}
 
 
-@router.post("/auth/refresh", status_code=200)
+@router.post(
+    "/auth/refresh",
+    status_code=200,
+    description="Exchange a valid refresh token cookie for a new access/refresh token pair.",
+)
 @user_limiter.limit("20/minute")
 async def refresh_tokens(
     request: Request,
@@ -476,7 +488,11 @@ async def refresh_tokens(
     return {"status": "ok"}
 
 
-@router.post("/auth/logout", status_code=204)
+@router.post(
+    "/auth/logout",
+    status_code=204,
+    description="Revoke the current session and clear auth cookies.",
+)
 @user_limiter.limit("20/minute")
 async def logout(
     request: Request,
@@ -503,7 +519,11 @@ async def logout(
     _clear_auth_cookies(response)
 
 
-@router.post("/auth/google", status_code=200)
+@router.post(
+    "/auth/google",
+    status_code=200,
+    description="Sign in or register using a Google ID token. Creates the account on first use.",
+)
 @limiter.limit("5/minute")
 async def google_auth(
     request: Request,
@@ -656,7 +676,11 @@ async def google_auth(
     return {"status": "ok"}
 
 
-@router.get("/auth/me", response_model=MeResponse)
+@router.get(
+    "/auth/me",
+    response_model=MeResponse,
+    description="Return the authenticated user's profile (id, email, full name, role).",
+)
 @user_limiter.limit("60/minute")
 async def auth_me(request: Request, user: dict = Depends(get_current_user)):
     return MeResponse(
@@ -667,7 +691,11 @@ async def auth_me(request: Request, user: dict = Depends(get_current_user)):
     )
 
 
-@router.delete("/user/me", status_code=204)
+@router.delete(
+    "/user/me",
+    status_code=204,
+    description="Permanently delete the authenticated user's account and all associated data.",
+)
 @user_limiter.limit("3/minute")
 async def delete_account(
     request: Request,
