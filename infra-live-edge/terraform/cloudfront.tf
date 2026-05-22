@@ -54,6 +54,11 @@ resource "aws_cloudfront_distribution" "frontend" {
       https_port             = 443
       origin_protocol_policy = "https-only"
       origin_ssl_protocols   = ["TLSv1.2"]
+      # Must be >= LLM_TIMEOUT_SECONDS (default 60). CloudFront's default of 30 s
+      # causes 504s on slow LLM responses before the backend can reply, which
+      # triggers the rule-based fallback and, if the effect was already cancelled,
+      # skips the personality PATCH entirely.
+      origin_read_timeout = 60
     }
   }
 

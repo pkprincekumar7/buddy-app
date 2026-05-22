@@ -66,7 +66,6 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
             prompt,
             response_json_schema: personalityLlmSchema(),
           });
-          if (cancelled) return;
 
           const vm = adaptAiPersonalityToViewModel(ai || {}, mergedFromServer.name);
           const prof = onboardingProfileFromViewModel(vm);
@@ -79,7 +78,6 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
           if (prof) dispatch({ type: 'SET_GENERATED_PROFILE', payload: prof });
         } catch (err) {
           console.warn('[usePersonalityAnalysis] LLM failed, falling back to rule-based:', err);
-          if (cancelled) return;
 
           const ruleVm = calculateMBTI(mergedFromServer);
           const prof = onboardingProfileFromViewModel(ruleVm);
