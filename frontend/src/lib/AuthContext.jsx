@@ -125,10 +125,8 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!isAuthenticated) return;
     const timer = setTimeout(() => {
-      const pathToSave = BLOCKED_REDIRECT_PATHS.includes(location.pathname)
-        ? null
-        : location.pathname;
-      api.preferences.patch({ last_visited_path: pathToSave }).catch(() => {});
+      if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
+      api.preferences.patch({ last_visited_path: location.pathname }).catch(() => {});
     }, 1500);
     return () => clearTimeout(timer);
   }, [location.pathname, isAuthenticated]);

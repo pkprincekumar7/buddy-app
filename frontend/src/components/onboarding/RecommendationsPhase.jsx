@@ -862,7 +862,19 @@ export default function RecommendationsPhase({
   );
 
   useEffect(() => {
+    // On page refresh/close, flush any pending debounced saves before the browser
+    // unloads the page.  Without this the cleanup's cancel() would silently discard
+    // wizard_step / wizard_area_index / interactive_step writes that hadn't committed
+    // yet, causing the wrong area (or intro) to be restored on the next load.
+    // Normal navigations away from this component call flush() explicitly before
+    // navigating, so the cancel() in the cleanup is still correct for those paths.
+    const flushOnUnload = () => {
+      debouncedSaveAreaProgress.flush?.();
+      debouncedSaveGlobalStep.flush?.();
+    };
+    window.addEventListener('beforeunload', flushOnUnload);
     return () => {
+      window.removeEventListener('beforeunload', flushOnUnload);
       debouncedSaveAreaProgress.cancel();
       debouncedSaveGlobalStep.cancel();
     };
