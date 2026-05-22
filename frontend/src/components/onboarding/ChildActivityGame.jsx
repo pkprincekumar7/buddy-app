@@ -425,7 +425,7 @@ export default function ChildActivityGame({
             {option.image && !failedImages.has(option.id) ? (
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
-                  src={`/assets/${option.image}`}
+                  src={`/app-assets/${option.image}`}
                   alt={option.label}
                   className="h-full w-full object-cover"
                   onError={() => {

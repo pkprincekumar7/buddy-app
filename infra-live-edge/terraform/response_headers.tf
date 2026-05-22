@@ -15,7 +15,7 @@
 #   img-src     'self' + data: + https:         — bundled SVG/PNG assets; base64 data URIs;
 #                                               all HTTPS image sources including S3-backed
 #                                               activity-game images (served via CloudFront
-#                                               /assets/*) and Google profile photos.
+#                                               /app-assets/*) and Google profile photos.
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
@@ -108,13 +108,13 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 }
 
 # ---------------------------------------------------------------------------
-# Minimal response headers policy for static assets (/assets/*)
+# Minimal response headers policy for static assets (/app-assets/*)
 #
 # Only nosniff is meaningful on image responses. HSTS, CSP, X-Frame-Options
 # and the rest are document-level controls; browsers ignore them on image or
 # binary responses. The CSP that protects the page is already set on the
 # index.html response (default cache behaviour above) and img-src 'self'
-# covers /assets/* because it is the same CloudFront origin.
+# covers /app-assets/* because it is the same CloudFront origin.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "assets" {
   name    = "${var.app_name}-assets-${var.environment}"

@@ -137,31 +137,31 @@ Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images)
 - Frontend:
   ```bash
   cd frontend
-  cp .env.example .env   # set BACKEND_BUCKET_NAME to load activity-game images via Vite proxy
+  cp .env.example .env   # set BACKEND_BUCKET_NAME to your local assets bucket to load activity-game images via Vite proxy
   npm install && npm run dev
   ```
 
 ## Static assets (images)
 
-Activity-game images (used in `ChildActivityGame`) are stored in an S3 bucket and served differently depending on the environment.
+Activity-game images (used in `ChildActivityGame`) are stored in S3 and served differently depending on the environment. **Two separate buckets are used** — a dedicated local bucket that is never touched by Terraform, and per-environment deployed buckets managed entirely by Terraform.
 
 ### How images are served
 
-| Environment | Path | How it works |
-|---|---|---|
-| **Production** | `/assets/<path>` via CloudFront | CloudFront `/assets/*` behavior proxies to the S3 bucket using OAC (SigV4 signing). No public S3 access needed from the browser. |
-| **Local dev** | `/assets/<path>` via Vite proxy | `vite.config.js` proxies `/assets/*` directly to `https://<bucket>.s3.us-east-1.amazonaws.com` when `BACKEND_BUCKET_NAME` is set in `frontend/.env`. The S3 bucket policy allows public `s3:GetObject` on the `assets/*` prefix so no AWS credentials are required. |
+| Environment | Bucket | Path | How it works |
+|---|---|---|---|
+| **Local dev** | dedicated local bucket (set via `BACKEND_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy | `vite.config.js` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
+| **Deployed (dev/stg/prod)** | per-environment bucket (set via `BACKEND_BUCKET_NAME` GitHub secret) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
-In both environments the frontend uses the same relative path `` `/assets/${option.image}` `` — no environment-specific URL logic in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
+In all environments the frontend uses the same relative path `` `/app-assets/${option.image}` `` — no environment-specific URL logic in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
 
-> **Note — CDN edge caching:** Local dev sends requests directly to the S3 regional endpoint in `us-east-1` — there is no CDN, no edge caching, and no geographic distribution. Only production CloudFront distributes from the nearest edge location.
+> **Note — CDN edge caching:** Local dev sends requests directly to the S3 regional endpoint in `us-east-1` — there is no CDN, no edge caching, and no geographic distribution. Only deployed CloudFront distributions serve from edge locations.
 
 ### S3 bucket folder structure
 
-Images live under the `assets/` prefix, organised by growth area:
+Images live under the `app-assets/` prefix, organised by growth area:
 
 ```
-assets/
+app-assets/
   child_activity_game/
     life_ambition/          astronaut.jpg, sports_person.jpg, like_my_parents.jpg,
                             super_hero.jpg, dancer.jpg, scientist.jpg
@@ -177,21 +177,30 @@ assets/
                             working_in_a_team.jpg, making_new_friends.jpg, enjoying_my_own_time.jpg
 ```
 
-### Step 1 — Allow public read access on the bucket
+### Step 1 — Create and configure the local bucket (one-time)
 
-Images are fetched directly from S3 in local dev, so the bucket must allow public `s3:GetObject` on the `assets/` prefix.
+This is a **dedicated bucket used only for local development**. It is never referenced by Terraform, so its configuration is managed manually and will never be overwritten by a Terraform apply or destroy.
 
-**1a. Relax Block Public Access**
+**1a. Create the bucket**
 
-1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click on your bucket (`person-backend-dev-app-bucket`)
-2. Go to **Permissions** tab → **Block public access (bucket settings)** → **Edit**
-3. Uncheck **"Block public access to buckets and objects granted through new public bucket policies"** and **"Block public and cross-account access to buckets and objects through any public bucket policies"** (the bottom two checkboxes)
+1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click **Create bucket**
+2. Set **Bucket name** to your chosen local bucket name — note it down, you will set this as `BACKEND_BUCKET_NAME` in `.env`
+3. Set **AWS Region** to `us-east-1`
+4. Leave all other settings at their defaults and click **Create bucket**
+
+**1b. Relax Block Public Access**
+
+1. Click on the bucket you just created → **Permissions** tab → **Block public access (bucket settings)** → **Edit**
+2. Uncheck the following two settings:
+   - **Block public access to buckets and objects granted through new public bucket or access point policies**
+   - **Block public and cross-account access to buckets and objects through any public bucket or access point policies**
+3. Leave the top two checkboxes checked (they block ACL-based public access, which is not used here)
 4. Click **Save changes** → type `confirm` → **Confirm**
 
-**1b. Add a bucket policy**
+**1c. Add a bucket policy**
 
 1. Still on the **Permissions** tab, scroll to **Bucket policy** → **Edit**
-2. Paste the following (merge with any existing statements if needed):
+2. Paste the following (replace `<your-local-bucket>` with your actual bucket name):
 
 ```json
 {
@@ -202,7 +211,7 @@ Images are fetched directly from S3 in local dev, so the bucket must allow publi
       "Effect": "Allow",
       "Principal": "*",
       "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::person-backend-dev-app-bucket/assets/*"
+      "Resource": "arn:aws:s3:::<your-local-bucket>/app-assets/*"
     }
   ]
 }
@@ -210,14 +219,23 @@ Images are fetched directly from S3 in local dev, so the bucket must allow publi
 
 3. Click **Save changes**
 
-### Step 2 — Create the folder structure and upload images
+**1d. Create the folder structure**
 
-Images live directly in S3 — there is no local `assets/` folder in this repository.
+Images live directly in S3 — there is no `app-assets/` folder in this repository.
 
-1. Open the bucket in the S3 console and click **Create folder** → name it `assets` → **Create folder**
-2. Open the `assets/` folder and create the subfolder `child_activity_game/`
-3. Inside `child_activity_game/`, create one subfolder per growth area: `life_ambition`, `self_care`, `critical_thinking`, `creativity`, `physical_wellness`, `social_skills`
-4. Open each subfolder, click **Upload** → **Add files**, and upload the corresponding images:
+1. Click on the bucket → **Objects** tab → **Create folder** → name it `app-assets` → **Create folder**
+2. Open `app-assets/` → **Create folder** → name it `child_activity_game` → **Create folder**
+3. Open `child_activity_game/` and create one subfolder for each growth area:
+   - `life_ambition`
+   - `self_care`
+   - `critical_thinking`
+   - `creativity`
+   - `physical_wellness`
+   - `social_skills`
+
+### Step 2 — Upload images
+
+Open each subfolder in the S3 console, click **Upload** → **Add files**, and upload the corresponding images:
 
 | Folder | Files |
 |---|---|
@@ -232,9 +250,9 @@ Images live directly in S3 — there is no local `assets/` folder in this reposi
 
 **Vite dev server (`npm run dev`):**
 
-1. Ensure `frontend/.env` has the bucket name (already set for dev):
+1. Ensure `frontend/.env` has `BACKEND_BUCKET_NAME` set to your local bucket name:
    ```env
-   BACKEND_BUCKET_NAME=person-backend-dev-app-bucket
+   BACKEND_BUCKET_NAME=<your-local-bucket-name>
    ```
 2. Run:
    ```bash
@@ -243,12 +261,12 @@ Images live directly in S3 — there is no local `assets/` folder in this reposi
 
 **Docker Compose:**
 
-Ensure `BACKEND_BUCKET_NAME` is set in the root `.env` (already set for dev), then:
+Ensure `BACKEND_BUCKET_NAME` is set to your local bucket name in the root `.env`, then:
 ```bash
 docker compose up --build
 ```
 
-nginx proxies any `/assets/*` path not found in the built bundle directly to S3.
+nginx proxies `/app-assets/*` requests directly to S3.
 
 If `BACKEND_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
 
@@ -294,6 +312,7 @@ The frontend hooks invoke `npx eslint` / `npx prettier` from `frontend/node_modu
 No manual setup required for backend and frontend checks. On every run the script automatically:
 - Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements.txt`, `requirements-lint.txt` (ruff, mypy), `requirements-security.txt` (bandit, semgrep, pip-audit, checkov), and `requirements-test.txt` (pytest, pytest-cov). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
 - Runs `npm install` in `frontend/`. This is fast when `node_modules` already exists and ensures any `package.json` change is always reflected.
+- Downloads/refreshes the retire.js vulnerability database to `frontend/retire-jsrepo.json` if it is absent or older than 7 days. The file is gitignored so it stays current without committing a static snapshot. If the network is unavailable and a previous copy exists, the existing file is reused with a warning.
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
 
@@ -758,7 +777,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ROLE_ARN` | ARN of the IAM OIDC role |
 | `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `buddy360` |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
-| `BACKEND_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
+| `BACKEND_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
 | `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app` |
 | `SUBDOMAIN_INTERNAL` | Backend/internal subdomain prefix, e.g. `api` |

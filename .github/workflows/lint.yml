@@ -264,10 +264,27 @@ jobs:
         run: npm audit --audit-level=high
         working-directory: frontend
 
+      - name: Restore retire.js database cache
+        id: retiredb_cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/retire-jsrepo.json
+          # Cache key tied to package-lock.json — refreshes when JS deps change.
+          # Falls back to any prior cache for this OS if the exact key misses.
+          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: retiredb-${{ runner.os }}-
+
+      - name: Fetch retire.js vulnerability database
+        if: steps.retiredb_cache.outputs.cache-hit != 'true'
+        run: curl -sSfL https://raw.githubusercontent.com/RetireJS/retire.js/master/repository/jsrepository-v5.json -o retire-jsrepo.json
+        working-directory: frontend
+
       - name: Retire.js (browser library CVE scan)
         id: retire
         continue-on-error: true
-        run: ./node_modules/.bin/retire --path . --exitwith 1
+        # retire-jsrepo.json is fetched/restored above — --jsrepo prevents retire.js
+        # from making its own network request and guarantees the same DB is used.
+        run: ./node_modules/.bin/retire --path . --exitwith 1 --jsrepo ./retire-jsrepo.json
         working-directory: frontend
 
       # ── CVE scanning (Trivy advisory DB) ────────────────────────────────────

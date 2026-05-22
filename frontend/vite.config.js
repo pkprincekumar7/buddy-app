@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
   }
 
   if (env.BACKEND_BUCKET_NAME) {
-    proxy['/assets'] = {
+    proxy['/app-assets'] = {
       target: `https://${env.BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com`,
       changeOrigin: true,
     }

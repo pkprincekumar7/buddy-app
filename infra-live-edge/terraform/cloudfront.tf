@@ -71,10 +71,13 @@ resource "aws_cloudfront_distribution" "frontend" {
     response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
   }
 
-  # -- /assets/* behaviour: static files from backend S3 bucket ---------------
+  # -- /app-assets/* behaviour: static assets from backend S3 bucket ---
+  # /app-assets/ covers all asset subfolders (e.g. child_activity_game/, and any added later).
+  # Uses /app-assets/ prefix (not /assets/) to avoid conflicting with Vite build output
+  # (index-*.js, index-*.css, fonts) which CloudFront serves from the frontend S3 bucket.
 
   ordered_cache_behavior {
-    path_pattern           = "/assets/*"
+    path_pattern           = "/app-assets/*"
     target_origin_id       = "s3-backend-assets"
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]

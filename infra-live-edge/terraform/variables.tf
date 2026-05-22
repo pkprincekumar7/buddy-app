@@ -59,7 +59,7 @@ variable "frontend_bucket_name" {
 }
 
 variable "backend_bucket_name" {
-  description = "Pre-existing S3 backend bucket name (us-east-1) — holds static assets under assets/"
+  description = "Pre-existing S3 backend bucket name (us-east-1) — holds static assets under app-assets/"
   type        = string
 }
 

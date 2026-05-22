@@ -17,3 +17,7 @@ htmlcov/
 
 # SBOM generated locally by check.sh (trivy image scan)
 sbom-*.cyclonedx.json
+
+# retire.js vulnerability database — auto-downloaded by check.sh bootstrap;
+# gitignored so it stays current without committing a static snapshot.
+frontend/retire-jsrepo.json

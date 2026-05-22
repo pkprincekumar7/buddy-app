@@ -5,7 +5,7 @@ data "aws_s3_bucket" "frontend" {
   bucket   = var.frontend_bucket_name
 }
 
-# Backend S3 bucket — holds static assets under assets/; served via CloudFront
+# Backend S3 bucket — holds static assets under app-assets/; served via CloudFront
 # with a dedicated OAC so no public access is required on the bucket.
 data "aws_s3_bucket" "backend" {
   provider = aws.us_east_1
