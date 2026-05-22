@@ -128,7 +128,7 @@ jobs:
         run: npm run lint
 
       - name: Prettier (check only)
-        run: npx prettier --check "src/**/*.{js,jsx,css}"
+        run: ./node_modules/.bin/prettier --check "src/**/*.{js,jsx,css}"
 
       - name: TypeScript type check
         run: npm run typecheck
@@ -267,7 +267,7 @@ jobs:
       - name: Retire.js (browser library CVE scan)
         id: retire
         continue-on-error: true
-        run: npx retire --path . --exitwith 1
+        run: ./node_modules/.bin/retire --path . --exitwith 1
         working-directory: frontend
 
       # ── CVE scanning (Trivy advisory DB) ────────────────────────────────────

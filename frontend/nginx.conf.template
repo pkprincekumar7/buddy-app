@@ -41,11 +41,21 @@ server {
         proxy_send_timeout 30s;
     }
 
-    # Vite build output: hashed JS/CSS — never SPA-fallback here (fixes broken styles if misrouted)
+    # Vite build output: hashed JS/CSS/fonts — immutable caching.
+    # Paths not found locally (activity-game images) fall through to the S3 proxy.
     location /assets/ {
+        try_files $uri @s3_assets;
         expires 1y;
         add_header Cache-Control "public, immutable";
-        try_files $uri =404;
+        access_log off;
+    }
+
+    # S3 proxy for /assets/* paths not present in the local build output.
+    # ${BACKEND_BUCKET_NAME} is substituted by envsubst at container start (nginx-start.sh).
+    location @s3_assets {
+        proxy_pass https://${BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_set_header Host ${BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_ssl_server_name on;
         access_log off;
     }
 

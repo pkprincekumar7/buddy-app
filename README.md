@@ -10,6 +10,7 @@ Frontend UI library: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), 
 - [Connecting to MongoDB](#connecting-to-mongodb)
 - [Google Sign-In](#google-sign-in-optional)
 - [Local development](#local-development-without-docker-for-nodepython)
+- [Static assets (images)](#static-assets-images)
 - [Pre-commit hooks](#pre-commit-hooks)
 - [Local checks (check.sh)](#local-checks-checksh)
 - [Backend tooling (pyproject.toml)](#backend-tooling-pyprojecttoml)
@@ -133,7 +134,123 @@ Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images)
   cp .env.example .env   # fill in MONGODB_URI and JWT_SECRET
   uvicorn app.main:app --reload
   ```
-- Frontend: `cd frontend && npm install && npm run dev`
+- Frontend:
+  ```bash
+  cd frontend
+  cp .env.example .env   # set BACKEND_BUCKET_NAME to load activity-game images via Vite proxy
+  npm install && npm run dev
+  ```
+
+## Static assets (images)
+
+Activity-game images (used in `ChildActivityGame`) are stored in an S3 bucket and served differently depending on the environment.
+
+### How images are served
+
+| Environment | Path | How it works |
+|---|---|---|
+| **Production** | `/assets/<path>` via CloudFront | CloudFront `/assets/*` behavior proxies to the S3 bucket using OAC (SigV4 signing). No public S3 access needed from the browser. |
+| **Local dev** | `/assets/<path>` via Vite proxy | `vite.config.js` proxies `/assets/*` directly to `https://<bucket>.s3.us-east-1.amazonaws.com` when `BACKEND_BUCKET_NAME` is set in `frontend/.env`. The S3 bucket policy allows public `s3:GetObject` on the `assets/*` prefix so no AWS credentials are required. |
+
+In both environments the frontend uses the same relative path `` `/assets/${option.image}` `` — no environment-specific URL logic in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
+
+> **Note — CDN edge caching:** Local dev sends requests directly to the S3 regional endpoint in `us-east-1` — there is no CDN, no edge caching, and no geographic distribution. Only production CloudFront distributes from the nearest edge location.
+
+### S3 bucket folder structure
+
+Images live under the `assets/` prefix, organised by growth area:
+
+```
+assets/
+  child_activity_game/
+    life_ambition/          astronaut.jpg, sports_person.jpg, like_my_parents.jpg,
+                            super_hero.jpg, dancer.jpg, scientist.jpg
+    self_care/              reading.jpg, listening_to_music.jpg, being_in_nature.jpg,
+                            drawing_painting.jpg, resting_sleeping.jpg, exercise.jpg
+    critical_thinking/      solving_puzzles.jpg, science_experiments.jpg, debates_arguments.jpg,
+                            strategy_games.jpg, solving_mysteries.jpg, inventing_things.jpg
+    creativity/             drawing_art.jpg, storytelling.jpg, making_music.jpg,
+                            building_making.jpg, acting_drama.jpg, cooking_baking.jpg
+    physical_wellness/      football_soccer.jpg, swimming.jpg, cycling.jpg,
+                            dancing.jpg, yoga_stretching.jpg, running.jpg
+    social_skills/          helping_others.jpg, leading_a_group.jpg, listening_to_friends.jpg,
+                            working_in_a_team.jpg, making_new_friends.jpg, enjoying_my_own_time.jpg
+```
+
+### Step 1 — Allow public read access on the bucket
+
+Images are fetched directly from S3 in local dev, so the bucket must allow public `s3:GetObject` on the `assets/` prefix.
+
+**1a. Relax Block Public Access**
+
+1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click on your bucket (`person-backend-dev-app-bucket`)
+2. Go to **Permissions** tab → **Block public access (bucket settings)** → **Edit**
+3. Uncheck **"Block public access to buckets and objects granted through new public bucket policies"** and **"Block public and cross-account access to buckets and objects through any public bucket policies"** (the bottom two checkboxes)
+4. Click **Save changes** → type `confirm` → **Confirm**
+
+**1b. Add a bucket policy**
+
+1. Still on the **Permissions** tab, scroll to **Bucket policy** → **Edit**
+2. Paste the following (merge with any existing statements if needed):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowPublicGetAssets",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::person-backend-dev-app-bucket/assets/*"
+    }
+  ]
+}
+```
+
+3. Click **Save changes**
+
+### Step 2 — Create the folder structure and upload images
+
+Images live directly in S3 — there is no local `assets/` folder in this repository.
+
+1. Open the bucket in the S3 console and click **Create folder** → name it `assets` → **Create folder**
+2. Open the `assets/` folder and create the subfolder `child_activity_game/`
+3. Inside `child_activity_game/`, create one subfolder per growth area: `life_ambition`, `self_care`, `critical_thinking`, `creativity`, `physical_wellness`, `social_skills`
+4. Open each subfolder, click **Upload** → **Add files**, and upload the corresponding images:
+
+| Folder | Files |
+|---|---|
+| `life_ambition/` | `astronaut.jpg`, `sports_person.jpg`, `like_my_parents.jpg`, `super_hero.jpg`, `dancer.jpg`, `scientist.jpg` |
+| `self_care/` | `reading.jpg`, `listening_to_music.jpg`, `being_in_nature.jpg`, `drawing_painting.jpg`, `resting_sleeping.jpg`, `exercise.jpg` |
+| `critical_thinking/` | `solving_puzzles.jpg`, `science_experiments.jpg`, `debates_arguments.jpg`, `strategy_games.jpg`, `solving_mysteries.jpg`, `inventing_things.jpg` |
+| `creativity/` | `drawing_art.jpg`, `storytelling.jpg`, `making_music.jpg`, `building_making.jpg`, `acting_drama.jpg`, `cooking_baking.jpg` |
+| `physical_wellness/` | `football_soccer.jpg`, `swimming.jpg`, `cycling.jpg`, `dancing.jpg`, `yoga_stretching.jpg`, `running.jpg` |
+| `social_skills/` | `helping_others.jpg`, `leading_a_group.jpg`, `listening_to_friends.jpg`, `working_in_a_team.jpg`, `making_new_friends.jpg`, `enjoying_my_own_time.jpg` |
+
+### Step 3 — Local dev setup
+
+**Vite dev server (`npm run dev`):**
+
+1. Ensure `frontend/.env` has the bucket name (already set for dev):
+   ```env
+   BACKEND_BUCKET_NAME=person-backend-dev-app-bucket
+   ```
+2. Run:
+   ```bash
+   cd frontend && npm run dev
+   ```
+
+**Docker Compose:**
+
+Ensure `BACKEND_BUCKET_NAME` is set in the root `.env` (already set for dev), then:
+```bash
+docker compose up --build
+```
+
+nginx proxies any `/assets/*` path not found in the built bundle directly to S3.
+
+If `BACKEND_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
 
 ## Pre-commit hooks
 
@@ -205,7 +322,7 @@ brew install terraform-linters/tap/tflint
 | 2 | `ruff format` | ruff 0.11.2 | `backend/` — formatting (black-compatible, line-length 100) |
 | 3 | `mypy` | mypy 1.15.0 | `backend/app/` — static type checking (Python 3.12) |
 | 4 | `eslint` | ESLint (via npm) | `frontend/src/**` (excl. `components/ui/`) — React/hooks rules, unused imports, security |
-| 5 | `prettier` | Prettier (via npx) | `frontend/src/**` — JS/JSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
+| 5 | `prettier` | Prettier (devDependency) | `frontend/src/**` — JS/JSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
 | 6 | `typecheck` | tsc (via npm) | `frontend/src/**` (excl. `components/ui/`) — JSDoc type checking via `checkJs` |
 | 7 | `build` | Vite (via npm) | `frontend/` — production build |
 | 8 | bundle size | bash + `wc` | `frontend/dist/` — main JS bundle must be ≤ 1.4 MB |
@@ -213,7 +330,7 @@ brew install terraform-linters/tap/tflint
 | 10 | `bandit` | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure calls (medium+ severity) |
 | 11 | `pip-audit` | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PYSEC-2025-183 suppressed — disputed, no fix version) |
 | 12 | `npm audit` | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
-| 13 | retire.js | retire (via npx) | `frontend/` — browser library CVEs, including client-side JS libraries not always caught by npm audit |
+| 13 | retire.js | retire (devDependency) | `frontend/` — browser library CVEs, including client-side JS libraries not always caught by npm audit |
 | 14 | semgrep | semgrep 1.163.0 | `backend/app/` + `frontend/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset); venv-installed via `requirements-security.txt` |
 | 15 | checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM); venv-installed via `requirements-security.txt` |
 | 16 ² | gitleaks | gitleaks | Entire repo git history — accidentally committed secrets, API keys, tokens |
@@ -521,7 +638,7 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 | Step | Tool | What it checks |
 |---|---|---|
 | `eslint` | ESLint (via `npm run lint`) | React/hooks rules, unused imports, security (`eslint-plugin-security`) — covers `src/**` excl. `components/ui/` |
-| `prettier --check` | Prettier (via npx) | JS/JSX/CSS formatting across `src/**` — fails if any file is unformatted or has unsorted Tailwind classes (`prettier-plugin-tailwindcss`) |
+| `prettier --check` | Prettier (devDependency) | JS/JSX/CSS formatting across `src/**` — fails if any file is unformatted or has unsorted Tailwind classes (`prettier-plugin-tailwindcss`) |
 | `typecheck` | tsc (via `npm run typecheck`) | JSDoc type checking (`checkJs`) across `src/**` excl. `components/ui/` |
 | `build` | Vite (via `npm run build`) | Production build — catches import errors and missing assets |
 | bundle size | bash + `wc` | Ensures the main JS bundle stays ≤ 1.4 MB (current: ~1.08 MB) |
@@ -567,7 +684,7 @@ All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so g
 | pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 suppressed — disputed, no fix version |
 | Checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
 | npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
-| Retire.js | retire (via npx) | `frontend/` — browser library CVEs not always caught by npm audit |
+| Retire.js | retire (devDependency) | `frontend/` — browser library CVEs not always caught by npm audit |
 | Trivy (backend fs) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
 | Trivy (frontend fs) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
 | Trivy (backend license) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) in Python packages |
@@ -641,6 +758,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ROLE_ARN` | ARN of the IAM OIDC role |
 | `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `buddy360` |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
+| `BACKEND_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
 | `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app` |
 | `SUBDOMAIN_INTERNAL` | Backend/internal subdomain prefix, e.g. `api` |
@@ -662,9 +780,10 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ANTHROPIC_API_KEY` | Anthropic key (optional) |
 | `ANTHROPIC_MODEL` | e.g. `claude-sonnet-4-6` |
 | `GEMINI_API_KEY` | Google Gemini key (optional) |
-| `GEMINI_MODEL` | e.g. `gemini-1.5-flash` |
+| `GEMINI_MODEL` | e.g. `gemini-3-flash` |
 | `BEHIND_PROXY` | `true` if the backend is behind a reverse proxy (e.g. ALB/Nginx); enables correct client-IP extraction for rate limiting (default `false`) |
 | `DEFAULT_LOCATION` | MongoDB shard key for new users when location cannot be detected, e.g. `us`, `eu`, `in` (default `us`) |
+| `BACKEND_BUCKET_NAME` | S3 bucket name injected into the ECS task environment; available to the backend for any S3 operations (e.g. future direct uploads). Also declared as an infrastructure secret above — a single GitHub secret drives both Terraform and the ECS environment. |
 
 **Frontend build secrets** (baked into the bundle by `deploy-live-frontend.yml`):
 
@@ -677,7 +796,7 @@ At least one LLM API key must be set to enable LLM features.
 
 ## Product notes
 
-- **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-4o-mini`, `claude-sonnet-4-6`, `gemini-1.5-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
+- **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-5.4-mini`, `claude-sonnet-4-6`, `gemini-3-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
 - **Rate limiting**: `POST /auth/register` is capped at 5 requests/minute per IP; login and Google auth at 10/minute. LLM calls are also rate-limited per-user (sliding window, default 200 calls/hour) via Redis — set `REDIS_URL` to a Redis instance; without it the rate limiter falls back to an in-process counter that breaks under multiple containers.
 - **Session management**: the access token has a 30-minute lifetime; the refresh token lasts 24 hours. `AuthContext` schedules a proactive silent refresh 60 seconds before the access token would expire, so sessions stay alive automatically without requiring any user interaction. If the silent refresh returns 401 (refresh token expired or revoked), the app dispatches a `buddy360:auth-expired` custom event and the user is logged out. Network hiccups retry after 30 seconds.
 

@@ -90,7 +90,7 @@ run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
 
 run "prettier (check)" \
-    bash -c "cd '$FRONTEND' && npx prettier --check 'src/**/*.{js,jsx,css}'"
+    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{js,jsx,css}'"
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
@@ -133,7 +133,7 @@ run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
 run "retire.js (browser library CVE scan)" \
-    bash -c "cd '$FRONTEND' && npx retire --path . --exitwith 1"
+    bash -c "'$FRONTEND/node_modules/.bin/retire' --path '$FRONTEND' --exitwith 1"
 
 # ---- mandatory: external tools — check.sh fails if any are absent ----------------
 # semgrep and checkov are installed into .venv via requirements-security.txt above.

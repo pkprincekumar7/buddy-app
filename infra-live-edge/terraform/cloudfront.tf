@@ -40,6 +40,12 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   origin {
+    origin_id                = "s3-backend-assets"
+    domain_name              = data.aws_s3_bucket.backend.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.backend_assets.id
+  }
+
+  origin {
     origin_id   = "alb-backend"
     domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
 
@@ -63,6 +69,21 @@ resource "aws_cloudfront_distribution" "frontend" {
     cache_policy_id            = local.cache_policy_optimized
     origin_request_policy_id   = local.origin_request_cors_s3
     response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
+  }
+
+  # -- /assets/* behaviour: static files from backend S3 bucket ---------------
+
+  ordered_cache_behavior {
+    path_pattern           = "/assets/*"
+    target_origin_id       = "s3-backend-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = local.cache_policy_optimized
+    origin_request_policy_id   = local.origin_request_cors_s3
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
   }
 
   # -- /api/* behaviour: proxy to ALB backend ---------------------------------

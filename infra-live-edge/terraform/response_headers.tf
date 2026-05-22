@@ -12,9 +12,10 @@
 #                + accounts.google.com          inline styles added by framer-motion
 #                                               and shadcn components at runtime;
 #                                               GSI button injects its own inline styles.
-#   img-src     'self' + data:                 — bundled SVG/PNG assets; base64 data URIs
-#                + lh3.googleusercontent.com    used by some UI components;
-#                                               Google profile photos shown after sign-in.
+#   img-src     'self' + data: + https:         — bundled SVG/PNG assets; base64 data URIs;
+#                                               all HTTPS image sources including S3-backed
+#                                               activity-game images (served via CloudFront
+#                                               /assets/*) and Google profile photos.
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
@@ -65,7 +66,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
         "default-src 'self'",
         "script-src 'self' https://accounts.google.com",
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
-        "img-src 'self' data: https://lh3.googleusercontent.com",
+        "img-src 'self' data: https:",
         "font-src 'self' data:",
         "connect-src 'self' https://accounts.google.com",
         "frame-src https://accounts.google.com",
@@ -101,6 +102,26 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
     items {
       header   = "Permissions-Policy"
       value    = "microphone=(self), camera=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+      override = true
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Minimal response headers policy for static assets (/assets/*)
+#
+# Only nosniff is meaningful on image responses. HSTS, CSP, X-Frame-Options
+# and the rest are document-level controls; browsers ignore them on image or
+# binary responses. The CSP that protects the page is already set on the
+# index.html response (default cache behaviour above) and img-src 'self'
+# covers /assets/* because it is the same CloudFront origin.
+# ---------------------------------------------------------------------------
+resource "aws_cloudfront_response_headers_policy" "assets" {
+  name    = "${var.app_name}-assets-${var.environment}"
+  comment = "Minimal security headers for static asset responses (${var.environment})"
+
+  security_headers_config {
+    content_type_options {
       override = true
     }
   }
