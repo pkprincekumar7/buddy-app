@@ -108,21 +108,85 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 }
 
 # ---------------------------------------------------------------------------
+# Response headers policy for FastAPI API responses (/api/*)
+#
+# Sets the standard security headers that belong on every HTTPS response.
+# CORS headers (Access-Control-*) are intentionally omitted — FastAPI's
+# CORSMiddleware is the single authoritative source for those and they pass
+# through CloudFront unchanged. Adding them here would create duplicates.
+#
+# override = true on every header: CloudFront enforces the correct value
+# regardless of what the origin returns, making this policy the single
+# authoritative source for security headers on all /api/* responses.
+# ---------------------------------------------------------------------------
+resource "aws_cloudfront_response_headers_policy" "api_security" {
+  name    = "${var.app_name}-api-security-${var.environment}"
+  comment = "Security headers for FastAPI /api/* responses (${var.environment})"
+
+  security_headers_config {
+    # Block MIME-type sniffing on all API responses.
+    content_type_options {
+      override = true
+    }
+
+    # Prevent the API response from being loaded inside a frame.
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    # Send only the origin (no path/query) as the referrer.
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    # Enforce HTTPS for 2 years on this domain — applies to ALL HTTPS responses,
+    # not just documents. HSTS must be set at the TLS-termination layer (CloudFront)
+    # and is therefore absent from FastAPI's request_id_middleware.
+    strict_transport_security {
+      access_control_max_age_sec = 63072000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+
+    # Legacy XSS auditor header — ignored by modern browsers but still checked
+    # by security scanners and older enterprise proxies.
+    xss_protection {
+      mode_block = true
+      protection = true
+      override   = true
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Minimal response headers policy for static assets (/app-assets/*)
 #
-# Only nosniff is meaningful on image responses. HSTS, CSP, X-Frame-Options
-# and the rest are document-level controls; browsers ignore them on image or
-# binary responses. The CSP that protects the page is already set on the
-# index.html response (default cache behaviour above) and img-src 'self'
-# covers /app-assets/* because it is the same CloudFront origin.
+# nosniff is essential for binary asset responses (images, fonts).
+# HSTS must be set on ALL HTTPS responses — browsers honour it regardless of
+# content type, updating their HSTS cache even for image or font responses.
+# CSP, X-Frame-Options, Referrer-Policy and Permissions-Policy are
+# document-level controls; browsers do not apply them to sub-resource responses
+# so there is no security benefit in setting them on image/binary assets.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "assets" {
   name    = "${var.app_name}-assets-${var.environment}"
-  comment = "Minimal security headers for static asset responses (${var.environment})"
+  comment = "Security headers for static asset responses (/app-assets/*) (${var.environment})"
 
   security_headers_config {
     content_type_options {
       override = true
+    }
+
+    # HSTS applies to all HTTPS responses — include it here so the browser's
+    # HSTS cache is refreshed even when only asset requests are made.
+    strict_transport_security {
+      access_control_max_age_sec = 63072000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
     }
   }
 }

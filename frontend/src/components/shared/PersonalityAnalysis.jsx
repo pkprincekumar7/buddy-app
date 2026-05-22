@@ -2,6 +2,7 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { Sparkles, Sprout } from 'lucide-react';
 import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
+import { generateAvatarDataUri } from '@/lib/avatarUtils';
 
 const FAMOUS_LABEL = {
   Ambitious: 'Achievers',
@@ -374,7 +375,7 @@ function roleModelAvatars(roleModels, fallbackName) {
     const nm = typeof r?.name === 'string' && r.name.trim() ? r.name.trim() : 'Guide';
     return {
       name: nm,
-      image: `https://ui-avatars.com/api/?name=${encodeURIComponent(nm)}&background=random&size=128`,
+      image: generateAvatarDataUri(nm),
     };
   });
 }
@@ -591,8 +592,10 @@ export default function PersonalityAnalysis({ mbtiResult, childName }) {
                   alt={person.name}
                   className="h-full w-full object-cover"
                   onError={(e) => {
-                    /** @type {HTMLImageElement} */ (e.target).src =
-                      `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=1a1a1a&color=2dd4bf&size=128`;
+                    /** @type {HTMLImageElement} */ (e.target).src = generateAvatarDataUri(
+                      person.name,
+                      { background: '1a1a1a', color: '#2dd4bf' },
+                    );
                   }}
                 />
               </div>

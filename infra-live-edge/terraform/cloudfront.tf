@@ -101,6 +101,11 @@ resource "aws_cloudfront_distribution" "frontend" {
 
     cache_policy_id          = local.cache_policy_disabled
     origin_request_policy_id = local.origin_request_all_viewer_except_host
+    # api_security sets X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+    # HSTS, and X-XSS-Protection with override=true.  CORS headers (Access-Control-*)
+    # are NOT in this policy — FastAPI's CORSMiddleware is the sole source for those
+    # and they pass through unchanged, so no duplication occurs.
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
   }
 
   # -- SPA fallback: S3 returns 403 for missing objects -----------------------

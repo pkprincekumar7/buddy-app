@@ -44,7 +44,11 @@ server {
     # Vite build output: hashed JS/CSS/fonts — immutable caching.
     location /assets/ {
         expires 1y;
+        # Any add_header in a location block disables inheritance of the server-block
+        # add_header directives. Re-declare X-Content-Type-Options here so hashed
+        # JS/CSS assets are still served with the nosniff protection.
         add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
         access_log off;
     }
 

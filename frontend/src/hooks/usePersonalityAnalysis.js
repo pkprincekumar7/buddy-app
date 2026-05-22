@@ -7,6 +7,7 @@ import {
 } from '@/components/shared/PersonalityAnalysis';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
+import { sanitizeViewModelAvatars } from '@/lib/avatarUtils';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -34,10 +35,14 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
               analysisSource: child.personality.source,
             },
           );
-          dispatch({ type: 'SET_MBTI_RESULT', payload: clampedReuse });
+          // Sanitize any legacy image URLs (e.g. ui-avatars.com) that may have
+          // been persisted by older code.  Safe data URIs and Wikipedia images
+          // are left unchanged; everything else is replaced with a local avatar.
+          const sanitized = sanitizeViewModelAvatars(clampedReuse);
+          dispatch({ type: 'SET_MBTI_RESULT', payload: sanitized });
           dispatch({
             type: 'SET_GENERATED_PROFILE',
-            payload: onboardingProfileFromViewModel(clampedReuse),
+            payload: onboardingProfileFromViewModel(sanitized),
           });
           return;
         }
