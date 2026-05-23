@@ -7,7 +7,7 @@ import {
 } from '@/components/shared/PersonalityAnalysis';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { sanitizeViewModelAvatars } from '@/lib/avatarUtils';
+import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -69,8 +69,9 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
 
           const vm = adaptAiPersonalityToViewModel(ai || {}, mergedFromServer.name);
           const prof = onboardingProfileFromViewModel(vm);
+          // Strip SVG data-URI images before saving — WAF blocks payloads with <svg>/<text> tags.
           await api.entities.Child.update(activeChildId, {
-            personality: { source: 'llm', view_model: vm },
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           });
           if (cancelled) return;
 
@@ -83,7 +84,7 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
           const prof = onboardingProfileFromViewModel(ruleVm);
           try {
             await api.entities.Child.update(activeChildId, {
-              personality: { source: 'rule_fallback', view_model: ruleVm },
+              personality: { source: 'rule_fallback', view_model: stripViewModelImages(ruleVm) },
             });
           } catch (patchErr) {
             console.warn(

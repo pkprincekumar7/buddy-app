@@ -11,7 +11,7 @@ import PersonalityAnalysis, {
   PERSONALITY_TYPE_KEYS,
 } from '@/components/shared/PersonalityAnalysis';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { sanitizeViewModelAvatars } from '@/lib/avatarUtils';
+import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -82,8 +82,10 @@ export default function PersonalityType() {
           if (cancelled) return;
 
           const vm = adaptAiPersonalityToViewModel(ai || {}, merged.name);
+          // Strip SVG data-URI images before saving — WAF blocks payloads containing
+          // <svg>/<text> tags. sanitizeViewModelAvatars regenerates them on next load.
           await api.entities.Child.update(child.id, {
-            personality: { source: 'llm', view_model: vm },
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
             onboarding_phase: 2,
           });
           if (cancelled) return;
@@ -93,7 +95,7 @@ export default function PersonalityType() {
           const ruleVm = calculateMBTI(merged);
           try {
             await api.entities.Child.update(child.id, {
-              personality: { source: 'rule_fallback', view_model: ruleVm },
+              personality: { source: 'rule_fallback', view_model: stripViewModelImages(ruleVm) },
               onboarding_phase: 2,
             });
           } catch {

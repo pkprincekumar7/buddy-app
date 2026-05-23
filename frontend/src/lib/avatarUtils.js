@@ -61,6 +61,29 @@ function nameToColor(name) {
  * @returns {object}   A new view_model object with all famous_people images
  *                     replaced by safe data URIs where necessary.
  */
+/**
+ * Strips `image` from every `profile.famous_people` entry before persisting
+ * the view_model to the backend.
+ *
+ * SVG data-URI avatars (`data:image/svg+xml;…`) embedded in the JSON body
+ * trigger the AWS WAF Core Rule Set's CrossSiteScripting_BODY rule (the rule
+ * URL-decodes the body and sees `<svg>/<text>` tags). Stripping images before
+ * the API call keeps the payload WAF-safe. On next load, `sanitizeViewModelAvatars`
+ * regenerates the avatars from the person's name, so the UI is unaffected.
+ *
+ * @param {object} vm  The personality view_model to sanitize for persistence.
+ * @returns {object}   A new view_model with `image` removed from every famous_person.
+ */
+export function stripViewModelImages(vm) {
+  const people = vm?.profile?.famous_people;
+  if (!Array.isArray(people)) return vm;
+  const stripped = people.map(({ image: _image, ...rest }) => rest);
+  return {
+    ...vm,
+    profile: { ...vm.profile, famous_people: stripped },
+  };
+}
+
 export function sanitizeViewModelAvatars(vm) {
   const people = vm?.profile?.famous_people;
   if (!Array.isArray(people)) return vm;

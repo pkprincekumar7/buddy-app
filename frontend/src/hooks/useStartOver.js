@@ -28,14 +28,5 @@ export function useStartOver(childId) {
     navigate('/Home', { replace: true });
   }, [isStartingOver, childId, navigate, queryClient]);
 
-  const startOver = useCallback(() => {
-    if (!childId) return;
-    toast.warning("This child's progress will be permanently deleted.", {
-      action: { label: 'Yes, start over', onClick: doStartOver },
-      cancel: { label: 'Cancel', onClick: () => {} },
-      duration: 6000,
-    });
-  }, [doStartOver, childId]);
-
-  return { startOver, isStartingOver };
+  return { doStartOver, isStartingOver };
 }
