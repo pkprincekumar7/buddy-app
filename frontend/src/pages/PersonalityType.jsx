@@ -30,8 +30,14 @@ export default function PersonalityType() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
@@ -39,7 +45,10 @@ export default function PersonalityType() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
 
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) || {});
         setChildName(merged.name || '');
@@ -54,7 +63,10 @@ export default function PersonalityType() {
           return;
         }
 
-        if (!merged.name?.trim()) { navigate(`/ConversationalOnboarding/${childId}`, { replace: true }); return; }
+        if (!merged.name?.trim()) {
+          navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
+          return;
+        }
 
         // Call LLM
         setStatus('analysing');
@@ -84,7 +96,9 @@ export default function PersonalityType() {
               personality: { source: 'rule_fallback', view_model: ruleVm },
               onboarding_phase: 2,
             });
-          } catch { /* non-fatal */ }
+          } catch {
+            /* non-fatal */
+          }
           if (cancelled) return;
           setMbtiResult(ruleVm);
         }
@@ -95,7 +109,9 @@ export default function PersonalityType() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
   const handleContinue = async () => {
@@ -108,7 +124,10 @@ export default function PersonalityType() {
   if (isLoadingAuth || status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -116,7 +135,10 @@ export default function PersonalityType() {
   if (status === 'analysing') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <motion.div {...SPINNER} className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
         <p className="max-w-md text-center font-medium text-slate-400">
           Shaping personality insights from your questionnaire…
         </p>
@@ -128,7 +150,10 @@ export default function PersonalityType() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-slate-400">Something went wrong. Please try again.</p>
-        <Button onClick={() => navigate(childId ? `/ConversationalOnboarding/${childId}` : '/Home')} className="btn-primary rounded-2xl px-8">
+        <Button
+          onClick={() => navigate(childId ? `/ConversationalOnboarding/${childId}` : '/Home')}
+          className="btn-primary rounded-2xl px-8"
+        >
           Go Back
         </Button>
       </div>
@@ -152,12 +177,16 @@ export default function PersonalityType() {
                   phase.active
                     ? 'border border-teal-500/25 bg-teal-500/10'
                     : phase.done
-                    ? 'border border-emerald-500/20 bg-emerald-500/10'
-                    : 'bg-ghost border-edge-faint opacity-50'
+                      ? 'border border-emerald-500/20 bg-emerald-500/10'
+                      : 'bg-ghost border-edge-faint opacity-50'
                 }`}
               >
-                <span className="text-base" aria-hidden="true">{phase.icon}</span>
-                <span className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}>
+                <span className="text-base" aria-hidden="true">
+                  {phase.icon}
+                </span>
+                <span
+                  className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}
+                >
                   {phase.label}
                 </span>
                 {phase.done && <span className="text-xs text-emerald-400">✓</span>}
@@ -175,7 +204,9 @@ export default function PersonalityType() {
           left={
             <Button
               variant="outline"
-              onClick={() => navigate(`/ConversationalOnboarding/${childId}`, { state: { fromBack: true } })}
+              onClick={() =>
+                navigate(`/ConversationalOnboarding/${childId}`, { state: { fromBack: true } })
+              }
               className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />

@@ -8,9 +8,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import { SPINNER } from '@/lib/animations';
-import {
-  normalizeOnboardingChildDataBlob,
-} from '@/lib/onboardingChildData';
+import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
 
 export default function ConversationalOnboarding() {
@@ -25,8 +23,14 @@ export default function ConversationalOnboarding() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
@@ -34,10 +38,15 @@ export default function ConversationalOnboarding() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
 
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         // Preload existing data — no auto-redirect forward even if personality is ready.
-        const personalityReady = !!(child.personality?.view_model?.type && child.personality?.view_model?.profile);
+        const personalityReady = !!(
+          child.personality?.view_model?.type && child.personality?.view_model?.profile
+        );
         setHasPersonality(personalityReady);
         const normalized = normalizeOnboardingChildDataBlob(child);
         if (normalized) setChildData(mergeChildDraft(normalized));
@@ -48,26 +57,30 @@ export default function ConversationalOnboarding() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
-  const handleComplete = useCallback(async (conversationData) => {
-    const mergedDraft = mergeChildDraft({ ...(childData || {}), ...conversationData });
-    try {
-      if (childId) {
-        await api.entities.Child.update(childId, {
-          ...mergedDraft,
-          onboarding_phase: 2,
-          onboarding_completed: false,
-          ...(!hasPersonality && { personality: null, recommendations: null }),
-        });
+  const handleComplete = useCallback(
+    async (conversationData) => {
+      const mergedDraft = mergeChildDraft({ ...(childData || {}), ...conversationData });
+      try {
+        if (childId) {
+          await api.entities.Child.update(childId, {
+            ...mergedDraft,
+            onboarding_phase: 2,
+            onboarding_completed: false,
+            ...(!hasPersonality && { personality: null, recommendations: null }),
+          });
+        }
+      } catch (err) {
+        console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
       }
-    } catch (err) {
-      console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
-    }
-    navigate(`/PersonalityType/${childId}`);
-  }, [childData, childId, hasPersonality, navigate]);
-
+      navigate(`/PersonalityType/${childId}`);
+    },
+    [childData, childId, hasPersonality, navigate],
+  );
 
   if (isLoadingAuth || !hydrated) {
     return (
@@ -99,8 +112,12 @@ export default function ConversationalOnboarding() {
                     : 'bg-ghost border-edge-faint opacity-50'
                 }`}
               >
-                <span className="text-base" aria-hidden="true">{phase.icon}</span>
-                <span className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : 'text-slate-600'}`}>
+                <span className="text-base" aria-hidden="true">
+                  {phase.icon}
+                </span>
+                <span
+                  className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : 'text-slate-600'}`}
+                >
                   {phase.label}
                 </span>
               </div>

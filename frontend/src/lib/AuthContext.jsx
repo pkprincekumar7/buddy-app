@@ -126,7 +126,9 @@ export const AuthProvider = ({ children }) => {
     if (!isAuthenticated) return;
     const timer = setTimeout(() => {
       if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
-      api.preferences.patch({ last_visited_path: location.pathname + location.search }).catch(() => {});
+      api.preferences
+        .patch({ last_visited_path: location.pathname + location.search })
+        .catch(() => {});
     }, 1500);
     return () => clearTimeout(timer);
   }, [location.pathname, location.search, isAuthenticated]);

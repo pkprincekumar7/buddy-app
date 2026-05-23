@@ -18,7 +18,10 @@ export default function Onboarding() {
   // No auto-redirects — the user always navigates step by step.
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { setChecking(false); return; }
+    if (!isAuthenticated) {
+      setChecking(false);
+      return;
+    }
     let cancelled = false;
 
     (async () => {
@@ -36,7 +39,9 @@ export default function Onboarding() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated]);
 
   const handleContinue = useCallback(async () => {
@@ -77,11 +82,7 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
-        <WelcomePhase
-          onContinue={handleContinue}
-          isAuthenticated={isAuthenticated}
-          user={user}
-        />
+        <WelcomePhase onContinue={handleContinue} isAuthenticated={isAuthenticated} user={user} />
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button
             variant="outline"

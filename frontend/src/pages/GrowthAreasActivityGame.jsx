@@ -25,16 +25,28 @@ export default function GrowthAreasActivityGame() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
-    if (!area) { navigate(`/GrowthAreas/${childId}`, { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
+    if (!area) {
+      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         setChildName(child.name || '');
 
@@ -54,53 +66,66 @@ export default function GrowthAreasActivityGame() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, activity, area, navigate]);
 
-  const handleGameComplete = useCallback(async (result) => {
-    if (!childId || !area) return;
-    try {
-      await api.completedGrowthAreas.append(childId, {
-        area_id: area.id,
-        area_name: area.name,
-        area_color: area.color,
-        answers: savedAnswers,
-        status: 'in_progress',
-        step: 'activity_summary',
-        child_activity: {
-          selections: result.selections || [],
-          results: result.recommendations || null,
-        },
-        child_activity_selections: result.selections || [],
-      });
-    } catch (err) {
-      console.error('[GrowthAreasActivityGame] Save failed:', err);
-      toast.error('Could not save game results. Try again or check your connection.');
-      return;
-    }
-    navigate(`/GrowthAreas/${childId}/Activity/${activity}/GreatInsights`);
-  }, [childId, area, activity, navigate, savedAnswers]);
+  const handleGameComplete = useCallback(
+    async (result) => {
+      if (!childId || !area) return;
+      try {
+        await api.completedGrowthAreas.append(childId, {
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          answers: savedAnswers,
+          status: 'in_progress',
+          step: 'activity_summary',
+          child_activity: {
+            selections: result.selections || [],
+            results: result.recommendations || null,
+          },
+          child_activity_selections: result.selections || [],
+        });
+      } catch (err) {
+        console.error('[GrowthAreasActivityGame] Save failed:', err);
+        toast.error('Could not save game results. Try again or check your connection.');
+        return;
+      }
+      navigate(`/GrowthAreas/${childId}/Activity/${activity}/GreatInsights`);
+    },
+    [childId, area, activity, navigate, savedAnswers],
+  );
 
-  const handleSelectedIdsChange = useCallback(async (ids) => {
-    setSelectedIds(ids);
-    if (!childId || !area) return;
-    try {
-      await api.completedGrowthAreas.append(childId, {
-        area_id: area.id,
-        area_name: area.name,
-        area_color: area.color,
-        answers: savedAnswers,
-        status: 'in_progress',
-        step: 'activity_summary',
-        child_activity_selections: ids,
-      });
-    } catch { /* non-fatal */ }
-  }, [childId, area, savedAnswers]);
+  const handleSelectedIdsChange = useCallback(
+    async (ids) => {
+      setSelectedIds(ids);
+      if (!childId || !area) return;
+      try {
+        await api.completedGrowthAreas.append(childId, {
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          answers: savedAnswers,
+          status: 'in_progress',
+          step: 'activity_summary',
+          child_activity_selections: ids,
+        });
+      } catch {
+        /* non-fatal */
+      }
+    },
+    [childId, area, savedAnswers],
+  );
 
   if (isLoadingAuth || !hydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -115,7 +140,9 @@ export default function GrowthAreasActivityGame() {
       <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
         <div className="mx-auto max-w-4xl px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}>
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}
+            >
               <area.icon className="h-5 w-5 text-white" />
             </div>
             <p className="text-sm font-semibold text-white">{area.name} — Activity</p>

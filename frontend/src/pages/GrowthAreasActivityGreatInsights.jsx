@@ -28,16 +28,28 @@ export default function GrowthAreasActivityGreatInsights() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
-    if (!area) { navigate(`/GrowthAreas/${childId}`, { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
+    if (!area) {
+      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         setChildName(child.name || '');
 
@@ -66,8 +78,8 @@ export default function GrowthAreasActivityGreatInsights() {
           areaDoc.ai_three_month_recommendations.length > 0
             ? areaDoc.ai_three_month_recommendations
             : Array.isArray(areaDoc.recommendations) && areaDoc.recommendations.length > 0
-            ? areaDoc.recommendations
-            : null;
+              ? areaDoc.recommendations
+              : null;
 
         if (cached) {
           setRecommendations(cached);
@@ -83,7 +95,9 @@ export default function GrowthAreasActivityGreatInsights() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, activity, area, navigate]);
 
   const generateRecommendations = useCallback(async () => {
@@ -93,7 +107,10 @@ export default function GrowthAreasActivityGreatInsights() {
     const questions = AREA_QUESTIONS[area.id] || [];
     const qaContext = questions
       .filter((q) => interactiveAnswers[q.id])
-      .map((q) => `Q: ${q.question.replace(/\{name\}/g, childName || 'the child')}\nA: ${interactiveAnswers[q.id]}`)
+      .map(
+        (q) =>
+          `Q: ${q.question.replace(/\{name\}/g, childName || 'the child')}\nA: ${interactiveAnswers[q.id]}`,
+      )
       .join('\n\n');
 
     const childContext = childGameResults
@@ -136,7 +153,10 @@ export default function GrowthAreasActivityGreatInsights() {
   if (isLoadingAuth || status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -145,7 +165,12 @@ export default function GrowthAreasActivityGreatInsights() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-slate-400">Could not load insights. Please try again.</p>
-        <Button onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')} className="btn-primary rounded-2xl px-8">Back to Growth Areas</Button>
+        <Button
+          onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
+          className="btn-primary rounded-2xl px-8"
+        >
+          Back to Growth Areas
+        </Button>
       </div>
     );
   }
@@ -158,7 +183,9 @@ export default function GrowthAreasActivityGreatInsights() {
       <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
         <div className="mx-auto max-w-4xl px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}>
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}
+            >
               <Icon className="h-5 w-5 text-white" />
             </div>
             <p className="text-sm font-semibold text-white">{area.name} — Great Insights</p>
@@ -174,7 +201,9 @@ export default function GrowthAreasActivityGreatInsights() {
           transition={{ duration: 0.8 }}
           className="text-center"
         >
-          <div className={`mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br ${area.color}`}>
+          <div
+            className={`mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br ${area.color}`}
+          >
             <Icon className="h-10 w-10 text-white" />
           </div>
           <h2 className="mb-2 text-2xl font-bold text-white">Great Insights!</h2>
@@ -193,7 +222,7 @@ export default function GrowthAreasActivityGreatInsights() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.3 }}
-              className="rounded-2xl border border-white/10 bg-card p-6 space-y-3"
+              className="space-y-3 rounded-2xl border border-white/10 bg-card p-6"
             >
               {answered.map((q, i) => (
                 <motion.div
@@ -219,9 +248,9 @@ export default function GrowthAreasActivityGreatInsights() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.5 }}
-            className="rounded-2xl border border-emerald-500/20 bg-card p-6 space-y-4"
+            className="space-y-4 rounded-2xl border border-emerald-500/20 bg-card p-6"
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
@@ -235,19 +264,20 @@ export default function GrowthAreasActivityGreatInsights() {
               </div>
             )}
 
-            {Array.isArray(childGameResults.suggested_activities) && childGameResults.suggested_activities.length > 0 && (
-              <div className="rounded-xl bg-surface-elevated p-4">
-                <h4 className="mb-2 font-semibold text-white">Suggested Activities</h4>
-                <ul className="space-y-2">
-                  {childGameResults.suggested_activities.map((act, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
-                      <span className="mt-0.5 text-emerald-500">✓</span>
-                      <span>{act}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {Array.isArray(childGameResults.suggested_activities) &&
+              childGameResults.suggested_activities.length > 0 && (
+                <div className="rounded-xl bg-surface-elevated p-4">
+                  <h4 className="mb-2 font-semibold text-white">Suggested Activities</h4>
+                  <ul className="space-y-2">
+                    {childGameResults.suggested_activities.map((act, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
+                        <span className="mt-0.5 text-emerald-500">✓</span>
+                        <span>{act}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
             {Array.isArray(childGameResults.strengths) && childGameResults.strengths.length > 0 && (
               <div className="rounded-xl bg-surface-elevated p-4">
@@ -301,7 +331,9 @@ export default function GrowthAreasActivityGreatInsights() {
               </div>
               <div className="space-y-1 text-center">
                 <p className="text-sm font-semibold text-white">Building your 3-Month Plan</p>
-                <p className="text-xs text-slate-500">Personalising recommendations for {childName}…</p>
+                <p className="text-xs text-slate-500">
+                  Personalising recommendations for {childName}…
+                </p>
               </div>
             </div>
           )}
@@ -317,7 +349,9 @@ export default function GrowthAreasActivityGreatInsights() {
                   transition={{ duration: 0.5, delay: i * 0.1 }}
                   className="flex items-start gap-3 rounded-xl bg-surface-input p-3"
                 >
-                  <div className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${area.color}`}>
+                  <div
+                    className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ${area.color}`}
+                  >
                     <span className="text-xs font-bold text-white">{i + 1}</span>
                   </div>
                   <p className="text-sm leading-relaxed text-slate-300">{rec}</p>

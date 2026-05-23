@@ -833,7 +833,9 @@ export default function RecommendationsPhase({
   );
 
   useEffect(() => {
-    const flushOnUnload = () => { debouncedSaveAreaProgress.flush?.(); };
+    const flushOnUnload = () => {
+      debouncedSaveAreaProgress.flush?.();
+    };
     window.addEventListener('beforeunload', flushOnUnload);
     return () => {
       window.removeEventListener('beforeunload', flushOnUnload);

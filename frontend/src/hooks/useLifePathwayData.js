@@ -37,7 +37,8 @@ export function useLifePathwayData(childId) {
           (a) =>
             a.status === 'completed' ||
             !a.status ||
-            (Array.isArray(a.ai_three_month_recommendations) && a.ai_three_month_recommendations.length > 0),
+            (Array.isArray(a.ai_three_month_recommendations) &&
+              a.ai_three_month_recommendations.length > 0),
         );
         if (completedOnly.length) setCompletedAreas(completedOnly);
 

@@ -90,7 +90,9 @@ function MonthCard({ month, idx, color, isOpen, onToggle }) {
       className="border-edge rounded-2xl bg-card"
     >
       <button onClick={onToggle} className="w-full text-left">
-        <div className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}>
+        <div
+          className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
               <span className="font-bold text-white">{month.month}</span>
@@ -377,9 +379,7 @@ export default function GoalsDashboard() {
                     ← Back
                   </Button>
                 }
-                center={
-                  <StartOverButton childId={childId} className="w-full sm:w-auto" />
-                }
+                center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                 right={
                   <Button
                     variant="outline"

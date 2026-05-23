@@ -79,7 +79,8 @@ const areaMilestoneMap = {
 function getAreaBoost(area) {
   const answerCount = Object.values(area.answers || {}).filter(Boolean).length;
   const recs =
-    Array.isArray(area.ai_three_month_recommendations) && area.ai_three_month_recommendations.length > 0
+    Array.isArray(area.ai_three_month_recommendations) &&
+    area.ai_three_month_recommendations.length > 0
       ? area.ai_three_month_recommendations
       : area.recommendations || [];
   return 5 + answerCount * 0.8 + (recs.length > 0 ? 2 : 0);
@@ -537,7 +538,8 @@ export default function LifePathway() {
               {completedAreas.map((area, idx) => {
                 const bgTw = areaBgTw[area.area_id] ?? 'bg-emerald-500';
                 const recs =
-                  Array.isArray(area.ai_three_month_recommendations) && area.ai_three_month_recommendations.length > 0
+                  Array.isArray(area.ai_three_month_recommendations) &&
+                  area.ai_three_month_recommendations.length > 0
                     ? area.ai_three_month_recommendations
                     : area.recommendations || [];
                 return (
@@ -636,9 +638,7 @@ export default function LifePathway() {
                   ← Back
                 </Button>
               }
-              center={
-                <StartOverButton childId={childId} className="w-full sm:w-auto" />
-              }
+              center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
               right={
                 <Button
                   onClick={handleStartJourney}

@@ -23,8 +23,14 @@ export default function PersonalityJourney() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
@@ -32,8 +38,14 @@ export default function PersonalityJourney() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
 
-        if (!child) { navigate('/Home', { replace: true }); return; }
-        if (!child.personality?.view_model?.type) { navigate(`/PersonalityType/${childId}`, { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
+        if (!child.personality?.view_model?.type) {
+          navigate(`/PersonalityType/${childId}`, { replace: true });
+          return;
+        }
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) || {});
         setChildName(merged.name || '');
 
@@ -52,7 +64,10 @@ export default function PersonalityJourney() {
           return;
         }
 
-        if (!merged.name?.trim()) { navigate(`/PersonalityType/${childId}`, { replace: true }); return; }
+        if (!merged.name?.trim()) {
+          navigate(`/PersonalityType/${childId}`, { replace: true });
+          return;
+        }
 
         setStatus('generating');
         const age = parseInt(String(merged.age), 10) || 10;
@@ -90,7 +105,9 @@ export default function PersonalityJourney() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
   const sectionAnim = (delay) => ({
@@ -102,7 +119,10 @@ export default function PersonalityJourney() {
   if (isLoadingAuth || status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -110,7 +130,10 @@ export default function PersonalityJourney() {
   if (status === 'generating') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <motion.div {...SPINNER} className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
         <p className="max-w-md text-center font-medium text-slate-400">
           Mapping personalized recommendations…
         </p>
@@ -122,7 +145,12 @@ export default function PersonalityJourney() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-slate-400">Something went wrong. Please try again.</p>
-        <Button onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')} className="btn-primary rounded-2xl px-8">Go Back</Button>
+        <Button
+          onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')}
+          className="btn-primary rounded-2xl px-8"
+        >
+          Go Back
+        </Button>
       </div>
     );
   }
@@ -144,12 +172,16 @@ export default function PersonalityJourney() {
                   phase.active
                     ? 'border border-teal-500/25 bg-teal-500/10'
                     : phase.done
-                    ? 'border border-emerald-500/20 bg-emerald-500/10'
-                    : 'bg-ghost border-edge-faint opacity-50'
+                      ? 'border border-emerald-500/20 bg-emerald-500/10'
+                      : 'bg-ghost border-edge-faint opacity-50'
                 }`}
               >
-                <span className="text-base" aria-hidden="true">{phase.icon}</span>
-                <span className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}>
+                <span className="text-base" aria-hidden="true">
+                  {phase.icon}
+                </span>
+                <span
+                  className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}
+                >
                   {phase.label}
                 </span>
                 {phase.done && <span className="text-xs text-emerald-400">✓</span>}
@@ -207,13 +239,17 @@ export default function PersonalityJourney() {
         )}
 
         {/* Growth areas prompt */}
-        <motion.div {...sectionAnim(1.8)} className="rounded-2xl border border-purple-500/20 bg-card p-6">
+        <motion.div
+          {...sectionAnim(1.8)}
+          className="rounded-2xl border border-purple-500/20 bg-card p-6"
+        >
           <div className="space-y-4 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600">
               <Compass className="h-7 w-7 text-white" />
             </div>
             <h3 className="text-lg font-bold text-white">
-              Do you want to explore the specific growth areas for {childName} to become their best version?
+              Do you want to explore the specific growth areas for {childName} to become their best
+              version?
             </h3>
             <p className="text-sm text-slate-400">
               Discover personalized activities to help {childName} develop key life skills

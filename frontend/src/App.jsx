@@ -70,20 +70,104 @@ const ProtectedRoutes = () => (
       }
     />
     {/* Child-specific routes — must come before the generic /:pageName entries */}
-    <Route path="/ConversationalOnboarding/:childId" element={<LayoutWrapper currentPageName="ConversationalOnboarding"><Pages.ConversationalOnboarding /></LayoutWrapper>} />
-    <Route path="/PersonalityType/:childId" element={<LayoutWrapper currentPageName="PersonalityType"><Pages.PersonalityType /></LayoutWrapper>} />
-    <Route path="/PersonalityJourney/:childId" element={<LayoutWrapper currentPageName="PersonalityJourney"><Pages.PersonalityJourney /></LayoutWrapper>} />
-    <Route path="/LifePathway/:childId" element={<LayoutWrapper currentPageName="LifePathway"><Pages.LifePathway /></LayoutWrapper>} />
-    <Route path="/GoalsDashboard/:childId" element={<LayoutWrapper currentPageName="GoalsDashboard"><Pages.GoalsDashboard /></LayoutWrapper>} />
+    <Route
+      path="/ConversationalOnboarding/:childId"
+      element={
+        <LayoutWrapper currentPageName="ConversationalOnboarding">
+          <Pages.ConversationalOnboarding />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/PersonalityType/:childId"
+      element={
+        <LayoutWrapper currentPageName="PersonalityType">
+          <Pages.PersonalityType />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/PersonalityJourney/:childId"
+      element={
+        <LayoutWrapper currentPageName="PersonalityJourney">
+          <Pages.PersonalityJourney />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/LifePathway/:childId"
+      element={
+        <LayoutWrapper currentPageName="LifePathway">
+          <Pages.LifePathway />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GoalsDashboard/:childId"
+      element={
+        <LayoutWrapper currentPageName="GoalsDashboard">
+          <Pages.GoalsDashboard />
+        </LayoutWrapper>
+      }
+    />
     {/* GrowthAreas nested routes (most-specific first) */}
-    <Route path="/GrowthAreas/:childId/Activity/:activity/GreatInsights" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivityGreatInsights /></LayoutWrapper>} />
-    <Route path="/GrowthAreas/:childId/Activity/:activity/Game" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivityGame /></LayoutWrapper>} />
-    <Route path="/GrowthAreas/:childId/Activity/:activity" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivity /></LayoutWrapper>} />
-    <Route path="/GrowthAreas/:childId" element={<LayoutWrapper currentPageName="GrowthAreas"><Pages.GrowthAreas /></LayoutWrapper>} />
+    <Route
+      path="/GrowthAreas/:childId/Activity/:activity/GreatInsights"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivityGreatInsights />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GrowthAreas/:childId/Activity/:activity/Game"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivityGame />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GrowthAreas/:childId/Activity/:activity"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivity />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GrowthAreas/:childId"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <Pages.GrowthAreas />
+        </LayoutWrapper>
+      }
+    />
     {/* Legacy routes without childId — pages guard with !childId → navigate('/Home') */}
-    <Route path="/GrowthAreas/Activity/:activity/GreatInsights" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivityGreatInsights /></LayoutWrapper>} />
-    <Route path="/GrowthAreas/Activity/:activity/Game" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivityGame /></LayoutWrapper>} />
-    <Route path="/GrowthAreas/Activity/:activity" element={<LayoutWrapper currentPageName="GrowthAreas"><GrowthAreasActivity /></LayoutWrapper>} />
+    <Route
+      path="/GrowthAreas/Activity/:activity/GreatInsights"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivityGreatInsights />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GrowthAreas/Activity/:activity/Game"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivityGame />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/GrowthAreas/Activity/:activity"
+      element={
+        <LayoutWrapper currentPageName="GrowthAreas">
+          <GrowthAreasActivity />
+        </LayoutWrapper>
+      }
+    />
     {Object.entries(Pages).map(([path, Page]) => (
       <Route
         key={path}

@@ -19,16 +19,28 @@ export default function GrowthAreas() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
-        if (!child.personality?.view_model?.type) { navigate(`/PersonalityType/${childId}`, { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
+        if (!child.personality?.view_model?.type) {
+          navigate(`/PersonalityType/${childId}`, { replace: true });
+          return;
+        }
 
         const areas = await api.completedGrowthAreas.list(childId);
         if (cancelled) return;
@@ -52,13 +64,18 @@ export default function GrowthAreas() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
   if (isLoadingAuth || !hydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -100,7 +117,9 @@ export default function GrowthAreas() {
                     : 'border-edge-faint bg-card hover:border-white/20'
                 }`}
               >
-                <div className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}>
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}
+                >
                   <Icon className="h-6 w-6 text-white" />
                 </div>
                 <div className="flex-1">
@@ -130,7 +149,11 @@ export default function GrowthAreas() {
           center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             anyDone && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full sm:w-auto">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="w-full sm:w-auto"
+              >
                 <Button
                   onClick={() => navigate(`/LifePathway/${childId}`)}
                   className="h-12 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-10 text-white sm:w-auto"

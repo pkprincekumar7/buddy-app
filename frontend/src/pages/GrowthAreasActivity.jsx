@@ -18,7 +18,7 @@ export default function GrowthAreasActivity() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
 
   const area = areaByUrlName(activity);
-  const questions = area ? (AREA_QUESTIONS[area.id] || []) : [];
+  const questions = area ? AREA_QUESTIONS[area.id] || [] : [];
   // q param is 1-indexed; clamp to valid range
   const qRaw = parseInt(searchParams.get('q') || '1', 10);
   const qIndex = Math.max(0, Math.min(qRaw - 1, questions.length - 1));
@@ -31,16 +31,28 @@ export default function GrowthAreasActivity() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
-    if (!area) { navigate(`/GrowthAreas/${childId}`, { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
+    if (!area) {
+      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      return;
+    }
     let cancelled = false;
 
     (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         setChildName(child.name || '');
 
@@ -84,11 +96,15 @@ export default function GrowthAreasActivity() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, activity, navigate, setSearchParams]);
 
   // Keep ref in sync so the qIndex effect can read the latest answers without depending on them.
-  useEffect(() => { answersRef.current = answers; }, [answers]);
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   // Reset current answer when question index changes.
   // Reads answers via ref to avoid firing on every keystroke.
@@ -99,46 +115,52 @@ export default function GrowthAreasActivity() {
     }
   }, [qIndex, questions]);
 
-  const saveProgress = useCallback(async (updatedAnswers, nextStep) => {
-    if (!childId || !area) return;
-    try {
-      await api.completedGrowthAreas.append(childId, {
-        area_id: area.id,
-        area_name: area.name,
-        area_color: area.color,
-        answers: updatedAnswers,
-        status: 'in_progress',
-        step: nextStep,
-        interactive_step: qIndex,
-        interactive_answers: updatedAnswers,
-        interactive_draft: null,
-      });
-    } catch (err) {
-      console.warn('[GrowthAreasActivity] Save failed:', err);
-    }
-  }, [childId, area, qIndex]);
+  const saveProgress = useCallback(
+    async (updatedAnswers, nextStep) => {
+      if (!childId || !area) return;
+      try {
+        await api.completedGrowthAreas.append(childId, {
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          answers: updatedAnswers,
+          status: 'in_progress',
+          step: nextStep,
+          interactive_step: qIndex,
+          interactive_answers: updatedAnswers,
+          interactive_draft: null,
+        });
+      } catch (err) {
+        console.warn('[GrowthAreasActivity] Save failed:', err);
+      }
+    },
+    [childId, area, qIndex],
+  );
 
-  const handleAnswer = useCallback((answer) => {
-    if (!area) return;
-    const cq = questions[qIndex];
-    if (!cq) return;
+  const handleAnswer = useCallback(
+    (answer) => {
+      if (!area) return;
+      const cq = questions[qIndex];
+      if (!cq) return;
 
-    const updatedAnswers = { ...answers, [cq.id]: answer };
-    setAnswers(updatedAnswers);
+      const updatedAnswers = { ...answers, [cq.id]: answer };
+      setAnswers(updatedAnswers);
 
-    const isLast = qIndex >= questions.length - 1;
-    const nextStep = isLast ? 'activity_summary' : 'interactive_activity';
+      const isLast = qIndex >= questions.length - 1;
+      const nextStep = isLast ? 'activity_summary' : 'interactive_activity';
 
-    // Navigate immediately — smooth, no waiting for the network.
-    if (isLast) {
-      navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`);
-    } else {
-      setSearchParams({ q: String(qIndex + 2) });
-    }
+      // Navigate immediately — smooth, no waiting for the network.
+      if (isLast) {
+        navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`);
+      } else {
+        setSearchParams({ q: String(qIndex + 2) });
+      }
 
-    // Save in the background — does not block navigation.
-    saveProgress(updatedAnswers, nextStep);
-  }, [area, questions, qIndex, answers, saveProgress, navigate, childId, activity, setSearchParams]);
+      // Save in the background — does not block navigation.
+      saveProgress(updatedAnswers, nextStep);
+    },
+    [area, questions, qIndex, answers, saveProgress, navigate, childId, activity, setSearchParams],
+  );
 
   const handleBack = useCallback(() => {
     if (qIndex === 0) {
@@ -151,7 +173,10 @@ export default function GrowthAreasActivity() {
   if (isLoadingAuth || !hydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+        />
       </div>
     );
   }
@@ -160,7 +185,12 @@ export default function GrowthAreasActivity() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-slate-400">Area not found.</p>
-        <Button onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')} className="btn-primary rounded-2xl px-8">Back</Button>
+        <Button
+          onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
+          className="btn-primary rounded-2xl px-8"
+        >
+          Back
+        </Button>
       </div>
     );
   }
@@ -176,7 +206,9 @@ export default function GrowthAreasActivity() {
       <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
         <div className="mx-auto max-w-4xl px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}>
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${area.color}`}
+            >
               <Icon className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1">
@@ -207,9 +239,7 @@ export default function GrowthAreasActivity() {
           >
             {/* Question */}
             <div className="rounded-2xl border border-white/10 bg-card p-6">
-              <p className="text-lg font-semibold leading-relaxed text-white">
-                {questionText}
-              </p>
+              <p className="text-lg font-semibold leading-relaxed text-white">{questionText}</p>
             </div>
 
             {/* Answer input */}
@@ -235,7 +265,7 @@ export default function GrowthAreasActivity() {
                 onChange={(e) => setCurrentAnswer(e.target.value)}
                 placeholder={currentQuestion.placeholder || ''}
                 rows={3}
-                className="w-full rounded-2xl border border-edge-faint bg-card px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20 resize-none"
+                className="border-edge-faint w-full resize-none rounded-2xl border bg-card px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
               />
             )}
           </motion.div>
