@@ -10,8 +10,7 @@ import {
 } from 'react';
 import PropTypes from 'prop-types';
 import { cn } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Target, ChevronDown, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';
@@ -19,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
 import { SPINNER, slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
+import StartOverButton from '@/components/shared/StartOverButton';
 
 // Animation timing constants
 const ANIM_MONTH_BASE = 0.6;
@@ -90,7 +90,7 @@ function MonthCard({ month, idx, color, isOpen, onToggle }) {
       className="border-edge rounded-2xl bg-card"
     >
       <button onClick={onToggle} className="w-full text-left">
-        <div className={`bg-gradient-to-r ${color.bg} flex items-center justify-between px-6 py-4`}>
+        <div className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}>
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
               <span className="font-bold text-white">{month.month}</span>
@@ -267,6 +267,7 @@ const monthColors = [
 
 export default function GoalsDashboard() {
   const navigate = useNavigate();
+  const { childId } = useParams();
   const {
     childData,
     concern,
@@ -275,9 +276,8 @@ export default function GoalsDashboard() {
     isLoading,
     saveActivityCompletion,
     handleActivityReset,
-    handleStartOver,
     handleRegenerate,
-  } = useGoalPlan();
+  } = useGoalPlan(childId);
 
   const [expandedMonths, setExpandedMonths] = useState({ 0: true, 1: false, 2: false });
   const [activeActivity, setActiveActivity] = useState(null);
@@ -371,20 +371,14 @@ export default function GoalsDashboard() {
                 left={
                   <Button
                     variant="outline"
-                    onClick={() => navigate(createPageUrl('LifePathway'))}
+                    onClick={() => navigate(`/LifePathway/${childId}`)}
                     className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
                   >
                     ← Back
                   </Button>
                 }
                 center={
-                  <Button
-                    variant="outline"
-                    onClick={handleStartOver}
-                    className="btn-start-over h-11 w-full rounded-2xl px-6 sm:w-auto"
-                  >
-                    <span aria-hidden="true">🔄</span> Start Over
-                  </Button>
+                  <StartOverButton childId={childId} className="w-full sm:w-auto" />
                 }
                 right={
                   <Button

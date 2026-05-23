@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle, X } from 'lucide-react';
 import TextareaWithVoice from '../components/shared/TextareaWithVoice';
-import { createPageUrl } from '@/utils';
 import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { SPINNER, MODAL_BACKDROP, MODAL_SCALE, slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
+import StartOverButton from '@/components/shared/StartOverButton';
 import {
   LineChart,
   Line,
@@ -78,8 +78,11 @@ const areaMilestoneMap = {
 
 function getAreaBoost(area) {
   const answerCount = Object.values(area.answers || {}).filter(Boolean).length;
-  const hasRecs = area.recommendations && area.recommendations.length > 0;
-  return 5 + answerCount * 0.8 + (hasRecs ? 2 : 0);
+  const recs =
+    Array.isArray(area.ai_three_month_recommendations) && area.ai_three_month_recommendations.length > 0
+      ? area.ai_three_month_recommendations
+      : area.recommendations || [];
+  return 5 + answerCount * 0.8 + (recs.length > 0 ? 2 : 0);
 }
 
 // Defined at module level so React never sees a new component type between renders.
@@ -96,9 +99,10 @@ function CustomDot({ cx, cy, payload, milestoneAgeColorMap }) {
 
 export default function LifePathway() {
   const navigate = useNavigate();
+  const { childId } = useParams();
   const { user } = useAuth();
   const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
-    useLifePathwayData();
+    useLifePathwayData(childId);
 
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');
@@ -135,7 +139,7 @@ export default function LifePathway() {
 
   const handleStartJourney = () => {
     if (savedConcern) {
-      navigate(createPageUrl('GoalsDashboard'));
+      navigate(`/GoalsDashboard/${childId}`);
       return;
     }
     setShowConcernModal(true);
@@ -154,26 +158,10 @@ export default function LifePathway() {
 
   const handleProceedToDashboard = () => {
     closeConcernModal();
-    navigate(createPageUrl('GoalsDashboard'));
+    navigate(`/GoalsDashboard/${childId}`);
   };
 
-  const handleStartOver = useCallback(async () => {
-    try {
-      if (childData?.id) {
-        try {
-          await api.entities.Child.delete(childData.id);
-        } catch (err) {
-          if (err?.status !== 404) console.warn('[LifePathway] Child delete failed:', err);
-        }
-      }
-      // Child deletion cascades all related data — no additional resets needed.
-    } catch (err) {
-      console.warn('[LifePathway] Start over cleanup had errors:', err);
-    }
-    navigate(createPageUrl('Onboarding'));
-  }, [childData, navigate]);
-
-  const handleBack = () => navigate(createPageUrl('Onboarding'));
+  const handleBack = () => navigate(`/GrowthAreas/${childId}`);
 
   const strengths = useMemo(
     () =>
@@ -548,7 +536,10 @@ export default function LifePathway() {
 
               {completedAreas.map((area, idx) => {
                 const bgTw = areaBgTw[area.area_id] ?? 'bg-emerald-500';
-                const recs = area.recommendations || [];
+                const recs =
+                  Array.isArray(area.ai_three_month_recommendations) && area.ai_three_month_recommendations.length > 0
+                    ? area.ai_three_month_recommendations
+                    : area.recommendations || [];
                 return (
                   <motion.div
                     key={area.area_id}
@@ -646,13 +637,7 @@ export default function LifePathway() {
                 </Button>
               }
               center={
-                <Button
-                  variant="outline"
-                  onClick={handleStartOver}
-                  className="btn-start-over h-11 w-full rounded-2xl px-6 sm:w-auto"
-                >
-                  🔄 Start Over
-                </Button>
+                <StartOverButton childId={childId} className="w-full sm:w-auto" />
               }
               right={
                 <Button

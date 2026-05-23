@@ -743,7 +743,6 @@ export default function RecommendationsPhase({
     (async () => {
       try {
         debouncedSaveAreaProgress.cancel();
-        debouncedSaveGlobalStep.cancel();
         const [childFresh, completedData, prefs] = await Promise.all([
           api.entities.Child.get(activeChildId),
           api.completedGrowthAreas.list(activeChildId),
@@ -764,30 +763,18 @@ export default function RecommendationsPhase({
           setCompletedAreaIds(new Set(completedDocs.map((a) => a.area_id)));
         }
 
-        // Restore global wizard navigation from the child record
-        const wizardStep = childFresh?.wizard_step ?? null;
-        const wizardAreaIndex = childFresh?.wizard_area_index ?? null;
-
-        if (!wizardStep || wizardStep === 'intro') return;
-
-        // Find the in-progress area doc (if any) — this is the source of truth for per-area state
+        // Restore from in-progress area doc (wizard_step / wizard_area_index removed;
+        // navigation state now lives in the URL via last_visited_path)
         const inProgressDoc = allDocs.find((a) => a.status === 'in_progress') || null;
+        if (!inProgressDoc?.area_id) return;
 
-        // Resolve the area object from the in-progress doc or from wizard_area_index
-        let areaObj = null;
-        if (inProgressDoc?.area_id) {
-          areaObj = growthAreas.find((a) => a.id === inProgressDoc.area_id) || null;
-        }
-        if (!areaObj && typeof wizardAreaIndex === 'number') {
-          areaObj = growthAreas[wizardAreaIndex] || null;
-        }
-
-        if (typeof wizardAreaIndex === 'number') setCurrentAreaIndex(wizardAreaIndex);
+        const areaObj = growthAreas.find((a) => a.id === inProgressDoc.area_id) || null;
+        const areaIdx = growthAreas.findIndex((a) => a.id === inProgressDoc.area_id);
+        if (typeof areaIdx === 'number' && areaIdx >= 0) setCurrentAreaIndex(areaIdx);
 
         if (areaObj) {
           setSelectedArea(areaObj);
-          // p is the per-area doc (in-progress or completed) for this area
-          const p = inProgressDoc || allDocs.find((a) => a.area_id === areaObj.id) || {};
+          const p = inProgressDoc;
 
           if (p.selected_activity) setSelectedActivity(p.selected_activity);
           if (p.parent_liked != null) setParentLiked(p.parent_liked);
@@ -800,7 +787,6 @@ export default function RecommendationsPhase({
           setInteractiveStep(d.interactiveStep);
           setCurrentAnswer(d.currentAnswer);
 
-          // Restore child game state — child_activity (completed) takes priority over child_activity_selections (in-progress)
           const ca = p.child_activity;
           if (ca) {
             const sels = Array.isArray(ca.selections) ? ca.selections : [];
@@ -818,7 +804,6 @@ export default function RecommendationsPhase({
           if (p.generated_activity) setGeneratedActivity(p.generated_activity);
           if (typeof p.show_game === 'boolean') setShowGame(p.show_game);
 
-          // AI recommendations: prefer the in-progress doc's field, fall back to completed doc's recommendations
           let aiRec =
             Array.isArray(p.ai_three_month_recommendations) &&
             p.ai_three_month_recommendations.length > 0
@@ -826,8 +811,6 @@ export default function RecommendationsPhase({
               : null;
           if (!aiRec) aiRec = extractAiRecommendationsFromCompleted(completedDocs, areaObj.id);
           setAiRecommendations(aiRec);
-        } else {
-          setStep(wizardStep || 'intro');
         }
       } catch (err) {
         console.warn('[RecommendationsPhase] Resume load failed, keeping defaults:', err);
@@ -849,36 +832,14 @@ export default function RecommendationsPhase({
     [activeChildId],
   );
 
-  // Debounced save of global wizard navigation to the child record
-  const debouncedSaveGlobalStep = useMemo(
-    () =>
-      debounce((wizStep, wizAreaIdx) => {
-        api.entities.Child.update(activeChildId, {
-          wizard_step: wizStep,
-          wizard_area_index: wizAreaIdx,
-        }).catch(() => {});
-      }, 400),
-    [activeChildId],
-  );
-
   useEffect(() => {
-    // On page refresh/close, flush any pending debounced saves before the browser
-    // unloads the page.  Without this the cleanup's cancel() would silently discard
-    // wizard_step / wizard_area_index / interactive_step writes that hadn't committed
-    // yet, causing the wrong area (or intro) to be restored on the next load.
-    // Normal navigations away from this component call flush() explicitly before
-    // navigating, so the cancel() in the cleanup is still correct for those paths.
-    const flushOnUnload = () => {
-      debouncedSaveAreaProgress.flush?.();
-      debouncedSaveGlobalStep.flush?.();
-    };
+    const flushOnUnload = () => { debouncedSaveAreaProgress.flush?.(); };
     window.addEventListener('beforeunload', flushOnUnload);
     return () => {
       window.removeEventListener('beforeunload', flushOnUnload);
       debouncedSaveAreaProgress.cancel();
-      debouncedSaveGlobalStep.cancel();
     };
-  }, [debouncedSaveAreaProgress, debouncedSaveGlobalStep]);
+  }, [debouncedSaveAreaProgress]);
 
   // Register back handler with parent
   useEffect(() => {
@@ -967,12 +928,6 @@ export default function RecommendationsPhase({
     debouncedSaveAreaProgress,
   ]);
 
-  // Auto-persist global wizard navigation to child record
-  useEffect(() => {
-    if (!resumeLoaded) return;
-    debouncedSaveGlobalStep(step, currentAreaIndex);
-  }, [resumeLoaded, step, currentAreaIndex, debouncedSaveGlobalStep]);
-
   useEffect(() => {
     if (!resumeLoaded || step !== 'interactive_activity' || !selectedArea) return;
     const questions = areaQuestions[selectedArea.id] || areaQuestions.life_ambition;
@@ -997,7 +952,6 @@ export default function RecommendationsPhase({
     // Flushing would race the completion call on the wire and could overwrite status:'completed'
     // with status:'in_progress' if the debounced request arrives last.
     debouncedSaveAreaProgress.cancel?.();
-    debouncedSaveGlobalStep.flush?.();
     const payload = {
       area_id: area.id,
       area_name: area.name,
@@ -1236,7 +1190,6 @@ export default function RecommendationsPhase({
                 }}
                 onClick={async () => {
                   debouncedSaveAreaProgress.flush?.();
-                  debouncedSaveGlobalStep.flush?.();
                   setSelectedArea(area);
                   setCurrentAreaIndex(i);
 
@@ -2127,7 +2080,6 @@ export default function RecommendationsPhase({
                   if (!area?.id) return;
 
                   debouncedSaveAreaProgress.cancel();
-                  debouncedSaveGlobalStep.cancel();
 
                   const child_activity = {
                     selections: Array.isArray(results.selections) ? [...results.selections] : [],

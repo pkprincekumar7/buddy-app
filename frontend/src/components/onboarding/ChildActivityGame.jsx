@@ -329,7 +329,6 @@ export default function ChildActivityGame({
       new Set(game.options.filter((o) => _failedAssetPaths.has(o.image)).map((o) => o.id)),
     );
     // game is derived from areaId; only re-run when the area actually changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaId]);
 
   const ids = Array.isArray(selectedIds) ? selectedIds : [];

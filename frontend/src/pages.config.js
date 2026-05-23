@@ -51,6 +51,10 @@ import Home from './pages/Home';
 import LifePathway from './pages/LifePathway';
 import Onboarding from './pages/Onboarding';
 import GoalsDashboard from './pages/GoalsDashboard';
+import ConversationalOnboarding from './pages/ConversationalOnboarding';
+import PersonalityType from './pages/PersonalityType';
+import PersonalityJourney from './pages/PersonalityJourney';
+import GrowthAreas from './pages/GrowthAreas';
 import __Layout from './Layout.jsx';
 
 export const PAGES = {
@@ -58,10 +62,14 @@ export const PAGES = {
   LifePathway: LifePathway,
   Onboarding: Onboarding,
   GoalsDashboard: GoalsDashboard,
+  ConversationalOnboarding: ConversationalOnboarding,
+  PersonalityType: PersonalityType,
+  PersonalityJourney: PersonalityJourney,
+  GrowthAreas: GrowthAreas,
 };
 
 export const pagesConfig = {
-  mainPage: 'Onboarding',
+  mainPage: 'Home',
   Pages: PAGES,
   Layout: __Layout,
 };

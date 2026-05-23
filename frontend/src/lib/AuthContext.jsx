@@ -15,7 +15,7 @@ import { pagesConfig } from '../pages.config';
 
 const AuthContext = createContext(/** @type {any} */ (null));
 
-const BLOCKED_REDIRECT_PATHS = ['/Login', '/Register', '/Onboarding'];
+const BLOCKED_REDIRECT_PATHS = ['/Login', '/Register'];
 
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
@@ -126,10 +126,10 @@ export const AuthProvider = ({ children }) => {
     if (!isAuthenticated) return;
     const timer = setTimeout(() => {
       if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
-      api.preferences.patch({ last_visited_path: location.pathname }).catch(() => {});
+      api.preferences.patch({ last_visited_path: location.pathname + location.search }).catch(() => {});
     }, 1500);
     return () => clearTimeout(timer);
-  }, [location.pathname, isAuthenticated]);
+  }, [location.pathname, location.search, isAuthenticated]);
 
   const logout = useCallback(
     async (shouldRedirect = true) => {
