@@ -12,6 +12,8 @@ import { useLocation } from 'react-router-dom';
  *
  * Automatically skipped when the page was reached via a Back navigation,
  * i.e. location.state?.fromBack is truthy.
+ *
+ * @returns {[boolean, () => void]}
  */
 export function useStageSplash() {
   const location = useLocation();
