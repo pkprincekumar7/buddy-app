@@ -8,6 +8,8 @@ import {
   Suspense,
   Component,
 } from 'react';
+import StageSplash from '@/components/shared/StageSplash';
+import { useStageSplash } from '@/hooks/useStageSplash';
 import PropTypes from 'prop-types';
 import { cn } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -270,6 +272,7 @@ const monthColors = [
 export default function GoalsDashboard() {
   const navigate = useNavigate();
   const { childId } = useParams();
+  const [showSplash, startTimer] = useStageSplash();
   const {
     childData,
     concern,
@@ -313,113 +316,127 @@ export default function GoalsDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-4xl px-4 py-10">
-        <motion.div {...slideUp(0.1)} className="mb-8 text-center">
-          <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
-            <Target className="h-7 w-7 text-white" />
-          </div>
-          <h1 className="mb-2 text-3xl font-bold tracking-tight text-white">
-            3-Month Growth Plan for {childData?.name || 'Your Child'}
-          </h1>
-          <p className="text-slate-400">Personalized goals powered by Buddy360</p>
-
-          {concern && (
-            <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3 text-sm text-amber-400">
-              <span className="font-semibold">Focus area: </span>
-              {concern}
-            </div>
-          )}
-        </motion.div>
-
-        {isLoading ? (
-          <div
-            className="flex flex-col items-center justify-center space-y-4 py-24"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <motion.div
-              {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
-              aria-hidden="true"
-            />
-            <p className="text-slate-500">Building your 3-month plan...</p>
-          </div>
-        ) : (
-          <GoalPlanContext.Provider value={contextValue}>
-            <div className="space-y-4">
-              {goalPlan?.months?.map((month, idx) => (
-                <MonthCard
-                  key={month.month}
-                  month={month}
-                  idx={idx}
-                  color={monthColors[idx] || monthColors[0]}
-                  isOpen={!!expandedMonths[idx]}
-                  onToggle={() => toggleMonth(idx)}
-                />
-              ))}
-
-              <div className="flex justify-center pt-2">
-                <Button
-                  onClick={() => setShowProgress(true)}
-                  className="btn-primary h-11 rounded-2xl px-8 transition-all"
-                >
-                  View Progress And Insights
-                </Button>
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: showSplash ? 0 : 1 }}
+        transition={{ duration: 0.8, ease: 'easeOut' }}
+      >
+        <div className="min-h-screen bg-background">
+          <div className="mx-auto max-w-4xl px-4 py-10">
+            <motion.div {...slideUp(0.1)} className="mb-8 text-center">
+              <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
+                <Target className="h-7 w-7 text-white" />
               </div>
+              <h1 className="mb-2 text-3xl font-bold tracking-tight text-white">
+                3-Month Growth Plan for {childData?.name || 'Your Child'}
+              </h1>
+              <p className="text-slate-400">Personalized goals powered by Buddy360</p>
 
-              <PageActions
-                className="pt-4"
-                left={
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate(`/LifePathway/${childId}`)}
-                    className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
-                  >
-                    ← Back
-                  </Button>
-                }
-                center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
-                right={
-                  <Button
-                    variant="outline"
-                    onClick={handleRegenerate}
-                    className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Regenerate Plan
-                  </Button>
-                }
-              />
-            </div>
-          </GoalPlanContext.Provider>
-        )}
-      </div>
+              {concern && (
+                <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3 text-sm text-amber-400">
+                  <span className="font-semibold">Focus area: </span>
+                  {concern}
+                </div>
+              )}
+            </motion.div>
 
-      <ModalErrorBoundary>
-        <Suspense fallback={null}>
-          <AnimatePresence>
-            {activeActivity && (
-              <ActivityModal
-                activity={activeActivity.activity}
-                originalActivity={activeActivity.originalActivity}
-                childName={childData?.name}
-                onClose={() => setActiveActivity(null)}
-                onComplete={handleActivityComplete}
-              />
+            {isLoading ? (
+              <div
+                className="flex flex-col items-center justify-center space-y-4 py-24"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <motion.div
+                  {...SPINNER}
+                  className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+                  aria-hidden="true"
+                />
+                <p className="text-slate-500">Building your 3-month plan...</p>
+              </div>
+            ) : (
+              <GoalPlanContext.Provider value={contextValue}>
+                <div className="space-y-4">
+                  {goalPlan?.months?.map((month, idx) => (
+                    <MonthCard
+                      key={month.month}
+                      month={month}
+                      idx={idx}
+                      color={monthColors[idx] || monthColors[0]}
+                      isOpen={!!expandedMonths[idx]}
+                      onToggle={() => toggleMonth(idx)}
+                    />
+                  ))}
+
+                  <div className="flex justify-center pt-2">
+                    <Button
+                      onClick={() => setShowProgress(true)}
+                      className="btn-primary h-11 rounded-2xl px-8 transition-all"
+                    >
+                      View Progress And Insights
+                    </Button>
+                  </div>
+
+                  <PageActions
+                    className="pt-4"
+                    left={
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          navigate(`/LifePathway/${childId}`, { state: { fromBack: true } })
+                        }
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                      >
+                        ← Back
+                      </Button>
+                    }
+                    center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
+                    right={
+                      <Button
+                        variant="outline"
+                        onClick={handleRegenerate}
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Regenerate Plan
+                      </Button>
+                    }
+                  />
+                </div>
+              </GoalPlanContext.Provider>
             )}
-            {showProgress && (
-              <ProgressInsightsModal
-                goalPlan={goalPlan}
-                childId={childData?.id}
-                childName={childData?.name}
-                onPlanUpdate={setGoalPlan}
-                onClose={() => setShowProgress(false)}
-              />
-            )}
-          </AnimatePresence>
-        </Suspense>
-      </ModalErrorBoundary>
-    </div>
+          </div>
+
+          <ModalErrorBoundary>
+            <Suspense fallback={null}>
+              <AnimatePresence>
+                {activeActivity && (
+                  <ActivityModal
+                    activity={activeActivity.activity}
+                    originalActivity={activeActivity.originalActivity}
+                    childName={childData?.name}
+                    onClose={() => setActiveActivity(null)}
+                    onComplete={handleActivityComplete}
+                  />
+                )}
+                {showProgress && (
+                  <ProgressInsightsModal
+                    goalPlan={goalPlan}
+                    childId={childData?.id}
+                    childName={childData?.name}
+                    onPlanUpdate={setGoalPlan}
+                    onClose={() => setShowProgress(false)}
+                  />
+                )}
+              </AnimatePresence>
+            </Suspense>
+          </ModalErrorBoundary>
+        </div>
+      </motion.div>
+
+      <AnimatePresence>
+        {showSplash && <StageSplash stage={7} onReady={startTimer} />}
+      </AnimatePresence>
+    </>
   );
 }

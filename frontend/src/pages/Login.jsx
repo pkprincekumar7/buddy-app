@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { COUNTRIES } from '@/lib/countries';
 import { httpErrorMessage } from '@/lib/apiError';
+import { MODAL_BACKDROP } from '@/lib/animations';
 
 export default function Login() {
   const { checkAppState } = useAuth();
@@ -12,6 +14,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const googleBtnRef = useRef(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
@@ -24,6 +27,7 @@ export default function Login() {
   const onGoogleCountrySubmit = async () => {
     if (!googleCountry || !pendingGoogleToken) return;
     setError('');
+    setLoadingMessage('Completing sign-in…');
     setGoogleCountryBusy(true);
     try {
       await api.auth.google(pendingGoogleToken, googleCountry);
@@ -46,6 +50,7 @@ export default function Login() {
       setError('');
       setPendingGoogleToken(null);
       setGoogleCountry('');
+      setLoadingMessage('Signing in with Google…');
       setBusy(true);
       try {
         await api.auth.google(idToken);
@@ -103,6 +108,7 @@ export default function Login() {
   const onSubmit = async (ev) => {
     ev.preventDefault();
     setError('');
+    setLoadingMessage('Signing you in…');
     setBusy(true);
     try {
       await api.auth.login(email.trim(), password);
@@ -244,6 +250,36 @@ export default function Login() {
           </Link>
         </p>
       </div>
+
+      {/* Full-screen loading overlay — fades in over the whole page during sign-in */}
+      <AnimatePresence>
+        {(busy || googleCountryBusy) && (
+          <motion.div
+            {...MODAL_BACKDROP}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 bg-background/95 backdrop-blur-sm"
+          >
+            {/* Dual-ring spinner */}
+            <div className="relative h-20 w-20">
+              <div className="absolute inset-0 rounded-full border-4 border-teal-500/20" />
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-teal-500" />
+              <div
+                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-emerald-400"
+                style={{ animationDuration: '0.75s', animationDirection: 'reverse' }}
+              />
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15, duration: 0.4, ease: 'easeOut' }}
+              className="space-y-1 text-center"
+            >
+              <p className="text-base font-semibold text-white">{loadingMessage}</p>
+              <p className="text-sm text-slate-500">Please wait a moment…</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

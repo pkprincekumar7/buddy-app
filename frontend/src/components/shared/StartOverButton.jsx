@@ -1,57 +1,128 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 import { RotateCcw, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useStartOver } from '@/hooks/useStartOver';
+import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
+
+function ConfirmModal({ onCancel, onConfirm, isStartingOver }) {
+  // Close on Escape key
+  const handleKey = useCallback(
+    (e) => {
+      if (e.key === 'Escape') onCancel();
+    },
+    [onCancel],
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [handleKey]);
+
+  return createPortal(
+    <motion.div
+      {...MODAL_BACKDROP}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onCancel}
+      role="presentation"
+    >
+      <motion.div
+        {...MODAL_SCALE}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm start over"
+        className="border-edge-strong w-full max-w-sm rounded-2xl bg-surface-elevated p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Icon */}
+        <div className="mb-5 flex justify-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
+            <AlertTriangle className="h-7 w-7 text-red-400" />
+          </div>
+        </div>
+
+        {/* Text */}
+        <div className="mb-7 space-y-2 text-center">
+          <h3 className="text-lg font-bold text-white">Start Over?</h3>
+          <p className="text-sm leading-relaxed text-slate-400">
+            This will permanently delete all progress for this child, including personality results,
+            growth area answers, and goal plans.
+          </p>
+          <p className="text-xs font-medium text-red-400">This cannot be undone.</p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            disabled={isStartingOver}
+            className="btn-secondary h-11 flex-1 rounded-xl"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={isStartingOver}
+            className="h-11 flex-1 rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-50"
+          >
+            {isStartingOver ? (
+              <span className="flex items-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Deleting…
+              </span>
+            ) : (
+              'Yes, delete'
+            )}
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
+  );
+}
+
+ConfirmModal.propTypes = {
+  onCancel: PropTypes.func.isRequired,
+  onConfirm: PropTypes.func.isRequired,
+  isStartingOver: PropTypes.bool.isRequired,
+};
 
 export default function StartOverButton({ childId, className = '' }) {
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirming, setConfirming] = useState(false);
 
-  if (confirming) {
-    return (
-      <div
-        className={`flex flex-col items-center gap-2.5 rounded-2xl border border-red-500/30 bg-red-500/10 px-5 py-3 ${className}`}
-      >
-        <div className="flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-          <p className="text-xs font-medium text-red-300">Delete this child&apos;s progress?</p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirming(false)}
-            className="h-8 rounded-xl border-slate-700 bg-transparent text-slate-300 hover:border-slate-500 hover:text-white"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setConfirming(false);
-              doStartOver();
-            }}
-            disabled={isStartingOver}
-            className="h-8 rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-50"
-          >
-            {isStartingOver ? 'Deleting…' : 'Yes, delete'}
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  const handleConfirm = useCallback(() => {
+    setConfirming(false);
+    doStartOver();
+  }, [doStartOver]);
+
+  const handleCancel = useCallback(() => setConfirming(false), []);
 
   return (
-    <Button
-      variant="outline"
-      onClick={() => childId && setConfirming(true)}
-      disabled={isStartingOver || !childId}
-      className={`btn-start-over h-12 rounded-2xl px-6 ${className}`}
-    >
-      <RotateCcw className="mr-1 h-4 w-4" />
-      {isStartingOver ? 'Resetting…' : 'Start Over'}
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        onClick={() => childId && setConfirming(true)}
+        disabled={isStartingOver || !childId}
+        className={`btn-start-over h-12 rounded-2xl px-6 ${className}`}
+      >
+        <RotateCcw className="mr-1 h-4 w-4" />
+        {isStartingOver ? 'Resetting…' : 'Start Over'}
+      </Button>
+
+      <AnimatePresence>
+        {confirming && (
+          <ConfirmModal
+            onCancel={handleCancel}
+            onConfirm={handleConfirm}
+            isStartingOver={isStartingOver}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

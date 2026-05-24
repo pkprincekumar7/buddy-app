@@ -5,16 +5,23 @@ import PropTypes from 'prop-types';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
-import { Home, LogOut, Menu, X, VolumeX, Volume2 } from 'lucide-react';
+import { Home, LogOut, VolumeX, Volume2, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const NAV_ITEMS = [{ label: 'Home', icon: Home, path: 'Home' }];
+/** Extracts up to two initials from a display name or email. */
+function getInitials(name) {
+  if (!name?.trim()) return '?';
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0][0].toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
 
 export default function Layout({ children, currentPageName }) {
-  const { user, isAuthenticated, childProfiles, logout } = useAuth();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, isAuthenticated, childProfiles: _childProfiles, logout } = useAuth();
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
 
   // Global TTS control and cleanup on load
   useEffect(() => {
@@ -70,6 +77,28 @@ export default function Layout({ children, currentPageName }) {
     };
   }, [isAuthenticated]);
 
+  /** Close profile panel on Escape. */
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setProfileOpen(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [profileOpen]);
+
+  /** Close profile panel on click outside. */
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handleOutside = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [profileOpen]);
+
   /** Speaker click: optimistic UI + persist so next session matches. */
   const handleToggleTts = useCallback(async () => {
     const next = !ttsEnabledRef.current;
@@ -101,31 +130,89 @@ export default function Layout({ children, currentPageName }) {
               </span>
             </Link>
 
-            {/* Desktop Navigation */}
-            <div className="hidden items-center gap-1 md:flex">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.path}
-                  to={createPageUrl(item.path)}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2 transition-all duration-200 ${
-                    currentPageName === item.path
-                      ? 'bg-teal-500/10 font-medium text-teal-400'
-                      : 'hover:bg-subtle text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </Link>
-              ))}
+            {/* Right side controls */}
+            <div className="flex items-center gap-2">
+              {/* TTS Toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleTts}
+                className="hover:bg-subtle text-slate-400 hover:text-white"
+                title={ttsEnabled ? 'Turn off voice' : 'Turn on voice'}
+              >
+                {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </Button>
+
+              {/* Profile Avatar — authenticated */}
               {isAuthenticated && (
-                <button
-                  onClick={handleLogout}
-                  className="hover:bg-subtle flex items-center gap-2 rounded-xl px-4 py-2 text-slate-400 transition-all duration-200 hover:text-red-400"
-                >
-                  <LogOut className="h-4 w-4" />
-                  <span>Logout</span>
-                </button>
+                <div className="relative" ref={profileRef}>
+                  <button
+                    onClick={() => setProfileOpen((prev) => !prev)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 text-xs font-bold text-white ring-2 ring-transparent transition-all hover:scale-105 hover:ring-teal-500/40"
+                    title="Your profile"
+                    aria-label="Your profile"
+                    aria-expanded={profileOpen}
+                    aria-haspopup="true"
+                  >
+                    {getInitials(user?.full_name || user?.email || '?')}
+                  </button>
+
+                  {profileOpen && (
+                    <div
+                      role="dialog"
+                      aria-label="User profile"
+                      className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-white/10 bg-surface-elevated shadow-2xl"
+                    >
+                      {/* Header gradient strip */}
+                      <div className="bg-gradient-to-r from-teal-600/30 to-emerald-600/20 px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 text-lg font-bold text-white shadow-lg">
+                            {getInitials(user?.full_name || user?.email || '?')}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-white">
+                              {user?.full_name || 'User'}
+                            </p>
+                            <p className="flex items-center gap-1 truncate text-xs text-slate-400">
+                              <Mail className="h-3 w-3 shrink-0" />
+                              {user?.email || ''}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div className="border-t border-white/10" />
+
+                      {/* Navigation + actions */}
+                      <div className="p-2">
+                        <Link
+                          to={createPageUrl('Home')}
+                          onClick={() => setProfileOpen(false)}
+                          className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-white/5 ${
+                            currentPageName === 'Home' ? 'text-teal-400' : 'text-slate-300'
+                          }`}
+                        >
+                          <Home className="h-4 w-4" />
+                          Home
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setProfileOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Sign out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
+
+              {/* Sign In — unauthenticated only */}
               {!isAuthenticated && (
                 <Button
                   variant="outline"
@@ -137,77 +224,8 @@ export default function Layout({ children, currentPageName }) {
                 </Button>
               )}
             </div>
-
-            {/* Right side controls */}
-            <div className="flex items-center gap-2">
-              {/* TTS Toggle */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleToggleTts}
-                className="hover:bg-subtle text-slate-400 hover:text-white"
-                title={ttsEnabled ? 'Turn off voice' : 'Turn on voice'}
-              >
-                {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              </Button>
-
-              {/* Mobile Menu Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="hover:bg-subtle text-slate-400 hover:text-white md:hidden"
-              >
-                {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </Button>
-            </div>
           </div>
         </div>
-
-        {/* Mobile / Tablet Menu */}
-        {mobileMenuOpen && (
-          <div className="border-t-edge-faint bg-sidebar md:hidden">
-            <div className="space-y-1 px-4 py-3">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.path}
-                  to={createPageUrl(item.path)}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${
-                    currentPageName === item.path
-                      ? 'bg-teal-500/10 font-medium text-teal-400'
-                      : 'hover:bg-subtle text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.label}</span>
-                </Link>
-              ))}
-              {isAuthenticated ? (
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    handleLogout();
-                  }}
-                  className="hover:bg-subtle flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 transition-all duration-200 hover:text-red-400"
-                >
-                  <LogOut className="h-5 w-5" />
-                  <span>Logout</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    api.auth.redirectToLogin();
-                  }}
-                  className="hover:bg-subtle flex w-full items-center gap-3 rounded-xl px-4 py-3 text-slate-400 transition-all duration-200 hover:text-white"
-                >
-                  <span>Sign In</span>
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </nav>
 
       {/* Page Content */}

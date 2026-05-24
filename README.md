@@ -175,6 +175,9 @@ app-assets/
                             dancing.jpg, yoga_stretching.jpg, running.jpg
     social_skills/          helping_others.jpg, leading_a_group.jpg, listening_to_friends.jpg,
                             working_in_a_team.jpg, making_new_friends.jpg, enjoying_my_own_time.jpg
+  avatars/
+    stage-01.png  stage-02.png  stage-03.png  stage-04.png  stage-05.png
+    stage-06.png  stage-07.png  stage-08.png  stage-09.png  stage-10.png
 ```
 
 ### Step 1 — Create and configure the local bucket (one-time)
@@ -232,6 +235,7 @@ Images live directly in S3 — there is no `app-assets/` folder in this reposito
    - `creativity`
    - `physical_wellness`
    - `social_skills`
+4. Back in `app-assets/`, create a second top-level folder named `avatars` — this holds the onboarding stage splash images.
 
 ### Step 2 — Upload images
 
@@ -245,6 +249,7 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 | `creativity/` | `drawing_art.jpg`, `storytelling.jpg`, `making_music.jpg`, `building_making.jpg`, `acting_drama.jpg`, `cooking_baking.jpg` |
 | `physical_wellness/` | `football_soccer.jpg`, `swimming.jpg`, `cycling.jpg`, `dancing.jpg`, `yoga_stretching.jpg`, `running.jpg` |
 | `social_skills/` | `helping_others.jpg`, `leading_a_group.jpg`, `listening_to_friends.jpg`, `working_in_a_team.jpg`, `making_new_friends.jpg`, `enjoying_my_own_time.jpg` |
+| `avatars/` | `stage-01.png`, `stage-02.png`, `stage-03.png`, `stage-04.png`, `stage-05.png`, `stage-06.png`, `stage-07.png`, `stage-08.png`, `stage-09.png`, `stage-10.png` |
 
 ### Step 3 — Local dev setup
 
@@ -482,12 +487,19 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 | `/Login` | Login (email/password + Google) | Public, hardcoded in `App.jsx` |
 | `/Register` | Register | Public, hardcoded in `App.jsx` |
 | `/` | Redirects to `mainPage` | `mainPage` is set in `pages.config.js`, currently `Onboarding` |
-| `/Onboarding` | Conversational onboarding + personality analysis | Protected |
-| `/Home` | Home | Protected |
-| `/GoalsDashboard` | Goals dashboard | Protected |
-| `/LifePathway` | Life pathway / recommendations | Protected |
+| `/Onboarding` | Welcome / sign-in landing | Protected — stage-01 splash on entry |
+| `/ConversationalOnboarding/:childId` | Chat-based child questionnaire | Protected — stage-02 splash on entry |
+| `/PersonalityType/:childId` | Personality analysis (LLM + rule fallback) | Protected — stage-03 splash on entry |
+| `/PersonalityJourney/:childId` | Journey overview + growth-area prompt | Protected — stage-04 splash on entry |
+| `/GrowthAreas/:childId` | Growth area selection grid | Protected — stage-05 splash on entry |
+| `/GrowthAreas/:childId/Activity/:areaName` | Growth area activity questionnaire | Protected |
+| `/GrowthAreas/:childId/Activity/:areaName/Game` | Interactive activity game (image-choice) | Protected |
+| `/GrowthAreas/:childId/Activity/:areaName/GreatInsights` | Post-game AI insights | Protected |
+| `/LifePathway/:childId` | 10-year growth chart + milestones | Protected — stage-06 splash on entry |
+| `/GoalsDashboard/:childId` | 3-month AI goal plan | Protected — stage-07 splash on entry |
+| `/Home` | Home dashboard | Protected |
 
-Protected routes redirect to `/Login` when unauthenticated. Pages other than Login and Register are auto-registered from `pages.config.js`.
+Protected routes redirect to `/Onboarding` when unauthenticated. Pages other than Login and Register are auto-registered from `pages.config.js`. Each onboarding step shows a full-screen stage image splash (served from `app-assets/avatars/` in S3) before the page content appears; the animation is gated on image load so the 1 s fade-in / 2 s hold / 1 s fade-out sequence always plays against a visible image regardless of network latency. Navigating back via the Back button skips the splash (`location.state.fromBack`).
 
 ## UI design system
 
@@ -554,12 +566,12 @@ All animations use **Framer Motion**. The design system follows a consistent dar
 
 | Location | Duration | Effect |
 |---|---|---|
-| WelcomePhase — heading | `0.3s` delay | Fade + slide up |
-| WelcomePhase — subtitle | `0.45s` delay | Fade + slide up |
-| WelcomePhase — "what you'll do" card | `0.6s` delay | Fade + slide up |
-| WelcomePhase — step items | `0.75 + idx * 0.15s` delay | Fade + slide left (`x: -20 → 0`) |
-| WelcomePhase — CTA button area | `1.05s` delay | Fade + slide up |
-| WelcomePhase — footer note | `1.2s` delay | Fade in |
+| WelcomePhase — heading | `0.55s` delay | Fade + slide up |
+| WelcomePhase — subtitle | `0.85s` delay | Fade + slide up |
+| WelcomePhase — "what you'll do" card | `1.15s` delay | Fade + slide up |
+| WelcomePhase — step items | `1.4 + idx * 0.25s` delay | Fade + slide left (`x: -20 → 0`) |
+| WelcomePhase — CTA button area | `2.15s` delay | Fade + slide up |
+| WelcomePhase — footer note | `2.5s` delay | Fade in |
 | ConversationalOnboarding — bot messages | `2.0s` fade / `1.6s` y, ease-out | Fade + slide up (`y: 16 → 0`); messages assigned stable IDs as React keys |
 | ConversationalOnboarding — user messages | `1.6s` fade / `1.4s` x | Fade + slide in from right (`x: 40 → 0`) |
 | ConversationalOnboarding — typing indicator | `0.45s` in / `0.3s` out | Fade + slide up, `AnimatePresence` exit |
@@ -607,12 +619,26 @@ All animations use **Framer Motion**. The design system follows a consistent dar
 | Analyzing screen spinner (ConversationalOnboarding) | `3s` infinite | Slow rotate 360° |
 | Typing indicator dots | CSS `animate-bounce` | Staggered bounce (`0ms / 150ms / 300ms` delay) |
 
+### Stage splash
+
+A full-screen image overlay (`StageSplash` component + `useStageSplash` hook) appears before each of the 7 onboarding pages loads. Images are served from `app-assets/avatars/` in S3 (same proxy/CloudFront path as activity-game images).
+
+| Phase | Timing | Notes |
+|---|---|---|
+| Image reveal | `1.0s` ease-out (opacity + scale) | Gated on `onLoad`/`onError` — timer does not start until the image is visually present |
+| Hold | `2.0s` | Counted from image-load event; total visible window is ~3 s including the fade-in |
+| Fade-out (overlay) | `1.0s` ease-in-out | `AnimatePresence` exit animation on the wrapper `motion.div` |
+| Page content fade-in | `0.8s` ease-out | Outer page wrapper fades from `opacity: 0` to `1` once `showSplash` becomes `false` |
+| Back-navigation skip | — | `useStageSplash` reads `location.state?.fromBack`; sets `showSplash = false` immediately so no splash plays when the user presses Back |
+
+The hook (`src/hooks/useStageSplash.js`) returns `[showSplash, startTimer]`. `startTimer` is passed as `onReady` to `StageSplash` and is called inside the image's `handleLoad` callback — this guarantees the full fade-in plays before the countdown begins regardless of S3 / CDN latency.
+
 ### Scroll behaviour
 
 - **Route change**: `ScrollToTop` component in `App.jsx` fires `window.scrollTo({ top: 0, behavior: 'instant' })` on every React Router path change.
 - **Onboarding phase change**: `window.scrollTo` instant on `currentPhase` update.
 - **RecommendationsPhase step change**: `window.scrollTo` instant on `step` state update.
-- **Conversational chat**: custom RAF-based cubic ease-in-out scroll (1.4 s, 200 ms debounced) on the messages container after each new message or typing-indicator change.
+- **Conversational chat**: custom RAF-based cubic ease-in-out scroll (2.5 s, 400 ms debounced) on the messages container after each new message or typing-indicator change.
 
 ### Design rules
 
