@@ -89,7 +89,7 @@ export default function GrowthAreas() {
             />
           </div>
         ) : (
-          <div className="min-h-screen bg-background">
+          <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
             <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
               <motion.div
                 initial={{ opacity: 0, y: 24 }}

@@ -88,6 +88,7 @@ export default function Onboarding() {
           </div>
         ) : (
           <motion.div
+            key={showSplash ? 'splash' : 'content'}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}

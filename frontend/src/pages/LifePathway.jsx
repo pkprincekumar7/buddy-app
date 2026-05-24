@@ -285,7 +285,7 @@ export default function LifePathway() {
             />
           </div>
         ) : (
-          <div className="min-h-screen bg-background">
+          <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
             <div className="mx-auto max-w-6xl px-4 py-12">
               <motion.div
                 initial={{ opacity: 0 }}
