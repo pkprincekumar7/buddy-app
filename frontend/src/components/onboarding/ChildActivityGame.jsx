@@ -1,9 +1,14 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
+
+// Module-level cache of asset paths that have previously failed to load.
+// Lives outside the component so it survives remounts, StrictMode double-invocations,
+// and HMR restarts — preventing any failed image from ever being retried in the session.
+const _failedAssetPaths = new Set();
 
 // Fallback gradient palette shown when an image fails to load.
 const TILE_GRADIENTS = [
@@ -25,37 +30,37 @@ const areaGames = {
         id: 'astronaut',
         label: 'Astronaut',
         emoji: '🚀',
-        image: 'https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/astronaut.jpg',
       },
       {
         id: 'sports',
         label: 'Sports Person',
         emoji: '⚽',
-        image: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/sports_person.jpg',
       },
       {
         id: 'parent',
         label: 'Like My Parents',
         emoji: '👨‍👩‍👧',
-        image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/like_my_parents.jpg',
       },
       {
         id: 'superhero',
         label: 'Super Hero',
         emoji: '🦸',
-        image: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/super_hero.jpg',
       },
       {
         id: 'dancer',
         label: 'Dancer',
         emoji: '💃',
-        image: 'https://images.unsplash.com/photo-1508700929628-666bc8bd84ea?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/dancer.jpg',
       },
       {
         id: 'scientist',
         label: 'Scientist',
         emoji: '🔬',
-        image: 'https://images.unsplash.com/photo-1532187863486-abf9dbad1b69?w=400&h=300&fit=crop',
+        image: 'child_activity_game/life_ambition/scientist.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -70,37 +75,37 @@ const areaGames = {
         id: 'reading',
         label: 'Reading',
         emoji: '📚',
-        image: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/reading.jpg',
       },
       {
         id: 'music',
         label: 'Listening to Music',
         emoji: '🎵',
-        image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/listening_to_music.jpg',
       },
       {
         id: 'nature',
         label: 'Being in Nature',
         emoji: '🌿',
-        image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/being_in_nature.jpg',
       },
       {
         id: 'drawing',
         label: 'Drawing / Painting',
         emoji: '🎨',
-        image: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/drawing_painting.jpg',
       },
       {
         id: 'sleep',
         label: 'Resting / Sleeping',
         emoji: '😴',
-        image: 'https://images.unsplash.com/photo-1520206183501-b80df61043c2?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/resting_sleeping.jpg',
       },
       {
         id: 'exercise',
         label: 'Exercise',
         emoji: '🏃',
-        image: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=400&h=300&fit=crop',
+        image: 'child_activity_game/self_care/exercise.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -115,37 +120,37 @@ const areaGames = {
         id: 'puzzles',
         label: 'Solving Puzzles',
         emoji: '🧩',
-        image: 'https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/solving_puzzles.jpg',
       },
       {
         id: 'experiments',
         label: 'Science Experiments',
         emoji: '🧪',
-        image: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/science_experiments.jpg',
       },
       {
         id: 'debates',
         label: 'Debates & Arguments',
         emoji: '💬',
-        image: 'https://images.unsplash.com/photo-1573164574572-cb89e39749b4?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/debates_arguments.jpg',
       },
       {
         id: 'strategy',
         label: 'Strategy Games',
         emoji: '♟️',
-        image: 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/strategy_games.jpg',
       },
       {
         id: 'mysteries',
         label: 'Solving Mysteries',
         emoji: '🔍',
-        image: 'https://images.unsplash.com/photo-1590012314607-cda9d9b699ae?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/solving_mysteries.jpg',
       },
       {
         id: 'inventions',
         label: 'Inventing Things',
         emoji: '💡',
-        image: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=400&h=300&fit=crop',
+        image: 'child_activity_game/critical_thinking/inventing_things.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -160,37 +165,37 @@ const areaGames = {
         id: 'drawing',
         label: 'Drawing & Art',
         emoji: '🎨',
-        image: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/drawing_art.jpg',
       },
       {
         id: 'storytelling',
         label: 'Storytelling',
         emoji: '📖',
-        image: 'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/storytelling.jpg',
       },
       {
         id: 'music',
         label: 'Making Music',
         emoji: '🎸',
-        image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/making_music.jpg',
       },
       {
         id: 'building',
         label: 'Building & Making',
         emoji: '🏗️',
-        image: 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/building_making.jpg',
       },
       {
         id: 'acting',
         label: 'Acting & Drama',
         emoji: '🎭',
-        image: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/acting_drama.jpg',
       },
       {
         id: 'cooking',
         label: 'Cooking & Baking',
         emoji: '🍳',
-        image: 'https://images.unsplash.com/photo-1466637574441-749b8f19452f?w=400&h=300&fit=crop',
+        image: 'child_activity_game/creativity/cooking_baking.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -205,37 +210,37 @@ const areaGames = {
         id: 'football',
         label: 'Football / Soccer',
         emoji: '⚽',
-        image: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/football_soccer.jpg',
       },
       {
         id: 'swimming',
         label: 'Swimming',
         emoji: '🏊',
-        image: 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/swimming.jpg',
       },
       {
         id: 'cycling',
         label: 'Cycling',
         emoji: '🚴',
-        image: 'https://images.unsplash.com/photo-1534787238916-9ba6764efd4f?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/cycling.jpg',
       },
       {
         id: 'dancing',
         label: 'Dancing',
         emoji: '💃',
-        image: 'https://images.unsplash.com/photo-1508700929628-666bc8bd84ea?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/dancing.jpg',
       },
       {
         id: 'yoga',
         label: 'Yoga / Stretching',
         emoji: '🧘',
-        image: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/yoga_stretching.jpg',
       },
       {
         id: 'running',
         label: 'Running',
         emoji: '🏃',
-        image: 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=400&h=300&fit=crop',
+        image: 'child_activity_game/physical_wellness/running.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -250,37 +255,37 @@ const areaGames = {
         id: 'helping',
         label: 'Helping Others',
         emoji: '🤝',
-        image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/helping_others.jpg',
       },
       {
         id: 'leading',
         label: 'Leading a Group',
         emoji: '👑',
-        image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/leading_a_group.jpg',
       },
       {
         id: 'listening',
         label: 'Listening to Friends',
         emoji: '👂',
-        image: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/listening_to_friends.jpg',
       },
       {
         id: 'teamwork',
         label: 'Working in a Team',
         emoji: '🙌',
-        image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/working_in_a_team.jpg',
       },
       {
         id: 'making_friends',
         label: 'Making New Friends',
         emoji: '😊',
-        image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/making_new_friends.jpg',
       },
       {
         id: 'alone',
         label: 'Enjoying My Own Time',
         emoji: '🧸',
-        image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=300&fit=crop',
+        image: 'child_activity_game/social_skills/enjoying_my_own_time.jpg',
       },
     ],
     promptContext: (labels) =>
@@ -313,7 +318,18 @@ export default function ChildActivityGame({
 }) {
   const game = areaGames[areaId] || areaGames.life_ambition;
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [failedImages, setFailedImages] = useState(new Set());
+  const [failedImages, setFailedImages] = useState(
+    () => new Set(game.options.filter((o) => _failedAssetPaths.has(o.image)).map((o) => o.id)),
+  );
+
+  // When areaId changes (component stays mounted), re-seed failedImages from the cache
+  // so images that failed in a previous session of the same area are not retried.
+  useEffect(() => {
+    setFailedImages(
+      new Set(game.options.filter((o) => _failedAssetPaths.has(o.image)).map((o) => o.id)),
+    );
+    // game is derived from areaId; only re-run when the area actually changes.
+  }, [areaId]);
 
   const ids = Array.isArray(selectedIds) ? selectedIds : [];
 
@@ -408,10 +424,13 @@ export default function ChildActivityGame({
             {option.image && !failedImages.has(option.id) ? (
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
-                  src={option.image}
+                  src={`/app-assets/${option.image}`}
                   alt={option.label}
                   className="h-full w-full object-cover"
-                  onError={() => setFailedImages((prev) => new Set([...prev, option.id]))}
+                  onError={() => {
+                    _failedAssetPaths.add(option.image);
+                    setFailedImages((prev) => new Set([...prev, option.id]));
+                  }}
                 />
               </div>
             ) : (

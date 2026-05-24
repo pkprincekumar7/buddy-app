@@ -58,6 +58,11 @@ variable "frontend_bucket_name" {
   type        = string
 }
 
+variable "backend_bucket_name" {
+  description = "Pre-existing S3 backend bucket name (us-east-1) — holds static assets under app-assets/"
+  type        = string
+}
+
 # -- CloudFront ---------------------------------------------------------------
 variable "cloudfront_price_class" {
   description = "CloudFront price class controlling which edge locations serve traffic. PriceClass_100 = US/EU only; PriceClass_200 = US/EU/Asia/ME/Africa; PriceClass_All = all edge locations."

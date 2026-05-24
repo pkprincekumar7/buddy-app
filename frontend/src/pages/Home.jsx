@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
-import { createPageUrl } from '@/utils';
 import { api } from '@/api/client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import StartOverButton from '@/components/shared/StartOverButton';
 import {
   Sparkles,
   ArrowRight,
@@ -66,8 +64,6 @@ const PILLARS = [
 
 export default function Home() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [isResetting, setIsResetting] = useState(false);
   const { data: children = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date'),
@@ -75,31 +71,11 @@ export default function Home() {
 
   // Onboarding is in progress if there's a child that hasn't completed it yet.
   const onboardingInProgress = children.some((c) => !c.onboarding_completed);
+  // The child currently being onboarded (or the most recent one) for Start Over targeting.
+  const activeChild = children.find((c) => !c.onboarding_completed) || children[0];
 
   const handleStartJourney = () => {
-    navigate(createPageUrl('Onboarding'));
-  };
-
-  const handleStartFresh = async () => {
-    if (isResetting) return;
-    setIsResetting(true);
-    try {
-      // Deleting each child cascades goals and growth_areas.
-      const existingChildren = await api.entities.Child.list('-created_date');
-      for (const c of Array.isArray(existingChildren) ? existingChildren : []) {
-        try {
-          await api.entities.Child.delete(c.id);
-        } catch (err) {
-          if (err?.status !== 404) console.warn('[Home] Child delete failed:', err);
-        }
-      }
-      queryClient.invalidateQueries({ queryKey: ['children'] });
-      navigate(createPageUrl('Onboarding'));
-    } catch (e) {
-      console.error('[Start Fresh] Reset failed:', e);
-      toast.error('Reset failed. Please try again.');
-      setIsResetting(false);
-    }
+    navigate('/Onboarding');
   };
 
   if (isLoading) {
@@ -155,21 +131,17 @@ export default function Home() {
               {onboardingInProgress ? (
                 <>
                   <Button
-                    onClick={() => navigate(createPageUrl('Onboarding'))}
+                    onClick={() => navigate('/Onboarding')}
                     className="btn-primary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
                     Continue Onboarding
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
-                  <Button
-                    onClick={handleStartFresh}
-                    disabled={isResetting}
-                    variant="outline"
-                    className="btn-secondary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
-                  >
-                    {isResetting ? 'Resetting…' : 'Start Fresh'}
-                  </Button>
+                  <StartOverButton
+                    childId={activeChild?.id}
+                    className="h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
+                  />
                 </>
               ) : (
                 <Button

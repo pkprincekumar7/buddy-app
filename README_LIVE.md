@@ -123,8 +123,8 @@ deploy-live-frontend reads: /edge/s3_bucket_name
 | Resource | Convention | Region | Notes |
 |---|---|---|---|
 | S3 state bucket | any name | `us-east-1` | Holds all Terraform state; set as `STATE_BUCKET` secret |
-| Frontend assets bucket | `person-frontend-{env}-bucket` | `us-east-1` | One per environment; name set via `FRONTEND_BUCKET_NAME` environment secret |
-| Backend app bucket | `person-backend-{env}-app-bucket` | `us-east-1` | One per environment; name set via `BACKEND_BUCKET_NAME` environment secret |
+| Frontend assets bucket | any name | `us-east-1` | One per environment; name set via `FRONTEND_BUCKET_NAME` environment secret |
+| Backend app bucket | any name | `us-east-1` | One per environment; name set via `BACKEND_BUCKET_NAME` environment secret |
 | IAM role (OIDC) | any name | global | Trusted by GitHub Actions; ARN set as `ROLE_ARN` secret |
 | ACM certificate | covers public subdomain | `us-east-1` | For CloudFront; set as `ACM_CERTIFICATE_ARN_US_EAST_1` |
 | ACM certificate | covers internal subdomain | `ap-south-1` | For ALB HTTPS; set as `ACM_CERTIFICATE_ARN_AP_SOUTH_1` |
@@ -228,7 +228,7 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient (acceptable for ephemeral rate-limit counters; revisit if persistent or sensitive data is ever cached); used for LLM rate-limit counters only (ephemeral, no persistence needed)
 - **CloudWatch Logs**: log group `/ecs/{APP_NAME}/backend/{env}`, 30-day retention; Container Insights metrics also collected
 - **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
-- **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `S3_BUCKET_NAME` env var; separate from the frontend assets bucket
+- **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `BACKEND_BUCKET_NAME` env var; static activity-game images are stored under the `app-assets/` prefix and served via CloudFront; separate from the frontend assets bucket
 - **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` and `secretsmanager:DescribeSecret`; task role — inline S3 policy on backend bucket + four specific `ssmmessages:` actions for ECS Exec (see ECS Exec bullet above)
 - **Route 53 A record**: `{SUBDOMAIN}-internal-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
 - Writes `alb_internal_fqdn`, `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` to SSM under `/{APP_NAME}/{env}/backend/ap-south-1/`
@@ -237,7 +237,8 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **WAF WebACL** (`us-east-1`, `scope = CLOUDFRONT`): 4 rules evaluated in priority order — Core Rule Set (OWASP Top 10, priority 10), Known Bad Inputs (priority 20), Amazon IP Reputation List (priority 30), rate limit 1 000 req / 5 min per IP — block action (priority 40); CloudWatch metrics + sampled requests enabled on all rules
 - **CloudFront Origin Access Control (OAC)**: SigV4 signing (`always`) for S3 origin; S3 bucket policy in `infra-live-frontend` uses the distribution ARN written to SSM here to restrict access to this specific distribution only
 - **CloudFront distribution**: IPv6 enabled; `default_root_object = index.html`; minimum TLS 1.2 (`TLSv1.2_2021`); ACM cert in `us-east-1` required
-  - *S3 origin (default behaviour)*: cache policy `CachingOptimized`; CORS S3 origin request policy; **security response headers policy** applied (HSTS, CSP, X-Frame-Options etc.); GET/HEAD/OPTIONS only; compress enabled
+  - *S3 frontend origin (default behaviour)*: cache policy `CachingOptimized`; CORS S3 origin request policy; **security response headers policy** applied (HSTS, CSP, X-Frame-Options, Permissions-Policy etc.); GET/HEAD/OPTIONS only; compress enabled
+  - */app-assets/\* origin (ordered behaviour)*: S3 backend-assets origin with dedicated OAC (SigV4); cache policy `CachingOptimized`; CORS S3 origin request policy; minimal response headers policy (nosniff only — HSTS/CSP are document-level controls, ignored on image responses); GET/HEAD/OPTIONS only; compress enabled; covers all asset subfolders (e.g. `child_activity_game/`) — any new subfolder under `app-assets/` is served automatically without a config change
   - */api/\* origin (ordered behaviour)*: single ALB origin pointing to `ap-south-1` ALB; cache policy `CachingDisabled`; `AllViewerExceptHostHeader` origin request policy; all HTTP methods; compress disabled
   - *SPA fallback*: CloudFront 403 and 404 responses mapped to `index.html` with HTTP 200 and `error_caching_min_ttl = 0` — supports React client-side routing
 - **CloudFront price class**: `PriceClass_100` (US/EU edge locations) for `dev` and `stg`; `PriceClass_200` (US/EU/Asia/ME/Africa) for `prod`; set via `cloudfront_price_class` in tfvars
@@ -259,7 +260,7 @@ Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore
 | Category | Fields |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `S3_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `BACKEND_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
 | Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
 | Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
 | Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |
@@ -301,7 +302,7 @@ All other fields — env vars, secrets references, CPU, memory, log config, heal
 
 1. Reads `s3_bucket_name`, `cloudfront_distribution_id` from SSM under `/{APP_NAME}/{env}/edge/`
 2. Derives `VITE_API_URL` from `SUBDOMAIN` + environment + `DOMAIN_NAME`, then builds React app with it and `VITE_GOOGLE_CLIENT_ID`
-3. Syncs hashed assets (`/assets/*`) with 1-year immutable cache
+3. Syncs hashed assets (`/assets/*`) with 1-year immutable cache (Vite build output only — activity-game images are stored separately under `app-assets/` in the backend bucket)
 4. Syncs root files (`index.html`, etc.) with `no-cache` headers
 5. Invalidates CloudFront cache (`/*`) and waits for completion
 

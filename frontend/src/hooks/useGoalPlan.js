@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
-import { createPageUrl } from '@/utils';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { goalsMonthlyPlanSchema } from '@/lib/llmSchemas';
 import { buildGoalsMonthlyPlanPrompt } from '@/lib/prompts';
@@ -47,9 +44,7 @@ export function buildGoalPlanIndex(goalPlan) {
   return { flatIndexMap: map, firstActiveFlat };
 }
 
-export function useGoalPlan() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
+export function useGoalPlan(childId) {
   const [childData, setChildData] = useState(null);
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState(null);
@@ -114,14 +109,13 @@ export function useGoalPlan() {
   );
 
   useEffect(() => {
+    if (!childId) return;
     const init = async () => {
       try {
-        const children = await api.entities.Child.list('-created_date', 1);
-        const child = children?.[0] || null;
+        const child = await api.entities.Child.get(childId);
         setChildData(child);
 
-        const childId = child?.id;
-        if (!childId) {
+        if (!child?.id) {
           setIsLoading(false);
           return;
         }
@@ -152,7 +146,7 @@ export function useGoalPlan() {
       }
     };
     void init();
-  }, [generateGoals]);
+  }, [childId, generateGoals]);
 
   // Saves completion data for a single activity by its position in the plan.
   const saveActivityCompletion = useCallback(
@@ -204,23 +198,6 @@ export function useGoalPlan() {
     [goalPlan, childData],
   );
 
-  const handleStartOver = useCallback(async () => {
-    try {
-      // Deleting the child cascades goals and growth_areas.
-      if (childData?.id) {
-        try {
-          await api.entities.Child.delete(childData.id);
-        } catch (err) {
-          if (err?.status !== 404) console.warn('[useGoalPlan] Child delete failed:', err);
-        }
-      }
-      queryClient.invalidateQueries({ queryKey: ['children'] });
-    } catch (err) {
-      console.warn('[useGoalPlan] Start over cleanup had errors:', err);
-    }
-    navigate(createPageUrl('Onboarding'));
-  }, [childData, queryClient, navigate]);
-
   const handleRegenerate = useCallback(async () => {
     const completedSnapshot = {};
     goalPlan?.months?.forEach((month, mIdx) => {
@@ -241,7 +218,6 @@ export function useGoalPlan() {
     isLoading,
     saveActivityCompletion,
     handleActivityReset,
-    handleStartOver,
     handleRegenerate,
   };
 }

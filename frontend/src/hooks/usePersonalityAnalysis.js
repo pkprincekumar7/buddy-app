@@ -7,6 +7,7 @@ import {
 } from '@/components/shared/PersonalityAnalysis';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
+import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -34,10 +35,14 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
               analysisSource: child.personality.source,
             },
           );
-          dispatch({ type: 'SET_MBTI_RESULT', payload: clampedReuse });
+          // Sanitize any legacy image URLs (e.g. ui-avatars.com) that may have
+          // been persisted by older code.  Safe data URIs and Wikipedia images
+          // are left unchanged; everything else is replaced with a local avatar.
+          const sanitized = sanitizeViewModelAvatars(clampedReuse);
+          dispatch({ type: 'SET_MBTI_RESULT', payload: sanitized });
           dispatch({
             type: 'SET_GENERATED_PROFILE',
-            payload: onboardingProfileFromViewModel(clampedReuse),
+            payload: onboardingProfileFromViewModel(sanitized),
           });
           return;
         }
@@ -61,12 +66,12 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
             prompt,
             response_json_schema: personalityLlmSchema(),
           });
-          if (cancelled) return;
 
           const vm = adaptAiPersonalityToViewModel(ai || {}, mergedFromServer.name);
           const prof = onboardingProfileFromViewModel(vm);
+          // Strip SVG data-URI images before saving — WAF blocks payloads with <svg>/<text> tags.
           await api.entities.Child.update(activeChildId, {
-            personality: { source: 'llm', view_model: vm },
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           });
           if (cancelled) return;
 
@@ -74,13 +79,12 @@ export function usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, 
           if (prof) dispatch({ type: 'SET_GENERATED_PROFILE', payload: prof });
         } catch (err) {
           console.warn('[usePersonalityAnalysis] LLM failed, falling back to rule-based:', err);
-          if (cancelled) return;
 
           const ruleVm = calculateMBTI(mergedFromServer);
           const prof = onboardingProfileFromViewModel(ruleVm);
           try {
             await api.entities.Child.update(activeChildId, {
-              personality: { source: 'rule_fallback', view_model: ruleVm },
+              personality: { source: 'rule_fallback', view_model: stripViewModelImages(ruleVm) },
             });
           } catch (patchErr) {
             console.warn(

@@ -41,7 +41,7 @@ server {
         proxy_send_timeout 30s;
     }
 
-    # Vite build output: hashed JS/CSS — never SPA-fallback here (fixes broken styles if misrouted)
+    # Vite build output: hashed JS/CSS/fonts — immutable caching.
     location /assets/ {
         expires 1y;
         # Any add_header in a location block disables inheritance of the server-block
@@ -49,7 +49,17 @@ server {
         # JS/CSS assets are still served with the nosniff protection.
         add_header Cache-Control "public, immutable";
         add_header X-Content-Type-Options "nosniff" always;
-        try_files $uri =404;
+        access_log off;
+    }
+
+    # Backend S3 assets proxied to the backend S3 bucket.
+    # /app-assets/ covers all current and future asset subfolders (e.g. child_activity_game/).
+    # Completely separate from /assets/ (Vite build output) — no path conflict.
+    # ${BACKEND_BUCKET_NAME} is substituted by envsubst at container start (nginx-start.sh).
+    location /app-assets/ {
+        proxy_pass https://${BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_set_header Host ${BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com;
+        proxy_ssl_server_name on;
         access_log off;
     }
 

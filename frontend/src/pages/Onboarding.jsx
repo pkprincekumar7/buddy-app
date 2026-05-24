@@ -1,491 +1,99 @@
-import { useEffect, useRef, useReducer, useMemo, useCallback } from 'react';
-import { useAuth } from '@/lib/AuthContext';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '@/api/client';
+import { motion } from 'framer-motion';
+import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, ChevronLeft, RotateCcw } from 'lucide-react';
-
+import { useAuth } from '@/lib/AuthContext';
+import { api } from '@/api/client';
 import WelcomePhase from '../components/onboarding/WelcomePhase';
-import ConversationalOnboarding from '../components/onboarding/ConversationalOnboarding';
-import PersonalityAnalysis from '../components/shared/PersonalityAnalysis';
-import RecommendationsPhase from '../components/onboarding/RecommendationsPhase';
-import {
-  CHATBOT_CAPTURED_FIELDS,
-  normalizeOnboardingChildDataBlob,
-} from '@/lib/onboardingChildData';
-import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
-import { DEFAULT_CHILD_STATE, mergeChildDraft } from '@/lib/onboardingHelpers';
-import { usePersonalityAnalysis } from '@/hooks/usePersonalityAnalysis';
-import { useJourneyRecommendations } from '@/hooks/useJourneyRecommendations';
-import { useOnboardingComplete } from '@/hooks/useOnboardingComplete';
-import { SPINNER, PAGE_SLIDE } from '@/lib/animations';
-import PageActions from '@/components/shared/PageActions';
-
-const phases = [
-  { id: 'welcome', label: 'Welcome', icon: '👋' },
-  { id: 'conversation', label: 'Getting to Know', icon: '💬' },
-  { id: 'personality', label: 'Personality Analysis', icon: '⭐' },
-  { id: 'recommendations', label: 'Your Journey', icon: '💡' },
-];
-
-// ─── Wizard state management ─────────────────────────────────────────────────
-
-const initialWizardState = {
-  currentPhase: 0,
-  hydrated: false,
-  appStateReady: false,
-  conversationBootKey: 0,
-  personalityBusy: false,
-  journeyBusy: false,
-  completionBusy: false,
-  childData: { ...DEFAULT_CHILD_STATE },
-  mbtiResult: null,
-  generatedProfile: null,
-  recommendations: null,
-  activeChildId: null,
-};
-
-/**
- * @param {typeof initialWizardState} state
- * @param {{ type: string, payload?: any }} action
- * @returns {typeof initialWizardState}
- */
-function wizardReducer(state, action) {
-  switch (action.type) {
-    case 'SET_PHASE':
-      return { ...state, currentPhase: action.payload };
-    case 'INCREMENT_PHASE':
-      return { ...state, currentPhase: Math.min(state.currentPhase + 1, phases.length - 1) };
-    case 'DECREMENT_PHASE':
-      return { ...state, currentPhase: Math.max(state.currentPhase - 1, 0) };
-    case 'SET_HYDRATED':
-      return { ...state, hydrated: action.payload };
-    case 'SET_APP_STATE_READY':
-      return { ...state, appStateReady: action.payload };
-    case 'BUMP_CONVERSATION_KEY':
-      return { ...state, conversationBootKey: state.conversationBootKey + 1 };
-    case 'SET_PERSONALITY_BUSY':
-      return { ...state, personalityBusy: action.payload };
-    case 'SET_JOURNEY_BUSY':
-      return { ...state, journeyBusy: action.payload };
-    case 'SET_COMPLETION_BUSY':
-      return { ...state, completionBusy: action.payload };
-    case 'SET_CHILD_DATA':
-      return { ...state, childData: action.payload };
-    case 'MERGE_CHILD_DATA':
-      return { ...state, childData: mergeChildDraft({ ...state.childData, ...action.payload }) };
-    case 'CLEAR_CHATBOT_FIELDS': {
-      const next = { ...state.childData };
-      for (const k of CHATBOT_CAPTURED_FIELDS) delete next[k];
-      return { ...state, childData: mergeChildDraft(next) };
-    }
-    case 'SET_MBTI_RESULT':
-      return { ...state, mbtiResult: action.payload };
-    case 'SET_GENERATED_PROFILE':
-      return { ...state, generatedProfile: action.payload };
-    case 'SET_RECOMMENDATIONS':
-      return { ...state, recommendations: action.payload };
-    case 'SET_ACTIVE_CHILD_ID':
-      return { ...state, activeChildId: action.payload };
-    case 'RESET_WIZARD':
-      return {
-        ...initialWizardState,
-        // Preserve auth/hydration state — user is still logged in and the page is already initialized.
-        hydrated: state.hydrated,
-        appStateReady: state.appStateReady,
-        conversationBootKey: state.conversationBootKey + 1,
-      };
-    default:
-      return state;
-  }
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+import StartOverButton from '@/components/shared/StartOverButton';
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [state, dispatch] = useReducer(wizardReducer, initialWizardState);
-  const {
-    currentPhase,
-    hydrated,
-    appStateReady,
-    conversationBootKey,
-    personalityBusy,
-    journeyBusy,
-    completionBusy,
-    childData,
-    mbtiResult,
-    generatedProfile,
-    recommendations,
-    activeChildId,
-  } = state;
-  const wizardBusy = personalityBusy || journeyBusy || completionBusy;
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
-  const recPhaseBackRef = useRef(null);
+  const [childId, setChildId] = useState(null);
+  const [checking, setChecking] = useState(true);
 
-  // Delegate phase-specific LLM effects to dedicated hooks.
-  usePersonalityAnalysis({ hydrated, currentPhase, activeChildId, dispatch });
-  useJourneyRecommendations({ hydrated, currentPhase, activeChildId, dispatch });
-
-  const handleComplete = useOnboardingComplete({
-    dispatch,
-    activeChildId,
-    childData,
-    recommendations,
-  });
-
+  // Preload any existing in-progress child so Continue reuses it instead of creating a new one.
+  // No auto-redirects — the user always navigates step by step.
   useEffect(() => {
     if (isLoadingAuth) return;
+    if (!isAuthenticated) {
+      setChecking(false);
+      return;
+    }
     let cancelled = false;
 
-    const hydrateFromServer = async () => {
-      if (!isAuthenticated) {
-        dispatch({ type: 'SET_HYDRATED', payload: true });
-        dispatch({ type: 'SET_APP_STATE_READY', payload: true });
-        dispatch({ type: 'BUMP_CONVERSATION_KEY' });
-        return;
-      }
-      dispatch({ type: 'SET_APP_STATE_READY', payload: false });
+    (async () => {
       try {
-        // All state lives on the child record — resume with the most recent child.
         const list = await api.entities.Child.list('-created_date', 1);
         if (cancelled) return;
         const child = list?.[0];
-
-        if (child) {
-          dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: child.id });
-          dispatch({ type: 'SET_PHASE', payload: child.onboarding_phase || 1 });
-
-          // Restore child data from the child record fields.
-          const normalized = normalizeOnboardingChildDataBlob(child);
-          if (normalized)
-            dispatch({ type: 'SET_CHILD_DATA', payload: mergeChildDraft(normalized) });
-
-          // Restore personality if already analysed.
-          if (child.personality?.view_model?.type && child.personality?.view_model?.profile) {
-            const clampedVm = maybeClampStoredPersonalityDescription(child.personality.view_model, {
-              analysisSource: child.personality.source,
-            });
-            dispatch({ type: 'SET_MBTI_RESULT', payload: clampedVm });
-            dispatch({
-              type: 'SET_GENERATED_PROFILE',
-              payload: onboardingProfileFromViewModel(clampedVm),
-            });
-          }
-
-          if (child.recommendations)
-            dispatch({ type: 'SET_RECOMMENDATIONS', payload: child.recommendations });
+        if (child && !child.onboarding_completed) {
+          setChildId(child.id);
         }
-
-        if (!cancelled) dispatch({ type: 'BUMP_CONVERSATION_KEY' });
       } catch (err) {
-        console.warn('[Onboarding] Server hydration failed:', err);
+        console.warn('[Onboarding] Preload failed:', err);
       } finally {
-        if (!cancelled) {
-          dispatch({ type: 'SET_HYDRATED', payload: true });
-          dispatch({ type: 'SET_APP_STATE_READY', payload: true });
-        }
+        if (!cancelled) setChecking(false);
       }
-    };
+    })();
 
-    void hydrateFromServer();
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, queryClient]);
+  }, [isLoadingAuth, isAuthenticated]);
 
-  useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [currentPhase]);
-
-  // Creates a child stub at chatbot start; all subsequent writes go directly to the child record.
-  const handleStartChat = useCallback(async () => {
+  const handleContinue = useCallback(async () => {
     if (!isAuthenticated) {
-      dispatch({ type: 'SET_PHASE', payload: 1 });
+      navigate('/Onboarding');
       return;
     }
-    let childId = activeChildId;
-    try {
-      if (!childId) {
+    let targetId = childId;
+    if (!targetId) {
+      try {
         const created = await api.entities.Child.create({
           onboarding_phase: 1,
           onboarding_completed: false,
         });
-        childId = created?.id;
-        if (childId) dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: childId });
-      }
-    } catch (err) {
-      console.warn('[Onboarding] Could not create child stub, proceeding anyway:', err);
-    }
-    dispatch({ type: 'SET_PHASE', payload: 1 });
-  }, [isAuthenticated, activeChildId, dispatch]);
-
-  const handleConversationComplete = useCallback(
-    async (conversationData) => {
-      const mergedDraft = mergeChildDraft({
-        ...childData,
-        ...conversationData,
-      });
-
-      dispatch({ type: 'SET_MBTI_RESULT', payload: null });
-      dispatch({ type: 'SET_GENERATED_PROFILE', payload: null });
-      dispatch({ type: 'SET_RECOMMENDATIONS', payload: null });
-
-      const childId = activeChildId;
-      try {
-        if (childId) {
-          // Update stub with real chatbot data and advance phase; everything lives on the child record.
-          await api.entities.Child.update(childId, {
-            ...mergedDraft,
-            onboarding_phase: 2,
-            onboarding_completed: false,
-            personality: null,
-            recommendations: null,
-            wizard_step: null,
-            wizard_area_index: null,
-          });
+        if (created?.id) {
+          setChildId(created.id);
+          targetId = created.id;
         }
       } catch (err) {
-        console.warn('[Onboarding] Could not update child after chatbot:', err);
-      }
-
-      dispatch({ type: 'SET_CHILD_DATA', payload: mergedDraft });
-      dispatch({ type: 'SET_PHASE', payload: 2 });
-    },
-    [childData, activeChildId, dispatch],
-  );
-
-  const handleWizardStartOver = useCallback(async () => {
-    // Deleting the child cascades all related data (goals and growth_areas).
-    // No separate onboarding reset needed — all state lives on the child record.
-    if (activeChildId) {
-      try {
-        await api.entities.Child.delete(activeChildId);
-      } catch (err) {
-        if (err?.status !== 404) console.warn('[Onboarding] Child delete failed:', err);
+        console.warn('[Onboarding] Could not create child stub:', err);
       }
     }
-    queryClient.invalidateQueries({ queryKey: ['children'] });
-    dispatch({ type: 'RESET_WIZARD' });
-  }, [activeChildId, queryClient, dispatch]);
+    if (targetId) navigate(`/ConversationalOnboarding/${targetId}`);
+  }, [isAuthenticated, childId, navigate]);
 
-  const handleNext = useCallback(async () => {
-    if (currentPhase === 2 && activeChildId) {
-      try {
-        await api.entities.Child.update(activeChildId, {
-          onboarding_phase: 3,
-          wizard_step: null,
-          wizard_area_index: null,
-        });
-      } catch (err) {
-        console.warn('[Onboarding] Could not advance to phase 3:', err);
-      }
-    }
-    dispatch({ type: 'INCREMENT_PHASE' });
-  }, [currentPhase, activeChildId, dispatch]);
-
-  const handleBack = useCallback(() => {
-    dispatch({ type: 'DECREMENT_PHASE' });
-  }, [dispatch]);
-
-  const handleRegisterBack = useCallback((fn) => {
-    recPhaseBackRef.current = fn;
-  }, []);
-
-  const canProceed = useMemo(() => {
-    switch (currentPhase) {
-      case 0:
-        return isAuthenticated;
-      case 1:
-        return false;
-      case 2:
-        return mbtiResult !== null;
-      case 3:
-        return true;
-      default:
-        return true;
-    }
-  }, [currentPhase, isAuthenticated, mbtiResult]);
-
-  const renderPhase = () => {
-    switch (currentPhase) {
-      case 0:
-        return (
-          <WelcomePhase
-            onContinue={handleStartChat}
-            isAuthenticated={isAuthenticated}
-            user={user}
-          />
-        );
-      case 1:
-        return (
-          <ConversationalOnboarding
-            key={conversationBootKey}
-            user={user}
-            activeChildId={activeChildId}
-            resumeHydrationReady={hydrated && !isLoadingAuth && appStateReady}
-            onContinueToPersonality={() => dispatch({ type: 'SET_PHASE', payload: 2 })}
-            onQuestionnairePersisted={(slice) =>
-              dispatch({ type: 'MERGE_CHILD_DATA', payload: slice })
-            }
-            onQuestionnaireCleared={() => dispatch({ type: 'CLEAR_CHATBOT_FIELDS' })}
-            onComplete={handleConversationComplete}
-          />
-        );
-      case 2:
-        return mbtiResult ? (
-          <PersonalityAnalysis mbtiResult={mbtiResult} childName={childData.name} />
-        ) : null;
-      case 3:
-        return null;
-      default:
-        return null;
-    }
-  };
-
-  if (isLoadingAuth) {
+  if (isLoadingAuth || checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <motion.div
-          {...SPINNER}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
           className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
         />
-      </div>
-    );
-  }
-
-  if (isAuthenticated && !appStateReady) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <motion.div
-          {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
-        />
-        <p className="max-w-sm text-center text-sm text-slate-500">
-          Restoring your onboarding progress from your account…
-        </p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {currentPhase > 0 && (
-        <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
-          <div className="mx-auto max-w-4xl px-4 py-3">
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
-              {phases.slice(1).map((phase, index) => (
-                <div
-                  key={phase.id}
-                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 transition-all ${
-                    index + 1 === currentPhase
-                      ? 'border border-teal-500/25 bg-teal-500/10'
-                      : index + 1 < currentPhase
-                        ? 'border border-emerald-500/20 bg-emerald-500/10'
-                        : 'bg-ghost border-edge-faint opacity-50'
-                  }`}
-                >
-                  <span className="text-base" aria-hidden="true">
-                    {phase.icon}
-                  </span>
-                  <span
-                    className={`hidden text-xs font-medium sm:block ${
-                      index + 1 === currentPhase
-                        ? 'text-teal-400'
-                        : index + 1 < currentPhase
-                          ? 'text-emerald-400'
-                          : 'text-slate-600'
-                    }`}
-                  >
-                    {phase.label}
-                  </span>
-                  {index + 1 < currentPhase && <span className="text-xs text-emerald-400">✓</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
-        <AnimatePresence mode="wait">
-          <motion.div key={currentPhase} {...PAGE_SLIDE}>
-            {wizardBusy ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <motion.div
-                  {...SPINNER}
-                  className="mb-4 h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent"
-                />
-                <p className="max-w-md text-center font-medium text-slate-400">
-                  {completionBusy
-                    ? 'Saving journey data…'
-                    : journeyBusy
-                      ? 'Mapping personalized recommendations…'
-                      : 'Shaping personality insights from your questionnaire…'}
-                </p>
-              </div>
-            ) : currentPhase === 3 ? (
-              <RecommendationsPhase
-                data={childData}
-                profile={generatedProfile}
-                recommendations={recommendations}
-                activeChildId={activeChildId}
-                onFinish={handleComplete}
-                onRegisterBack={handleRegisterBack}
-                onPhaseBack={handleBack}
-              />
-            ) : (
-              renderPhase()
-            )}
-          </motion.div>
-        </AnimatePresence>
-
-        {!wizardBusy && currentPhase >= 2 && (
-          <PageActions
-            className="mt-12"
-            left={
-              <Button
-                variant="outline"
-                onClick={() =>
-                  currentPhase === 3 && recPhaseBackRef.current
-                    ? recPhaseBackRef.current()
-                    : handleBack()
-                }
-                className="btn-secondary h-12 w-full rounded-2xl px-6 transition-all sm:w-auto"
-              >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-                Back
-              </Button>
-            }
-            center={
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleWizardStartOver}
-                className="btn-start-over h-12 w-full rounded-2xl px-6 transition-all sm:w-auto"
-              >
-                <RotateCcw className="mr-1 h-4 w-4" />
-                Start Over
-              </Button>
-            }
-            right={
-              currentPhase === 2 ? (
-                <Button
-                  onClick={handleNext}
-                  disabled={!canProceed}
-                  className="btn-primary h-12 w-full rounded-2xl px-8 disabled:opacity-50 sm:w-auto"
-                >
-                  Continue
-                  <ChevronRight className="ml-1 h-5 w-5" />
-                </Button>
-              ) : null
-            }
-          />
-        )}
+        <WelcomePhase onContinue={handleContinue} isAuthenticated={isAuthenticated} user={user} />
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            variant="outline"
+            onClick={() => navigate('/Home')}
+            className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+          >
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Back
+          </Button>
+          <StartOverButton childId={childId} className="w-full sm:w-auto" />
+        </div>
       </div>
     </div>
   );

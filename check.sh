@@ -55,6 +55,23 @@ echo -e "${CYAN}Syncing frontend/node_modules...${RESET}"
 (cd "$FRONTEND" && npm install --quiet) \
   || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
 
+# retire.js vulnerability database — download if absent or older than 7 days.
+# Gitignored so it stays current without committing a static snapshot.
+RETIRE_DB="$FRONTEND/retire-jsrepo.json"
+if [ ! -f "$RETIRE_DB" ] || find "$RETIRE_DB" -mtime +7 | grep -q .; then
+  echo -e "${CYAN}Refreshing retire.js vulnerability database...${RESET}"
+  if ! curl -sSfL \
+      "https://raw.githubusercontent.com/RetireJS/retire.js/master/repository/jsrepository-v5.json" \
+      -o "$RETIRE_DB"; then
+    if [ -f "$RETIRE_DB" ]; then
+      echo -e "${CYAN}Network unavailable — using existing retire.js database (may be stale)${RESET}"
+    else
+      echo -e "${RED}Cannot download retire.js database and no local copy exists — check network${RESET}"
+      exit 1
+    fi
+  fi
+fi
+
 # ── tool discovery ────────────────────────────────────────────────────────────
 # Prefer tools from backend/.venv; fall back to PATH for CI (which installs
 # tools globally via pip install rather than using a venv).
@@ -90,7 +107,7 @@ run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
 
 run "prettier (check)" \
-    bash -c "cd '$FRONTEND' && npx prettier --check 'src/**/*.{js,jsx,css}'"
+    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{js,jsx,css}'"
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
@@ -132,8 +149,10 @@ run "pip-audit" \
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
+# retire-jsrepo.json is downloaded by the bootstrap above (refreshed every 7 days).
+# --jsrepo avoids retire.js making its own network request on every invocation.
 run "retire.js (browser library CVE scan)" \
-    bash -c "cd '$FRONTEND' && npx retire --path . --exitwith 1"
+    bash -c "'$FRONTEND/node_modules/.bin/retire' --path '$FRONTEND' --exitwith 1 --jsrepo '$FRONTEND/retire-jsrepo.json'"
 
 # ---- mandatory: external tools — check.sh fails if any are absent ----------------
 # semgrep and checkov are installed into .venv via requirements-security.txt above.

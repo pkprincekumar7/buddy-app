@@ -74,7 +74,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
         { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
         { name = "DEFAULT_REGION", value = var.default_region },
-        { name = "S3_BUCKET_NAME", value = var.backend_bucket_name },
+        { name = "BACKEND_BUCKET_NAME", value = var.backend_bucket_name },
         { name = "CORS_ORIGINS", value = var.cors_origins },
         { name = "COOKIE_DOMAIN", value = var.cookie_domain },
       ]

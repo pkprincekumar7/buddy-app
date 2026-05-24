@@ -197,9 +197,13 @@ async def request_id_middleware(request: Request, call_next):
     # called frequently by load balancers and carries no sensitive data.
     if request.url.path not in _HEALTH_PATHS:
         response.headers["Cache-Control"] = "no-store"
-    # Prevent MIME-type sniffing and framing on all responses.
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    # X-Content-Type-Options and X-Frame-Options are intentionally NOT set here.
+    # They are infrastructure-layer headers owned by the reverse proxy / CDN:
+    #   - Docker Compose: nginx server-block add_header directives
+    #   - AWS deployed:   CloudFront api_security response_headers_policy (override=true)
+    # Setting them here as well would create duplicate header lines when running
+    # behind nginx or CloudFront, requiring proxy_hide_header workarounds.
+    # Cache-Control and X-Request-Id are application-layer concerns and stay here.
     return response
 
 

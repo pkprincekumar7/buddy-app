@@ -240,11 +240,6 @@ class ChildResponse(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
-    # Global wizard navigation — replaces the old wizard_progress blob.
-    # wizard_step: current sub-step inside the recommendations phase (intro, area_selection, etc.)
-    # wizard_area_index: index into the growthAreas array for the currently active area.
-    wizard_step: str | None = None
-    wizard_area_index: int | None = None
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
@@ -312,8 +307,6 @@ class ChildPatch(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
-    wizard_step: str | None = None
-    wizard_area_index: int | None = None
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:

@@ -40,6 +40,12 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   origin {
+    origin_id                = "s3-backend-assets"
+    domain_name              = data.aws_s3_bucket.backend.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.backend_assets.id
+  }
+
+  origin {
     origin_id   = "alb-backend"
     domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
 
@@ -48,6 +54,11 @@ resource "aws_cloudfront_distribution" "frontend" {
       https_port             = 443
       origin_protocol_policy = "https-only"
       origin_ssl_protocols   = ["TLSv1.2"]
+      # Must be >= LLM_TIMEOUT_SECONDS (default 60). CloudFront's default of 30 s
+      # causes 504s on slow LLM responses before the backend can reply, which
+      # triggers the rule-based fallback and, if the effect was already cancelled,
+      # skips the personality PATCH entirely.
+      origin_read_timeout = 60
     }
   }
 
@@ -65,6 +76,24 @@ resource "aws_cloudfront_distribution" "frontend" {
     response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
   }
 
+  # -- /app-assets/* behaviour: static assets from backend S3 bucket ---
+  # /app-assets/ covers all asset subfolders (e.g. child_activity_game/, and any added later).
+  # Uses /app-assets/ prefix (not /assets/) to avoid conflicting with Vite build output
+  # (index-*.js, index-*.css, fonts) which CloudFront serves from the frontend S3 bucket.
+
+  ordered_cache_behavior {
+    path_pattern           = "/app-assets/*"
+    target_origin_id       = "s3-backend-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = local.cache_policy_optimized
+    origin_request_policy_id   = local.origin_request_cors_s3
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
+  }
+
   # -- /api/* behaviour: proxy to ALB backend ---------------------------------
 
   ordered_cache_behavior {
@@ -77,6 +106,11 @@ resource "aws_cloudfront_distribution" "frontend" {
 
     cache_policy_id          = local.cache_policy_disabled
     origin_request_policy_id = local.origin_request_all_viewer_except_host
+    # api_security sets X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+    # HSTS, and X-XSS-Protection with override=true.  CORS headers (Access-Control-*)
+    # are NOT in this policy — FastAPI's CORSMiddleware is the sole source for those
+    # and they pass through unchanged, so no duplication occurs.
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
   }
 
   # -- SPA fallback: S3 returns 403 for missing objects -----------------------
