@@ -161,7 +161,7 @@ export default function PersonalityType() {
             </Button>
           </div>
         ) : (
-          <div className="min-h-screen bg-background">
+          <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
             {/* Progress indicator */}
             <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
               <div className="mx-auto max-w-4xl px-4 py-3">

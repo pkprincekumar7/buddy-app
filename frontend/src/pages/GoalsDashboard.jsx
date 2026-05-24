@@ -322,7 +322,7 @@ export default function GoalsDashboard() {
         animate={{ opacity: showSplash ? 0 : 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
-        <div className="min-h-screen bg-background">
+        <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
           <div className="mx-auto max-w-4xl px-4 py-10">
             <motion.div {...slideUp(0.1)} className="mb-8 text-center">
               <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
