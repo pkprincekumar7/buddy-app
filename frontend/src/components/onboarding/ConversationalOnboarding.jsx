@@ -369,7 +369,7 @@ export default function ConversationalOnboarding({
       const start = container.scrollTop;
       const end = container.scrollHeight - container.clientHeight;
       if (end <= start) return;
-      const duration = 1400;
+      const duration = 2500;
       const startTime = performance.now();
       const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
       const step = (now) => {
@@ -378,7 +378,7 @@ export default function ConversationalOnboarding({
         if (progress < 1) requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
-    }, 200);
+    }, 400);
     return () => clearTimeout(t);
   }, [messages, isTyping]);
 

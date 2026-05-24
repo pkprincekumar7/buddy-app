@@ -20,27 +20,27 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       {/* Hero */}
       <div className="text-center">
         <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: 'spring', stiffness: 200 }}
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 60, damping: 14, delay: 0.1 }}
           className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
         >
           <span className="text-2xl font-bold text-white">B</span>
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          transition={{ duration: 0.8, delay: 0.55, ease: 'easeOut' }}
           className="mb-3 text-3xl font-bold tracking-tight text-white md:text-4xl"
         >
           Welcome to Buddy360
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45 }}
+          transition={{ duration: 0.8, delay: 0.85, ease: 'easeOut' }}
           className="mx-auto max-w-md text-base leading-relaxed text-slate-400"
         >
           A guided journey to help your child discover their strengths and design a meaningful life
@@ -49,9 +49,9 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
 
       {/* Features */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 22 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
+        transition={{ duration: 0.8, delay: 1.15, ease: 'easeOut' }}
         className="border-edge mx-auto max-w-md rounded-2xl bg-surface-elevated p-6"
       >
         <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -61,9 +61,9 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
           {WELCOME_FEATURES.map((feature, index) => (
             <motion.div
               key={feature.text}
-              initial={{ opacity: 0, x: -20 }}
+              initial={{ opacity: 0, x: -18 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.75 + index * 0.15 }}
+              transition={{ duration: 0.7, delay: 1.4 + index * 0.25, ease: 'easeOut' }}
               className="flex items-center gap-3"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
@@ -77,9 +77,9 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
 
       {/* Login/Continue */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 22 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.05 }}
+        transition={{ duration: 0.8, delay: 2.15, ease: 'easeOut' }}
         className="mx-auto max-w-md space-y-4 text-center"
       >
         {isAuthenticated ? (
@@ -149,7 +149,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }) {
       <motion.p
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 1.2 }}
+        transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
         className="text-center text-xs text-slate-600"
       >
         ⏱️ This will take about 5–7 minutes
