@@ -28,20 +28,6 @@ repos:
         files: ^backend/
 
   # --------------------------------------------------------------------------
-  # Frontend — ESLint + Prettier
+  # Frontend — ESLint + Prettier are handled by Husky + lint-staged.
+  # Run `npm install` inside frontend/ to install the git hooks.
   # --------------------------------------------------------------------------
-  - repo: local
-    hooks:
-      - id: eslint
-        name: ESLint (frontend)
-        language: system
-        entry: bash -c "cd frontend && npx eslint --quiet --fix $@" --
-        files: ^frontend/src/.*\.(js|mjs|cjs|jsx)$
-        pass_filenames: true
-
-      - id: prettier
-        name: Prettier (frontend)
-        language: system
-        entry: bash -c "cd frontend && npx prettier --write $@" --
-        files: ^frontend/src/.*\.(js|mjs|cjs|jsx|css)$
-        pass_filenames: true

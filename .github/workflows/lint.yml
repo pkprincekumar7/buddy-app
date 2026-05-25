@@ -49,7 +49,7 @@ jobs:
         run: ruff format --check .
 
       - name: mypy type check
-        run: mypy app/
+        run: mypy app/ tools/
 
   backend-test:
     name: Backend Tests
@@ -128,7 +128,7 @@ jobs:
         run: npm run lint
 
       - name: Prettier (check only)
-        run: ./node_modules/.bin/prettier --check "src/**/*.{js,jsx,css}"
+        run: ./node_modules/.bin/prettier --check "src/**/*.{ts,tsx,css}"
 
       - name: TypeScript type check
         run: npm run typecheck
@@ -203,12 +203,19 @@ jobs:
         continue-on-error: true
         run: gitleaks detect --source . --redact
 
-      - name: Hadolint (Dockerfile lint)
-        id: hadolint
+      - name: Hadolint (backend Dockerfile lint)
+        id: hadolint_backend
         continue-on-error: true
         uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: backend/Dockerfile
+
+      - name: Hadolint (frontend Dockerfile lint)
+        id: hadolint_frontend
+        continue-on-error: true
+        uses: hadolint/hadolint-action@v3.3.0
+        with:
+          dockerfile: frontend/Dockerfile
 
       # ── Python security tools ────────────────────────────────────────────────
       - name: Set up Python
@@ -224,12 +231,12 @@ jobs:
       - name: Bandit (Python SAST)
         id: bandit
         continue-on-error: true
-        run: bandit -r backend/app/ -ll -q
+        run: bandit -r backend/app/ backend/tools/ -ll -q
 
       - name: Semgrep (SAST)
         id: semgrep
         continue-on-error: true
-        run: semgrep --config p/security-audit --error backend/app/ frontend/src/
+        run: semgrep --config p/security-audit --error backend/app/ backend/tools/ frontend/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
@@ -423,7 +430,8 @@ jobs:
         run: |
           FAILED_CHECKS=()
           [[ "${{ steps.gitleaks.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(gitleaks)
-          [[ "${{ steps.hadolint.outcome }}"              == "failure" ]] && FAILED_CHECKS+=(hadolint)
+          [[ "${{ steps.hadolint_backend.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(hadolint-backend)
+          [[ "${{ steps.hadolint_frontend.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(hadolint-frontend)
           [[ "${{ steps.bandit.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(bandit)
           [[ "${{ steps.semgrep.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(semgrep)
           [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)

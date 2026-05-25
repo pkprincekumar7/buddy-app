@@ -5,8 +5,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Vite + Tailwind/postcss configs (vite.config.ts / tsconfig.json do not exist in this project)
-COPY index.html vite.config.js tailwind.config.js postcss.config.cjs jsconfig.json ./
+# Vite + Tailwind/postcss configs + TypeScript project references
+COPY index.html vite.config.ts tailwind.config.ts postcss.config.ts \
+     tsconfig.json tsconfig.app.json tsconfig.node.json ./
 COPY public ./public/
 COPY src ./src
 

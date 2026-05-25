@@ -1,39 +1,50 @@
-**Welcome to your Base44 project** 
+# buddy-app — Frontend
 
-**About**
+React 18 + TypeScript + Vite frontend for the buddy-app platform.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Prerequisites
 
-This project contains everything you need to run your app locally.
+- Node.js 22
+- npm 10+
+- The [FastAPI backend](../backend/README.md) running on port 8000 (required for API calls)
 
-**Edit the code in your local development environment**
+## Setup
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+```bash
+# Install dependencies
+npm install
 
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+# Copy environment file and fill in your values
+cp .env.example .env.local
 ```
 
-Run the app: `npm run dev`
+**Environment variables** (see `.env.example` for the full list):
 
-**Publish your changes**
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID for Sign-In |
+| `VITE_API_URL` | No | Backend API base URL — leave empty to use the Vite dev-server proxy (`/api → localhost:8000`) |
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+> `BACKEND_BUCKET_NAME` is a Docker build arg only — it is never exposed to the client and should **not** go in `.env.local`.
 
-**Docs & Support**
+## Development
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+```bash
+npm run dev        # start Vite dev server (http://localhost:5173)
+npm run typecheck  # run tsc type-checking (zero errors required)
+npm run lint       # run ESLint (zero errors required)
+npm run build      # production build → dist/
+```
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+The dev server proxies `/api` requests to `http://localhost:8000` automatically when `VITE_API_URL` is not set. Start the backend first.
+
+## Tech stack
+
+- **React 18** + **TypeScript 5** (strict mode)
+- **Vite 6** (build + dev server)
+- **Tailwind CSS 3** + **shadcn/ui**
+- **TanStack Query 5** (server state)
+- **React Hook Form 7** + **Zod 3** (form validation)
+- **React Router 6** (client-side routing)
+- **ESLint 9** flat config + **Prettier 3**
+- **Husky** + **lint-staged** (pre-commit hooks)

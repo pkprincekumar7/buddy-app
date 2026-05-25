@@ -1,0 +1,134 @@
+import { useEffect } from 'react';
+import { api } from '@/api/client';
+import {
+  calculateMBTI,
+  adaptAiPersonalityToViewModel,
+  PERSONALITY_TYPE_KEYS,
+} from '@/components/shared/PersonalityAnalysis';
+import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
+import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
+import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
+import { personalityLlmSchema } from '@/lib/llmSchemas';
+import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
+import { mergeChildDraft } from '@/lib/onboardingHelpers';
+import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
+
+import type { DispatchFn } from '@/types';
+
+interface UsePersonalityAnalysisProps {
+  hydrated: boolean;
+  currentPhase: number;
+  activeChildId: string | undefined;
+  dispatch: DispatchFn;
+}
+
+// Fires when the wizard reaches the personality phase (phase 2).
+// Reads from and writes to the child record directly — no separate onboarding collection.
+export function usePersonalityAnalysis({
+  hydrated,
+  currentPhase,
+  activeChildId,
+  dispatch,
+}: UsePersonalityAnalysisProps) {
+  useEffect(() => {
+    if (!hydrated || currentPhase !== 2 || !activeChildId) return;
+    let cancelled = false;
+
+    const run = async () => {
+      dispatch({ type: 'SET_PERSONALITY_BUSY', payload: true });
+      try {
+        const child = await api.entities.Child.get(activeChildId);
+        const childRecord = child as Record<string, unknown>;
+        if (cancelled) return;
+
+        const mergedFromServer = mergeChildDraft(
+          normalizeOnboardingChildDataBlob(childRecord) ?? {},
+        );
+
+        const personality = childRecord?.personality as Record<string, unknown> | undefined;
+        const viewModel = personality?.view_model as
+          | { type?: string; profile?: Record<string, unknown>; [key: string]: unknown }
+          | undefined;
+        if (viewModel?.type && viewModel?.profile) {
+          const clampedReuse = maybeClampStoredPersonalityDescription(viewModel, {
+            analysisSource: personality?.source as string | undefined,
+          });
+          // Sanitize any legacy image URLs (e.g. ui-avatars.com) that may have
+          // been persisted by older code.  Safe data URIs and Wikipedia images
+          // are left unchanged; everything else is replaced with a local avatar.
+          const sanitized = sanitizeViewModelAvatars(clampedReuse);
+          dispatch({ type: 'SET_MBTI_RESULT', payload: sanitized });
+          dispatch({
+            type: 'SET_GENERATED_PROFILE',
+            payload: onboardingProfileFromViewModel(sanitized),
+          });
+          return;
+        }
+
+        if (!mergedFromServer.name?.trim?.()) {
+          dispatch({ type: 'SET_MBTI_RESULT', payload: null });
+          dispatch({ type: 'SET_GENERATED_PROFILE', payload: null });
+          return;
+        }
+
+        if (cancelled) return;
+
+        try {
+          const prompt = buildPersonalityAnalysisPrompt({
+            childData: mergedFromServer,
+            personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+          });
+          if (cancelled) return;
+
+          const ai = await api.integrations.Core.InvokeLLM({
+            prompt,
+            response_json_schema: personalityLlmSchema(),
+          });
+          const aiRecord = (ai ?? {}) as Record<string, unknown>;
+
+          const vm = adaptAiPersonalityToViewModel(aiRecord, mergedFromServer.name);
+          const prof = onboardingProfileFromViewModel(vm);
+          // Strip SVG data-URI images before saving — WAF blocks payloads with <svg>/<text> tags.
+          await api.entities.Child.update(activeChildId, {
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+          });
+          if (cancelled) return;
+
+          dispatch({ type: 'SET_MBTI_RESULT', payload: vm });
+          if (prof) dispatch({ type: 'SET_GENERATED_PROFILE', payload: prof });
+        } catch (err) {
+          console.warn('[usePersonalityAnalysis] LLM failed, falling back to rule-based:', err);
+
+          const ruleVm = calculateMBTI(mergedFromServer);
+          const prof = onboardingProfileFromViewModel(ruleVm);
+          try {
+            await api.entities.Child.update(activeChildId, {
+              personality: { source: 'rule_fallback', view_model: stripViewModelImages(ruleVm) },
+            });
+          } catch (patchErr) {
+            console.warn(
+              '[usePersonalityAnalysis] Could not persist rule-based personality:',
+              patchErr,
+            );
+          }
+          if (cancelled) return;
+
+          dispatch({ type: 'SET_MBTI_RESULT', payload: ruleVm });
+          if (prof) dispatch({ type: 'SET_GENERATED_PROFILE', payload: prof });
+        } finally {
+          if (!cancelled) dispatch({ type: 'SET_PERSONALITY_BUSY', payload: false });
+        }
+      } catch (err) {
+        console.warn('[usePersonalityAnalysis] Server fetch failed:', err);
+      } finally {
+        if (!cancelled) dispatch({ type: 'SET_PERSONALITY_BUSY', payload: false });
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      dispatch({ type: 'SET_PERSONALITY_BUSY', payload: false });
+    };
+  }, [hydrated, currentPhase, activeChildId, dispatch]);
+}

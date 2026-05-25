@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# TypeScript build cache (written to node_modules/.tmp/ per tsconfig tsBuildInfoFile)
+*.tsbuildinfo
+
+# Vite dev-server cache
+.vite/
+
+# retire.js vulnerability database (auto-downloaded by check.sh; stays current without committing)
+retire-jsrepo.json

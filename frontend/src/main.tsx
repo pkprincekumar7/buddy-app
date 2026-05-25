@@ -1,0 +1,7 @@
+import '@/lib/env';
+import ReactDOM from 'react-dom/client';
+import '@/lib/app-params';
+import App from '@/App';
+import '@/index.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
