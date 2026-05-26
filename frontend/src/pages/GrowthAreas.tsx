@@ -16,7 +16,7 @@ export default function GrowthAreas() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
-  const [completedAreaIds, setCompletedAreaIds] = useState(new Set());
+  const [completedAreaIds, setCompletedAreaIds] = useState<Set<string | undefined>>(new Set());
   const [hydrated, setHydrated] = useState(false);
   const [showSplash, startTimer] = useStageSplash();
 
@@ -40,30 +40,24 @@ export default function GrowthAreas() {
           navigate('/Home', { replace: true });
           return;
         }
-        const childRecord = child as Record<string, unknown>;
-        const personality = childRecord['personality'] as Record<string, unknown> | undefined;
-        const viewModel = personality?.['view_model'] as Record<string, unknown> | undefined;
-        if (!viewModel?.['type']) {
+        if (!child.personality?.view_model?.type) {
           navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }
 
         const areas = await api.completedGrowthAreas.list(childId);
         if (cancelled) return;
-        const areasRecord = areas as Record<string, unknown> | null;
-        const allDocs = Array.isArray(areasRecord?.['areas'])
-          ? (areasRecord['areas'] as Record<string, unknown>[])
-          : [];
+        const allDocs = areas.areas ?? [];
         const done = new Set(
           allDocs
             .filter(
               (a) =>
-                a['status'] === 'completed' ||
-                !a['status'] ||
-                (Array.isArray(a['ai_three_month_recommendations']) &&
-                  (a['ai_three_month_recommendations'] as unknown[]).length > 0),
+                a.status === 'completed' ||
+                !a.status ||
+                (Array.isArray(a.ai_three_month_recommendations) &&
+                  a.ai_three_month_recommendations.length > 0),
             )
-            .map((a) => a['area_id']),
+            .map((a) => a.area_id),
         );
         setCompletedAreaIds(done);
       } catch (err) {
@@ -114,6 +108,7 @@ export default function GrowthAreas() {
                   return (
                     <motion.button
                       key={area.id}
+                      type="button"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       whileTap={{ scale: 0.97 }}

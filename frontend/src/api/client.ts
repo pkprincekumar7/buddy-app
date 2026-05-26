@@ -1,4 +1,11 @@
 import { ApiError } from './errors';
+import type {
+  UserRecord,
+  ChildRecord,
+  PreferencesRecord,
+  GoalsRecord,
+  CompletedGrowthAreasRecord,
+} from '@/types/api';
 
 function joinApi(path: string): string {
   const base = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
@@ -97,8 +104,8 @@ export const api = {
       }
     },
 
-    async me(): Promise<unknown> {
-      return request('/auth/me');
+    async me(): Promise<UserRecord> {
+      return request('/auth/me') as Promise<UserRecord>;
     },
 
     async logout(): Promise<void> {
@@ -178,52 +185,58 @@ export const api = {
   },
 
   preferences: {
-    get: (): Promise<unknown> => request('/user/preferences'),
-    patch: (body: Record<string, unknown>): Promise<unknown> =>
-      request('/user/preferences', { method: 'PATCH', body }),
+    get: (): Promise<PreferencesRecord> =>
+      request('/user/preferences') as Promise<PreferencesRecord>,
+    patch: (body: Record<string, unknown>): Promise<PreferencesRecord> =>
+      request('/user/preferences', { method: 'PATCH', body }) as Promise<PreferencesRecord>,
   },
 
   completedGrowthAreas: {
-    list: (childId: string): Promise<unknown> =>
-      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`),
-    append: (childId: string, body: Record<string, unknown>): Promise<unknown> =>
+    list: (childId: string): Promise<CompletedGrowthAreasRecord> =>
+      request(
+        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<CompletedGrowthAreasRecord>,
+    append: (childId: string, body: Record<string, unknown>): Promise<CompletedGrowthAreasRecord> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'POST',
         body,
-      }),
-    clear: (childId: string): Promise<unknown> =>
+      }) as Promise<CompletedGrowthAreasRecord>,
+    clear: (childId: string): Promise<void> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'DELETE',
-      }),
+      }) as Promise<void>,
   },
 
   goals: {
-    get: (childId: string): Promise<unknown> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`),
-    patch: (childId: string, body: Record<string, unknown>): Promise<unknown> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`, { method: 'PATCH', body }),
+    get: (childId: string): Promise<GoalsRecord> =>
+      request(`/user/goals?child_id=${encodeURIComponent(childId)}`) as Promise<GoalsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<GoalsRecord> =>
+      request(`/user/goals?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<GoalsRecord>,
   },
 
   entities: {
     Child: {
-      async list(sort = '-created_date', limit?: number): Promise<unknown> {
+      async list(sort = '-created_date', limit?: number): Promise<ChildRecord[]> {
         const qs = new URLSearchParams();
         if (sort) qs.set('sort', sort);
         if (limit != null) qs.set('limit', String(limit));
         const q = qs.toString();
-        return request(`/children${q ? `?${q}` : ''}`);
+        return request(`/children${q ? `?${q}` : ''}`) as Promise<ChildRecord[]>;
       },
-      get: (id: string): Promise<unknown> => request(`/children/${encodeURIComponent(id)}`),
-      create: (payload: Record<string, unknown>): Promise<unknown> =>
-        request('/children', { method: 'POST', body: payload }),
-      update: (id: string, patch: Record<string, unknown>): Promise<unknown> =>
-        request(`/children/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
-      delete: (id: string): Promise<unknown> =>
-        request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      get: (id: string): Promise<ChildRecord> =>
+        request(`/children/${encodeURIComponent(id)}`) as Promise<ChildRecord>,
+      create: (payload: Record<string, unknown>): Promise<ChildRecord> =>
+        request('/children', { method: 'POST', body: payload }) as Promise<ChildRecord>,
+      update: (id: string, patch: Record<string, unknown>): Promise<ChildRecord> =>
+        request(`/children/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: patch,
+        }) as Promise<ChildRecord>,
+      delete: (id: string): Promise<void> =>
+        request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
     },
-  },
-
-  appLogs: {
-    logUserInApp: (_pageName: string): Promise<void> => Promise.resolve(),
   },
 };

@@ -57,13 +57,12 @@ export default function PersonalityType() {
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
         setChildName(merged.name || '');
 
-        const childRecord = child as Record<string, unknown>;
         // DB hit: personality already analysed — skip LLM
-        const personality = childRecord['personality'] as Record<string, unknown> | undefined;
-        const viewModel = personality?.['view_model'] as Record<string, unknown> | undefined;
-        if (viewModel?.['type'] && viewModel?.['profile']) {
+        const personality = child.personality;
+        const viewModel = personality?.view_model;
+        if (viewModel?.type && viewModel?.profile) {
           const clamped = maybeClampStoredPersonalityDescription(viewModel, {
-            analysisSource: personality?.['source'] as string | undefined,
+            analysisSource: personality?.source,
           });
           setMbtiResult(sanitizeViewModelAvatars(clamped));
           setStatus('ready');
@@ -77,7 +76,7 @@ export default function PersonalityType() {
 
         // Call LLM
         setStatus('analysing');
-        const childId_ = childRecord['id'] as string;
+        const childId_ = child.id;
         try {
           const prompt = buildPersonalityAnalysisPrompt({
             childData: merged,

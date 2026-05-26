@@ -80,12 +80,12 @@ services:
       BACKEND_BUCKET_NAME: ${BACKEND_BUCKET_NAME:-}
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "${FRONTEND_PORT:-5173}:8080"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

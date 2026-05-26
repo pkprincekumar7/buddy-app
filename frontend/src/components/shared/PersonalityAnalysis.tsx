@@ -22,7 +22,8 @@ interface PersonalityCategory {
 }
 
 // New Personality Framework
-const personalityCategories: Record<string, PersonalityCategory> = {
+// eslint-disable-next-line react-refresh/only-export-components
+export const personalityCategories: Record<string, PersonalityCategory> = {
   motivators: {
     name: 'Motivators',
     color: 'from-red-500 to-orange-600',
@@ -61,7 +62,8 @@ interface PersonalityTypeEntry {
   growth_areas: string[];
 }
 
-const personalityTypes: Record<string, PersonalityTypeEntry> = {
+// eslint-disable-next-line react-refresh/only-export-components
+export const personalityTypes: Record<string, PersonalityTypeEntry> = {
   Ambitious: {
     name: 'Ambitious',
     category: 'motivators',
@@ -393,7 +395,7 @@ export function calculateMBTI(data: CalculateMbtiData) {
   };
 }
 
-const PERSONALITY_TYPE_KEYS = Object.keys(personalityTypes);
+export const PERSONALITY_TYPE_KEYS = Object.keys(personalityTypes);
 const PERSONALITY_CATEGORY_KEYS = ['motivators', 'socializers', 'creatives', 'adventurers'];
 
 interface RoleModel {
@@ -735,6 +737,3 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
     </div>
   );
 }
-
-// eslint-disable-next-line react-refresh/only-export-components
-export { personalityTypes, personalityCategories, PERSONALITY_TYPE_KEYS };

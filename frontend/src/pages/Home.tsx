@@ -65,12 +65,11 @@ const PILLARS = [
 
 export default function Home() {
   const navigate = useNavigate();
-  type ChildRecord = { id?: string; onboarding_completed?: boolean };
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date'),
   });
-  const children = (Array.isArray(childrenRaw) ? childrenRaw : []) as ChildRecord[];
+  const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
   // Onboarding is in progress if there's a child that hasn't completed it yet.
   const onboardingInProgress = children.some((c) => !c.onboarding_completed);

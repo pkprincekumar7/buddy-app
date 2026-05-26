@@ -1,4 +1,4 @@
-import { useEffect, Component } from 'react';
+import { useEffect, Component, Suspense, lazy } from 'react';
 import type { ComponentType, ErrorInfo, ReactNode } from 'react';
 import { Toaster as SonnerToaster } from '@/components/ui/sonner';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,13 +8,17 @@ import { pagesConfig } from './pages.config';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
-import GrowthAreasActivity from './pages/GrowthAreasActivity';
-import GrowthAreasActivityGame from './pages/GrowthAreasActivityGame';
-import GrowthAreasActivityGreatInsights from './pages/GrowthAreasActivityGreatInsights';
+
+const GrowthAreasActivity = lazy(() => import('./pages/GrowthAreasActivity'));
+const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGame'));
+const GrowthAreasActivityGreatInsights = lazy(
+  () => import('./pages/GrowthAreasActivityGreatInsights'),
+);
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -59,7 +63,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-const PUBLIC_PATHS = ['/Login', '/Register'];
+const PUBLIC_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -72,8 +76,16 @@ interface LayoutWrapperProps {
   currentPageName?: string;
 }
 
-const LayoutWrapper = ({ children, currentPageName }: LayoutWrapperProps) =>
-  Layout ? <Layout currentPageName={currentPageName}>{children}</Layout> : <>{children}</>;
+const PageFallback = () => (
+  <div className="fixed inset-0 flex items-center justify-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
+  </div>
+);
+
+const LayoutWrapper = ({ children, currentPageName }: LayoutWrapperProps) => {
+  const wrapped = <Suspense fallback={<PageFallback />}>{children}</Suspense>;
+  return Layout ? <Layout currentPageName={currentPageName}>{wrapped}</Layout> : wrapped;
+};
 
 const ProtectedRoutes = () => (
   <Routes>

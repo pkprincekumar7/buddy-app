@@ -37,8 +37,7 @@ export function useOnboardingComplete({
       } else {
         // Fallback: create if somehow not created yet (e.g. user refreshed mid-flow).
         const created = await api.entities.Child.create(finalData);
-        const createdRecord = created as Record<string, unknown>;
-        childId = typeof createdRecord?.id === 'string' ? createdRecord.id : undefined;
+        childId = created?.id;
         if (childId) dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: childId });
       }
 

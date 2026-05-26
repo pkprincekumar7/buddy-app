@@ -13,7 +13,7 @@
  *   "Alice"     → "A"
  *   ""          → "?"
  */
-function getInitials(name: string): string {
+export function getInitials(name: string): string {
   if (!name?.trim()) return '?';
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 1) return (words[0]?.[0] ?? '?').toUpperCase();
@@ -71,7 +71,7 @@ export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<st
     const p = person as Record<string, unknown>;
     const img = p.image;
     const isSafe =
-      (typeof img === 'string' && img.startsWith('data:')) ||
+      (typeof img === 'string' && img.startsWith('data:image/')) ||
       (typeof img === 'string' && img.startsWith('https://upload.wikimedia.org/'));
     if (isSafe) return p;
     const name = typeof p.name === 'string' ? p.name : 'Guide';

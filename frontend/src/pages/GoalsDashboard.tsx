@@ -8,7 +8,7 @@ import {
   Suspense,
   Component,
 } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, ErrorInfo } from 'react';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import { cn } from '@/lib/utils';
@@ -67,8 +67,8 @@ class ModalErrorBoundary extends Component<ModalErrorBoundaryProps, ModalErrorBo
   static getDerivedStateFromError(): ModalErrorBoundaryState {
     return { hasError: true };
   }
-  componentDidCatch(err: unknown) {
-    console.error('[ModalErrorBoundary]', err);
+  componentDidCatch(err: unknown, info: ErrorInfo) {
+    console.error('[ModalErrorBoundary]', err, info.componentStack);
     toast.error('Modal failed to load. Please try again.');
   }
   render() {

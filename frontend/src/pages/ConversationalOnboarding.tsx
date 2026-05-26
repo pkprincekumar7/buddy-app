@@ -47,10 +47,8 @@ export default function ConversationalOnboarding() {
         }
 
         // Preload existing data — no auto-redirect forward even if personality is ready.
-        const childRecord = child as Record<string, unknown>;
-        const personality = childRecord['personality'] as Record<string, unknown> | undefined;
-        const viewModel = personality?.['view_model'] as Record<string, unknown> | undefined;
-        const personalityReady = !!(viewModel?.['type'] && viewModel?.['profile']);
+        const viewModel = child.personality?.view_model;
+        const personalityReady = !!(viewModel?.type && viewModel?.profile);
         setHasPersonality(personalityReady);
         const normalized = normalizeOnboardingChildDataBlob(child);
         if (normalized) setChildData(mergeChildDraft(normalized));

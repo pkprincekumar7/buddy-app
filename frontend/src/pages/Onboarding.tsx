@@ -32,10 +32,10 @@ export default function Onboarding() {
       try {
         const list = await api.entities.Child.list('-created_date', 1);
         if (cancelled) return;
-        const listArr = Array.isArray(list) ? (list as Record<string, unknown>[]) : [];
+        const listArr = Array.isArray(list) ? list : [];
         const child = listArr[0];
-        if (child && !child['onboarding_completed']) {
-          setChildId(child['id'] as string);
+        if (child && !child.onboarding_completed) {
+          setChildId(child.id);
         }
       } catch (err) {
         console.warn('[Onboarding] Preload failed:', err);
@@ -61,8 +61,7 @@ export default function Onboarding() {
           onboarding_phase: 1,
           onboarding_completed: false,
         });
-        const createdRecord = created as Record<string, unknown> | null;
-        const createdId = createdRecord?.['id'] as string | undefined;
+        const createdId = created?.id;
         if (createdId) {
           setChildId(createdId);
           targetId = createdId;

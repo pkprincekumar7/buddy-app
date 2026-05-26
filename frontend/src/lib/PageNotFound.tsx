@@ -1,11 +1,12 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
+import type { UserRecord } from '@/types/api';
 
 const USER_ROLES = { ADMIN: 'admin' };
 
 interface AuthData {
-  user: Record<string, unknown> | null;
+  user: UserRecord | null;
   isAuthenticated: boolean;
 }
 
@@ -18,7 +19,7 @@ export default function PageNotFound() {
     queryKey: ['user'],
     queryFn: async () => {
       try {
-        const user = (await api.auth.me()) as Record<string, unknown>;
+        const user = await api.auth.me();
         return { user, isAuthenticated: true };
       } catch {
         return { user: null, isAuthenticated: false };
@@ -46,24 +47,22 @@ export default function PageNotFound() {
           </div>
 
           {/* Admin Note */}
-          {isFetched &&
-            authData?.isAuthenticated &&
-            authData.user?.['role'] === USER_ROLES.ADMIN && (
-              <div className="border-edge mt-8 rounded-lg bg-surface-elevated p-4">
-                <div className="flex items-start space-x-3">
-                  <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-500/10">
-                    <div className="h-2 w-2 rounded-full bg-orange-400" />
-                  </div>
-                  <div className="space-y-1 text-left">
-                    <p className="text-sm font-medium text-slate-300">Admin Note</p>
-                    <p className="text-sm leading-relaxed text-slate-400">
-                      This could mean that the AI hasn't implemented this page yet. Ask it to
-                      implement it in the chat.
-                    </p>
-                  </div>
+          {isFetched && authData?.isAuthenticated && authData.user?.role === USER_ROLES.ADMIN && (
+            <div className="border-edge mt-8 rounded-lg bg-surface-elevated p-4">
+              <div className="flex items-start space-x-3">
+                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-500/10">
+                  <div className="h-2 w-2 rounded-full bg-orange-400" />
+                </div>
+                <div className="space-y-1 text-left">
+                  <p className="text-sm font-medium text-slate-300">Admin Note</p>
+                  <p className="text-sm leading-relaxed text-slate-400">
+                    This could mean that the AI hasn't implemented this page yet. Ask it to
+                    implement it in the chat.
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
           {/* Action Button */}
           <div className="pt-6">

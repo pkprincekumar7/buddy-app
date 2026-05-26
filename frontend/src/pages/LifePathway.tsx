@@ -162,17 +162,17 @@ export default function LifePathway() {
     setShowConcernModal(true);
   };
 
-  const handleConcernSubmit = async () => {
-    const childId = childData?.['id'] as string | undefined;
-    if (!concernInput.trim() || !childId) return;
+  const handleConcernSubmit = useCallback(async () => {
+    const activeChildId = childData?.['id'] as string | undefined;
+    if (!concernInput.trim() || !activeChildId) return;
     try {
-      await api.goals.patch(childId, { parent_concern: concernInput.trim() });
+      await api.goals.patch(activeChildId, { parent_concern: concernInput.trim() });
       setSavedConcern(concernInput.trim());
     } catch (err) {
       console.warn('[LifePathway] Could not persist concern, proceeding anyway:', err);
     }
     setConcernSubmitted(true);
-  };
+  }, [childData, concernInput, setSavedConcern]);
 
   const handleProceedToDashboard = () => {
     closeConcernModal();

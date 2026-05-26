@@ -2,17 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-
-interface CompletedArea {
-  status?: string;
-  ai_three_month_recommendations?: unknown[];
-  area_id?: string;
-  area_name?: string;
-  area_color?: string;
-  recommendations?: string[];
-  answers?: Record<string, unknown>;
-  [key: string]: unknown;
-}
+import type { CompletedArea } from '@/types/api';
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
@@ -28,34 +18,22 @@ export function useLifePathwayData(childId: string | undefined) {
     const load = async () => {
       try {
         const child = await api.entities.Child.get(childId);
-        const childRecord = child as Record<string, unknown>;
-        if (childRecord) setChildData(childRecord);
+        setChildData(child);
 
-        if (!childRecord?.id) {
-          setIsLoading(false);
-          return;
-        }
+        if (!child.id) return;
 
         const [completedData, goals] = await Promise.all([
           api.completedGrowthAreas.list(childId),
           api.goals.get(childId),
         ]);
 
-        const completedRecord = completedData as Record<string, unknown>;
-        const goalsRecord = goals as Record<string, unknown>;
-
-        const personality = childRecord?.personality as Record<string, unknown> | undefined;
-        const vm = personality?.view_model as
-          | { type?: string; profile?: Record<string, unknown> }
-          | undefined;
+        const vm = child.personality?.view_model;
         if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
 
         // Filter to finalised areas — matches the same 3-way OR used in GrowthAreas.tsx for green ticks.
         // status may have been reset to 'in_progress' if the user re-entered the area after completing it,
         // but ai_three_month_recommendations is never overwritten so it's the reliable completion signal.
-        const allAreas = Array.isArray(completedRecord?.areas)
-          ? (completedRecord.areas as CompletedArea[])
-          : [];
+        const allAreas = completedData.areas ?? [];
         const completedOnly = allAreas.filter(
           (a) =>
             a.status === 'completed' ||
@@ -66,13 +44,14 @@ export function useLifePathwayData(childId: string | undefined) {
         if (completedOnly.length) setCompletedAreas(completedOnly);
 
         setSavedConcern(
-          typeof goalsRecord?.parent_concern === 'string' ? goalsRecord.parent_concern.trim() : '',
+          typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '',
         );
       } catch (err) {
         console.error('[useLifePathwayData] Failed to load:', err);
         toast.error('Failed to load your data. Please refresh and try again.');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     void load();
   }, [childId]);

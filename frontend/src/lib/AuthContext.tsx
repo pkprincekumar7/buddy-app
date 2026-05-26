@@ -13,18 +13,11 @@ import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
+import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
+import type { UserRecord, ChildRecord } from '@/types/api';
 
-interface UserData {
-  role?: string;
-  full_name?: string;
-  email?: string;
-  [key: string]: unknown;
-}
-
-interface ChildProfile {
-  id: string;
-  [key: string]: unknown;
-}
+type UserData = UserRecord;
+type ChildProfile = ChildRecord;
 
 interface AuthErrorUnknown {
   type: 'unknown';
@@ -51,7 +44,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const BLOCKED_REDIRECT_PATHS = ['/Login', '/Register'];
+const BLOCKED_REDIRECT_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
@@ -76,11 +69,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         api.entities.Child.list('-created_date'),
         api.preferences.get(),
       ]);
-      setUser(currentUser as UserData);
-      setChildProfiles(children as ChildProfile[]);
-      const prefsObj = prefs as Record<string, unknown> | null;
+      setUser(currentUser);
+      setChildProfiles(children);
       setLastVisitedPath(
-        typeof prefsObj?.['last_visited_path'] === 'string' ? prefsObj['last_visited_path'] : null,
+        typeof prefs.last_visited_path === 'string' ? prefs.last_visited_path : null,
       );
       setIsAuthenticated(true);
     } catch (error) {
@@ -98,8 +90,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setChildProfiles([]);
         setLastVisitedPath(null);
         const msg =
-          (error as Error)?.message ??
-          'Backend unavailable. Run the API (backend) and ensure Vite proxies /api to it, or set VITE_API_URL.';
+          (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
         setAuthError({ type: 'unknown', message: msg });
       }
     } finally {
@@ -192,7 +183,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const refreshChildren = useCallback(async () => {
     try {
       const children = await api.entities.Child.list('-created_date');
-      setChildProfiles(children as ChildProfile[]);
+      setChildProfiles(children);
     } catch (err) {
       console.warn('[AuthContext] Could not refresh children list:', err);
     }

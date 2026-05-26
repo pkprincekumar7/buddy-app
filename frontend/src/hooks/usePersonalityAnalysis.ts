@@ -38,20 +38,14 @@ export function usePersonalityAnalysis({
       dispatch({ type: 'SET_PERSONALITY_BUSY', payload: true });
       try {
         const child = await api.entities.Child.get(activeChildId);
-        const childRecord = child as Record<string, unknown>;
         if (cancelled) return;
 
-        const mergedFromServer = mergeChildDraft(
-          normalizeOnboardingChildDataBlob(childRecord) ?? {},
-        );
+        const mergedFromServer = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
 
-        const personality = childRecord?.personality as Record<string, unknown> | undefined;
-        const viewModel = personality?.view_model as
-          | { type?: string; profile?: Record<string, unknown>; [key: string]: unknown }
-          | undefined;
+        const viewModel = child?.personality?.view_model;
         if (viewModel?.type && viewModel?.profile) {
           const clampedReuse = maybeClampStoredPersonalityDescription(viewModel, {
-            analysisSource: personality?.source as string | undefined,
+            analysisSource: child?.personality?.source,
           });
           // Sanitize any legacy image URLs (e.g. ui-avatars.com) that may have
           // been persisted by older code.  Safe data URIs and Wikipedia images

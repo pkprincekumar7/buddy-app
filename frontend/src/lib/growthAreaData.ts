@@ -1,5 +1,14 @@
 import { Rocket, Heart, Brain, Palette, Dumbbell, MessageSquare } from 'lucide-react';
 
+export interface Question {
+  id: string;
+  question: string;
+  type: string;
+  placeholder?: string;
+  options?: string[];
+  followUp: string;
+}
+
 export const GROWTH_AREAS = [
   {
     id: 'life_ambition',
@@ -61,7 +70,7 @@ export function areaById(id: string): (typeof GROWTH_AREAS)[number] | null {
   return GROWTH_AREAS.find((a) => a.id === id) ?? null;
 }
 
-export const AREA_QUESTIONS = {
+export const AREA_QUESTIONS: Record<string, Question[]> = {
   life_ambition: [
     {
       id: 'dream_career',

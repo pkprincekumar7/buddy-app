@@ -31,8 +31,8 @@ import {
   truncate,
   buildMonthData,
   completedCount,
-  generateInsights,
 } from '@/lib/insightsUtils';
+import { generateInsights } from '@/lib/generateInsights';
 import type { Observation } from '@/lib/insightsUtils';
 import type { GoalPlan } from '@/hooks/useGoalPlan';
 
@@ -335,6 +335,7 @@ export default function ProgressInsightsModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close progress modal"
             className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
@@ -350,6 +351,7 @@ export default function ProgressInsightsModal({
             ['insights', 'Insights'],
           ].map(([key, label]) => (
             <button
+              type="button"
               key={key}
               onClick={() => setActiveTab(key!)}
               className={`border-b-2 px-5 pb-3 text-sm font-semibold transition-colors ${
@@ -381,6 +383,7 @@ export default function ProgressInsightsModal({
                     ['3months', '3-Months'],
                   ].map(([key, label]) => (
                     <button
+                      type="button"
                       key={key}
                       onClick={() => setProgressTab(key!)}
                       className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
@@ -598,6 +601,7 @@ export default function ProgressInsightsModal({
                       Failed to generate insights. Please try again.
                     </p>
                     <button
+                      type="button"
                       onClick={() => {
                         setInsightsError(false);
                         setInsightsData(null);
@@ -641,6 +645,7 @@ export default function ProgressInsightsModal({
                               {item.text}
                             </p>
                             <button
+                              type="button"
                               onClick={() =>
                                 setExpandedInsight((prev) => (prev === idx ? null : idx))
                               }
@@ -686,10 +691,16 @@ export default function ProgressInsightsModal({
                                   {item.details}
                                 </p>
                                 <div className="flex flex-wrap gap-2">
-                                  <button className="rounded-xl bg-teal-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-600">
+                                  <button
+                                    type="button"
+                                    className="rounded-xl bg-teal-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-600"
+                                  >
                                     Start Monitoring
                                   </button>
-                                  <button className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-slate-300 transition-colors">
+                                  <button
+                                    type="button"
+                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-slate-300 transition-colors"
+                                  >
                                     Check-in Later
                                   </button>
                                 </div>

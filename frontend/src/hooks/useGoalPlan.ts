@@ -43,26 +43,6 @@ export interface GoalPlan {
   [key: string]: unknown;
 }
 
-// Builds a flat-index map over every activity in the plan.
-// key: "mIdx-pIdx-aIdx" → flat integer index (sequential across all months/periods/activities)
-export function buildFlatIndexMap(goalPlan: GoalPlan | null): Map<string, number> {
-  const map = new Map<string, number>();
-  if (!goalPlan?.months) return map;
-  let idx = 0;
-  for (let m = 0; m < goalPlan.months.length; m++) {
-    const month = goalPlan.months[m];
-    const periods = month?.periods ?? [];
-    for (let p = 0; p < periods.length; p++) {
-      const period = periods[p];
-      const activities = period?.activities ?? [];
-      for (let a = 0; a < activities.length; a++) {
-        map.set(`${m}-${p}-${a}`, idx++);
-      }
-    }
-  }
-  return map;
-}
-
 // Returns both the flat-index map and the flat index of the first incomplete activity.
 export function buildGoalPlanIndex(goalPlan: GoalPlan | null): {
   flatIndexMap: Map<string, number>;
@@ -118,11 +98,10 @@ export function useGoalPlan(childId: string | undefined) {
             api.entities.Child.get(cId),
             api.completedGrowthAreas.list(cId),
           ]);
-          ob = freshChild as Record<string, unknown>;
+          ob = freshChild;
           // Use only finalised areas for goal generation; legacy docs without status are treated as completed.
-          const completedRecord = freshCompleted as Record<string, unknown>;
-          const allAreas = Array.isArray(completedRecord?.areas)
-            ? (completedRecord.areas as Activity[])
+          const allAreas = Array.isArray(freshCompleted.areas)
+            ? (freshCompleted.areas as Activity[])
             : [];
           areas = allAreas.filter((a) => a.status === 'completed' || !a.status);
         }
@@ -249,10 +228,10 @@ export function useGoalPlan(childId: string | undefined) {
     async (monthIdx: number, periodIdx: number, actIdx: number) => {
       const updatedPlan = structuredClone(goalPlan);
       if (!updatedPlan) return;
-      const flatMap = buildFlatIndexMap(updatedPlan);
-      const resetFlatIdx = flatMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
+      const { flatIndexMap } = buildGoalPlanIndex(updatedPlan);
+      const resetFlatIdx = flatIndexMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
 
-      flatMap.forEach((flatIdx, key) => {
+      flatIndexMap.forEach((flatIdx, key) => {
         if (flatIdx >= resetFlatIdx) {
           const parts = key.split('-').map(Number);
           const m = parts[0] ?? 0;
@@ -260,12 +239,12 @@ export function useGoalPlan(childId: string | undefined) {
           const a = parts[2] ?? 0;
           const act = updatedPlan.months[m]?.periods?.[p]?.activities?.[a];
           if (act) {
-            delete act.completed;
-            delete act.score;
-            delete act.note;
-            delete act.progress_observation;
-            delete act.ai_feedback;
-            delete act.parent_feedback;
+            act.completed = undefined;
+            act.score = undefined;
+            act.note = undefined;
+            act.progress_observation = undefined;
+            act.ai_feedback = undefined;
+            act.parent_feedback = undefined;
           }
         }
       });

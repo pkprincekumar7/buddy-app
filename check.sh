@@ -119,7 +119,7 @@ bundle_size_check() {
   local bundle
   bundle=$(ls "$FRONTEND/dist/assets/index-"*.js 2>/dev/null | head -1)
   if [ -z "$bundle" ]; then echo "No bundle found in dist/assets/"; return 1; fi
-  local size limit=1468006
+  local size limit=$((1400 * 1024))  # 1.4 MB
   size=$(wc -c < "$bundle")
   echo "Bundle: $(basename "$bundle") — ${size} bytes (limit ${limit})"
   if [ "$size" -gt "$limit" ]; then

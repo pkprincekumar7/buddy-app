@@ -48,25 +48,21 @@ export default function GrowthAreasActivityGame() {
           return;
         }
 
-        const childRecord = child as Record<string, unknown>;
-        setChildName((childRecord['name'] as string) || '');
+        setChildName(child.name ?? '');
 
         // Restore previously saved game selections
-        const completedData = await api.completedGrowthAreas.list(childRecord['id'] as string);
+        const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
-        const completedRecord = completedData as Record<string, unknown> | null;
-        const allDocs = Array.isArray(completedRecord?.['areas'])
-          ? (completedRecord['areas'] as Record<string, unknown>[])
-          : [];
-        const areaDoc = allDocs.find((a) => a['area_id'] === area.id) ?? {};
-        const childActivity = areaDoc['child_activity'] as Record<string, unknown> | undefined;
+        const allDocs = completedData.areas ?? [];
+        const areaDoc = allDocs.find((a) => a.area_id === area.id);
+        const childActivity = areaDoc?.child_activity;
         const saved =
           (childActivity?.['selections'] as string[] | undefined) ??
-          (areaDoc['child_activity_selections'] as string[] | undefined) ??
+          areaDoc?.child_activity_selections ??
           [];
         if (Array.isArray(saved) && saved.length > 0) setSelectedIds(saved);
-        const ia = areaDoc['interactive_answers'];
-        if (ia && typeof ia === 'object') setSavedAnswers(ia as Record<string, unknown>);
+        const ia = areaDoc?.interactive_answers;
+        if (ia) setSavedAnswers(ia);
       } catch (err) {
         console.warn('[GrowthAreasActivityGame] Load failed:', err);
       } finally {
@@ -173,7 +169,7 @@ export default function GrowthAreasActivityGame() {
           <Button
             variant="outline"
             onClick={() => {
-              const questions = (AREA_QUESTIONS as Record<string, unknown[]>)[area.id] ?? [];
+              const questions = AREA_QUESTIONS[area.id] ?? [];
               navigate(`/GrowthAreas/${childId}/Activity/${activity}?q=${questions.length}`);
             }}
             className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"

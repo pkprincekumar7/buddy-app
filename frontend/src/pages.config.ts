@@ -1,13 +1,15 @@
+import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import Home from './pages/Home';
-import LifePathway from './pages/LifePathway';
-import Onboarding from './pages/Onboarding';
-import GoalsDashboard from './pages/GoalsDashboard';
-import ConversationalOnboarding from './pages/ConversationalOnboarding';
-import PersonalityType from './pages/PersonalityType';
-import PersonalityJourney from './pages/PersonalityJourney';
-import GrowthAreas from './pages/GrowthAreas';
 import __Layout from './Layout';
+
+const Home = lazy(() => import('./pages/Home'));
+const LifePathway = lazy(() => import('./pages/LifePathway'));
+const Onboarding = lazy(() => import('./pages/Onboarding'));
+const GoalsDashboard = lazy(() => import('./pages/GoalsDashboard'));
+const ConversationalOnboarding = lazy(() => import('./pages/ConversationalOnboarding'));
+const PersonalityType = lazy(() => import('./pages/PersonalityType'));
+const PersonalityJourney = lazy(() => import('./pages/PersonalityJourney'));
+const GrowthAreas = lazy(() => import('./pages/GrowthAreas'));
 
 export const PAGES = {
   Home,

@@ -2,7 +2,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
 # Vite + Tailwind/postcss configs + TypeScript project references
@@ -28,6 +28,14 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Template used when BACKEND_BUCKET_NAME is set — nginx-start.sh runs envsubst and overwrites default.conf.
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 COPY nginx-start.sh /nginx-start.sh
-RUN chmod +x /nginx-start.sh
-EXPOSE 80
+RUN chmod +x /nginx-start.sh \
+    && chown -R nginx:nginx /usr/share/nginx/html \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown -R nginx:nginx /etc/nginx/conf.d \
+    && touch /var/run/nginx.pid \
+    && chown nginx:nginx /var/run/nginx.pid \
+    && chown nginx:nginx /nginx-start.sh
+USER nginx
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s CMD wget -qO- http://localhost:8080/manifest.json || exit 1
 CMD ["/nginx-start.sh"]

@@ -348,10 +348,9 @@ export default function ConversationalOnboarding({
         slim = child
           ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) ?? {})
           : {};
-        const prefsData = prefs as Record<string, unknown>;
-        if (typeof prefsData['tts_enabled'] === 'boolean') {
-          voiceEnabledRef.current = prefsData['tts_enabled'];
-          setVoiceEnabled(prefsData['tts_enabled']);
+        if (typeof prefs.tts_enabled === 'boolean') {
+          voiceEnabledRef.current = prefs.tts_enabled;
+          setVoiceEnabled(prefs.tts_enabled);
         }
         if (cancelled) return;
 

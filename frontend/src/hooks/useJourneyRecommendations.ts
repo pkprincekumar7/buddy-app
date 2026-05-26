@@ -30,26 +30,23 @@ export function useJourneyRecommendations({
     const run = async () => {
       try {
         const child = await api.entities.Child.get(activeChildId);
-        const childRecord = child as Record<string, unknown>;
         if (cancelled) return;
 
-        const recommendations = childRecord?.recommendations as Record<string, unknown> | undefined;
+        const recommendations = child?.recommendations;
         if (
           recommendations &&
-          (typeof recommendations.pathway_overview === 'string' ||
-            (Array.isArray(recommendations.focus_areas) && recommendations.focus_areas.length > 0))
+          (typeof recommendations['pathway_overview'] === 'string' ||
+            (Array.isArray(recommendations['focus_areas']) &&
+              recommendations['focus_areas'].length > 0))
         ) {
           dispatch({ type: 'SET_RECOMMENDATIONS', payload: recommendations });
           return;
         }
 
-        const mergedChild = mergeChildDraft(normalizeOnboardingChildDataBlob(childRecord) ?? {});
+        const mergedChild = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
         if (!mergedChild.name?.trim?.()) return;
 
-        const personality = childRecord?.personality as Record<string, unknown> | undefined;
-        const vmJ = personality?.view_model as
-          | { type?: string; profile?: Record<string, unknown> }
-          | undefined;
+        const vmJ = child?.personality?.view_model;
         const gp = vmJ?.type && vmJ?.profile ? onboardingProfileFromViewModel(vmJ) : null;
 
         dispatch({ type: 'SET_JOURNEY_BUSY', payload: true });

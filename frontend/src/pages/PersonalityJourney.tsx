@@ -15,16 +15,12 @@ import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 
+type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
+
 export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
-  type ProfileType = {
-    summary: string;
-    top_strengths: unknown[];
-    personality_type: string;
-    growth_areas: unknown[];
-  } | null;
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
   const [status, setStatus] = useState('loading'); // loading | generating | ready | error
@@ -51,11 +47,8 @@ export default function PersonalityJourney() {
           navigate('/Home', { replace: true });
           return;
         }
-        const childRecord = child as Record<string, unknown>;
-        const personality = childRecord['personality'] as Record<string, unknown> | undefined;
-        const viewModel = personality?.['view_model'] as
-          | { type?: string; profile?: Record<string, unknown> }
-          | undefined;
+        const personality = child.personality;
+        const viewModel = personality?.view_model;
         if (!viewModel?.type) {
           navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
@@ -67,9 +60,7 @@ export default function PersonalityJourney() {
         setProfile(gp);
 
         // DB hit: recommendations already generated — skip LLM
-        const recommendations = childRecord['recommendations'] as
-          | Record<string, unknown>
-          | undefined;
+        const recommendations = child.recommendations;
         if (
           recommendations &&
           (typeof recommendations['pathway_overview'] === 'string' ||

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
+import type { Question } from '@/lib/growthAreaData';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
@@ -17,17 +18,9 @@ export default function GrowthAreasActivity() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
 
-  type Question = {
-    id: string;
-    question: string;
-    type: string;
-    placeholder?: string;
-    options?: string[];
-    followUp: string;
-  };
   const area = areaByUrlName(activity ?? '');
   const questions: Question[] = useMemo(
-    () => (area ? ((AREA_QUESTIONS as Record<string, Question[]>)[area.id] ?? []) : []),
+    () => (area ? (AREA_QUESTIONS[area.id] ?? []) : []),
     [area],
   );
   // q param is 1-indexed; clamp to valid range
@@ -65,24 +58,16 @@ export default function GrowthAreasActivity() {
           return;
         }
 
-        const childRecord = child as Record<string, unknown>;
-        setChildName((childRecord['name'] as string) || '');
+        setChildName(child.name ?? '');
 
-        const completedData = await api.completedGrowthAreas.list(childRecord['id'] as string);
+        const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
-        const completedRecord = completedData as Record<string, unknown> | null;
-        const allDocs = Array.isArray(completedRecord?.['areas'])
-          ? (completedRecord['areas'] as Record<string, unknown>[])
-          : [];
+        const allDocs = completedData.areas ?? [];
         const areaDoc =
-          allDocs.find((a) => a['area_id'] === area.id && a['status'] === 'in_progress') ??
-          allDocs.find((a) => a['area_id'] === area.id) ??
-          {};
+          allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ??
+          allDocs.find((a) => a.area_id === area.id);
 
-        const savedAnswers =
-          areaDoc['interactive_answers'] && typeof areaDoc['interactive_answers'] === 'object'
-            ? (areaDoc['interactive_answers'] as Record<string, unknown>)
-            : {};
+        const savedAnswers = areaDoc?.interactive_answers ?? {};
         setAnswers(savedAnswers);
 
         // If no explicit q param was in the URL, jump to the first unanswered question

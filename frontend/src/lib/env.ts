@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const EnvSchema = z.object({
-  VITE_GOOGLE_CLIENT_ID: z.string(),
+  VITE_GOOGLE_CLIENT_ID: z.string().default(''),
   VITE_API_URL: z.string().url().or(z.literal('')).optional(),
 });
 

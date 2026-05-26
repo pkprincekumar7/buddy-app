@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
+import type { Question } from '@/lib/growthAreaData';
 import { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
@@ -52,40 +53,32 @@ export default function GrowthAreasActivityGreatInsights() {
           return;
         }
 
-        const childRecord = child as Record<string, unknown>;
-        setChildName((childRecord['name'] as string) || '');
+        setChildName(child.name ?? '');
 
-        const completedData = await api.completedGrowthAreas.list(childRecord['id'] as string);
+        const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
-        const completedRecord = completedData as Record<string, unknown> | null;
-        const allDocs = Array.isArray(completedRecord?.['areas'])
-          ? (completedRecord['areas'] as Record<string, unknown>[])
-          : [];
+        const allDocs = completedData.areas ?? [];
         const areaDoc =
-          allDocs.find((a) => a['area_id'] === area.id && a['status'] === 'in_progress') ??
-          allDocs.find((a) => a['area_id'] === area.id) ??
-          {};
+          allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ??
+          allDocs.find((a) => a.area_id === area.id);
 
-        const ia =
-          areaDoc['interactive_answers'] && typeof areaDoc['interactive_answers'] === 'object'
-            ? (areaDoc['interactive_answers'] as Record<string, unknown>)
-            : {};
+        const ia = areaDoc?.interactive_answers ?? {};
         setInteractiveAnswers(ia);
 
-        const childActivity = areaDoc['child_activity'] as Record<string, unknown> | undefined;
+        const childActivity = areaDoc?.child_activity;
         const rawGameResults = childActivity?.['results'];
         if (rawGameResults) {
           setChildGameResults(normalizeChildGameRecommendations(rawGameResults));
         }
 
         // DB hit: recommendations already exist — show immediately
-        const aiRecs = areaDoc['ai_three_month_recommendations'];
-        const recs = areaDoc['recommendations'];
+        const aiRecs = areaDoc?.ai_three_month_recommendations;
+        const recs = areaDoc?.recommendations;
         const cached =
           Array.isArray(aiRecs) && aiRecs.length > 0
-            ? (aiRecs as string[])
+            ? aiRecs
             : Array.isArray(recs) && recs.length > 0
-              ? (recs as string[])
+              ? recs
               : null;
 
         if (cached) {
@@ -111,15 +104,7 @@ export default function GrowthAreasActivityGreatInsights() {
     if (!area || !childId) return;
     setStatus('generating');
 
-    type Question = {
-      id: string;
-      question: string;
-      type: string;
-      placeholder?: string;
-      options?: string[];
-      followUp: string;
-    };
-    const questions: Question[] = (AREA_QUESTIONS as Record<string, Question[]>)[area.id] ?? [];
+    const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
     const qaContext = questions
       .filter((q) => interactiveAnswers[q.id])
       .map(
@@ -232,16 +217,7 @@ export default function GrowthAreasActivityGreatInsights() {
 
         {/* Q&A summary */}
         {(() => {
-          type Question = {
-            id: string;
-            question: string;
-            type: string;
-            placeholder?: string;
-            options?: string[];
-            followUp: string;
-          };
-          const questions: Question[] =
-            (AREA_QUESTIONS as Record<string, Question[]>)[area.id] ?? [];
+          const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
           const answered = questions.filter((q) => interactiveAnswers[q.id]);
           if (answered.length === 0) return null;
           return (
@@ -301,8 +277,8 @@ export default function GrowthAreasActivityGreatInsights() {
                 <div className="rounded-xl bg-surface-elevated p-4">
                   <h4 className="mb-2 font-semibold text-white">Suggested Activities</h4>
                   <ul className="space-y-2">
-                    {childGameResults.suggested_activities.map((act, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
+                    {childGameResults.suggested_activities.map((act) => (
+                      <li key={act} className="flex items-start gap-2 text-sm text-slate-400">
                         <span className="mt-0.5 text-emerald-500">✓</span>
                         <span>{act}</span>
                       </li>
@@ -315,8 +291,8 @@ export default function GrowthAreasActivityGreatInsights() {
               <div className="rounded-xl bg-surface-elevated p-4">
                 <h4 className="mb-2 font-semibold text-white">Strengths to Encourage</h4>
                 <ul className="space-y-2">
-                  {childGameResults.strengths.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-slate-400">
+                  {childGameResults.strengths.map((s) => (
+                    <li key={s} className="flex items-start gap-2 text-sm text-slate-400">
                       <span className="mt-0.5 text-emerald-500">★</span>
                       <span>{s}</span>
                     </li>

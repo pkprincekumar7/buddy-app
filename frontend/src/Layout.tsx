@@ -5,16 +5,9 @@ import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
+import { getInitials } from '@/lib/avatarUtils';
 import { Home, LogOut, VolumeX, Volume2, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-/** Extracts up to two initials from a display name or email. */
-function getInitials(name: string): string {
-  if (!name?.trim()) return '?';
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 1) return (words[0]?.[0] ?? '?').toUpperCase();
-  return ((words[0]?.[0] ?? '') + (words[words.length - 1]?.[0] ?? '')).toUpperCase();
-}
 
 interface LayoutProps {
   children: ReactNode;

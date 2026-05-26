@@ -1,14 +1,15 @@
 import { useState } from 'react';
+import type { TextareaHTMLAttributes } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import VoiceInput from './VoiceInput';
 
-interface TextareaWithVoiceProps {
+type TextareaWithVoiceProps = Omit<
+  TextareaHTMLAttributes<HTMLTextAreaElement>,
+  'onChange' | 'value'
+> & {
   value?: string;
   onChange: (e: { target: { value: string } }) => void;
-  placeholder?: string;
-  className?: string;
-  [key: string]: unknown;
-}
+};
 
 export default function TextareaWithVoice({
   value,
