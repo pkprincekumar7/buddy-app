@@ -244,7 +244,7 @@ export default function PersonalityType() {
       </motion.div>
 
       <AnimatePresence>
-        {showSplash && <StageSplash stage={3} onReady={startTimer} />}
+        {showSplash && <StageSplash stage={2} onReady={startTimer} />}
       </AnimatePresence>
     </>
   );

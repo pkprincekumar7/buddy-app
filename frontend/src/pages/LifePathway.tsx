@@ -827,7 +827,7 @@ export default function LifePathway() {
       </motion.div>
 
       <AnimatePresence>
-        {showSplash && <StageSplash stage={6} onReady={startTimer} />}
+        {showSplash && <StageSplash stage={4} onReady={startTimer} />}
       </AnimatePresence>
     </>
   );
