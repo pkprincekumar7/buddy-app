@@ -1,0 +1,265 @@
+name: Promote Live Frontend
+run-name: Promote Live Frontend (${{ inputs.source_env }} → ${{ inputs.target_env }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_env:
+        description: "Source environment (code version verified here will be promoted)"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+      target_env:
+        description: "Target environment (frontend will be rebuilt and deployed here)"
+        required: true
+        default: "stg"
+        type: choice
+        options:
+          - stg
+          - prod
+
+# NOTE: Unlike the backend, the frontend must be rebuilt for each environment
+# because VITE_API_URL is baked into the compiled JS at build time. Promoting
+# the frontend means rebuilding the same git ref with the target environment's
+# variables — not copying compiled artifacts from the source environment.
+# deploy-live-frontend.yml records the deployed SHA to SSM after every
+# successful deploy — this workflow reads it automatically, mirroring how
+# promote-live-backend.yml reads the live image from the source ECS service.
+
+permissions:
+  id-token: write
+  contents: read  # required for the checkout step
+
+# Use the same concurrency group as deploy-live-frontend for the target environment
+# so a promotion and a direct deploy cannot run simultaneously against the same env.
+concurrency:
+  group: deploy-live-frontend-buddy360-${{ inputs.target_env }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Validate runs immediately — no environment gate — so bad inputs are
+  # rejected before the manual approval request is even raised for prod.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate Promotion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate promotion direction
+        run: |
+          SOURCE="${{ inputs.source_env }}"
+          TARGET="${{ inputs.target_env }}"
+
+          if [ "$SOURCE" = "$TARGET" ]; then
+            echo "::error::Source and target environments must differ."
+            exit 1
+          elif [ "$SOURCE" = "dev" ] && [ "$TARGET" = "stg" ]; then
+            echo "Promotion path: dev → stg — OK"
+          elif [ "$SOURCE" = "stg" ] && [ "$TARGET" = "prod" ]; then
+            echo "Promotion path: stg → prod — OK"
+          else
+            echo "::error::Promotion from '$SOURCE' to '$TARGET' is not a permitted path. Allowed: dev→stg, stg→prod."
+            exit 1
+          fi
+
+  # -------------------------------------------------------------------------
+  # promote runs after validate passes.
+  # Setting environment: <target_env> triggers the manual approval gate
+  # configured in Settings → Environments → prod (required reviewer).
+  # All secrets are read from the target environment.
+  # -------------------------------------------------------------------------
+  promote:
+    name: Promote Live Frontend
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+
+    steps:
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:              ${{ secrets.ROLE_ARN }}
+          APP_NAME:              ${{ secrets.APP_NAME }}
+          SUBDOMAIN:             ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME")
+          [[ -z "$SUBDOMAIN"             ]] && missing+=("SUBDOMAIN")
+          [[ -z "$DOMAIN_NAME"           ]] && missing+=("DOMAIN_NAME")
+          [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.target_env }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
+          # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
+          aws-region: us-east-1
+          # NOTE: this role is the target environment's deploy role. It must have
+          # ssm:GetParameter on source-environment SSM paths (deployed_git_sha,
+          # s3_bucket_name, cloudfront_distribution_id) in addition to the full
+          # set of deploy permissions for the target environment.
+
+      # -------------------------------------------------------------------------
+      # Resolve the git SHA that is currently deployed in the source environment.
+      # deploy-live-frontend.yml writes github.sha to SSM after every successful
+      # deploy — this is the single source of truth. If the parameter is missing
+      # it means deploy-live-frontend has not run successfully for the source
+      # environment yet, which is a legitimate error: do not promote what has
+      # never been deployed.
+      # -------------------------------------------------------------------------
+      - name: Resolve source git ref
+        id: source_ref
+        run: |
+          RESOLVED=$(aws ssm get-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
+            --query "Parameter.Value" --output text 2>/dev/null || echo "")
+
+          if [ -z "$RESOLVED" ]; then
+            echo "ERROR: No deployed git SHA found in SSM for source env=${{ inputs.source_env }}."
+            echo "Run deploy-live-frontend for that environment successfully before promoting."
+            exit 1
+          fi
+
+          echo "Promoting git SHA: $RESOLVED"
+          echo "git_sha=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+      # -------------------------------------------------------------------------
+      # VITE_API_URL is the public CloudFront origin for the TARGET environment.
+      # Same FQDN logic as deploy-live-frontend.yml and infra-live-edge:
+      #   prod:     {subdomain}.{domain}
+      #   non-prod: {subdomain}-{env}.{domain}
+      # Derived here so it does not need to be maintained as a separate secret.
+      # -------------------------------------------------------------------------
+      - name: Resolve derived values
+        env:
+          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        run: |
+          if [[ "${{ inputs.target_env }}" == "prod" ]]; then
+            FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
+          else
+            FQDN="${SUBDOMAIN}-${{ inputs.target_env }}.${DOMAIN_NAME}"
+          fi
+          echo "VITE_API_URL=https://${FQDN}" >> "$GITHUB_ENV"
+
+      # -------------------------------------------------------------------------
+      # Resolve deployment targets before checkout and the Node.js build so the
+      # workflow fails fast if edge infra has not been applied yet — avoiding a
+      # wasted git checkout + npm install before hitting the SSM error.
+      # SSM parameters are written automatically by terraform-live-edge.yml
+      # after every successful apply — no manual secret copying needed.
+      # -------------------------------------------------------------------------
+      - name: Resolve deployment targets
+        id: tf_outputs
+        run: |
+          # SSM params are always written to us-east-1 (control-plane region).
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/cloudfront_distribution_id")
+
+          if [ -z "$S3_BUCKET" ]; then
+            echo "ERROR: S3 bucket not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-edge workflow (apply) for that environment first."
+            exit 1
+          fi
+          if [ -z "$CF_DIST_ID" ]; then
+            echo "ERROR: CloudFront distribution ID not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-edge workflow (apply) for that environment first."
+            exit 1
+          fi
+
+          echo "s3_bucket=$S3_BUCKET"   >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "S3 bucket:               $S3_BUCKET"
+          echo "CloudFront distribution: $CF_DIST_ID"
+
+      # -------------------------------------------------------------------------
+      # Check out the exact git ref deployed in the source environment.
+      # All resolution steps run first so a misconfigured environment fails
+      # before the cost of a git checkout + npm install is incurred.
+      # -------------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ steps.source_ref.outputs.git_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        env:
+          VITE_API_URL:          ${{ env.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run build
+
+      - name: Sync to S3
+        run: |
+          # Upload hashed assets (JS/CSS) with long-lived cache headers
+          aws s3 sync frontend/dist/assets/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/assets/ \
+            --cache-control "public,max-age=31536000,immutable" \
+            --delete
+
+          # Upload everything else (index.html, manifest.json, etc.) with no-cache
+          aws s3 sync frontend/dist/ \
+            s3://${{ steps.tf_outputs.outputs.s3_bucket }}/ \
+            --exclude "assets/*" \
+            --cache-control "no-cache,no-store,must-revalidate" \
+            --delete
+
+      - name: Invalidate CloudFront cache
+        id: invalidate
+        run: |
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --paths "/*" \
+            --query "Invalidation.Id" \
+            --output text)
+          echo "Invalidation ID: $INVALIDATION_ID"
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for invalidation to complete
+        run: |
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
+            --id "${{ steps.invalidate.outputs.invalidation_id }}"
+          echo "CloudFront cache invalidation complete."
+
+      # -------------------------------------------------------------------------
+      # Record the promoted git SHA to SSM for the target environment so that
+      # a subsequent stg → prod promotion can resolve it automatically.
+      # -------------------------------------------------------------------------
+      - name: Record deployed git SHA
+        run: |
+          aws ssm put-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
+            --value "${{ steps.source_ref.outputs.git_sha }}" \
+            --type String \
+            --overwrite
+          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: ${{ steps.source_ref.outputs.git_sha }}"

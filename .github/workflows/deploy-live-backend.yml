@@ -151,7 +151,7 @@ jobs:
           # exists the image is identical, so skip the push and proceed.
           REPO="${{ steps.tf_outputs.outputs.ecr_url }}"
           TAG="${{ github.sha }}"
-          REPO_NAME="${REPO##*/}"   # strip registry host, keep <app>/<env>/backend
+          REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
           if aws ecr describe-images \
                --repository-name "$REPO_NAME" \
                --image-ids imageTag="$TAG" \
