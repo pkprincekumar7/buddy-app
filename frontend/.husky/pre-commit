@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+ROOT="$(git rev-parse --show-toplevel)"
+
+# ── Frontend: ESLint + Prettier via lint-staged (staged .ts/.tsx/.css only) ──
+# cd into frontend/ so lint-staged can find its config in frontend/package.json.
+# Git runs hooks from the repo root, so without this cd, lint-staged finds no config.
+# || exit 1 is required — without it a lint-staged failure does not abort the hook,
+# and the commit would proceed despite errors.
+if git diff --cached --name-only --diff-filter=ACMR | grep -q "^frontend/src/"; then
+  (cd "$ROOT/frontend" && npx lint-staged) || exit 1
+fi
+
+# ── Backend: ruff check + format on staged .py files ─────────────────────────
+# grep returns exit code 1 when no .py files are staged — do NOT use set -e here
+# or every TypeScript-only commit would abort at this line.
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACMR | grep "^backend/.*\.py$" || true)
+
+if [ -n "$STAGED_PY" ]; then
+  RUFF="$ROOT/backend/.venv/bin/ruff"
+
+  if [ ! -f "$RUFF" ]; then
+    echo "ERROR: backend/.venv/bin/ruff not found."
+    echo "Fix: cd backend && python3 -m venv .venv && pip install -r requirements-lint.txt"
+    echo "     Or run ./check.sh once — it bootstraps the venv automatically."
+    exit 1
+  fi
+
+  # Run ruff from inside backend/ so pyproject.toml config is picked up automatically.
+  # Use a subshell so the cd does not affect the parent shell's working directory.
+  PY_FILES=$(echo "$STAGED_PY" | sed 's|^backend/||')
+  (
+    cd "$ROOT/backend"
+    echo "$PY_FILES" | xargs "$RUFF" check --fix || exit 1
+    echo "$PY_FILES" | xargs "$RUFF" format || exit 1
+  ) || exit 1
+
+  # Re-stage files that ruff auto-fixed so the commit includes the corrected versions.
+  echo "$STAGED_PY" | xargs -I{} git add "$ROOT/{}"
+fi

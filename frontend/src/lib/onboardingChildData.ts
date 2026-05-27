@@ -1,0 +1,86 @@
+/** Fields persisted from the chatbot; avoid defaults like pillar_scores at this stage. */
+export const CHATBOT_CAPTURED_FIELDS = [
+  'name',
+  'age',
+  'school',
+  'strengths',
+  'hobbies',
+  'thinking_pattern',
+  'communication_style',
+  'energy_level',
+  'social_behaviour',
+  'emotional_behaviour',
+];
+
+export function questionnaireFieldHasValue(
+  field: string,
+  data: Record<string, unknown> | null | undefined,
+): boolean {
+  const v = data?.[field];
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string' && !String(v).trim()) return false;
+  if (Array.isArray(v) && v.length === 0) return false;
+  return true;
+}
+
+export function slimChildConversationForStorage(
+  full: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of CHATBOT_CAPTURED_FIELDS) {
+    if (!questionnaireFieldHasValue(k, full)) continue;
+    out[k] = full[k];
+  }
+  return out;
+}
+
+/** Questionnaire slice suitable for loading back into the chatbot (non-empty fields only). */
+export function pickSavedQuestionnaireForChatbot(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of CHATBOT_CAPTURED_FIELDS) {
+    if (questionnaireFieldHasValue(k, raw)) out[k] = raw[k];
+  }
+  return out;
+}
+
+/**
+ * Map a persisted Child entity into questionnaire-shaped fields for chat replay.
+ */
+export function conversationDraftFromChildRecord(
+  child: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!child || typeof child !== 'object') return null;
+  const out: Record<string, unknown> = {};
+  if (questionnaireFieldHasValue('name', child)) out.name = child.name;
+  if (questionnaireFieldHasValue('school', child)) out.school = child.school;
+  if (questionnaireFieldHasValue('age', child)) out.age = String(child.age);
+  for (const k of [
+    'thinking_pattern',
+    'communication_style',
+    'energy_level',
+    'social_behaviour',
+    'emotional_behaviour',
+  ]) {
+    if (questionnaireFieldHasValue(k, child)) out[k] = child[k];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Raw `onboarding_childData` from GET app-state (object or legacy JSON string).
+ * Maps older field names so the chatbot can replay persisted answers.
+ */
+export function normalizeOnboardingChildDataBlob(raw: unknown): Record<string, unknown> | null {
+  let o: unknown = raw;
+  if (typeof o === 'string') {
+    try {
+      o = JSON.parse(o);
+    } catch {
+      return null;
+    }
+  }
+  if (!o || typeof o !== 'object') return null;
+  return { ...(o as Record<string, unknown>) };
+}

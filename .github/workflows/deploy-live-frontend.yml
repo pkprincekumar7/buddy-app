@@ -167,3 +167,19 @@ jobs:
             --distribution-id "${{ steps.tf_outputs.outputs.cf_dist_id }}" \
             --id "${{ steps.invalidate.outputs.invalidation_id }}"
           echo "CloudFront cache invalidation complete."
+
+      # -------------------------------------------------------------------------
+      # Record the deployed git SHA in SSM so promote-live-frontend.yml can
+      # resolve it automatically.
+      # The deploy role must have ssm:PutParameter on this parameter path
+      # (terraform-live-edge grants ssm:PutParameter on /$APP_NAME/$ENV/edge/*).
+      # -------------------------------------------------------------------------
+      - name: Record deployed git SHA
+        run: |
+          aws ssm put-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" \
+            --value "${{ github.sha }}" \
+            --type String \
+            --overwrite
+          echo "Recorded deployed git SHA: ${{ github.sha }}"

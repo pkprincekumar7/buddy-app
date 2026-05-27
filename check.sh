@@ -98,7 +98,7 @@ run "ruff format (check)" \
     bash -c "cd '$BACKEND' && '$RUFF' format --check ."
 
 run "mypy" \
-    bash -c "cd '$BACKEND' && '$MYPY' app/"
+    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/"
 
 # ── frontend ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
@@ -107,7 +107,7 @@ run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
 
 run "prettier (check)" \
-    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{js,jsx,css}'"
+    bash -c "cd '$FRONTEND' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx,css}'"
 
 run "typecheck" \
     bash -c "cd '$FRONTEND' && npm run typecheck"
@@ -119,7 +119,7 @@ bundle_size_check() {
   local bundle
   bundle=$(ls "$FRONTEND/dist/assets/index-"*.js 2>/dev/null | head -1)
   if [ -z "$bundle" ]; then echo "No bundle found in dist/assets/"; return 1; fi
-  local size limit=1468006
+  local size limit=$((1400 * 1024))  # 1.4 MB
   size=$(wc -c < "$bundle")
   echo "Bundle: $(basename "$bundle") — ${size} bytes (limit ${limit})"
   if [ "$size" -gt "$limit" ]; then
@@ -141,7 +141,7 @@ echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
 # ---- always-run: tools available from the bootstrapped venv / npm ----------------
 run "bandit" \
-    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ -ll -q"
+    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ -ll -q"
 
 run "pip-audit" \
     bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183"
@@ -178,11 +178,13 @@ if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
 fi
 
 run "semgrep (SAST)" \
-    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$ROOT/frontend/src/'"
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$ROOT/frontend/src/'"
 
 if require_tool hadolint HADOLINT "brew install hadolint"; then
-  run "hadolint (Dockerfile)" \
+  run "hadolint (backend Dockerfile)" \
       bash -c "'$HADOLINT' '$BACKEND/Dockerfile'"
+  run "hadolint (frontend Dockerfile)" \
+      bash -c "'$HADOLINT' '$FRONTEND/Dockerfile'"
 fi
 
 run "checkov (Terraform IaC)" \
