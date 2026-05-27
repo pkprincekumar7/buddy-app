@@ -1,0 +1,163 @@
+name: Build Android APK
+run-name: Build Android APK (${{ inputs.environment }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - stg
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: build-android-apk-buddy360-${{ inputs.environment }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      # -------------------------------------------------------------------------
+      # Validate that all required secrets exist in the selected GitHub environment
+      # before doing any real work — mirrors the pattern in deploy-live-frontend.yml.
+      # -------------------------------------------------------------------------
+      - name: Validate required secrets
+        env:
+          SUBDOMAIN:           ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:         ${{ secrets.DOMAIN_NAME }}
+          GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
+          ROLE_ARN:            ${{ secrets.ROLE_ARN }}
+          BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
+        run: |
+          missing=()
+          [[ -z "$SUBDOMAIN"           ]] && missing+=("SUBDOMAIN")
+          [[ -z "$DOMAIN_NAME"         ]] && missing+=("DOMAIN_NAME")
+          [[ -z "$GOOGLE_CLIENT_ID"    ]] && missing+=("GOOGLE_CLIENT_ID")
+          [[ -z "$ROLE_ARN"            ]] && missing+=("ROLE_ARN")
+          [[ -z "$BACKEND_BUCKET_NAME" ]] && missing+=("BACKEND_BUCKET_NAME")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      # -------------------------------------------------------------------------
+      # Derive the CloudFront FQDN using the same logic as deploy-live-frontend.yml:
+      #   prod  →  {SUBDOMAIN}.{DOMAIN_NAME}           e.g. buddy.learning-dev.com
+      #   other →  {SUBDOMAIN}-{env}.{DOMAIN_NAME}     e.g. buddy-dev.learning-dev.com
+      #
+      # Both API_URL and CDN_BASE_URL point to this same CloudFront domain because:
+      #   /api/*         → CloudFront proxies to the ALB / FastAPI backend
+      #   /app-assets/*  → CloudFront proxies to the S3 assets bucket
+      # -------------------------------------------------------------------------
+      - name: Resolve CloudFront FQDN
+        env:
+          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+        run: |
+          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+            FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
+          else
+            FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
+          fi
+          echo "FQDN=${FQDN}" >> "$GITHUB_ENV"
+          echo "Resolved FQDN: ${FQDN}"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-app
+        run: npm ci
+
+      # -------------------------------------------------------------------------
+      # Write frontend-app/.env so react-native-config picks up the correct
+      # values at Gradle build time.  The file is created fresh each run —
+      # it is gitignored and never committed.
+      # -------------------------------------------------------------------------
+      - name: Write .env for react-native-config
+        working-directory: frontend-app
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+        run: |
+          {
+            echo "API_URL=https://${{ env.FQDN }}"
+            echo "CDN_BASE_URL=https://${{ env.FQDN }}"
+            echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+          } > .env
+          echo "Written .env (secrets masked):"
+          sed 's/=.*/=***/' .env
+
+      - name: Make Gradlew executable
+        working-directory: frontend-app/android
+        run: chmod +x gradlew
+
+      # -------------------------------------------------------------------------
+      # The release build currently uses the debug keystore (see android/app/build.gradle).
+      # This is fine for direct device installation and testing.
+      # For Play Store submission, replace signingConfigs.release with a production
+      # keystore and add KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+      # secrets to the GitHub environment.
+      # -------------------------------------------------------------------------
+      - name: Build release APK
+        working-directory: frontend-app/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: buddy360-android-${{ inputs.environment }}-${{ github.sha }}
+          path: frontend-app/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 14
+
+      # -------------------------------------------------------------------------
+      # Authenticate with AWS via OIDC and push the APK to S3.
+      # The destination key includes a UTC timestamp so every build is retained:
+      #   app-assets/applications/android/app-release-YYYY-MM-DD-HH-MM-SS.apk
+      # -------------------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: build-android-apk-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      - name: Push APK to S3
+        env:
+          BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
+        run: |
+          TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
+          S3_KEY="app-assets/applications/android/app-release-${TIMESTAMP}.apk"
+          aws s3 cp \
+            frontend-app/android/app/build/outputs/apk/release/app-release.apk \
+            "s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
+          echo "Uploaded to s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
