@@ -260,28 +260,28 @@ jobs:
           # Variables use shell syntax (${VAR}) consistently — mixing ${{ }} GitHub
           # expressions inside a heredoc is fragile and confusing.
           cat > "$RUNNER_TEMP/ExportOptions.plist" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>teamID</key>
-  <string>${IOS_APPLE_TEAM_ID}</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>org.reactjs.native.example.BuddyApp</key>
-    <string>${IOS_PROVISIONING_PROFILE_UUID}</string>
-  </dict>
-  <key>compileBitcode</key>
-  <false/>
-  <key>uploadSymbols</key>
-  <true/>
-</dict>
-</plist>
-PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>teamID</key>
+            <string>${IOS_APPLE_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>org.reactjs.native.example.BuddyApp</key>
+              <string>${IOS_PROVISIONING_PROFILE_UUID}</string>
+            </dict>
+            <key>compileBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
 
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/BuddyApp.xcarchive" \
