@@ -685,7 +685,7 @@ export default function ConversationalOnboarding({
 
     isScrollingRef.current = true;
     const duration  = 2500;
-    const startTime = Date.now();
+    const startTime = performance.now();
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
