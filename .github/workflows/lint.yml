@@ -145,6 +145,34 @@ jobs:
           echo "Bundle: $BUNDLE — ${SIZE} bytes (limit ${LIMIT})"
           [ "$SIZE" -le "$LIMIT" ] || { echo "Main bundle exceeds 1.4 MB limit"; exit 1; }
 
+  frontend-app-lint:
+    name: Frontend App Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript type check
+        run: node_modules/.bin/tsc --noEmit
+
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
@@ -180,7 +208,7 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [backend-lint, frontend-lint]
+    needs: [backend-lint, frontend-lint, frontend-app-lint]
 
     steps:
       - name: Checkout
@@ -236,7 +264,7 @@ jobs:
       - name: Semgrep (SAST)
         id: semgrep
         continue-on-error: true
-        run: semgrep --config p/security-audit --error backend/app/ backend/tools/ frontend/src/
+        run: semgrep --config p/security-audit --error backend/app/ backend/tools/ frontend/src/ frontend-app/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
@@ -259,17 +287,29 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend-app/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend
+
+      - name: Install frontend-app dependencies
+        run: npm ci
+        working-directory: frontend-app
 
       - name: npm audit (frontend dependency CVEs)
         id: npm_audit
         continue-on-error: true
         run: npm audit --audit-level=high
         working-directory: frontend
+
+      - name: npm audit (frontend-app dependency CVEs)
+        id: npm_audit_frontend_app
+        continue-on-error: true
+        run: npm audit --audit-level=high
+        working-directory: frontend-app
 
       - name: Restore retire.js database cache
         id: retiredb_cache
@@ -278,7 +318,7 @@ jobs:
           path: frontend/retire-jsrepo.json
           # Cache key tied to package-lock.json — refreshes when JS deps change.
           # Falls back to any prior cache for this OS if the exact key misses.
-          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/package-lock.json') }}
           restore-keys: retiredb-${{ runner.os }}-
 
       - name: Fetch retire.js vulnerability database
@@ -292,6 +332,12 @@ jobs:
         # retire-jsrepo.json is fetched/restored above — --jsrepo prevents retire.js
         # from making its own network request and guarantees the same DB is used.
         run: ./node_modules/.bin/retire --path . --exitwith 1 --jsrepo ./retire-jsrepo.json
+        working-directory: frontend
+
+      - name: Retire.js (frontend-app library CVE scan)
+        id: retire_frontend_app
+        continue-on-error: true
+        run: ./node_modules/.bin/retire --path ../frontend-app --exitwith 1 --jsrepo ./retire-jsrepo.json
         working-directory: frontend
 
       # ── CVE scanning (Trivy advisory DB) ────────────────────────────────────
@@ -317,6 +363,17 @@ jobs:
           exit-code: '1'
           scanners: vuln
 
+      - name: Trivy (frontend-app dependency CVE scan)
+        id: trivy_frontend_app_vuln
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend-app/
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: vuln
+
       # ── license compliance (Trivy) ───────────────────────────────────────────
       - name: Trivy (backend license scan)
         id: trivy_backend_license
@@ -336,6 +393,17 @@ jobs:
         with:
           scan-type: fs
           scan-ref: frontend/
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          scanners: license
+
+      - name: Trivy (frontend-app license scan)
+        id: trivy_frontend_app_license
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend-app/
           severity: HIGH,CRITICAL
           exit-code: '1'
           scanners: license
@@ -424,6 +492,21 @@ jobs:
           path: sbom-frontend.cyclonedx.json
           retention-days: 90
 
+      - name: Generate SBOM (frontend-app filesystem)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: frontend-app/
+          format: cyclonedx
+          output: sbom-frontend-app.cyclonedx.json
+
+      - name: Upload SBOM artifact (frontend-app)
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-frontend-app
+          path: sbom-frontend-app.cyclonedx.json
+          retention-days: 90
+
       # ── fail gate: surface all check results before failing the job ──────────
       - name: Fail if any security check failed
         if: always()
@@ -437,11 +520,15 @@ jobs:
           [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
           [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
           [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
+          [[ "${{ steps.npm_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(npm-audit-frontend-app)
           [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
+          [[ "${{ steps.retire_frontend_app.outcome }}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
           [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
           [[ "${{ steps.trivy_frontend_vuln.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-vuln)
+          [[ "${{ steps.trivy_frontend_app_vuln.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-vuln)
           [[ "${{ steps.trivy_backend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
           [[ "${{ steps.trivy_frontend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
+          [[ "${{ steps.trivy_frontend_app_license.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
           [[ "${{ steps.trivy_config_backend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
           [[ "${{ steps.trivy_config_edge.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
           [[ "${{ steps.trivy_config_frontend.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
@@ -457,7 +544,7 @@ jobs:
     name: DAST & API Spec
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: [backend-lint, frontend-lint]
+    needs: [backend-lint, frontend-lint, frontend-app-lint]
     services:
       mongodb:
         image: mongo:7
@@ -561,7 +648,7 @@ jobs:
     name: CodeQL
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [backend-lint, frontend-lint]
+    needs: [backend-lint, frontend-lint, frontend-app-lint]
     permissions:
       security-events: write
       actions: read

@@ -5,7 +5,7 @@
  * sitting to its right. The prop surface is intentionally identical to the
  * web version so that screen-level code can import this unchanged.
  */
-import React, { useState, forwardRef } from 'react';
+import React, { useState, useCallback, forwardRef } from 'react';
 import { View } from 'react-native';
 import type { TextInput } from 'react-native';
 import { Input } from '@/components/ui/Input';
@@ -22,16 +22,16 @@ const InputWithVoice = forwardRef<React.ElementRef<typeof TextInput>, InputWithV
   ({ value, onChange, placeholder, className, ...props }, ref) => {
     const [isRecording, setIsRecording] = useState(false);
 
-    const handleTranscript = (transcript: string) => {
+    const handleTranscript = useCallback((transcript: string) => {
       onChange({ target: { value: transcript } });
-    };
+    }, [onChange]);
 
-    const handleChangeText = (text: string) => {
+    const handleChangeText = useCallback((text: string) => {
       onChange({ target: { value: text } });
-    };
+    }, [onChange]);
 
     return (
-      <View className="flex-row items-center gap-2">
+      <View className="flex-1 flex-row items-center gap-2">
         <Input
           ref={ref}
           value={value}

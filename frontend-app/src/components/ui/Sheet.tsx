@@ -47,7 +47,7 @@ interface SheetContentProps extends ViewProps {
   onClose?: () => void;
 }
 
-function SheetContent({ side = 'bottom', children, className, onClose, ...props }: SheetContentProps) {
+function SheetContent({ side: _side = 'bottom', children, className, onClose, ...props }: SheetContentProps) {
   const translateY = useSharedValue(SCREEN_HEIGHT);
 
   useEffect(() => {

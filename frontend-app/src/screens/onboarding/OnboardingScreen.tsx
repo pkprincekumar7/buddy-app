@@ -24,7 +24,7 @@ type OnboardingNavigationProp = StackNavigationProp<OnboardingStackParamList, 'O
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<OnboardingNavigationProp>();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, activeChildId, setActiveChildId } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
 
@@ -85,8 +85,14 @@ export default function OnboardingScreen() {
         console.warn('[Onboarding] Could not create child stub:', err);
       }
     }
-    if (targetId) navigation.navigate('ConversationalOnboarding');
-  }, [isAuthenticated, childId, navigation]);
+    if (targetId) {
+      // Sync AuthContext so ConversationalOnboardingScreen can read the correct ID.
+      // Web passes the ID via URL params; mobile relies on AuthContext instead.
+      // Skip the write if AuthContext already holds this ID to avoid a redundant AsyncStorage.setItem.
+      if (targetId !== activeChildId) setActiveChildId(targetId);
+      navigation.navigate('ConversationalOnboarding');
+    }
+  }, [isAuthenticated, childId, navigation, activeChildId, setActiveChildId]);
 
   if (isLoading || checking) {
     return (

@@ -117,6 +117,8 @@ export function useModalScale(visible: boolean) {
     opacity.value = withTiming(visible ? 1 : 0, cfg);
     scale.value = withTiming(visible ? 1 : 0.95, cfg);
     translateY.value = withTiming(visible ? 0 : 16, cfg);
+  // opacity/scale/translateY are Reanimated SharedValues — stable refs, safe to omit from deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
   return useAnimatedStyle(() => ({
     opacity: opacity.value,

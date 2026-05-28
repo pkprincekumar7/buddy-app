@@ -50,7 +50,6 @@ export default function RegisterScreen() {
       setError('Please select your country.');
       return;
     }
-    // eslint-disable-next-line security/detect-possible-timing-attacks
     if (password !== confirm) {
       setError('Password and confirmation do not match.');
       return;

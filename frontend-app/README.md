@@ -21,6 +21,16 @@ React Native 0.85.3 mobile app (Android & iOS).
   - [Daily Workflow](#daily-workflow-ios)
   - [When to Rebuild](#when-to-rebuild-ios)
   - [Build an IPA](#build-an-ipa)
+- [CI / CD (GitHub Actions)](#ci--cd-github-actions)
+  - [Overview](#overview)
+  - [GitHub Environment Setup](#github-environment-setup)
+  - [Shared Secrets](#shared-secrets-both-android-and-ios)
+  - [Android-Specific Secrets](#android-specific-secrets)
+  - [Apple Developer Account](#apple-developer-account)
+  - [iOS-Specific Secrets](#ios-specific-secrets)
+  - [Running a Build](#running-a-build)
+  - [Retrieving Build Artifacts](#retrieving-build-artifacts)
+  - [AWS OIDC Setup](#aws-oidc-setup-one-time-per-aws-account)
 - [Environment Variables](#environment-variables)
 - [Google Sign-In Setup](#google-sign-in-setup)
 - [Troubleshooting](#troubleshooting)
@@ -513,6 +523,284 @@ xcodebuild -exportArchive \
 </dict>
 </plist>
 ```
+
+---
+
+## CI / CD (GitHub Actions)
+
+### Overview
+
+Two workflow files build and publish the mobile app to S3:
+
+| Workflow | File | Runner | Output |
+|---|---|---|---|
+| Build Android APK | `.github/workflows/build-android-apk.yml` | `ubuntu-latest` | `.apk` |
+| Build iOS IPA | `.github/workflows/build-ios-ipa.yml` | `macos-latest` | `.ipa` |
+
+Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**.
+
+---
+
+### GitHub Environment Setup
+
+Before running either workflow, configure secrets in each GitHub environment. Go to **GitHub repository → Settings → Environments → select environment → Add secret**.
+
+Environments used: `dev`, `stg`, `prod`. Each environment needs its own copy of the secrets below.
+
+---
+
+### Shared Secrets (both Android and iOS)
+
+Add these to **every** environment that will run CI builds.
+
+| Secret | Description | Example |
+|---|---|---|
+| `SUBDOMAIN` | CloudFront subdomain prefix | `buddy` |
+| `DOMAIN_NAME` | Root domain | `learning-dev.com` |
+| `GOOGLE_CLIENT_ID` | Web OAuth 2.0 Client ID (same value as `.env`) | `491922250866-xxx.apps.googleusercontent.com` |
+| `ROLE_ARN` | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
+| `BACKEND_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded | `buddy360-assets-dev` |
+
+**How the API URL is derived at build time:**
+
+```
+prod  →  https://{SUBDOMAIN}.{DOMAIN_NAME}              e.g. https://buddy.learning-dev.com
+other →  https://{SUBDOMAIN}-{env}.{DOMAIN_NAME}        e.g. https://buddy-dev.learning-dev.com
+```
+
+This value is written into `frontend-app/.env` as both `API_URL` and `CDN_BASE_URL` at the start of every workflow run.
+
+---
+
+### Android-Specific Secrets
+
+The current release build uses the **debug keystore** for signing (suitable for direct device installation and testing). **No additional secrets are needed** beyond the shared set above.
+
+For Play Store submission in the future, replace the debug keystore with a production keystore and add these secrets:
+
+| Secret | Description |
+|---|---|
+| `KEYSTORE_FILE_BASE64` | Base64-encoded `.jks` release keystore |
+| `KEYSTORE_PASSWORD` | Keystore store password |
+| `KEY_ALIAS` | Key alias inside the keystore (e.g. `buddyapp`) |
+| `KEY_PASSWORD` | Key password |
+
+See [Build a Release APK](#build-a-release-apk) for keystore generation instructions.
+
+---
+
+### Apple Developer Account
+
+#### Free account vs. paid program
+
+Apple offers two tiers. The CI/CD workflow requires the **paid program**.
+
+| Capability | Free Apple ID | Paid ($99 / year) |
+|---|---|---|
+| Run app on **your own device** via Xcode | ✅ | ✅ |
+| Provisioning profile expires after **7 days** (app stops launching; reinstall via Xcode) | ⚠️ | No expiry |
+| Max **3 apps** on your device at once | ⚠️ | Unlimited |
+| **Distribution certificate** (required by CI) | ❌ | ✅ |
+| **Ad Hoc provisioning profile** (required by CI) | ❌ | ✅ |
+| **TestFlight** beta distribution | ❌ | ✅ |
+| **App Store** submission | ❌ | ✅ |
+| Push notifications, CloudKit, etc. | ❌ | ✅ |
+
+The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **Distribution certificate** and an **Ad Hoc provisioning profile** — both are locked behind the paid program.
+
+#### How to enroll
+
+1. Go to [developer.apple.com/programs/enroll](https://developer.apple.com/programs/enroll)
+2. Sign in with the **company Apple ID** (not a personal one — the account owns all certificates and profiles)
+3. Choose **Organization** enrollment if building under a company name (requires a D-U-N-S number); choose **Individual** for a solo developer
+4. Pay the $99 / year fee
+5. Wait for approval (usually instant for Individual; 2–5 days for Organization)
+
+> One enrollment covers all apps built under that team. The **Team ID** shown after enrollment is the value you add as `IOS_APPLE_TEAM_ID` in GitHub.
+
+#### Testing on a real device without the paid program
+
+If you want to test on a physical iPhone during local development before enrolling:
+
+1. Connect the iPhone to your Mac via USB
+2. Open `frontend-app/ios/BuddyApp.xcworkspace` in Xcode
+3. Select your device in the scheme toolbar (top left)
+4. **Signing & Capabilities** → set Team to your free Apple ID
+5. Click **Run** — Xcode signs and installs directly
+6. The provisioning profile is valid for **7 days** — after that the app stops launching and Xcode reinstalls it automatically on the next run
+
+This is fine for development testing on your own device. CI builds and distributing to other testers both require the paid account.
+
+---
+
+### iOS-Specific Secrets
+
+iOS builds require four extra secrets on top of the shared set. The steps below show how to generate each one.
+
+| Secret | Description |
+|---|---|
+| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded Apple Distribution certificate (`.p12`) |
+| `IOS_CERTIFICATE_PASSWORD` | Password chosen when exporting the `.p12` |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`) |
+| `IOS_APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+
+#### Step 1 — Find your Apple Team ID
+
+1. Go to [developer.apple.com](https://developer.apple.com) → **Account**
+2. Under **Membership Details**, copy the **Team ID** (10 characters, e.g. `ABCD1234EF`)
+3. Add as `IOS_APPLE_TEAM_ID` in GitHub
+
+#### Step 2 — Create and export a Distribution certificate
+
+1. Go to [developer.apple.com](https://developer.apple.com) → **Certificates, IDs & Profiles → Certificates → +**
+2. Select **Apple Distribution** → Continue
+3. Follow the CSR instructions (Keychain Access → Certificate Assistant → Request a Certificate from a Certificate Authority)
+4. Upload the `.certSigningRequest` file → Download the resulting `.cer`
+5. Double-click the `.cer` to add it to **Keychain Access**
+6. In Keychain Access → **My Certificates** → right-click the certificate entry → **Export** → save as `.p12` with a strong password
+7. Base64-encode it and copy to clipboard:
+   ```bash
+   # macOS — result is copied to clipboard
+   base64 -i /path/to/certificate.p12 | pbcopy
+   ```
+8. Paste the clipboard value as `IOS_CERTIFICATE_P12_BASE64`. Add the export password as `IOS_CERTIFICATE_PASSWORD`.
+
+#### Step 3 — Register test devices (Ad Hoc only)
+
+Ad Hoc distribution requires each test device's UDID to be registered:
+
+1. **Devices → +** in the Apple Developer portal
+2. Enter the device name and UDID
+   - On iPhone/iPad: **Settings → General → VPN & Device Management → [device name]** — or connect to Mac and run `system_profiler SPUSBDataType | grep -A 5 "iPhone"`
+
+#### Step 4 — Create an Ad Hoc provisioning profile
+
+1. Go to **Profiles → +** → select **Ad Hoc** under Distribution → Continue
+2. Select the App ID for this app (`org.reactjs.native.example.BuddyApp`) → Continue
+3. Select the **Distribution certificate** created in Step 2 → Continue
+4. Select the **registered test devices** from Step 3 → Continue
+5. Name the profile (e.g. `BuddyApp Ad Hoc Dev`) → **Generate** → Download
+6. Base64-encode it and copy to clipboard:
+   ```bash
+   # macOS — result is copied to clipboard
+   base64 -i /path/to/BuddyAppAdHocDev.mobileprovision | pbcopy
+   ```
+7. Paste as `IOS_PROVISIONING_PROFILE_BASE64`
+
+> **Bundle ID note:** The Xcode project currently uses the default React Native bundle ID `org.reactjs.native.example.BuddyApp`. When this is changed to a production ID (e.g. `com.buddyapp`), update the `provisioningProfiles` key inside `build-ios-ipa.yml` and create a new provisioning profile for the new ID.
+
+---
+
+### Running a Build
+
+1. Go to the **GitHub repository → Actions** tab
+2. Select **Build Android APK** or **Build iOS IPA** from the left sidebar
+3. Click **Run workflow** → choose environment (`dev`, `stg`, or `prod`) → **Run workflow**
+
+Approximate build times:
+
+| Platform | Cached run | Cold run (no cache) |
+|---|---|---|
+| Android | ~8 min | ~20 min |
+| iOS | ~15 min | ~50 min |
+
+---
+
+### Retrieving Build Artifacts
+
+**GitHub artifact** (retained for 14 days):
+
+Go to the completed workflow run → scroll to the **Artifacts** section at the bottom of the page → download the zip.
+
+Artifact name format:
+```
+buddy360-android-{env}-{git-sha}
+buddy360-ios-{env}-{git-sha}
+```
+
+**S3** (permanent, timestamped):
+
+```
+s3://{BACKEND_BUCKET_NAME}/app-assets/applications/android/app-release-YYYY-MM-DD-HH-MM-SS.apk
+s3://{BACKEND_BUCKET_NAME}/app-assets/applications/ios/BuddyApp-YYYY-MM-DD-HH-MM-SS.ipa
+```
+
+List and download from S3:
+
+```bash
+# List all Android builds in the dev bucket
+aws s3 ls s3://buddy360-assets-dev/app-assets/applications/android/
+
+# Download a specific Android build
+aws s3 cp s3://buddy360-assets-dev/app-assets/applications/android/app-release-2026-05-28-10-30-00.apk ./
+
+# List all iOS builds in the dev bucket
+aws s3 ls s3://buddy360-assets-dev/app-assets/applications/ios/
+
+# Download a specific iOS build
+aws s3 cp s3://buddy360-assets-dev/app-assets/applications/ios/BuddyApp-2026-05-28-10-30-00.ipa ./
+```
+
+---
+
+### AWS OIDC Setup (one-time, per AWS account)
+
+The `ROLE_ARN` secret assumes an IAM role configured for GitHub OIDC. This is a one-time setup per AWS account. If it hasn't been done yet:
+
+**1 — Add the GitHub OIDC provider in IAM**
+
+- AWS Console → **IAM → Identity providers → Add provider**
+- Provider type: **OpenID Connect**
+- Provider URL: `https://token.actions.githubusercontent.com`
+- Audience: `sts.amazonaws.com`
+
+**2 — Create an IAM role**
+
+Create a role with the following trust policy (replace `YOUR_ORG` and `buddy-app`):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::{ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:YOUR_ORG/buddy-app:*"
+        },
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+**3 — Attach a permissions policy**
+
+The role needs at minimum:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::{BACKEND_BUCKET_NAME}/app-assets/applications/*"
+    }
+  ]
+}
+```
+
+**4 — Add the Role ARN as a secret**
+
+Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add it as `ROLE_ARN` in each GitHub environment.
 
 ---
 

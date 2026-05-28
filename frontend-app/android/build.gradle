@@ -19,3 +19,11 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Force all subprojects (including third-party libraries) to target JVM 17
+// so Kotlin and Java tasks are consistent and Gradle 9 doesn't fail the build.
+subprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions { jvmTarget = "17" }
+    }
+}

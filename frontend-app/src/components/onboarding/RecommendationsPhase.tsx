@@ -829,7 +829,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
   const { data, selectedArea, selectedActivity, interactiveAnswers, parentLiked, showGame,
     childGameResults, childActivitySelections, aiRecommendations, loadingRecommendations,
     currentAreaIndex, qaAnimKey, setStep, setParentLiked, setShowGame, setChildGameResults,
-    setChildActivitySelections, setAiRecommendations, setSelectedActivity,
+    setChildActivitySelections, setAiRecommendations, setSelectedActivity: _setSelectedActivity,
     saveCompletedGrowthArea, mergeChildGameFromServer, generateAiRecommendations,
     handleFinishRef, debouncedSaveAreaProgress, activeChildId, navigation } = ps;
   const questions = areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions['life_ambition']!;
@@ -849,7 +849,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
 
       {/* Q&A summary */}
       <Animated.View style={qaAnim} className="rounded-2xl border border-white/10 bg-card p-6 mb-6">
-        {questions.map((q: { id: string; question: string }, i: number) => {
+        {questions.map((q: { id: string; question: string }, _i: number) => {
           const answer = interactiveAnswers[q.id];
           if (!answer) return null;
           return (

@@ -130,7 +130,6 @@ const areaGames: AreaGamesMap = {
 };
 
 /** Canonical child-game LLM blob: `suggested_activities` only; strip `activities` if echoed. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function normalizeChildGameRecommendations(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== 'object') return raw as Record<string, unknown>;
   const rawObj = raw as Record<string, unknown>;
