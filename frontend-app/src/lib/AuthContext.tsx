@@ -13,6 +13,7 @@ interface AuthContextValue {
   activeChild: ChildRecord | null;
   activeChildId: string | undefined;
   setActiveChildId: (id: string) => void;
+  clearActiveChildId: () => Promise<void>;
   isLoading: boolean;
   isAuthenticated: boolean;
   logout: () => Promise<void>;
@@ -40,6 +41,11 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     AsyncStorage.setItem(ACTIVE_CHILD_KEY, id).catch(() => {});
   }, []);
 
+  const clearActiveChildId = useCallback(async () => {
+    _setActiveChildId(undefined);
+    await AsyncStorage.removeItem(ACTIVE_CHILD_KEY).catch(() => {});
+  }, []);
+
   const refetchUser = useCallback(async () => {
     try {
       const u = await api.auth.me();
@@ -55,11 +61,14 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     try {
       const list = await api.entities.Child.list();
       setChildList(list);
-      // Auto-select first child if none persisted
       if (list.length > 0) {
         const stored = await AsyncStorage.getItem(ACTIVE_CHILD_KEY).catch(() => null);
         const valid = stored && list.some((c) => c.id === stored);
         if (!valid) setActiveChildId(list[0].id);
+      } else {
+        // No children — clear any stale activeChildId so screens don't try to fetch a deleted child.
+        await AsyncStorage.removeItem(ACTIVE_CHILD_KEY).catch(() => {});
+        _setActiveChildId(undefined);
       }
     } catch {
       setChildList([]);
@@ -94,6 +103,7 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
         activeChild,
         activeChildId,
         setActiveChildId,
+        clearActiveChildId,
         isLoading,
         isAuthenticated: !!user,
         logout,

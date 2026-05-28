@@ -38,7 +38,7 @@ type ConversationalOnboardingRouteProp = RouteProp<
 
 export default function ConversationalOnboardingScreen() {
   const navigation = useNavigation<ConversationalOnboardingNavigationProp>();
-  const route = useRoute<ConversationalOnboardingRouteProp>();
+  const _route = useRoute<ConversationalOnboardingRouteProp>();
   const { activeChildId: childId } = useAuth();
   const { user, isAuthenticated, isLoading } = useAuth();
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);

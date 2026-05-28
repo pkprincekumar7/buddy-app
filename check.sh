@@ -9,6 +9,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
+FRONTEND_APP="$ROOT/frontend-app"
 
 # ── colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
@@ -53,6 +54,10 @@ echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 # --quiet suppresses progress bars but still shows warnings and errors.
 echo -e "${CYAN}Syncing frontend/node_modules...${RESET}"
 (cd "$FRONTEND" && npm install --quiet) \
+  || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
+
+echo -e "${CYAN}Syncing frontend-app/node_modules...${RESET}"
+(cd "$FRONTEND_APP" && npm install --quiet) \
   || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
 
 # retire.js vulnerability database — download if absent or older than 7 days.
@@ -129,6 +134,15 @@ bundle_size_check() {
 }
 run "bundle size (≤ 1.4 MB)" bundle_size_check
 
+# ── frontend-app ─────────────────────────────────────────────────────────────
+echo -e "\n${BOLD}════ FRONTEND-APP ════${RESET}"
+
+run "eslint (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && npm run lint"
+
+run "typecheck (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
+
 # ── tests ─────────────────────────────────────────────────────────────────────
 # Requires MONGODB_URI and JWT_SECRET in backend/.env (same env used by the dev server).
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
@@ -149,10 +163,16 @@ run "pip-audit" \
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
+run "npm audit (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && npm audit --audit-level=high"
+
 # retire-jsrepo.json is downloaded by the bootstrap above (refreshed every 7 days).
 # --jsrepo avoids retire.js making its own network request on every invocation.
 run "retire.js (browser library CVE scan)" \
     bash -c "'$FRONTEND/node_modules/.bin/retire' --path '$FRONTEND' --exitwith 1 --jsrepo '$FRONTEND/retire-jsrepo.json'"
+
+run "retire.js (frontend-app library CVE scan)" \
+    bash -c "'$FRONTEND/node_modules/.bin/retire' --path '$FRONTEND_APP' --exitwith 1 --jsrepo '$FRONTEND/retire-jsrepo.json'"
 
 # ---- mandatory: external tools — check.sh fails if any are absent ----------------
 # semgrep and checkov are installed into .venv via requirements-security.txt above.
@@ -178,7 +198,7 @@ if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
 fi
 
 run "semgrep (SAST)" \
-    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$ROOT/frontend/src/'"
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
 
 if require_tool hadolint HADOLINT "brew install hadolint"; then
   run "hadolint (backend Dockerfile)" \
@@ -208,6 +228,16 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
   run "trivy (frontend SBOM)" \
       bash -c "'$TRIVY' fs --format cyclonedx --output '$ROOT/sbom-frontend.cyclonedx.json' '$FRONTEND/' \
         && echo 'Frontend SBOM → sbom-frontend.cyclonedx.json'"
+
+  run "trivy (frontend-app CVE scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$FRONTEND_APP/'"
+
+  run "trivy (frontend-app license scan)" \
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners license '$FRONTEND_APP/'"
+
+  run "trivy (frontend-app SBOM)" \
+      bash -c "'$TRIVY' fs --format cyclonedx --output '$ROOT/sbom-frontend-app.cyclonedx.json' '$FRONTEND_APP/' \
+        && echo 'frontend-app SBOM → sbom-frontend-app.cyclonedx.json'"
 
   run "trivy config (infra-live-backend)" \
       bash -c "'$TRIVY' config '$ROOT/infra-live-backend/terraform' --exit-code 1 --severity HIGH,CRITICAL"

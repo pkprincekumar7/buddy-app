@@ -6,10 +6,12 @@ import { toast } from '@/lib/toast';
 import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import type { RootStackParamList } from '@/navigation';
+import { useAuth } from '@/lib/AuthContext';
 
 export function useStartOver(childId: string | undefined) {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const queryClient = useQueryClient();
+  const { refetchChildren, clearActiveChildId } = useAuth();
   const [isStartingOver, setIsStartingOver] = useState(false);
 
   const doStartOver = useCallback(async () => {
@@ -18,7 +20,8 @@ export function useStartOver(childId: string | undefined) {
     try {
       await api.entities.Child.delete(childId);
       await api.preferences.patch({ last_visited_path: '/Home' }).catch(() => {});
-      void queryClient.invalidateQueries({ queryKey: ['children'] });
+      // Drop the stale cache entry; components will re-fetch on next mount.
+      queryClient.removeQueries({ queryKey: ['children'] });
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
         console.warn('[useStartOver] Failed:', err);
@@ -27,9 +30,12 @@ export function useStartOver(childId: string | undefined) {
         return;
       }
     }
+    // Sync AuthContext so activeChildId is cleared before navigation.
+    // Fall back to a direct clear if the network call fails.
+    await refetchChildren().catch(() => clearActiveChildId());
     setIsStartingOver(false);
     navigation.replace('Main');
-  }, [isStartingOver, childId, navigation, queryClient]);
+  }, [isStartingOver, childId, navigation, queryClient, refetchChildren, clearActiveChildId]);
 
   return { doStartOver, isStartingOver };
 }

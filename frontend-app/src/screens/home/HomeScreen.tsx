@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-  Pressable,
   ActivityIndicator,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -13,7 +12,6 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
-import { useAuth } from '@/lib/AuthContext';
 import StartOverButton from '@/components/shared/StartOverButton';
 import type { RootStackParamList } from '@/navigation';
 
@@ -79,7 +77,6 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
-  const { activeChildId } = useAuth();
 
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
@@ -88,6 +85,8 @@ export default function HomeScreen() {
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
   const onboardingInProgress = children.some((c) => !c.onboarding_completed);
+  // Mirrors web: derive active child from the same React Query source, not a separate AuthContext read.
+  const activeChild = children.find((c) => !c.onboarding_completed) ?? children[0];
 
   const heroAnim  = useSlideUp(0.0, 1000);
   const pillarsAnim = useSlideUp(0.2, 900);
@@ -140,8 +139,8 @@ export default function HomeScreen() {
               <Text className="text-sm font-semibold text-[#0a0a0a]">✨  Continue Onboarding  →</Text>
             </Button>
             {/* Mirror the web: offer Start Over alongside Continue */}
-            {activeChildId ? (
-              <StartOverButton childId={activeChildId} className="w-full" />
+            {activeChild?.id ? (
+              <StartOverButton childId={activeChild.id} className="w-full" />
             ) : null}
           </View>
         ) : (

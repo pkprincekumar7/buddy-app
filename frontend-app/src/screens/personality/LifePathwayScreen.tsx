@@ -31,7 +31,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import type { MainTabParamList } from '@/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/Button';
-import { Textarea } from '@/components/ui/Textarea';
+import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import StartOverButton from '@/components/shared/StartOverButton';
@@ -237,6 +237,8 @@ function GrowthLineChart({
         setActiveAge(snapToAge(x));
       }
     },
+    // PAD is a constant-literal object — its values never change, safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [snapToAge, innerW],
   );
 
@@ -1112,9 +1114,9 @@ export default function LifePathwayScreen() {
                       to{' '}
                       <Text className="font-semibold text-emerald-400">{childName}</Text>?
                     </Text>
-                    <Textarea
+                    <TextareaWithVoice
                       value={concernInput}
-                      onChangeText={(val) => setConcernInput(val)}
+                      onChange={(e) => setConcernInput(e.target.value)}
                       placeholder={`e.g., I want to improve English speaking skills for ${childName}.`}
                       className="min-h-[120px] w-full rounded-xl"
                     />

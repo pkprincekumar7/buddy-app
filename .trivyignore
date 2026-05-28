@@ -1,0 +1,4 @@
+# CVE-2024-21907: Newtonsoft.Json in react-native-fs/windows/RNFS.Net46
+# This is a Windows-platform NuGet dependency inside node_modules.
+# The app targets Android and iOS only — the Windows code path is never compiled or shipped.
+CVE-2024-21907

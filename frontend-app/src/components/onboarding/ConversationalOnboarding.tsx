@@ -15,13 +15,8 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import Svg, {
-  LinearGradient as SvgLinearGradient,
-  Rect,
-  Stop,
-  Defs,
-} from 'react-native-svg';
 import { Volume2, VolumeX, Send, RotateCcw, Brain, Star, Sparkles } from 'lucide-react-native';
+import Speech from '@mhpdev/react-native-speech';
 import InputWithVoice from '@/components/shared/InputWithVoice';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
@@ -140,22 +135,17 @@ const ANALYZE_STEPS = [
   { label: 'Finalizing personalized journey...', Icon: Sparkles, threshold: 100 },
 ] as const;
 
-// bg-background (hsl 0 0% 4% ≈ #0a0a0a) — used as mask overlay for gradient progress bar.
-const PROGRESS_MASK_BG = '#0a0a0a';
-
 // ── GradientRoundedBox ────────────────────────────────────────────────────────
 // Renders a rounded square with a diagonal SVG LinearGradient background.
 // Used for the brain icon container, done step icons, and the loading-dots icon.
 // Mirrors web's `bg-gradient-to-br ${class}` utility.
 function GradientRoundedBox({
   from,
-  to,
   size,
   radius,
   children,
 }: {
   from: string;
-  to: string;
   size: number;
   radius: number;
   children: React.ReactNode;
@@ -164,19 +154,10 @@ function GradientRoundedBox({
     <View
       style={{
         width: size, height: size, borderRadius: radius,
-        overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
-        backgroundColor: from, // fallback before SVG renders
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: from,
       }}
     >
-      <Svg width={size} height={size} style={{ position: 'absolute', top: 0, left: 0 }}>
-        <Defs>
-          <SvgLinearGradient id="boxGrad" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0%" stopColor={from} />
-            <Stop offset="100%" stopColor={to} />
-          </SvgLinearGradient>
-        </Defs>
-        <Rect width={size} height={size} fill="url(#boxGrad)" rx={radius} />
-      </Svg>
       {children}
     </View>
   );
@@ -372,11 +353,10 @@ function AnalyzingScreen({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
-  // Gradient progress bar — SVG LinearGradient + animated mask reveal (same technique as
-  // PersonalityAnalysis bars).  `trackWidthSv` mirrors `trackPx` for worklet access.
-  const [trackPx, setTrackPx]       = useState(0);
-  const trackWidthSv                = useSharedValue(0);
-  const progressWidthSv             = useSharedValue(0);
+  // Animated progress bar — width driven by analyzeProgress (0–100).
+  const [trackPx, setTrackPx] = useState(0);
+  const trackWidthSv          = useSharedValue(0);
+  const progressWidthSv       = useSharedValue(0);
 
   useEffect(() => {
     if (trackWidthSv.value === 0) return;
@@ -386,13 +366,8 @@ function AnalyzingScreen({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analyzeProgress]);
 
-  const progressMaskStyle = useAnimatedStyle(() => ({
-    position:        'absolute',
-    right:           0,
-    top:             0,
-    bottom:          0,
-    width:           Math.max(0, trackWidthSv.value - progressWidthSv.value),
-    backgroundColor: PROGRESS_MASK_BG,
+  const progressBarStyle = useAnimatedStyle(() => ({
+    width: progressWidthSv.value,
   }));
 
   const activeStep = ANALYZE_STEPS.findIndex((s) => analyzeProgress < s.threshold);
@@ -404,7 +379,7 @@ function AnalyzingScreen({
 
       {/* Spinning gradient brain icon — web: motion.div rotate:360 / 3s / Infinity */}
       <Animated.View style={rotateStyle}>
-        <GradientRoundedBox from="#2dd4bf" to="#0d9488" size={64} radius={16}>
+        <GradientRoundedBox from="#2dd4bf" size={64} radius={16}>
           <Brain size={32} color="white" />
         </GradientRoundedBox>
       </Animated.View>
@@ -433,19 +408,12 @@ function AnalyzingScreen({
           }}
         >
           {trackPx > 0 && (
-            <>
-              {/* Full-width gradient — mask progressively reveals it */}
-              <Svg width={trackPx} height={8} style={{ position: 'absolute', top: 0, left: 0 }}>
-                <Defs>
-                  <SvgLinearGradient id="progressGrad" x1="0" y1="0" x2="1" y2="0">
-                    <Stop offset="0%" stopColor="#14b8a6" />  {/* teal-500 */}
-                    <Stop offset="100%" stopColor="#5eead4" /> {/* teal-300 */}
-                  </SvgLinearGradient>
-                </Defs>
-                <Rect width={trackPx} height={8} fill="url(#progressGrad)" rx={4} />
-              </Svg>
-              <Animated.View style={progressMaskStyle} />
-            </>
+            <Animated.View
+              style={[{
+                position: 'absolute', left: 0, top: 0, bottom: 0,
+                backgroundColor: '#14b8a6', borderRadius: 4,
+              }, progressBarStyle]}
+            />
           )}
         </View>
         <Text className="text-right text-xs font-medium text-slate-500">{analyzeProgress}%</Text>
@@ -466,7 +434,7 @@ function AnalyzingScreen({
             >
               {done ? (
                 // Done: gradient icon — web: bg-gradient-to-br from-emerald-500 to-teal-600
-                <GradientRoundedBox from="#10b981" to="#0d9488" size={32} radius={10}>
+                <GradientRoundedBox from="#10b981" size={32} radius={10}>
                   <Icon size={16} color="white" />
                 </GradientRoundedBox>
               ) : active ? (
@@ -520,7 +488,6 @@ export default function ConversationalOnboarding({
   const [currentStep, setCurrentStep]   = useState(0);
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
   const [isTyping, setIsTyping]         = useState(false);
-  // voiceEnabled drives the header TTS toggle icon (UI-only — expo-speech not installed).
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const voiceEnabledRef                 = useRef(true);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
@@ -718,7 +685,7 @@ export default function ConversationalOnboarding({
 
     isScrollingRef.current = true;
     const duration  = 2500;
-    const startTime = performance.now();
+    const startTime = Date.now();
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
@@ -749,10 +716,23 @@ export default function ConversationalOnboarding({
     }
   }, []);
 
-  // TTS stub — expo-speech not installed; toggle state is saved via persistVoiceToggle
-  // so the preference round-trips through the server even without actual speech.
-  const speak = useCallback((_text: string) => {
-    // No-op: install expo-speech and call Speech.speak(_text) here to enable TTS.
+  // Configure TTS on mount and stop any ongoing speech on unmount.
+  useEffect(() => {
+    Speech.configure({ language: 'en-US', rate: 1.0, pitch: 1.0 });
+    return () => { Speech.stop(); };
+  }, []);
+
+  const speak = useCallback((text: string) => {
+    if (!voiceEnabledRef.current) return;
+    // Strip all emoji (Unicode Extended_Pictographic) and collapse whitespace/newlines.
+    const cleanText = text
+      .replace(/\p{Extended_Pictographic}/gu, '')
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleanText) return;
+    Speech.stop();   // cancel any currently playing speech before starting new
+    Speech.speak(cleanText);
   }, []);
 
   const addBotMessage = useCallback(
@@ -1004,6 +984,7 @@ export default function ConversationalOnboarding({
     const next = !voiceEnabledRef.current;
     voiceEnabledRef.current = next;
     setVoiceEnabled(next);
+    if (!next) Speech.stop(); // cancel ongoing speech immediately when toggling off
     try {
       await api.preferences.patch({ tts_enabled: next });
     } catch (err) {
@@ -1185,7 +1166,7 @@ export default function ConversationalOnboarding({
           >
             <View className="flex-row items-start gap-3">
               {/* Gradient icon — web: bg-gradient-to-br from-teal-400 to-teal-600 glow-teal-sm */}
-              <GradientRoundedBox from="#2dd4bf" to="#0d9488" size={36} radius={10}>
+              <GradientRoundedBox from="#2dd4bf" size={36} radius={10}>
                 <Sparkles size={16} color="white" />
               </GradientRoundedBox>
               <View className="flex-1 pt-0.5">

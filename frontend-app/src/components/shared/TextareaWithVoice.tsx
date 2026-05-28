@@ -5,7 +5,7 @@
  * positioned at the bottom-right corner (absolute), mirroring the web layout.
  * The prop surface is identical to the web version.
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View } from 'react-native';
 import { Textarea } from '@/components/ui/Textarea';
 import type { TextareaProps } from '@/components/ui/Textarea';
@@ -26,14 +26,13 @@ export default function TextareaWithVoice({
 }: TextareaWithVoiceProps) {
   const [isRecording, setIsRecording] = useState(false);
 
-  const handleTranscript = (transcript: string) => {
-    const newValue = value ? `${value} ${transcript}` : transcript;
-    onChange({ target: { value: newValue } });
-  };
+  const handleTranscript = useCallback((transcript: string) => {
+    onChange({ target: { value: value ? `${value} ${transcript}` : transcript } });
+  }, [onChange, value]);
 
-  const handleChangeText = (text: string) => {
+  const handleChangeText = useCallback((text: string) => {
     onChange({ target: { value: text } });
-  };
+  }, [onChange]);
 
   return (
     <View className="relative">

@@ -84,7 +84,7 @@ export default function PersonalityTypeScreen() {
 
   // Prefer explicit childId from navigation params (onboarding flow);
   // fall back to the auth context's active child (Personality tab access).
-  const { isAuthenticated, isLoading: isLoadingAuth, activeChildId, activeChild } = useAuth();
+  const { isAuthenticated, isLoading: isLoadingAuth, activeChildId } = useAuth();
   const routeChildId = (route.params as { childId?: string } | undefined)?.childId;
   const childId = routeChildId ?? activeChildId;
   const [childName, setChildName] = useState('');
