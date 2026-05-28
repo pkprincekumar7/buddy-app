@@ -256,32 +256,32 @@ jobs:
         env:
           IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
-          # Write ExportOptions.plist.
-          # Variables use shell syntax (${VAR}) consistently — mixing ${{ }} GitHub
-          # expressions inside a heredoc is fragile and confusing.
-          cat > "$RUNNER_TEMP/ExportOptions.plist" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>teamID</key>
-  <string>${IOS_APPLE_TEAM_ID}</string>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>org.reactjs.native.example.BuddyApp</key>
-    <string>${IOS_PROVISIONING_PROFILE_UUID}</string>
-  </dict>
-  <key>compileBitcode</key>
-  <false/>
-  <key>uploadSymbols</key>
-  <true/>
-</dict>
-</plist>
-PLIST
+          # Write ExportOptions.plist using grouped echo — heredoc delimiters must be
+          # at column 0 in shell, but YAML literal blocks require indentation >= the
+          # block level, so heredocs and YAML are incompatible here.
+          {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+            echo '<plist version="1.0">'
+            echo '<dict>'
+            echo '  <key>method</key>'
+            echo '  <string>ad-hoc</string>'
+            echo '  <key>teamID</key>'
+            echo "  <string>${IOS_APPLE_TEAM_ID}</string>"
+            echo '  <key>signingStyle</key>'
+            echo '  <string>manual</string>'
+            echo '  <key>provisioningProfiles</key>'
+            echo '  <dict>'
+            echo '    <key>org.reactjs.native.example.BuddyApp</key>'
+            echo "    <string>${IOS_PROVISIONING_PROFILE_UUID}</string>"
+            echo '  </dict>'
+            echo '  <key>compileBitcode</key>'
+            echo '  <false/>'
+            echo '  <key>uploadSymbols</key>'
+            echo '  <true/>'
+            echo '</dict>'
+            echo '</plist>'
+          } > "$RUNNER_TEMP/ExportOptions.plist"
 
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/BuddyApp.xcarchive" \
