@@ -168,7 +168,7 @@ export default function VoiceInput({
     });
 
     try {
-      await Sound.startRecorder();
+      await Sound.startRecorder(undefined, undefined, true);
       warmupRef.current = Date.now(); // reset to actual recording start for accurate warm-up
       setIsRecording(true);
 
