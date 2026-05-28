@@ -685,11 +685,12 @@ export default function ConversationalOnboarding({
 
     isScrollingRef.current = true;
     const duration  = 2500;
-    const startTime = Date.now();
+    let startTime   = -1;
     const easeInOutCubic = (t: number) =>
       t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
     const step = (now: number) => {
+      if (startTime < 0) startTime = now;
       const liveEnd   = Math.max(0, contentHeightRef.current - containerHeightRef.current);
       const targetEnd = Math.max(initialEnd, liveEnd);
       const progress  = Math.min((now - startTime) / duration, 1);
