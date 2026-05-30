@@ -42,7 +42,7 @@ React Native 0.85.3 mobile app (Android & iOS).
 
 | Tool | Required version | Check command |
 |---|---|---|
-| Node.js | 18 or higher | `node --version` |
+| Node.js | 22.13.0 or higher | `node --version` |
 | npm | 9 or higher | `npm --version` |
 | yarn | 1.22 or higher | `yarn --version` |
 | Java JDK | 17 (LTS) | `java -version` |
