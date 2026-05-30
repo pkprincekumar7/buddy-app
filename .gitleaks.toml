@@ -1,0 +1,20 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+# Extend the default gitleaks ruleset
+useDefault = true
+
+[allowlist]
+description = "Known false positives"
+
+# CocoaPod names in Podfile.lock contain "Auth" which triggers generic-api-key.
+# These are library names (AppAuth, GTMAppAuth), not secrets.
+paths = [
+  "frontend-app/ios/Podfile.lock",
+]
+
+# Specific fingerprints for the known false-positive commits
+commits = [
+  "519a3899b874f457c44bba03cd0ffd4cd5e38d92",
+]

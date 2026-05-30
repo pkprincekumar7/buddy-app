@@ -229,7 +229,7 @@ jobs:
       - name: Gitleaks (secret detection)
         id: gitleaks
         continue-on-error: true
-        run: gitleaks detect --source . --redact
+        run: gitleaks detect --source . --redact --config .gitleaks.toml
 
       - name: Hadolint (backend Dockerfile lint)
         id: hadolint_backend

@@ -194,7 +194,7 @@ GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
 
 if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
   run "gitleaks (secret detection)" \
-      bash -c "cd '$ROOT' && '$GITLEAKS' detect"
+      bash -c "cd '$ROOT' && '$GITLEAKS' detect --config '$ROOT/.gitleaks.toml'"
 fi
 
 run "semgrep (SAST)" \
