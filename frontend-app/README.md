@@ -10,6 +10,7 @@ React Native 0.85.3 mobile app (Android & iOS).
 
 - [Prerequisites](#prerequisites)
 - [First-Time Setup](#first-time-setup)
+- [Windows Setup](#windows-setup)
 - [Android](#android)
   - [One-Time Setup](#one-time-setup-android)
   - [Daily Workflow](#daily-workflow-android)
@@ -66,19 +67,80 @@ Then install project dependencies:
 
 ```bash
 cd frontend-app
-npm install
+yarn install
 ```
 
 Create the `.env` file at `frontend-app/.env`:
 
 ```
 API_URL=http://localhost:8000
+CDN_BASE_URL=http://localhost:8000
 GOOGLE_CLIENT_ID=
+IOS_CLIENT_ID=
 ```
 
-> **Android emulator:** `localhost:8000` works after running `adb reverse tcp:8000 tcp:8000` once per emulator boot (see Daily Workflow below).
+> **Android emulator:** `localhost` works after running `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` once per emulator boot (see Daily Workflow below).
 > **iOS simulator:** `localhost:8000` works directly — no tunnel needed; the simulator shares the Mac's network stack.
 > **Physical device (Android or iOS):** Replace `localhost` with your Mac's LAN IP e.g. `http://192.168.1.10:8000` and rebuild.
+
+---
+
+## Windows Setup
+
+> iOS builds are **not possible on Windows** — Xcode and CocoaPods are macOS-only. Android development works fully on Windows.
+
+yarn works on Windows. All commands in this README work in **PowerShell** or **Git Bash** (recommended).
+
+### Prerequisites (Windows)
+
+| Tool | Install |
+|---|---|
+| Node.js 18+ | [nodejs.org](https://nodejs.org) or `winget install OpenJS.NodeJS.LTS` |
+| yarn | `npm install -g yarn` |
+| Java JDK 17 | `winget install EclipseAdoptium.Temurin.17.JDK` |
+| Android Studio | [developer.android.com/studio](https://developer.android.com/studio) |
+| Git | `winget install Git.Git` |
+
+### Windows-Specific Environment Variables
+
+Add to your **System Environment Variables** (Search → "Edit the system environment variables" → Environment Variables):
+
+```
+ANDROID_HOME   = C:\Users\<YourUser>\AppData\Local\Android\Sdk
+```
+
+Add to **Path**:
+```
+%ANDROID_HOME%\platform-tools
+%ANDROID_HOME%\emulator
+C:\Program Files\Eclipse Adoptium\jdk-17\bin   (adjust to your JDK install path)
+```
+
+Reload your terminal after saving. Verify:
+```powershell
+adb --version
+java -version   # must print 17.x.x
+```
+
+### Run on Windows
+
+The same commands work on Windows:
+
+```powershell
+# Install dependencies
+cd frontend-app
+yarn install
+
+# Start Metro (Terminal 1)
+yarn start
+
+# ADB tunnels + build (Terminal 2 — emulator must be running)
+adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8000 tcp:8000
+yarn android
+```
+
+> **Note:** If `adb` is not recognised, the `ANDROID_HOME\platform-tools` entry is missing from Path. Re-check the environment variable setup above.
 
 ---
 
@@ -151,27 +213,21 @@ Recommended: **Pixel 7, API 34 with Google Play** system image (required for Goo
 
 #### Step 5 — First Build and Install
 
-Start the emulator in Android Studio first, then in a terminal:
+Start the emulator in Android Studio first, then open **two terminals**:
 
 ```bash
-cd frontend-app/android
-
-rm -rf app/build
-./gradlew assembleDebug
-
-adb reverse tcp:8000 tcp:8000
-adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
-```
-
-In a **separate terminal**, start Metro:
-
-```bash
+# Terminal 1 — ADB tunnels + Metro
 cd frontend-app
-npm start
+adb reverse tcp:8081 tcp:8081
+adb reverse tcp:8000 tcp:8000
+yarn start
+
+# Terminal 2 — build, install, and launch the app
+cd frontend-app
+yarn android
 ```
 
-The app will load on the emulator.
+`yarn android` compiles the APK with Gradle, installs it on the running emulator, and launches the app automatically. First build takes 10–20 minutes; subsequent builds take 1–3 minutes.
 
 ---
 
@@ -191,27 +247,28 @@ Open Android Studio → Device Manager → click the play button on your virtual
 **Step 3 — Set up the ADB reverse tunnel**
 
 ```bash
+adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8000 tcp:8000
 ```
 
-This makes `localhost:8000` inside the emulator point to your Mac's `localhost:8000`. **Run this once every time the emulator starts** — without it, API calls will fail with "Network request failed".
+This makes `localhost:8081` (Metro) and `localhost:8000` (backend) inside the emulator point to your Mac. **Run both once every time the emulator starts** — without `8081` the app shows a blank screen; without `8000` API calls fail with "Network request failed".
 
 **Step 4 — Start Metro**
 
 ```bash
 cd frontend-app
-npm start
+yarn start
 ```
 
 **Step 5 — Launch the app**
 
-The app is already installed from the previous session. Just tap its icon on the emulator, or run:
+If this is your first time back after the initial build, the app is already installed — just tap its icon or run:
 
 ```bash
 adb shell am start -n com.buddyapp/.MainActivity
 ```
 
-The app connects to Metro automatically and loads.
+If you need to rebuild (e.g. after a native change or new device), run `yarn android` from `frontend-app/` instead. The app connects to Metro automatically and loads.
 
 **Step 6 — Make changes**
 
@@ -225,13 +282,22 @@ Edit any `.ts` / `.tsx` file and save. Metro hot-reloads instantly — no rebuil
 |---|---|
 | `.ts` / `.tsx` / `.js` file | Nothing — Metro hot-reloads on save |
 | Change not appearing | Press `r` in the Metro terminal |
-| Still not appearing after `r` | `npm start -- --reset-cache` then press `r` |
-| New JS-only npm package | `npm install` → press `r` |
-| New native npm package | `npm install` → rebuild (see below) |
+| Still not appearing after `r` | `yarn start --reset-cache` then press `r` |
+| New JS-only package | `yarn add <package>` → press `r` |
+| New native package | `yarn add <package>` → rebuild (see below) |
 | `.env` file changed | Rebuild (see below) |
 | `android/build.gradle` changed | Rebuild (see below) |
 
 **Rebuild command** (use this whenever a rebuild is needed):
+
+```bash
+cd frontend-app
+yarn android
+```
+
+`yarn android` builds, installs, and launches the app in one step. Make sure Metro (`yarn start`) is already running in a separate terminal.
+
+**Manual rebuild (use when troubleshooting build errors or after native module issues):**
 
 ```bash
 cd frontend-app/android
@@ -243,15 +309,6 @@ adb shell am start -n com.buddyapp/.MainActivity
 
 > **Why `rm -rf app/build` and not `./gradlew clean`?**
 > `./gradlew clean` wipes build artifacts from all modules including `react-native-reanimated`. This causes a CMake prefab error on the next build. Deleting only `app/build` keeps library artifacts intact and avoids this issue.
-
-**Quick alternative — single rebuild + launch command:**
-
-```bash
-cd frontend-app
-npx react-native run-android
-```
-
-> This builds, installs, and launches the app in one step. Use it for a fast rebuild when you have not made any native changes and do not need a clean build. **Prefer the manual `./gradlew` workflow above** when troubleshooting build errors, after a `rm -rf app/build` clean, or when native modules behave unexpectedly — it gives more control and avoids Metro conflicts. Make sure to **stop any running Metro instance** before using this command, as it starts its own.
 
 **If you get a CMake / prefab ordering error:**
 
@@ -435,7 +492,6 @@ If you ever need to install pods without running the full build (e.g. after addi
 ```bash
 cd frontend-app
 npx pod-install
-cd ..
 ```
 
 > First pod install takes 5–15 minutes — compiles native modules (Skia, Reanimated, Notifee).
@@ -454,7 +510,7 @@ Open two terminals (both from `buddy-app/`):
 ```bash
 # Terminal 1 — keep running
 cd frontend-app
-npm start
+yarn start
 
 # Terminal 2 — builds, installs pods, and launches the app
 cd frontend-app
@@ -485,7 +541,7 @@ docker compose up
 **Step 2 — Start Metro (Terminal 1)**
 ```bash
 cd frontend-app
-npm start
+yarn start
 ```
 
 **Step 3 — Launch the app (Terminal 2)**
@@ -512,8 +568,8 @@ Edit any `.ts` / `.tsx` file and save. Metro hot-reloads instantly. Press `r` in
 |---|---|
 | `.ts` / `.tsx` / `.js` file | Nothing — Metro hot-reloads on save |
 | Change not appearing | Press `r` in the Metro terminal |
-| New JS-only npm package | `npm install` → press `r` |
-| New native npm package | `npm install` → `yarn ios` (handles pod install internally) |
+| New JS-only package | `yarn add <package>` → press `r` |
+| New native package | `yarn add <package>` → `yarn ios` (handles pod install internally) |
 | `ios/Podfile` changed | `yarn ios` (handles pod install internally) |
 | `.env` file changed | `yarn ios` (full rebuild) |
 
@@ -632,7 +688,7 @@ prod  →  https://{SUBDOMAIN}.{DOMAIN_NAME}              e.g. https://buddy.lea
 other →  https://{SUBDOMAIN}-{env}.{DOMAIN_NAME}        e.g. https://buddy-dev.learning-dev.com
 ```
 
-This value is written into `frontend-app/.env` as both `API_URL` and `CDN_BASE_URL` at the start of every workflow run.
+This value is written into `frontend-app/.env` as both `API_URL` and `CDN_BASE_URL` at the start of every workflow run. The iOS workflow additionally writes `IOS_CLIENT_ID` (required for Google Sign-In on iOS).
 
 ---
 
@@ -703,6 +759,7 @@ iOS builds require four extra secrets on top of the shared set. The steps below 
 
 | Secret | Description |
 |---|---|
+| `IOS_CLIENT_ID` | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
 | `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded Apple Distribution certificate (`.p12`) |
 | `IOS_CERTIFICATE_PASSWORD` | Password chosen when exporting the `.p12` |
 | `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`) |
@@ -875,13 +932,14 @@ Managed by `react-native-config`. File location: `frontend-app/.env`
 | Variable | Description | Local dev value |
 |---|---|---|
 | `API_URL` | Backend base URL | `http://localhost:8000` |
+| `CDN_BASE_URL` | CDN base URL for static assets | `http://localhost:8000` |
 | `GOOGLE_CLIENT_ID` | Google Web OAuth 2.0 Client ID | from Google Cloud Console |
 | `IOS_CLIENT_ID` | Google iOS OAuth 2.0 Client ID (iOS only) | from Google Cloud Console |
 
 **Important rules:**
-- Changing `.env` always requires a **native rebuild** (`rm -rf app/build && ./gradlew assembleDebug` for Android, `yarn ios` for iOS)
-- `npm start --reset-cache` alone is **not** enough after a `.env` change
-- For Android emulator, always run `adb reverse tcp:8000 tcp:8000` after starting the emulator so `localhost:8000` resolves correctly
+- Changing `.env` always requires a **native rebuild** (`yarn android` for Android, `yarn ios` for iOS)
+- `yarn start --reset-cache` alone is **not** enough after a `.env` change
+- For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` after starting the emulator — `8081` is Metro (blank screen without it), `8000` is the backend API
 - For a real physical device (Android or iOS), replace `localhost` with your Mac's LAN IP: `http://192.168.x.x:8000`
 
 ---
@@ -987,11 +1045,8 @@ Because `@react-native-google-signin/google-signin` is a native module and `.env
 
 **Android:**
 ```bash
-cd frontend-app/android
-rm -rf app/build
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+cd frontend-app
+yarn android
 ```
 
 **iOS:**
@@ -1007,6 +1062,7 @@ yarn ios
 The Google sign-in sheet makes a network call back through the app. Make sure the ADB reverse tunnel is active:
 
 ```bash
+adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8000 tcp:8000
 ```
 
@@ -1038,22 +1094,20 @@ adb reverse tcp:8000 tcp:8000
 # 1. Confirm backend is running
 curl http://localhost:8000/api/health
 
-# 2. Set up the ADB reverse tunnel (run once every time the emulator starts)
-#    This makes localhost:8000 inside the emulator resolve to your Mac's localhost:8000.
-#    Without this step, ALL network calls — including login — will fail.
+# 2. Set up the ADB reverse tunnels (run once every time the emulator starts)
+#    8081 → Metro bundler (without this the app shows a blank screen)
+#    8000 → backend API (without this ALL network calls — including login — will fail)
+adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8000 tcp:8000
 
-# 3. If .env was recently changed, rebuild the APK
-cd frontend-app/android
-rm -rf app/build
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+# 3. If .env was recently changed, rebuild the app
+cd frontend-app
+yarn android
 ```
 
 ### App shows a blank white screen
 
-Metro is not connected. Make sure `npm start` is running inside `frontend-app/`, then press `r` in that terminal to force-reload.
+Metro is not connected. Make sure `yarn start` is running inside `frontend-app/`, then press `r` in that terminal to force-reload.
 
 ### Changes not appearing after save
 
@@ -1063,8 +1117,7 @@ Metro is not connected. Make sure `npm start` is running inside `frontend-app/`,
 
 ```bash
 cd frontend-app
-npm start -- --reset-cache
-# equivalently: npx react-native start --reset-cache
+yarn start --reset-cache
 ```
 
 Once Metro finishes starting, **press `r` again** in that terminal (or shake the emulator → Reload) to load the freshly built bundle.
@@ -1078,7 +1131,7 @@ Another Metro instance is still running. Kill it and restart:
 ```bash
 kill -9 $(lsof -ti :8081)
 cd frontend-app
-npm start
+yarn start
 ```
 
 ### APK install hangs at 99% for several minutes
@@ -1152,7 +1205,7 @@ Install the package:
 
 ```bash
 cd frontend-app
-npm install react-native-worklets@0.8
+yarn add react-native-worklets@0.8
 ```
 
 Then rebuild the APK (native package change requires a full rebuild):

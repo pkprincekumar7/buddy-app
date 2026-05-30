@@ -311,7 +311,7 @@ jobs:
         working-directory: frontend
 
       - name: yarn audit (frontend-app dependency CVEs)
-        id: npm_audit_frontend_app
+        id: yarn_audit_frontend_app
         continue-on-error: true
         run: yarn audit --level high
         working-directory: frontend-app
@@ -525,7 +525,7 @@ jobs:
           [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
           [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
           [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
-          [[ "${{ steps.npm_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(npm-audit-frontend-app)
+          [[ "${{ steps.yarn_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
           [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
           [[ "${{ steps.retire_frontend_app.outcome }}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
           [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)
