@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { EmojiText } from '@/components/ui/EmojiText';
 import {
   View,
   Text,
@@ -1095,7 +1096,7 @@ export default function ConversationalOnboarding({
       >
         <View className="flex-row items-center gap-3">
           <View className="h-9 w-9 items-center justify-center rounded-xl bg-teal-500/20">
-            <Text className="text-lg">🌱</Text>
+            <EmojiText size="lg">🌱</EmojiText>
           </View>
           <View>
             <Text className="text-sm font-semibold text-white">Buddy360 Guide</Text>

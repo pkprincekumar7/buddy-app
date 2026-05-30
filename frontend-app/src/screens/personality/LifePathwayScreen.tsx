@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { EmojiText } from '@/components/ui/EmojiText';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -1014,7 +1015,7 @@ export default function LifePathwayScreen() {
                 {/* Sparkles icons flank the 🎉 — mirrors web Sparkles + 🎉 + Sparkles */}
                 <View className="flex-row items-center justify-center gap-3 mb-4">
                   <Sparkles size={24} color="#fbbf24" />
-                  <Text className="text-3xl">🎉</Text>
+                  <EmojiText size="3xl">🎉</EmojiText>
                   <Sparkles size={24} color="#fbbf24" />
                 </View>
                 <Text className="text-xl font-bold leading-relaxed text-white text-center">

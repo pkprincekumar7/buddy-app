@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { EmojiText } from '@/components/ui/EmojiText';
 import {
   View,
   Text,
@@ -63,7 +64,7 @@ function PhaseBar() {
                 : 'border border-slate-800 bg-transparent opacity-50'
             }`}
           >
-            <Text className="text-sm">{phase.icon}</Text>
+            <EmojiText size="sm">{phase.icon}</EmojiText>
             <Text
               className={`text-xs font-medium flex-1 ${
                 phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'

@@ -11,6 +11,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/Button';
+import { EmojiText } from '@/components/ui/EmojiText';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import type { RootStackParamList } from '@/navigation';
@@ -66,7 +67,7 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
     <Animated.View style={anim} className="w-1/2 p-2">
       <View className="rounded-2xl bg-card border border-slate-800 p-4">
         <View className={`h-10 w-10 rounded-xl ${pillar.bgColor} items-center justify-center mb-3`}>
-          <Text className="text-lg">{pillar.emoji}</Text>
+          <EmojiText size="lg">{pillar.emoji}</EmojiText>
         </View>
         <Text className="text-base font-semibold text-white mb-1">{pillar.label}</Text>
         <Text className="text-xs text-slate-500">{pillar.description}</Text>
@@ -181,7 +182,7 @@ export default function HomeScreen() {
           {HOW_IT_WORKS.map((item) => (
             <View key={item.title} className="items-center">
               <View className="h-14 w-14 rounded-2xl bg-slate-800 border border-slate-700 items-center justify-center mb-4">
-                <Text className="text-2xl">{item.emoji}</Text>
+                <EmojiText size="2xl">{item.emoji}</EmojiText>
               </View>
               <Text className="text-base font-semibold text-white mb-2 text-center">{item.title}</Text>
               <Text className="text-sm leading-relaxed text-slate-500 text-center">{item.description}</Text>

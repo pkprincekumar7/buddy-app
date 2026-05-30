@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { EmojiText } from '@/components/ui/EmojiText';
 import {
   View,
   Text,
@@ -355,7 +356,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-8">
         <View className="mb-6 h-24 w-24 items-center justify-center rounded-3xl bg-teal-500">
-          <Text className="text-4xl">✨</Text>
+          <EmojiText size="4xl">✨</EmojiText>
         </View>
         <Text className="mb-2 text-center text-2xl font-bold text-white">Your Personalized Journey</Text>
         <Text className="text-center text-slate-400">
@@ -367,7 +368,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
         <Animated.View style={profileAnim} className="mb-8 rounded-2xl bg-card border border-white/10 p-6">
           <View className="mb-4 flex-row items-start gap-4">
             <View className="h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-500">
-              <Text className="text-xl">⭐</Text>
+              <EmojiText size="xl">⭐</EmojiText>
             </View>
             <View>
               <Text className="text-lg font-bold text-white">{String(data['name'])}'s Profile</Text>
@@ -396,7 +397,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
       <Animated.View style={exploreAnim} className="rounded-2xl border border-purple-500/20 bg-card p-6">
         <View className="items-center">
           <View className="h-14 w-14 items-center justify-center rounded-2xl bg-purple-500 mb-4">
-            <Text className="text-2xl">🧭</Text>
+            <EmojiText size="2xl">🧭</EmojiText>
           </View>
           <Text className="text-center text-lg font-bold text-white mb-2">
             Do you want to explore the specific growth areas for {String(data['name'])} to become their best version?
@@ -499,7 +500,7 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
             android_ripple={{ color: 'rgba(255,255,255,0.05)' }}
           >
             <View className={`h-11 w-11 rounded-xl ${area.color} mb-3 items-center justify-center`}>
-              <Text className="text-lg">{area.emoji}</Text>
+              <EmojiText size="lg">{area.emoji}</EmojiText>
             </View>
             <Text className="text-sm font-semibold text-white">{area.name}</Text>
             <Text className="mt-1 text-xs text-slate-500">{area.description}</Text>
@@ -519,7 +520,7 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
         <View className={`mx-auto h-16 w-16 rounded-2xl ${selectedArea?.color ?? 'bg-teal-500'} mb-4 items-center justify-center`}>
-          <Text className="text-2xl">{selectedArea?.emoji}</Text>
+          <EmojiText size="2xl">{selectedArea?.emoji}</EmojiText>
         </View>
         <Text className="mb-2 text-center text-2xl font-bold text-white">{selectedArea?.name}</Text>
         <Text className="text-center text-slate-400">Choose an activity to try with {String(data['name'])}</Text>
@@ -638,7 +639,7 @@ function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
       <Animated.View style={cardAnim} className="rounded-2xl border border-emerald-500/20 bg-card p-6">
         <View className="items-center">
           <View className="h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500 mb-4">
-            <Text className="text-2xl">⚡</Text>
+            <EmojiText size="2xl">⚡</EmojiText>
           </View>
           <Text className="text-center text-lg font-bold text-white mb-2">
             Do you want {String(data['name'])} to take a fun activity on {selectedArea?.name}?
@@ -668,7 +669,7 @@ function ResultsPreviewScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
         <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-emerald-500">
-          <Text className="text-4xl">🏆</Text>
+          <EmojiText size="4xl">🏆</EmojiText>
         </View>
         <Text className="mb-2 text-center text-2xl font-bold text-white">Activity Results Preview</Text>
       </Animated.View>
@@ -730,7 +731,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={progressAnim} className="items-center mb-6">
         <View className="mb-4 flex-row items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2">
-          <Text className="text-sm">{selectedArea?.emoji}</Text>
+          <EmojiText size="sm">{selectedArea?.emoji}</EmojiText>
           <Text className="text-sm font-medium text-teal-400">{selectedArea?.name} Activity</Text>
         </View>
         <View className="mb-2 flex-row justify-center gap-1">
@@ -744,7 +745,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
       <Animated.View key={interactiveStep} style={questionAnim} className="rounded-2xl border border-white/10 bg-card p-6">
         <View className="mb-5">
           <View className="mb-4 h-10 w-10 items-center justify-center rounded-xl bg-teal-500">
-            <Text className="text-base">💬</Text>
+            <EmojiText size="base">💬</EmojiText>
           </View>
           <Text className="mb-1 text-lg font-bold text-white">{questionText}</Text>
         </View>
@@ -839,7 +840,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {/* Header */}
       <Animated.View style={headerAnim} className="items-center mb-6">
         <View className={`mx-auto mb-4 h-20 w-20 rounded-2xl ${selectedArea?.color ?? 'bg-emerald-500'} items-center justify-center`}>
-          <Text className="text-4xl">{selectedArea?.emoji}</Text>
+          <EmojiText size="4xl">{selectedArea?.emoji}</EmojiText>
         </View>
         <Text className="mb-2 text-center text-2xl font-bold text-white">Great Insights!</Text>
         <Text className="text-center text-slate-400">
@@ -969,7 +970,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           <View className="rounded-3xl border border-emerald-500/20 bg-card p-6 mb-4">
             <View className="items-center mb-4">
               <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-emerald-500">
-                <Text className="text-3xl">✨</Text>
+                <EmojiText size="3xl">✨</EmojiText>
               </View>
               <Text className="text-center text-xl font-bold text-white">Recommendations for {String(data['name'])}</Text>
             </View>
@@ -1070,7 +1071,7 @@ function SkipScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4 items-center">
       <Animated.View style={anim} className="items-center gap-6 pt-8">
         <View className="h-20 w-20 items-center justify-center rounded-full bg-teal-500">
-          <Text className="text-4xl">✨</Text>
+          <EmojiText size="4xl">✨</EmojiText>
         </View>
         <Text className="text-center text-2xl font-bold text-white">Ready for the Next Step!</Text>
         <Text className="text-center text-slate-400">Let's explore the Life Journey designed for {String(data['name'])}.</Text>

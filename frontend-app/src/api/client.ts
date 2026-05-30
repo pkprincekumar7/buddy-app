@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiError } from './errors';
 import type {
   UserRecord,
@@ -8,6 +9,45 @@ import type {
 } from '@/types/api';
 import { env } from '@/lib/env';
 import { navigateTo } from '@/lib/navigationRef';
+
+// ---------------------------------------------------------------------------
+// Token store — AsyncStorage-backed manual cookie jar for React Native.
+//
+// The JS fetch polyfill in React Native has no cookie jar: Set-Cookie response
+// headers are silently discarded and credentials: 'include' is a no-op.
+// We solve this by:
+//   1. Reading access_token / refresh_token from the login/register/refresh
+//      response bodies (the backend sets these in addition to HttpOnly cookies,
+//      so the web app continues to use cookies unchanged).
+//   2. Sending the access_token as an Authorization: Bearer header on every
+//      request.
+//   3. On 401, sending the refresh_token as Authorization: Bearer to /auth/refresh
+//      and storing the new token pair.
+// ---------------------------------------------------------------------------
+
+const ACCESS_KEY = 'buddy360:access_token';
+const REFRESH_KEY = 'buddy360:refresh_token';
+
+const tokenStore = {
+  async getAccess(): Promise<string | null> {
+    return AsyncStorage.getItem(ACCESS_KEY);
+  },
+  async getRefresh(): Promise<string | null> {
+    return AsyncStorage.getItem(REFRESH_KEY);
+  },
+  async set(access: string, refresh: string): Promise<void> {
+    await Promise.all([
+      AsyncStorage.setItem(ACCESS_KEY, access),
+      AsyncStorage.setItem(REFRESH_KEY, refresh),
+    ]);
+  },
+  async clear(): Promise<void> {
+    await Promise.all([
+      AsyncStorage.removeItem(ACCESS_KEY),
+      AsyncStorage.removeItem(REFRESH_KEY),
+    ]);
+  },
+};
 
 function joinApi(path: string): string {
   const base = (env.API_URL ?? '').replace(/\/$/, '');
@@ -37,12 +77,43 @@ async function request(
     headers['Content-Type'] = 'application/json';
   }
 
+  // Attach stored access token as Bearer header so authenticated requests
+  // work on React Native (fetch has no cookie jar).
+  const accessToken = await tokenStore.getAccess();
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
   const res = await fetch(joinApi(path), {
     method,
     headers,
     credentials: 'include',
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   });
+
+  // Save tokens returned in the response body (login / register / refresh).
+  if (res.ok) {
+    const ct = res.headers.get('content-type') ?? '';
+    if (ct.includes('application/json')) {
+      const text = await res.text();
+      if (text) {
+        try {
+          const json = JSON.parse(text) as Record<string, unknown>;
+          if (
+            typeof json.access_token === 'string' &&
+            typeof json.refresh_token === 'string'
+          ) {
+            await tokenStore.set(json.access_token, json.refresh_token);
+          }
+        } catch {
+          /* not JSON or no tokens — ignore */
+        }
+        return JSON.parse(text) as unknown;
+      }
+      return undefined;
+    }
+    return undefined;
+  }
 
   if (res.status === 401 && !_retry) {
     try {
@@ -54,43 +125,71 @@ async function request(
     }
   }
 
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try {
-      const text = await res.text();
-      if (text) {
-        try {
-          const json: unknown = JSON.parse(text);
-          if (
-            json !== null &&
-            typeof json === 'object' &&
-            'detail' in json &&
-            typeof (json as Record<string, unknown>)['detail'] === 'string'
-          ) {
-            detail = (json as { detail: string }).detail;
-          } else {
-            detail = text;
-          }
-        } catch {
+  let detail = `${res.status} ${res.statusText}`;
+  try {
+    const text = await res.text();
+    if (text) {
+      try {
+        const json: unknown = JSON.parse(text);
+        if (
+          json !== null &&
+          typeof json === 'object' &&
+          'detail' in json &&
+          typeof (json as Record<string, unknown>)['detail'] === 'string'
+        ) {
+          detail = (json as { detail: string }).detail;
+        } else {
           detail = text;
         }
+      } catch {
+        detail = text;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  throw new ApiError(res.status, detail);
+}
+
+async function refreshTokenPair(): Promise<void> {
+  // Send the stored refresh token as Bearer header so the refresh endpoint
+  // can validate it on React Native (no cookie jar).
+  const refreshToken = await tokenStore.getRefresh();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (refreshToken) {
+    headers['Authorization'] = `Bearer ${refreshToken}`;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let res: Response;
+  try {
+    res = await fetch(joinApi('/auth/refresh'), {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    await tokenStore.clear();
+    throw new ApiError(res.status, 'Refresh failed');
+  }
+
+  const text = await res.text();
+  if (text) {
+    try {
+      const json = JSON.parse(text) as Record<string, unknown>;
+      if (typeof json.access_token === 'string' && typeof json.refresh_token === 'string') {
+        await tokenStore.set(json.access_token, json.refresh_token);
       }
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, detail);
   }
-
-  const ct = res.headers.get('content-type');
-  if (ct?.includes('application/json')) {
-    const text = await res.text();
-    return text ? (JSON.parse(text) as unknown) : undefined;
-  }
-  return undefined;
-}
-
-async function refreshTokenPair(): Promise<void> {
-  await request('/auth/refresh', { method: 'POST' }, true);
 }
 
 export const api = {
@@ -114,6 +213,7 @@ export const api = {
       } catch {
         /* cookie cleared best-effort; proceed regardless */
       }
+      await tokenStore.clear();
     },
 
     async redirectToLogin(): Promise<void> {
