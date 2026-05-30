@@ -57,7 +57,7 @@ echo -e "${CYAN}Syncing frontend/node_modules...${RESET}"
   || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
 
 echo -e "${CYAN}Syncing frontend-app/node_modules...${RESET}"
-(cd "$FRONTEND_APP" && yarn install --frozen-lockfile --silent) \
+(cd "$FRONTEND_APP" && yarn install --frozen-lockfile --quiet) \
   || { echo -e "${RED}yarn install failed — check your network or package.json${RESET}"; exit 1; }
 
 # retire.js vulnerability database — download if absent or older than 7 days.
