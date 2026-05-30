@@ -42,20 +42,22 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Validate required secrets
         env:
-          SUBDOMAIN:                      ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME:                    ${{ secrets.DOMAIN_NAME }}
-          GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
-          ROLE_ARN:                       ${{ secrets.ROLE_ARN }}
-          BACKEND_BUCKET_NAME:            ${{ secrets.BACKEND_BUCKET_NAME }}
-          IOS_CERTIFICATE_P12_BASE64:     ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
-          IOS_CERTIFICATE_PASSWORD:       ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          SUBDOMAIN:                       ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:                     ${{ secrets.DOMAIN_NAME }}
+          GOOGLE_CLIENT_ID:                ${{ secrets.GOOGLE_CLIENT_ID }}
+          IOS_CLIENT_ID:                   ${{ secrets.IOS_CLIENT_ID }}
+          ROLE_ARN:                        ${{ secrets.ROLE_ARN }}
+          BACKEND_BUCKET_NAME:             ${{ secrets.BACKEND_BUCKET_NAME }}
+          IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
-          IOS_APPLE_TEAM_ID:              ${{ secrets.IOS_APPLE_TEAM_ID }}
+          IOS_APPLE_TEAM_ID:               ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
           missing=()
           [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                     ]] && missing+=("DOMAIN_NAME")
           [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID")
+          [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID")
           [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN")
           [[ -z "$BACKEND_BUCKET_NAME"             ]] && missing+=("BACKEND_BUCKET_NAME")
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
@@ -90,20 +92,20 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version: "22.11.0"
-          cache: "npm"
-          cache-dependency-path: frontend-app/package-lock.json
+          cache: "yarn"
+          cache-dependency-path: frontend-app/yarn.lock
 
       - name: Cache node_modules
         uses: actions/cache@v4
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
-          key: node-modules-${{ runner.os }}-node22.11.0-${{ hashFiles('frontend-app/package-lock.json') }}
+          key: node-modules-${{ runner.os }}-node22.11.0-${{ hashFiles('frontend-app/yarn.lock') }}
 
       - name: Install JS dependencies
         working-directory: frontend-app
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       # -------------------------------------------------------------------------
       # Write frontend-app/.env so react-native-config picks up the correct
@@ -113,18 +115,20 @@ jobs:
         working-directory: frontend-app
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          IOS_CLIENT_ID:    ${{ secrets.IOS_CLIENT_ID }}
         run: |
           {
             echo "API_URL=https://${{ env.FQDN }}"
             echo "CDN_BASE_URL=https://${{ env.FQDN }}"
             echo "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}"
+            echo "IOS_CLIENT_ID=${IOS_CLIENT_ID}"
           } > .env
           echo "Written .env (secrets masked):"
           sed 's/=.*/=***/' .env
 
       # -------------------------------------------------------------------------
       # CocoaPods — restore cached Pods to avoid reinstalling on every run.
-      # Cache key covers both Podfile.lock (pod versions) and the JS package-lock
+      # Cache key covers both Podfile.lock (pod versions) and yarn.lock
       # (native modules change when JS deps change).
       #
       # restore-keys is intentionally omitted: actions/cache only sets cache-hit
@@ -141,7 +145,7 @@ jobs:
           path: |
             frontend-app/ios/Pods
             ~/Library/Caches/CocoaPods
-          key: pods-${{ runner.os }}-${{ hashFiles('frontend-app/ios/Podfile.lock', 'frontend-app/package-lock.json') }}
+          key: pods-${{ runner.os }}-${{ hashFiles('frontend-app/ios/Podfile.lock', 'frontend-app/yarn.lock') }}
 
       - name: Install CocoaPods
         working-directory: frontend-app/ios

@@ -147,16 +147,23 @@ def _cookie_kwargs() -> dict:
     }
 
 
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+
+
 async def _set_auth_cookies(
     response: Response,
     user_id: str,
     location: str,
     db: AsyncIOMotorDatabase,
-) -> None:
+) -> TokenPair:
+    """Set HttpOnly auth cookies (for web) and return tokens for mobile clients."""
     kw = _cookie_kwargs()
+    access_token = create_access_token(user_id, location=location)
     response.set_cookie(
         key="access_token",
-        value=create_access_token(user_id, location=location),
+        value=access_token,
         max_age=settings.jwt_access_expire_minutes * 60,
         path="/",
         **kw,
@@ -178,6 +185,7 @@ async def _set_auth_cookies(
         path=_REFRESH_COOKIE_PATH,
         **kw,
     )
+    return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -336,8 +344,12 @@ async def register(
         ) from None
 
     log.info("user.register id=%s location=%s", new_user_id, location)
-    await _set_auth_cookies(response, new_user_id, location, db)
-    return {"status": "ok"}
+    tokens = await _set_auth_cookies(response, new_user_id, location, db)
+    return {
+        "status": "ok",
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+    }
 
 
 @router.post(
@@ -385,8 +397,12 @@ async def login(
 
     location = user.get("location", settings.default_location)
     log.info("auth.login.ok id=%s location=%s", user["_id"], location)
-    await _set_auth_cookies(response, user["_id"], location, db)
-    return {"status": "ok"}
+    tokens = await _set_auth_cookies(response, user["_id"], location, db)
+    return {
+        "status": "ok",
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+    }
 
 
 @router.post(
@@ -400,7 +416,12 @@ async def refresh_tokens(
     response: Response,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    # Accept refresh token from cookie (web) or Authorization: Bearer header (mobile).
     refresh_token_val = request.cookies.get("refresh_token")
+    if not refresh_token_val:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            refresh_token_val = auth_header[len("Bearer ") :]
     if not refresh_token_val:
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
@@ -483,9 +504,13 @@ async def refresh_tokens(
     # Insert new session before deleting old: if the process crashes after the insert
     # but before the HTTP response is sent, the client retries with the old cookies
     # (old session still present) and succeeds. The orphaned new session expires naturally.
-    await _set_auth_cookies(response, uid, location, db)
+    tokens = await _set_auth_cookies(response, uid, location, db)
     await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+    }
 
 
 @router.post(
@@ -561,7 +586,7 @@ async def google_auth(
                 detail="This account is temporarily unavailable. Please try again shortly.",
             )
         location = existing.get("location", settings.default_location)
-        await _set_auth_cookies(response, existing["_id"], location, db)
+        tokens = await _set_auth_cookies(response, existing["_id"], location, db)
     else:
         if not body.country_code:
             raise HTTPException(
@@ -650,13 +675,17 @@ async def google_auth(
                         status_code=409,
                         detail="This account is temporarily unavailable. Please try again shortly.",
                     ) from None
-                await _set_auth_cookies(
+                tokens = await _set_auth_cookies(
                     response,
                     race_user["_id"],
                     race_user.get("location", settings.default_location),
                     db,
                 )
-                return {"status": "ok"}
+                return {
+                    "status": "ok",
+                    "access_token": tokens.access_token,
+                    "refresh_token": tokens.refresh_token,
+                }
 
         try:
             await db[models.USERS].insert_one(user_doc)
@@ -671,9 +700,13 @@ async def google_auth(
             ) from None
 
         log.info("google_auth.register id=%s location=%s", new_user_id, location)
-        await _set_auth_cookies(response, new_user_id, location, db)
+        tokens = await _set_auth_cookies(response, new_user_id, location, db)
 
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "access_token": tokens.access_token,
+        "refresh_token": tokens.refresh_token,
+    }
 
 
 @router.get(

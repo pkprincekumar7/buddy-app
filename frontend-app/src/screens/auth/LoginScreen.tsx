@@ -155,13 +155,15 @@ export default function LoginScreen() {
     COUNTRIES.find((c) => c.code === googleCountry)?.label ?? 'Select your country…';
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <KeyboardAvoidingView
         className="flex-1"
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           contentContainerClassName="flex-grow items-center justify-center p-6"
+          contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
           {/* Card */}
@@ -223,17 +225,19 @@ export default function LoginScreen() {
                   {busy ? 'Signing in…' : 'Sign in'}
                 </Button>
 
-                {/* Google Sign-In — mirrors web: "or" divider + native Google button below the form */}
-                <View style={{ marginTop: 8, alignItems: 'center', gap: 12 }}>
-                  <Text style={{ fontSize: 12, color: '#64748b' }}>or</Text>
-                  <GoogleSigninButton
-                    size={GoogleSigninButton.Size.Wide}
-                    color={GoogleSigninButton.Color.Light}
-                    onPress={() => { void onGoogleSignIn(); }}
-                    disabled={busy}
-                    style={{ width: '100%', height: 48, opacity: busy ? 0.6 : 1 }}
-                  />
-                </View>
+                {/* Google Sign-In — Android only (iOS sign-in not yet supported) */}
+                {Platform.OS !== 'ios' && (
+                  <View style={{ marginTop: 8, alignItems: 'center', gap: 12 }}>
+                    <Text style={{ fontSize: 12, color: '#64748b' }}>or</Text>
+                    <GoogleSigninButton
+                      size={GoogleSigninButton.Size.Wide}
+                      color={GoogleSigninButton.Color.Light}
+                      onPress={() => { void onGoogleSignIn(); }}
+                      disabled={busy}
+                      style={{ width: '100%', height: 48, opacity: busy ? 0.6 : 1 }}
+                    />
+                  </View>
+                )}
               </View>
             )}
 
@@ -264,8 +268,8 @@ export default function LoginScreen() {
                   presentationStyle="pageSheet"
                   onRequestClose={() => setShowCountryPicker(false)}
                 >
-                  <SafeAreaView className="flex-1 bg-background">
-                    <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
+                  <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
+                    <View className="flex-row items-center justify-between border-b border-border px-4 py-3" style={{ borderBottomColor: '#1e293b' }}>
                       <Text className="text-base font-semibold text-white">Select Country</Text>
                       <Button
                         variant="ghost"

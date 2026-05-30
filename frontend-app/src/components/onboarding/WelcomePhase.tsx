@@ -1,5 +1,6 @@
 import Animated from 'react-native-reanimated';
 import { View, Text, Pressable } from 'react-native';
+import { EmojiText } from '@/components/ui/EmojiText';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
@@ -22,7 +23,7 @@ function FeatureItem({ emoji, text, delay }: { emoji: string; text: string; dela
   return (
     <Animated.View style={anim} className="flex-row items-center gap-3">
       <View className="h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
-        <Text className="text-base">{emoji}</Text>
+        <EmojiText size="base">{emoji}</EmojiText>
       </View>
       <Text className="text-sm text-slate-300">{text}</Text>
     </Animated.View>

@@ -57,8 +57,8 @@ echo -e "${CYAN}Syncing frontend/node_modules...${RESET}"
   || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
 
 echo -e "${CYAN}Syncing frontend-app/node_modules...${RESET}"
-(cd "$FRONTEND_APP" && npm install --quiet) \
-  || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
+(cd "$FRONTEND_APP" && yarn install --frozen-lockfile --quiet) \
+  || { echo -e "${RED}yarn install failed — check your network or package.json${RESET}"; exit 1; }
 
 # retire.js vulnerability database — download if absent or older than 7 days.
 # Gitignored so it stays current without committing a static snapshot.
@@ -138,7 +138,7 @@ run "bundle size (≤ 1.4 MB)" bundle_size_check
 echo -e "\n${BOLD}════ FRONTEND-APP ════${RESET}"
 
 run "eslint (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && npm run lint"
+    bash -c "cd '$FRONTEND_APP' && yarn lint"
 
 run "typecheck (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
@@ -163,8 +163,8 @@ run "pip-audit" \
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
-run "npm audit (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && npm audit --audit-level=high"
+run "yarn audit (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && yarn audit --level high"
 
 # retire-jsrepo.json is downloaded by the bootstrap above (refreshed every 7 days).
 # --jsrepo avoids retire.js making its own network request on every invocation.
@@ -194,7 +194,7 @@ GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
 
 if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
   run "gitleaks (secret detection)" \
-      bash -c "cd '$ROOT' && '$GITLEAKS' detect"
+      bash -c "cd '$ROOT' && '$GITLEAKS' detect --config '$ROOT/.gitleaks.toml'"
 fi
 
 run "semgrep (SAST)" \

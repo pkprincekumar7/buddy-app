@@ -50,8 +50,9 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     try {
       const u = await api.auth.me();
       setUser(u);
-    } catch {
+    } catch (e) {
       setUser(null);
+      throw e;
     } finally {
       setIsLoading(false);
     }

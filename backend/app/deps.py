@@ -14,7 +14,14 @@ async def get_current_user(
     request: Request,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> dict:
+    # Accept either an HttpOnly cookie (web) or an Authorization: Bearer header
+    # (React Native — the JS fetch polyfill has no cookie jar, so mobile clients
+    # store the access token in AsyncStorage and send it as a Bearer token instead).
     token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[len("Bearer ") :]
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_token(token)

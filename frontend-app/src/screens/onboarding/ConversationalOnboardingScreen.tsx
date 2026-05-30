@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { EmojiText } from '@/components/ui/EmojiText';
 import {
   View,
   Text,
@@ -162,7 +163,7 @@ export default function ConversationalOnboardingScreen() {
                         : undefined
                     }
                   >
-                    <Text className="text-base">{phase.icon}</Text>
+                    <EmojiText size="base">{phase.icon}</EmojiText>
                     <Text
                       className={`text-xs font-medium flex-shrink-1 ${
                         phase.active ? 'text-teal-400' : 'text-slate-600'

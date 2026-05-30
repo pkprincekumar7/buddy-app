@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, Image } from 'react-native';
+import { EmojiText } from '@/components/ui/EmojiText';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
@@ -301,7 +302,7 @@ export default function ChildActivityGame({
                 <View className="absolute inset-0 flex-col justify-end p-3 bg-gradient-to-t from-black/60 to-transparent">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-sm font-semibold text-white flex-1 mr-1">{option.label}</Text>
-                    <Text className="text-lg">{isSelected ? '✅' : '⭕'}</Text>
+                    <EmojiText size="lg">{isSelected ? '✅' : '⭕'}</EmojiText>
                   </View>
                 </View>
               </Pressable>

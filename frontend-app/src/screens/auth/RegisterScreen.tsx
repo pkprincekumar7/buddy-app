@@ -76,13 +76,15 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <KeyboardAvoidingView
         className="flex-1"
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           contentContainerClassName="flex-grow items-center justify-center p-6"
+          contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}
           keyboardShouldPersistTaps="handled"
         >
           {/* Card */}
@@ -214,8 +216,8 @@ export default function RegisterScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowCountryPicker(false)}
       >
-        <SafeAreaView className="flex-1 bg-background">
-          <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
+        <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
+          <View className="flex-row items-center justify-between border-b border-border px-4 py-3" style={{ borderBottomColor: '#1e293b' }}>
             <Text className="text-base font-semibold text-white">Select Country</Text>
             <Button
               variant="ghost"

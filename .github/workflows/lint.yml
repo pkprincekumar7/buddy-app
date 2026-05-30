@@ -161,14 +161,14 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend-app/package-lock.json
+          cache: "yarn"
+          cache-dependency-path: frontend-app/yarn.lock
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: ESLint
-        run: npm run lint
+        run: yarn lint
 
       - name: TypeScript type check
         run: node_modules/.bin/tsc --noEmit
@@ -229,7 +229,7 @@ jobs:
       - name: Gitleaks (secret detection)
         id: gitleaks
         continue-on-error: true
-        run: gitleaks detect --source . --redact
+        run: gitleaks detect --source . --redact --config .gitleaks.toml
 
       - name: Hadolint (backend Dockerfile lint)
         id: hadolint_backend
@@ -287,16 +287,21 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: |
-            frontend/package-lock.json
-            frontend-app/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend
 
+      - name: Set up Node (frontend-app)
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: "yarn"
+          cache-dependency-path: frontend-app/yarn.lock
+
       - name: Install frontend-app dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
         working-directory: frontend-app
 
       - name: npm audit (frontend dependency CVEs)
@@ -305,10 +310,10 @@ jobs:
         run: npm audit --audit-level=high
         working-directory: frontend
 
-      - name: npm audit (frontend-app dependency CVEs)
-        id: npm_audit_frontend_app
+      - name: yarn audit (frontend-app dependency CVEs)
+        id: yarn_audit_frontend_app
         continue-on-error: true
-        run: npm audit --audit-level=high
+        run: yarn audit --level high
         working-directory: frontend-app
 
       - name: Restore retire.js database cache
@@ -318,7 +323,7 @@ jobs:
           path: frontend/retire-jsrepo.json
           # Cache key tied to package-lock.json — refreshes when JS deps change.
           # Falls back to any prior cache for this OS if the exact key misses.
-          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/package-lock.json') }}
+          key: retiredb-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json', 'frontend-app/yarn.lock') }}
           restore-keys: retiredb-${{ runner.os }}-
 
       - name: Fetch retire.js vulnerability database
@@ -520,7 +525,7 @@ jobs:
           [[ "${{ steps.pip_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(pip-audit)
           [[ "${{ steps.checkov.outcome }}"               == "failure" ]] && FAILED_CHECKS+=(checkov)
           [[ "${{ steps.npm_audit.outcome }}"             == "failure" ]] && FAILED_CHECKS+=(npm-audit)
-          [[ "${{ steps.npm_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(npm-audit-frontend-app)
+          [[ "${{ steps.yarn_audit_frontend_app.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(yarn-audit-frontend-app)
           [[ "${{ steps.retire.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(retire.js)
           [[ "${{ steps.retire_frontend_app.outcome }}"         == "failure" ]] && FAILED_CHECKS+=(retire.js-frontend-app)
           [[ "${{ steps.trivy_backend_vuln.outcome }}"    == "failure" ]] && FAILED_CHECKS+=(trivy-backend-vuln)

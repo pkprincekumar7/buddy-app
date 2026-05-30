@@ -11,6 +11,7 @@ const DEV_ASSETS_BASE =
 
 export const env = {
   GOOGLE_CLIENT_ID: Config.GOOGLE_CLIENT_ID ?? '',
+  IOS_CLIENT_ID: Config.IOS_CLIENT_ID ?? '',
   API_URL: Config.API_URL ?? '',
   // Base URL for static assets (/app-assets/*).
   // Set CDN_BASE_URL in .env to point at the production web URL or S3 bucket.
