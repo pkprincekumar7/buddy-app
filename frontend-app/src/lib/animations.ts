@@ -16,7 +16,11 @@ import {
  * the screen gains focus (e.g. back navigation, tab re-selection).
  * Use this on screens visited multiple times (Journey, Growth, Pathway, Goals).
  */
-export function useFocusEntranceAnim(ready: boolean, delay = 0, duration = 700) {
+export function useFocusEntranceAnim(
+  ready: boolean,
+  delay = 0,
+  duration = 700,
+) {
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(24);
 
@@ -26,20 +30,22 @@ export function useFocusEntranceAnim(ready: boolean, delay = 0, duration = 700) 
     const cfg = { duration, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateY.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [delay, duration]);
 
   // Initial load: play when data becomes ready
   useEffect(() => {
     if (ready) play();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   // Back/forward navigation: re-play every time screen gains focus
-  useFocusEffect(useCallback(() => {
-    if (ready) play();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, play]));
+  useFocusEffect(
+    useCallback(() => {
+      if (ready) play();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ready, play]),
+  );
 
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -50,8 +56,11 @@ export function useFocusEntranceAnim(ready: boolean, delay = 0, duration = 700) 
 export function useFadeIn(delay = 0, duration = 600) {
   const opacity = useSharedValue(0);
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.ease) }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    opacity.value = withDelay(
+      delay,
+      withTiming(1, { duration, easing: Easing.out(Easing.ease) }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useAnimatedStyle(() => ({ opacity: opacity.value }));
 }
@@ -64,7 +73,7 @@ export function useSlideUp(delaySeconds = 0, duration = 1000) {
     const cfg = { duration, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delayMs, withTiming(1, cfg));
     translateY.value = withDelay(delayMs, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -85,7 +94,7 @@ export function useSlideUpWhenReady(ready: boolean, delay = 0, duration = 700) {
     const cfg = { duration, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateY.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -100,7 +109,7 @@ export function usePageSlide(direction: 'in' | 'out' = 'in', duration = 450) {
     const cfg = { duration };
     opacity.value = withTiming(direction === 'in' ? 1 : 0, cfg);
     translateX.value = withTiming(direction === 'in' ? 0 : -50, cfg);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -117,8 +126,8 @@ export function useModalScale(visible: boolean) {
     opacity.value = withTiming(visible ? 1 : 0, cfg);
     scale.value = withTiming(visible ? 1 : 0.95, cfg);
     translateY.value = withTiming(visible ? 0 : 16, cfg);
-  // opacity/scale/translateY are Reanimated SharedValues — stable refs, safe to omit from deps.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // opacity/scale/translateY are Reanimated SharedValues — stable refs, safe to omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -129,8 +138,11 @@ export function useModalScale(visible: boolean) {
 export function useSpinner() {
   const rotation = useSharedValue(0);
   useEffect(() => {
-    rotation.value = withRepeat(withTiming(360, { duration: 2000, easing: Easing.linear }), -1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 2000, easing: Easing.linear }),
+      -1,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],

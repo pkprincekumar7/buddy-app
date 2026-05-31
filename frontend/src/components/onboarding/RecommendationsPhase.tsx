@@ -27,6 +27,8 @@ import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import ChildActivityGame, { normalizeChildGameRecommendations } from './ChildActivityGame';
+import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
+import { normalizeAge } from '@/lib/insightsUtils';
 import { createPageUrl } from '@/utils';
 import { pickPreferredVoice } from '@/lib/tts';
 
@@ -2009,29 +2011,27 @@ export default function RecommendationsPhase({
         })
         .join('\n\n');
 
-      const childContext = childResults
-        ? (() => {
-            const gr = normalizeChildGameRecommendations(childResults);
-            const sug: string[] = Array.isArray(gr['suggested_activities'])
-              ? (gr['suggested_activities'] as string[])
-              : [];
-            const strengths: string[] = Array.isArray(gr['strengths'])
-              ? (gr['strengths'] as string[])
-              : [];
-            return `\n\nChild's game responses:\nSummary: ${typeof gr['summary'] === 'string' ? gr['summary'] : ''}\nStrengths observed: ${strengths.join(', ')}\nSuggested activities from game: ${sug.join(', ')}`;
-          })()
-        : '';
-
-      const feedbackContext = feedback?.trim()
-        ? `\n\nParent's feedback on suggested activities: "${feedback}"`
-        : '';
-
+      const gr = childResults ? normalizeChildGameRecommendations(childResults) : null;
       const result = await api.integrations.Core.InvokeLLM({
-        prompt: `Based on the following parent responses and child's game activity responses about "${String(data['name'])}" in the growth area "${selectedArea?.name ?? ''}", generate 5 practical 3-month recommendations that synthesize both perspectives.\n\nParent responses:\n${qaContext}${childContext}${feedbackContext}\n\nReturn ONLY a JSON object with a "recommendations" array of 5 short, actionable bullet points (1-2 sentences each) specific to the "${selectedArea?.name ?? ''}" growth area.`,
+        prompt: buildGrowthAreaRecommendationsPrompt({
+          childName: String(data['name']),
+          childAge: normalizeAge(data['age']),
+          childGender: typeof data['gender'] === 'string' ? data['gender'] : undefined,
+          areaName: selectedArea?.name ?? '',
+          qaContext,
+          childGameSummary: typeof gr?.['summary'] === 'string' ? gr['summary'] : null,
+          childGameStrengths: Array.isArray(gr?.['strengths'])
+            ? (gr['strengths'] as string[])
+            : null,
+          childGameSuggestedActivities: Array.isArray(gr?.['suggested_activities'])
+            ? (gr['suggested_activities'] as string[])
+            : null,
+          parentFeedback: feedback?.trim() || null,
+        }),
         response_json_schema: {
           type: 'object',
           properties: {
-            recommendations: { type: 'array', items: { type: 'string' } },
+            recommendations: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5 },
           },
         },
       });
@@ -2264,6 +2264,8 @@ export default function RecommendationsPhase({
               <ChildActivityGame
                 key={selectedArea.id}
                 childName={typeof data['name'] === 'string' ? data['name'] : String(data['name'])}
+                childAge={normalizeAge(data['age'])}
+                childGender={typeof data['gender'] === 'string' ? data['gender'] : undefined}
                 areaId={selectedArea.id}
                 activeChildId={activeChildId}
                 selectedIds={childActivitySelections}

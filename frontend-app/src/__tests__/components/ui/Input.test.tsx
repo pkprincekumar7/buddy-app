@@ -15,7 +15,9 @@ describe('Input', () => {
   });
 
   it('displays a value', () => {
-    const { getByDisplayValue } = render(<Input value="hello" onChangeText={jest.fn()} />);
+    const { getByDisplayValue } = render(
+      <Input value="hello" onChangeText={jest.fn()} />,
+    );
     expect(getByDisplayValue('hello')).toBeTruthy();
   });
 

@@ -1,10 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -16,23 +11,41 @@ import Animated, {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RouteProp } from '@react-navigation/native';
-import { Sparkles, ChevronLeft, ChevronRight, Target } from 'lucide-react-native';
+import {
+  Sparkles,
+  ChevronLeft,
+  ChevronRight,
+  Target,
+} from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
+import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import type { Question } from '@/lib/growthAreaData';
 import { useSlideUpWhenReady } from '@/lib/animations';
-import { GradientIconBox, GradientButton, areaGrad } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+  areaGrad,
+} from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
 
-type GrowthNavProp = StackNavigationProp<GrowthStackParamList, 'GrowthAreasGreatInsights'>;
-type GrowthRouteProp = RouteProp<GrowthStackParamList, 'GrowthAreasGreatInsights'>;
+type GrowthNavProp = StackNavigationProp<
+  GrowthStackParamList,
+  'GrowthAreasGreatInsights'
+>;
+type GrowthRouteProp = RouteProp<
+  GrowthStackParamList,
+  'GrowthAreasGreatInsights'
+>;
 
 // Inlined from ChildActivityGame — normalises the LLM blob so `suggested_activities`
 // is always the canonical key.
-function normalizeChildGameRecommendations(raw: unknown): Record<string, unknown> {
+function normalizeChildGameRecommendations(
+  raw: unknown,
+): Record<string, unknown> {
   if (!raw || typeof raw !== 'object') return raw as Record<string, unknown>;
   const rawObj = raw as Record<string, unknown>;
   const suggested = Array.isArray(rawObj.suggested_activities)
@@ -42,7 +55,11 @@ function normalizeChildGameRecommendations(raw: unknown): Record<string, unknown
   return { ...rest, suggested_activities: suggested };
 }
 
-type GameResults = { summary?: string; strengths?: string[]; suggested_activities?: string[] };
+type GameResults = {
+  summary?: string;
+  strengths?: string[];
+  suggested_activities?: string[];
+};
 
 // ── Double-ring spinner — mirrors web CSS double-ring animation ───────────────
 function DoubleRingSpinner() {
@@ -50,9 +67,17 @@ function DoubleRingSpinner() {
   const rot2 = useSharedValue(0);
 
   useEffect(() => {
-    rot1.value = withRepeat(withTiming(360, { duration: 1000, easing: Easing.linear }), -1, false);
-    rot2.value = withRepeat(withTiming(-360, { duration: 700, easing: Easing.linear }), -1, false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    rot1.value = withRepeat(
+      withTiming(360, { duration: 1000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    rot2.value = withRepeat(
+      withTiming(-360, { duration: 700, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style1 = useAnimatedStyle(() => ({
@@ -67,25 +92,49 @@ function DoubleRingSpinner() {
       {/* Outer track */}
       <View
         style={{
-          position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
-          borderRadius: 32, borderWidth: 4, borderColor: 'rgba(16,185,129,0.2)',
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          borderRadius: 32,
+          borderWidth: 4,
+          borderColor: 'rgba(16,185,129,0.2)',
         }}
       />
       {/* Outer spinner */}
       <Animated.View
-        style={[style1, {
-          position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
-          borderRadius: 32, borderWidth: 4,
-          borderColor: 'transparent', borderTopColor: '#10b981',
-        }]}
+        style={[
+          style1,
+          {
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            borderRadius: 32,
+            borderWidth: 4,
+            borderColor: 'transparent',
+            borderTopColor: '#10b981',
+          },
+        ]}
       />
       {/* Inner spinner (reverse, faster) */}
       <Animated.View
-        style={[style2, {
-          position: 'absolute', top: 8, right: 8, bottom: 8, left: 8,
-          borderRadius: 24, borderWidth: 4,
-          borderColor: 'transparent', borderTopColor: '#2dd4bf',
-        }]}
+        style={[
+          style2,
+          {
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            bottom: 8,
+            left: 8,
+            borderRadius: 24,
+            borderWidth: 4,
+            borderColor: 'transparent',
+            borderTopColor: '#2dd4bf',
+          },
+        ]}
       />
     </View>
   );
@@ -109,7 +158,7 @@ function AnimatedRecItem({
     const cfg = { duration: 500, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateX.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -121,19 +170,24 @@ function AnimatedRecItem({
 
   return (
     <Animated.View
-      style={[style, {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 12,
-        borderRadius: 12,
-        padding: 12,
-      }]}
+      style={[
+        style,
+        {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: 12,
+          borderRadius: 12,
+          padding: 12,
+        },
+      ]}
       className="bg-surface-input"
     >
       <GradientIconBox from={from} to={to} size={24} radius={8} diagonal>
         <Text className="text-xs font-bold text-white">{index + 1}</Text>
       </GradientIconBox>
-      <Text className="flex-1 text-sm leading-relaxed text-slate-300">{rec}</Text>
+      <Text className="flex-1 text-sm leading-relaxed text-slate-300">
+        {rec}
+      </Text>
     </Animated.View>
   );
 }
@@ -142,19 +196,31 @@ export default function GrowthAreasGreatInsightsScreen() {
   const navigation = useNavigation<GrowthNavProp>();
   const route = useRoute<GrowthRouteProp>();
   const { activityId } = route.params as { activityId: string };
-  const { activeChildId, isAuthenticated, isLoading: isLoadingAuth } = useAuth();
+  const {
+    activeChildId,
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+  } = useAuth();
 
   const area = areaByUrlName(activityId ?? '');
 
   const [childName, setChildName] = useState('');
+  const [childAge, setChildAge] = useState<string | null>(null);
+  const [childGender, setChildGender] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<string[] | null>(null);
-  const [interactiveAnswers, setInteractiveAnswers] = useState<Record<string, unknown>>({});
-  const [childGameResults, setChildGameResults] = useState<GameResults | null>(null);
+  const [interactiveAnswers, setInteractiveAnswers] = useState<
+    Record<string, unknown>
+  >({});
+  const [childGameResults, setChildGameResults] = useState<GameResults | null>(
+    null,
+  );
   // loading → initial DB fetch | idle → no cached recs, waiting for button
   // generating → LLM running | ready → recs available | error → load failed
   const [status, setStatus] = useState('loading');
 
-  const contentStyle = useSlideUpWhenReady(!isLoadingAuth && status !== 'loading');
+  const contentStyle = useSlideUpWhenReady(
+    !isLoadingAuth && status !== 'loading',
+  );
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -173,13 +239,16 @@ export default function GrowthAreasGreatInsightsScreen() {
         if (!child) return;
 
         setChildName(child.name ?? '');
+        if (child.age != null) setChildAge(String(child.age));
+        if (typeof child.gender === 'string') setChildGender(child.gender);
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
         const allDocs = completedData.areas ?? [];
         const areaDoc =
-          allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ??
-          allDocs.find((a) => a.area_id === area.id);
+          allDocs.find(
+            a => a.area_id === area.id && a.status === 'in_progress',
+          ) ?? allDocs.find(a => a.area_id === area.id);
 
         const ia = areaDoc?.interactive_answers ?? {};
         setInteractiveAnswers(ia);
@@ -199,8 +268,8 @@ export default function GrowthAreasGreatInsightsScreen() {
           Array.isArray(aiRecs) && aiRecs.length > 0
             ? aiRecs
             : Array.isArray(recs) && recs.length > 0
-              ? recs
-              : null;
+            ? recs
+            : null;
 
         if (cached) {
           setRecommendations(cached);
@@ -218,7 +287,14 @@ export default function GrowthAreasGreatInsightsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, activeChildId, activityId, area, navigation]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    activeChildId,
+    activityId,
+    area,
+    navigation,
+  ]);
 
   const generateRecommendations = useCallback(async () => {
     if (!area || !activeChildId) return;
@@ -226,24 +302,38 @@ export default function GrowthAreasGreatInsightsScreen() {
 
     const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
     const qaContext = questions
-      .filter((q) => interactiveAnswers[q.id])
+      .filter(q => interactiveAnswers[q.id])
       .map(
-        (q) =>
-          `Q: ${q.question.replace(/\{name\}/g, childName || 'the child')}\nA: ${String(interactiveAnswers[q.id])}`,
+        q =>
+          `Q: ${q.question.replace(
+            /\{name\}/g,
+            childName || 'the child',
+          )}\nA: ${String(interactiveAnswers[q.id])}`,
       )
       .join('\n\n');
 
-    const childContext = childGameResults
-      ? `\n\nChild's activity responses:\nSummary: ${childGameResults.summary ?? ''}\nStrengths: ${(childGameResults.strengths ?? []).join(', ')}\nSuggested: ${(childGameResults.suggested_activities ?? []).join(', ')}`
-      : '';
-
     try {
       const result = await api.integrations.Core.InvokeLLM({
-        prompt: `Based on the following parent responses about "${childName || 'the child'}" in the growth area "${area.name}", generate 5 practical 3-month recommendations.\n\nParent responses:\n${qaContext}${childContext}\n\nReturn ONLY a JSON object with a "recommendations" array of 5 short, actionable bullet points (1-2 sentences each) specific to the "${area.name}" growth area.`,
+        prompt: buildGrowthAreaRecommendationsPrompt({
+          childName: childName || 'the child',
+          childAge,
+          childGender,
+          areaName: area.name,
+          qaContext,
+          childGameSummary: childGameResults?.summary ?? null,
+          childGameStrengths: childGameResults?.strengths ?? null,
+          childGameSuggestedActivities:
+            childGameResults?.suggested_activities ?? null,
+        }),
         response_json_schema: {
           type: 'object',
           properties: {
-            recommendations: { type: 'array', items: { type: 'string' } },
+            recommendations: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 5,
+              maxItems: 5,
+            },
           },
         },
       });
@@ -271,7 +361,15 @@ export default function GrowthAreasGreatInsightsScreen() {
       toast.error('Could not generate recommendations. Please try again.');
       setStatus('idle');
     }
-  }, [area, activeChildId, childName, interactiveAnswers, childGameResults]);
+  }, [
+    area,
+    activeChildId,
+    childName,
+    childAge,
+    childGender,
+    interactiveAnswers,
+    childGameResults,
+  ]);
 
   if (isLoadingAuth || status === 'loading') {
     return (
@@ -284,7 +382,9 @@ export default function GrowthAreasGreatInsightsScreen() {
   if (status === 'error' || !area) {
     return (
       <View className="flex-1 items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400">Could not load insights. Please try again.</Text>
+        <Text className="text-slate-400">
+          Could not load insights. Please try again.
+        </Text>
         <Button
           onPress={() => navigation.navigate('GrowthAreas')}
           className="rounded-2xl px-8"
@@ -300,31 +400,52 @@ export default function GrowthAreasGreatInsightsScreen() {
 
   // Q&A summary rows
   const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
-  const answeredQuestions = questions.filter((q) => interactiveAnswers[q.id]);
+  const answeredQuestions = questions.filter(q => interactiveAnswers[q.id]);
 
   return (
     <Animated.View style={contentStyle} className="flex-1 bg-background">
       {/* Area header */}
       <View className="border-b border-white/10 bg-slate-900/90 px-4 py-3">
         <View className="flex-row items-center gap-3">
-          <GradientIconBox from={gradFrom} to={gradTo} size={36} radius={12} diagonal>
+          <GradientIconBox
+            from={gradFrom}
+            to={gradTo}
+            size={36}
+            radius={12}
+            diagonal
+          >
             <Icon size={20} color="white" />
           </GradientIconBox>
-          <Text className="text-sm font-semibold text-white">{area.name} — Great Insights</Text>
+          <Text className="text-sm font-semibold text-white">
+            {area.name} — Great Insights
+          </Text>
         </View>
       </View>
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 32, paddingBottom: 40, gap: 24 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 32,
+          paddingBottom: 40,
+          gap: 24,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Page header — gradient area icon + title */}
         <View className="items-center">
-          <GradientIconBox from={gradFrom} to={gradTo} size={80} radius={20} diagonal>
+          <GradientIconBox
+            from={gradFrom}
+            to={gradTo}
+            size={80}
+            radius={20}
+            diagonal
+          >
             <Icon size={40} color="white" />
           </GradientIconBox>
-          <Text className="mb-2 text-2xl font-bold text-white mt-4">Great Insights!</Text>
+          <Text className="mb-2 text-2xl font-bold text-white mt-4">
+            Great Insights!
+          </Text>
           <Text className="text-slate-400">
             Here's what we learned about {childName}'s {area.name}
           </Text>
@@ -337,7 +458,7 @@ export default function GrowthAreasGreatInsightsScreen() {
               className="gap-3 rounded-2xl bg-card p-6"
               style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
             >
-              {answeredQuestions.map((q) => {
+              {answeredQuestions.map(q => {
                 const answerVal = interactiveAnswers[q.id];
                 return (
                   <View
@@ -345,7 +466,10 @@ export default function GrowthAreasGreatInsightsScreen() {
                     className="border-b border-white/5 pb-3 last:border-0 last:pb-0"
                   >
                     <Text className="mb-1 text-xs text-slate-500">
-                      {q.question.replace(/\{name\}/g, childName || 'your child')}
+                      {q.question.replace(
+                        /\{name\}/g,
+                        childName || 'your child',
+                      )}
                     </Text>
                     <Text className="text-sm font-medium text-white">
                       {typeof answerVal === 'string' ? answerVal : ''}
@@ -364,28 +488,44 @@ export default function GrowthAreasGreatInsightsScreen() {
             >
               <View className="mb-2 flex-row items-center gap-2">
                 {/* Always emerald→teal, mirrors web's from-emerald-500 to-teal-600 */}
-                <GradientIconBox from="#10b981" to="#0d9488" size={40} radius={20} diagonal>
+                <GradientIconBox
+                  from="#10b981"
+                  to="#0d9488"
+                  size={40}
+                  radius={20}
+                  diagonal
+                >
                   <Sparkles size={20} color="white" />
                 </GradientIconBox>
-                <Text className="font-bold text-white">Recommendations for {childName}</Text>
+                <Text className="font-bold text-white">
+                  Recommendations for {childName}
+                </Text>
               </View>
 
               {childGameResults.summary ? (
                 <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">What This Reveals</Text>
-                  <Text className="text-sm text-slate-400">{childGameResults.summary}</Text>
+                  <Text className="mb-2 font-semibold text-white">
+                    What This Reveals
+                  </Text>
+                  <Text className="text-sm text-slate-400">
+                    {childGameResults.summary}
+                  </Text>
                 </View>
               ) : null}
 
               {Array.isArray(childGameResults.suggested_activities) &&
               childGameResults.suggested_activities.length > 0 ? (
                 <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">Suggested Activities</Text>
+                  <Text className="mb-2 font-semibold text-white">
+                    Suggested Activities
+                  </Text>
                   <View className="gap-2">
-                    {childGameResults.suggested_activities.map((act) => (
+                    {childGameResults.suggested_activities.map(act => (
                       <View key={act} className="flex-row items-start gap-2">
                         <Text className="text-emerald-500">✓</Text>
-                        <Text className="flex-1 text-sm text-slate-400">{act}</Text>
+                        <Text className="flex-1 text-sm text-slate-400">
+                          {act}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -395,12 +535,16 @@ export default function GrowthAreasGreatInsightsScreen() {
               {Array.isArray(childGameResults.strengths) &&
               childGameResults.strengths.length > 0 ? (
                 <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">Strengths to Encourage</Text>
+                  <Text className="mb-2 font-semibold text-white">
+                    Strengths to Encourage
+                  </Text>
                   <View className="gap-2">
-                    {childGameResults.strengths.map((s) => (
+                    {childGameResults.strengths.map(s => (
                       <View key={s} className="flex-row items-start gap-2">
                         <Text className="text-emerald-500">★</Text>
-                        <Text className="flex-1 text-sm text-slate-400">{s}</Text>
+                        <Text className="flex-1 text-sm text-slate-400">
+                          {s}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -428,12 +572,16 @@ export default function GrowthAreasGreatInsightsScreen() {
                 to="#0d9488"
                 height={44}
                 borderRadius={16}
-                onPress={() => { void generateRecommendations(); }}
+                onPress={() => {
+                  void generateRecommendations();
+                }}
                 style={{ width: '100%' }}
               >
                 <View className="flex-row items-center gap-2">
                   <Sparkles size={16} color="#0a0a0a" />
-                  <Text className="font-semibold text-[#0a0a0a]">Generate Recommendations</Text>
+                  <Text className="font-semibold text-[#0a0a0a]">
+                    Generate Recommendations
+                  </Text>
                 </View>
               </GradientButton>
             )}

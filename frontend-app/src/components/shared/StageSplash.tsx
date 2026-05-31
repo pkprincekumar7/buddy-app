@@ -30,9 +30,9 @@ import Animated, {
  * appearing.
  */
 
-const IMAGE_FADE_IN_MS  = 1000;
-const HOLD_MS           = 3000;
-const CONTAINER_FADE_MS =  600;
+const IMAGE_FADE_IN_MS = 1000;
+const HOLD_MS = 3000;
+const CONTAINER_FADE_MS = 600;
 
 interface StageSplashProps {
   stage: number;
@@ -44,23 +44,28 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
   // Image: starts invisible + slightly zoomed in, fades in on load
   const imgOpacity = useSharedValue(0);
-  const imgScale   = useSharedValue(1.04);
-  const imgStyle   = useAnimatedStyle(() => ({
-    opacity:   imgOpacity.value,
+  const imgScale = useSharedValue(1.04);
+  const imgStyle = useAnimatedStyle(() => ({
+    opacity: imgOpacity.value,
     transform: [{ scale: imgScale.value }],
   }));
 
   // Container: starts fully opaque, fades to 0 before onReady is called
   const containerOpacity = useSharedValue(1);
-  const containerStyle   = useAnimatedStyle(() => ({ opacity: containerOpacity.value }));
+  const containerStyle = useAnimatedStyle(() => ({
+    opacity: containerOpacity.value,
+  }));
 
   // Called once the image has loaded (or failed to load).
   // Starts the fade-in animation and then schedules the fade-out.
   const handleLoad = useCallback(() => {
     // 1. Fade image IN
-    const fadeIn = { duration: IMAGE_FADE_IN_MS, easing: Easing.out(Easing.ease) };
+    const fadeIn = {
+      duration: IMAGE_FADE_IN_MS,
+      easing: Easing.out(Easing.ease),
+    };
     imgOpacity.value = withTiming(1, fadeIn);
-    imgScale.value   = withTiming(1, fadeIn);
+    imgScale.value = withTiming(1, fadeIn);
 
     // 2. After HOLD_MS, fade the whole container OUT, then fire onReady
     const notify = onReady ?? (() => {});
@@ -69,21 +74,25 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
       withTiming(
         0,
         { duration: CONTAINER_FADE_MS, easing: Easing.in(Easing.ease) },
-        (finished) => {
+        finished => {
           if (finished) runOnJS(notify)();
         },
       ),
     );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     // Outer animated wrapper handles the full-screen fade-out
-    <Animated.View style={[StyleSheet.absoluteFill, styles.container, containerStyle]}>
+    <Animated.View
+      style={[StyleSheet.absoluteFill, styles.container, containerStyle]}
+    >
       {/* Inner wrapper handles the image fade-in + scale */}
       <Animated.View style={[StyleSheet.absoluteFill, imgStyle]}>
         <Image
-          source={{ uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}.png` }}
+          source={{
+            uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}.png`,
+          }}
           style={styles.image}
           resizeMode="contain"
           onLoad={handleLoad}

@@ -1,5 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ActivityIndicator, Pressable, Platform, PermissionsAndroid } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  Platform,
+  PermissionsAndroid,
+} from 'react-native';
 import Sound from 'react-native-nitro-sound';
 import type { RecordBackType } from 'react-native-nitro-sound';
 import RNFS from 'react-native-fs';
@@ -62,12 +67,22 @@ export default function VoiceInput({
   // Keep latest callbacks in refs so timers/listeners always call the current version.
   const onTranscriptRef = useRef(onTranscript);
   const setIsRecordingRef = useRef(setIsRecording);
-  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
-  useEffect(() => { setIsRecordingRef.current = setIsRecording; }, [setIsRecording]);
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+  }, [onTranscript]);
+  useEffect(() => {
+    setIsRecordingRef.current = setIsRecording;
+  }, [setIsRecording]);
 
   const clearTimers = useCallback(() => {
-    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
   }, []);
 
   // Core stop logic — safe to call from silence timer, max-timer, or manual press.
@@ -98,7 +113,9 @@ export default function VoiceInput({
 
     setIsTranscribing(true);
     try {
-      const result = (await api.audio.transcribe(uri)) as { transcript?: string };
+      const result = (await api.audio.transcribe(uri)) as {
+        transcript?: string;
+      };
       if (result?.transcript) {
         onTranscriptRef.current(result.transcript);
       } else {
@@ -136,7 +153,9 @@ export default function VoiceInput({
     if (!isActiveRef.current) return; // unmounted during permission dialog
     if (!hasPermission) {
       isActiveRef.current = false;
-      toast.error('Microphone access was denied. Please allow mic access and try again.');
+      toast.error(
+        'Microphone access was denied. Please allow mic access and try again.',
+      );
       return;
     }
 
@@ -197,10 +216,10 @@ export default function VoiceInput({
   const defaultLabel = isPendingPermission
     ? 'Requesting mic…'
     : isTranscribing
-      ? 'Transcribing…'
-      : isRecording
-        ? 'Stop recording'
-        : 'Start voice input';
+    ? 'Transcribing…'
+    : isRecording
+    ? 'Stop recording'
+    : 'Start voice input';
 
   return (
     <Pressable
@@ -213,10 +232,10 @@ export default function VoiceInput({
         isRecording
           ? 'bg-red-500'
           : isTranscribing
-            ? 'bg-amber-400'
-            : isPendingPermission
-              ? 'bg-slate-400'
-              : 'bg-transparent',
+          ? 'bg-amber-400'
+          : isPendingPermission
+          ? 'bg-slate-400'
+          : 'bg-transparent',
         isBusy && 'opacity-50',
       )}
     >

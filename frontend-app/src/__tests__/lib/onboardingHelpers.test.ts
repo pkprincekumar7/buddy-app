@@ -1,4 +1,8 @@
-import { determinePhase, mergeChildDraft, DEFAULT_CHILD_STATE } from '@/lib/onboardingHelpers';
+import {
+  determinePhase,
+  mergeChildDraft,
+  DEFAULT_CHILD_STATE,
+} from '@/lib/onboardingHelpers';
 
 describe('determinePhase', () => {
   it('returns "foundation" for children under 12', () => {

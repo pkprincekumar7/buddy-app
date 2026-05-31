@@ -2,10 +2,10 @@ import React from 'react';
 import { Text } from 'react-native';
 
 const SIZES = {
-  sm:   14,
+  sm: 14,
   base: 16,
-  lg:   18,
-  xl:   20,
+  lg: 18,
+  xl: 20,
   '2xl': 24,
   '3xl': 30,
   '4xl': 36,

@@ -201,6 +201,15 @@ export default function ConversationalOnboarding({
         phase: 1,
       },
       {
+        id: 'gender',
+        message: (data) =>
+          `Got it! What is ${typeof data['name'] === 'string' ? data['name'] : ''}'s gender?`,
+        field: 'gender',
+        type: 'choice',
+        options: ['Male', 'Female', 'Other'],
+        phase: 1,
+      },
+      {
         id: 'school',
         message: (data) =>
           `Great! Which school does ${typeof data['name'] === 'string' ? data['name'] : ''} go to?`,
@@ -519,6 +528,47 @@ export default function ConversationalOnboarding({
         );
         return;
       }
+
+      // ── field-level validation ──────────────────────────────────────────────
+      if (step?.field === 'age') {
+        const trimmed = response.trim();
+        const ageMatch = trimmed.match(/^(\d+)\s*(\w+)?/);
+        if (!ageMatch) {
+          setTimeout(() => {
+            addBotMessage(`Please enter age as a number in years (e.g., 10 or 10 years).`);
+            setWaitingForResponse(true);
+          }, 400);
+          return;
+        }
+        const unit = ageMatch[2]?.toLowerCase();
+        if (unit && !unit.startsWith('year')) {
+          setTimeout(() => {
+            addBotMessage(`Age must be in years only (e.g., 10 or 10 years). Please re-enter.`);
+            setWaitingForResponse(true);
+          }, 400);
+          return;
+        }
+        const ageNum = parseInt(ageMatch[1]!, 10);
+        if (ageNum < 8) {
+          setTimeout(() => {
+            addBotMessage(`Age must be at least 8 years. Please enter a valid age.`);
+            setWaitingForResponse(true);
+          }, 400);
+          return;
+        }
+      }
+
+      if (step?.field === 'gender') {
+        const lower = response.trim().toLowerCase();
+        if (lower !== 'male' && lower !== 'female' && lower !== 'other') {
+          setTimeout(() => {
+            addBotMessage(`Please select Male, Female, or Other.`);
+            setWaitingForResponse(true);
+          }, 400);
+          return;
+        }
+      }
+      // ───────────────────────────────────────────────────────────────────────
 
       let nextCollected = collectedData;
       if (step?.field) {

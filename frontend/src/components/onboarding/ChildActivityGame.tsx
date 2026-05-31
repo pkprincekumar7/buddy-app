@@ -31,7 +31,12 @@ interface AreaGame {
   subtitle: string;
   maxSelections: number;
   options: AreaGameOption[];
-  promptContext: (labels: string[]) => string;
+  promptContext: (
+    labels: string[],
+    childAge?: string | number | null,
+    childGender?: string | null,
+    childName?: string | null,
+  ) => string;
 }
 
 type AreaGamesMap = Record<string, AreaGame>;
@@ -79,8 +84,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/life_ambition/scientist.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has selected these career aspirations: ${labels.join(', ')}. Generate personalized recommendations for the parent to help nurture these interests: 1. A brief summary of what these choices reveal about the child's interests, 2. 3-4 specific activities or experiences to support these aspirations, 3. 2-3 strengths to encourage based on these choices.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has selected these career aspirations: ${labels.join(', ')}. These selections will be used to generate a personalised development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these career choices reveal about this child's interests and motivations, taking into account their age and gender.\n- "suggested_activities": an array of 3–4 concrete, age-appropriate activities or experiences the parent can provide to nurture these aspirations. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 specific strengths these choices suggest the child has or is developing.`,
   },
   self_care: {
     question: 'Which activities make you feel calm and happy?',
@@ -124,8 +129,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/self_care/exercise.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has chosen these self-care activities as things that make them feel calm and happy: ${labels.join(', ')}. Generate personalized self-care recommendations for the parent: 1. A brief summary of what these choices reveal about the child's emotional needs, 2. 3-4 specific ways to support these self-care habits at home, 3. 2-3 emotional strengths to encourage.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these activities as things that make them feel calm and happy: ${labels.join(', ')}. These selections will be used to generate a personalised self-care development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these self-care choices reveal about this child's emotional needs and coping style, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and strengthen these self-care habits at home. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 emotional or wellbeing strengths these choices suggest the child has or is developing.`,
   },
   critical_thinking: {
     question: 'Which challenges do you enjoy most?',
@@ -169,8 +174,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/critical_thinking/inventing_things.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has chosen these thinking challenges as their favourites: ${labels.join(', ')}. Generate personalized recommendations for the parent to develop their critical thinking: 1. A brief summary of what these choices reveal about the child's thinking style, 2. 3-4 specific activities to sharpen these skills, 3. 2-3 cognitive strengths to encourage.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these thinking challenges as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised critical thinking development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these choices reveal about this child's thinking style and cognitive preferences, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate activities to sharpen these critical thinking skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 cognitive strengths these choices suggest the child has or is developing.`,
   },
   creativity: {
     question: 'Which creative activities do you love?',
@@ -214,8 +219,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/creativity/cooking_baking.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has chosen these creative activities as their favourites: ${labels.join(', ')}. Generate personalized recommendations for the parent to nurture their creativity: 1. A brief summary of what these choices reveal about the child's creative personality, 2. 3-4 specific ways to encourage and develop these creative skills, 3. 2-3 creative strengths to celebrate.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these creative activities as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised creativity development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these creative choices reveal about this child's expressive personality and creative instincts, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can encourage and develop these creative skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 creative strengths these choices suggest the child has or is developing.`,
   },
   physical_wellness: {
     question: 'Which physical activities do you enjoy?',
@@ -259,8 +264,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/physical_wellness/running.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has chosen these physical activities as their favourites: ${labels.join(', ')}. Generate personalized physical wellness recommendations for the parent: 1. A brief summary of what these choices reveal about the child's physical personality, 2. 3-4 specific ways to support and grow these physical habits, 3. 2-3 physical strengths to encourage.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these physical activities as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised physical wellness plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these physical choices reveal about this child's energy, movement preferences, and physical personality, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and grow these physical habits. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 physical strengths these choices suggest the child has or is developing.`,
   },
   social_skills: {
     question: 'Which situations feel most natural to you?',
@@ -304,8 +309,8 @@ const areaGames: AreaGamesMap = {
         image: 'child_activity_game/social_skills/enjoying_my_own_time.jpg',
       },
     ],
-    promptContext: (labels: string[]) =>
-      `A child has identified these social situations as most natural to them: ${labels.join(', ')}. Generate personalized social skills recommendations for the parent: 1. A brief summary of what these choices reveal about the child's social personality, 2. 3-4 specific activities to strengthen their social skills, 3. 2-3 social strengths to celebrate.`,
+    promptContext: (labels: string[], childAge?, childGender?, childName?) =>
+      `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has identified these social situations as most natural to them: ${labels.join(', ')}. These selections will be used to generate a personalised social skills development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these choices reveal about this child's social personality and interpersonal style, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate activities to strengthen their social skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 social strengths these choices suggest the child has or is developing.`,
   },
 };
 
@@ -323,6 +328,8 @@ export function normalizeChildGameRecommendations(raw: unknown): Record<string, 
 
 interface ChildActivityGameProps {
   childName?: string;
+  childAge?: string | number | null;
+  childGender?: string | null;
   areaId?: string;
   activeChildId?: string;
   selectedIds?: string[];
@@ -335,6 +342,8 @@ interface ChildActivityGameProps {
 
 export default function ChildActivityGame({
   childName,
+  childAge,
+  childGender,
   areaId = 'life_ambition',
   activeChildId,
   selectedIds = [],
@@ -412,13 +421,23 @@ export default function ChildActivityGame({
 
     try {
       const raw = await api.integrations.Core.InvokeLLM({
-        prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(selectedLabels)}`,
+        prompt: game.promptContext(selectedLabels, childAge, childGender, childName),
         response_json_schema: {
           type: 'object',
           properties: {
             summary: { type: 'string' },
-            suggested_activities: { type: 'array', items: { type: 'string' } },
-            strengths: { type: 'array', items: { type: 'string' } },
+            suggested_activities: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 3,
+              maxItems: 4,
+            },
+            strengths: {
+              type: 'array',
+              items: { type: 'string' },
+              minItems: 2,
+              maxItems: 3,
+            },
           },
         },
       });

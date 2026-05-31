@@ -1,11 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { EmojiText } from '@/components/ui/EmojiText';
-import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,11 +8,20 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+} from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RouteProp } from '@react-navigation/native';
 import {
-  Sparkles, Star, Compass, Zap, Clock, ChevronLeft,
+  Sparkles,
+  Star,
+  Compass,
+  Zap,
+  Clock,
+  ChevronLeft,
 } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
@@ -32,7 +36,10 @@ import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { GradientIconBox, GradientButton } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+} from '@/components/shared/GradientView';
 import type { RootStackParamList } from '@/navigation';
 
 type PersonalityJourneyNavProp = StackNavigationProp<RootStackParamList>;
@@ -44,16 +51,16 @@ type PersonalityJourneyRouteProp = RouteProp<
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
 const PHASES = [
-  { label: 'Getting to Know', icon: '💬', done: true,  active: false },
-  { label: 'Personality Analysis', icon: '⭐', done: true,  active: false },
-  { label: 'Your Journey',    icon: '💡', done: false, active: true  },
+  { label: 'Getting to Know', icon: '💬', done: true, active: false },
+  { label: 'Personality Analysis', icon: '⭐', done: true, active: false },
+  { label: 'Your Journey', icon: '💡', done: false, active: true },
 ];
 
 function PhaseBar() {
   return (
     <View className="bg-slate-900/90 border-b border-slate-800 px-4 py-3">
       <View className="flex-row items-center justify-between gap-2">
-        {PHASES.map((phase) => (
+        {PHASES.map(phase => (
           <View
             key={phase.label}
             className={`flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 ${
@@ -67,7 +74,11 @@ function PhaseBar() {
             <EmojiText size="sm">{phase.icon}</EmojiText>
             <Text
               className={`text-xs font-medium flex-1 ${
-                phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'
+                phase.active
+                  ? 'text-teal-400'
+                  : phase.done
+                  ? 'text-emerald-400'
+                  : 'text-slate-600'
               }`}
               numberOfLines={1}
             >
@@ -82,7 +93,13 @@ function PhaseBar() {
 }
 
 // Staggered slide-in for each strength row (mirrors web motion.div delay: 1.1 + index * 0.25s)
-function AnimatedStrengthItem({ strength, index }: { strength: string; index: number }) {
+function AnimatedStrengthItem({
+  strength,
+  index,
+}: {
+  strength: string;
+  index: number;
+}) {
   const opacity = useSharedValue(0);
   const translateX = useSharedValue(-20);
 
@@ -91,7 +108,7 @@ function AnimatedStrengthItem({ strength, index }: { strength: string; index: nu
     const cfg = { duration: 800, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateX.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -101,19 +118,24 @@ function AnimatedStrengthItem({ strength, index }: { strength: string; index: nu
 
   return (
     <Animated.View
-      style={[style, {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 12,
-        borderRadius: 12,
-        padding: 12,
-      }]}
+      style={[
+        style,
+        {
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: 12,
+          borderRadius: 12,
+          padding: 12,
+        },
+      ]}
       className="bg-surface-input"
     >
       <View className="h-7 w-7 flex-shrink-0 rounded-lg bg-amber-500/15 items-center justify-center">
         <Text className="text-xs font-bold text-amber-400">{index + 1}</Text>
       </View>
-      <Text className="text-sm font-semibold text-white flex-1">{strength}</Text>
+      <Text className="text-sm font-semibold text-white flex-1">
+        {strength}
+      </Text>
     </Animated.View>
   );
 }
@@ -124,28 +146,37 @@ export default function PersonalityJourneyScreen() {
 
   // Prefer explicit childId from navigation params (onboarding flow);
   // fall back to the auth context's active child (Personality tab access).
-  const { isAuthenticated, isLoading: isLoadingAuth, activeChildId } = useAuth();
-  const routeChildId = (route.params as { childId?: string } | undefined)?.childId;
+  const {
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+    activeChildId,
+  } = useAuth();
+  const routeChildId = (route.params as { childId?: string } | undefined)
+    ?.childId;
   const childId = routeChildId ?? activeChildId;
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
-  const [status, setStatus] = useState<'loading' | 'generating' | 'ready' | 'error'>('loading');
+  const [status, setStatus] = useState<
+    'loading' | 'generating' | 'ready' | 'error'
+  >('loading');
 
   const [showSplash, startTimer] = useStageSplash();
 
   const scrollRef = useRef<ScrollView>(null);
   // Reset scroll to top every time the screen gains focus (covers back navigation).
-  useFocusEffect(useCallback(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, []),
+  );
 
   // Section animations match web delays: header 100ms, profile 800ms, growth 1800ms.
   // useFocusEntranceAnim re-plays on back navigation for polish.
   const ready = status === 'ready' && !showSplash;
-  const contentStyle = useFocusEntranceAnim(ready, 0,    1000);
-  const headerAnim   = useFocusEntranceAnim(ready, 100,  1000);
-  const profileAnim  = useFocusEntranceAnim(ready, 800,  1000);
-  const growthAnim   = useFocusEntranceAnim(ready, 1800, 1000);
+  const contentStyle = useFocusEntranceAnim(ready, 0, 1000);
+  const headerAnim = useFocusEntranceAnim(ready, 100, 1000);
+  const profileAnim = useFocusEntranceAnim(ready, 800, 1000);
+  const growthAnim = useFocusEntranceAnim(ready, 1800, 1000);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -173,14 +204,17 @@ export default function PersonalityJourneyScreen() {
         const viewModel = personality?.view_model;
         if (!viewModel?.type) {
           // Not analysed yet — go back to personality type screen
-          (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
-            'PersonalityType',
-            childId ? { childId } : undefined,
-          );
+          (
+            navigation as unknown as {
+              navigate: (name: string, params?: unknown) => void;
+            }
+          ).navigate('PersonalityType', childId ? { childId } : undefined);
           return;
         }
 
-        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        const merged = mergeChildDraft(
+          normalizeOnboardingChildDataBlob(child) ?? {},
+        );
         setChildName(merged.name || '');
 
         const gp = onboardingProfileFromViewModel(viewModel);
@@ -199,10 +233,11 @@ export default function PersonalityJourneyScreen() {
         }
 
         if (!merged.name?.trim()) {
-          (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
-            'PersonalityType',
-            childId ? { childId } : undefined,
-          );
+          (
+            navigation as unknown as {
+              navigate: (name: string, params?: unknown) => void;
+            }
+          ).navigate('PersonalityType', childId ? { childId } : undefined);
           return;
         }
 
@@ -218,7 +253,9 @@ export default function PersonalityJourneyScreen() {
               lifePhase,
               personalityType:
                 gp?.personality_type ??
-                `${viewModel?.type ?? 'Unknown'} (${(viewModel?.profile?.['name'] as string) ?? ''})`,
+                `${viewModel?.type ?? 'Unknown'} (${
+                  (viewModel?.profile?.['name'] as string) ?? ''
+                })`,
               personalityNarrative: gp?.summary,
               growthAreas: gp?.growth_areas as string[] | undefined,
             }),
@@ -245,8 +282,10 @@ export default function PersonalityJourneyScreen() {
       }
     })();
 
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);
 
   // — Loading state
@@ -274,10 +313,16 @@ export default function PersonalityJourneyScreen() {
   if (status === 'error') {
     return (
       <View className="flex-1 flex-col items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400 text-center mb-4">Something went wrong. Please try again.</Text>
+        <Text className="text-slate-400 text-center mb-4">
+          Something went wrong. Please try again.
+        </Text>
         <Button
           onPress={() =>
-            (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
+            (
+              navigation as unknown as {
+                navigate: (name: string, params?: unknown) => void;
+              }
+            ).navigate(
               'PersonalityType',
               childId ? { childId, fromBack: true } : { fromBack: true },
             )
@@ -293,155 +338,184 @@ export default function PersonalityJourneyScreen() {
   // — Ready state
   return (
     <View style={{ flex: 1 }}>
-    <Animated.View style={contentStyle} className="flex-1 bg-background">
-      <PhaseBar />
+      <Animated.View style={contentStyle} className="flex-1 bg-background">
+        <PhaseBar />
 
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 24, paddingBottom: 40 }}
-      >
-        {/* Header — mirrors web: gradient rounded-3xl box + Sparkles icon */}
-        <Animated.View style={headerAnim} className="items-center mb-6">
-          <GradientIconBox
-            from="#2dd4bf"
-            to="#10b981"
-            size={96}
-            radius={24}
-            diagonal
-          >
-            <Sparkles size={48} color="white" />
-          </GradientIconBox>
-          <Text className="text-xl font-bold text-white text-center mb-2 mt-5">
-            Your Personalized Journey
-          </Text>
-          <Text className="text-sm text-slate-400 text-center">
-            Here's what we've discovered about {childName}
-          </Text>
-        </Animated.View>
-
-        {/* Profile summary — mirrors web: border-edge + gradient star icon + surface-input strengths */}
-        {profile && (
-          <Animated.View
-            style={[profileAnim, { borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }]}
-            className="rounded-2xl bg-card p-6 mb-5"
-          >
-            <View className="flex-row items-start gap-4 mb-4">
-              <GradientIconBox
-                from="#2dd4bf"
-                to="#0d9488"
-                size={48}
-                radius={12}
-                diagonal
-              >
-                <Star size={24} color="white" />
-              </GradientIconBox>
-              <View className="flex-1">
-                <Text className="text-lg font-bold text-white">{childName}'s Profile</Text>
-                <Text className="text-sm font-medium text-teal-400">
-                  {profile.personality_type?.split(' - ')[1] ?? profile.personality_type}
-                </Text>
-              </View>
-            </View>
-
-            <Text className="text-sm leading-relaxed text-slate-400 mb-5">{profile.summary}</Text>
-
-            <Text className="text-xs font-semibold uppercase tracking-widest text-slate-600 mb-3">
-              Emerging Strengths
-            </Text>
-            <View className="gap-2">
-              {(profile.top_strengths as string[])?.map((strength, index) => (
-                <AnimatedStrengthItem
-                  key={String(strength)}
-                  strength={String(strength)}
-                  index={index}
-                />
-              ))}
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Growth areas prompt — mirrors web: gradient compass icon + gradient Continue + Clock Later */}
-        <Animated.View
-          style={growthAnim}
-          className="rounded-2xl border border-purple-500/20 bg-card p-6 mb-5"
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 24,
+            paddingBottom: 40,
+          }}
         >
-          <View className="items-center gap-4">
+          {/* Header — mirrors web: gradient rounded-3xl box + Sparkles icon */}
+          <Animated.View style={headerAnim} className="items-center mb-6">
             <GradientIconBox
-              from="#a855f7"
-              to="#4f46e5"
-              size={56}
-              radius={16}
+              from="#2dd4bf"
+              to="#10b981"
+              size={96}
+              radius={24}
               diagonal
             >
-              <Compass size={28} color="white" />
+              <Sparkles size={48} color="white" />
             </GradientIconBox>
-            <Text className="text-base font-bold text-white text-center">
-              Do you want to explore the specific growth areas for {childName} to become their best
-              version?
+            <Text className="text-xl font-bold text-white text-center mb-2 mt-5">
+              Your Personalized Journey
             </Text>
             <Text className="text-sm text-slate-400 text-center">
-              Discover personalized activities to help {childName} develop key life skills
+              Here's what we've discovered about {childName}
             </Text>
-            <View className="w-full gap-3 pt-1">
-              <GradientButton
+          </Animated.View>
+
+          {/* Profile summary — mirrors web: border-edge + gradient star icon + surface-input strengths */}
+          {profile && (
+            <Animated.View
+              style={[
+                profileAnim,
+                { borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+              ]}
+              className="rounded-2xl bg-card p-6 mb-5"
+            >
+              <View className="flex-row items-start gap-4 mb-4">
+                <GradientIconBox
+                  from="#2dd4bf"
+                  to="#0d9488"
+                  size={48}
+                  radius={12}
+                  diagonal
+                >
+                  <Star size={24} color="white" />
+                </GradientIconBox>
+                <View className="flex-1">
+                  <Text className="text-lg font-bold text-white">
+                    {childName}'s Profile
+                  </Text>
+                  <Text className="text-sm font-medium text-teal-400">
+                    {profile.personality_type?.split(' - ')[1] ??
+                      profile.personality_type}
+                  </Text>
+                </View>
+              </View>
+
+              <Text className="text-sm leading-relaxed text-slate-400 mb-5">
+                {profile.summary}
+              </Text>
+
+              <Text className="text-xs font-semibold uppercase tracking-widest text-slate-600 mb-3">
+                Emerging Strengths
+              </Text>
+              <View className="gap-2">
+                {(profile.top_strengths as string[])?.map((strength, index) => (
+                  <AnimatedStrengthItem
+                    key={String(strength)}
+                    strength={String(strength)}
+                    index={index}
+                  />
+                ))}
+              </View>
+            </Animated.View>
+          )}
+
+          {/* Growth areas prompt — mirrors web: gradient compass icon + gradient Continue + Clock Later */}
+          <Animated.View
+            style={growthAnim}
+            className="rounded-2xl border border-purple-500/20 bg-card p-6 mb-5"
+          >
+            <View className="items-center gap-4">
+              <GradientIconBox
                 from="#a855f7"
                 to="#4f46e5"
-                height={48}
-                borderRadius={16}
-                onPress={() =>
-                  (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
-                    'Growth',
-                    childId ? { childId } : undefined,
-                  )
-                }
-                style={{ width: '100%' }}
+                size={56}
+                radius={16}
+                diagonal
               >
-                <View className="flex-row items-center gap-2">
-                  <Zap size={16} color="white" />
-                  <Text className="text-sm font-semibold text-white">Continue Now</Text>
-                </View>
-              </GradientButton>
+                <Compass size={28} color="white" />
+              </GradientIconBox>
+              <Text className="text-base font-bold text-white text-center">
+                Do you want to explore the specific growth areas for {childName}{' '}
+                to become their best version?
+              </Text>
+              <Text className="text-sm text-slate-400 text-center">
+                Discover personalized activities to help {childName} develop key
+                life skills
+              </Text>
+              <View className="w-full gap-3 pt-1">
+                <GradientButton
+                  from="#a855f7"
+                  to="#4f46e5"
+                  height={48}
+                  borderRadius={16}
+                  onPress={() =>
+                    (
+                      navigation as unknown as {
+                        navigate: (name: string, params?: unknown) => void;
+                      }
+                    ).navigate('Growth', childId ? { childId } : undefined)
+                  }
+                  style={{ width: '100%' }}
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Zap size={16} color="white" />
+                    <Text className="text-sm font-semibold text-white">
+                      Continue Now
+                    </Text>
+                  </View>
+                </GradientButton>
+                <Button
+                  variant="outline"
+                  onPress={() => navigation.navigate('Main')}
+                  className="h-12 rounded-2xl"
+                >
+                  <View className="flex-row items-center gap-2">
+                    <Clock size={16} color="#cbd5e1" />
+                    <Text className="text-sm text-slate-300">
+                      Catch Up Later
+                    </Text>
+                  </View>
+                </Button>
+              </View>
+            </View>
+          </Animated.View>
+
+          {/* Back navigation + Start Over */}
+          <PageActions
+            className="mt-2"
+            left={
               <Button
                 variant="outline"
-                onPress={() => navigation.navigate('Main')}
-                className="h-12 rounded-2xl"
+                onPress={() =>
+                  (
+                    navigation as unknown as {
+                      navigate: (name: string, params?: unknown) => void;
+                    }
+                  ).navigate(
+                    'PersonalityType',
+                    childId ? { childId, fromBack: true } : { fromBack: true },
+                  )
+                }
+                className="h-12 w-full rounded-2xl px-6"
               >
-                <View className="flex-row items-center gap-2">
-                  <Clock size={16} color="#cbd5e1" />
-                  <Text className="text-sm text-slate-300">Catch Up Later</Text>
+                <View className="flex-row items-center gap-1.5">
+                  <ChevronLeft size={16} color="#cbd5e1" />
+                  <Text className="text-sm font-medium text-slate-300">
+                    Back
+                  </Text>
                 </View>
               </Button>
-            </View>
-          </View>
-        </Animated.View>
+            }
+            center={
+              <StartOverButton
+                childId={childId ?? undefined}
+                className="w-full"
+              />
+            }
+          />
+        </ScrollView>
+      </Animated.View>
 
-        {/* Back navigation + Start Over */}
-        <PageActions
-          className="mt-2"
-          left={
-            <Button
-              variant="outline"
-              onPress={() =>
-                (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
-                  'PersonalityType',
-                  childId ? { childId, fromBack: true } : { fromBack: true },
-                )
-              }
-              className="h-12 w-full rounded-2xl px-6"
-            >
-              <View className="flex-row items-center gap-1.5">
-                <ChevronLeft size={16} color="#cbd5e1" />
-                <Text className="text-sm font-medium text-slate-300">Back</Text>
-              </View>
-            </Button>
-          }
-          center={<StartOverButton childId={childId ?? undefined} className="w-full" />}
-        />
-      </ScrollView>
-    </Animated.View>
-
-    {showSplash && <StageSplash stage={4} onReady={startTimer} />}
+      {showSplash && <StageSplash stage={4} onReady={startTimer} />}
     </View>
   );
 }

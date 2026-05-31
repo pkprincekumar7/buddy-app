@@ -22,7 +22,11 @@ interface TooltipTriggerProps {
   className?: string;
 }
 
-function TooltipTrigger({ children, onShowTooltip, className }: TooltipTriggerProps) {
+function TooltipTrigger({
+  children,
+  onShowTooltip,
+  className,
+}: TooltipTriggerProps) {
   return (
     <Pressable onLongPress={onShowTooltip} className={className}>
       {children}
@@ -37,11 +41,24 @@ interface TooltipContentProps {
   onDismiss?: () => void;
 }
 
-function TooltipContent({ children, className, visible = false, onDismiss }: TooltipContentProps) {
+function TooltipContent({
+  children,
+  className,
+  visible = false,
+  onDismiss,
+}: TooltipContentProps) {
   if (!visible) return null;
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}>
-      <Pressable className="flex-1 items-center justify-center" onPress={onDismiss}>
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onDismiss}
+    >
+      <Pressable
+        className="flex-1 items-center justify-center"
+        onPress={onDismiss}
+      >
         <View
           className={cn(
             'rounded-md bg-primary px-3 py-1.5 shadow-md',
@@ -66,7 +83,10 @@ function TooltipWrap({ content, children, className }: TooltipWrapProps) {
   const [visible, setVisible] = useState(false);
   return (
     <>
-      <TooltipTrigger onShowTooltip={() => setVisible(true)} className={className}>
+      <TooltipTrigger
+        onShowTooltip={() => setVisible(true)}
+        className={className}
+      >
         {children}
       </TooltipTrigger>
       <TooltipContent visible={visible} onDismiss={() => setVisible(false)}>
@@ -76,4 +96,10 @@ function TooltipWrap({ content, children, className }: TooltipWrapProps) {
   );
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, TooltipWrap };
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  TooltipWrap,
+};

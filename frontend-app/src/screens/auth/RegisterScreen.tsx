@@ -38,7 +38,8 @@ export default function RegisterScreen() {
   const cardFade = useFadeIn(0, 700);
 
   const selectedCountryLabel =
-    COUNTRIES.find((c) => c.code === countryCode)?.label ?? 'Select your country…';
+    COUNTRIES.find(c => c.code === countryCode)?.label ??
+    'Select your country…';
 
   const onSubmit = async () => {
     setError('');
@@ -60,7 +61,12 @@ export default function RegisterScreen() {
     }
     setBusy(true);
     try {
-      await api.auth.register(email.trim(), password, fullName.trim(), countryCode);
+      await api.auth.register(
+        email.trim(),
+        password,
+        fullName.trim(),
+        countryCode,
+      );
       await refetchUser();
       await refetchChildren();
     } catch (e) {
@@ -76,7 +82,10 @@ export default function RegisterScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
+    <SafeAreaView
+      className="flex-1 bg-background"
+      style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+    >
       <KeyboardAvoidingView
         className="flex-1"
         style={{ flex: 1 }}
@@ -84,17 +93,27 @@ export default function RegisterScreen() {
       >
         <ScrollView
           contentContainerClassName="flex-grow items-center justify-center p-6"
-          contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
           keyboardShouldPersistTaps="handled"
         >
           {/* Card */}
-          <Animated.View style={cardFade} className="w-full max-w-md rounded-2xl bg-card p-8 border border-border">
+          <Animated.View
+            style={cardFade}
+            className="w-full max-w-md rounded-2xl bg-card p-8 border border-border"
+          >
             {/* Header */}
             <View className="mb-8 items-center">
               <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-teal-500">
                 <Text className="text-lg font-bold text-white">LP</Text>
               </View>
-              <Text className="text-2xl font-bold text-white">Create account</Text>
+              <Text className="text-2xl font-bold text-white">
+                Create account
+              </Text>
               <Text className="mt-1 text-sm text-slate-400">
                 Choose an email and password for Buddy360
               </Text>
@@ -103,7 +122,9 @@ export default function RegisterScreen() {
             <View className="gap-4">
               {/* Full name */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">Full name</Text>
+                <Text className="mb-1 text-sm font-medium text-slate-300">
+                  Full name
+                </Text>
                 <TextInput
                   className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
                   autoComplete="name"
@@ -137,22 +158,29 @@ export default function RegisterScreen() {
 
               {/* Country */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">Country</Text>
+                <Text className="mb-1 text-sm font-medium text-slate-300">
+                  Country
+                </Text>
                 <Button
                   variant="outline"
                   onPress={() => setShowCountryPicker(true)}
                   className="w-full justify-start"
                 >
-                  <Text className="text-sm text-foreground">{selectedCountryLabel}</Text>
+                  <Text className="text-sm text-foreground">
+                    {selectedCountryLabel}
+                  </Text>
                 </Button>
                 <Text className="mt-1 text-xs text-slate-400">
-                  Determines where your data is stored to comply with local privacy laws.
+                  Determines where your data is stored to comply with local
+                  privacy laws.
                 </Text>
               </View>
 
               {/* Password */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">Password</Text>
+                <Text className="mb-1 text-sm font-medium text-slate-300">
+                  Password
+                </Text>
                 <TextInput
                   className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
                   secureTextEntry
@@ -185,7 +213,9 @@ export default function RegisterScreen() {
               ) : null}
 
               <Button
-                onPress={() => { void onSubmit(); }}
+                onPress={() => {
+                  void onSubmit();
+                }}
                 disabled={busy}
                 className="w-full bg-teal-600"
               >
@@ -195,14 +225,18 @@ export default function RegisterScreen() {
 
             {/* Navigate to Login */}
             <View className="mt-8 flex-row justify-center">
-              <Text className="text-sm text-slate-400">Already have an account? </Text>
+              <Text className="text-sm text-slate-400">
+                Already have an account?{' '}
+              </Text>
               <Button
                 variant="link"
                 size="sm"
                 onPress={() => navigation.navigate('Login')}
                 className="p-0"
               >
-                <Text className="text-sm font-medium text-teal-500">Sign in</Text>
+                <Text className="text-sm font-medium text-teal-500">
+                  Sign in
+                </Text>
               </Button>
             </View>
           </Animated.View>
@@ -216,9 +250,17 @@ export default function RegisterScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowCountryPicker(false)}
       >
-        <SafeAreaView className="flex-1 bg-background" style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
-          <View className="flex-row items-center justify-between border-b border-border px-4 py-3" style={{ borderBottomColor: '#1e293b' }}>
-            <Text className="text-base font-semibold text-white">Select Country</Text>
+        <SafeAreaView
+          className="flex-1 bg-background"
+          style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+        >
+          <View
+            className="flex-row items-center justify-between border-b border-border px-4 py-3"
+            style={{ borderBottomColor: '#1e293b' }}
+          >
+            <Text className="text-base font-semibold text-white">
+              Select Country
+            </Text>
             <Button
               variant="ghost"
               size="sm"
@@ -239,7 +281,11 @@ export default function RegisterScreen() {
                 }}
               >
                 <Text
-                  className={`text-sm ${countryCode === code ? 'font-semibold text-teal-400' : 'text-foreground'}`}
+                  className={`text-sm ${
+                    countryCode === code
+                      ? 'font-semibold text-teal-400'
+                      : 'text-foreground'
+                  }`}
                 >
                   {label}
                 </Text>

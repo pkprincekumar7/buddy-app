@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+} from 'react';
 import type { ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -31,9 +37,11 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
 
   // Restore persisted activeChildId on mount
   useEffect(() => {
-    AsyncStorage.getItem(ACTIVE_CHILD_KEY).then((stored) => {
-      if (stored) _setActiveChildId(stored);
-    }).catch(() => {});
+    AsyncStorage.getItem(ACTIVE_CHILD_KEY)
+      .then(stored => {
+        if (stored) _setActiveChildId(stored);
+      })
+      .catch(() => {});
   }, []);
 
   const setActiveChildId = useCallback((id: string) => {
@@ -63,8 +71,10 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
       const list = await api.entities.Child.list();
       setChildList(list);
       if (list.length > 0) {
-        const stored = await AsyncStorage.getItem(ACTIVE_CHILD_KEY).catch(() => null);
-        const valid = stored && list.some((c) => c.id === stored);
+        const stored = await AsyncStorage.getItem(ACTIVE_CHILD_KEY).catch(
+          () => null,
+        );
+        const valid = stored && list.some(c => c.id === stored);
         if (!valid) setActiveChildId(list[0].id);
       } else {
         // No children — clear any stale activeChildId so screens don't try to fetch a deleted child.
@@ -78,8 +88,10 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
 
   // Bootstrap on mount
   useEffect(() => {
-    refetchUser().then(() => refetchChildren()).catch(() => setIsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    refetchUser()
+      .then(() => refetchChildren())
+      .catch(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const logout = useCallback(async () => {
@@ -94,7 +106,7 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const activeChild = childList.find((c) => c.id === activeChildId) ?? null;
+  const activeChild = childList.find(c => c.id === activeChildId) ?? null;
 
   return (
     <AuthContext.Provider

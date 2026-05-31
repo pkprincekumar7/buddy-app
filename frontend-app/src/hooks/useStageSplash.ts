@@ -16,11 +16,13 @@ import { useRoute } from '@react-navigation/native';
  * Note: no setTimeout lives here; all timing is owned by StageSplash itself.
  */
 export function useStageSplash() {
-  const route  = useRoute();
+  const route = useRoute();
   const params = route.params as { fromBack?: boolean } | undefined;
 
   // Initialised once at mount time — forward nav ⟹ true, back nav ⟹ false.
-  const [showSplash, setShowSplash] = useState<boolean>(() => !params?.fromBack);
+  const [showSplash, setShowSplash] = useState<boolean>(
+    () => !params?.fromBack,
+  );
 
   // Passed to <StageSplash onReady={dismiss} /> — called after the fade-out.
   const dismiss = useCallback(() => setShowSplash(false), []);

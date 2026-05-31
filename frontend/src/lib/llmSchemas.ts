@@ -21,8 +21,9 @@ export function personalityLlmSchema() {
             prominence: { type: 'number' },
           },
         },
+        maxItems: 2,
       },
-      personalized_traits: { type: 'array', items: { type: 'string' }, minItems: 4 },
+      personalized_traits: { type: 'array', items: { type: 'string' }, minItems: 4, maxItems: 6 },
       personalized_description: { type: 'string', maxLength: 180 },
       personalized_growth_areas: { type: 'array', items: { type: 'string' }, minItems: 3 },
       role_models: {
@@ -34,8 +35,14 @@ export function personalityLlmSchema() {
           },
         },
         minItems: 2,
+        maxItems: 2,
       },
-      strength_summary_bullets: { type: 'array', items: { type: 'string' }, minItems: 3 },
+      strength_summary_bullets: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: 6,
+        maxItems: 6,
+      },
     },
     required: [
       'dominant_style',
@@ -65,6 +72,8 @@ export function recommendationsJourneySchema() {
             why: { type: 'string' },
           },
         },
+        minItems: 4,
+        maxItems: 4,
       },
       initial_missions: {
         type: 'array',
@@ -76,6 +85,8 @@ export function recommendationsJourneySchema() {
             pillar: { type: 'string' },
           },
         },
+        minItems: 3,
+        maxItems: 3,
       },
     },
   };
@@ -88,6 +99,8 @@ export function goalsMonthlyPlanSchema() {
     properties: {
       months: {
         type: 'array',
+        minItems: 3,
+        maxItems: 3,
         items: {
           type: 'object',
           required: ['month', 'goal', 'objective', 'periods'],
@@ -97,6 +110,8 @@ export function goalsMonthlyPlanSchema() {
             objective: { type: 'string' },
             periods: {
               type: 'array',
+              minItems: 2,
+              maxItems: 2,
               items: {
                 type: 'object',
                 required: ['label', 'activities'],
@@ -104,6 +119,8 @@ export function goalsMonthlyPlanSchema() {
                   label: { type: 'string' },
                   activities: {
                     type: 'array',
+                    minItems: 2,
+                    maxItems: 2,
                     items: {
                       type: 'object',
                       required: ['title', 'objective', 'scorable'],
@@ -130,11 +147,13 @@ export function activityQuestionsSchema() {
     properties: {
       questions: {
         type: 'array',
+        minItems: 4,
+        maxItems: 4,
         items: {
           type: 'object',
           properties: {
             id: { type: 'number' },
-            type: { type: 'string' },
+            type: { type: 'string', enum: ['choice', 'text', 'scale'] },
             question: { type: 'string' },
             options: { type: 'array', items: { type: 'string' } },
             labels: { type: 'array', items: { type: 'string' } },

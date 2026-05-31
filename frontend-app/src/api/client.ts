@@ -88,7 +88,12 @@ async function request(
     method,
     headers,
     credentials: 'include',
-    body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+    body:
+      body === undefined
+        ? undefined
+        : body instanceof FormData
+        ? body
+        : JSON.stringify(body),
   });
 
   // Save tokens returned in the response body (login / register / refresh).
@@ -155,7 +160,9 @@ async function refreshTokenPair(): Promise<void> {
   // Send the stored refresh token as Bearer header so the refresh endpoint
   // can validate it on React Native (no cookie jar).
   const refreshToken = await tokenStore.getRefresh();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
   if (refreshToken) {
     headers['Authorization'] = `Bearer ${refreshToken}`;
   }
@@ -183,7 +190,10 @@ async function refreshTokenPair(): Promise<void> {
   if (text) {
     try {
       const json = JSON.parse(text) as Record<string, unknown>;
-      if (typeof json.access_token === 'string' && typeof json.refresh_token === 'string') {
+      if (
+        typeof json.access_token === 'string' &&
+        typeof json.refresh_token === 'string'
+      ) {
         await tokenStore.set(json.access_token, json.refresh_token);
       }
     } catch {
@@ -232,7 +242,12 @@ export const api = {
     ): Promise<void> {
       await request('/auth/register', {
         method: 'POST',
-        body: { email, password, full_name: full_name || 'Parent', country_code },
+        body: {
+          email,
+          password,
+          full_name: full_name || 'Parent',
+          country_code,
+        },
       });
     },
 
@@ -271,7 +286,10 @@ export const api = {
         prompt: string;
         response_json_schema?: Record<string, unknown>;
       }): Promise<unknown> =>
-        request('/llm/invoke', { method: 'POST', body: { prompt, response_json_schema } }),
+        request('/llm/invoke', {
+          method: 'POST',
+          body: { prompt, response_json_schema },
+        }),
     },
   },
 
@@ -279,7 +297,11 @@ export const api = {
     transcribe(uri: string, filename = 'recording.m4a'): Promise<unknown> {
       const form = new FormData();
       // RN FormData uses { uri, name, type } instead of Blob
-      form.append('audio', { uri, name: filename, type: 'audio/m4a' } as unknown as Blob);
+      form.append('audio', {
+        uri,
+        name: filename,
+        type: 'audio/m4a',
+      } as unknown as Blob);
       return request('/audio/transcribe', { method: 'POST', body: form });
     },
   },
@@ -288,7 +310,10 @@ export const api = {
     get: (): Promise<PreferencesRecord> =>
       request('/user/preferences') as Promise<PreferencesRecord>,
     patch: (body: Record<string, unknown>): Promise<PreferencesRecord> =>
-      request('/user/preferences', { method: 'PATCH', body }) as Promise<PreferencesRecord>,
+      request('/user/preferences', {
+        method: 'PATCH',
+        body,
+      }) as Promise<PreferencesRecord>,
   },
 
   completedGrowthAreas: {
@@ -296,21 +321,35 @@ export const api = {
       request(
         `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
       ) as Promise<CompletedGrowthAreasRecord>,
-    append: (childId: string, body: Record<string, unknown>): Promise<CompletedGrowthAreasRecord> =>
-      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
-        method: 'POST',
-        body,
-      }) as Promise<CompletedGrowthAreasRecord>,
+    append: (
+      childId: string,
+      body: Record<string, unknown>,
+    ): Promise<CompletedGrowthAreasRecord> =>
+      request(
+        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
+        {
+          method: 'POST',
+          body,
+        },
+      ) as Promise<CompletedGrowthAreasRecord>,
     clear: (childId: string): Promise<void> =>
-      request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
-        method: 'DELETE',
-      }) as Promise<void>,
+      request(
+        `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
+        {
+          method: 'DELETE',
+        },
+      ) as Promise<void>,
   },
 
   goals: {
     get: (childId: string): Promise<GoalsRecord> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`) as Promise<GoalsRecord>,
-    patch: (childId: string, body: Record<string, unknown>): Promise<GoalsRecord> =>
+      request(
+        `/user/goals?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<GoalsRecord>,
+    patch: (
+      childId: string,
+      body: Record<string, unknown>,
+    ): Promise<GoalsRecord> =>
       request(`/user/goals?child_id=${encodeURIComponent(childId)}`, {
         method: 'PATCH',
         body,
@@ -319,24 +358,37 @@ export const api = {
 
   entities: {
     Child: {
-      async list(sort = '-created_date', limit?: number): Promise<ChildRecord[]> {
+      async list(
+        sort = '-created_date',
+        limit?: number,
+      ): Promise<ChildRecord[]> {
         const qs = new URLSearchParams();
         if (sort) qs.set('sort', sort);
         if (limit != null) qs.set('limit', String(limit));
         const q = qs.toString();
-        return request(`/children${q ? `?${q}` : ''}`) as Promise<ChildRecord[]>;
+        return request(`/children${q ? `?${q}` : ''}`) as Promise<
+          ChildRecord[]
+        >;
       },
       get: (id: string): Promise<ChildRecord> =>
         request(`/children/${encodeURIComponent(id)}`) as Promise<ChildRecord>,
       create: (payload: Record<string, unknown>): Promise<ChildRecord> =>
-        request('/children', { method: 'POST', body: payload }) as Promise<ChildRecord>,
-      update: (id: string, patch: Record<string, unknown>): Promise<ChildRecord> =>
+        request('/children', {
+          method: 'POST',
+          body: payload,
+        }) as Promise<ChildRecord>,
+      update: (
+        id: string,
+        patch: Record<string, unknown>,
+      ): Promise<ChildRecord> =>
         request(`/children/${encodeURIComponent(id)}`, {
           method: 'PATCH',
           body: patch,
         }) as Promise<ChildRecord>,
       delete: (id: string): Promise<void> =>
-        request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
+        request(`/children/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        }) as Promise<void>,
     },
   },
 };

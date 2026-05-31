@@ -1,10 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import { useNavigation } from '@react-navigation/native';
@@ -20,11 +15,15 @@ import PageActions from '@/components/shared/PageActions';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 
-type OnboardingNavigationProp = StackNavigationProp<OnboardingStackParamList, 'Onboarding'>;
+type OnboardingNavigationProp = StackNavigationProp<
+  OnboardingStackParamList,
+  'Onboarding'
+>;
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<OnboardingNavigationProp>();
-  const { user, isAuthenticated, isLoading, activeChildId, setActiveChildId } = useAuth();
+  const { user, isAuthenticated, isLoading, activeChildId, setActiveChildId } =
+    useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
 
@@ -62,7 +61,9 @@ export default function OnboardingScreen() {
   const [showSplash, startTimer] = useStageSplash();
   // Content animates in only when data is ready AND the stage-1 splash is gone —
   // mirrors web: animate={{ opacity: showSplash ? 0 : 1 }}
-  const contentStyle = useSlideUpWhenReady(!isLoading && !checking && !showSplash);
+  const contentStyle = useSlideUpWhenReady(
+    !isLoading && !checking && !showSplash,
+  );
 
   const handleContinue = useCallback(async () => {
     if (!isAuthenticated) {
@@ -109,12 +110,18 @@ export default function OnboardingScreen() {
       <Animated.View style={contentStyle} className="flex-1 bg-background">
         <ScrollView
           className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 32, paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 32,
+            paddingBottom: 40,
+          }}
           keyboardShouldPersistTaps="handled"
         >
           <View className="max-w-3xl w-full self-center">
             <WelcomePhase
-              onContinue={() => { void handleContinue(); }}
+              onContinue={() => {
+                void handleContinue();
+              }}
               isAuthenticated={isAuthenticated}
               user={user}
             />
@@ -130,7 +137,11 @@ export default function OnboardingScreen() {
                   <Text className="text-slate-300">← Back</Text>
                 </Button>
               }
-              center={childId ? <StartOverButton childId={childId} className="w-full" /> : undefined}
+              center={
+                childId ? (
+                  <StartOverButton childId={childId} className="w-full" />
+                ) : undefined
+              }
             />
           </View>
         </ScrollView>

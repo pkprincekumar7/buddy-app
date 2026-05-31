@@ -18,7 +18,12 @@ import Animated, {
   withTiming,
   Easing,
 } from 'react-native-reanimated';
-import Svg, { LinearGradient as SvgLinearGradient, Rect, Stop, Defs } from 'react-native-svg';
+import Svg, {
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+  Defs,
+} from 'react-native-svg';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RouteProp } from '@react-navigation/native';
@@ -32,21 +37,35 @@ import { useSlideUpWhenReady } from '@/lib/animations';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
-import { GradientIconBox, GradientButton, areaGrad } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+  areaGrad,
+} from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
 
-type GrowthNavProp = StackNavigationProp<GrowthStackParamList, 'GrowthAreasActivity'>;
+type GrowthNavProp = StackNavigationProp<
+  GrowthStackParamList,
+  'GrowthAreasActivity'
+>;
 type GrowthRouteProp = RouteProp<GrowthStackParamList, 'GrowthAreasActivity'>;
 
 export default function GrowthAreasActivityScreen() {
   const navigation = useNavigation<GrowthNavProp>();
   const route = useRoute<GrowthRouteProp>();
-  const { activityId, fromReview } = route.params as { activityId: string; fromReview?: boolean };
-  const { activeChildId, isAuthenticated, isLoading: isLoadingAuth } = useAuth();
+  const { activityId, fromReview } = route.params as {
+    activityId: string;
+    fromReview?: boolean;
+  };
+  const {
+    activeChildId,
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+  } = useAuth();
 
   const area = areaByUrlName(activityId ?? '');
   const questions: Question[] = useMemo(
-    () => (area ? (AREA_QUESTIONS[area.id] ?? []) : []),
+    () => (area ? AREA_QUESTIONS[area.id] ?? [] : []),
     [area],
   );
 
@@ -68,9 +87,15 @@ export default function GrowthAreasActivityScreen() {
   useEffect(() => {
     questionOpacity.value = 0;
     questionTranslateX.value = 40;
-    questionOpacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.ease) });
-    questionTranslateX.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.ease) });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    questionOpacity.value = withTiming(1, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+    questionTranslateX.value = withTiming(0, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qIndex]);
 
   const questionStyle = useAnimatedStyle(() => ({
@@ -100,8 +125,9 @@ export default function GrowthAreasActivityScreen() {
         if (cancelled) return;
         const allDocs = completedData.areas ?? [];
         const areaDoc =
-          allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ??
-          allDocs.find((a) => a.area_id === area.id);
+          allDocs.find(
+            a => a.area_id === area.id && a.status === 'in_progress',
+          ) ?? allDocs.find(a => a.area_id === area.id);
 
         const savedAnswers = areaDoc?.interactive_answers ?? {};
         setAnswers(savedAnswers);
@@ -118,9 +144,11 @@ export default function GrowthAreasActivityScreen() {
         } else {
           // No explicit navigation — jump to the first unanswered question (or Game if all done)
           const firstUnanswered = questions.findIndex(
-            (q) => !savedAnswers[q.id] || String(savedAnswers[q.id]).trim() === '',
+            q =>
+              !savedAnswers[q.id] || String(savedAnswers[q.id]).trim() === '',
           );
-          const startIndex = firstUnanswered === -1 ? questions.length : firstUnanswered;
+          const startIndex =
+            firstUnanswered === -1 ? questions.length : firstUnanswered;
 
           if (startIndex >= questions.length) {
             // All answered — go straight to Game
@@ -145,7 +173,16 @@ export default function GrowthAreasActivityScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, activeChildId, area, activityId, navigation, questions, fromReview]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    activeChildId,
+    area,
+    activityId,
+    navigation,
+    questions,
+    fromReview,
+  ]);
 
   // Keep ref in sync so the qIndex effect can read latest answers without depending on them.
   useEffect(() => {
@@ -156,7 +193,9 @@ export default function GrowthAreasActivityScreen() {
   useEffect(() => {
     const cq = questions[qIndex];
     if (cq) {
-      setCurrentAnswer(answersRef.current[cq.id] ? String(answersRef.current[cq.id]) : '');
+      setCurrentAnswer(
+        answersRef.current[cq.id] ? String(answersRef.current[cq.id]) : '',
+      );
     }
   }, [qIndex, questions]);
 
@@ -245,26 +284,38 @@ export default function GrowthAreasActivityScreen() {
   }
 
   const Icon = area.icon;
-  const questionText = currentQuestion.question.replace(/\{name\}/g, childName || 'your child');
+  const questionText = currentQuestion.question.replace(
+    /\{name\}/g,
+    childName || 'your child',
+  );
   const progress = ((qIndex + 1) / questions.length) * 100;
   const { from: gradFrom, to: gradTo } = areaGrad(area.color);
-  const progressFillW = progressTrackW > 0 ? (progressTrackW * progress) / 100 : 0;
+  const progressFillW =
+    progressTrackW > 0 ? (progressTrackW * progress) / 100 : 0;
 
   return (
     <Animated.View style={contentStyle} className="flex-1 bg-background">
       {/* Area header — gradient icon + area name + gradient progress bar */}
       <View className="border-b border-white/10 bg-slate-900/90 px-4 py-3">
         <View className="flex-row items-center gap-3">
-          <GradientIconBox from={gradFrom} to={gradTo} size={36} radius={12} diagonal>
+          <GradientIconBox
+            from={gradFrom}
+            to={gradTo}
+            size={36}
+            radius={12}
+            diagonal
+          >
             <Icon size={20} color="white" />
           </GradientIconBox>
           <View className="flex-1">
-            <Text className="text-sm font-semibold text-white">{area.name}</Text>
+            <Text className="text-sm font-semibold text-white">
+              {area.name}
+            </Text>
             {/* Gradient progress bar */}
             <View
               className="mt-1 overflow-hidden rounded-full bg-slate-800"
               style={{ height: 6 }}
-              onLayout={(e) => setProgressTrackW(e.nativeEvent.layout.width)}
+              onLayout={e => setProgressTrackW(e.nativeEvent.layout.width)}
             >
               {progressTrackW > 0 && (
                 <View
@@ -284,12 +335,23 @@ export default function GrowthAreasActivityScreen() {
                     style={{ position: 'absolute', top: 0, left: 0 }}
                   >
                     <Defs>
-                      <SvgLinearGradient id="pgGrad" x1="0" y1="0" x2="1" y2="0">
+                      <SvgLinearGradient
+                        id="pgGrad"
+                        x1="0"
+                        y1="0"
+                        x2="1"
+                        y2="0"
+                      >
                         <Stop offset="0%" stopColor={gradFrom} />
                         <Stop offset="100%" stopColor={gradTo} />
                       </SvgLinearGradient>
                     </Defs>
-                    <Rect width={progressTrackW} height={6} fill="url(#pgGrad)" rx={3} />
+                    <Rect
+                      width={progressTrackW}
+                      height={6}
+                      fill="url(#pgGrad)"
+                      rx={3}
+                    />
                   </Svg>
                 </View>
               )}
@@ -303,7 +365,11 @@ export default function GrowthAreasActivityScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 32, paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 32,
+          paddingBottom: 40,
+        }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -322,7 +388,7 @@ export default function GrowthAreasActivityScreen() {
           {/* Answer input — choices or free text */}
           {currentQuestion.type === 'choice' ? (
             <View className="gap-3">
-              {(currentQuestion.options ?? []).map((option) => {
+              {(currentQuestion.options ?? []).map(option => {
                 const isSelected = currentAnswer === option;
                 return (
                   <ChoiceOption
@@ -339,7 +405,7 @@ export default function GrowthAreasActivityScreen() {
           ) : (
             <TextareaWithVoice
               value={currentAnswer}
-              onChange={(e) => setCurrentAnswer(e.target.value)}
+              onChange={e => setCurrentAnswer(e.target.value)}
               placeholder={currentQuestion.placeholder ?? ''}
               className="border-white/10 bg-card text-white"
             />
@@ -361,7 +427,12 @@ export default function GrowthAreasActivityScreen() {
               </View>
             </Button>
           }
-          center={<StartOverButton childId={activeChildId ?? undefined} className="w-full" />}
+          center={
+            <StartOverButton
+              childId={activeChildId ?? undefined}
+              className="w-full"
+            />
+          }
           right={
             <GradientButton
               from={gradFrom}
@@ -407,8 +478,11 @@ function ChoiceOption({
     <TouchableOpacity
       activeOpacity={0.85}
       onPress={onPress}
-      onLayout={(e) =>
-        setDims({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      onLayout={e =>
+        setDims({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
       }
       style={{
         borderRadius: 16,
@@ -420,7 +494,11 @@ function ChoiceOption({
     >
       {/* Gradient fill when selected */}
       {isSelected && dims.w > 0 && dims.h > 0 && (
-        <Svg width={dims.w} height={dims.h} style={{ position: 'absolute', top: 0, left: 0 }}>
+        <Svg
+          width={dims.w}
+          height={dims.h}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
           <Defs>
             <SvgLinearGradient id="optGrad" x1="0" y1="0" x2="1" y2="0">
               <Stop offset="0%" stopColor={gradFrom} />
@@ -432,7 +510,9 @@ function ChoiceOption({
       )}
       <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
         <Text
-          className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}
+          className={`text-sm font-medium ${
+            isSelected ? 'text-white' : 'text-slate-300'
+          }`}
         >
           {option}
         </Text>

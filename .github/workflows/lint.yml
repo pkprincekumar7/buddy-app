@@ -170,6 +170,9 @@ jobs:
       - name: ESLint
         run: yarn lint
 
+      - name: Prettier (check only)
+        run: ./node_modules/.bin/prettier --check "src/**/*.{ts,tsx}"
+
       - name: TypeScript type check
         run: node_modules/.bin/tsc --noEmit
 

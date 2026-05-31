@@ -36,7 +36,8 @@ export function useOnboardingComplete({
       } else {
         const created = await api.entities.Child.create(finalData);
         childId = created?.id;
-        if (childId) dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: childId });
+        if (childId)
+          dispatch({ type: 'SET_ACTIVE_CHILD_ID', payload: childId });
       }
 
       if (!childId) throw new Error('No child ID available to save journey');
@@ -44,7 +45,9 @@ export function useOnboardingComplete({
       navigation.replace('Main');
     } catch (err) {
       console.error('[Onboarding] Failed to save journey:', err);
-      toast.error('Something went wrong saving your journey. Please try again.');
+      toast.error(
+        'Something went wrong saving your journey. Please try again.',
+      );
     } finally {
       dispatch({ type: 'SET_COMPLETION_BUSY', payload: false });
     }

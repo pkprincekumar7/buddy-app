@@ -111,7 +111,9 @@ const darkHeader = {
   headerStyle: { backgroundColor: '#0a0a0a' },
   headerTintColor: '#ffffff' as const,
   headerTitleStyle: { color: '#ffffff' as const },
-  headerTitle: (props: { children?: React.ReactNode }) => <HeaderTitle {...props} />,
+  headerTitle: (props: { children?: React.ReactNode }) => (
+    <HeaderTitle {...props} />
+  ),
   headerLeft: () => null,
   headerRight: () => <HeaderRight />,
 };
@@ -223,7 +225,9 @@ function MainTabNavigator() {
         component={GrowthNavigator}
         options={{
           headerShown: false,
-          tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <TrendingUp color={color} size={size} />
+          ),
         }}
       />
       <MainTab.Screen
@@ -287,7 +291,12 @@ function RootNavigator() {
   if (isLoading) {
     return (
       <View
-        style={{ flex: 1, backgroundColor: '#0a0a0a', alignItems: 'center', justifyContent: 'center' }}
+        style={{
+          flex: 1,
+          backgroundColor: '#0a0a0a',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
       >
         <ActivityIndicator size="large" color="#2dd4bf" />
       </View>
@@ -309,7 +318,10 @@ function RootNavigator() {
         <>
           <RootStack.Screen name="Main" component={MainTabNavigator} />
           {!activeChild?.onboarding_completed && (
-            <RootStack.Screen name="Onboarding" component={OnboardingNavigator} />
+            <RootStack.Screen
+              name="Onboarding"
+              component={OnboardingNavigator}
+            />
           )}
         </>
       )}

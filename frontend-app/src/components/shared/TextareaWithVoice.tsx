@@ -11,7 +11,10 @@ import { Textarea } from '@/components/ui/Textarea';
 import type { TextareaProps } from '@/components/ui/Textarea';
 import VoiceInput from './VoiceInput';
 
-export type TextareaWithVoiceProps = Omit<TextareaProps, 'onChangeText' | 'value' | 'onChange'> & {
+export type TextareaWithVoiceProps = Omit<
+  TextareaProps,
+  'onChangeText' | 'value' | 'onChange'
+> & {
   value?: string;
   /** Mirrors the web onChange signature so form libraries work unchanged. */
   onChange: (e: { target: { value: string } }) => void;
@@ -26,13 +29,21 @@ export default function TextareaWithVoice({
 }: TextareaWithVoiceProps) {
   const [isRecording, setIsRecording] = useState(false);
 
-  const handleTranscript = useCallback((transcript: string) => {
-    onChange({ target: { value: value ? `${value} ${transcript}` : transcript } });
-  }, [onChange, value]);
+  const handleTranscript = useCallback(
+    (transcript: string) => {
+      onChange({
+        target: { value: value ? `${value} ${transcript}` : transcript },
+      });
+    },
+    [onChange, value],
+  );
 
-  const handleChangeText = useCallback((text: string) => {
-    onChange({ target: { value: text } });
-  }, [onChange]);
+  const handleChangeText = useCallback(
+    (text: string) => {
+      onChange({ target: { value: text } });
+    },
+    [onChange],
+  );
 
   return (
     <View className="relative">

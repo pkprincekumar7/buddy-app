@@ -30,11 +30,23 @@ function Sheet({ open = false, onOpenChange, children }: SheetProps) {
   );
 }
 
-function SheetTrigger({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) {
+function SheetTrigger({
+  children,
+  onPress,
+}: {
+  children?: React.ReactNode;
+  onPress?: () => void;
+}) {
   return <Pressable onPress={onPress}>{children}</Pressable>;
 }
 
-function SheetClose({ children, onPress }: { children?: React.ReactNode; onPress?: () => void }) {
+function SheetClose({
+  children,
+  onPress,
+}: {
+  children?: React.ReactNode;
+  onPress?: () => void;
+}) {
   return <Pressable onPress={onPress}>{children}</Pressable>;
 }
 
@@ -47,18 +59,28 @@ interface SheetContentProps extends ViewProps {
   onClose?: () => void;
 }
 
-function SheetContent({ side: _side = 'bottom', children, className, onClose, ...props }: SheetContentProps) {
+function SheetContent({
+  side: _side = 'bottom',
+  children,
+  className,
+  onClose,
+  ...props
+}: SheetContentProps) {
   const translateY = useSharedValue(SCREEN_HEIGHT);
 
   useEffect(() => {
     translateY.value = withTiming(0, { duration: 350 });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleClose = () => {
-    translateY.value = withTiming(SCREEN_HEIGHT, { duration: 300 }, (finished) => {
-      if (finished) runOnJS(onClose ?? (() => {}))();
-    });
+    translateY.value = withTiming(
+      SCREEN_HEIGHT,
+      { duration: 300 },
+      finished => {
+        if (finished) runOnJS(onClose ?? (() => {}))();
+      },
+    );
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -67,16 +89,25 @@ function SheetContent({ side: _side = 'bottom', children, className, onClose, ..
 
   return (
     <View className="flex-1 justify-end">
-      <Pressable className="absolute inset-0 bg-black/80" onPress={handleClose} />
+      <Pressable
+        className="absolute inset-0 bg-black/80"
+        onPress={handleClose}
+      />
       <Animated.View
         style={animatedStyle}
-        className={cn('relative z-10 rounded-t-2xl bg-background p-6 shadow-lg', className)}
+        className={cn(
+          'relative z-10 rounded-t-2xl bg-background p-6 shadow-lg',
+          className,
+        )}
         {...props}
       >
         <View className="mb-4 flex-row items-center justify-between">
           <View className="mx-auto h-1.5 w-12 rounded-full bg-muted" />
           {onClose && (
-            <Pressable className="absolute right-0 opacity-70" onPress={handleClose}>
+            <Pressable
+              className="absolute right-0 opacity-70"
+              onPress={handleClose}
+            >
               <Text className="text-foreground">✕</Text>
             </Pressable>
           )}
@@ -87,22 +118,60 @@ function SheetContent({ side: _side = 'bottom', children, className, onClose, ..
   );
 }
 
-function SheetHeader({ className, ...props }: ViewProps & { className?: string }) {
+function SheetHeader({
+  className,
+  ...props
+}: ViewProps & { className?: string }) {
   return <View className={cn('flex-col gap-1.5 mb-4', className)} {...props} />;
 }
 
-function SheetFooter({ className, ...props }: ViewProps & { className?: string }) {
-  return <View className={cn('flex-row justify-end gap-2 mt-4', className)} {...props} />;
-}
-
-function SheetTitle({ className, children }: { className?: string; children?: React.ReactNode }) {
+function SheetFooter({
+  className,
+  ...props
+}: ViewProps & { className?: string }) {
   return (
-    <Text className={cn('text-lg font-semibold text-foreground', className)}>{children}</Text>
+    <View
+      className={cn('flex-row justify-end gap-2 mt-4', className)}
+      {...props}
+    />
   );
 }
 
-function SheetDescription({ className, children }: { className?: string; children?: React.ReactNode }) {
-  return <Text className={cn('text-sm text-muted-foreground', className)}>{children}</Text>;
+function SheetTitle({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Text className={cn('text-lg font-semibold text-foreground', className)}>
+      {children}
+    </Text>
+  );
 }
 
-export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetFooter, SheetTitle, SheetDescription };
+function SheetDescription({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <Text className={cn('text-sm text-muted-foreground', className)}>
+      {children}
+    </Text>
+  );
+}
+
+export {
+  Sheet,
+  SheetTrigger,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetFooter,
+  SheetTitle,
+  SheetDescription,
+};

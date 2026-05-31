@@ -25,7 +25,11 @@ import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { GradientIconBox, GradientButton, areaGrad } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+  areaGrad,
+} from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
 
 type GrowthNavProp = StackNavigationProp<GrowthStackParamList, 'GrowthAreas'>;
@@ -50,7 +54,7 @@ function AnimatedAreaCard({
     const cfg = { duration: 800, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateY.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const cardStyle = useAnimatedStyle(() => ({
@@ -84,7 +88,9 @@ function AnimatedAreaCard({
         </View>
 
         <Text className="text-sm font-semibold text-white">{area.name}</Text>
-        <Text className="mt-0.5 text-xs text-slate-500">{area.description}</Text>
+        <Text className="mt-0.5 text-xs text-slate-500">
+          {area.description}
+        </Text>
 
         {done && (
           <View style={{ position: 'absolute', top: 12, right: 12 }}>
@@ -98,19 +104,29 @@ function AnimatedAreaCard({
 
 export default function GrowthAreasScreen() {
   const navigation = useNavigation<GrowthNavProp>();
-  const { activeChildId, isAuthenticated, isLoading: isLoadingAuth } = useAuth();
+  const {
+    activeChildId,
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+  } = useAuth();
 
-  const [completedAreaIds, setCompletedAreaIds] = useState<Set<string | undefined>>(new Set());
+  const [completedAreaIds, setCompletedAreaIds] = useState<
+    Set<string | undefined>
+  >(new Set());
   const [hydrated, setHydrated] = useState(false);
 
   const [showSplash, startTimer] = useStageSplash();
 
   const scrollRef = useRef<ScrollView>(null);
-  useFocusEffect(useCallback(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, []),
+  );
 
-  const contentStyle = useFocusEntranceAnim(!isLoadingAuth && hydrated && !showSplash);
+  const contentStyle = useFocusEntranceAnim(
+    !isLoadingAuth && hydrated && !showSplash,
+  );
   // Life Pathway button fades in when it becomes visible (mirrors web motion.div opacity 0→1)
   const pathwayFadeStyle = useFadeIn(0, 600);
 
@@ -133,13 +149,13 @@ export default function GrowthAreasScreen() {
         const done = new Set(
           allDocs
             .filter(
-              (a) =>
+              a =>
                 a.status === 'completed' ||
                 !a.status ||
                 (Array.isArray(a.ai_three_month_recommendations) &&
                   a.ai_three_month_recommendations.length > 0),
             )
-            .map((a) => a.area_id),
+            .map(a => a.area_id),
         );
         setCompletedAreaIds(done);
       } catch (err) {
@@ -166,81 +182,102 @@ export default function GrowthAreasScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-    <Animated.View style={contentStyle} className="flex-1 bg-background">
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 32, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View className="mb-8 items-center">
-          <Text className="mb-2 text-2xl font-bold text-white">Growth Areas</Text>
-          <Text className="text-slate-400">Choose an area to explore</Text>
-        </View>
+      <Animated.View style={contentStyle} className="flex-1 bg-background">
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 32,
+            paddingBottom: 40,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View className="mb-8 items-center">
+            <Text className="mb-2 text-2xl font-bold text-white">
+              Growth Areas
+            </Text>
+            <Text className="text-slate-400">Choose an area to explore</Text>
+          </View>
 
-        {/* Grid — 2-column, staggered entrance */}
-        <View className="flex-row flex-wrap" style={{ gap: 12 }}>
-          {GROWTH_AREAS.map((area, index) => (
-            <AnimatedAreaCard
-              key={area.id}
-              area={area}
-              index={index}
-              done={completedAreaIds.has(area.id)}
-              onPress={() =>
-                navigation.navigate('GrowthAreasActivity', { activityId: area.urlName, fromReview: true })
-              }
-            />
-          ))}
-        </View>
+          {/* Grid — 2-column, staggered entrance */}
+          <View className="flex-row flex-wrap" style={{ gap: 12 }}>
+            {GROWTH_AREAS.map((area, index) => (
+              <AnimatedAreaCard
+                key={area.id}
+                area={area}
+                index={index}
+                done={completedAreaIds.has(area.id)}
+                onPress={() =>
+                  navigation.navigate('GrowthAreasActivity', {
+                    activityId: area.urlName,
+                    fromReview: true,
+                  })
+                }
+              />
+            ))}
+          </View>
 
-        {/* Actions */}
-        <PageActions
-          className="mt-8"
-          left={
-            <Button
-              variant="outline"
-              onPress={() =>
-                (navigation.getParent() as unknown as { navigate: (name: string, params?: unknown) => void })?.navigate(
-                  'Personality',
-                  {
+          {/* Actions */}
+          <PageActions
+            className="mt-8"
+            left={
+              <Button
+                variant="outline"
+                onPress={() =>
+                  (
+                    navigation.getParent() as unknown as {
+                      navigate: (name: string, params?: unknown) => void;
+                    }
+                  )?.navigate('Personality', {
                     screen: 'PersonalityJourney',
-                    params: activeChildId ? { childId: activeChildId, fromBack: true } : { fromBack: true },
-                  },
-                )
-              }
-              className="h-12 w-full rounded-2xl px-6"
-            >
-              <View className="flex-row items-center gap-1.5">
-                <ChevronLeft size={16} color="#cbd5e1" />
-                <Text className="text-sm font-medium text-slate-300">Back</Text>
-              </View>
-            </Button>
-          }
-          center={<StartOverButton childId={activeChildId ?? undefined} className="w-full" />}
-          right={
-            anyDone ? (
-              <Animated.View style={pathwayFadeStyle} className="w-full">
-                <GradientButton
-                  from="#14b8a6"
-                  to="#059669"
-                  height={48}
-                  borderRadius={16}
-                  onPress={() => {
-                    navigation.getParent()?.navigate('LifePathway' as never);
-                  }}
-                  style={{ width: '100%' }}
-                >
-                  <Text className="font-semibold text-[#0a0a0a]">View Your Life Pathway</Text>
-                </GradientButton>
-              </Animated.View>
-            ) : undefined
-          }
-        />
-      </ScrollView>
-    </Animated.View>
+                    params: activeChildId
+                      ? { childId: activeChildId, fromBack: true }
+                      : { fromBack: true },
+                  })
+                }
+                className="h-12 w-full rounded-2xl px-6"
+              >
+                <View className="flex-row items-center gap-1.5">
+                  <ChevronLeft size={16} color="#cbd5e1" />
+                  <Text className="text-sm font-medium text-slate-300">
+                    Back
+                  </Text>
+                </View>
+              </Button>
+            }
+            center={
+              <StartOverButton
+                childId={activeChildId ?? undefined}
+                className="w-full"
+              />
+            }
+            right={
+              anyDone ? (
+                <Animated.View style={pathwayFadeStyle} className="w-full">
+                  <GradientButton
+                    from="#14b8a6"
+                    to="#059669"
+                    height={48}
+                    borderRadius={16}
+                    onPress={() => {
+                      navigation.getParent()?.navigate('LifePathway' as never);
+                    }}
+                    style={{ width: '100%' }}
+                  >
+                    <Text className="font-semibold text-[#0a0a0a]">
+                      View Your Life Pathway
+                    </Text>
+                  </GradientButton>
+                </Animated.View>
+              ) : undefined
+            }
+          />
+        </ScrollView>
+      </Animated.View>
 
-    {showSplash && <StageSplash stage={5} onReady={startTimer} />}
+      {showSplash && <StageSplash stage={5} onReady={startTimer} />}
     </View>
   );
 }

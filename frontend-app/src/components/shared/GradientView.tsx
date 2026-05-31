@@ -18,22 +18,28 @@ import Svg, {
 // ── Tailwind area.color → hex gradient pairs ──────────────────────────────────
 
 /** Maps Tailwind growth-area `.color` strings to actual hex gradient pairs. */
-export const AREA_GRADIENT_COLORS: Record<string, { from: string; to: string }> = {
+export const AREA_GRADIENT_COLORS: Record<
+  string,
+  { from: string; to: string }
+> = {
   'from-purple-500 to-indigo-600': { from: '#a855f7', to: '#4f46e5' },
-  'from-rose-500 to-pink-600':     { from: '#f43f5e', to: '#db2777' },
-  'from-blue-500 to-cyan-600':     { from: '#3b82f6', to: '#0891b2' },
-  'from-amber-500 to-orange-600':  { from: '#f59e0b', to: '#ea580c' },
-  'from-emerald-500 to-teal-600':  { from: '#10b981', to: '#0d9488' },
+  'from-rose-500 to-pink-600': { from: '#f43f5e', to: '#db2777' },
+  'from-blue-500 to-cyan-600': { from: '#3b82f6', to: '#0891b2' },
+  'from-amber-500 to-orange-600': { from: '#f59e0b', to: '#ea580c' },
+  'from-emerald-500 to-teal-600': { from: '#10b981', to: '#0d9488' },
   'from-violet-500 to-purple-600': { from: '#8b5cf6', to: '#9333ea' },
 };
 
 /** Lighter tile palette used in GrowthAreasActivityGame. */
-export const TILE_GRADIENT_COLORS: Record<string, { from: string; to: string }> = {
+export const TILE_GRADIENT_COLORS: Record<
+  string,
+  { from: string; to: string }
+> = {
   'from-purple-400 to-indigo-500': { from: '#c084fc', to: '#6366f1' },
-  'from-rose-400 to-pink-500':     { from: '#fb7185', to: '#ec4899' },
-  'from-amber-400 to-orange-500':  { from: '#fbbf24', to: '#f97316' },
-  'from-emerald-400 to-teal-500':  { from: '#34d399', to: '#14b8a6' },
-  'from-blue-400 to-cyan-500':     { from: '#60a5fa', to: '#06b6d4' },
+  'from-rose-400 to-pink-500': { from: '#fb7185', to: '#ec4899' },
+  'from-amber-400 to-orange-500': { from: '#fbbf24', to: '#f97316' },
+  'from-emerald-400 to-teal-500': { from: '#34d399', to: '#14b8a6' },
+  'from-blue-400 to-cyan-500': { from: '#60a5fa', to: '#06b6d4' },
   'from-violet-400 to-purple-500': { from: '#a78bfa', to: '#a855f7' },
 };
 
@@ -86,9 +92,19 @@ export function GradientIconBox({
         justifyContent: 'center',
       }}
     >
-      <Svg width={size} height={size} style={{ position: 'absolute', top: 0, left: 0 }}>
+      <Svg
+        width={size}
+        height={size}
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      >
         <Defs>
-          <SvgLinearGradient id="iconGrad" x1="0" y1="0" x2="1" y2={diagonal ? '1' : '0'}>
+          <SvgLinearGradient
+            id="iconGrad"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2={diagonal ? '1' : '0'}
+          >
             <Stop offset="0%" stopColor={gradFrom} />
             <Stop offset="100%" stopColor={gradTo} />
           </SvgLinearGradient>
@@ -141,8 +157,11 @@ export function GradientSurface({
     <View
       className={className}
       style={[{ overflow: 'hidden' }, style]}
-      onLayout={(e) =>
-        setDims({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      onLayout={e =>
+        setDims({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
       }
     >
       {dims.w > 0 && dims.h > 0 && (
@@ -152,7 +171,13 @@ export function GradientSurface({
           style={{ position: 'absolute', top: 0, left: 0 }}
         >
           <Defs>
-            <SvgLinearGradient id="gsGrad" x1="0" y1="0" x2="1" y2={diagonal ? '1' : '0'}>
+            <SvgLinearGradient
+              id="gsGrad"
+              x1="0"
+              y1="0"
+              x2="1"
+              y2={diagonal ? '1' : '0'}
+            >
               <Stop offset="0%" stopColor={fromColor} />
               <Stop offset="100%" stopColor={toColor} />
             </SvgLinearGradient>
@@ -189,8 +214,11 @@ export function GradientButton({
       activeOpacity={isDisabled ? 1 : 0.8}
       disabled={isDisabled}
       onPress={onPress}
-      onLayout={(e) =>
-        setDims({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      onLayout={e =>
+        setDims({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
       }
       style={[
         {
@@ -206,14 +234,23 @@ export function GradientButton({
       {...rest}
     >
       {dims.w > 0 && dims.h > 0 && (
-        <Svg width={dims.w} height={dims.h} style={{ position: 'absolute', top: 0, left: 0 }}>
+        <Svg
+          width={dims.w}
+          height={dims.h}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
           <Defs>
             <SvgLinearGradient id="btnGrad" x1="0" y1="0" x2="1" y2="0">
               <Stop offset="0%" stopColor={gradFrom} />
               <Stop offset="100%" stopColor={gradTo} />
             </SvgLinearGradient>
           </Defs>
-          <Rect width={dims.w} height={dims.h} fill="url(#btnGrad)" rx={borderRadius} />
+          <Rect
+            width={dims.w}
+            height={dims.h}
+            fill="url(#btnGrad)"
+            rx={borderRadius}
+          />
         </Svg>
       )}
       {loading ? <ActivityIndicator color="#0a0a0a" /> : children}

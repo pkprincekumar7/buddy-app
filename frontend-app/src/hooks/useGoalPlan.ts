@@ -75,11 +75,15 @@ export function buildGoalPlanIndex(goalPlan: GoalPlan | null): {
 }
 
 export function useGoalPlan(childId: string | undefined) {
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState<GoalPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>([]);
+  const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>(
+    [],
+  );
 
   const generateGoals = useCallback(
     async (
@@ -103,24 +107,31 @@ export function useGoalPlan(childId: string | undefined) {
           const allAreas = Array.isArray(freshCompleted.areas)
             ? (freshCompleted.areas as Activity[])
             : [];
-          areas = allAreas.filter((a) => a.status === 'completed' || !a.status);
+          areas = allAreas.filter(a => a.status === 'completed' || !a.status);
         }
 
         const obRecord = ob;
-        const personality = obRecord?.personality as Record<string, unknown> | undefined;
+        const personality = obRecord?.personality as
+          | Record<string, unknown>
+          | undefined;
         const vm = personality?.view_model as
           | { type?: string; profile?: Record<string, unknown> }
           | undefined;
-        const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
+        const profile =
+          vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
         const safeAreas = areas ?? [];
         const areasContext = safeAreas
-          .map((a) => `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`)
+          .map(
+            a =>
+              `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`,
+          )
           .join('\n');
 
         const plan = (await api.integrations.Core.InvokeLLM({
           prompt: buildGoalsMonthlyPlanPrompt({
             childName: obRecord?.name as string | undefined,
             childAge: obRecord?.age as number | undefined,
+            childGender: obRecord?.gender as string | undefined,
             parentConcern,
             personalityType: profile?.personality_type,
             areasContext,
@@ -175,11 +186,15 @@ export function useGoalPlan(childId: string | undefined) {
         const allFetched = Array.isArray(completedRecord?.areas)
           ? (completedRecord.areas as Activity[])
           : [];
-        const areas = allFetched.filter((a) => a.status === 'completed' || !a.status);
+        const areas = allFetched.filter(
+          a => a.status === 'completed' || !a.status,
+        );
         setSavedCompletedAreas(areas);
 
         const savedConcern =
-          typeof goalsRecord?.parent_concern === 'string' ? goalsRecord.parent_concern : '';
+          typeof goalsRecord?.parent_concern === 'string'
+            ? goalsRecord.parent_concern
+            : '';
         setConcern(savedConcern);
 
         if (goalsRecord?.plan) {
@@ -205,9 +220,14 @@ export function useGoalPlan(childId: string | undefined) {
       actIdx: number,
       result: Record<string, unknown>,
     ) => {
-      const updatedPlan = JSON.parse(JSON.stringify(goalPlan)) as typeof goalPlan;
+      const updatedPlan = JSON.parse(
+        JSON.stringify(goalPlan),
+      ) as typeof goalPlan;
       if (!updatedPlan) return;
-      const act = updatedPlan.months[monthIdx]?.periods?.[periodIdx]?.activities?.[actIdx];
+      const act =
+        updatedPlan.months[monthIdx]?.periods?.[periodIdx]?.activities?.[
+          actIdx
+        ];
       if (act) {
         Object.assign(act, { completed: true, ...result });
       }
@@ -226,10 +246,13 @@ export function useGoalPlan(childId: string | undefined) {
   // Clears completion data from the target activity and every activity after it.
   const handleActivityReset = useCallback(
     async (monthIdx: number, periodIdx: number, actIdx: number) => {
-      const updatedPlan = JSON.parse(JSON.stringify(goalPlan)) as typeof goalPlan;
+      const updatedPlan = JSON.parse(
+        JSON.stringify(goalPlan),
+      ) as typeof goalPlan;
       if (!updatedPlan) return;
       const { flatIndexMap } = buildGoalPlanIndex(updatedPlan);
-      const resetFlatIdx = flatIndexMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
+      const resetFlatIdx =
+        flatIndexMap.get(`${monthIdx}-${periodIdx}-${actIdx}`) ?? 0;
 
       flatIndexMap.forEach((flatIdx, key) => {
         if (flatIdx >= resetFlatIdx) {
@@ -245,6 +268,10 @@ export function useGoalPlan(childId: string | undefined) {
             act.progress_observation = undefined;
             act.ai_feedback = undefined;
             act.parent_feedback = undefined;
+            act.what_changed = undefined;
+            act.what_learned = undefined;
+            act.recommendation = undefined;
+            act.answers_text = undefined;
           }
         }
       });
@@ -266,11 +293,17 @@ export function useGoalPlan(childId: string | undefined) {
     goalPlan?.months?.forEach((month, mIdx) => {
       month.periods?.forEach((period, pIdx) => {
         period.activities?.forEach((act, aIdx) => {
-          if (act.completed) completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`] = { ...act };
+          if (act.completed)
+            completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`] = { ...act };
         });
       });
     });
-    await generateGoals(childData, concern, savedCompletedAreas, completedSnapshot);
+    await generateGoals(
+      childData,
+      concern,
+      savedCompletedAreas,
+      completedSnapshot,
+    );
   }, [goalPlan, childData, concern, savedCompletedAreas, generateGoals]);
 
   return {

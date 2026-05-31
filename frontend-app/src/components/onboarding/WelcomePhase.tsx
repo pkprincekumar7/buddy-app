@@ -18,7 +18,15 @@ interface WelcomePhaseProps {
 }
 
 // Each feature item gets its own animated wrapper so hooks are called at component level.
-function FeatureItem({ emoji, text, delay }: { emoji: string; text: string; delay: number }) {
+function FeatureItem({
+  emoji,
+  text,
+  delay,
+}: {
+  emoji: string;
+  text: string;
+  delay: number;
+}) {
   const anim = useFadeIn(delay, 700);
   return (
     <Animated.View style={anim} className="flex-row items-center gap-3">
@@ -30,7 +38,11 @@ function FeatureItem({ emoji, text, delay }: { emoji: string; text: string; dela
   );
 }
 
-export default function WelcomePhase({ onContinue, isAuthenticated, user }: WelcomePhaseProps) {
+export default function WelcomePhase({
+  onContinue,
+  isAuthenticated,
+  user,
+}: WelcomePhaseProps) {
   const handleGoogleLogin = () => {
     void api.auth.redirectToLogin();
   };
@@ -61,7 +73,8 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
 
         <Animated.View style={subtitleAnim} className="items-center px-4">
           <Text className="text-center text-base leading-relaxed text-slate-400">
-            A guided journey to help your child discover their strengths and design a meaningful life
+            A guided journey to help your child discover their strengths and
+            design a meaningful life
           </Text>
         </Animated.View>
       </View>
@@ -87,7 +100,10 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
       </Animated.View>
 
       {/* Login/Continue */}
-      <Animated.View style={ctaAnim} className="mx-4 mb-8 items-center space-y-4">
+      <Animated.View
+        style={ctaAnim}
+        className="mx-4 mb-8 items-center space-y-4"
+      >
         {isAuthenticated ? (
           <>
             <View className="w-full flex-row items-center gap-3 rounded-2xl bg-surface-elevated p-4 border border-white/10">
@@ -97,7 +113,9 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
                 </Text>
               </View>
               <View>
-                <Text className="text-sm font-medium text-white">{user?.full_name ?? 'Welcome!'}</Text>
+                <Text className="text-sm font-medium text-white">
+                  {user?.full_name ?? 'Welcome!'}
+                </Text>
                 <Text className="text-xs text-slate-500">{user?.email}</Text>
               </View>
             </View>
@@ -106,14 +124,18 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               onPress={onContinue}
               className="w-full rounded-2xl h-14 bg-teal-500 items-center justify-center"
             >
-              <Text className="text-base font-semibold text-[#0a0a0a]">✨ Let's Begin</Text>
+              <Text className="text-base font-semibold text-[#0a0a0a]">
+                ✨ Let's Begin
+              </Text>
             </Button>
           </>
         ) : (
           <>
             <View className="w-full rounded-2xl bg-surface-elevated p-5 border border-white/10">
               <View className="mb-4 flex-row items-center justify-center gap-2">
-                <Text className="text-xs text-slate-500">🛡 Sign in to save your progress securely</Text>
+                <Text className="text-xs text-slate-500">
+                  🛡 Sign in to save your progress securely
+                </Text>
               </View>
 
               <Pressable
@@ -121,12 +143,15 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
                 className="h-12 w-full flex-row items-center justify-center rounded-xl bg-[#242424] border border-white/10"
                 android_ripple={{ color: '#2a2a2a' }}
               >
-                <Text className="text-sm font-medium text-white">Continue with Google</Text>
+                <Text className="text-sm font-medium text-white">
+                  Continue with Google
+                </Text>
               </Pressable>
             </View>
 
             <Text className="text-xs text-slate-600 text-center">
-              By continuing, you agree to our Terms of Service and Privacy Policy
+              By continuing, you agree to our Terms of Service and Privacy
+              Policy
             </Text>
           </>
         )}

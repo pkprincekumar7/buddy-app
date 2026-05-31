@@ -51,18 +51,36 @@ export interface ButtonProps
 }
 
 const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
-  ({ className, textClassName, variant, size, children, disabled, loading, ...props }, ref) => {
+  (
+    {
+      className,
+      textClassName,
+      variant,
+      size,
+      children,
+      disabled,
+      loading,
+      ...props
+    },
+    ref,
+  ) => {
     const isDisabled = disabled || loading;
     return (
       <Pressable
         ref={ref}
         disabled={isDisabled}
-        className={cn(buttonVariants({ variant, size }), isDisabled && 'opacity-50', className)}
+        className={cn(
+          buttonVariants({ variant, size }),
+          isDisabled && 'opacity-50',
+          className,
+        )}
         {...props}
       >
         {loading && <ActivityIndicator size="small" color="currentColor" />}
         {typeof children === 'string' ? (
-          <Text className={cn(textVariants({ variant }), textClassName)}>{children}</Text>
+          <Text className={cn(textVariants({ variant }), textClassName)}>
+            {children}
+          </Text>
         ) : (
           children
         )}

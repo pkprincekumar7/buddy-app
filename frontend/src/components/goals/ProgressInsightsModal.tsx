@@ -62,6 +62,8 @@ interface ProgressInsightsModalProps {
   goalPlan: GoalPlan;
   childId?: string;
   childName?: string;
+  childAge?: string | number | null;
+  childGender?: string | null;
   onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
@@ -217,6 +219,8 @@ export default function ProgressInsightsModal({
   goalPlan,
   childId,
   childName,
+  childAge,
+  childGender,
   onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
@@ -231,8 +235,12 @@ export default function ProgressInsightsModal({
   // being listed as a dependency (re-generation is driven by insightsData reset, not prop changes).
   const goalPlanRef = useRef(goalPlan);
   const childNameRef = useRef(childName);
+  const childAgeRef = useRef(childAge);
+  const childGenderRef = useRef(childGender);
   goalPlanRef.current = goalPlan;
   childNameRef.current = childName;
+  childAgeRef.current = childAge;
+  childGenderRef.current = childGender;
 
   const monthData = useMemo(() => buildMonthData(goalPlan), [goalPlan]);
 
@@ -267,12 +275,17 @@ export default function ProgressInsightsModal({
     // Re-generation is intentionally driven only by insightsData being reset (e.g. on retry).
     const plan = goalPlanRef.current;
     const name = childNameRef.current;
+    const age = childAgeRef.current;
+    const gender = childGenderRef.current;
     const currentCount = completedCount(plan);
 
-    // Valid cache: same schema version and generated after the last completed activity.
+    // Valid cache: same schema version, generated after the last completed activity,
+    // and actually contains insights (don't serve a previously-saved empty result).
     if (
       plan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
-      plan?.insights_signature === currentCount
+      plan?.insights_signature === currentCount &&
+      Array.isArray(plan.insights.insight_items) &&
+      plan.insights.insight_items.length > 0
     ) {
       setInsightsData(plan.insights);
       return;
@@ -283,17 +296,21 @@ export default function ProgressInsightsModal({
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const payload = await generateInsights(name, plan);
-        const updatedPlan: GoalPlan = {
-          ...plan,
-          insights: { ...payload, schema_version: payload.schema_version },
-          insights_signature: currentCount,
-        };
-        try {
-          await api.goals.patch(childId ?? '', { plan: updatedPlan });
-          onPlanUpdate?.(updatedPlan);
-        } catch (err) {
-          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+        const payload = await generateInsights(name, plan, age, gender);
+        // Only persist non-empty insights — if no activities are completed yet the
+        // guard returns [] and we don't want that to be cached permanently.
+        if (payload.insight_items.length > 0) {
+          const updatedPlan: GoalPlan = {
+            ...plan,
+            insights: { ...payload, schema_version: payload.schema_version },
+            insights_signature: currentCount,
+          };
+          try {
+            await api.goals.patch(childId ?? '', { plan: updatedPlan });
+            onPlanUpdate?.(updatedPlan);
+          } catch (err) {
+            console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+          }
         }
         setInsightsData(payload);
       } catch (err) {
@@ -613,8 +630,19 @@ export default function ProgressInsightsModal({
                   </div>
                 )}
 
+                {/* Empty state — no completed activities yet */}
+                {insightsData && !insightsLoading && insightsData.insight_items.length === 0 && (
+                  <div className="flex flex-col items-center gap-3 py-16 text-center">
+                    <p className="text-base font-semibold text-slate-300">No insights yet</p>
+                    <p className="max-w-xs text-sm text-slate-500">
+                      Complete at least one activity to generate personalised insights for{' '}
+                      {childName ?? 'your child'}.
+                    </p>
+                  </div>
+                )}
+
                 {/* Insights list */}
-                {insightsData && !insightsLoading && (
+                {insightsData && !insightsLoading && insightsData.insight_items.length > 0 && (
                   <div className="border-edge-faint divide-y divide-white/[0.04] overflow-hidden rounded-2xl">
                     {(insightsData.insight_items || []).map((itemRaw, idx) => {
                       const item = itemRaw as InsightItem;

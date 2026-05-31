@@ -29,6 +29,9 @@ interface DashActivity {
   note?: unknown;
   scorable?: unknown;
   ai_feedback?: unknown;
+  what_changed?: string | null;
+  what_learned?: string | null;
+  recommendation?: string | null;
   parent_feedback?: unknown;
   title?: string;
   objective?: string;
@@ -41,6 +44,8 @@ interface ActiveActivity {
   periodIdx: number;
   actIdx: number;
   originalActivity: DashActivity | null;
+  monthGoal: string;
+  monthObjective: string;
 }
 
 // Animation timing constants
@@ -237,18 +242,8 @@ function MonthCard({
                               {act.objective}
                             </p>
                             {act.completed ? (
-                              <div className="mt-2 space-y-1">
-                                <p className="text-xs font-semibold text-emerald-400">
-                                  <span aria-hidden="true">✅</span>{' '}
-                                  {String(
-                                    (act.ai_feedback as
-                                      | string
-                                      | number
-                                      | boolean
-                                      | null
-                                      | undefined) ?? '',
-                                  )}
-                                </p>
+                              <div className="mt-2 space-y-1.5">
+                                {/* Score / Note */}
                                 {act.scorable !== false ? (
                                   <p className="text-xs font-bold text-slate-300">
                                     Score:{' '}
@@ -267,6 +262,30 @@ function MonthCard({
                                     )}
                                   </p>
                                 )}
+                                {/* What changed */}
+                                {!!act.what_changed && (
+                                  <p className="text-xs text-slate-400">
+                                    <span className="font-semibold text-slate-300">
+                                      What changed:{' '}
+                                    </span>
+                                    {String(act.what_changed)}
+                                  </p>
+                                )}
+                                {/* What learned */}
+                                {!!act.what_learned && (
+                                  <p className="text-xs text-slate-400">
+                                    <span className="font-semibold text-slate-300">Learnt: </span>
+                                    {String(act.what_learned)}
+                                  </p>
+                                )}
+                                {/* Recommendation */}
+                                {!!act.recommendation && (
+                                  <p className="text-xs text-teal-400">
+                                    <span className="font-semibold">Next: </span>
+                                    {String(act.recommendation)}
+                                  </p>
+                                )}
+                                {/* Parent feedback */}
                                 {!!act.parent_feedback && (
                                   <p className="text-xs italic text-slate-500">
                                     Parent:{' '}
@@ -292,6 +311,8 @@ function MonthCard({
                                     periodIdx: pIdx,
                                     actIdx: aIdx,
                                     originalActivity: originalAct,
+                                    monthGoal: String(month.goal ?? ''),
+                                    monthObjective: String(month.objective ?? ''),
                                   });
                                 }}
                                 className={`mt-1.5 text-xs font-medium ${color.text} hover:underline`}
@@ -503,6 +524,10 @@ export default function GoalsDashboard() {
                         | undefined) ?? undefined
                     }
                     childName={childData?.['name'] as string | undefined}
+                    childAge={childData?.['age'] as number | string | undefined}
+                    childGender={childData?.['gender'] as string | undefined}
+                    goal={activeActivity.monthGoal || concern || undefined}
+                    impact={activeActivity.monthObjective || undefined}
                     onClose={() => setActiveActivity(null)}
                     onComplete={handleActivityComplete}
                   />
@@ -512,6 +537,8 @@ export default function GoalsDashboard() {
                     goalPlan={goalPlan}
                     childId={childData?.['id'] as string | undefined}
                     childName={childData?.['name'] as string | undefined}
+                    childAge={childData?.['age'] as string | number | undefined}
+                    childGender={childData?.['gender'] as string | undefined}
                     onPlanUpdate={(plan) => setGoalPlan(plan)}
                     onClose={() => setShowProgress(false)}
                   />

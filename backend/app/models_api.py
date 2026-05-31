@@ -155,6 +155,10 @@ class GoalsActivity(BaseModel):
     progress_observation: str | None = Field(None, max_length=1000)
     ai_feedback: str | None = Field(None, max_length=2000)
     parent_feedback: str | None = Field(None, max_length=2000)
+    what_changed: str | None = Field(None, max_length=2000)
+    what_learned: str | None = Field(None, max_length=2000)
+    recommendation: str | None = Field(None, max_length=2000)
+    answers_text: str | None = Field(None, max_length=5000)
 
 
 class GoalsPeriod(BaseModel):

@@ -17,7 +17,9 @@ export function getInitials(name: string): string {
   if (!name?.trim()) return '?';
   const words = name.trim().split(/\s+/).filter(Boolean);
   if (words.length === 1) return (words[0]?.[0] ?? '?').toUpperCase();
-  return ((words[0]?.[0] ?? '') + (words[words.length - 1]?.[0] ?? '')).toUpperCase();
+  return (
+    (words[0]?.[0] ?? '') + (words[words.length - 1]?.[0] ?? '')
+  ).toUpperCase();
 }
 
 /**
@@ -44,7 +46,9 @@ export function nameToColor(name: string): string {
  * the API call keeps the payload WAF-safe. On next load, `sanitizeViewModelAvatars`
  * regenerates the avatars from the person's name, so the UI is unaffected.
  */
-export function stripViewModelImages(vm: Record<string, unknown>): Record<string, unknown> {
+export function stripViewModelImages(
+  vm: Record<string, unknown>,
+): Record<string, unknown> {
   const profile = vm?.profile;
   if (!profile || typeof profile !== 'object') return vm;
   const people = (profile as Record<string, unknown>).famous_people;
@@ -65,11 +69,16 @@ export function stripViewModelImages(vm: Record<string, unknown>): Record<string
   });
   return {
     ...vm,
-    profile: { ...(profile as Record<string, unknown>), famous_people: stripped },
+    profile: {
+      ...(profile as Record<string, unknown>),
+      famous_people: stripped,
+    },
   };
 }
 
-export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeViewModelAvatars(
+  vm: Record<string, unknown>,
+): Record<string, unknown> {
   const profile = vm?.profile;
   if (!profile || typeof profile !== 'object') return vm;
   const people = (profile as Record<string, unknown>).famous_people;
@@ -81,7 +90,8 @@ export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<st
     const img = p.image;
     const isSafe =
       (typeof img === 'string' && img.startsWith('data:image/')) ||
-      (typeof img === 'string' && img.startsWith('https://upload.wikimedia.org/'));
+      (typeof img === 'string' &&
+        img.startsWith('https://upload.wikimedia.org/'));
     if (isSafe) return p;
     const name = typeof p.name === 'string' ? p.name : 'Guide';
     return { ...p, image: generateAvatarDataUri(name) };
@@ -89,7 +99,10 @@ export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<st
 
   return {
     ...vm,
-    profile: { ...(profile as Record<string, unknown>), famous_people: sanitizedPeople },
+    profile: {
+      ...(profile as Record<string, unknown>),
+      famous_people: sanitizedPeople,
+    },
   };
 }
 
@@ -107,8 +120,8 @@ export function generateAvatarDataUri(
     background === 'random'
       ? nameToColor(name)
       : background.startsWith('#')
-        ? background
-        : `#${background}`;
+      ? background
+      : `#${background}`;
   const fontSize = Math.round(size * 0.42);
 
   const svg = [
