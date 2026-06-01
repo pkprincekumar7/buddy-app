@@ -26,6 +26,7 @@ const InputWithVoice = forwardRef<
   InputWithVoiceProps
 >(({ value, onChange, placeholder, className, ...props }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   const handleTranscript = useCallback(
     (transcript: string) => {
@@ -41,14 +42,22 @@ const InputWithVoice = forwardRef<
     [onChange],
   );
 
+  const isBusy = isRecording || isTranscribing;
+
   return (
     <View className="flex-1 flex-row items-center gap-2">
       <Input
         ref={ref}
         value={value}
         onChangeText={handleChangeText}
-        placeholder={isRecording ? 'Listening...' : placeholder}
-        editable={!isRecording}
+        placeholder={
+          isRecording
+            ? 'Listening...'
+            : isTranscribing
+            ? 'Transcribing...'
+            : placeholder
+        }
+        editable={!isBusy}
         className={`flex-1 ${className ?? ''}`}
         {...props}
       />
@@ -56,6 +65,8 @@ const InputWithVoice = forwardRef<
         onTranscript={handleTranscript}
         isRecording={isRecording}
         setIsRecording={setIsRecording}
+        isTranscribing={isTranscribing}
+        setIsTranscribing={setIsTranscribing}
       />
     </View>
   );

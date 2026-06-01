@@ -5,7 +5,7 @@
  * positioned at the bottom-right corner (absolute), mirroring the web layout.
  * The prop surface is identical to the web version.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { Textarea } from '@/components/ui/Textarea';
 import type { TextareaProps } from '@/components/ui/Textarea';
@@ -28,6 +28,7 @@ export default function TextareaWithVoice({
   ...props
 }: TextareaWithVoiceProps) {
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   const handleTranscript = useCallback(
     (transcript: string) => {
@@ -45,13 +46,21 @@ export default function TextareaWithVoice({
     [onChange],
   );
 
+  const isBusy = isRecording || isTranscribing;
+
+  const activePlaceholder = useMemo(() => {
+    if (isRecording) return 'Listening...';
+    if (isTranscribing) return 'Transcribing...';
+    return placeholder;
+  }, [isRecording, isTranscribing, placeholder]);
+
   return (
     <View className="relative">
       <Textarea
         value={value}
         onChangeText={handleChangeText}
-        placeholder={isRecording ? 'Listening...' : placeholder}
-        editable={!isRecording}
+        placeholder={activePlaceholder}
+        editable={!isBusy}
         // Extra bottom padding so text doesn't run under the mic button
         className={`pb-12 ${className ?? ''}`}
         {...props}
@@ -61,6 +70,8 @@ export default function TextareaWithVoice({
           onTranscript={handleTranscript}
           isRecording={isRecording}
           setIsRecording={setIsRecording}
+          isTranscribing={isTranscribing}
+          setIsTranscribing={setIsTranscribing}
         />
       </View>
     </View>
