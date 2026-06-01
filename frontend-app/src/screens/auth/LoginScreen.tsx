@@ -136,7 +136,11 @@ export default function LoginScreen() {
           typeof e.detail === 'object'
             ? (e.detail as Record<string, unknown>)['code']
             : undefined;
-        if (e instanceof ApiError && e.status === 422 && detailCode === 'country_code_required') {
+        if (
+          e instanceof ApiError &&
+          e.status === 422 &&
+          detailCode === 'country_code_required'
+        ) {
           setPendingGoogleToken(idToken);
           setBusy(false);
           return;
