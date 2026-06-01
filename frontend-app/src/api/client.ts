@@ -299,8 +299,7 @@ export const api = {
       // correct filename regardless of platform. Android records as .mp4 while iOS
       // records as .m4a — both are MPEG-4 audio but the extension matters for the
       // backend's allowlist check and for Whisper's file-type detection.
-      const rawExt =
-        uri.split('?')[0].split('.').pop()?.toLowerCase() ?? 'mp4';
+      const rawExt = uri.split('?')[0].split('.').pop()?.toLowerCase() ?? 'mp4';
       const ext = ['m4a', 'mp4', 'wav', 'mp3', 'webm', 'ogg'].includes(rawExt)
         ? rawExt
         : 'mp4';
