@@ -125,8 +125,8 @@ export default function Home() {
             </h1>
 
             <p className="mx-auto mb-10 max-w-3xl text-lg leading-relaxed text-slate-400 md:text-xl">
-              A 9-year guided journey helping your child discover strengths, build character, and
-              design a meaningful life.
+              A guided journey helping your child discover strengths, build character, and design a
+              meaningful life.
             </p>
 
             <div className="flex flex-col justify-center gap-4 sm:flex-row">

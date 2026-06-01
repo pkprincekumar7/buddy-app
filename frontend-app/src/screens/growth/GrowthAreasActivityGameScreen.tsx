@@ -19,7 +19,12 @@ import {
   Image,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
-import Svg, { LinearGradient as SvgLinearGradient, Rect, Stop, Defs } from 'react-native-svg';
+import Svg, {
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+  Defs,
+} from 'react-native-svg';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -31,11 +36,22 @@ import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
-import { GradientIconBox, GradientButton, areaGrad, tileGrad } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+  areaGrad,
+  tileGrad,
+} from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
 
-type GrowthNavProp = StackNavigationProp<GrowthStackParamList, 'GrowthAreasActivityGame'>;
-type GrowthRouteProp = RouteProp<GrowthStackParamList, 'GrowthAreasActivityGame'>;
+type GrowthNavProp = StackNavigationProp<
+  GrowthStackParamList,
+  'GrowthAreasActivityGame'
+>;
+type GrowthRouteProp = RouteProp<
+  GrowthStackParamList,
+  'GrowthAreasActivityGame'
+>;
 
 // ---------------------------------------------------------------------------
 // Inline game data (mirrors ChildActivityGame.tsx until a shared RN version exists)
@@ -71,94 +87,288 @@ const areaGames: Record<string, AreaGame> = {
     subtitle: 'Choose up to 3 options that excite you!',
     maxSelections: 3,
     options: [
-      { id: 'astronaut',  label: 'Astronaut',       emoji: '🚀', image: 'child_activity_game/life_ambition/astronaut.jpg' },
-      { id: 'sports',     label: 'Sports Person',    emoji: '⚽', image: 'child_activity_game/life_ambition/sports_person.jpg' },
-      { id: 'parent',     label: 'Like My Parents',  emoji: '👨‍👩‍👧', image: 'child_activity_game/life_ambition/like_my_parents.jpg' },
-      { id: 'superhero',  label: 'Super Hero',       emoji: '🦸', image: 'child_activity_game/life_ambition/super_hero.jpg' },
-      { id: 'dancer',     label: 'Dancer',           emoji: '💃', image: 'child_activity_game/life_ambition/dancer.jpg' },
-      { id: 'scientist',  label: 'Scientist',        emoji: '🔬', image: 'child_activity_game/life_ambition/scientist.jpg' },
+      {
+        id: 'astronaut',
+        label: 'Astronaut',
+        emoji: '🚀',
+        image: 'child_activity_game/life_ambition/astronaut.jpg',
+      },
+      {
+        id: 'sports',
+        label: 'Sports Person',
+        emoji: '⚽',
+        image: 'child_activity_game/life_ambition/sports_person.jpg',
+      },
+      {
+        id: 'parent',
+        label: 'Like My Parents',
+        emoji: '👨‍👩‍👧',
+        image: 'child_activity_game/life_ambition/like_my_parents.jpg',
+      },
+      {
+        id: 'superhero',
+        label: 'Super Hero',
+        emoji: '🦸',
+        image: 'child_activity_game/life_ambition/super_hero.jpg',
+      },
+      {
+        id: 'dancer',
+        label: 'Dancer',
+        emoji: '💃',
+        image: 'child_activity_game/life_ambition/dancer.jpg',
+      },
+      {
+        id: 'scientist',
+        label: 'Scientist',
+        emoji: '🔬',
+        image: 'child_activity_game/life_ambition/scientist.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has selected these career aspirations: ${labels.join(', ')}. Generate personalized recommendations for the parent to help nurture these interests: 1. A brief summary of what these choices reveal about the child's interests, 2. 3-4 specific activities or experiences to support these aspirations, 3. 2-3 strengths to encourage based on these choices.`,
+    promptContext: labels =>
+      `A child has selected these career aspirations: ${labels.join(
+        ', ',
+      )}. Generate personalized recommendations for the parent to help nurture these interests: 1. A brief summary of what these choices reveal about the child's interests, 2. 3-4 specific activities or experiences to support these aspirations, 3. 2-3 strengths to encourage based on these choices.`,
   },
   self_care: {
     question: 'Which activities make you feel calm and happy?',
     subtitle: 'Pick up to 3 things you enjoy!',
     maxSelections: 3,
     options: [
-      { id: 'reading',   label: 'Reading',              emoji: '📚', image: 'child_activity_game/self_care/reading.jpg' },
-      { id: 'music',     label: 'Listening to Music',   emoji: '🎵', image: 'child_activity_game/self_care/listening_to_music.jpg' },
-      { id: 'nature',    label: 'Being in Nature',      emoji: '🌿', image: 'child_activity_game/self_care/being_in_nature.jpg' },
-      { id: 'drawing',   label: 'Drawing / Painting',   emoji: '🎨', image: 'child_activity_game/self_care/drawing_painting.jpg' },
-      { id: 'sleep',     label: 'Resting / Sleeping',   emoji: '😴', image: 'child_activity_game/self_care/resting_sleeping.jpg' },
-      { id: 'exercise',  label: 'Exercise',             emoji: '🏃', image: 'child_activity_game/self_care/exercise.jpg' },
+      {
+        id: 'reading',
+        label: 'Reading',
+        emoji: '📚',
+        image: 'child_activity_game/self_care/reading.jpg',
+      },
+      {
+        id: 'music',
+        label: 'Listening to Music',
+        emoji: '🎵',
+        image: 'child_activity_game/self_care/listening_to_music.jpg',
+      },
+      {
+        id: 'nature',
+        label: 'Being in Nature',
+        emoji: '🌿',
+        image: 'child_activity_game/self_care/being_in_nature.jpg',
+      },
+      {
+        id: 'drawing',
+        label: 'Drawing / Painting',
+        emoji: '🎨',
+        image: 'child_activity_game/self_care/drawing_painting.jpg',
+      },
+      {
+        id: 'sleep',
+        label: 'Resting / Sleeping',
+        emoji: '😴',
+        image: 'child_activity_game/self_care/resting_sleeping.jpg',
+      },
+      {
+        id: 'exercise',
+        label: 'Exercise',
+        emoji: '🏃',
+        image: 'child_activity_game/self_care/exercise.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has chosen these self-care activities as things that make them feel calm and happy: ${labels.join(', ')}. Generate personalized self-care recommendations for the parent: 1. A brief summary of what these choices reveal about the child's emotional needs, 2. 3-4 specific ways to support these self-care habits at home, 3. 2-3 emotional strengths to encourage.`,
+    promptContext: labels =>
+      `A child has chosen these self-care activities as things that make them feel calm and happy: ${labels.join(
+        ', ',
+      )}. Generate personalized self-care recommendations for the parent: 1. A brief summary of what these choices reveal about the child's emotional needs, 2. 3-4 specific ways to support these self-care habits at home, 3. 2-3 emotional strengths to encourage.`,
   },
   critical_thinking: {
     question: 'Which challenges do you enjoy most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
-      { id: 'puzzles',      label: 'Solving Puzzles',      emoji: '🧩', image: 'child_activity_game/critical_thinking/solving_puzzles.jpg' },
-      { id: 'experiments',  label: 'Science Experiments',  emoji: '🧪', image: 'child_activity_game/critical_thinking/science_experiments.jpg' },
-      { id: 'debates',      label: 'Debates & Arguments',  emoji: '💬', image: 'child_activity_game/critical_thinking/debates_arguments.jpg' },
-      { id: 'strategy',     label: 'Strategy Games',       emoji: '♟️', image: 'child_activity_game/critical_thinking/strategy_games.jpg' },
-      { id: 'mysteries',    label: 'Solving Mysteries',    emoji: '🔍', image: 'child_activity_game/critical_thinking/solving_mysteries.jpg' },
-      { id: 'inventions',   label: 'Inventing Things',     emoji: '💡', image: 'child_activity_game/critical_thinking/inventing_things.jpg' },
+      {
+        id: 'puzzles',
+        label: 'Solving Puzzles',
+        emoji: '🧩',
+        image: 'child_activity_game/critical_thinking/solving_puzzles.jpg',
+      },
+      {
+        id: 'experiments',
+        label: 'Science Experiments',
+        emoji: '🧪',
+        image: 'child_activity_game/critical_thinking/science_experiments.jpg',
+      },
+      {
+        id: 'debates',
+        label: 'Debates & Arguments',
+        emoji: '💬',
+        image: 'child_activity_game/critical_thinking/debates_arguments.jpg',
+      },
+      {
+        id: 'strategy',
+        label: 'Strategy Games',
+        emoji: '♟️',
+        image: 'child_activity_game/critical_thinking/strategy_games.jpg',
+      },
+      {
+        id: 'mysteries',
+        label: 'Solving Mysteries',
+        emoji: '🔍',
+        image: 'child_activity_game/critical_thinking/solving_mysteries.jpg',
+      },
+      {
+        id: 'inventions',
+        label: 'Inventing Things',
+        emoji: '💡',
+        image: 'child_activity_game/critical_thinking/inventing_things.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has chosen these thinking challenges as their favourites: ${labels.join(', ')}. Generate personalized recommendations for the parent to develop their critical thinking: 1. A brief summary of what these choices reveal about the child's thinking style, 2. 3-4 specific activities to sharpen these skills, 3. 2-3 cognitive strengths to encourage.`,
+    promptContext: labels =>
+      `A child has chosen these thinking challenges as their favourites: ${labels.join(
+        ', ',
+      )}. Generate personalized recommendations for the parent to develop their critical thinking: 1. A brief summary of what these choices reveal about the child's thinking style, 2. 3-4 specific activities to sharpen these skills, 3. 2-3 cognitive strengths to encourage.`,
   },
   creativity: {
     question: 'Which creative activities do you love?',
     subtitle: 'Pick up to 3 that spark your imagination!',
     maxSelections: 3,
     options: [
-      { id: 'drawing',      label: 'Drawing & Art',      emoji: '🎨', image: 'child_activity_game/creativity/drawing_art.jpg' },
-      { id: 'storytelling', label: 'Storytelling',       emoji: '📖', image: 'child_activity_game/creativity/storytelling.jpg' },
-      { id: 'music',        label: 'Making Music',       emoji: '🎸', image: 'child_activity_game/creativity/making_music.jpg' },
-      { id: 'building',     label: 'Building & Making',  emoji: '🏗️', image: 'child_activity_game/creativity/building_making.jpg' },
-      { id: 'acting',       label: 'Acting & Drama',     emoji: '🎭', image: 'child_activity_game/creativity/acting_drama.jpg' },
-      { id: 'cooking',      label: 'Cooking & Baking',   emoji: '🍳', image: 'child_activity_game/creativity/cooking_baking.jpg' },
+      {
+        id: 'drawing',
+        label: 'Drawing & Art',
+        emoji: '🎨',
+        image: 'child_activity_game/creativity/drawing_art.jpg',
+      },
+      {
+        id: 'storytelling',
+        label: 'Storytelling',
+        emoji: '📖',
+        image: 'child_activity_game/creativity/storytelling.jpg',
+      },
+      {
+        id: 'music',
+        label: 'Making Music',
+        emoji: '🎸',
+        image: 'child_activity_game/creativity/making_music.jpg',
+      },
+      {
+        id: 'building',
+        label: 'Building & Making',
+        emoji: '🏗️',
+        image: 'child_activity_game/creativity/building_making.jpg',
+      },
+      {
+        id: 'acting',
+        label: 'Acting & Drama',
+        emoji: '🎭',
+        image: 'child_activity_game/creativity/acting_drama.jpg',
+      },
+      {
+        id: 'cooking',
+        label: 'Cooking & Baking',
+        emoji: '🍳',
+        image: 'child_activity_game/creativity/cooking_baking.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has chosen these creative activities as their favourites: ${labels.join(', ')}. Generate personalized recommendations for the parent to nurture their creativity: 1. A brief summary of what these choices reveal about the child's creative personality, 2. 3-4 specific ways to encourage and develop these creative skills, 3. 2-3 creative strengths to celebrate.`,
+    promptContext: labels =>
+      `A child has chosen these creative activities as their favourites: ${labels.join(
+        ', ',
+      )}. Generate personalized recommendations for the parent to nurture their creativity: 1. A brief summary of what these choices reveal about the child's creative personality, 2. 3-4 specific ways to encourage and develop these creative skills, 3. 2-3 creative strengths to celebrate.`,
   },
   physical_wellness: {
     question: 'Which physical activities do you enjoy?',
     subtitle: 'Choose up to 3 that get you moving!',
     maxSelections: 3,
     options: [
-      { id: 'football',  label: 'Football / Soccer',  emoji: '⚽', image: 'child_activity_game/physical_wellness/football_soccer.jpg' },
-      { id: 'swimming',  label: 'Swimming',           emoji: '🏊', image: 'child_activity_game/physical_wellness/swimming.jpg' },
-      { id: 'cycling',   label: 'Cycling',            emoji: '🚴', image: 'child_activity_game/physical_wellness/cycling.jpg' },
-      { id: 'dancing',   label: 'Dancing',            emoji: '💃', image: 'child_activity_game/physical_wellness/dancing.jpg' },
-      { id: 'yoga',      label: 'Yoga / Stretching',  emoji: '🧘', image: 'child_activity_game/physical_wellness/yoga_stretching.jpg' },
-      { id: 'running',   label: 'Running',            emoji: '🏃', image: 'child_activity_game/physical_wellness/running.jpg' },
+      {
+        id: 'football',
+        label: 'Football / Soccer',
+        emoji: '⚽',
+        image: 'child_activity_game/physical_wellness/football_soccer.jpg',
+      },
+      {
+        id: 'swimming',
+        label: 'Swimming',
+        emoji: '🏊',
+        image: 'child_activity_game/physical_wellness/swimming.jpg',
+      },
+      {
+        id: 'cycling',
+        label: 'Cycling',
+        emoji: '🚴',
+        image: 'child_activity_game/physical_wellness/cycling.jpg',
+      },
+      {
+        id: 'dancing',
+        label: 'Dancing',
+        emoji: '💃',
+        image: 'child_activity_game/physical_wellness/dancing.jpg',
+      },
+      {
+        id: 'yoga',
+        label: 'Yoga / Stretching',
+        emoji: '🧘',
+        image: 'child_activity_game/physical_wellness/yoga_stretching.jpg',
+      },
+      {
+        id: 'running',
+        label: 'Running',
+        emoji: '🏃',
+        image: 'child_activity_game/physical_wellness/running.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has chosen these physical activities as their favourites: ${labels.join(', ')}. Generate personalized physical wellness recommendations for the parent: 1. A brief summary of what these choices reveal about the child's physical personality, 2. 3-4 specific ways to support and grow these physical habits, 3. 2-3 physical strengths to encourage.`,
+    promptContext: labels =>
+      `A child has chosen these physical activities as their favourites: ${labels.join(
+        ', ',
+      )}. Generate personalized physical wellness recommendations for the parent: 1. A brief summary of what these choices reveal about the child's physical personality, 2. 3-4 specific ways to support and grow these physical habits, 3. 2-3 physical strengths to encourage.`,
   },
   social_skills: {
     question: 'Which situations feel most natural to you?',
     subtitle: 'Choose up to 3 that sound like you!',
     maxSelections: 3,
     options: [
-      { id: 'helping',        label: 'Helping Others',       emoji: '🤝', image: 'child_activity_game/social_skills/helping_others.jpg' },
-      { id: 'leading',        label: 'Leading a Group',      emoji: '👑', image: 'child_activity_game/social_skills/leading_a_group.jpg' },
-      { id: 'listening',      label: 'Listening to Friends', emoji: '👂', image: 'child_activity_game/social_skills/listening_to_friends.jpg' },
-      { id: 'teamwork',       label: 'Working in a Team',    emoji: '🙌', image: 'child_activity_game/social_skills/working_in_a_team.jpg' },
-      { id: 'making_friends', label: 'Making New Friends',   emoji: '😊', image: 'child_activity_game/social_skills/making_new_friends.jpg' },
-      { id: 'alone',          label: 'Enjoying My Own Time', emoji: '🧸', image: 'child_activity_game/social_skills/enjoying_my_own_time.jpg' },
+      {
+        id: 'helping',
+        label: 'Helping Others',
+        emoji: '🤝',
+        image: 'child_activity_game/social_skills/helping_others.jpg',
+      },
+      {
+        id: 'leading',
+        label: 'Leading a Group',
+        emoji: '👑',
+        image: 'child_activity_game/social_skills/leading_a_group.jpg',
+      },
+      {
+        id: 'listening',
+        label: 'Listening to Friends',
+        emoji: '👂',
+        image: 'child_activity_game/social_skills/listening_to_friends.jpg',
+      },
+      {
+        id: 'teamwork',
+        label: 'Working in a Team',
+        emoji: '🙌',
+        image: 'child_activity_game/social_skills/working_in_a_team.jpg',
+      },
+      {
+        id: 'making_friends',
+        label: 'Making New Friends',
+        emoji: '😊',
+        image: 'child_activity_game/social_skills/making_new_friends.jpg',
+      },
+      {
+        id: 'alone',
+        label: 'Enjoying My Own Time',
+        emoji: '🧸',
+        image: 'child_activity_game/social_skills/enjoying_my_own_time.jpg',
+      },
     ],
-    promptContext: (labels) =>
-      `A child has identified these social situations as most natural to them: ${labels.join(', ')}. Generate personalized social skills recommendations for the parent: 1. A brief summary of what these choices reveal about the child's social personality, 2. 3-4 specific activities to strengthen their social skills, 3. 2-3 social strengths to celebrate.`,
+    promptContext: labels =>
+      `A child has identified these social situations as most natural to them: ${labels.join(
+        ', ',
+      )}. Generate personalized social skills recommendations for the parent: 1. A brief summary of what these choices reveal about the child's social personality, 2. 3-4 specific activities to strengthen their social skills, 3. 2-3 social strengths to celebrate.`,
   },
 };
 
-function normalizeChildGameRecommendations(raw: unknown): Record<string, unknown> {
+function normalizeChildGameRecommendations(
+  raw: unknown,
+): Record<string, unknown> {
   if (!raw || typeof raw !== 'object') return raw as Record<string, unknown>;
   const rawObj = raw as Record<string, unknown>;
   const suggested = Array.isArray(rawObj.suggested_activities)
@@ -176,7 +386,11 @@ export default function GrowthAreasActivityGameScreen() {
   const navigation = useNavigation<GrowthNavProp>();
   const route = useRoute<GrowthRouteProp>();
   const { activityId } = route.params as { activityId: string };
-  const { activeChildId, isAuthenticated, isLoading: isLoadingAuth } = useAuth();
+  const {
+    activeChildId,
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+  } = useAuth();
 
   const area = areaByUrlName(activityId ?? '');
 
@@ -187,7 +401,10 @@ export default function GrowthAreasActivityGameScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const game = useMemo(
-    () => (area ? (areaGames[area.id] ?? areaGames['life_ambition']!) : areaGames['life_ambition']!),
+    () =>
+      area
+        ? areaGames[area.id] ?? areaGames['life_ambition']!
+        : areaGames['life_ambition']!,
     [area],
   );
 
@@ -214,7 +431,7 @@ export default function GrowthAreasActivityGameScreen() {
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
         const allDocs = completedData.areas ?? [];
-        const areaDoc = allDocs.find((a) => a.area_id === area.id);
+        const areaDoc = allDocs.find(a => a.area_id === area.id);
         const childActivity = areaDoc?.child_activity;
         const saved =
           (childActivity?.['selections'] as string[] | undefined) ??
@@ -233,12 +450,19 @@ export default function GrowthAreasActivityGameScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, activeChildId, activityId, area, navigation]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    activeChildId,
+    activityId,
+    area,
+    navigation,
+  ]);
 
   const toggleSelection = useCallback(
     (id: string) => {
       if (selectedIds.includes(id)) {
-        const next = selectedIds.filter((s) => s !== id);
+        const next = selectedIds.filter(s => s !== id);
         setSelectedIds(next);
         void handleSelectedIdsChange(next);
       } else if (selectedIds.length < game.maxSelections) {
@@ -292,7 +516,9 @@ export default function GrowthAreasActivityGameScreen() {
         });
       } catch (err) {
         console.error('[GrowthAreasActivityGameScreen] Save failed:', err);
-        toast.error('Could not save game results. Try again or check your connection.');
+        toast.error(
+          'Could not save game results. Try again or check your connection.',
+        );
         return;
       }
       navigation.navigate('GrowthAreasGreatInsights', { activityId });
@@ -310,23 +536,31 @@ export default function GrowthAreasActivityGameScreen() {
 
     try {
       // Check DB first — skip LLM if results already saved
-      const completedData = (await api.completedGrowthAreas.list(activeChildId ?? '')) as Record<
-        string,
-        unknown
-      >;
-      const areasArr = Array.isArray((completedData as { areas?: unknown }).areas)
+      const completedData = (await api.completedGrowthAreas.list(
+        activeChildId ?? '',
+      )) as Record<string, unknown>;
+      const areasArr = Array.isArray(
+        (completedData as { areas?: unknown }).areas,
+      )
         ? (completedData as { areas: Array<Record<string, unknown>> }).areas
         : [];
-      const existing = areasArr.find((a) => a.area_id === area?.id);
+      const existing = areasArr.find(a => a.area_id === area?.id);
       const existingChildActivity = existing?.child_activity as
         | Record<string, unknown>
         | undefined;
       if (existingChildActivity?.results) {
-        const recommendations = normalizeChildGameRecommendations(existingChildActivity.results);
-        const existingSelections = Array.isArray(existingChildActivity.selections)
+        const recommendations = normalizeChildGameRecommendations(
+          existingChildActivity.results,
+        );
+        const existingSelections = Array.isArray(
+          existingChildActivity.selections,
+        )
           ? (existingChildActivity.selections as string[])
           : selectedIds;
-        await handleGameComplete({ selections: existingSelections, recommendations });
+        await handleGameComplete({
+          selections: existingSelections,
+          recommendations,
+        });
         setIsSubmitting(false);
         return;
       }
@@ -338,12 +572,14 @@ export default function GrowthAreasActivityGameScreen() {
     }
 
     const selectedLabels = selectedIds.map(
-      (id) => game.options.find((o) => o.id === id)?.label ?? id,
+      id => game.options.find(o => o.id === id)?.label ?? id,
     );
 
     try {
       const raw = await api.integrations.Core.InvokeLLM({
-        prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(selectedLabels)}`,
+        prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(
+          selectedLabels,
+        )}`,
         response_json_schema: {
           type: 'object',
           properties: {
@@ -357,7 +593,10 @@ export default function GrowthAreasActivityGameScreen() {
       const recommendations = normalizeChildGameRecommendations(raw);
       await handleGameComplete({ selections: selectedIds, recommendations });
     } catch (err) {
-      console.error('[GrowthAreasActivityGameScreen] Recommendation generation failed:', err);
+      console.error(
+        '[GrowthAreasActivityGameScreen] Recommendation generation failed:',
+        err,
+      );
       toast.error('Could not generate recommendations. Please try again.');
     } finally {
       setIsSubmitting(false);
@@ -392,7 +631,9 @@ export default function GrowthAreasActivityGameScreen() {
           >
             <Icon size={20} color="white" />
           </GradientIconBox>
-          <Text className="text-sm font-semibold text-white">{area.name} — Activity</Text>
+          <Text className="text-sm font-semibold text-white">
+            {area.name} — Activity
+          </Text>
         </View>
       </View>
 
@@ -401,12 +642,14 @@ export default function GrowthAreasActivityGameScreen() {
         contentContainerClassName="px-4 py-8"
         showsVerticalScrollIndicator={false}
         data={game.options}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         numColumns={2}
         columnWrapperClassName="gap-4 mb-4"
         ListHeaderComponent={
           <View className="mb-6 items-center">
-            <Text className="mb-2 text-2xl font-bold text-white">{game.question}</Text>
+            <Text className="mb-2 text-2xl font-bold text-white">
+              {game.question}
+            </Text>
             <Text className="text-slate-500">{game.subtitle}</Text>
             <Text className="mt-2 text-sm text-emerald-600">
               Selected: {selectedIds.length}/{game.maxSelections}
@@ -415,7 +658,8 @@ export default function GrowthAreasActivityGameScreen() {
         }
         renderItem={({ item: option, index }) => {
           const isSelected = selectedIds.includes(option.id);
-          const tileColor = TILE_COLORS[index % TILE_COLORS.length] ?? TILE_COLORS[0]!;
+          const tileColor =
+            TILE_COLORS[index % TILE_COLORS.length] ?? TILE_COLORS[0]!;
           const { from: tFrom, to: tTo } = tileGrad(tileColor);
           const imageUrl = option.image
             ? `${env.CDN_BASE_URL}/app-assets/${option.image}`
@@ -433,10 +677,17 @@ export default function GrowthAreasActivityGameScreen() {
               }}
             >
               {/* Tile — S3 image with gradient+emoji fallback */}
-              <GradientTile from={tFrom} to={tTo} imageUrl={imageUrl} emoji={option.emoji} />
+              <GradientTile
+                from={tFrom}
+                to={tTo}
+                imageUrl={imageUrl}
+                emoji={option.emoji}
+              />
               {/* Label row */}
               <View className="flex-row items-center justify-between bg-black/60 px-3 py-2">
-                <Text className="text-sm font-semibold text-white">{option.label}</Text>
+                <Text className="text-sm font-semibold text-white">
+                  {option.label}
+                </Text>
                 {isSelected ? (
                   <CheckCircle size={20} color="#10b981" fill="#10b981" />
                 ) : (
@@ -456,11 +707,15 @@ export default function GrowthAreasActivityGameScreen() {
               borderRadius={16}
               disabled={selectedIds.length === 0 || isSubmitting}
               loading={isSubmitting}
-              onPress={() => { void handleSubmit(); }}
+              onPress={() => {
+                void handleSubmit();
+              }}
               style={{ width: '100%' }}
             >
               <Text className="font-semibold text-[#0a0a0a]">
-                {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}
+                {isSubmitting
+                  ? 'Generating Recommendations...'
+                  : 'Submit My Choices'}
               </Text>
             </GradientButton>
 
@@ -508,14 +763,26 @@ function GradientTile({
 
   return (
     <View
-      style={{ aspectRatio: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
-      onLayout={(e) =>
-        setDims({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })
+      style={{
+        aspectRatio: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+      onLayout={e =>
+        setDims({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
       }
     >
       {/* Gradient background — always rendered; visible when no image or image fails */}
       {dims.w > 0 && dims.h > 0 && (
-        <Svg width={dims.w} height={dims.h} style={{ position: 'absolute', top: 0, left: 0 }}>
+        <Svg
+          width={dims.w}
+          height={dims.h}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
           <Defs>
             <SvgLinearGradient id="tileGrad" x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={from} />
@@ -530,16 +797,20 @@ function GradientTile({
       {imageUrl && dims.w > 0 && dims.h > 0 && !imgFailed && (
         <Image
           source={{ uri: imageUrl }}
-          style={{ position: 'absolute', top: 0, left: 0, width: dims.w, height: dims.h }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: dims.w,
+            height: dims.h,
+          }}
           resizeMode="cover"
           onError={() => setImgFailed(true)}
         />
       )}
 
       {/* Emoji fallback — shown when no image or image fails */}
-      {!showImage && (
-        <Text style={{ fontSize: 40 }}>{emoji}</Text>
-      )}
+      {!showImage && <Text style={{ fontSize: 40 }}>{emoji}</Text>}
     </View>
   );
 }

@@ -140,6 +140,9 @@ echo -e "\n${BOLD}════ FRONTEND-APP ════${RESET}"
 run "eslint (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn lint"
 
+run "prettier (check) (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && node_modules/.bin/prettier --check 'src/**/*.{ts,tsx}'"
+
 run "typecheck (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
 

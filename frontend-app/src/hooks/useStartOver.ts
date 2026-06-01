@@ -19,7 +19,9 @@ export function useStartOver(childId: string | undefined) {
     setIsStartingOver(true);
     try {
       await api.entities.Child.delete(childId);
-      await api.preferences.patch({ last_visited_path: '/Home' }).catch(() => {});
+      await api.preferences
+        .patch({ last_visited_path: '/Home' })
+        .catch(() => {});
       // Drop the stale cache entry; components will re-fetch on next mount.
       queryClient.removeQueries({ queryKey: ['children'] });
     } catch (err) {
@@ -35,7 +37,14 @@ export function useStartOver(childId: string | undefined) {
     await refetchChildren().catch(() => clearActiveChildId());
     setIsStartingOver(false);
     navigation.replace('Main');
-  }, [isStartingOver, childId, navigation, queryClient, refetchChildren, clearActiveChildId]);
+  }, [
+    isStartingOver,
+    childId,
+    navigation,
+    queryClient,
+    refetchChildren,
+    clearActiveChildId,
+  ]);
 
   return { doStartOver, isStartingOver };
 }

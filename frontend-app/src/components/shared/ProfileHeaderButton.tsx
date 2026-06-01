@@ -56,7 +56,14 @@ export default function ProfileHeaderButton() {
         accessibilityLabel="Open profile"
         accessibilityRole="button"
       >
-        <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>
+        <Text
+          style={{
+            color: '#ffffff',
+            fontSize: 12,
+            fontWeight: '700',
+            letterSpacing: 0.5,
+          }}
+        >
           {initials}
         </Text>
       </Pressable>
@@ -70,7 +77,10 @@ export default function ProfileHeaderButton() {
         statusBarTranslucent
       >
         {/* Full-screen backdrop — tap outside to close */}
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} onPress={close} />
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }}
+          onPress={close}
+        />
 
         {/* ── Dropdown card ── absolute, anchored top-right below header */}
         <View
@@ -78,8 +88,8 @@ export default function ProfileHeaderButton() {
             position: 'absolute',
             top: dropdownTop,
             right: 10,
-            width: 288,          // matches web w-72
-            borderRadius: 16,    // matches web rounded-2xl
+            width: 288, // matches web w-72
+            borderRadius: 16, // matches web rounded-2xl
             borderWidth: 1,
             borderColor: 'rgba(255,255,255,0.10)',
             overflow: 'hidden',
@@ -92,16 +102,15 @@ export default function ProfileHeaderButton() {
             elevation: 28,
           }}
         >
-
           {/* ── User info strip ── */}
           {/* Web: bg-gradient-to-r from-teal-600/30 to-emerald-600/20, px-5 py-4 */}
           <View
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              paddingHorizontal: 20,   // px-5
-              paddingVertical: 20,     // slightly more room in header strip
-              gap: 12,                 // gap-3
+              paddingHorizontal: 20, // px-5
+              paddingVertical: 20, // slightly more room in header strip
+              gap: 12, // gap-3
               backgroundColor: 'rgba(20,184,166,0.18)', // teal-600/30 approximation
             }}
           >
@@ -122,7 +131,9 @@ export default function ProfileHeaderButton() {
                 elevation: 5,
               }}
             >
-              <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '700' }}>
+              <Text
+                style={{ color: '#ffffff', fontSize: 18, fontWeight: '700' }}
+              >
                 {initials}
               </Text>
             </View>
@@ -136,11 +147,19 @@ export default function ProfileHeaderButton() {
                 {user?.full_name ?? 'User'}
               </Text>
               <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginTop: 3,
+                }}
               >
                 {/* web: Mail h-3 w-3 shrink-0 */}
                 <Mail size={12} color="#94a3b8" style={{ flexShrink: 0 }} />
-                <Text style={{ color: '#94a3b8', fontSize: 12 }} numberOfLines={1}>
+                <Text
+                  style={{ color: '#94a3b8', fontSize: 12 }}
+                  numberOfLines={1}
+                >
                   {user?.email ?? ''}
                 </Text>
               </View>
@@ -148,11 +167,12 @@ export default function ProfileHeaderButton() {
           </View>
 
           {/* Divider — web: border-t border-white/10 */}
-          <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.10)' }} />
+          <View
+            style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.10)' }}
+          />
 
           {/* ── Navigation + actions ── */}
           <View style={{ paddingHorizontal: 8, paddingVertical: 8 }}>
-
             {/* Home — explicit height wrapper guarantees row height */}
             <View style={{ height: 60, justifyContent: 'center' }}>
               <Pressable
@@ -164,19 +184,41 @@ export default function ProfileHeaderButton() {
                   flex: 1,
                   paddingHorizontal: 16,
                   borderRadius: 12,
-                  backgroundColor: pressed ? 'rgba(255,255,255,0.05)' : 'transparent',
+                  backgroundColor: pressed
+                    ? 'rgba(255,255,255,0.05)'
+                    : 'transparent',
                   justifyContent: 'center',
                 })}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
                   <Home size={20} color="#cbd5e1" />
-                  <Text style={{ color: '#cbd5e1', fontSize: 15, fontWeight: '500' }}>Home</Text>
+                  <Text
+                    style={{
+                      color: '#cbd5e1',
+                      fontSize: 15,
+                      fontWeight: '500',
+                    }}
+                  >
+                    Home
+                  </Text>
                 </View>
               </Pressable>
             </View>
 
             {/* Thin separator between menu items */}
-            <View style={{ height: 1, marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            <View
+              style={{
+                height: 1,
+                marginHorizontal: 16,
+                backgroundColor: 'rgba(255,255,255,0.08)',
+              }}
+            />
 
             {/* Sign out — explicit height wrapper guarantees row height */}
             <View style={{ height: 60, justifyContent: 'center' }}>
@@ -189,17 +231,32 @@ export default function ProfileHeaderButton() {
                   flex: 1,
                   paddingHorizontal: 16,
                   borderRadius: 12,
-                  backgroundColor: pressed ? 'rgba(239,68,68,0.10)' : 'transparent',
+                  backgroundColor: pressed
+                    ? 'rgba(239,68,68,0.10)'
+                    : 'transparent',
                   justifyContent: 'center',
                 })}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
                   <LogOut size={20} color="#94a3b8" />
-                  <Text style={{ color: '#94a3b8', fontSize: 15, fontWeight: '500' }}>Sign out</Text>
+                  <Text
+                    style={{
+                      color: '#94a3b8',
+                      fontSize: 15,
+                      fontWeight: '500',
+                    }}
+                  >
+                    Sign out
+                  </Text>
                 </View>
               </Pressable>
             </View>
-
           </View>
         </View>
       </Modal>

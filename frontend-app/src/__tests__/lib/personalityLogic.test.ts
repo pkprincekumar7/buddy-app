@@ -54,7 +54,12 @@ describe('calculateMBTI', () => {
       name: 'Sam',
     });
     expect(PERSONALITY_TYPE_KEYS).toContain(result.type);
-    expect(['Outgoing', 'Enthusiastic', 'Highly Energetic', 'Playful']).toContain(result.type);
+    expect([
+      'Outgoing',
+      'Enthusiastic',
+      'Highly Energetic',
+      'Playful',
+    ]).toContain(result.type);
   });
 
   it('returns a valid type for empty data', () => {
@@ -64,7 +69,9 @@ describe('calculateMBTI', () => {
 
   it('scores object contains all personality type keys', () => {
     const result = calculateMBTI({ energy_level: 'Moderate - balanced' });
-    expect(Object.keys(result.scores)).toEqual(expect.arrayContaining(PERSONALITY_TYPE_KEYS));
+    expect(Object.keys(result.scores)).toEqual(
+      expect.arrayContaining(PERSONALITY_TYPE_KEYS),
+    );
   });
 
   it('profile.description replaces {childName} placeholder', () => {
@@ -103,13 +110,19 @@ describe('adaptAiPersonalityToViewModel', () => {
   });
 
   it('falls back to base traits when personalized_traits is empty', () => {
-    const vm = adaptAiPersonalityToViewModel({ ...validAi, personalized_traits: [] }, 'Alex');
+    const vm = adaptAiPersonalityToViewModel(
+      { ...validAi, personalized_traits: [] },
+      'Alex',
+    );
     const base = personalityTypes['Thinker']!;
     expect(vm.profile.traits).toEqual(base.traits);
   });
 
   it('falls back to Creative for unknown dominant_style', () => {
-    const vm = adaptAiPersonalityToViewModel({ dominant_style: 'Unknown' }, 'Alex');
+    const vm = adaptAiPersonalityToViewModel(
+      { dominant_style: 'Unknown' },
+      'Alex',
+    );
     expect(vm.type).toBe('Creative');
   });
 
@@ -120,7 +133,7 @@ describe('adaptAiPersonalityToViewModel', () => {
 
   it('secondary style gets elevated score', () => {
     const vm = adaptAiPersonalityToViewModel(validAi, 'Jordan');
-    expect((vm.scores['Creative'] ?? 0)).toBeGreaterThan(14);
+    expect(vm.scores['Creative'] ?? 0).toBeGreaterThan(14);
   });
 
   it('produces two famous_people entries', () => {

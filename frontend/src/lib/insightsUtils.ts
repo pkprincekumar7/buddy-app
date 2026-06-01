@@ -1,6 +1,9 @@
 // Bump when the insights payload shape changes — any cached plan with a
 // different schema_version will be treated as stale and regenerated.
-export const INSIGHTS_SCHEMA_VERSION = 2;
+export const INSIGHTS_SCHEMA_VERSION = 3;
+
+export const normalizeAge = (age: unknown): string | undefined =>
+  typeof age === 'string' || typeof age === 'number' ? String(age) : undefined;
 
 export const NON_SCORABLE_DELTA_PTS = 30;
 
@@ -16,6 +19,9 @@ interface Activity {
   note?: string;
   ai_feedback?: string;
   parent_feedback?: string;
+  what_changed?: string;
+  what_learned?: string;
+  recommendation?: string;
 }
 
 export interface MonthRecord {
@@ -51,6 +57,8 @@ const computeObservation = (
   if (!original) return { label: 'Not Started', type: 'notStarted' };
   if (!original.completed && !followUp?.completed)
     return { label: 'Not Started', type: 'notStarted' };
+  if (!original.completed && followUp?.completed)
+    return { label: 'In Progress', type: 'inProgress' };
   if (original.completed && !followUp?.completed)
     return { label: 'In Progress', type: 'inProgress' };
 

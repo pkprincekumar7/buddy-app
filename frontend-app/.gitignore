@@ -83,3 +83,10 @@ ios/BuddyApp.xcworkspace/
 # Environment
 .env
 .env.local
+.env.*.local
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# retire.js vulnerability database (auto-downloaded by check.sh; stays current without committing)
+retire-jsrepo.json

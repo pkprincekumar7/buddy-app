@@ -121,6 +121,7 @@ export function useGoalPlan(childId: string | undefined) {
           prompt: buildGoalsMonthlyPlanPrompt({
             childName: obRecord?.name as string | undefined,
             childAge: obRecord?.age as number | undefined,
+            childGender: obRecord?.gender as string | undefined,
             parentConcern,
             personalityType: profile?.personality_type,
             areasContext,
@@ -245,6 +246,10 @@ export function useGoalPlan(childId: string | undefined) {
             act.progress_observation = undefined;
             act.ai_feedback = undefined;
             act.parent_feedback = undefined;
+            act.what_changed = undefined;
+            act.what_learned = undefined;
+            act.recommendation = undefined;
+            act.answers_text = undefined;
           }
         }
       });

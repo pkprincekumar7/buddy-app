@@ -7,7 +7,10 @@ interface HttpErrorOptions {
 
 export function httpErrorMessage(
   err: ApiError | Error | null | undefined,
-  { fallback = 'Something went wrong.', statusMessages = {} }: HttpErrorOptions = {},
+  {
+    fallback = 'Something went wrong.',
+    statusMessages = {},
+  }: HttpErrorOptions = {},
 ): string {
   const status = err instanceof ApiError ? err.status : undefined;
   if (status != null) {

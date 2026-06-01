@@ -1,5 +1,10 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ActivityIndicator, Pressable, Platform, PermissionsAndroid } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  Platform,
+  PermissionsAndroid,
+} from 'react-native';
 import Sound from 'react-native-nitro-sound';
 import type { RecordBackType } from 'react-native-nitro-sound';
 import RNFS from 'react-native-fs';
@@ -12,6 +17,8 @@ export interface VoiceInputProps {
   onTranscript: (transcript: string) => void;
   isRecording: boolean;
   setIsRecording: (value: boolean) => void;
+  isTranscribing: boolean;
+  setIsTranscribing: (value: boolean) => void;
   'aria-label'?: string;
 }
 
@@ -50,9 +57,10 @@ export default function VoiceInput({
   onTranscript,
   isRecording,
   setIsRecording,
+  isTranscribing,
+  setIsTranscribing,
   'aria-label': ariaLabel,
 }: VoiceInputProps) {
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isPendingPermission, setIsPendingPermission] = useState(false);
   const isActiveRef = useRef(false); // guards against re-entrant stop calls
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,14 +68,30 @@ export default function VoiceInput({
   const voiceDetectedRef = useRef(false); // true if amplitude exceeded threshold at least once
 
   // Keep latest callbacks in refs so timers/listeners always call the current version.
+  // This avoids adding them to doStop's dependency array (which would cascade into
+  // startRecording / handlePress re-creations on every parent render).
   const onTranscriptRef = useRef(onTranscript);
   const setIsRecordingRef = useRef(setIsRecording);
-  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
-  useEffect(() => { setIsRecordingRef.current = setIsRecording; }, [setIsRecording]);
+  const setIsTranscribingRef = useRef(setIsTranscribing);
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+  }, [onTranscript]);
+  useEffect(() => {
+    setIsRecordingRef.current = setIsRecording;
+  }, [setIsRecording]);
+  useEffect(() => {
+    setIsTranscribingRef.current = setIsTranscribing;
+  }, [setIsTranscribing]);
 
   const clearTimers = useCallback(() => {
-    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (maxTimerRef.current) {
+      clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
   }, []);
 
   // Core stop logic — safe to call from silence timer, max-timer, or manual press.
@@ -96,9 +120,11 @@ export default function VoiceInput({
       return;
     }
 
-    setIsTranscribing(true);
+    setIsTranscribingRef.current(true);
     try {
-      const result = (await api.audio.transcribe(uri)) as { transcript?: string };
+      const result = (await api.audio.transcribe(uri)) as {
+        transcript?: string;
+      };
       if (result?.transcript) {
         onTranscriptRef.current(result.transcript);
       } else {
@@ -107,7 +133,7 @@ export default function VoiceInput({
     } catch {
       toast.error('Transcription failed. Please try again.');
     } finally {
-      setIsTranscribing(false);
+      setIsTranscribingRef.current(false);
       deleteFile(uri); // always clean up the temp audio file
     }
   }, [clearTimers]);
@@ -136,7 +162,9 @@ export default function VoiceInput({
     if (!isActiveRef.current) return; // unmounted during permission dialog
     if (!hasPermission) {
       isActiveRef.current = false;
-      toast.error('Microphone access was denied. Please allow mic access and try again.');
+      toast.error(
+        'Microphone access was denied. Please allow mic access and try again.',
+      );
       return;
     }
 
@@ -146,8 +174,19 @@ export default function VoiceInput({
     //   2. Minimum (2 000 ms) — record for at least 2 s before silence can stop it.
     //      Whisper reliably hallucinates ("you", "thanks", etc.) on clips < ~2 s,
     //      so this floor prevents false transcriptions on quiet/short recordings.
+    //
+    // Android fix: on Android the native recording timer starts firing callbacks
+    // *before* startRecorder()'s Promise resolves back to JS. Those early callbacks
+    // would be measured against the pre-await warmupRef value (i.e. elapsed >> 800)
+    // and slip past the warm-up gate, causing voiceDetectedRef to be set/unset with
+    // stale amplitude readings (getMaxAmplitude returns 0 until the recorder warms
+    // up). The `recordingStartedRef` flag acts as an additional gate: the listener
+    // ignores all callbacks until startRecorder() has fully resolved and warmupRef
+    // has been reset to the true recording-start timestamp.
     const warmupRef = { current: Date.now() };
+    const recordingStartedRef = { current: false };
     Sound.addRecordBackListener((data: RecordBackType) => {
+      if (!recordingStartedRef.current) return; // discard pre-start callbacks (Android)
       const elapsed = Date.now() - warmupRef.current;
       if (elapsed < 800) return; // warm-up: ignore early callbacks
       const amplitude = data.currentMetering ?? -160;
@@ -169,7 +208,10 @@ export default function VoiceInput({
 
     try {
       await Sound.startRecorder(undefined, undefined, true);
-      warmupRef.current = Date.now(); // reset to actual recording start for accurate warm-up
+      // Reset warmupRef *before* opening the gate so the first unblocked callback
+      // measures elapsed time from the true recording-start moment.
+      warmupRef.current = Date.now();
+      recordingStartedRef.current = true; // open gate: callbacks are now valid
       setIsRecording(true);
 
       // Safety cap in case silence detection never triggers.
@@ -197,10 +239,10 @@ export default function VoiceInput({
   const defaultLabel = isPendingPermission
     ? 'Requesting mic…'
     : isTranscribing
-      ? 'Transcribing…'
-      : isRecording
-        ? 'Stop recording'
-        : 'Start voice input';
+    ? 'Transcribing…'
+    : isRecording
+    ? 'Stop recording'
+    : 'Start voice input';
 
   return (
     <Pressable
@@ -213,10 +255,10 @@ export default function VoiceInput({
         isRecording
           ? 'bg-red-500'
           : isTranscribing
-            ? 'bg-amber-400'
-            : isPendingPermission
-              ? 'bg-slate-400'
-              : 'bg-transparent',
+          ? 'bg-amber-400'
+          : isPendingPermission
+          ? 'bg-slate-400'
+          : 'bg-transparent',
         isBusy && 'opacity-50',
       )}
     >

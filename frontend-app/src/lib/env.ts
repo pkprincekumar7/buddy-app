@@ -5,9 +5,7 @@ import { Platform } from 'react-native';
 // Mobile can hit the same Vite server directly — no S3 credentials needed.
 // Android emulator reaches the host machine via 10.0.2.2; iOS simulator uses localhost.
 const DEV_ASSETS_BASE =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:5173'
-    : 'http://localhost:5173';
+  Platform.OS === 'android' ? 'http://10.0.2.2:5173' : 'http://localhost:5173';
 
 export const env = {
   GOOGLE_CLIENT_ID: Config.GOOGLE_CLIENT_ID ?? '',

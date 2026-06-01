@@ -1,10 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { EmojiText } from '@/components/ui/EmojiText';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
@@ -42,7 +38,9 @@ export default function ConversationalOnboardingScreen() {
   const _route = useRoute<ConversationalOnboardingRouteProp>();
   const { activeChildId: childId } = useAuth();
   const { user, isAuthenticated, isLoading } = useAuth();
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [hasPersonality, setHasPersonality] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
@@ -54,10 +52,13 @@ export default function ConversationalOnboardingScreen() {
   const pageStyle = useAnimatedStyle(() => ({ opacity: pageOpacity.value }));
   useEffect(() => {
     if (!showSplash) {
-      pageOpacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.ease) });
+      pageOpacity.value = withTiming(1, {
+        duration: 800,
+        easing: Easing.out(Easing.ease),
+      });
     }
-  // pageOpacity is a stable ref — safe to omit from deps
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // pageOpacity is a stable ref — safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSplash]);
 
   useEffect(() => {
@@ -105,24 +106,36 @@ export default function ConversationalOnboardingScreen() {
 
   const handleComplete = useCallback(
     async (conversationData: Record<string, unknown>) => {
-      const mergedDraft = mergeChildDraft({ ...(childData ?? {}), ...conversationData });
+      const mergedDraft = mergeChildDraft({
+        ...(childData ?? {}),
+        ...conversationData,
+      });
       try {
         if (childId) {
           await api.entities.Child.update(childId, {
             ...mergedDraft,
             onboarding_phase: 2,
             onboarding_completed: false,
-            ...(!hasPersonality && { personality: null, recommendations: null }),
+            ...(!hasPersonality && {
+              personality: null,
+              recommendations: null,
+            }),
           });
         }
       } catch (err) {
-        console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
+        console.warn(
+          '[ConversationalOnboarding] Could not save chatbot data:',
+          err,
+        );
       }
       // Navigate into the Personality tab's PersonalityType screen so the
       // full onboarding flow mirrors the web (Chat → Personality Analysis → Journey).
       navigateTo('Main', {
         screen: 'Personality',
-        params: { screen: 'PersonalityType', params: childId ? { childId } : undefined },
+        params: {
+          screen: 'PersonalityType',
+          params: childId ? { childId } : undefined,
+        },
       });
     },
     [childData, childId, hasPersonality],
@@ -147,11 +160,13 @@ export default function ConversationalOnboardingScreen() {
                   { label: 'Getting to Know', icon: '💬', active: true },
                   { label: 'Personality Analysis', icon: '⭐', active: false },
                   { label: 'Your Journey', icon: '💡', active: false },
-                ].map((phase) => (
+                ].map(phase => (
                   <View
                     key={phase.label}
                     className={`flex-row items-center gap-2 rounded-xl px-3 py-2 flex-1 ${
-                      phase.active ? 'border border-teal-500/25 bg-teal-500/10' : 'opacity-50'
+                      phase.active
+                        ? 'border border-teal-500/25 bg-teal-500/10'
+                        : 'opacity-50'
                     }`}
                     style={
                       !phase.active
@@ -180,16 +195,27 @@ export default function ConversationalOnboardingScreen() {
             {/* Chat — fills all remaining vertical space so its internal ScrollView
                 is constrained and the "Continue" button stays pinned at the bottom.
                 No outer ScrollView here: scrolling belongs only inside the chat. */}
-            <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
+            <View
+              style={{
+                flex: 1,
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 8,
+              }}
+            >
               <ConversationalOnboardingChat
                 key={bootKey}
                 user={user}
                 activeChildId={childId}
                 resumeHydrationReady={hydrated && !showSplash}
                 onComplete={handleComplete}
-                onContinueToPersonality={() => { void handleComplete({}); }}
-                onQuestionnairePersisted={(slice) =>
-                  setChildData((prev) => mergeChildDraft({ ...(prev ?? {}), ...slice }))
+                onContinueToPersonality={() => {
+                  void handleComplete({});
+                }}
+                onQuestionnairePersisted={slice =>
+                  setChildData(prev =>
+                    mergeChildDraft({ ...(prev ?? {}), ...slice }),
+                  )
                 }
                 onQuestionnaireCleared={() => setChildData(null)}
               />
@@ -201,16 +227,25 @@ export default function ConversationalOnboardingScreen() {
                 left={
                   <Button
                     variant="outline"
-                    onPress={() => navigation.navigate('Onboarding', { fromBack: true })}
+                    onPress={() =>
+                      navigation.navigate('Onboarding', { fromBack: true })
+                    }
                     className="h-12 w-full rounded-2xl px-6"
                   >
                     <View className="flex-row items-center gap-1.5">
                       <ChevronLeft size={16} color="#cbd5e1" />
-                      <Text className="text-sm font-medium text-slate-300">Back</Text>
+                      <Text className="text-sm font-medium text-slate-300">
+                        Back
+                      </Text>
                     </View>
                   </Button>
                 }
-                center={<StartOverButton childId={childId ?? undefined} className="w-full" />}
+                center={
+                  <StartOverButton
+                    childId={childId ?? undefined}
+                    className="w-full"
+                  />
+                }
               />
             </View>
           </View>

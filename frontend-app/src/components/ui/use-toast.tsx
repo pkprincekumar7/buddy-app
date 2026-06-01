@@ -15,7 +15,12 @@ interface ToastOptions {
   duration?: number;
 }
 
-function toast({ title, description, variant = 'default', duration = 3000 }: ToastOptions) {
+function toast({
+  title,
+  description,
+  variant = 'default',
+  duration = 3000,
+}: ToastOptions) {
   RNToast.show({
     type: variant === 'destructive' ? 'error' : 'success',
     text1: title,

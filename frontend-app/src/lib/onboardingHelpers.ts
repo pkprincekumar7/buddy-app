@@ -1,7 +1,9 @@
 // Shared defaults and helpers for the onboarding wizard.
 // Consumed by both the Onboarding page and the personality/journey hooks.
 
-export function determinePhase(age: number | string | undefined | null): string {
+export function determinePhase(
+  age: number | string | undefined | null,
+): string {
   if (!age) return 'foundation';
   const n = typeof age === 'string' ? parseFloat(age) : age;
   if (isNaN(n)) return 'foundation';

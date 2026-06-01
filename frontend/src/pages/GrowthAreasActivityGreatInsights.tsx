@@ -9,6 +9,7 @@ import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
 import type { Question } from '@/lib/growthAreaData';
 import { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
+import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
@@ -22,6 +23,8 @@ export default function GrowthAreasActivityGreatInsights() {
 
   type GameResults = { summary?: string; strengths?: string[]; suggested_activities?: string[] };
   const [childName, setChildName] = useState('');
+  const [childAge, setChildAge] = useState('');
+  const [childGender, setChildGender] = useState('');
   const [recommendations, setRecommendations] = useState<string[] | null>(null);
   const [interactiveAnswers, setInteractiveAnswers] = useState<Record<string, unknown>>({});
   const [childGameResults, setChildGameResults] = useState<GameResults | null>(null);
@@ -54,6 +57,8 @@ export default function GrowthAreasActivityGreatInsights() {
         }
 
         setChildName(child.name ?? '');
+        setChildAge(child.age != null ? String(child.age) : '');
+        setChildGender(typeof child.gender === 'string' ? child.gender : '');
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
@@ -113,17 +118,22 @@ export default function GrowthAreasActivityGreatInsights() {
       )
       .join('\n\n');
 
-    const childContext = childGameResults
-      ? `\n\nChild's activity responses:\nSummary: ${childGameResults.summary ?? ''}\nStrengths: ${(childGameResults.strengths ?? []).join(', ')}\nSuggested: ${(childGameResults.suggested_activities ?? []).join(', ')}`
-      : '';
-
     try {
       const result = await api.integrations.Core.InvokeLLM({
-        prompt: `Based on the following parent responses about "${childName || 'the child'}" in the growth area "${area.name}", generate 5 practical 3-month recommendations.\n\nParent responses:\n${qaContext}${childContext}\n\nReturn ONLY a JSON object with a "recommendations" array of 5 short, actionable bullet points (1-2 sentences each) specific to the "${area.name}" growth area.`,
+        prompt: buildGrowthAreaRecommendationsPrompt({
+          childName: childName || 'the child',
+          childAge: childAge || null,
+          childGender: childGender || null,
+          areaName: area.name,
+          qaContext,
+          childGameSummary: childGameResults?.summary ?? null,
+          childGameStrengths: childGameResults?.strengths ?? null,
+          childGameSuggestedActivities: childGameResults?.suggested_activities ?? null,
+        }),
         response_json_schema: {
           type: 'object',
           properties: {
-            recommendations: { type: 'array', items: { type: 'string' } },
+            recommendations: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5 },
           },
         },
       });
@@ -151,7 +161,7 @@ export default function GrowthAreasActivityGreatInsights() {
       toast.error('Could not generate recommendations. Please try again.');
       setStatus('idle');
     }
-  }, [area, childId, childName, interactiveAnswers, childGameResults]);
+  }, [area, childId, childName, childAge, childGender, interactiveAnswers, childGameResults]);
 
   if (isLoadingAuth || status === 'loading') {
     return (

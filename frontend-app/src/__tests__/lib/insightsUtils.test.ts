@@ -49,7 +49,11 @@ describe('completedCount', () => {
   it('returns 0 when no activities are completed', () => {
     const plan = {
       months: [
-        { periods: [{ activities: [{ completed: false }, { completed: false }] }] },
+        {
+          periods: [
+            { activities: [{ completed: false }, { completed: false }] },
+          ],
+        },
       ],
     };
     expect(completedCount(plan)).toBe(0);
@@ -65,9 +69,7 @@ describe('completedCount', () => {
           ],
         },
         {
-          periods: [
-            { activities: [{ completed: true }] },
-          ],
+          periods: [{ activities: [{ completed: true }] }],
         },
       ],
     };

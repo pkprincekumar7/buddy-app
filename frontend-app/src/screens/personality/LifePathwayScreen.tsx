@@ -39,7 +39,10 @@ import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { GradientIconBox, GradientButton } from '@/components/shared/GradientView';
+import {
+  GradientIconBox,
+  GradientButton,
+} from '@/components/shared/GradientView';
 import {
   TrendingUp,
   Sparkles,
@@ -55,38 +58,39 @@ import {
 // Static data (identical to web LifePathway.tsx)
 // ---------------------------------------------------------------------------
 
-const areaMilestoneMap: Record<string, { yearOffset: number; text: string }[]> = {
-  life_ambition: [
-    { yearOffset: 0, text: 'Life ambition clarified' },
-    { yearOffset: 3, text: 'Career path explored' },
-    { yearOffset: 7, text: 'Purpose solidified' },
-  ],
-  self_care: [
-    { yearOffset: 0, text: 'Self-care habits formed' },
-    { yearOffset: 4, text: 'Emotional resilience built' },
-    { yearOffset: 8, text: 'Lifelong wellness achieved' },
-  ],
-  critical_thinking: [
-    { yearOffset: 0, text: 'Problem-solving enhanced' },
-    { yearOffset: 4, text: 'Analytical thinking mastered' },
-    { yearOffset: 9, text: 'Strategic mindset developed' },
-  ],
-  creativity: [
-    { yearOffset: 0, text: 'Creative confidence unlocked' },
-    { yearOffset: 5, text: 'Artistic expression flourishing' },
-    { yearOffset: 9, text: 'Innovation mindset instilled' },
-  ],
-  physical_wellness: [
-    { yearOffset: 0, text: 'Healthy habits started' },
-    { yearOffset: 3, text: 'Physical goals achieved' },
-    { yearOffset: 7, text: 'Lifelong fitness culture' },
-  ],
-  social_skills: [
-    { yearOffset: 0, text: 'Communication skills built' },
-    { yearOffset: 4, text: 'Leadership emerging' },
-    { yearOffset: 8, text: 'Strong social network' },
-  ],
-};
+const areaMilestoneMap: Record<string, { yearOffset: number; text: string }[]> =
+  {
+    life_ambition: [
+      { yearOffset: 0, text: 'Life ambition clarified' },
+      { yearOffset: 3, text: 'Career path explored' },
+      { yearOffset: 7, text: 'Purpose solidified' },
+    ],
+    self_care: [
+      { yearOffset: 0, text: 'Self-care habits formed' },
+      { yearOffset: 4, text: 'Emotional resilience built' },
+      { yearOffset: 8, text: 'Lifelong wellness achieved' },
+    ],
+    critical_thinking: [
+      { yearOffset: 0, text: 'Problem-solving enhanced' },
+      { yearOffset: 4, text: 'Analytical thinking mastered' },
+      { yearOffset: 9, text: 'Strategic mindset developed' },
+    ],
+    creativity: [
+      { yearOffset: 0, text: 'Creative confidence unlocked' },
+      { yearOffset: 5, text: 'Artistic expression flourishing' },
+      { yearOffset: 9, text: 'Innovation mindset instilled' },
+    ],
+    physical_wellness: [
+      { yearOffset: 0, text: 'Healthy habits started' },
+      { yearOffset: 3, text: 'Physical goals achieved' },
+      { yearOffset: 7, text: 'Lifelong fitness culture' },
+    ],
+    social_skills: [
+      { yearOffset: 0, text: 'Communication skills built' },
+      { yearOffset: 4, text: 'Leadership emerging' },
+      { yearOffset: 8, text: 'Strong social network' },
+    ],
+  };
 
 const areaColors: Record<string, string> = {
   life_ambition: '#8b5cf6',
@@ -107,7 +111,8 @@ const areaBgTw: Record<string, string> = {
 };
 
 function getAreaBoost(area: Record<string, unknown>) {
-  const answers = (area['answers'] as Record<string, unknown> | undefined) ?? {};
+  const answers =
+    (area['answers'] as Record<string, unknown> | undefined) ?? {};
   const answerCount = Object.values(answers).filter(Boolean).length;
   const aiRecs = area['ai_three_month_recommendations'];
   const recs: unknown[] =
@@ -139,7 +144,7 @@ function AnimatedInsightCard({
     const cfg = { duration: 800, easing: Easing.out(Easing.ease) };
     opacity.value = withDelay(delay, withTiming(1, cfg));
     translateY.value = withDelay(delay, withTiming(0, cfg));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -159,7 +164,7 @@ function AnimatedFadeSlide({ children }: { children: React.ReactNode }) {
     const cfg = { duration: 500, easing: Easing.out(Easing.ease) };
     opacity.value = withTiming(1, cfg);
     translateY.value = withTiming(0, cfg);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const style = useAnimatedStyle(() => ({
@@ -200,18 +205,21 @@ function GrowthLineChart({
   const Y_MIN = 28;
   const Y_MAX = 108;
 
-  const ages = data.map((d) => d['age'] ?? 0);
+  const ages = data.map(d => d['age'] ?? 0);
   const xMin = Math.min(...ages);
   const xMax = Math.max(...ages);
 
   const sx = (v: number) => PAD.left + ((v - xMin) / (xMax - xMin)) * innerW;
-  const sy = (v: number) => PAD.top + (1 - (v - Y_MIN) / (Y_MAX - Y_MIN)) * innerH;
+  const sy = (v: number) =>
+    PAD.top + (1 - (v - Y_MIN) / (Y_MAX - Y_MIN)) * innerH;
 
   const makePath = (key: string) =>
     data
       .map(
         (d, i) =>
-          `${i === 0 ? 'M' : 'L'}${sx(d['age'] ?? 0).toFixed(1)},${sy(d[key] ?? 0).toFixed(1)}`,
+          `${i === 0 ? 'M' : 'L'}${sx(d['age'] ?? 0).toFixed(1)},${sy(
+            d[key] ?? 0,
+          ).toFixed(1)}`,
       )
       .join(' ');
 
@@ -244,7 +252,8 @@ function GrowthLineChart({
   );
 
   // Derived tooltip values
-  const activePoint = activeAge !== null ? data.find((d) => d['age'] === activeAge) : null;
+  const activePoint =
+    activeAge !== null ? data.find(d => d['age'] === activeAge) : null;
   const cursorX = activeAge !== null ? sx(activeAge) : 0;
   // Flip tooltip to the left when near the right edge
   const tooltipLeft =
@@ -255,18 +264,20 @@ function GrowthLineChart({
 
   const yTicks = [40, 60, 80, 100];
   const xTicks = data.filter((_, i) => i % 2 === 0);
-  const buddy360Keys = yKeys.filter((k) => k !== 'standard');
+  const buddy360Keys = yKeys.filter(k => k !== 'standard');
 
   return (
     // Outer View must NOT clip overflow so the tooltip can escape the SVG bounds
     <View style={{ width: chartWidth, height: CHART_HEIGHT }}>
       <Svg width={chartWidth} height={CHART_HEIGHT}>
         {/* Grid lines */}
-        {yTicks.map((tick) => (
+        {yTicks.map(tick => (
           <SvgLine
             key={`yg${tick}`}
-            x1={PAD.left} y1={sy(tick)}
-            x2={PAD.left + innerW} y2={sy(tick)}
+            x1={PAD.left}
+            y1={sy(tick)}
+            x2={PAD.left + innerW}
+            y2={sy(tick)}
             stroke="rgba(255,255,255,0.05)"
             strokeWidth={1}
             strokeDasharray="3,3"
@@ -274,37 +285,49 @@ function GrowthLineChart({
         ))}
         {/* Frame */}
         <SvgLine
-          x1={PAD.left} y1={PAD.top}
-          x2={PAD.left} y2={PAD.top + innerH}
-          stroke="#475569" strokeWidth={1}
+          x1={PAD.left}
+          y1={PAD.top}
+          x2={PAD.left}
+          y2={PAD.top + innerH}
+          stroke="#475569"
+          strokeWidth={1}
         />
         <SvgLine
-          x1={PAD.left} y1={PAD.top + innerH}
-          x2={PAD.left + innerW} y2={PAD.top + innerH}
-          stroke="#475569" strokeWidth={1}
+          x1={PAD.left}
+          y1={PAD.top + innerH}
+          x2={PAD.left + innerW}
+          y2={PAD.top + innerH}
+          stroke="#475569"
+          strokeWidth={1}
         />
         {/* Y labels */}
-        {yTicks.map((tick) => (
+        {yTicks.map(tick => (
           <SvgText
             key={`yl${tick}`}
-            x={PAD.left - 5} y={sy(tick) + 3.5}
-            fill="#475569" fontSize={9} textAnchor="end"
+            x={PAD.left - 5}
+            y={sy(tick) + 3.5}
+            fill="#475569"
+            fontSize={9}
+            textAnchor="end"
           >
             {`${tick}%`}
           </SvgText>
         ))}
         {/* X labels */}
-        {xTicks.map((d) => (
+        {xTicks.map(d => (
           <SvgText
             key={`xl${d['age']}`}
-            x={sx(d['age'] ?? 0)} y={PAD.top + innerH + 16}
-            fill="#475569" fontSize={9} textAnchor="middle"
+            x={sx(d['age'] ?? 0)}
+            y={PAD.top + innerH + 16}
+            fill="#475569"
+            fontSize={9}
+            textAnchor="middle"
           >
             {String(d['age'])}
           </SvgText>
         ))}
         {/* Lines */}
-        {yKeys.map((key) => (
+        {yKeys.map(key => (
           <SvgPath
             key={key}
             d={makePath(key)}
@@ -316,15 +339,16 @@ function GrowthLineChart({
           />
         ))}
         {/* Small dots on all data points */}
-        {yKeys.map((key) =>
-          data.map((d) => {
+        {yKeys.map(key =>
+          data.map(d => {
             const age = d['age'] ?? 0;
             const yVal = d[key];
             if (yVal === undefined) return null;
             return (
               <SvgCircle
                 key={`rdot-${key}-${age}`}
-                cx={sx(age)} cy={sy(yVal)}
+                cx={sx(age)}
+                cy={sy(yVal)}
                 r={4}
                 fill={colors[key] ?? '#10b981'}
               />
@@ -332,8 +356,8 @@ function GrowthLineChart({
           }),
         )}
         {/* Milestone dots (larger, colored, white stroke) */}
-        {buddy360Keys.map((key) =>
-          data.map((d) => {
+        {buddy360Keys.map(key =>
+          data.map(d => {
             const age = d['age'] ?? 0;
             const dotColor = milestoneAgeColorMap[age];
             const yVal = d[key];
@@ -341,7 +365,8 @@ function GrowthLineChart({
             return (
               <SvgCircle
                 key={`mdot-${key}-${age}`}
-                cx={sx(age)} cy={sy(yVal)}
+                cx={sx(age)}
+                cy={sy(yVal)}
                 r={7}
                 fill={dotColor}
                 stroke="white"
@@ -353,8 +378,10 @@ function GrowthLineChart({
         {/* Active cursor line — vertical dashed line at the touched age */}
         {activeAge !== null && (
           <SvgLine
-            x1={cursorX} y1={PAD.top}
-            x2={cursorX} y2={PAD.top + innerH}
+            x1={cursorX}
+            y1={PAD.top}
+            x2={cursorX}
+            y2={PAD.top + innerH}
             stroke="rgba(255,255,255,0.30)"
             strokeWidth={1.5}
             strokeDasharray="4,4"
@@ -362,13 +389,14 @@ function GrowthLineChart({
         )}
         {/* Highlight dots at cursor age — larger ring to call attention */}
         {activePoint &&
-          yKeys.map((key) => {
+          yKeys.map(key => {
             const yVal = activePoint[key];
             if (yVal === undefined) return null;
             return (
               <SvgCircle
                 key={`hi-${key}`}
-                cx={cursorX} cy={sy(yVal)}
+                cx={cursorX}
+                cy={sy(yVal)}
                 r={6}
                 fill={colors[key] ?? '#10b981'}
                 stroke="white"
@@ -380,11 +408,17 @@ function GrowthLineChart({
 
       {/* ── Touch capture overlay — transparent, sits on top of SVG ── */}
       <View
-        style={{ position: 'absolute', top: 0, left: 0, width: chartWidth, height: CHART_HEIGHT }}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: chartWidth,
+          height: CHART_HEIGHT,
+        }}
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
-        onResponderGrant={(e) => handleTouchMove(e.nativeEvent.locationX)}
-        onResponderMove={(e) => handleTouchMove(e.nativeEvent.locationX)}
+        onResponderGrant={e => handleTouchMove(e.nativeEvent.locationX)}
+        onResponderMove={e => handleTouchMove(e.nativeEvent.locationX)}
         onResponderRelease={() => setActiveAge(null)}
         onResponderTerminate={() => setActiveAge(null)}
       />
@@ -423,7 +457,7 @@ function GrowthLineChart({
             Age {activeAge}
           </Text>
           {/* One row per series — color swatch · name · value% */}
-          {yKeys.map((key) => {
+          {yKeys.map(key => {
             const val = activePoint[key];
             if (val === undefined) return null;
             return (
@@ -451,7 +485,9 @@ function GrowthLineChart({
                 >
                   {seriesNames[key] ?? key}
                 </Text>
-                <Text style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '600' }}>
+                <Text
+                  style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '600' }}
+                >
                   {val}%
                 </Text>
               </View>
@@ -474,8 +510,14 @@ export default function LifePathwayScreen() {
 
   const { activeChildId: childId } = useAuth();
   const { user } = useAuth();
-  const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
-    useLifePathwayData(childId);
+  const {
+    childData,
+    profile,
+    isLoading,
+    completedAreas,
+    savedConcern,
+    setSavedConcern,
+  } = useLifePathwayData(childId);
   const childName = (childData?.['name'] as string | undefined) ?? '';
 
   const [showConcernModal, setShowConcernModal] = useState(false);
@@ -500,10 +542,15 @@ export default function LifePathwayScreen() {
     const activeChildId = childData?.['id'] as string | undefined;
     if (!concernInput.trim() || !activeChildId) return;
     try {
-      await api.goals.patch(activeChildId, { parent_concern: concernInput.trim() });
+      await api.goals.patch(activeChildId, {
+        parent_concern: concernInput.trim(),
+      });
       setSavedConcern(concernInput.trim());
     } catch (err) {
-      console.warn('[LifePathway] Could not persist concern, proceeding anyway:', err);
+      console.warn(
+        '[LifePathway] Could not persist concern, proceeding anyway:',
+        err,
+      );
     }
     setConcernSubmitted(true);
   }, [childData, concernInput, setSavedConcern]);
@@ -514,10 +561,11 @@ export default function LifePathwayScreen() {
   };
 
   const handleBack = () =>
-    (navigation as unknown as { navigate: (name: string, params?: unknown) => void }).navigate(
-      'Growth',
-      { screen: 'GrowthAreas', params: { fromBack: true } },
-    );
+    (
+      navigation as unknown as {
+        navigate: (name: string, params?: unknown) => void;
+      }
+    ).navigate('Growth', { screen: 'GrowthAreas', params: { fromBack: true } });
 
   const strengths = useMemo(
     () =>
@@ -531,7 +579,11 @@ export default function LifePathwayScreen() {
 
   const currentAge = useMemo(
     () =>
-      parseInt(String((childData?.['age'] as string | number | null | undefined) ?? '')) || 10,
+      parseInt(
+        String(
+          (childData?.['age'] as string | number | null | undefined) ?? '',
+        ),
+      ) || 10,
     [childData],
   );
 
@@ -545,14 +597,20 @@ export default function LifePathwayScreen() {
           standard: Math.min(40 + i * 4, 100),
         };
         if (completedAreas.length > 0) {
-          completedAreas.forEach((area) => {
+          completedAreas.forEach(area => {
             const boost = getAreaBoost(area);
             const areaId = area['area_id'];
             if (areaId)
-              point[areaId] = Math.min(Math.round(40 + i * boost + i * i * 0.25), 100);
+              point[areaId] = Math.min(
+                Math.round(40 + i * boost + i * i * 0.25),
+                100,
+              );
           });
         } else {
-          point['buddy360'] = Math.min(Math.round(40 + i * 6.5 + i * i * 0.3), 100);
+          point['buddy360'] = Math.min(
+            Math.round(40 + i * 6.5 + i * i * 0.3),
+            100,
+          );
         }
         return point;
       }),
@@ -573,11 +631,12 @@ export default function LifePathwayScreen() {
     () =>
       completedAreas.length > 0
         ? completedAreas
-            .flatMap((area) => {
+            .flatMap(area => {
               const areaId = area.area_id as string | undefined;
               const areaName = area.area_name as string | undefined;
-              const milestones = (areaId ? areaMilestoneMap[areaId] : undefined) ?? [];
-              return milestones.map((m) => ({
+              const milestones =
+                (areaId ? areaMilestoneMap[areaId] : undefined) ?? [];
+              return milestones.map(m => ({
                 age: currentAge + m.yearOffset,
                 text: m.text,
                 area: areaName ?? '',
@@ -586,12 +645,42 @@ export default function LifePathwayScreen() {
             })
             .sort((a, b) => a.age - b.age)
         : [
-            { age: currentAge, text: 'Personalized profile created', area: 'Core', color: '#10b981' },
-            { age: currentAge + 1, text: 'Core strengths identified & enhanced', area: 'Core', color: '#10b981' },
-            { age: currentAge + 2, text: 'Weekly missions mastered', area: 'Core', color: '#10b981' },
-            { age: currentAge + 5, text: 'Multiple talents developed', area: 'Core', color: '#10b981' },
-            { age: currentAge + 7, text: 'Character strengths solidified', area: 'Core', color: '#10b981' },
-            { age: currentAge + 10, text: 'Ready for exceptional future', area: 'Core', color: '#10b981' },
+            {
+              age: currentAge,
+              text: 'Personalized profile created',
+              area: 'Core',
+              color: '#10b981',
+            },
+            {
+              age: currentAge + 1,
+              text: 'Core strengths identified & enhanced',
+              area: 'Core',
+              color: '#10b981',
+            },
+            {
+              age: currentAge + 2,
+              text: 'Weekly missions mastered',
+              area: 'Core',
+              color: '#10b981',
+            },
+            {
+              age: currentAge + 5,
+              text: 'Multiple talents developed',
+              area: 'Core',
+              color: '#10b981',
+            },
+            {
+              age: currentAge + 7,
+              text: 'Character strengths solidified',
+              area: 'Core',
+              color: '#10b981',
+            },
+            {
+              age: currentAge + 10,
+              text: 'Ready for exceptional future',
+              area: 'Core',
+              color: '#10b981',
+            },
           ],
     [completedAreas, currentAge],
   );
@@ -617,19 +706,22 @@ export default function LifePathwayScreen() {
 
   // Section entrance animations — mirrors web slideUp(0.1 / 0.8 / 1.6 / 1.8)
   const ready = !isLoading && !showSplash;
-  const contentStyle  = useFocusEntranceAnim(ready, 0,    800);
-  const headerAnim    = useFocusEntranceAnim(ready, 100,  800);
-  const chartAnim     = useFocusEntranceAnim(ready, 800,  800);
-  const insightsAnim  = useFocusEntranceAnim(ready, 1600, 800);
-  const ctaAnim       = useFocusEntranceAnim(ready, 1800, 800);
+  const contentStyle = useFocusEntranceAnim(ready, 0, 800);
+  const headerAnim = useFocusEntranceAnim(ready, 100, 800);
+  const chartAnim = useFocusEntranceAnim(ready, 800, 800);
+  const insightsAnim = useFocusEntranceAnim(ready, 1600, 800);
+  const ctaAnim = useFocusEntranceAnim(ready, 1800, 800);
 
   const { width: screenWidth } = useWindowDimensions();
   // card has 16px page padding + 24px card padding on each side → subtract 80
   const chartWidth = Math.max(screenWidth - 80, 200);
 
   const chartColors = useMemo<Record<string, string>>(() => {
-    const m: Record<string, string> = { standard: '#94a3b8', buddy360: '#10b981' };
-    completedAreas.forEach((a) => {
+    const m: Record<string, string> = {
+      standard: '#94a3b8',
+      buddy360: '#10b981',
+    };
+    completedAreas.forEach(a => {
       const id = a.area_id as string | undefined;
       if (id) m[id] = areaColors[id] ?? '#10b981';
     });
@@ -638,7 +730,10 @@ export default function LifePathwayScreen() {
 
   const chartYKeys = useMemo<string[]>(() => {
     if (completedAreas.length === 0) return ['standard', 'buddy360'];
-    return ['standard', ...completedAreas.map((a) => String(a.area_id ?? '')).filter(Boolean)];
+    return [
+      'standard',
+      ...completedAreas.map(a => String(a.area_id ?? '')).filter(Boolean),
+    ];
   }, [completedAreas]);
 
   // Series display names — mirrors web recharts Line name props exactly
@@ -647,7 +742,7 @@ export default function LifePathwayScreen() {
       standard: 'Standard Journey',
       buddy360: 'Buddy360 Journey',
     };
-    completedAreas.forEach((a) => {
+    completedAreas.forEach(a => {
       const id = a.area_id as string | undefined;
       if (id) m[id] = `${String(a.area_name ?? '')} (Buddy360)`;
     });
@@ -668,25 +763,37 @@ export default function LifePathwayScreen() {
         <ScrollView
           ref={scrollRef}
           className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 48, paddingBottom: 48 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 48,
+            paddingBottom: 48,
+          }}
           showsVerticalScrollIndicator={false}
         >
           {/* ── Header ─────────────────────────────────────────────────────── */}
           <Animated.View style={headerAnim} className="mb-8 items-center gap-4">
             {/* Gradient icon box — mirrors web glow-teal-sm bg-gradient-to-br from-teal-400 to-teal-600 */}
             <View style={{ marginBottom: 8 }}>
-              <GradientIconBox from="#2dd4bf" to="#0d9488" size={64} radius={16} diagonal>
+              <GradientIconBox
+                from="#2dd4bf"
+                to="#0d9488"
+                size={64}
+                radius={16}
+                diagonal
+              >
                 <TrendingUp size={32} color="white" />
               </GradientIconBox>
             </View>
             <Text className="text-3xl font-bold tracking-tight text-white text-center">
-              Take a look at {childName}'s life journey planned and powered by Buddy360
+              Take a look at {childName}'s life journey planned and powered by
+              Buddy360
             </Text>
             {completedAreas.length > 0 && (
               <View className="flex-row flex-wrap justify-center gap-2 pt-2">
-                {completedAreas.map((area) => {
+                {completedAreas.map(area => {
                   const areaId = area.area_id as string | undefined;
-                  const bgTw = (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
+                  const bgTw =
+                    (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
                   return (
                     <View
                       key={(area.area_id ?? area.area_name) as string}
@@ -706,7 +813,10 @@ export default function LifePathwayScreen() {
 
           {/* ── 10-Year Growth Journey Chart Card ──────────────────────────── */}
           <Animated.View
-            style={[chartAnim, { borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }]}
+            style={[
+              chartAnim,
+              { borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+            ]}
             className="rounded-2xl bg-card p-6 mb-6"
           >
             <View className="mb-6 items-center">
@@ -716,7 +826,9 @@ export default function LifePathwayScreen() {
               <Text className="text-slate-400 text-center">
                 See how {childName}'s development accelerates with Buddy360
                 {completedAreas.length > 0 &&
-                  ` across ${completedAreas.length} growth area${completedAreas.length > 1 ? 's' : ''}`}
+                  ` across ${completedAreas.length} growth area${
+                    completedAreas.length > 1 ? 's' : ''
+                  }`}
               </Text>
             </View>
 
@@ -738,31 +850,43 @@ export default function LifePathwayScreen() {
                 <View className="h-0.5 w-6 bg-slate-400" />
                 <Text className="text-xs text-slate-500">Standard Journey</Text>
               </View>
-              {completedAreas.length > 0
-                ? completedAreas.map((area) => {
-                    const areaId = area.area_id as string | undefined;
-                    const lineColor = (areaId ? areaColors[areaId] : undefined) ?? '#10b981';
-                    return (
-                      <View key={String(areaId)} className="flex-row items-center gap-2">
-                        <View className="h-0.5 w-6" style={{ backgroundColor: lineColor }} />
-                        <Text className="text-xs text-slate-500">
-                          {String(area.area_name ?? '')} (Buddy360)
-                        </Text>
-                      </View>
-                    );
-                  })
-                : (
-                  <View className="flex-row items-center gap-2">
-                    <View className="h-0.5 w-6 bg-teal-400" />
-                    <Text className="text-xs text-slate-500">Buddy360 Journey</Text>
-                  </View>
-                )}
+              {completedAreas.length > 0 ? (
+                completedAreas.map(area => {
+                  const areaId = area.area_id as string | undefined;
+                  const lineColor =
+                    (areaId ? areaColors[areaId] : undefined) ?? '#10b981';
+                  return (
+                    <View
+                      key={String(areaId)}
+                      className="flex-row items-center gap-2"
+                    >
+                      <View
+                        className="h-0.5 w-6"
+                        style={{ backgroundColor: lineColor }}
+                      />
+                      <Text className="text-xs text-slate-500">
+                        {String(area.area_name ?? '')} (Buddy360)
+                      </Text>
+                    </View>
+                  );
+                })
+              ) : (
+                <View className="flex-row items-center gap-2">
+                  <View className="h-0.5 w-6 bg-teal-400" />
+                  <Text className="text-xs text-slate-500">
+                    Buddy360 Journey
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Milestone Legend — mirrors web border-edge-faint bg-surface-elevated, 2-col grid */}
             {buddy360Milestones.length > 0 && (
               <View
-                style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+                style={{
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.06)',
+                }}
                 className="rounded-xl bg-surface-elevated p-4 mb-6"
               >
                 <Text className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
@@ -770,7 +894,7 @@ export default function LifePathwayScreen() {
                 </Text>
                 {/* 2-column flex-wrap layout mirrors web grid-cols-2 */}
                 <View className="flex-row flex-wrap" style={{ gap: 8 }}>
-                  {buddy360Milestones.map((m) => (
+                  {buddy360Milestones.map(m => (
                     <View
                       key={`${m.age}-${m.text}`}
                       className="flex-row items-center gap-2"
@@ -783,7 +907,10 @@ export default function LifePathwayScreen() {
                       <Text className="w-14 flex-shrink-0 text-xs font-medium text-slate-300">
                         Age {m.age}
                       </Text>
-                      <Text className="flex-1 text-xs text-slate-400" numberOfLines={2}>
+                      <Text
+                        className="flex-1 text-xs text-slate-400"
+                        numberOfLines={2}
+                      >
                         {m.text}
                       </Text>
                       {m.area !== 'Core' && (
@@ -812,17 +939,24 @@ export default function LifePathwayScreen() {
                   >
                     <Text className="text-sm font-bold text-slate-300">1</Text>
                   </View>
-                  <Text className="text-lg font-bold text-white">Standard Life Journey</Text>
+                  <Text className="text-lg font-bold text-white">
+                    Standard Life Journey
+                  </Text>
                 </View>
 
                 {/* Analysis card */}
                 <View
-                  style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.06)',
+                  }}
                   className="rounded-xl bg-surface-elevated p-4"
                 >
                   <View className="flex-row items-center gap-2 mb-2">
                     <Sparkles size={16} color="#94a3b8" />
-                    <Text className="text-sm font-semibold text-white">The Analysis</Text>
+                    <Text className="text-sm font-semibold text-white">
+                      The Analysis
+                    </Text>
                   </View>
                   <Text className="text-sm text-slate-400">
                     {(profile?.summary as string | undefined) ??
@@ -832,20 +966,30 @@ export default function LifePathwayScreen() {
 
                 {/* Key Milestones card */}
                 <View
-                  style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.06)',
+                  }}
                   className="rounded-xl bg-surface-elevated p-4"
                 >
                   <View className="flex-row items-center gap-2 mb-3">
                     <Target size={16} color="#94a3b8" />
-                    <Text className="text-sm font-semibold text-white">Key Milestones</Text>
+                    <Text className="text-sm font-semibold text-white">
+                      Key Milestones
+                    </Text>
                   </View>
                   <View className="gap-2.5">
-                    {standardMilestones.map((milestone) => (
-                      <View key={milestone.text} className="flex-row items-start gap-3">
+                    {standardMilestones.map(milestone => (
+                      <View
+                        key={milestone.text}
+                        className="flex-row items-start gap-3"
+                      >
                         <Text className="w-14 flex-shrink-0 text-xs font-medium text-slate-500">
                           Age {milestone.age}
                         </Text>
-                        <Text className="flex-1 text-xs text-slate-400">{milestone.text}</Text>
+                        <Text className="flex-1 text-xs text-slate-400">
+                          {milestone.text}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -856,7 +1000,13 @@ export default function LifePathwayScreen() {
               <View className="gap-4">
                 <View className="mb-4 flex-row items-center gap-2">
                   {/* Gradient badge — mirrors web bg-gradient-to-br from-teal-500 to-teal-700 */}
-                  <GradientIconBox from="#14b8a6" to="#0f766e" size={32} radius={16} diagonal>
+                  <GradientIconBox
+                    from="#14b8a6"
+                    to="#0f766e"
+                    size={32}
+                    radius={16}
+                    diagonal
+                  >
                     <Text className="text-sm font-bold text-white">2</Text>
                   </GradientIconBox>
                   <Text className="text-lg font-bold text-white">
@@ -868,13 +1018,17 @@ export default function LifePathwayScreen() {
                 <View className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-4">
                   <View className="flex-row items-center gap-2 mb-2">
                     <Sparkles size={16} color="#2dd4bf" />
-                    <Text className="text-sm font-semibold text-teal-400">Analysis</Text>
+                    <Text className="text-sm font-semibold text-teal-400">
+                      Analysis
+                    </Text>
                   </View>
                   <Text className="text-sm text-slate-400">
                     {(profile?.summary as string | undefined) ??
                       `${childName} experiences accelerated holistic growth through personalized guidance, targeted skill development, and continuous support.`}
                     {completedAreas.length > 0 &&
-                      ` Development is boosted across ${completedAreas.map((a) => a.area_name).join(', ')}.`}
+                      ` Development is boosted across ${completedAreas
+                        .map(a => a.area_name)
+                        .join(', ')}.`}
                   </Text>
                 </View>
 
@@ -884,10 +1038,15 @@ export default function LifePathwayScreen() {
                     Strengths Improvised by Buddy360
                   </Text>
                   <View className="gap-1.5">
-                    {strengths.map((strength) => (
-                      <View key={strength} className="flex-row items-start gap-2">
+                    {strengths.map(strength => (
+                      <View
+                        key={strength}
+                        className="flex-row items-start gap-2"
+                      >
                         <Text className="mt-0.5 text-teal-400">✓</Text>
-                        <Text className="flex-1 text-sm text-slate-400">{strength}</Text>
+                        <Text className="flex-1 text-sm text-slate-400">
+                          {strength}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -902,7 +1061,7 @@ export default function LifePathwayScreen() {
                     </Text>
                   </View>
                   <View className="gap-2.5">
-                    {buddy360Milestones.map((milestone) => (
+                    {buddy360Milestones.map(milestone => (
                       <View
                         key={`${milestone.age}-${milestone.text}`}
                         className="flex-row items-start gap-3"
@@ -918,7 +1077,9 @@ export default function LifePathwayScreen() {
                             className="flex-shrink-0 self-start rounded-full px-1.5 py-0.5"
                             style={{ backgroundColor: milestone.color }}
                           >
-                            <Text className="text-xs text-white">{milestone.area}</Text>
+                            <Text className="text-xs text-white">
+                              {milestone.area}
+                            </Text>
                           </View>
                         )}
                       </View>
@@ -941,7 +1102,8 @@ export default function LifePathwayScreen() {
 
               {completedAreas.map((area, idx) => {
                 const areaId = area.area_id as string | undefined;
-                const bgTw = (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
+                const bgTw =
+                  (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
                 const recs: unknown[] =
                   Array.isArray(area.ai_three_month_recommendations) &&
                   (area.ai_three_month_recommendations as unknown[]).length > 0
@@ -955,20 +1117,27 @@ export default function LifePathwayScreen() {
                     index={idx}
                   >
                     <View
-                      style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.10)',
+                      }}
                       className="rounded-2xl bg-card p-6"
                     >
                       <View className="mb-4 flex-row items-center gap-3">
                         <View
                           className={`h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${bgTw}`}
                         >
-                          <Text className="font-bold text-white">{idx + 1}</Text>
+                          <Text className="font-bold text-white">
+                            {idx + 1}
+                          </Text>
                         </View>
                         <Text className="flex-1 text-lg font-bold text-white">
                           {area.area_name as string}
                         </Text>
                         <View className={`rounded-full px-2 py-0.5 ${bgTw}`}>
-                          <Text className="text-xs font-medium text-white">Completed</Text>
+                          <Text className="text-xs font-medium text-white">
+                            Completed
+                          </Text>
                         </View>
                       </View>
 
@@ -980,15 +1149,21 @@ export default function LifePathwayScreen() {
                           <View className="gap-2">
                             {recs.map((rec, i) => (
                               <View
-                                key={`${(area.area_id ?? idx) as string | number}-${i}`}
+                                key={`${
+                                  (area.area_id ?? idx) as string | number
+                                }-${i}`}
                                 className="flex-row items-start gap-2"
                               >
                                 <View
                                   className={`mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${bgTw}`}
                                 >
-                                  <Text className="text-xs font-bold text-white">{i + 1}</Text>
+                                  <Text className="text-xs font-bold text-white">
+                                    {i + 1}
+                                  </Text>
                                 </View>
-                                <Text className="flex-1 text-sm text-slate-400">{String(rec)}</Text>
+                                <Text className="flex-1 text-sm text-slate-400">
+                                  {String(rec)}
+                                </Text>
                               </View>
                             ))}
                           </View>
@@ -1021,10 +1196,12 @@ export default function LifePathwayScreen() {
                 <Text className="text-xl font-bold leading-relaxed text-white text-center">
                   Welcome{' '}
                   <Text className="text-teal-400">
-                    {(user?.full_name as string | undefined)?.split(' ')[0] ?? 'Parent'}
+                    {(user?.full_name as string | undefined)?.split(' ')[0] ??
+                      'Parent'}
                   </Text>{' '}
-                  and <Text className="text-emerald-400">{childName}</Text> to Buddy360. We look
-                  forward to powering up your life in all possible dimensions.
+                  and <Text className="text-emerald-400">{childName}</Text> to
+                  Buddy360. We look forward to powering up your life in all
+                  possible dimensions.
                 </Text>
               </View>
             ) : null}
@@ -1044,11 +1221,18 @@ export default function LifePathwayScreen() {
                 >
                   <View className="flex-row items-center gap-1.5">
                     <ChevronLeft size={16} color="#cbd5e1" />
-                    <Text className="text-sm font-medium text-slate-300">Back</Text>
+                    <Text className="text-sm font-medium text-slate-300">
+                      Back
+                    </Text>
                   </View>
                 </Button>
               }
-              center={<StartOverButton childId={childId ?? undefined} className="w-full" />}
+              center={
+                <StartOverButton
+                  childId={childId ?? undefined}
+                  className="w-full"
+                />
+              }
               right={
                 <GradientButton
                   from="#14b8a6"
@@ -1059,7 +1243,9 @@ export default function LifePathwayScreen() {
                   style={{ width: '100%' }}
                 >
                   <View className="flex-row items-center gap-2">
-                    <Text className="font-semibold text-[#0a0a0a]">Continue Journey</Text>
+                    <Text className="font-semibold text-[#0a0a0a]">
+                      Continue Journey
+                    </Text>
                     <ChevronRight size={16} color="#0a0a0a" />
                   </View>
                 </GradientButton>
@@ -1082,7 +1268,7 @@ export default function LifePathwayScreen() {
             <Pressable
               className="relative w-full max-w-lg rounded-2xl bg-surface-elevated p-8 pt-12"
               style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
-              onPress={(e) => e.stopPropagation()}
+              onPress={e => e.stopPropagation()}
             >
               {/* Close button — mirrors web <X className="h-5 w-5"> */}
               <Pressable
@@ -1098,26 +1284,41 @@ export default function LifePathwayScreen() {
                   <View className="gap-5">
                     <View className="mb-2 flex-row items-center gap-3">
                       {/* Gradient icon — mirrors web glow-teal-sm from-teal-400 to-teal-600 */}
-                      <GradientIconBox from="#2dd4bf" to="#0d9488" size={44} radius={12} diagonal>
+                      <GradientIconBox
+                        from="#2dd4bf"
+                        to="#0d9488"
+                        size={44}
+                        radius={12}
+                        diagonal
+                      >
                         <Sparkles size={20} color="white" />
                       </GradientIconBox>
                       <View>
-                        <Text className="text-lg font-bold text-white">One last thing!</Text>
-                        <Text className="text-sm text-slate-500">Buddy360 wants to know</Text>
+                        <Text className="text-lg font-bold text-white">
+                          One last thing!
+                        </Text>
+                        <Text className="text-sm text-slate-500">
+                          Buddy360 wants to know
+                        </Text>
                       </View>
                     </View>
                     <Text className="text-base leading-relaxed text-slate-300">
                       Hey{' '}
                       <Text className="font-semibold text-teal-400">
-                        {(user?.full_name as string | undefined)?.split(' ')[0] ?? 'there'}
+                        {(user?.full_name as string | undefined)?.split(
+                          ' ',
+                        )[0] ?? 'there'}
                       </Text>
-                      , is there anything that you want Buddy360 to work on currently with respect
-                      to{' '}
-                      <Text className="font-semibold text-emerald-400">{childName}</Text>?
+                      , is there anything that you want Buddy360 to work on
+                      currently with respect to{' '}
+                      <Text className="font-semibold text-emerald-400">
+                        {childName}
+                      </Text>
+                      ?
                     </Text>
                     <TextareaWithVoice
                       value={concernInput}
-                      onChange={(e) => setConcernInput(e.target.value)}
+                      onChange={e => setConcernInput(e.target.value)}
                       placeholder={`e.g., I want to improve English speaking skills for ${childName}.`}
                       className="min-h-[120px] w-full rounded-xl"
                     />
@@ -1136,11 +1337,15 @@ export default function LifePathwayScreen() {
                         height={44}
                         borderRadius={12}
                         disabled={!concernInput.trim()}
-                        onPress={() => { void handleConcernSubmit(); }}
+                        onPress={() => {
+                          void handleConcernSubmit();
+                        }}
                         style={{ flex: 1 }}
                       >
                         <View className="flex-row items-center gap-1.5">
-                          <Text className="font-semibold text-[#0a0a0a]">Submit</Text>
+                          <Text className="font-semibold text-[#0a0a0a]">
+                            Submit
+                          </Text>
                           <ChevronRight size={16} color="#0a0a0a" />
                         </View>
                       </GradientButton>
@@ -1153,14 +1358,28 @@ export default function LifePathwayScreen() {
                     {/* Gradient success circle — mirrors web from-emerald-400 to-teal-500 */}
                     <View
                       style={{
-                        width: 56, height: 56, borderRadius: 28,
-                        overflow: 'hidden', alignSelf: 'center',
-                        alignItems: 'center', justifyContent: 'center',
+                        width: 56,
+                        height: 56,
+                        borderRadius: 28,
+                        overflow: 'hidden',
+                        alignSelf: 'center',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
-                      <Svg width={56} height={56} style={{ position: 'absolute' }}>
+                      <Svg
+                        width={56}
+                        height={56}
+                        style={{ position: 'absolute' }}
+                      >
                         <Defs>
-                          <SvgLinearGradient id="successGrad" x1="0" y1="0" x2="1" y2="1">
+                          <SvgLinearGradient
+                            id="successGrad"
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="1"
+                          >
                             <Stop offset="0%" stopColor="#34d399" />
                             <Stop offset="100%" stopColor="#14b8a6" />
                           </SvgLinearGradient>
@@ -1170,11 +1389,15 @@ export default function LifePathwayScreen() {
                       <Text style={{ fontSize: 24, zIndex: 1 }}>✅</Text>
                     </View>
                     <View className="items-center">
-                      <Text className="mb-2 text-lg font-bold text-white">Got it!</Text>
+                      <Text className="mb-2 text-lg font-bold text-white">
+                        Got it!
+                      </Text>
                       <Text className="text-center leading-relaxed text-slate-400">
                         I got that. We will work with{' '}
-                        <Text className="font-semibold text-emerald-400">{childName}</Text> on the
-                        same.
+                        <Text className="font-semibold text-emerald-400">
+                          {childName}
+                        </Text>{' '}
+                        on the same.
                       </Text>
                     </View>
                     {/* Gradient go-to-dashboard — mirrors web btn-primary */}
@@ -1187,7 +1410,9 @@ export default function LifePathwayScreen() {
                       style={{ width: '100%' }}
                     >
                       <View className="flex-row items-center gap-2">
-                        <Text className="font-semibold text-[#0a0a0a]">Go to Dashboard</Text>
+                        <Text className="font-semibold text-[#0a0a0a]">
+                          Go to Dashboard
+                        </Text>
                         <ChevronRight size={16} color="#0a0a0a" />
                       </View>
                     </GradientButton>

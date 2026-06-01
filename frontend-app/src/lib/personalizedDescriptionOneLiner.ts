@@ -1,5 +1,8 @@
 /** Collapse LLM prose to a single short line for UI and downstream summary fields. */
-export function personalizedDescriptionOneLiner(raw: unknown, maxLen = 180): string {
+export function personalizedDescriptionOneLiner(
+  raw: unknown,
+  maxLen = 180,
+): string {
   const flat = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
   if (!flat) return '';
   let sentence = flat;
@@ -8,7 +11,8 @@ export function personalizedDescriptionOneLiner(raw: unknown, maxLen = 180): str
   if (sentence.length > maxLen) {
     sentence = sentence.slice(0, maxLen).trimEnd();
     const lastSpace = sentence.lastIndexOf(' ');
-    if (lastSpace > Math.floor(maxLen * 0.5)) sentence = sentence.slice(0, lastSpace);
+    if (lastSpace > Math.floor(maxLen * 0.5))
+      sentence = sentence.slice(0, lastSpace);
     sentence = `${sentence}…`;
   }
   return sentence;

@@ -27,9 +27,7 @@ describe('Button', () => {
   });
 
   it('shows ActivityIndicator when loading=true', () => {
-    const { UNSAFE_getByType } = render(
-      <Button loading>Loading</Button>,
-    );
+    const { UNSAFE_getByType } = render(<Button loading>Loading</Button>);
     const { ActivityIndicator } = require('react-native');
     expect(UNSAFE_getByType(ActivityIndicator)).toBeTruthy();
   });
@@ -47,8 +45,6 @@ describe('Button', () => {
   });
 
   it('renders large size without throwing', () => {
-    expect(() =>
-      render(<Button size="lg">Large</Button>),
-    ).not.toThrow();
+    expect(() => render(<Button size="lg">Large</Button>)).not.toThrow();
   });
 });

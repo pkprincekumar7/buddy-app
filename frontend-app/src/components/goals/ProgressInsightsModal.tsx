@@ -16,7 +16,11 @@ import Animated, {
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
-import { useModalScale, useSpinner, useSlideUpWhenReady } from '@/lib/animations';
+import {
+  useModalScale,
+  useSpinner,
+  useSlideUpWhenReady,
+} from '@/lib/animations';
 import { GradientSurface } from '@/components/shared/GradientView';
 import {
   X,
@@ -61,14 +65,18 @@ interface ProgressInsightsModalProps {
   goalPlan: GoalPlan;
   childId?: string;
   childName?: string;
+  childAge?: number | string | null;
+  childGender?: string | null;
   onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
 
 // Maps a single pair observation to a bar score (-50 to +50)
 const obsToBarScore = (obs: Observation): number => {
-  if (obs.type === 'improved') return Math.min(obs.percent ?? NON_SCORABLE_DELTA_PTS, 50);
-  if (obs.type === 'declined') return -Math.min(obs.percent ?? NON_SCORABLE_DELTA_PTS, 50);
+  if (obs.type === 'improved')
+    return Math.min(obs.percent ?? NON_SCORABLE_DELTA_PTS, 50);
+  if (obs.type === 'declined')
+    return -Math.min(obs.percent ?? NON_SCORABLE_DELTA_PTS, 50);
   if (obs.type === 'noImprovement') return 0;
   return 0; // inProgress / notStarted → neutral
 };
@@ -79,22 +87,45 @@ const obsToBarColor = (obs: Observation): string => {
   return '#475569';
 };
 
-interface ObsBadgeProps { obs: Observation }
+interface ObsBadgeProps {
+  obs: Observation;
+}
 
 function ObsBadge({ obs }: ObsBadgeProps) {
-  const cfg: Record<string, { textClass: string; color: string; Icon: React.ComponentType<{ size?: number; color?: string }> }> = {
-    improved:       { textClass: 'text-emerald-400', color: '#34d399', Icon: CheckCircle2 },
-    declined:       { textClass: 'text-amber-400',   color: '#fbbf24', Icon: AlertTriangle },
-    noImprovement:  { textClass: 'text-slate-500',   color: '#64748b', Icon: Minus },
-    inProgress:     { textClass: 'text-blue-400',    color: '#60a5fa', Icon: Clock },
-    notStarted:     { textClass: 'text-slate-400',   color: '#94a3b8', Icon: Lock },
+  const cfg: Record<
+    string,
+    {
+      textClass: string;
+      color: string;
+      Icon: React.ComponentType<{ size?: number; color?: string }>;
+    }
+  > = {
+    improved: {
+      textClass: 'text-emerald-400',
+      color: '#34d399',
+      Icon: CheckCircle2,
+    },
+    declined: {
+      textClass: 'text-amber-400',
+      color: '#fbbf24',
+      Icon: AlertTriangle,
+    },
+    noImprovement: {
+      textClass: 'text-slate-500',
+      color: '#64748b',
+      Icon: Minus,
+    },
+    inProgress: { textClass: 'text-blue-400', color: '#60a5fa', Icon: Clock },
+    notStarted: { textClass: 'text-slate-400', color: '#94a3b8', Icon: Lock },
   };
   const entry = cfg[obs.type] ?? cfg['notStarted']!;
   const { Icon } = entry;
   return (
     <View className="flex-row items-center gap-1.5">
       <Icon size={16} color={entry.color} />
-      <Text className={`text-sm font-medium ${entry.textClass}`}>{obs.label}</Text>
+      <Text className={`text-sm font-medium ${entry.textClass}`}>
+        {obs.label}
+      </Text>
     </View>
   );
 }
@@ -121,15 +152,18 @@ interface ChartTooltipProps {
 
 function ChartTooltip({ datum, cx, chartWidth, onDismiss }: ChartTooltipProps) {
   const TOOLTIP_W = 185;
-  const left = Math.max(8, Math.min(cx - TOOLTIP_W / 2, chartWidth - TOOLTIP_W - 8));
+  const left = Math.max(
+    8,
+    Math.min(cx - TOOLTIP_W / 2, chartWidth - TOOLTIP_W - 8),
+  );
   const obsColorClass =
     datum.obsType === 'improved'
       ? 'text-emerald-400'
       : datum.obsType === 'declined'
-        ? 'text-red-400'
-        : datum.obsType === 'noImprovement'
-          ? 'text-slate-500'
-          : 'text-blue-400';
+      ? 'text-red-400'
+      : datum.obsType === 'noImprovement'
+      ? 'text-slate-500'
+      : 'text-blue-400';
   return (
     <Pressable
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
@@ -139,7 +173,10 @@ function ChartTooltip({ datum, cx, chartWidth, onDismiss }: ChartTooltipProps) {
         style={{ position: 'absolute', top: 4, left, width: TOOLTIP_W }}
         className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 shadow-lg"
       >
-        <Text className="text-sm font-semibold leading-snug text-white" numberOfLines={3}>
+        <Text
+          className="text-sm font-semibold leading-snug text-white"
+          numberOfLines={3}
+        >
           {datum.fullLabel}
         </Text>
         <Text className="mt-0.5 text-xs text-slate-500">
@@ -169,7 +206,8 @@ function ProgressBarChart({
   const Y_MIN = -55;
   const Y_MAX = 55;
 
-  const sy = (v: number) => PAD.top + (1 - (v - Y_MIN) / (Y_MAX - Y_MIN)) * innerH;
+  const sy = (v: number) =>
+    PAD.top + (1 - (v - Y_MIN) / (Y_MAX - Y_MIN)) * innerH;
   const yZero = sy(0);
 
   const barCount = Math.max(data.length, 1);
@@ -180,8 +218,12 @@ function ProgressBarChart({
   const yTicks = [-50, -25, 0, 25, 50];
 
   // Month background bands (2 bars per month)
-  const bandColors = ['rgba(20,255,160,0.04)', 'rgba(60,120,255,0.04)', 'rgba(160,60,255,0.04)'];
-  const monthBands = [0, 1, 2].map((m) => {
+  const bandColors = [
+    'rgba(20,255,160,0.04)',
+    'rgba(60,120,255,0.04)',
+    'rgba(160,60,255,0.04)',
+  ];
+  const monthBands = [0, 1, 2].map(m => {
     const first = m * 2;
     const last = m * 2 + 1;
     const x1 = PAD.left + slotW * first;
@@ -193,25 +235,51 @@ function ProgressBarChart({
     <Svg width={chartWidth} height={totalHeight}>
       {/* Month background bands */}
       {monthBands.map((band, i) => (
-        <SvgRect key={`band-${i}`} x={band.x} y={PAD.top} width={band.width} height={innerH} fill={band.fill} />
+        <SvgRect
+          key={`band-${i}`}
+          x={band.x}
+          y={PAD.top}
+          width={band.width}
+          height={innerH}
+          fill={band.fill}
+        />
       ))}
 
       {/* Grid lines */}
-      {yTicks.map((tick) => (
-        <SvgLine key={`yg${tick}`}
-          x1={PAD.left} y1={sy(tick)} x2={PAD.left + innerW} y2={sy(tick)}
-          stroke={tick === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.05)'}
-          strokeWidth={tick === 0 ? 1.5 : 1} />
+      {yTicks.map(tick => (
+        <SvgLine
+          key={`yg${tick}`}
+          x1={PAD.left}
+          y1={sy(tick)}
+          x2={PAD.left + innerW}
+          y2={sy(tick)}
+          stroke={
+            tick === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.05)'
+          }
+          strokeWidth={tick === 0 ? 1.5 : 1}
+        />
       ))}
 
       {/* Left axis */}
-      <SvgLine x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + innerH}
-        stroke="#334155" strokeWidth={1} />
+      <SvgLine
+        x1={PAD.left}
+        y1={PAD.top}
+        x2={PAD.left}
+        y2={PAD.top + innerH}
+        stroke="#334155"
+        strokeWidth={1}
+      />
 
       {/* Y labels */}
-      {yTicks.map((tick) => (
-        <SvgText key={`yl${tick}`} x={PAD.left - 4} y={sy(tick) + 3.5}
-          fill="#94a3b8" fontSize={9} textAnchor="end">
+      {yTicks.map(tick => (
+        <SvgText
+          key={`yl${tick}`}
+          x={PAD.left - 4}
+          y={sy(tick) + 3.5}
+          fill="#94a3b8"
+          fontSize={9}
+          textAnchor="end"
+        >
           {tick > 0 ? `+${tick}` : String(tick)}
         </SvgText>
       ))}
@@ -225,12 +293,22 @@ function ProgressBarChart({
         const barY = isPositive ? yZero - scoreH : yZero;
         const arrowY = isPositive ? yZero - scoreH - 10 : yZero + scoreH + 16;
         const arrowChar = isPositive ? '↑' : d.score < 0 ? '↓' : '—';
-        const arrowColor = isPositive ? '#10b981' : d.score < 0 ? '#f87171' : '#94a3b8';
+        const arrowColor = isPositive
+          ? '#10b981'
+          : d.score < 0
+          ? '#f87171'
+          : '#94a3b8';
 
         return (
           <SvgG key={d.x} onPress={() => onBarPress?.(d, cx)}>
             {/* Transparent hit area covering the full column */}
-            <SvgRect x={cx - slotW / 2} y={PAD.top} width={slotW} height={innerH} fill="transparent" />
+            <SvgRect
+              x={cx - slotW / 2}
+              y={PAD.top}
+              width={slotW}
+              height={innerH}
+              fill="transparent"
+            />
             <SvgRect
               x={cx - barW / 2}
               y={isNeutral ? yZero - 2 : barY}
@@ -240,16 +318,36 @@ function ProgressBarChart({
               fill={d.obsColor}
             />
             {/* Arrow label above/below bar */}
-            <SvgText x={cx} y={arrowY} textAnchor="middle" fill={arrowColor} fontSize={14} fontWeight="bold">
+            <SvgText
+              x={cx}
+              y={arrowY}
+              textAnchor="middle"
+              fill={arrowColor}
+              fontSize={14}
+              fontWeight="bold"
+            >
               {arrowChar}
             </SvgText>
             {/* Activity label */}
-            <SvgText x={cx} y={PAD.top + innerH + 14} fill="#94a3b8" fontSize={8} textAnchor="middle">
+            <SvgText
+              x={cx}
+              y={PAD.top + innerH + 14}
+              fill="#94a3b8"
+              fontSize={8}
+              textAnchor="middle"
+            >
               {d.label}
             </SvgText>
             {/* Month label — shown only for first bar in each group */}
             {d.actIdx === 0 && (
-              <SvgText x={cx + slotW / 2} y={PAD.top + innerH + 28} fill="#64748b" fontSize={7} textAnchor="middle" fontWeight="bold">
+              <SvgText
+                x={cx + slotW / 2}
+                y={PAD.top + innerH + 28}
+                fill="#64748b"
+                fontSize={7}
+                textAnchor="middle"
+                fontWeight="bold"
+              >
                 Month {d.monthNum}
               </SvgText>
             )}
@@ -261,7 +359,13 @@ function ProgressBarChart({
 }
 
 // ── InsightAccordion — height + opacity animated expand/collapse ──────────────
-function InsightAccordion({ isOpen, children }: { isOpen: boolean; children: ReactNode }) {
+function InsightAccordion({
+  isOpen,
+  children,
+}: {
+  isOpen: boolean;
+  children: ReactNode;
+}) {
   const measuredHeight = useRef(0);
   const animHeight = useSharedValue(0);
   const animOpacity = useSharedValue(0);
@@ -313,21 +417,30 @@ interface InsightRowProps {
   ready: boolean;
 }
 
-function InsightRow({ item, idx, isExpanded, onToggle, ready }: InsightRowProps) {
+function InsightRow({
+  item,
+  idx,
+  isExpanded,
+  onToggle,
+  ready,
+}: InsightRowProps) {
   const rowStyle = useSlideUpWhenReady(ready, idx * 100, 500);
   const isAnomaly = item.type === 'anomaly';
 
   return (
     <Animated.View
       style={rowStyle}
-      className={`border-t border-slate-800 ${idx === 0 ? 'border-t-0' : ''} ${isAnomaly ? 'bg-amber-500/10' : 'bg-slate-900'}`}
+      className={`border-t border-slate-800 ${idx === 0 ? 'border-t-0' : ''} ${
+        isAnomaly ? 'bg-amber-500/10' : 'bg-slate-900'
+      }`}
     >
       <View className="flex-row items-center gap-3 px-5 py-4">
         <View className="flex-shrink-0">
-          {isAnomaly
-            ? <AlertTriangle size={16} color="#f59e0b" />
-            : <CheckCircle2 size={16} color="#10b981" />
-          }
+          {isAnomaly ? (
+            <AlertTriangle size={16} color="#f59e0b" />
+          ) : (
+            <CheckCircle2 size={16} color="#10b981" />
+          )}
         </View>
         <Text
           className={`flex-1 text-sm font-medium leading-snug ${
@@ -365,10 +478,14 @@ function InsightRow({ item, idx, isExpanded, onToggle, ready }: InsightRowProps)
           </Text>
           <View className="flex-row flex-wrap gap-2">
             <Pressable className="rounded-xl bg-teal-500 px-4 py-2">
-              <Text className="text-xs font-semibold text-white">Start Monitoring</Text>
+              <Text className="text-xs font-semibold text-white">
+                Start Monitoring
+              </Text>
             </Pressable>
             <Pressable className="rounded-xl bg-slate-700 border border-slate-600 px-4 py-2">
-              <Text className="text-xs font-semibold text-slate-300">Check-in Later</Text>
+              <Text className="text-xs font-semibold text-slate-300">
+                Check-in Later
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -383,21 +500,30 @@ export default function ProgressInsightsModal({
   goalPlan,
   childId,
   childName,
+  childAge,
+  childGender,
   onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
   const [activeTab, setActiveTab] = useState('progress');
   const [progressTab, setProgressTab] = useState('monthly');
   const [expandedInsight, setExpandedInsight] = useState<number | null>(null);
-  const [selectedBar, setSelectedBar] = useState<{ datum: ChartBarDatum; cx: number } | null>(null);
+  const [selectedBar, setSelectedBar] = useState<{
+    datum: ChartBarDatum;
+    cx: number;
+  } | null>(null);
   const [insightsData, setInsightsData] = useState<InsightsData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(false);
 
   const goalPlanRef = useRef(goalPlan);
   const childNameRef = useRef(childName);
+  const childAgeRef = useRef(childAge);
+  const childGenderRef = useRef(childGender);
   goalPlanRef.current = goalPlan;
   childNameRef.current = childName;
+  childAgeRef.current = childAge;
+  childGenderRef.current = childGender;
 
   const { width: screenWidth } = useWindowDimensions();
   const chartWidth = Math.max(screenWidth - 80, 200);
@@ -430,34 +556,54 @@ export default function ProgressInsightsModal({
   const tabOpacity = useSharedValue(1);
   const subTabOpacity = useSharedValue(1);
 
-  const switchTab = useCallback((tab: string) => {
-    tabOpacity.value = withTiming(0, { duration: 150 }, () => {
-      runOnJS(setActiveTab)(tab);
-      tabOpacity.value = withTiming(1, { duration: 200 });
-    });
-  }, [tabOpacity]);
+  const switchTab = useCallback(
+    (tab: string) => {
+      tabOpacity.value = withTiming(0, { duration: 150 }, () => {
+        runOnJS(setActiveTab)(tab);
+        tabOpacity.value = withTiming(1, { duration: 200 });
+      });
+    },
+    [tabOpacity],
+  );
 
-  const switchProgressTab = useCallback((tab: string) => {
-    setSelectedBar(null);
-    subTabOpacity.value = withTiming(0, { duration: 150 }, () => {
-      runOnJS(setProgressTab)(tab);
-      subTabOpacity.value = withTiming(1, { duration: 200 });
-    });
-  }, [subTabOpacity]);
+  const switchProgressTab = useCallback(
+    (tab: string) => {
+      setSelectedBar(null);
+      subTabOpacity.value = withTiming(0, { duration: 150 }, () => {
+        runOnJS(setProgressTab)(tab);
+        subTabOpacity.value = withTiming(1, { duration: 200 });
+      });
+    },
+    [subTabOpacity],
+  );
 
   const tabFadeStyle = useAnimatedStyle(() => ({ opacity: tabOpacity.value }));
-  const subTabFadeStyle = useAnimatedStyle(() => ({ opacity: subTabOpacity.value }));
+  const subTabFadeStyle = useAnimatedStyle(() => ({
+    opacity: subTabOpacity.value,
+  }));
 
   useEffect(() => {
-    if (activeTab !== 'insights' || insightsData || insightsLoading || insightsError) return;
+    if (
+      activeTab !== 'insights' ||
+      insightsData ||
+      insightsLoading ||
+      insightsError
+    )
+      return;
 
     const plan = goalPlanRef.current;
     const name = childNameRef.current;
+    const age = childAgeRef.current;
+    const gender = childGenderRef.current;
     const currentCount = completedCount(plan);
 
+    // Valid cache: same schema version, generated after the last completed activity,
+    // and actually contains insights (don't serve a previously-saved empty result).
     if (
       plan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
-      plan?.insights_signature === currentCount
+      plan?.insights_signature === currentCount &&
+      Array.isArray(plan.insights.insight_items) &&
+      plan.insights.insight_items.length > 0
     ) {
       setInsightsData(plan.insights);
       return;
@@ -467,27 +613,44 @@ export default function ProgressInsightsModal({
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const payload = await generateInsights(name, plan);
-        const updatedPlan: GoalPlan = {
-          ...plan,
-          insights: { ...payload, schema_version: payload.schema_version },
-          insights_signature: currentCount,
-        };
-        try {
-          await api.goals.patch(childId ?? '', { plan: updatedPlan });
-          onPlanUpdate?.(updatedPlan);
-        } catch (err) {
-          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+        const payload = await generateInsights(name, plan, age, gender);
+        // Only persist non-empty insights — if no activities are completed yet the
+        // guard returns [] and we don't want that to be cached permanently.
+        if (payload.insight_items.length > 0) {
+          const updatedPlan: GoalPlan = {
+            ...plan,
+            insights: { ...payload, schema_version: payload.schema_version },
+            insights_signature: currentCount,
+          };
+          try {
+            await api.goals.patch(childId ?? '', { plan: updatedPlan });
+            onPlanUpdate?.(updatedPlan);
+          } catch (err) {
+            console.warn(
+              '[ProgressInsightsModal] Insight save failed (non-fatal):',
+              err,
+            );
+          }
         }
         setInsightsData(payload);
       } catch (err) {
-        console.error('[ProgressInsightsModal] Failed to generate insights:', err);
+        console.error(
+          '[ProgressInsightsModal] Failed to generate insights:',
+          err,
+        );
         setInsightsError(true);
       }
       setInsightsLoading(false);
     };
     void generate();
-  }, [activeTab, insightsData, insightsLoading, insightsError, childId, onPlanUpdate]);
+  }, [
+    activeTab,
+    insightsData,
+    insightsLoading,
+    insightsError,
+    childId,
+    onPlanUpdate,
+  ]);
 
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose}>
@@ -511,8 +674,12 @@ export default function ProgressInsightsModal({
                 <BarChart3 size={24} color="white" />
               </View>
               <View>
-                <Text className="text-xl font-bold text-white">Progress & Insights</Text>
-                <Text className="text-sm text-white/80">3-Month Growth Overview</Text>
+                <Text className="text-xl font-bold text-white">
+                  Progress & Insights
+                </Text>
+                <Text className="text-sm text-white/80">
+                  3-Month Growth Overview
+                </Text>
               </View>
             </View>
             <Pressable
@@ -525,7 +692,10 @@ export default function ProgressInsightsModal({
           </GradientSurface>
 
           {/* Top-level tabs */}
-          <View style={{ flexShrink: 0 }} className="flex-row border-b border-slate-800 bg-slate-900 px-6 pt-3">
+          <View
+            style={{ flexShrink: 0 }}
+            className="flex-row border-b border-slate-800 bg-slate-900 px-6 pt-3"
+          >
             {[
               ['progress', 'Progress'],
               ['insights', 'Insights'],
@@ -554,7 +724,6 @@ export default function ProgressInsightsModal({
             contentContainerStyle={{ padding: 24, paddingBottom: 32 }}
           >
             <Animated.View style={tabFadeStyle}>
-
               {/* ── PROGRESS TAB ── */}
               {activeTab === 'progress' && (
                 <View>
@@ -572,7 +741,9 @@ export default function ProgressInsightsModal({
                       >
                         <Text
                           className={`text-sm font-semibold ${
-                            progressTab === key ? 'text-white' : 'text-slate-400'
+                            progressTab === key
+                              ? 'text-white'
+                              : 'text-slate-400'
                           }`}
                         >
                           {label}
@@ -587,10 +758,18 @@ export default function ProgressInsightsModal({
                       <View className="rounded-2xl border border-slate-700 overflow-hidden">
                         {/* Header row */}
                         <View className="flex-row bg-slate-800 px-4 py-3">
-                          <Text className="w-20 text-xs font-semibold text-slate-400">Month</Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">Goal</Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">Objective</Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">Observation</Text>
+                          <Text className="w-20 text-xs font-semibold text-slate-400">
+                            Month
+                          </Text>
+                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                            Goal
+                          </Text>
+                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                            Objective
+                          </Text>
+                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                            Observation
+                          </Text>
                         </View>
                         {monthData.map(({ month, pairs }, mIdx) =>
                           pairs.map((pair, pIdx) => (
@@ -612,7 +791,9 @@ export default function ProgressInsightsModal({
                               ) : (
                                 <View className="flex-1" />
                               )}
-                              <Text className="flex-1 text-xs text-slate-400 pr-2">{pair.label}</Text>
+                              <Text className="flex-1 text-xs text-slate-400 pr-2">
+                                {pair.label}
+                              </Text>
                               <View className="flex-1">
                                 <ObsBadge obs={pair.observation} />
                               </View>
@@ -626,13 +807,16 @@ export default function ProgressInsightsModal({
                     {progressTab === '3months' && (
                       <View>
                         <Text className="mb-4 text-center text-sm text-slate-400">
-                          Per-objective comparison: original (Week 1&amp;2) vs follow-up (Week 3&amp;4)
+                          Per-objective comparison: original (Week 1&amp;2) vs
+                          follow-up (Week 3&amp;4)
                         </Text>
                         <View style={{ height: 240, position: 'relative' }}>
                           <ProgressBarChart
                             data={chartBarData}
                             chartWidth={chartWidth}
-                            onBarPress={(datum, cx) => setSelectedBar({ datum, cx })}
+                            onBarPress={(datum, cx) =>
+                              setSelectedBar({ datum, cx })
+                            }
                           />
                           {selectedBar && (
                             <ChartTooltip
@@ -646,11 +830,15 @@ export default function ProgressInsightsModal({
                         <View className="mt-3 flex-row justify-center gap-6">
                           <View className="flex-row items-center gap-1.5">
                             <View className="h-3 w-3 rounded-sm bg-emerald-400" />
-                            <Text className="text-xs text-slate-500">Improvement</Text>
+                            <Text className="text-xs text-slate-500">
+                              Improvement
+                            </Text>
                           </View>
                           <View className="flex-row items-center gap-1.5">
                             <View className="h-3 w-3 rounded-sm bg-red-400" />
-                            <Text className="text-xs text-slate-500">Decline</Text>
+                            <Text className="text-xs text-slate-500">
+                              Decline
+                            </Text>
                           </View>
                           <View className="flex-row items-center gap-1.5">
                             <View className="h-3 w-3 rounded-sm bg-slate-600" />
@@ -676,7 +864,8 @@ export default function ProgressInsightsModal({
                         Generating personalised insights…
                       </Text>
                       <Text className="text-sm text-slate-500">
-                        Analysing {childName ? `${childName}'s` : 'the'} assessment data
+                        Analysing {childName ? `${childName}'s` : 'the'}{' '}
+                        assessment data
                       </Text>
                     </View>
                   )}
@@ -694,33 +883,54 @@ export default function ProgressInsightsModal({
                         className="flex-row items-center gap-2 rounded-xl bg-teal-500 px-4 py-2"
                       >
                         <RefreshCw size={16} color="white" />
-                        <Text className="text-sm font-semibold text-white">Retry</Text>
+                        <Text className="text-sm font-semibold text-white">
+                          Retry
+                        </Text>
                       </Pressable>
                     </View>
                   )}
 
-                  {insightsData && !insightsLoading && (
-                    <View className="rounded-2xl border border-slate-700 overflow-hidden">
-                      {(insightsData.insight_items || []).map((itemRaw, idx) => {
-                        const item = itemRaw as InsightItem;
-                        return (
-                          <InsightRow
-                            key={`${item.type ?? ''}-${idx}`}
-                            item={item}
-                            idx={idx}
-                            isExpanded={expandedInsight === idx}
-                            onToggle={() =>
-                              setExpandedInsight((prev) => (prev === idx ? null : idx))
-                            }
-                            ready={!!insightsData && !insightsLoading}
-                          />
-                        );
-                      })}
-                    </View>
-                  )}
+                  {insightsData &&
+                    !insightsLoading &&
+                    insightsData.insight_items.length === 0 && (
+                      <View className="items-center gap-3 py-16">
+                        <Text className="text-base font-semibold text-slate-300">
+                          No insights yet
+                        </Text>
+                        <Text className="max-w-xs text-center text-sm text-slate-500">
+                          Complete at least one activity to generate
+                          personalised insights for {childName ?? 'your child'}.
+                        </Text>
+                      </View>
+                    )}
+
+                  {insightsData &&
+                    !insightsLoading &&
+                    insightsData.insight_items.length > 0 && (
+                      <View className="rounded-2xl border border-slate-700 overflow-hidden">
+                        {(insightsData.insight_items || []).map(
+                          (itemRaw, idx) => {
+                            const item = itemRaw as InsightItem;
+                            return (
+                              <InsightRow
+                                key={`${item.type ?? ''}-${idx}`}
+                                item={item}
+                                idx={idx}
+                                isExpanded={expandedInsight === idx}
+                                onToggle={() =>
+                                  setExpandedInsight(prev =>
+                                    prev === idx ? null : idx,
+                                  )
+                                }
+                                ready={!!insightsData && !insightsLoading}
+                              />
+                            );
+                          },
+                        )}
+                      </View>
+                    )}
                 </View>
               )}
-
             </Animated.View>
           </ScrollView>
         </Animated.View>

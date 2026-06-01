@@ -32,7 +32,19 @@ export interface ToggleProps
 }
 
 const Toggle = forwardRef<React.ElementRef<typeof Pressable>, ToggleProps>(
-  ({ className, variant, size, pressed: controlledPressed, onPressedChange, children, disabled, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      pressed: controlledPressed,
+      onPressedChange,
+      children,
+      disabled,
+      ...props
+    },
+    ref,
+  ) => {
     const [internalPressed, setInternalPressed] = useState(false);
     const isPressed = controlledPressed ?? internalPressed;
 

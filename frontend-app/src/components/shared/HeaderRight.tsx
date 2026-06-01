@@ -18,7 +18,9 @@ export default function HeaderRight() {
     let cancelled = false;
     void (async () => {
       try {
-        const prefs = (await api.preferences.get()) as { tts_enabled?: boolean };
+        const prefs = (await api.preferences.get()) as {
+          tts_enabled?: boolean;
+        };
         if (!cancelled && typeof prefs?.tts_enabled === 'boolean') {
           ttsEnabledRef.current = prefs.tts_enabled;
           setTtsEnabled(prefs.tts_enabled);
@@ -27,7 +29,9 @@ export default function HeaderRight() {
         // ignore — default stays true
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleToggle = () => {
@@ -38,7 +42,14 @@ export default function HeaderRight() {
   };
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginRight: 4 }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginRight: 4,
+      }}
+    >
       {/* TTS toggle — mirrors web's Volume2/VolumeX button */}
       <Pressable
         onPress={handleToggle}
@@ -53,10 +64,11 @@ export default function HeaderRight() {
           backgroundColor: pressed ? 'rgba(255,255,255,0.08)' : 'transparent',
         })}
       >
-        {ttsEnabled
-          ? <Volume2 size={18} color="#64748b" />
-          : <VolumeX  size={18} color="#64748b" />
-        }
+        {ttsEnabled ? (
+          <Volume2 size={18} color="#64748b" />
+        ) : (
+          <VolumeX size={18} color="#64748b" />
+        )}
       </Pressable>
 
       {/* Profile avatar — existing component */}

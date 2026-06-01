@@ -12,44 +12,65 @@ import { Input } from '@/components/ui/Input';
 import type { InputProps } from '@/components/ui/Input';
 import VoiceInput from './VoiceInput';
 
-export type InputWithVoiceProps = Omit<InputProps, 'onChangeText' | 'value' | 'onChange'> & {
+export type InputWithVoiceProps = Omit<
+  InputProps,
+  'onChangeText' | 'value' | 'onChange'
+> & {
   value?: string;
   /** Mirrors the web onChange signature so form libraries work unchanged. */
   onChange: (e: { target: { value: string } }) => void;
 };
 
-const InputWithVoice = forwardRef<React.ElementRef<typeof TextInput>, InputWithVoiceProps>(
-  ({ value, onChange, placeholder, className, ...props }, ref) => {
-    const [isRecording, setIsRecording] = useState(false);
+const InputWithVoice = forwardRef<
+  React.ElementRef<typeof TextInput>,
+  InputWithVoiceProps
+>(({ value, onChange, placeholder, className, ...props }, ref) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
-    const handleTranscript = useCallback((transcript: string) => {
+  const handleTranscript = useCallback(
+    (transcript: string) => {
       onChange({ target: { value: transcript } });
-    }, [onChange]);
+    },
+    [onChange],
+  );
 
-    const handleChangeText = useCallback((text: string) => {
+  const handleChangeText = useCallback(
+    (text: string) => {
       onChange({ target: { value: text } });
-    }, [onChange]);
+    },
+    [onChange],
+  );
 
-    return (
-      <View className="flex-1 flex-row items-center gap-2">
-        <Input
-          ref={ref}
-          value={value}
-          onChangeText={handleChangeText}
-          placeholder={isRecording ? 'Listening...' : placeholder}
-          editable={!isRecording}
-          className={`flex-1 ${className ?? ''}`}
-          {...props}
-        />
-        <VoiceInput
-          onTranscript={handleTranscript}
-          isRecording={isRecording}
-          setIsRecording={setIsRecording}
-        />
-      </View>
-    );
-  },
-);
+  const isBusy = isRecording || isTranscribing;
+
+  return (
+    <View className="flex-1 flex-row items-center gap-2">
+      <Input
+        ref={ref}
+        value={value}
+        onChangeText={handleChangeText}
+        placeholder={
+          isRecording
+            ? 'Listening...'
+            : isTranscribing
+            ? 'Transcribing...'
+            : placeholder
+        }
+        editable={!isBusy}
+        className={`flex-1 ${className ?? ''}`}
+        {...props}
+      />
+      <VoiceInput
+        onTranscript={handleTranscript}
+        isRecording={isRecording}
+        setIsRecording={setIsRecording}
+        isTranscribing={isTranscribing}
+        setIsTranscribing={setIsTranscribing}
+      />
+    </View>
+  );
+});
 
 InputWithVoice.displayName = 'InputWithVoice';
 export default InputWithVoice;

@@ -2,6 +2,7 @@
 export const CHATBOT_CAPTURED_FIELDS = [
   'name',
   'age',
+  'gender',
   'school',
   'strengths',
   'hobbies',
@@ -56,6 +57,7 @@ export function conversationDraftFromChildRecord(
   if (questionnaireFieldHasValue('name', child)) out.name = child.name;
   if (questionnaireFieldHasValue('school', child)) out.school = child.school;
   if (questionnaireFieldHasValue('age', child)) out.age = String(child.age);
+  if (questionnaireFieldHasValue('gender', child)) out.gender = child.gender;
   for (const k of [
     'thinking_pattern',
     'communication_style',

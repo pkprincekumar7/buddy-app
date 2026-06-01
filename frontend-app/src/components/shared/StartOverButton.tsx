@@ -13,7 +13,12 @@ interface ConfirmModalProps {
   isStartingOver: boolean;
 }
 
-function ConfirmModal({ visible, onCancel, onConfirm, isStartingOver }: ConfirmModalProps) {
+function ConfirmModal({
+  visible,
+  onCancel,
+  onConfirm,
+  isStartingOver,
+}: ConfirmModalProps) {
   const animatedStyle = useModalScale(visible);
 
   return (
@@ -32,7 +37,7 @@ function ConfirmModal({ visible, onCancel, onConfirm, isStartingOver }: ConfirmM
           style={animatedStyle}
           className="w-full max-w-sm rounded-2xl border border-border bg-card p-8"
         >
-          <Pressable onPress={(e) => e.stopPropagation()}>
+          <Pressable onPress={e => e.stopPropagation()}>
             {/* Icon */}
             <View className="mb-5 items-center">
               <View className="h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
@@ -44,10 +49,13 @@ function ConfirmModal({ visible, onCancel, onConfirm, isStartingOver }: ConfirmM
             <View className="mb-7 items-center gap-2">
               <Text className="text-lg font-bold text-white">Start Over?</Text>
               <Text className="text-center text-sm leading-relaxed text-slate-400">
-                This will permanently delete all progress for this child, including personality
-                results, growth area answers, and goal plans.
+                This will permanently delete all progress for this child,
+                including personality results, growth area answers, and goal
+                plans.
               </Text>
-              <Text className="text-xs font-medium text-red-400">This cannot be undone.</Text>
+              <Text className="text-xs font-medium text-red-400">
+                This cannot be undone.
+              </Text>
             </View>
 
             {/* Actions */}
@@ -68,10 +76,14 @@ function ConfirmModal({ visible, onCancel, onConfirm, isStartingOver }: ConfirmM
                 {isStartingOver ? (
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator size="small" color="white" />
-                    <Text className="text-sm font-medium text-white">Deleting…</Text>
+                    <Text className="text-sm font-medium text-white">
+                      Deleting…
+                    </Text>
                   </View>
                 ) : (
-                  <Text className="text-sm font-medium text-white">Yes, delete</Text>
+                  <Text className="text-sm font-medium text-white">
+                    Yes, delete
+                  </Text>
                 )}
               </Button>
             </View>
@@ -87,7 +99,10 @@ interface StartOverButtonProps {
   className?: string;
 }
 
-export default function StartOverButton({ childId, className = '' }: StartOverButtonProps) {
+export default function StartOverButton({
+  childId,
+  className = '',
+}: StartOverButtonProps) {
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirming, setConfirming] = useState(false);
 
