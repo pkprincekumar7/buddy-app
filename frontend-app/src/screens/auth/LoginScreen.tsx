@@ -130,13 +130,13 @@ export default function LoginScreen() {
         await refetchUser();
         await refetchChildren();
       } catch (e) {
-        // Backend returns 422 + detail object when a new Google user needs to pick a country.
-        // The mobile ApiError.detail is the raw JSON string when detail is an object.
-        if (
+        const detailCode =
           e instanceof ApiError &&
-          e.status === 422 &&
-          e.detail.includes('country_code_required')
-        ) {
+          e.detail !== null &&
+          typeof e.detail === 'object'
+            ? (e.detail as Record<string, unknown>)['code']
+            : undefined;
+        if (e instanceof ApiError && e.status === 422 && detailCode === 'country_code_required') {
           setPendingGoogleToken(idToken);
           setBusy(false);
           return;

@@ -61,22 +61,26 @@ async function request(
       if (text) {
         try {
           const json: unknown = JSON.parse(text);
-          if (
-            json !== null &&
-            typeof json === 'object' &&
-            'detail' in json &&
-            typeof (json as Record<string, unknown>)['detail'] === 'string'
-          ) {
-            detail = (json as { detail: string }).detail;
+          if (json !== null && typeof json === 'object' && 'detail' in json) {
+            const d = (json as Record<string, unknown>)['detail'];
+            if (typeof d === 'string') {
+              detail = d;
+            } else if (d !== null && typeof d === 'object') {
+              throw new ApiError(res.status, d as Record<string, unknown>);
+            } else {
+              detail = text;
+            }
           } else {
             detail = text;
           }
-        } catch {
+        } catch (inner) {
+          if (inner instanceof ApiError) throw inner;
           detail = text;
         }
       }
-    } catch {
-      /* ignore */
+    } catch (outer) {
+      if (outer instanceof ApiError) throw outer;
+      /* ignore network/parse errors — fall through to default detail */
     }
     throw new ApiError(res.status, detail);
   }

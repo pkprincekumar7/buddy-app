@@ -57,8 +57,12 @@ export default function Login() {
         await api.auth.google(idToken);
         await checkAppState({ withLoading: false });
       } catch (e) {
-        const apiErr = e as { status?: number; detail?: { code?: string } } | null;
-        if (apiErr?.status === 422 && apiErr?.detail?.code === 'country_code_required') {
+        const apiErr = e as { status?: number; detail?: unknown } | null;
+        const detailCode =
+          apiErr?.detail !== null && typeof apiErr?.detail === 'object'
+            ? (apiErr.detail as Record<string, unknown>)['code']
+            : undefined;
+        if (apiErr?.status === 422 && detailCode === 'country_code_required') {
           setPendingGoogleToken(idToken);
         } else {
           const msg = httpErrorMessage(e as Error | undefined, {

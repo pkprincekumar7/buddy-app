@@ -162,7 +162,7 @@ export default function HomeScreen() {
         </Text>
 
         <Text className="text-base leading-relaxed text-slate-400 text-center mb-8 max-w-sm">
-          A 9-year guided journey helping your child discover strengths, build
+          A guided journey helping your child discover strengths, build
           character, and design a meaningful life.
         </Text>
 
