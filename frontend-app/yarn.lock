@@ -2946,7 +2946,7 @@ babel-preset-current-node-syntax@^1.0.0:
     "@babel/plugin-syntax-private-property-in-object" "^7.14.5"
     "@babel/plugin-syntax-top-level-await" "^7.14.5"
 
-babel-preset-expo@~56.0.14:
+babel-preset-expo@~56.0.0, babel-preset-expo@~56.0.14:
   version "56.0.14"
   resolved "https://registry.yarnpkg.com/babel-preset-expo/-/babel-preset-expo-56.0.14.tgz#aea45c5d8427c0fe8e82789cc734662d147b06e3"
   integrity sha512-+JKVMYf3HajO3tPRA9DlKd/VhZOPTHyTzUo2yZajfMAoQ3l5VEdGVxm2MzX4DXMNKXwsC8GOeTRx7CrO/5dBDA==
@@ -4370,7 +4370,7 @@ expo-speech-recognition@^56.0.0:
   resolved "https://registry.yarnpkg.com/expo-speech-recognition/-/expo-speech-recognition-56.0.0.tgz#51c4f7e11d0a5acf0448e7b8608c192d319122f8"
   integrity sha512-spA6HqnA/rgwMNS5YmFktmzly7f46kGOv3tXZ2f0Xfh7x9pAsmXyG3YtPtB9sHGbW7RmUSjbMGEzsvCak2Q4sA==
 
-expo@^56.0.8:
+expo@~56.0.0:
   version "56.0.8"
   resolved "https://registry.yarnpkg.com/expo/-/expo-56.0.8.tgz#1f2ff8f904e9b9502e3b6c9fcd85aba7911b6847"
   integrity sha512-GzQi5450yrCk5JRSlm0epsmtURBErh0wS77uWLZImFdnPICuX912MaRWooR+Q1Sw/7aQjp9F+KXH+dvrqGxpeQ==
