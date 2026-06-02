@@ -1,10 +1,3 @@
-/**
- * InputWithVoice — React Native version
- *
- * Wraps the NativeWind-styled `Input` component with the `VoiceInput` stub
- * sitting to its right. The prop surface is intentionally identical to the
- * web version so that screen-level code can import this unchanged.
- */
 import React, { useState, useCallback, forwardRef } from 'react';
 import { View } from 'react-native';
 import type { TextInput } from 'react-native';
@@ -17,7 +10,6 @@ export type InputWithVoiceProps = Omit<
   'onChangeText' | 'value' | 'onChange'
 > & {
   value?: string;
-  /** Mirrors the web onChange signature so form libraries work unchanged. */
   onChange: (e: { target: { value: string } }) => void;
 };
 
@@ -26,14 +18,19 @@ const InputWithVoice = forwardRef<
   InputWithVoiceProps
 >(({ value, onChange, placeholder, className, ...props }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [partialText, setPartialText] = useState('');
 
   const handleTranscript = useCallback(
     (transcript: string) => {
+      setPartialText('');
       onChange({ target: { value: transcript } });
     },
     [onChange],
   );
+
+  const handlePartialTranscript = useCallback((partial: string) => {
+    setPartialText(partial);
+  }, []);
 
   const handleChangeText = useCallback(
     (text: string) => {
@@ -42,31 +39,22 @@ const InputWithVoice = forwardRef<
     [onChange],
   );
 
-  const isBusy = isRecording || isTranscribing;
-
   return (
     <View className="flex-1 flex-row items-center gap-2">
       <Input
         ref={ref}
-        value={value}
+        value={partialText || value}
         onChangeText={handleChangeText}
-        placeholder={
-          isRecording
-            ? 'Listening...'
-            : isTranscribing
-            ? 'Transcribing...'
-            : placeholder
-        }
-        editable={!isBusy}
+        placeholder={isRecording ? 'Listening...' : placeholder}
+        editable={!isRecording}
         className={`flex-1 ${className ?? ''}`}
         {...props}
       />
       <VoiceInput
         onTranscript={handleTranscript}
+        onPartialTranscript={handlePartialTranscript}
         isRecording={isRecording}
         setIsRecording={setIsRecording}
-        isTranscribing={isTranscribing}
-        setIsTranscribing={setIsTranscribing}
       />
     </View>
   );

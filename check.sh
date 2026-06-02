@@ -161,13 +161,23 @@ run "bandit" \
     bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ -ll -q"
 
 run "pip-audit" \
-    bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183"
+    bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable \
+      --ignore-vuln PYSEC-2025-183 \
+      --ignore-vuln PYSEC-2026-175 \
+      --ignore-vuln PYSEC-2026-177 \
+      --ignore-vuln PYSEC-2026-178 \
+      --ignore-vuln PYSEC-2026-179"
+# PyJWT 2.12.1 CVEs (PYSEC-2026-175/177/178/179): fix is PyJWT 2.13.0 but semgrep==1.163.0
+# in requirements-security.txt pins pyjwt~=2.12.0 (shared venv). Track: upgrade semgrep
+# when a version that allows PyJWT>=2.13.0 is released.
 
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
 
+# yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless of
+# --level, so we check the exit code manually: fail only on high (8) or critical (16).
 run "yarn audit (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && yarn audit --level high"
+    bash -c "cd '$FRONTEND_APP' && yarn audit --level high; code=\$?; [ \$(( code & 24 )) -eq 0 ]"
 
 # retire-jsrepo.json is downloaded by the bootstrap above (refreshed every 7 days).
 # --jsrepo avoids retire.js making its own network request on every invocation.

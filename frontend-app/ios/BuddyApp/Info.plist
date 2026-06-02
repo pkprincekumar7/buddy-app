@@ -37,6 +37,8 @@
 	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>BuddyApp uses your microphone to record voice input for the onboarding chatbot.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>BuddyApp uses speech recognition to convert your voice to text.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

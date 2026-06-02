@@ -272,7 +272,15 @@ jobs:
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
         continue-on-error: true
-        run: pip-audit -r backend/requirements.txt --skip-editable --ignore-vuln PYSEC-2025-183
+        # PyJWT 2.12.1 CVEs fixed in 2.13.0, but semgrep pins pyjwt~=2.12.0 (shared venv).
+        # Revisit when semgrep releases a version allowing PyJWT>=2.13.0.
+        run: |
+          pip-audit -r backend/requirements.txt --skip-editable \
+            --ignore-vuln PYSEC-2025-183 \
+            --ignore-vuln PYSEC-2026-175 \
+            --ignore-vuln PYSEC-2026-177 \
+            --ignore-vuln PYSEC-2026-178 \
+            --ignore-vuln PYSEC-2026-179
 
       - name: Checkov (Terraform IaC security)
         id: checkov
@@ -316,7 +324,12 @@ jobs:
       - name: yarn audit (frontend-app dependency CVEs)
         id: yarn_audit_frontend_app
         continue-on-error: true
-        run: yarn audit --level high
+        # yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless
+        # of --level. Check the exit code manually: fail only on high(8) or critical(16).
+        run: |
+          yarn audit --level high
+          code=$?
+          [ $(( code & 24 )) -eq 0 ]
         working-directory: frontend-app
 
       - name: Restore retire.js database cache

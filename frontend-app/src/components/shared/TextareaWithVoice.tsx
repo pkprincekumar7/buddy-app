@@ -1,10 +1,3 @@
-/**
- * TextareaWithVoice — React Native version
- *
- * Wraps the NativeWind-styled `Textarea` component with the `VoiceInput` stub
- * positioned at the bottom-right corner (absolute), mirroring the web layout.
- * The prop surface is identical to the web version.
- */
 import React, { useState, useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { Textarea } from '@/components/ui/Textarea';
@@ -16,7 +9,6 @@ export type TextareaWithVoiceProps = Omit<
   'onChangeText' | 'value' | 'onChange'
 > & {
   value?: string;
-  /** Mirrors the web onChange signature so form libraries work unchanged. */
   onChange: (e: { target: { value: string } }) => void;
 };
 
@@ -28,16 +20,21 @@ export default function TextareaWithVoice({
   ...props
 }: TextareaWithVoiceProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [partialText, setPartialText] = useState('');
 
   const handleTranscript = useCallback(
     (transcript: string) => {
+      setPartialText('');
       onChange({
         target: { value: value ? `${value} ${transcript}` : transcript },
       });
     },
     [onChange, value],
   );
+
+  const handlePartialTranscript = useCallback((partial: string) => {
+    setPartialText(partial);
+  }, []);
 
   const handleChangeText = useCallback(
     (text: string) => {
@@ -46,32 +43,27 @@ export default function TextareaWithVoice({
     [onChange],
   );
 
-  const isBusy = isRecording || isTranscribing;
-
   const activePlaceholder = useMemo(() => {
     if (isRecording) return 'Listening...';
-    if (isTranscribing) return 'Transcribing...';
     return placeholder;
-  }, [isRecording, isTranscribing, placeholder]);
+  }, [isRecording, placeholder]);
 
   return (
     <View className="relative">
       <Textarea
-        value={value}
+        value={partialText || value}
         onChangeText={handleChangeText}
         placeholder={activePlaceholder}
-        editable={!isBusy}
-        // Extra bottom padding so text doesn't run under the mic button
+        editable={!isRecording}
         className={`pb-12 ${className ?? ''}`}
         {...props}
       />
       <View className="absolute bottom-3 right-3">
         <VoiceInput
           onTranscript={handleTranscript}
+          onPartialTranscript={handlePartialTranscript}
           isRecording={isRecording}
           setIsRecording={setIsRecording}
-          isTranscribing={isTranscribing}
-          setIsTranscribing={setIsTranscribing}
         />
       </View>
     </View>
