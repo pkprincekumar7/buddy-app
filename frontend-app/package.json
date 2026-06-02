@@ -25,11 +25,12 @@
     "nativewind": "^4.2.4",
     "react": "19.2.3",
     "react-native": "0.85.3",
+    "expo": "^56.0.8",
+    "expo-modules-core": "^56.0.14",
+    "expo-speech-recognition": "^56.0.0",
     "react-native-config": "^1.6.1",
-    "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "^2.31.2",
     "react-native-nitro-modules": ">=0.35.4",
-    "react-native-nitro-sound": "^0.2.15",
     "react-native-reanimated": "^4.3.1",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.25.2",
@@ -67,5 +68,8 @@
   },
   "engines": {
     "node": ">= 22.13.0"
+  },
+  "resolutions": {
+    "uuid": "^11.1.1"
   }
 }
