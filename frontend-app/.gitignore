@@ -90,3 +90,8 @@ ios/BuddyApp.xcworkspace/
 
 # retire.js vulnerability database (auto-downloaded by check.sh; stays current without committing)
 retire-jsrepo.json
+
+# Expo
+.expo
+dist/
+web-build/

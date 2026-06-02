@@ -20,9 +20,6 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
-// Expo modules autolinking — discovers and links all installed expo-* packages.
-apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
-
 // Force all subprojects (including third-party libraries) to target JVM 17
 // so Kotlin and Java tasks are consistent and Gradle 9 doesn't fail the build.
 subprojects {
@@ -30,3 +27,4 @@ subprojects {
         kotlinOptions { jvmTarget = "17" }
     }
 }
+apply plugin: "expo-root-project"
