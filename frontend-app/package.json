@@ -7,7 +7,8 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "postinstall": "node -e \"const fs=require('fs'),f='node_modules/metro-source-map/src/source-map.js',c=fs.readFileSync(f,'utf8');if(c.includes('Unexpected module with full source map')){fs.writeFileSync(f,c.replace(/} else if \\(map != null\\) \\{\\n\\s+throw new Error\\([^)]+\\);\\n\\s+}/,'} else if (map != null) {\\n      // skip modules that already have a pre-compiled source map\\n    }'));}\" || true"
   },
   "dependencies": {
     "@mhpdev/react-native-speech": "^1.4.1",
