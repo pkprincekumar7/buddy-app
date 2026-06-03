@@ -9,9 +9,22 @@ import type { ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { api } from '@/api/client';
+import { ApiError } from '@/api/errors';
+import { queryClientInstance } from '@/lib/query-client';
 import type { UserRecord, ChildRecord } from '@/types/api';
 
 const ACTIVE_CHILD_KEY = 'buddy360:activeChildId';
+
+interface AuthErrorUnknown {
+  type: 'unknown';
+  message: string;
+}
+
+interface AuthErrorUserNotRegistered {
+  type: 'user_not_registered';
+}
+
+export type AuthErrorValue = AuthErrorUnknown | AuthErrorUserNotRegistered;
 
 interface AuthContextValue {
   user: UserRecord | null;
@@ -22,9 +35,11 @@ interface AuthContextValue {
   clearActiveChildId: () => Promise<void>;
   isLoading: boolean;
   isAuthenticated: boolean;
+  authError: AuthErrorValue | null;
   logout: () => Promise<void>;
   refetchUser: () => Promise<void>;
   refetchChildren: () => Promise<void>;
+  checkAppState: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -34,15 +49,7 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
   const [childList, setChildList] = useState<ChildRecord[]>([]);
   const [activeChildId, _setActiveChildId] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(true);
-
-  // Restore persisted activeChildId on mount
-  useEffect(() => {
-    AsyncStorage.getItem(ACTIVE_CHILD_KEY)
-      .then(stored => {
-        if (stored) _setActiveChildId(stored);
-      })
-      .catch(() => {});
-  }, []);
+  const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
 
   const setActiveChildId = useCallback((id: string) => {
     _setActiveChildId(id);
@@ -61,8 +68,6 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     } catch (e) {
       setUser(null);
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
@@ -70,6 +75,9 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     try {
       const list = await api.entities.Child.list();
       setChildList(list);
+      // Keep React Query cache in sync so screens using useQuery(['children'])
+      // (e.g. HomeScreen) always see the same data without an extra network call.
+      queryClientInstance.setQueryData(['children'], list);
       if (list.length > 0) {
         const stored = await AsyncStorage.getItem(ACTIVE_CHILD_KEY).catch(
           () => null,
@@ -86,11 +94,32 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     }
   }, [setActiveChildId]);
 
+  // Bootstrap: fetch user then children before releasing the loading gate.
+  // Keeping isLoading=true until BOTH complete prevents screens from rendering
+  // with activeChildId=undefined and getting stuck in a permanent loading spinner.
+  const checkAppState = useCallback(async () => {
+    setAuthError(null);
+    setIsLoading(true);
+    try {
+      await refetchUser();
+      await refetchChildren();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        // 401 → unauthenticated; no error to show, just redirect to login
+        setAuthError(null);
+      } else {
+        const msg =
+          (e as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
+        setAuthError({ type: 'unknown', message: msg });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refetchUser, refetchChildren]);
+
   // Bootstrap on mount
   useEffect(() => {
-    refetchUser()
-      .then(() => refetchChildren())
-      .catch(() => setIsLoading(false));
+    void checkAppState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -103,6 +132,9 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     setUser(null);
     setChildList([]);
     _setActiveChildId(undefined);
+    setAuthError(null);
+    // Clear all per-user React Query cache so a re-login never sees stale data.
+    queryClientInstance.clear();
     setIsLoading(false);
   }, []);
 
@@ -119,9 +151,11 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
         clearActiveChildId,
         isLoading,
         isAuthenticated: !!user,
+        authError,
         logout,
         refetchUser,
         refetchChildren,
+        checkAppState,
       }}
     >
       {node}

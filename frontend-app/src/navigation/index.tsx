@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import {
   NavigationContainer,
   DarkTheme,
@@ -26,6 +26,7 @@ import PersonalityTypeScreen from '../screens/personality/PersonalityTypeScreen'
 import PersonalityJourneyScreen from '../screens/personality/PersonalityJourneyScreen';
 import LifePathwayScreen from '../screens/personality/LifePathwayScreen';
 import HeaderRight from '../components/shared/HeaderRight';
+import UserNotRegisteredError from '../components/shared/UserNotRegisteredError';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -286,7 +287,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function RootNavigator() {
-  const { isAuthenticated, isLoading, activeChild } = useAuth();
+  const { isAuthenticated, isLoading, activeChild, authError, checkAppState, logout } = useAuth();
 
   if (isLoading) {
     return (
@@ -299,6 +300,40 @@ function RootNavigator() {
         }}
       >
         <ActivityIndicator size="large" color="#2dd4bf" />
+      </View>
+    );
+  }
+
+  if (authError?.type === 'user_not_registered') {
+    return <UserNotRegisteredError onLogout={logout} />;
+  }
+
+  if (authError?.type === 'unknown') {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#0a0a0a',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          gap: 16,
+        }}
+      >
+        <Text style={{ color: '#cbd5e1', textAlign: 'center', maxWidth: 320, lineHeight: 22 }}>
+          {authError.message}
+        </Text>
+        <TouchableOpacity
+          style={{
+            backgroundColor: '#0d9488',
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 12,
+          }}
+          onPress={() => void checkAppState()}
+        >
+          <Text style={{ color: '#ffffff', fontWeight: '600' }}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
