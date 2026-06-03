@@ -155,7 +155,7 @@ jobs:
       - name: Build release APK
         working-directory: frontend-app/android
         env:
-          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
+          GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g"
         run: ./gradlew assembleRelease --no-daemon --build-cache --parallel -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 
       - name: Upload APK artifact
