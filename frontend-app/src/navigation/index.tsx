@@ -287,7 +287,14 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function RootNavigator() {
-  const { isAuthenticated, isLoading, activeChild, authError, checkAppState, logout } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+    activeChild,
+    authError,
+    checkAppState,
+    logout,
+  } = useAuth();
 
   if (isLoading) {
     return (
@@ -320,7 +327,14 @@ function RootNavigator() {
           gap: 16,
         }}
       >
-        <Text style={{ color: '#cbd5e1', textAlign: 'center', maxWidth: 320, lineHeight: 22 }}>
+        <Text
+          style={{
+            color: '#cbd5e1',
+            textAlign: 'center',
+            maxWidth: 320,
+            lineHeight: 22,
+          }}
+        >
           {authError.message}
         </Text>
         <TouchableOpacity

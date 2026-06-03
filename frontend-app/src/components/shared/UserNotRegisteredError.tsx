@@ -84,7 +84,12 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
           {SUGGESTIONS.map(item => (
             <Text
               key={item}
-              style={{ color: '#94a3b8', fontSize: 13, marginTop: 4, lineHeight: 20 }}
+              style={{
+                color: '#94a3b8',
+                fontSize: 13,
+                marginTop: 4,
+                lineHeight: 20,
+              }}
             >
               {'• '}
               {item}

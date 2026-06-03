@@ -56,7 +56,9 @@ export class ErrorBoundary extends Component<Props, State> {
             }}
             onPress={() => this.setState({ hasError: false })}
           >
-            <Text style={{ color: '#ffffff', fontWeight: '600' }}>Try again</Text>
+            <Text style={{ color: '#ffffff', fontWeight: '600' }}>
+              Try again
+            </Text>
           </TouchableOpacity>
         </View>
       );

@@ -109,7 +109,8 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
         setAuthError(null);
       } else {
         const msg =
-          (e as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
+          (e as Error)?.message ??
+          'Service temporarily unavailable. Please try again later.';
         setAuthError({ type: 'unknown', message: msg });
       }
     } finally {
