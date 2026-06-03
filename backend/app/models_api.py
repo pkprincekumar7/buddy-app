@@ -232,6 +232,7 @@ class ChildResponse(BaseModel):
     created_date: str
     name: str = ""
     age: str | int | None = None
+    gender: str | None = None
     school: str | None = None
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
