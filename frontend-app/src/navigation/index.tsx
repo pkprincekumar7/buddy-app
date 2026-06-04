@@ -1,4 +1,10 @@
-import React from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import {
   NavigationContainer,
@@ -10,7 +16,10 @@ import { navigationRef } from '../lib/navigationRef';
 import { useAuth } from '../lib/AuthContext';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Home, Target, TrendingUp, Brain, Map } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -70,6 +79,93 @@ const OnboardingStack = createStackNavigator<OnboardingStackParamList>();
 const GrowthStack = createStackNavigator<GrowthStackParamList>();
 const PersonalityStack = createStackNavigator<PersonalityStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
+
+// AsyncStorage key for persisting unlocked tabs per child.
+const tabStorageKey = (childId: string) => `unlockedTabs:${childId}`;
+
+// Context lets CenteredTabBar subscribe to unlockedTabs directly so it
+// re-renders whenever the set changes, without relying on the tabBar prop
+// reference changing (React Navigation doesn't guarantee that triggers a re-render).
+const UnlockedTabsContext = React.createContext<Set<string>>(new Set(['Home']));
+
+// Tab display labels — kept here so CenteredTabBar doesn't depend on route names.
+const TAB_LABELS: Record<string, string> = {
+  Home: 'Home',
+  Personality: 'Personality',
+  Growth: 'Growth',
+  LifePathway: 'Pathway',
+  Goals: 'Goals',
+};
+
+// Tab icons by route name.
+const TAB_ICONS: Record<
+  string,
+  (color: string, size: number) => React.ReactNode
+> = {
+  Home: (c, s) => <Home color={c} size={s} />,
+  Personality: (c, s) => <Brain color={c} size={s} />,
+  Growth: (c, s) => <TrendingUp color={c} size={s} />,
+  LifePathway: (c, s) => <Map color={c} size={s} />,
+  Goals: (c, s) => <Target color={c} size={s} />,
+};
+
+function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const unlockedTabs = useContext(UnlockedTabsContext);
+  const insets = useSafeAreaInsets();
+  const focusedRouteName = state.routes[state.index]?.name;
+
+  const visibleRoutes = state.routes.filter(r => unlockedTabs.has(r.name));
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#0a0a0a',
+        borderTopColor: '#1a1a1a',
+        borderTopWidth: 1,
+        paddingBottom: insets.bottom,
+        paddingTop: 8,
+      }}
+    >
+      {visibleRoutes.map(route => {
+        const isFocused = route.name === focusedRouteName;
+        const color = isFocused ? '#14b8a6' : '#6b7280';
+        const { options } = descriptors[route.key];
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            onPress={() => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            }}
+            style={{
+              alignItems: 'center',
+              paddingHorizontal: 20,
+              paddingVertical: 4,
+            }}
+          >
+            {TAB_ICONS[route.name]?.(color, 24)}
+            <Text style={{ color, fontSize: 10, marginTop: 3 }}>
+              {TAB_LABELS[route.name] ?? route.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
 
 /**
  * Custom dark theme matching the app's background (#0a0a0a) and teal accent (#14b8a6).
@@ -190,63 +286,82 @@ function PersonalityNavigator() {
   );
 }
 
+// Stable tabBar renderer — never changes reference so React Navigation doesn't
+// remount the tab bar. CenteredTabBar reads unlockedTabs from context instead.
+const stableTabBar = (props: BottomTabBarProps) => (
+  <CenteredTabBar {...props} />
+);
+
 function MainTabNavigator() {
+  const { activeChild } = useAuth();
+  const childId = activeChild?.id ?? 'guest';
+
+  // Keep a ref so unlockTab always writes to the correct AsyncStorage key even
+  // if it is called before activeChild finishes loading (childId still 'guest').
+  const childIdRef = useRef(childId);
+  useEffect(() => {
+    childIdRef.current = childId;
+  }, [childId]);
+
+  const [unlockedTabs, setUnlockedTabs] = useState<Set<string>>(
+    new Set(['Home']),
+  );
+
+  // Load persisted unlocked tabs whenever the real child ID becomes known.
+  // Skip the 'guest' fallback — only read storage once we have an actual ID.
+  useEffect(() => {
+    if (childId === 'guest') return;
+    void AsyncStorage.getItem(tabStorageKey(childId)).then(val => {
+      setUnlockedTabs(new Set(val ? (JSON.parse(val) as string[]) : ['Home']));
+    });
+  }, [childId]);
+
+  const unlockTab = useCallback((tabName: string) => {
+    const id = childIdRef.current;
+    if (id === 'guest') return; // child not loaded yet — skip to avoid saving under wrong key
+    setUnlockedTabs(prev => {
+      if (prev.has(tabName)) return prev;
+      const next = new Set(prev);
+      next.add(tabName);
+      void AsyncStorage.setItem(tabStorageKey(id), JSON.stringify([...next]));
+      return next;
+    });
+  }, []); // no dependencies — reads childId via ref
+
   return (
-    <MainTab.Navigator
-      screenOptions={{
-        ...darkHeader,
-        tabBarStyle: {
-          backgroundColor: '#0a0a0a',
-          borderTopColor: '#1a1a1a',
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: '#14b8a6',
-        tabBarInactiveTintColor: '#6b7280',
-      }}
-    >
-      <MainTab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
-        }}
-      />
-      {/* Growth and Personality use nested stacks that manage their own headers.
-          Setting headerShown: false here prevents a doubled header. */}
-      <MainTab.Screen
-        name="Personality"
-        component={PersonalityNavigator}
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => <Brain color={color} size={size} />,
-        }}
-      />
-      <MainTab.Screen
-        name="Growth"
-        component={GrowthNavigator}
-        options={{
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <TrendingUp color={color} size={size} />
-          ),
-        }}
-      />
-      <MainTab.Screen
-        name="LifePathway"
-        component={LifePathwayScreen}
-        options={{
-          tabBarLabel: 'Pathway',
-          tabBarIcon: ({ color, size }) => <Map color={color} size={size} />,
-        }}
-      />
-      <MainTab.Screen
-        name="Goals"
-        component={GoalsDashboardScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Target color={color} size={size} />,
-        }}
-      />
-    </MainTab.Navigator>
+    <UnlockedTabsContext.Provider value={unlockedTabs}>
+      <MainTab.Navigator tabBar={stableTabBar} screenOptions={darkHeader}>
+        <MainTab.Screen
+          name="Home"
+          component={HomeScreen}
+          listeners={{ focus: () => unlockTab('Home') }}
+        />
+        {/* Growth and Personality use nested stacks that manage their own headers.
+            Setting headerShown: false here prevents a doubled header. */}
+        <MainTab.Screen
+          name="Personality"
+          component={PersonalityNavigator}
+          options={{ headerShown: false }}
+          listeners={{ focus: () => unlockTab('Personality') }}
+        />
+        <MainTab.Screen
+          name="Growth"
+          component={GrowthNavigator}
+          options={{ headerShown: false }}
+          listeners={{ focus: () => unlockTab('Growth') }}
+        />
+        <MainTab.Screen
+          name="LifePathway"
+          component={LifePathwayScreen}
+          listeners={{ focus: () => unlockTab('LifePathway') }}
+        />
+        <MainTab.Screen
+          name="Goals"
+          component={GoalsDashboardScreen}
+          listeners={{ focus: () => unlockTab('Goals') }}
+        />
+      </MainTab.Navigator>
+    </UnlockedTabsContext.Provider>
   );
 }
 
