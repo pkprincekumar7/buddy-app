@@ -281,6 +281,10 @@ export default function GrowthAreasGreatInsightsScreen() {
       } catch (err) {
         console.warn('[GrowthAreasGreatInsightsScreen] Load failed:', err);
         if (!cancelled) setStatus('error');
+      } finally {
+        // Ensure we always exit 'loading'; an early return inside try (e.g. !child)
+        // would otherwise leave the screen showing a spinner permanently.
+        if (!cancelled) setStatus(prev => (prev === 'loading' ? 'idle' : prev));
       }
     })();
 

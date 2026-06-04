@@ -13,6 +13,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { queryClientInstance } from './src/lib/query-client';
 import { AuthProvider } from './src/lib/AuthContext';
+import { ErrorBoundary } from './src/components/shared/ErrorBoundary';
 import { Toaster } from './src/components/ui/Toaster';
 import Navigation from './src/navigation';
 import { env } from './src/lib/env';
@@ -38,7 +39,9 @@ function App() {
         <AuthProvider>
           <SafeAreaProvider>
             <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-            <Navigation />
+            <ErrorBoundary>
+              <Navigation />
+            </ErrorBoundary>
             <Toaster />
           </SafeAreaProvider>
         </AuthProvider>

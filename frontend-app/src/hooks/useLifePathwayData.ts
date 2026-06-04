@@ -16,7 +16,10 @@ export function useLifePathwayData(childId: string | undefined) {
   const [savedConcern, setSavedConcern] = useState('');
 
   useEffect(() => {
-    if (!childId) return;
+    if (!childId) {
+      setIsLoading(false);
+      return;
+    }
     const load = async () => {
       try {
         const child = await api.entities.Child.get(childId);

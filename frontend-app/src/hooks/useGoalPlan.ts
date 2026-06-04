@@ -162,7 +162,10 @@ export function useGoalPlan(childId: string | undefined) {
   );
 
   useEffect(() => {
-    if (!childId) return;
+    if (!childId) {
+      setIsLoading(false);
+      return;
+    }
     const init = async () => {
       try {
         const child = await api.entities.Child.get(childId);

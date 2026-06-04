@@ -22,8 +22,9 @@ export function useStartOver(childId: string | undefined) {
       await api.preferences
         .patch({ last_visited_path: '/Home' })
         .catch(() => {});
-      // Drop the stale cache entry; components will re-fetch on next mount.
-      queryClient.removeQueries({ queryKey: ['children'] });
+      // Invalidate so the next mount triggers a fresh fetch rather than
+      // serving a deleted-child entry from cache.
+      await queryClient.invalidateQueries({ queryKey: ['children'] });
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
         console.warn('[useStartOver] Failed:', err);
