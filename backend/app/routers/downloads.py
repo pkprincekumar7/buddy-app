@@ -124,9 +124,16 @@ async def get_apk_download_url(
     except _ApkError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 
+    raw_user_id = user.get("_id")
+    safe_user_id = (
+        str(raw_user_id).replace("\r", "").replace("\n", "")
+        if raw_user_id is not None
+        else "unknown"
+    )
+
     log.info(
         "downloads: user=%s requested APK pre-signed URL filename=%s",
-        user.get("_id"),
+        safe_user_id,
         result.filename,
     )
 
