@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
@@ -15,8 +16,19 @@ import {
   Rocket,
   Shield,
   Users,
+  Smartphone,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+
+// Web app only — the React Native app (frontend-app/) has its own update flow.
+// Show the APK download option only when the page is opened on an Android device.
+// APKs cannot be sideloaded on iOS or installed on desktop, so displaying this
+// button there would be misleading. User-agent detection is intentionally
+// client-side: the backend endpoint remains available to any authenticated user,
+// but the UI surface is scoped to Android browsers.
+const IS_ANDROID_BROWSER = /android/i.test(navigator.userAgent);
 
 const PILLARS = [
   {
@@ -65,6 +77,28 @@ const PILLARS = [
 
 export default function Home() {
   const navigate = useNavigate();
+  const [apkDownloading, setApkDownloading] = useState(false);
+
+  const handleDownloadApk = async () => {
+    setApkDownloading(true);
+    try {
+      const { url } = await api.downloads.getApkUrl();
+      // Trigger the download via a temporary anchor so the browser initiates
+      // the download without opening a new tab. The filename is controlled by
+      // the Content-Disposition header embedded in the pre-signed S3 URL —
+      // anchor.download is not used because it is ignored for cross-origin URLs.
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      toast.error('Could not fetch the download link. Please try again.');
+    } finally {
+      setApkDownloading(false);
+    }
+  };
+
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
     queryFn: () => api.entities.Child.list('-created_date'),
@@ -159,6 +193,51 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      {/* Android app download — visible only when the page is opened on an Android
+          browser. APKs are built and uploaded to S3 by the build-android-apk GitHub
+          Actions workflow. The backend generates a 5-minute pre-signed URL on demand. */}
+      {IS_ANDROID_BROWSER && (
+        <section className="py-6">
+          <div className="mx-auto max-w-6xl px-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="border-edge flex flex-col items-center gap-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-teal-400/5 to-emerald-500/10 px-6 py-5 sm:flex-row sm:justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600">
+                  <Smartphone className="h-5 w-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-semibold text-white">Get the Buddy360 Android App</p>
+                  <p className="text-xs text-slate-400">
+                    Install directly on your device for the full experience
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={handleDownloadApk}
+                disabled={apkDownloading}
+                className="btn-primary shrink-0 rounded-xl px-5 py-2.5 text-sm font-medium transition-all duration-200"
+              >
+                {apkDownloading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Preparing…
+                  </>
+                ) : (
+                  <>
+                    <Smartphone className="mr-2 h-4 w-4" />
+                    Download APK
+                  </>
+                )}
+              </Button>
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* 6 Pillars */}
       <section className="py-20 md:py-28">

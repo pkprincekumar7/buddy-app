@@ -221,6 +221,13 @@ export const api = {
       }) as Promise<GoalsRecord>,
   },
 
+  downloads: {
+    // Web app only — the React Native app (frontend-app/) has its own update flow.
+    // Returns a 5-minute pre-signed S3 URL pointing to the latest Android APK build.
+    getApkUrl: (): Promise<{ url: string; filename: string; expires_in: number }> =>
+      request('/downloads/apk') as Promise<{ url: string; filename: string; expires_in: number }>,
+  },
+
   entities: {
     Child: {
       async list(sort = '-created_date', limit?: number): Promise<ChildRecord[]> {
