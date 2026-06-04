@@ -245,6 +245,7 @@ class ChildResponse(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    visited_tabs: list[str] = Field(default_factory=list)
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
@@ -270,6 +271,7 @@ class ChildCreate(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    visited_tabs: list[str] | None = None
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildCreate:
@@ -312,6 +314,7 @@ class ChildPatch(BaseModel):
     energy_level: str | None = None
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
+    visited_tabs: list[str] | None = None
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:

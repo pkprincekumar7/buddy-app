@@ -96,7 +96,7 @@ jobs:
           cache-dependency-path: frontend-app/yarn.lock
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
@@ -139,7 +139,7 @@ jobs:
       # the correct and predictable behaviour.
       # -------------------------------------------------------------------------
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: pods-cache
         with:
           path: |
@@ -153,7 +153,7 @@ jobs:
         run: pod install --no-repo-update
 
       - name: Cache Metro bundler
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: frontend-app/node_modules/.cache/metro
           key: metro-${{ runner.os }}-${{ hashFiles('frontend-app/yarn.lock') }}
@@ -165,7 +165,7 @@ jobs:
       # invalidate the build cache).
       # -------------------------------------------------------------------------
       - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/Library/Developer/Xcode/DerivedData
           key: xcode-derived-${{ runner.os }}-${{ hashFiles('frontend-app/ios/**/*.pbxproj', 'frontend-app/ios/Podfile.lock') }}

@@ -334,7 +334,7 @@ jobs:
 
       - name: Restore retire.js database cache
         id: retiredb_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: frontend/retire-jsrepo.json
           # Cache key tied to package-lock.json — refreshes when JS deps change.

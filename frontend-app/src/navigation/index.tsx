@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useContext, useRef, useState } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import {
   NavigationContainer,
@@ -18,8 +12,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Home, Target, TrendingUp, Brain, Map } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { api } from '../api/client';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
@@ -80,8 +74,7 @@ const GrowthStack = createStackNavigator<GrowthStackParamList>();
 const PersonalityStack = createStackNavigator<PersonalityStackParamList>();
 const MainTab = createBottomTabNavigator<MainTabParamList>();
 
-// AsyncStorage key for persisting unlocked tabs per child.
-const tabStorageKey = (childId: string) => `unlockedTabs:${childId}`;
+const DEFAULT_UNLOCKED = new Set(['Home']);
 
 // Context lets CenteredTabBar subscribe to unlockedTabs directly so it
 // re-renders whenever the set changes, without relying on the tabBar prop
@@ -294,39 +287,82 @@ const stableTabBar = (props: BottomTabBarProps) => (
 
 function MainTabNavigator() {
   const { activeChild } = useAuth();
-  const childId = activeChild?.id ?? 'guest';
 
-  // Keep a ref so unlockTab always writes to the correct AsyncStorage key even
-  // if it is called before activeChild finishes loading (childId still 'guest').
-  const childIdRef = useRef(childId);
-  useEffect(() => {
-    childIdRef.current = childId;
-  }, [childId]);
-
+  // Seed from the database — activeChild is kept fresh by AuthContext (React Query).
+  const dbTabs = activeChild?.visited_tabs;
   const [unlockedTabs, setUnlockedTabs] = useState<Set<string>>(
-    new Set(['Home']),
+    dbTabs && dbTabs.length > 0 ? new Set(dbTabs) : DEFAULT_UNLOCKED,
   );
 
-  // Load persisted unlocked tabs whenever the real child ID becomes known.
-  // Skip the 'guest' fallback — only read storage once we have an actual ID.
-  useEffect(() => {
-    if (childId === 'guest') return;
-    void AsyncStorage.getItem(tabStorageKey(childId)).then(val => {
-      setUnlockedTabs(new Set(val ? (JSON.parse(val) as string[]) : ['Home']));
-    });
-  }, [childId]);
+  // Sync local state when the server value changes (login, background refresh,
+  // or another device adding a tab).
+  const prevChildIdRef = React.useRef<string | undefined>(undefined);
+  const prevDbTabsRef = React.useRef<Set<string> | undefined>(undefined);
+  // Tracks which tabs are already persisted or in-flight so we don't send
+  // duplicate API calls when the same tab is re-focused.
+  const persistedTabsRef = useRef<Set<string>>(
+    new Set(activeChild?.visited_tabs ?? []),
+  );
 
-  const unlockTab = useCallback((tabName: string) => {
-    const id = childIdRef.current;
-    if (id === 'guest') return; // child not loaded yet — skip to avoid saving under wrong key
-    setUnlockedTabs(prev => {
-      if (prev.has(tabName)) return prev;
-      const next = new Set(prev);
-      next.add(tabName);
-      void AsyncStorage.setItem(tabStorageKey(id), JSON.stringify([...next]));
-      return next;
-    });
-  }, []); // no dependencies — reads childId via ref
+  React.useEffect(() => {
+    const childId = activeChild?.id;
+    if (!childId || !dbTabs) return;
+
+    const incoming = new Set(dbTabs);
+    const childChanged = prevChildIdRef.current !== childId;
+
+    if (childChanged) {
+      // Different child — reset completely so Child A's tabs never bleed into
+      // Child B's tab bar. Also resets persistedTabsRef so Child B's tabs are
+      // not skipped by the in-flight guard seeded from Child A (or from the
+      // empty initial value when activeChild was still loading on first render).
+      prevChildIdRef.current = childId;
+      prevDbTabsRef.current = incoming;
+      persistedTabsRef.current = new Set(dbTabs);
+      setUnlockedTabs(new Set([...DEFAULT_UNLOCKED, ...incoming]));
+      return;
+    }
+
+    // Same child — merge so any locally added tabs are never dropped on refresh.
+    // Order-insensitive comparison: $addToSet may return tabs in any order.
+    const prev = prevDbTabsRef.current;
+    if (
+      prev &&
+      prev.size === incoming.size &&
+      [...incoming].every(t => prev.has(t))
+    )
+      return;
+    prevDbTabsRef.current = incoming;
+    setUnlockedTabs(
+      current => new Set([...DEFAULT_UNLOCKED, ...incoming, ...current]),
+    );
+  }, [dbTabs, activeChild?.id]);
+
+  const unlockTab = useCallback(
+    async (tabName: string) => {
+      const childId = activeChild?.id;
+      if (!childId) return;
+      if (persistedTabsRef.current.has(tabName)) return;
+
+      // Mark in-flight immediately to prevent duplicate calls on rapid re-focus.
+      persistedTabsRef.current = new Set([
+        ...persistedTabsRef.current,
+        tabName,
+      ]);
+
+      try {
+        await api.entities.Child.update(childId, { visited_tabs: [tabName] });
+        // Reflect in UI only after the server confirms the write.
+        setUnlockedTabs(prev => new Set([...prev, tabName]));
+      } catch {
+        // Remove the in-flight marker so the next focus event retries.
+        persistedTabsRef.current = new Set(
+          [...persistedTabsRef.current].filter(t => t !== tabName),
+        );
+      }
+    },
+    [activeChild?.id],
+  );
 
   return (
     <UnlockedTabsContext.Provider value={unlockedTabs}>
@@ -334,7 +370,7 @@ function MainTabNavigator() {
         <MainTab.Screen
           name="Home"
           component={HomeScreen}
-          listeners={{ focus: () => unlockTab('Home') }}
+          listeners={{ focus: () => void unlockTab('Home') }}
         />
         {/* Growth and Personality use nested stacks that manage their own headers.
             Setting headerShown: false here prevents a doubled header. */}
@@ -342,23 +378,23 @@ function MainTabNavigator() {
           name="Personality"
           component={PersonalityNavigator}
           options={{ headerShown: false }}
-          listeners={{ focus: () => unlockTab('Personality') }}
+          listeners={{ focus: () => void unlockTab('Personality') }}
         />
         <MainTab.Screen
           name="Growth"
           component={GrowthNavigator}
           options={{ headerShown: false }}
-          listeners={{ focus: () => unlockTab('Growth') }}
+          listeners={{ focus: () => void unlockTab('Growth') }}
         />
         <MainTab.Screen
           name="LifePathway"
           component={LifePathwayScreen}
-          listeners={{ focus: () => unlockTab('LifePathway') }}
+          listeners={{ focus: () => void unlockTab('LifePathway') }}
         />
         <MainTab.Screen
           name="Goals"
           component={GoalsDashboardScreen}
-          listeners={{ focus: () => unlockTab('Goals') }}
+          listeners={{ focus: () => void unlockTab('Goals') }}
         />
       </MainTab.Navigator>
     </UnlockedTabsContext.Provider>
