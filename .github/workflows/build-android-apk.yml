@@ -96,13 +96,13 @@ jobs:
           cache-dependency-path: frontend-app/yarn.lock
 
       - name: Cache node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: node-modules-cache
         with:
           path: frontend-app/node_modules
           key: node-modules-${{ runner.os }}-node22.13.0-${{ hashFiles('frontend-app/yarn.lock') }}
 
-      - name: Install dependencies
+      - name: Install JS dependencies
         working-directory: frontend-app
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: yarn install --frozen-lockfile
@@ -126,7 +126,7 @@ jobs:
           sed 's/=.*/=***/' .env
 
       - name: Cache Gradle project files
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             frontend-app/android/.gradle
@@ -135,7 +135,7 @@ jobs:
           restore-keys: gradle-project-${{ runner.os }}-
 
       - name: Cache Metro bundler
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: frontend-app/node_modules/.cache/metro
           key: metro-${{ runner.os }}-${{ hashFiles('frontend-app/yarn.lock') }}
@@ -146,10 +146,10 @@ jobs:
         run: chmod +x gradlew
 
       # -------------------------------------------------------------------------
-      # The release build currently uses the debug keystore (see android/app/build.gradle).
-      # This is fine for direct device installation and testing.
-      # For Play Store submission, replace signingConfigs.release with a production
-      # keystore and add KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+      # The release build uses the debug keystore — sufficient for direct device
+      # installation (sideloading). For Play Store submission, replace this with
+      # a production keystore and add ANDROID_KEYSTORE_BASE64 /
+      # ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
       # secrets to the GitHub environment.
       # -------------------------------------------------------------------------
       - name: Build release APK
@@ -162,7 +162,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: buddy360-android-${{ inputs.environment }}-${{ github.sha }}
-          path: frontend-app/android/app/build/outputs/apk/release/app-release.apk
+          path: frontend-app/android/app/build/outputs/apk/release/*.apk
           retention-days: 14
 
       # -------------------------------------------------------------------------
@@ -181,9 +181,14 @@ jobs:
         env:
           BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
         run: |
+          # Discover the APK dynamically — mirrors the iOS IPA discovery pattern.
+          APK_FILE=$(find "frontend-app/android/app/build/outputs/apk/release" -name "*.apk" | head -1)
+          if [[ -z "$APK_FILE" ]]; then
+            echo "ERROR: No .apk file found in apk/release"
+            ls -la "frontend-app/android/app/build/outputs/apk/release/" || true
+            exit 1
+          fi
           TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
           S3_KEY="app-assets/applications/android/app-release-${TIMESTAMP}.apk"
-          aws s3 cp \
-            frontend-app/android/app/build/outputs/apk/release/app-release.apk \
-            "s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
+          aws s3 cp "$APK_FILE" "s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
           echo "Uploaded to s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"

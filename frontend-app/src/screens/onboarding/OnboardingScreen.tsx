@@ -22,8 +22,14 @@ type OnboardingNavigationProp = StackNavigationProp<
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<OnboardingNavigationProp>();
-  const { user, isAuthenticated, isLoading, activeChildId, setActiveChildId } =
-    useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isLoading,
+    activeChildId,
+    setActiveChildId,
+    refetchChildren,
+  } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
 
@@ -81,6 +87,9 @@ export default function OnboardingScreen() {
         if (createdId) {
           setChildId(createdId);
           targetId = createdId;
+          // Sync childList so activeChild is non-null in MainTabNavigator
+          // by the time the user reaches a tab with an unlockTab listener.
+          await refetchChildren();
         }
       } catch (err) {
         console.warn('[Onboarding] Could not create child stub:', err);
@@ -93,7 +102,14 @@ export default function OnboardingScreen() {
       if (targetId !== activeChildId) setActiveChildId(targetId);
       navigation.navigate('ConversationalOnboarding');
     }
-  }, [isAuthenticated, childId, navigation, activeChildId, setActiveChildId]);
+  }, [
+    isAuthenticated,
+    childId,
+    navigation,
+    activeChildId,
+    setActiveChildId,
+    refetchChildren,
+  ]);
 
   if (isLoading || checking) {
     return (

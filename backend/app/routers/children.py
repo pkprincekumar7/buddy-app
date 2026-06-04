@@ -109,6 +109,8 @@ async def create_child(
     data = payload.model_dump(exclude_none=True)
     for f in _CHILD_SYSTEM_FIELDS:
         data.pop(f, None)
+    # Always initialise visited_tabs so the field exists in every document.
+    data.setdefault("visited_tabs", [])
 
     child_id = str(uuid.uuid4())
     doc = {
@@ -158,16 +160,28 @@ async def update_child(
 ):
     updates = patch.model_dump(exclude_unset=True)
     set_fields: dict = {"updated_at": datetime.now(UTC)}
+    # visited_tabs uses $addToSet so concurrent patches from different sessions
+    # or devices never overwrite each other — each patch only adds new entries.
+    add_to_set_tabs: list[str] | None = None
     for k, v in updates.items():
         if k in _CHILD_SYSTEM_FIELDS:
             continue
         if k == "name" and v is None:
             continue  # name is required — ignore null patch
-        set_fields[k] = v
+        if k == "visited_tabs":
+            if isinstance(v, list):
+                add_to_set_tabs = v
+            # None means "no change" — skip rather than nullifying the field.
+        else:
+            set_fields[k] = v
+
+    update_op: dict = {"$set": set_fields}
+    if add_to_set_tabs:
+        update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
 
     doc = await db[models.CHILDREN].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
-        {"$set": set_fields},
+        update_op,
         return_document=True,
     )
     if not doc:

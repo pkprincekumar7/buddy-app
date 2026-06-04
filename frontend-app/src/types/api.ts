@@ -35,6 +35,7 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
+  visited_tabs?: string[];
   [key: string]: unknown;
 }
 
