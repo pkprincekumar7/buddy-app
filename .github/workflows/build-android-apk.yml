@@ -130,7 +130,6 @@ jobs:
         with:
           path: |
             frontend-app/android/.gradle
-            frontend-app/android/app/.cxx
           key: gradle-project-${{ runner.os }}-${{ hashFiles('frontend-app/android/**/*.gradle*', 'frontend-app/android/gradle/wrapper/gradle-wrapper.properties', 'frontend-app/android/gradle.properties', 'frontend-app/yarn.lock') }}
           restore-keys: gradle-project-${{ runner.os }}-
 
