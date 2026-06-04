@@ -218,7 +218,7 @@ export default function Home() {
                 </div>
               </div>
               <Button
-                onClick={handleDownloadApk}
+                onClick={() => { void handleDownloadApk(); }}
                 disabled={apkDownloading}
                 className="btn-primary shrink-0 rounded-xl px-5 py-2.5 text-sm font-medium transition-all duration-200"
               >
