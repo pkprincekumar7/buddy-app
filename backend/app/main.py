@@ -24,6 +24,7 @@ from app.llm_rate_limiter import get_redis_client
 from app.routers.audio import router as audio_router
 from app.routers.auth import router as auth_router
 from app.routers.children import router as children_router
+from app.routers.downloads import router as downloads_router
 from app.routers.llm import router as llm_router
 from app.routers.users import router as users_router
 from app.settings import settings
@@ -146,6 +147,7 @@ _OPENAPI_TAGS = [
     {"name": "children", "description": "Child profiles linked to a parent account."},
     {"name": "llm", "description": "Large-language-model invocation and provider availability."},
     {"name": "audio", "description": "Audio processing and speech-to-text transcription."},
+    {"name": "downloads", "description": "Pre-signed S3 URLs for downloading mobile app builds."},
     {"name": "system", "description": "Health checks and service build metadata."},
 ]
 
@@ -221,6 +223,7 @@ app.include_router(users_router, prefix=API_V1_PREFIX)
 app.include_router(children_router, prefix=API_V1_PREFIX)
 app.include_router(llm_router, prefix=API_V1_PREFIX)
 app.include_router(audio_router, prefix=API_V1_PREFIX)
+app.include_router(downloads_router, prefix=API_V1_PREFIX)
 
 
 @app.get(

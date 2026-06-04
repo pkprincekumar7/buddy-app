@@ -532,7 +532,7 @@ export default function ConversationalOnboarding({
       // ── field-level validation ──────────────────────────────────────────────
       if (step?.field === 'age') {
         const trimmed = response.trim();
-        const ageMatch = trimmed.match(/^(\d+)\s*(\w+)?/);
+        const ageMatch = trimmed.match(/^(\d+)\s*(years?|months?|y|m)?/i);
         if (!ageMatch) {
           setTimeout(() => {
             addBotMessage(`Please enter age as a number in years (e.g., 10 or 10 years).`);
