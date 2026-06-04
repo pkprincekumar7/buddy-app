@@ -1,4 +1,7 @@
 {
   "name": "BuddyApp",
-  "displayName": "BuddyApp"
+  "displayName": "BuddyApp",
+  "expo": {
+    "userInterfaceStyle": "automatic"
+  }
 }

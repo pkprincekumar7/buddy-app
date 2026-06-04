@@ -130,16 +130,8 @@ jobs:
         with:
           path: |
             frontend-app/android/.gradle
-            frontend-app/android/app/.cxx
           key: gradle-project-${{ runner.os }}-${{ hashFiles('frontend-app/android/**/*.gradle*', 'frontend-app/android/gradle/wrapper/gradle-wrapper.properties', 'frontend-app/android/gradle.properties', 'frontend-app/yarn.lock') }}
           restore-keys: gradle-project-${{ runner.os }}-
-
-      - name: Cache Metro bundler
-        uses: actions/cache@v5
-        with:
-          path: frontend-app/node_modules/.cache/metro
-          key: metro-${{ runner.os }}-${{ hashFiles('frontend-app/yarn.lock') }}
-          restore-keys: metro-${{ runner.os }}-
 
       - name: Make Gradlew executable
         working-directory: frontend-app/android
