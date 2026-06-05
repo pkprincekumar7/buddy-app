@@ -5,17 +5,6 @@ import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOn
 import { generateAvatarDataUri } from '@/lib/avatarUtils';
 import { pickPreferredVoice } from '@/lib/tts';
 
-const FAMOUS_LABEL: Record<string, string> = {
-  Ambitious: 'Achievers',
-  Determined: 'Strivers',
-  Outgoing: 'Socializers',
-  Creative: 'Creators',
-  Enthusiastic: 'Enthusiasts',
-  Restless: 'Explorers',
-  'Highly Energetic': 'Energizers',
-  Thinker: 'Thinkers',
-  Playful: 'Players',
-};
 
 interface PersonalityCategory {
   name: string;
@@ -529,8 +518,6 @@ const ANIM_FAMOUS_BASE = 2.7;
 const ANIM_FAMOUS_STEP = 0.3;
 const ANIM_STRENGTH_BASE = 3.5;
 const ANIM_STRENGTH_STEP = 0.15;
-const ANIM_GROWTH_BASE = 4.3;
-const ANIM_GROWTH_STEP = 0.15;
 
 export interface MbtiResult {
   type: string;

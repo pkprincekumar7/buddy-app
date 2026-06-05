@@ -457,7 +457,7 @@ export default function ChildActivityGame({
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="mb-2 text-2xl font-bold text-white">
-          {game.question.replace('[child name]', childName?.trim() || 'your child')}
+          {game.question.replace('[child name]', childName?.trim() ?? 'your child')}
         </h2>
         <p className="text-slate-500">{game.subtitle}</p>
         <p className="mt-2 text-sm text-emerald-600">

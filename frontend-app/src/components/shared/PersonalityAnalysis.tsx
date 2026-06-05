@@ -16,11 +16,7 @@ import Svg, {
 } from 'react-native-svg';
 import { Sparkles } from 'lucide-react-native';
 import { useSlideUpWhenReady } from '@/lib/animations';
-import {
-  personalityTypes,
-  personalityCategories,
-  type MbtiResult,
-} from '@/lib/personalityLogic';
+import { personalityTypes, type MbtiResult } from '@/lib/personalityLogic';
 import { getInitials, nameToColor } from '@/lib/avatarUtils';
 
 // ── Gradient lookup tables (match web personalityTypes/personalityCategories colors) ────
@@ -37,13 +33,6 @@ const TYPE_GRADIENT: Record<string, { from: string; to: string }> = {
   Playful: { from: '#f472b6', to: '#a855f7' }, // from-pink-400 to-purple-500
 };
 
-const CATEGORY_GRADIENT: Record<string, { from: string; to: string }> = {
-  motivators: { from: '#ef4444', to: '#ea580c' }, // from-red-500 to-orange-600
-  socializers: { from: '#facc15', to: '#f97316' }, // from-yellow-400 to-orange-500
-  creatives: { from: '#c084fc', to: '#ec4899' }, // from-purple-400 to-pink-500
-  adventurers: { from: '#fb923c', to: '#ef4444' }, // from-orange-400 to-red-500
-};
-
 // ── Timing constants matching web PersonalityAnalysis ────────────────────────
 // Web uses seconds; these are milliseconds for Reanimated.
 const ANIM_BAR_ROW_BASE = 1900;
@@ -54,18 +43,6 @@ const ANIM_FAMOUS_STEP = 300;
 // Card background (hsl(0 0% 8%) ≈ #141414) — used as mask overlay for gradient bars
 // so the unrevealed right portion matches the card surface.
 const CARD_BG = '#141414';
-
-const FAMOUS_LABEL: Record<string, string> = {
-  Ambitious: 'Achievers',
-  Determined: 'Strivers',
-  Outgoing: 'Socializers',
-  Creative: 'Creators',
-  Enthusiastic: 'Enthusiasts',
-  Restless: 'Explorers',
-  'Highly Energetic': 'Energizers',
-  Thinker: 'Thinkers',
-  Playful: 'Players',
-};
 
 interface FamousPersonItem {
   name: string;
@@ -81,46 +58,6 @@ interface PersonalityAnalysisProps {
    * component works standalone.
    */
   ready?: boolean;
-}
-
-// ── GradientBadge ─────────────────────────────────────────────────────────────
-// Renders a rounded pill with a horizontal SVG LinearGradient background.
-// Mirrors web's `bg-gradient-to-r ${category.color}` on the category badge div.
-function GradientBadge({
-  gradient,
-  children,
-}: {
-  gradient: { from: string; to: string };
-  children: React.ReactNode;
-}) {
-  const [dims, setDims] = useState({ w: 0, h: 0 });
-  return (
-    <View
-      className="rounded-2xl overflow-hidden p-4 items-center"
-      style={{ backgroundColor: gradient.from }}
-      onLayout={e => {
-        const { width, height } = e.nativeEvent.layout;
-        setDims({ w: width, h: height });
-      }}
-    >
-      {dims.w > 0 && dims.h > 0 && (
-        <Svg
-          width={dims.w}
-          height={dims.h}
-          style={{ position: 'absolute', top: 0, left: 0 }}
-        >
-          <Defs>
-            <SvgLinearGradient id="catGrad" x1="0" y1="0" x2="1" y2="0">
-              <Stop offset="0%" stopColor={gradient.from} />
-              <Stop offset="100%" stopColor={gradient.to} />
-            </SvgLinearGradient>
-          </Defs>
-          <Rect width={dims.w} height={dims.h} fill="url(#catGrad)" />
-        </Svg>
-      )}
-      {children}
-    </View>
-  );
 }
 
 // ── SlideSection ─────────────────────────────────────────────────────────────
@@ -373,12 +310,23 @@ export default function PersonalityAnalysis({
   useEffect(() => {
     if (!ready || hasSpokeRef.current) return;
     hasSpokeRef.current = true;
-    const famousNames = (Array.isArray(profile?.famous_people) ? profile.famous_people as FamousPersonItem[] : [])
-      .map(p => p.name).join(' and ');
-    const text = `${profile?.description ?? ''}${famousNames ? ` Famous people who share similar traits include ${famousNames}.` : ''}`;
+    const famousNames = (
+      Array.isArray(profile?.famous_people)
+        ? (profile.famous_people as FamousPersonItem[])
+        : []
+    )
+      .map(p => p.name)
+      .join(' and ');
+    const text = `${profile?.description ?? ''}${
+      famousNames
+        ? ` Famous people who share similar traits include ${famousNames}.`
+        : ''
+    }`;
     void speakText(text);
-    return () => { stopSpeech(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      stopSpeech();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   // Top 3 personality types by score
@@ -528,7 +476,6 @@ export default function PersonalityAnalysis({
           </View>
         </View>
       </SlideSection>
-
     </View>
   );
 }
