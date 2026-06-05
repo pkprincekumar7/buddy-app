@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 
 const WELCOME_FEATURES = [
-  { icon: Heart, text: 'Understand your child deeply' },
-  { icon: Compass, text: 'Create a personalized growth pathway' },
-  { icon: Sparkles, text: 'Get life changing recommendations' },
+  { icon: Heart, text: 'Understanding your child deeply' },
+  { icon: Compass, text: 'Creating a personalized growth pathway' },
+  { icon: Sparkles, text: 'Getting life-changing recommendations' },
 ];
 
 interface WelcomePhaseProps {
@@ -60,7 +60,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         className="border-edge mx-auto max-w-md rounded-2xl bg-surface-elevated p-6"
       >
         <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          What you'll do today
+          Let's Start By
         </p>
         <div className="space-y-4">
           {WELCOME_FEATURES.map((feature, index) => (

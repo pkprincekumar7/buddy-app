@@ -6,9 +6,9 @@ import { api } from '@/api/client';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
 
 const WELCOME_FEATURES = [
-  { emoji: '❤️', text: 'Understand your child deeply' },
-  { emoji: '🧭', text: 'Create a personalized growth pathway' },
-  { emoji: '✨', text: 'Get life changing recommendations' },
+  { emoji: '❤️', text: 'Understanding your child deeply' },
+  { emoji: '🧭', text: 'Creating a personalized growth pathway' },
+  { emoji: '✨', text: 'Getting life-changing recommendations' },
 ];
 
 interface WelcomePhaseProps {
@@ -85,7 +85,7 @@ export default function WelcomePhase({
         className="mx-4 mb-8 rounded-2xl bg-surface-elevated p-6 border border-white/10"
       >
         <Text className="mb-5 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          What you'll do today
+          Let's Start By
         </Text>
         <View className="space-y-4">
           {WELCOME_FEATURES.map((feature, index) => (

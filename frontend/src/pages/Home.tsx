@@ -145,22 +145,20 @@ export default function Home() {
             <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-400" />
               <span className="text-sm font-medium text-teal-400">
-                A Growth Companion for Families
+                A Transformational Journey for Your Child
               </span>
             </div>
 
             <h1 className="mb-6 text-4xl font-bold leading-tight tracking-tight text-white md:text-6xl lg:text-7xl">
-              Nurture Self-Aware,
-              <br />
+              Preparing Children to{' '}
               <span className="bg-gradient-to-r from-teal-400 to-teal-300 bg-clip-text text-transparent">
-                Purpose-Driven
-              </span>{' '}
-              Children
+                Unlock Their Super Powers
+              </span>
             </h1>
 
             <p className="mx-auto mb-10 max-w-3xl text-lg leading-relaxed text-slate-400 md:text-xl">
-              A guided journey helping your child discover strengths, build character, and design a
-              meaningful life.
+              A guided journey to uncover strengths, build confidence, and grow into a thoughtful,
+              capable individual.
             </p>
 
             <div className="flex flex-col justify-center gap-4 sm:flex-row">
@@ -168,7 +166,7 @@ export default function Home() {
                 <>
                   <Button
                     onClick={() => navigate('/Onboarding')}
-                    className="btn-primary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
+                    className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
                     Continue Onboarding
@@ -182,7 +180,7 @@ export default function Home() {
               ) : (
                 <Button
                   onClick={handleStartJourney}
-                  className="btn-primary h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
+                  className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Start Your Journey
@@ -359,7 +357,7 @@ export default function Home() {
               </p>
               <Button
                 onClick={handleStartJourney}
-                className="btn-primary h-btn-lg rounded-2xl px-10 text-base transition-all duration-200"
+                className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
               >
                 Get Started Free
                 <ArrowRight className="ml-2 h-4 w-4" />

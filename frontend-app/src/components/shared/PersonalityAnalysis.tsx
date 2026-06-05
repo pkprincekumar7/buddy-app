@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image } from 'react-native';
+import { speakText, stopSpeech } from '@/lib/tts';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,7 +14,7 @@ import Svg, {
   Stop,
   Defs,
 } from 'react-native-svg';
-import { Sparkles, Sprout } from 'lucide-react-native';
+import { Sparkles } from 'lucide-react-native';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import {
   personalityTypes,
@@ -367,11 +368,18 @@ export default function PersonalityAnalysis({
 }: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
 
-  const categoryKey = profile?.category ?? 'creatives';
-  const category =
-    personalityCategories[categoryKey] ?? personalityCategories['creatives']!;
-  const categoryGrad =
-    CATEGORY_GRADIENT[categoryKey] ?? CATEGORY_GRADIENT['creatives']!;
+  // Fire TTS exactly once when the splash/loading overlay is gone.
+  const hasSpokeRef = useRef(false);
+  useEffect(() => {
+    if (!ready || hasSpokeRef.current) return;
+    hasSpokeRef.current = true;
+    const famousNames = (Array.isArray(profile?.famous_people) ? profile.famous_people as FamousPersonItem[] : [])
+      .map(p => p.name).join(' and ');
+    const text = `${profile?.description ?? ''}${famousNames ? ` Famous people who share similar traits include ${famousNames}.` : ''}`;
+    void speakText(text);
+    return () => { stopSpeech(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // Top 3 personality types by score
   const topTypes = Object.entries(scores)
@@ -380,9 +388,6 @@ export default function PersonalityAnalysis({
     .slice(0, 3)
     .map(([typeName, score]) => ({ name: typeName, score }));
 
-  const growthAreasList = Array.isArray(profile?.growth_areas)
-    ? profile.growth_areas
-    : [];
   const traitsList = Array.isArray(profile?.traits) ? profile.traits : [];
   const strengthsList = Array.isArray(profile?.strengths)
     ? profile.strengths
@@ -391,31 +396,8 @@ export default function PersonalityAnalysis({
     ? (profile.famous_people as FamousPersonItem[])
     : [];
 
-  const famousHeading = profile?.name
-    ? FAMOUS_LABEL[profile.name] ?? `${profile.name}s`
-    : 'Role Models';
-
   return (
     <View className="gap-5">
-      {/* ── Section 1 — Category Badge ─────────────────────────────────────── */}
-      {/* Web: bg-gradient-to-r ${category.color} rounded-2xl p-4 text-center  */}
-      <SlideSection delayMs={100} ready={ready}>
-        <GradientBadge gradient={categoryGrad}>
-          <Text
-            className="text-sm font-medium text-white"
-            style={{ opacity: 0.9 }}
-          >
-            {category.name}
-          </Text>
-          <Text
-            className="mt-1 text-xs text-white text-center"
-            style={{ opacity: 0.75 }}
-          >
-            {category.description}
-          </Text>
-        </GradientBadge>
-      </SlideSection>
-
       {/* ── Section 2 — Main Type Card ─────────────────────────────────────── */}
       {/* Web: border-edge rounded-2xl bg-card p-6                              */}
       <SlideSection delayMs={800} ready={ready}>
@@ -505,10 +487,10 @@ export default function PersonalityAnalysis({
           style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
         >
           <Text className="text-sm font-semibold text-white mb-1">
-            Famous {famousHeading}
+            Famous People
           </Text>
           <Text className="text-xs text-slate-500 mb-5">
-            People {childName} may relate to
+            {childName} may relate to who share similar personality traits.
           </Text>
           {/* Web: flex flex-wrap justify-center gap-6 */}
           <View className="flex-row justify-center flex-wrap gap-6">
@@ -547,40 +529,6 @@ export default function PersonalityAnalysis({
         </View>
       </SlideSection>
 
-      {/* ── Section 6 — Growth Areas ───────────────────────────────────────── */}
-      {/* Web: rounded-2xl border border-amber-500/15 bg-card p-5               */}
-      {growthAreasList.length > 0 && (
-        <SlideSection delayMs={4000} ready={ready}>
-          <View
-            className="rounded-2xl bg-card p-5"
-            style={{ borderWidth: 1, borderColor: 'rgba(245,158,11,0.15)' }}
-          >
-            <View className="flex-row items-center gap-2 mb-3">
-              {/* Web: <Sprout className="h-4 w-4 shrink-0" /> */}
-              <Sprout size={16} color="#fbbf24" />
-              <Text className="text-sm font-semibold text-amber-400">
-                Growth Areas
-              </Text>
-            </View>
-            <View className="gap-2">
-              {growthAreasList.map((item, i) => (
-                <FadeItem
-                  key={`${String(item)}-${i}`}
-                  delayMs={4300 + i * 150}
-                  ready={ready}
-                >
-                  <View className="flex-row items-start gap-2.5">
-                    <View className="mt-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                    <Text className="text-sm text-slate-400 flex-1">
-                      {String(item)}
-                    </Text>
-                  </View>
-                </FadeItem>
-              ))}
-            </View>
-          </View>
-        </SlideSection>
-      )}
     </View>
   );
 }

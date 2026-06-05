@@ -177,7 +177,7 @@ const areaGames: Record<string, AreaGame> = {
       )}. Generate personalized self-care recommendations for the parent: 1. A brief summary of what these choices reveal about the child's emotional needs, 2. 3-4 specific ways to support these self-care habits at home, 3. 2-3 emotional strengths to encourage.`,
   },
   critical_thinking: {
-    question: 'Which challenges do you enjoy most?',
+    question: 'Which activity does [child name] enjoy the most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
@@ -648,7 +648,7 @@ export default function GrowthAreasActivityGameScreen() {
         ListHeaderComponent={
           <View className="mb-6 items-center">
             <Text className="mb-2 text-2xl font-bold text-white">
-              {game.question}
+              {game.question.replace('[child name]', childName?.trim() || 'your child')}
             </Text>
             <Text className="text-slate-500">{game.subtitle}</Text>
             <Text className="mt-2 text-sm text-emerald-600">

@@ -1,7 +1,9 @@
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Sprout } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
 import { generateAvatarDataUri } from '@/lib/avatarUtils';
+import { pickPreferredVoice } from '@/lib/tts';
 
 const FAMOUS_LABEL: Record<string, string> = {
   Ambitious: 'Achievers',
@@ -548,13 +550,34 @@ export interface MbtiResult {
 interface PersonalityAnalysisProps {
   mbtiResult: MbtiResult;
   childName?: string;
+  /** Defer TTS until splash/loading is fully gone. Defaults to true. */
+  ready?: boolean;
 }
 
-export default function PersonalityAnalysis({ mbtiResult, childName }: PersonalityAnalysisProps) {
+export default function PersonalityAnalysis({ mbtiResult, childName, ready = true }: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
-  const category =
-    (profile?.category ? personalityCategories[profile.category] : undefined) ??
-    personalityCategories['creatives']!;
+
+  // Fire TTS exactly once — only after the splash/loading overlay is gone (ready=true).
+  // Using a ref to prevent re-firing if the parent re-renders with ready=true again.
+  const hasSpokeRef = useRef(false);
+  useEffect(() => {
+    if (!ready || hasSpokeRef.current) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    hasSpokeRef.current = true;
+    const famousNames = (profile?.famous_people ?? []).map((p) => p.name).join(' and ');
+    const text = `${profile?.description ?? ''}${famousNames ? ` Famous people who share similar traits include ${famousNames}.` : ''}`;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.95;
+    utter.pitch = 1.15;
+    const voice = pickPreferredVoice();
+    if (voice) utter.voice = voice;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // Get top 3 personality types by score
   const topTypes = Object.entries(scores)
@@ -562,8 +585,6 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
     .map(([typeName, score]) => ({ name: typeName, score: score }));
-
-  const growthAreasList = Array.isArray(profile?.growth_areas) ? profile.growth_areas : [];
 
   const sectionAnim = (delay: number) => ({
     initial: { opacity: 0, y: 24 },
@@ -573,15 +594,6 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
 
   return (
     <div className="space-y-6">
-      {/* Section 1 — Category Badge */}
-      <motion.div
-        {...sectionAnim(0.1)}
-        className={`bg-gradient-to-r ${category.color} rounded-2xl p-4 text-center text-white`}
-      >
-        <p className="text-sm font-medium opacity-90">{category.name}</p>
-        <p className="mt-1 text-xs opacity-75">{category.description}</p>
-      </motion.div>
-
       {/* Section 2 — Main Type Card */}
       <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
         <div className="mb-4 text-center">
@@ -649,10 +661,10 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
 
       {/* Section 4 — Famous People */}
       <motion.div {...sectionAnim(2.4)} className="border-edge rounded-2xl bg-surface-elevated p-6">
-        <h4 className="mb-1 text-sm font-semibold text-white">
-          Famous {profile.name ? (FAMOUS_LABEL[profile.name] ?? `${profile.name}s`) : 'Role Models'}
-        </h4>
-        <p className="mb-5 text-xs text-slate-500">People {childName} may relate to</p>
+        <h4 className="mb-1 text-sm font-semibold text-white">Famous People</h4>
+        <p className="mb-5 text-xs text-slate-500">
+          {childName} may relate to who share similar personality traits.
+        </p>
         <div className="flex flex-wrap justify-center gap-6">
           {(profile.famous_people ?? []).map((person, i) => (
             <motion.div
@@ -705,35 +717,6 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
         </ul>
       </motion.div>
 
-      {/* Section 6 — Growth Areas */}
-      {growthAreasList.length > 0 && (
-        <motion.div
-          {...sectionAnim(4.0)}
-          className="rounded-2xl border border-amber-500/15 bg-card p-5"
-        >
-          <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-400">
-            <Sprout className="h-4 w-4 shrink-0" aria-hidden />
-            Growth Areas
-          </h4>
-          <ul className="space-y-2">
-            {growthAreasList.map((item, i) => (
-              <motion.li
-                key={`${item}-${i}`}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.7, delay: ANIM_GROWTH_BASE + i * ANIM_GROWTH_STEP }}
-                className="flex items-start gap-2.5 text-sm text-slate-400"
-              >
-                <span
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-                  aria-hidden
-                />
-                <span>{item}</span>
-              </motion.li>
-            ))}
-          </ul>
-        </motion.div>
-      )}
     </div>
   );
 }

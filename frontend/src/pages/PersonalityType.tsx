@@ -207,6 +207,7 @@ export default function PersonalityType() {
               <PersonalityAnalysis
                 mbtiResult={mbtiResult as unknown as MbtiResult}
                 childName={childName}
+                ready={!showSplash}
               />
 
               <PageActions

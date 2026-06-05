@@ -147,30 +147,27 @@ export default function HomeScreen() {
         <View className="flex-row items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2 mb-8">
           <View className="h-2 w-2 rounded-full bg-teal-400" />
           <Text className="text-xs font-medium text-teal-400">
-            A Growth Companion for Families
+            A Transformational Journey for Your Child
           </Text>
         </View>
 
         <Text className="text-3xl font-bold leading-tight tracking-tight text-white text-center mb-2">
-          Nurture Self-Aware,
+          Preparing Children to
         </Text>
-        <Text className="text-3xl font-bold leading-tight tracking-tight text-teal-400 text-center mb-2">
-          Purpose-Driven
-        </Text>
-        <Text className="text-3xl font-bold leading-tight tracking-tight text-white text-center mb-6">
-          Children
+        <Text className="text-3xl font-bold leading-tight tracking-tight text-teal-400 text-center mb-6">
+          Unlock Their Super Powers
         </Text>
 
         <Text className="text-base leading-relaxed text-slate-400 text-center mb-8 max-w-sm">
-          A guided journey helping your child discover strengths, build
-          character, and design a meaningful life.
+          A guided journey to uncover strengths, build confidence, and grow
+          into a thoughtful, capable individual.
         </Text>
 
         {onboardingInProgress ? (
           <View className="w-full gap-3">
             <Button
               onPress={() => navigation.navigate('Onboarding')}
-              className="h-12 rounded-2xl px-8"
+              className="h-12 rounded-2xl px-6"
             >
               <Text className="text-sm font-semibold text-[#0a0a0a]">
                 ✨ Continue Onboarding →
@@ -184,7 +181,7 @@ export default function HomeScreen() {
         ) : (
           <Button
             onPress={handleStartJourney}
-            className="h-12 rounded-2xl px-8"
+            className="h-12 rounded-2xl px-6"
           >
             <Text className="text-sm font-semibold text-[#0a0a0a]">
               ✨ Start Your Journey →
@@ -247,7 +244,7 @@ export default function HomeScreen() {
           </Text>
           <Button
             onPress={handleStartJourney}
-            className="h-12 rounded-2xl px-10"
+            className="h-12 rounded-2xl px-6"
           >
             <Text className="text-sm font-semibold text-[#0a0a0a]">
               Get Started Free →

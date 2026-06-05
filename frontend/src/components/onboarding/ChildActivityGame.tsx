@@ -133,7 +133,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these activities as things that make them feel calm and happy: ${labels.join(', ')}. These selections will be used to generate a personalised self-care development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these self-care choices reveal about this child's emotional needs and coping style, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and strengthen these self-care habits at home. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 emotional or wellbeing strengths these choices suggest the child has or is developing.`,
   },
   critical_thinking: {
-    question: 'Which challenges do you enjoy most?',
+    question: 'Which activity does [child name] enjoy the most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
@@ -456,7 +456,9 @@ export default function ChildActivityGame({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="mb-2 text-2xl font-bold text-white">{game.question}</h2>
+        <h2 className="mb-2 text-2xl font-bold text-white">
+          {game.question.replace('[child name]', childName?.trim() || 'your child')}
+        </h2>
         <p className="text-slate-500">{game.subtitle}</p>
         <p className="mt-2 text-sm text-emerald-600">
           Selected: {ids.length}/{game.maxSelections}

@@ -17,19 +17,17 @@ export function unlockIOSSpeechSynthesis() {
 export function pickPreferredVoice() {
   if (typeof window === 'undefined') return null;
   const voices = window.speechSynthesis.getVoices();
+  // Preference order: energetic, high-quality female voices first
   return (
-    voices.find(
-      (v) =>
-        v.name.includes('Google US English Female') ||
-        v.name.includes('Google UK English Female') ||
-        v.name.includes('Samantha') ||
-        v.name.includes('Karen') ||
-        v.name.includes('Moira') ||
-        v.name.includes('Fiona') ||
-        v.name.includes('Serena') ||
-        (v.name.includes('Microsoft') && v.name.includes('Zira')) ||
-        (v.name.includes('Microsoft') && v.name.includes('Eva')),
-    ) ??
+    voices.find((v) => v.name.includes('Google UK English Female')) ??
+    voices.find((v) => v.name.includes('Google US English Female')) ??
+    voices.find((v) => v.name.includes('Fiona')) ??
+    voices.find((v) => v.name.includes('Serena')) ??
+    voices.find((v) => v.name.includes('Karen')) ??
+    voices.find((v) => v.name.includes('Samantha')) ??
+    voices.find((v) => v.name.includes('Moira')) ??
+    voices.find((v) => v.name.includes('Microsoft') && v.name.includes('Zira')) ??
+    voices.find((v) => v.name.includes('Microsoft') && v.name.includes('Eva')) ??
     voices.find((v) => v.lang.startsWith('en') && !v.localService) ??
     voices.find((v) => v.lang.startsWith('en')) ??
     null
