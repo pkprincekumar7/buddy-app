@@ -159,8 +159,8 @@ export default function HomeScreen() {
         </Text>
 
         <Text className="text-base leading-relaxed text-slate-400 text-center mb-8 max-w-sm">
-          A guided journey to uncover strengths, build confidence, and grow
-          into a thoughtful, capable individual.
+          A guided journey to uncover strengths, build confidence, and grow into
+          a thoughtful, capable individual.
         </Text>
 
         {onboardingInProgress ? (

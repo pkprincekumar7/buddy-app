@@ -5,7 +5,6 @@ import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOn
 import { generateAvatarDataUri } from '@/lib/avatarUtils';
 import { pickPreferredVoice } from '@/lib/tts';
 
-
 interface PersonalityCategory {
   name: string;
   color: string;
@@ -541,7 +540,11 @@ interface PersonalityAnalysisProps {
   ready?: boolean;
 }
 
-export default function PersonalityAnalysis({ mbtiResult, childName, ready = true }: PersonalityAnalysisProps) {
+export default function PersonalityAnalysis({
+  mbtiResult,
+  childName,
+  ready = true,
+}: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
 
   // Fire TTS exactly once — only after the splash/loading overlay is gone (ready=true).
@@ -563,7 +566,7 @@ export default function PersonalityAnalysis({ mbtiResult, childName, ready = tru
     return () => {
       window.speechSynthesis.cancel();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   // Get top 3 personality types by score
@@ -703,7 +706,6 @@ export default function PersonalityAnalysis({ mbtiResult, childName, ready = tru
           ))}
         </ul>
       </motion.div>
-
     </div>
   );
 }

@@ -648,7 +648,10 @@ export default function GrowthAreasActivityGameScreen() {
         ListHeaderComponent={
           <View className="mb-6 items-center">
             <Text className="mb-2 text-2xl font-bold text-white">
-              {game.question.replace('[child name]', childName?.trim() || 'your child')}
+              {game.question.replace(
+                '[child name]',
+                childName?.trim() || 'your child',
+              )}
             </Text>
             <Text className="text-slate-500">{game.subtitle}</Text>
             <Text className="mt-2 text-sm text-emerald-600">
