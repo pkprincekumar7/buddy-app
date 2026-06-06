@@ -202,3 +202,10 @@ jobs:
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         run: terraform apply -auto-approve tfplan.bin
+
+      - name: Delete runtime SSM parameters
+        if: inputs.action == 'destroy'
+        run: |
+          aws ssm delete-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" || true
