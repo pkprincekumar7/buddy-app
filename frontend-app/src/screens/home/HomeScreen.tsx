@@ -166,10 +166,11 @@ export default function HomeScreen() {
         {onboardingInProgress ? (
           <View className="w-full gap-3">
             <Button
+              size="xl"
               onPress={() => navigation.navigate('Onboarding')}
-              className="h-12 rounded-2xl px-6"
+              className="rounded-2xl"
             >
-              <Text className="text-sm font-semibold text-[#0a0a0a]">
+              <Text className="text-base font-semibold text-[#0a0a0a]">
                 ✨ Continue Onboarding →
               </Text>
             </Button>
@@ -180,10 +181,11 @@ export default function HomeScreen() {
           </View>
         ) : (
           <Button
+            size="xl"
             onPress={handleStartJourney}
-            className="h-12 rounded-2xl px-6"
+            className="rounded-2xl"
           >
-            <Text className="text-sm font-semibold text-[#0a0a0a]">
+            <Text className="text-base font-semibold text-[#0a0a0a]">
               ✨ Start Your Journey →
             </Text>
           </Button>
@@ -243,10 +245,11 @@ export default function HomeScreen() {
             becoming their best self.
           </Text>
           <Button
+            size="xl"
             onPress={handleStartJourney}
-            className="h-12 rounded-2xl px-6"
+            className="rounded-2xl"
           >
-            <Text className="text-sm font-semibold text-[#0a0a0a]">
+            <Text className="text-base font-semibold text-[#0a0a0a]">
               Get Started Free →
             </Text>
           </Button>

@@ -946,14 +946,14 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
           className="mb-8 rounded-2xl bg-card border border-white/10 p-6"
         >
           <View className="mb-4 flex-row items-start gap-4">
-            <View className="h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-500">
+            <View className="w-12 shrink-0 items-center justify-center rounded-xl bg-teal-500">
               <EmojiText size="xl">⭐</EmojiText>
             </View>
             <View>
               <Text className="text-lg font-bold text-white">
                 {String(data['name'])}'s Profile
               </Text>
-              <Text className="text-sm font-medium text-teal-400">
+              <Text className="text-base font-medium text-teal-400">
                 {(() => {
                   const pt =
                     typeof profile['personality_type'] === 'string'
@@ -1010,16 +1010,20 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             develop key life skills
           </Text>
           <Button
+            size="xl"
             onPress={() => setStep('area_selection')}
-            className="h-12 w-full rounded-2xl bg-purple-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl bg-purple-500 items-center justify-center mb-3"
           >
-            <Text className="font-semibold text-white">Continue Now</Text>
+            <Text className="text-sm font-semibold text-white">
+              Continue Now
+            </Text>
           </Button>
           <Button
+            size="xl"
             onPress={() => navigation.navigate('Main' as never)}
-            className="h-12 w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
           >
-            <Text className="text-slate-300">Catch Up Later</Text>
+            <Text className="text-base text-slate-300">Catch Up Later</Text>
           </Button>
         </View>
       </Animated.View>
@@ -1343,22 +1347,26 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
         </Text>
         <View className="flex-row justify-center gap-4">
           <Button
+            size="xl"
             onPress={() => {
               setParentLiked(true);
               setStep('child_activity_prompt');
             }}
-            className="h-12 rounded-2xl bg-emerald-500 px-8 items-center justify-center"
+            className="rounded-2xl bg-emerald-500 px-8 items-center justify-center"
           >
-            <Text className="font-semibold text-white">Yes, I like it!</Text>
+            <Text className="text-sm font-semibold text-white">
+              Yes, I like it!
+            </Text>
           </Button>
           <Button
+            size="xl"
             onPress={() => {
               setParentLiked(false);
               setStep('feedback');
             }}
-            className="h-12 rounded-2xl border border-white/10 bg-transparent px-8 items-center justify-center"
+            className="rounded-2xl border border-white/10 bg-transparent px-8 items-center justify-center"
           >
-            <Text className="text-slate-300">Not quite</Text>
+            <Text className="text-sm text-slate-300">Not quite</Text>
           </Button>
         </View>
       </Animated.View>
@@ -1406,7 +1414,7 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
             onPress={() => setStep('activity_selection')}
             className="rounded-2xl border border-white/10 bg-transparent px-4 py-2 items-center justify-center"
           >
-            <Text className="text-slate-300">Go Back</Text>
+            <Text className="text-sm text-slate-300">Go Back</Text>
           </Button>
           <Button
             onPress={() => {
@@ -1415,7 +1423,9 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
             }}
             className="rounded-2xl bg-purple-500 px-4 py-2 items-center justify-center"
           >
-            <Text className="text-white font-medium">Submit & Try Another</Text>
+            <Text className="text-sm font-medium text-white">
+              Submit & Try Another
+            </Text>
           </Button>
         </View>
       </Animated.View>
@@ -1445,18 +1455,20 @@ function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
             {String(data['name'])} can complete this as a game on their device
           </Text>
           <Button
+            size="xl"
             onPress={() => setStep('results')}
-            className="h-12 w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
           >
-            <Text className="font-semibold text-white">
+            <Text className="text-sm font-semibold text-white">
               Yes, Start Activity
             </Text>
           </Button>
           <Button
+            size="xl"
             onPress={() => navigation.navigate('Main' as never)}
-            className="h-12 w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
           >
-            <Text className="text-slate-300">Catch Up Later</Text>
+            <Text className="text-base text-slate-300">Catch Up Later</Text>
           </Button>
         </View>
       </Animated.View>
@@ -1630,7 +1642,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   onPress={handlePreviousQuestion}
                   className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
                 >
-                  <Text className="text-slate-300">‹ Previous</Text>
+                  <Text className="text-sm text-slate-300">‹ Previous</Text>
                 </Button>
               )}
               <Button
@@ -1655,7 +1667,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
               >
-                <Text className="font-semibold text-white">
+                <Text className="text-sm font-semibold text-white">
                   {isLastQuestion ? 'See Summary' : 'Next ›'}
                 </Text>
               </Button>
@@ -1702,7 +1714,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   onPress={handlePreviousQuestion}
                   className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
                 >
-                  <Text className="text-slate-300">‹ Previous</Text>
+                  <Text className="text-sm text-slate-300">‹ Previous</Text>
                 </Button>
               )}
               <Button
@@ -1728,7 +1740,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
               >
-                <Text className="font-semibold text-white">
+                <Text className="text-sm font-semibold text-white">
                   {isLastQuestion ? 'See Summary' : 'Next ›'}
                 </Text>
               </Button>
@@ -1852,7 +1864,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
             onPress={() => setStep('parent_activity')}
             className="rounded-2xl bg-purple-500 items-center justify-center py-2.5 mb-2"
           >
-            <Text className="text-white font-medium">
+            <Text className="text-sm font-medium text-white">
               Open activity details
             </Text>
           </Button>
@@ -1860,7 +1872,9 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
             onPress={() => setStep('activity_selection')}
             className="rounded-2xl border border-white/10 bg-transparent items-center justify-center py-2.5"
           >
-            <Text className="text-slate-300">Pick a different activity</Text>
+            <Text className="text-sm text-slate-300">
+              Pick a different activity
+            </Text>
           </Button>
         </View>
       )}
@@ -1881,7 +1895,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
               }}
               className="h-11 flex-1 rounded-2xl bg-teal-500 items-center justify-center"
             >
-              <Text className="font-semibold text-white">
+              <Text className="text-sm font-semibold text-white">
                 Explore Child Activity
               </Text>
             </Button>
@@ -1903,7 +1917,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
               }}
               className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
             >
-              <Text className="text-slate-300">Next Growth Area</Text>
+              <Text className="text-sm text-slate-300">Next Growth Area</Text>
             </Button>
           </View>
           <Button
@@ -1912,7 +1926,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
             }}
             className="h-11 w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
           >
-            <Text className="text-teal-400">› Go to Life Journey</Text>
+            <Text className="text-sm text-teal-400">› Go to Life Journey</Text>
           </Button>
         </View>
       )}
@@ -1930,9 +1944,9 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 setShowGame(true);
               })();
             }}
-            className="h-12 w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
           >
-            <Text className="font-semibold text-white">
+            <Text className="text-sm font-semibold text-white">
               Present a fun game to {String(data['name'])} on the same topic
             </Text>
           </Button>
@@ -1952,17 +1966,18 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 setShowGame(false);
               })();
             }}
-            className="h-12 w-full rounded-2xl border-2 border-white/10 bg-transparent items-center justify-center mb-3"
+            className="w-full rounded-2xl border-2 border-white/10 bg-transparent items-center justify-center mb-3"
           >
-            <Text className="text-slate-300">Explore Later</Text>
+            <Text className="text-sm text-slate-300">Explore Later</Text>
           </Button>
           <Button
+            size="xl"
             onPress={() => {
               void handleFinishRef.current?.();
             }}
-            className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
           >
-            <Text className="text-teal-400">› Go to Life Journey</Text>
+            <Text className="text-sm text-teal-400">› Go to Life Journey</Text>
           </Button>
         </View>
       )}
@@ -2092,7 +2107,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 }}
                 className="h-11 w-full rounded-2xl bg-emerald-500 items-center justify-center"
               >
-                <Text className="font-semibold text-white">
+                <Text className="text-sm font-semibold text-white">
                   ✨ Generate Recommendations
                 </Text>
               </Button>
@@ -2157,21 +2172,24 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   }
                 })();
               }}
-              className="h-12 w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+              className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
             >
-              <Text className="font-semibold text-white">
+              <Text className="text-sm font-semibold text-white">
                 {currentAreaIndex < growthAreas.length - 1
                   ? 'Explore More Growth Areas'
                   : 'Explore Life Journey'}
               </Text>
             </Button>
             <Button
+              size="xl"
               onPress={() => {
                 void handleFinishRef.current?.();
               }}
-              className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
+              className="w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
             >
-              <Text className="text-teal-400">› Go to Life Journey</Text>
+              <Text className="text-sm text-teal-400">
+                › Go to Life Journey
+              </Text>
             </Button>
           </View>
         </View>
@@ -2199,10 +2217,11 @@ function SkipScreen({ ps }: { ps: PhaseState }) {
           Let's explore the Life Journey designed for {String(data['name'])}.
         </Text>
         <Button
+          size="xl"
           onPress={() => navigation.navigate('Main' as never)}
-          className="h-12 rounded-2xl bg-emerald-500 px-8 items-center justify-center"
+          className="rounded-2xl bg-emerald-500 px-8 items-center justify-center"
         >
-          <Text className="font-semibold text-white">
+          <Text className="text-sm font-semibold text-white">
             Continue to Life Journey ›
           </Text>
         </Button>

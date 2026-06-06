@@ -147,11 +147,12 @@ export default function GrowthAreas() {
                 className="mt-8"
                 left={
                   <Button
+                    size="xl"
                     variant="outline"
                     onClick={() =>
                       navigate(`/PersonalityJourney/${childId}`, { state: { fromBack: true } })
                     }
-                    className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                    className="btn-secondary w-full rounded-2xl sm:w-auto"
                   >
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
@@ -166,8 +167,9 @@ export default function GrowthAreas() {
                       className="w-full sm:w-auto"
                     >
                       <Button
+                        size="xl"
                         onClick={() => navigate(`/LifePathway/${childId}`)}
-                        className="h-12 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-10 text-white sm:w-auto"
+                        className="w-full rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-10 text-white sm:w-auto"
                       >
                         View Your Life Pathway
                       </Button>

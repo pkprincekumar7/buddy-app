@@ -103,6 +103,7 @@ export default function PersonalityTypeScreen() {
   const [status, setStatus] = useState<
     'loading' | 'analysing' | 'ready' | 'error'
   >('loading');
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   const [showSplash, startTimer] = useStageSplash();
   // Animate in only after data is ready AND stage-2 splash is gone — mirrors web PersonalityType.tsx.
@@ -122,12 +123,19 @@ export default function PersonalityTypeScreen() {
 
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        const [child, prefs] = await Promise.all([
+          api.entities.Child.get(childId),
+          api.preferences.get().catch(() => null),
+        ]);
         if (cancelled) return;
 
         if (!child) {
           navigation.navigate('Main');
           return;
+        }
+
+        if (prefs && typeof prefs.tts_enabled === 'boolean') {
+          setTtsEnabled(prefs.tts_enabled);
         }
 
         const merged = mergeChildDraft(
@@ -294,6 +302,7 @@ export default function PersonalityTypeScreen() {
             mbtiResult={mbtiResult}
             childName={childName}
             ready={!showSplash}
+            ttsEnabled={ttsEnabled}
           />
 
           {/* Navigation actions */}
@@ -308,11 +317,11 @@ export default function PersonalityTypeScreen() {
                     params: { fromBack: true },
                   } as never)
                 }
-                className="h-12 w-full rounded-2xl"
+                className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
                   <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-sm font-medium text-slate-300">
+                  <Text className="text-base font-medium text-slate-300">
                     Back
                   </Text>
                 </View>
@@ -326,13 +335,14 @@ export default function PersonalityTypeScreen() {
             }
             right={
               <Button
+                size="xl"
                 onPress={() => {
                   void handleContinue();
                 }}
-                className="h-12 w-full rounded-2xl"
+                className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
-                  <Text className="text-sm font-semibold text-[#0a0a0a]">
+                  <Text className="text-base font-semibold text-[#0a0a0a]">
                     Continue
                   </Text>
                   <ChevronRight size={16} color="#0a0a0a" />

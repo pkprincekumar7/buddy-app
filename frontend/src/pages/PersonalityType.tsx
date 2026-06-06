@@ -31,6 +31,7 @@ export default function PersonalityType() {
   const [mbtiResult, setMbtiResult] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState('loading'); // loading | analysing | ready | error
   const [showSplash, startTimer] = useStageSplash();
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -46,12 +47,19 @@ export default function PersonalityType() {
 
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        const [child, prefs] = await Promise.all([
+          api.entities.Child.get(childId),
+          api.preferences.get().catch(() => null),
+        ]);
         if (cancelled) return;
 
         if (!child) {
           navigate('/Home', { replace: true });
           return;
+        }
+
+        if (prefs && typeof prefs.tts_enabled === 'boolean') {
+          setTtsEnabled(prefs.tts_enabled);
         }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
@@ -208,6 +216,7 @@ export default function PersonalityType() {
                 mbtiResult={mbtiResult as unknown as MbtiResult}
                 childName={childName}
                 ready={!showSplash}
+                ttsEnabled={ttsEnabled}
               />
 
               <PageActions
@@ -220,7 +229,7 @@ export default function PersonalityType() {
                         state: { fromBack: true },
                       })
                     }
-                    className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                    className="btn-secondary h-12 w-full rounded-2xl px-6 text-base sm:w-auto"
                   >
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
@@ -229,10 +238,11 @@ export default function PersonalityType() {
                 center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                 right={
                   <Button
+                    size="xl"
                     onClick={() => {
                       void handleContinue();
                     }}
-                    className="btn-primary h-12 w-full rounded-2xl px-8 sm:w-auto"
+                    className="btn-primary w-full rounded-2xl px-8 sm:w-auto"
                   >
                     Continue
                     <ChevronRight className="ml-1 h-5 w-5" />

@@ -686,7 +686,7 @@ export default function LifePathway() {
                       <Button
                         variant="outline"
                         onClick={handleBack}
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         ← Back
                       </Button>
@@ -695,7 +695,7 @@ export default function LifePathway() {
                     right={
                       <Button
                         onClick={handleStartJourney}
-                        className="btn-primary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-primary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         Continue Journey
                         <ChevronRight className="ml-2 h-4 w-4" />
@@ -746,7 +746,7 @@ export default function LifePathway() {
                           className="space-y-5"
                         >
                           <div className="mb-2 flex items-center gap-3">
-                            <div className="glow-teal-sm flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                            <div className="glow-teal-sm flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 text-base">
                               <Sparkles className="h-5 w-5 text-white" />
                             </div>
                             <div>
@@ -773,7 +773,7 @@ export default function LifePathway() {
                             <Button
                               variant="outline"
                               onClick={handleProceedToDashboard}
-                              className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-xl bg-transparent text-slate-300"
+                              className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-xl bg-transparent text-base text-slate-300"
                             >
                               Skip for now
                             </Button>
@@ -782,7 +782,7 @@ export default function LifePathway() {
                                 void handleConcernSubmit();
                               }}
                               disabled={!concernInput.trim()}
-                              className="btn-primary h-11 flex-1 rounded-xl disabled:opacity-40"
+                              className="btn-primary h-11 flex-1 rounded-xl text-base disabled:opacity-40"
                             >
                               Submit
                               <ChevronRight className="ml-1 h-4 w-4" />
@@ -810,7 +810,7 @@ export default function LifePathway() {
                           </div>
                           <Button
                             onClick={handleProceedToDashboard}
-                            className="btn-primary h-11 w-full rounded-xl"
+                            className="btn-primary h-11 w-full rounded-xl text-base"
                           >
                             Go to Dashboard
                             <ChevronRight className="ml-2 h-4 w-4" />

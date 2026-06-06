@@ -20,6 +20,7 @@ const buttonVariants = cva(
         default: 'h-9 px-4 py-2',
         sm: 'h-8 px-3',
         lg: 'h-10 px-8',
+        xl: 'h-12 px-6',
         icon: 'h-9 w-9',
       },
     },
@@ -27,7 +28,7 @@ const buttonVariants = cva(
   },
 );
 
-const textVariants = cva('text-sm font-medium', {
+const textVariants = cva('font-medium', {
   variants: {
     variant: {
       default: 'text-[#0a0a0a]',
@@ -37,8 +38,15 @@ const textVariants = cva('text-sm font-medium', {
       ghost: 'text-foreground',
       link: 'text-primary underline',
     },
+    size: {
+      default: 'text-sm',
+      sm: 'text-xs',
+      lg: 'text-sm',
+      xl: 'text-base',
+      icon: 'text-sm',
+    },
   },
-  defaultVariants: { variant: 'default' },
+  defaultVariants: { variant: 'default', size: 'default' },
 });
 
 export interface ButtonProps
@@ -78,7 +86,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       >
         {loading && <ActivityIndicator size="small" color="currentColor" />}
         {typeof children === 'string' ? (
-          <Text className={cn(textVariants({ variant }), textClassName)}>
+          <Text className={cn(textVariants({ variant, size }), textClassName)}>
             {children}
           </Text>
         ) : (

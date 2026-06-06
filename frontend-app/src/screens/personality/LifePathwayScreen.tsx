@@ -1328,7 +1328,9 @@ export default function LifePathwayScreen() {
                         onPress={handleProceedToDashboard}
                         className="flex-1 h-11 rounded-xl"
                       >
-                        <Text className="text-slate-300">Skip for now</Text>
+                        <Text className="text-sm text-slate-300">
+                          Skip for now
+                        </Text>
                       </Button>
                       {/* Gradient submit — mirrors web btn-primary */}
                       <GradientButton

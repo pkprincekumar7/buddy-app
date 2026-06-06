@@ -673,7 +673,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-slate-400"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -683,7 +683,7 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                        className="h-12 rounded-2xl bg-teal-500 text-base font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>
@@ -722,7 +722,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-slate-400"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -732,7 +732,7 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer}
-                        className={`h-12 rounded-2xl font-semibold transition-all ${
+                        className={`h-12 rounded-2xl text-base font-semibold transition-all ${
                           currentAnswer
                             ? 'bg-teal-500 text-white hover:bg-teal-600'
                             : 'cursor-not-allowed bg-teal-200 text-white'
@@ -864,7 +864,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving}
-                          className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-teal-500 text-base font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Acknowledge ✓'}
                         </Button>
@@ -874,7 +874,7 @@ export default function ActivityModal({
                           }
                           disabled={isSaving}
                           variant="outline"
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent font-semibold text-slate-300"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base font-semibold text-slate-300"
                         >
                           Give Feedback
                         </Button>
@@ -911,7 +911,7 @@ export default function ActivityModal({
                           onClick={() =>
                             dispatch({ type: 'SET_CONFIRMATION_STEP', value: 'options' })
                           }
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-slate-400"
                         >
                           ← Back
                         </Button>
@@ -926,7 +926,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving || !parentFeedback.trim()}
-                          className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-teal-500 text-base font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Submit Feedback'}
                         </Button>

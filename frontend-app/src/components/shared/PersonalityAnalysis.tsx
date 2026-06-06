@@ -58,6 +58,8 @@ interface PersonalityAnalysisProps {
    * component works standalone.
    */
   ready?: boolean;
+  /** Whether TTS is enabled per user preferences. Defaults to true. */
+  ttsEnabled?: boolean;
 }
 
 // ── SlideSection ─────────────────────────────────────────────────────────────
@@ -302,6 +304,7 @@ export default function PersonalityAnalysis({
   mbtiResult,
   childName,
   ready = true,
+  ttsEnabled = true,
 }: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
 
@@ -310,6 +313,7 @@ export default function PersonalityAnalysis({
   useEffect(() => {
     if (!ready || hasSpokeRef.current) return;
     hasSpokeRef.current = true;
+    if (!ttsEnabled) return;
     const famousNames = (
       Array.isArray(profile?.famous_people)
         ? (profile.famous_people as FamousPersonItem[])
@@ -326,8 +330,7 @@ export default function PersonalityAnalysis({
     return () => {
       stopSpeech();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, ttsEnabled, profile?.description, profile?.famous_people]);
 
   // Top 3 personality types by score
   const topTypes = Object.entries(scores)

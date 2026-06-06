@@ -1274,7 +1274,7 @@ export default function RecommendationsPhase({
             <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
               <Button
                 onClick={() => setStep('area_selection')}
-                className="h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
+                className="h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-base text-white hover:from-purple-400 hover:to-indigo-500"
               >
                 <Zap className="mr-2 h-4 w-4" />
                 Continue Now
@@ -1282,7 +1282,7 @@ export default function RecommendationsPhase({
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-slate-300"
               >
                 <Clock className="mr-2 h-4 w-4" />
                 Catch Up Later
@@ -1460,7 +1460,7 @@ export default function RecommendationsPhase({
                 className="border-edge hover:border-c-bright rounded-2xl bg-card p-4 text-left transition-colors hover:bg-surface-elevated"
               >
                 <div
-                  className={`h-11 w-11 rounded-xl bg-gradient-to-br ${area.color} mb-3 flex items-center justify-center`}
+                  className={`h-11 w-11 rounded-xl bg-gradient-to-br text-base ${area.color} mb-3 flex items-center justify-center`}
                 >
                   <Icon className="h-5 w-5 text-white" />
                 </div>
@@ -1587,7 +1587,7 @@ export default function RecommendationsPhase({
                 setParentLiked(true);
                 setStep('child_activity_prompt');
               }}
-              className="h-12 rounded-2xl bg-emerald-500 px-8 text-white hover:bg-emerald-400"
+              className="h-12 rounded-2xl bg-emerald-500 px-8 text-base text-white hover:bg-emerald-400"
             >
               <ThumbsUp className="mr-2 h-4 w-4" />
               Yes, I like it!
@@ -1598,7 +1598,7 @@ export default function RecommendationsPhase({
                 setParentLiked(false);
                 setStep('feedback');
               }}
-              className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+              className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-slate-300"
             >
               <ThumbsDown className="mr-2 h-4 w-4" />
               Not quite
@@ -1693,14 +1693,14 @@ export default function RecommendationsPhase({
             <div className="flex flex-col justify-center gap-3 pt-4 sm:flex-row">
               <Button
                 onClick={() => setStep('results')}
-                className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8 text-white hover:from-emerald-400 hover:to-teal-500"
+                className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8 text-base text-white hover:from-emerald-400 hover:to-teal-500"
               >
                 Yes, Start Activity
               </Button>
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-slate-300"
               >
                 Catch Up Later
               </Button>
@@ -1892,7 +1892,7 @@ export default function RecommendationsPhase({
                         type="button"
                         variant="outline"
                         onClick={handlePreviousQuestion}
-                        className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-slate-300 sm:w-auto"
+                        className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-base text-slate-300 sm:w-auto"
                       >
                         <ChevronLeft className="mr-1 h-4 w-4" />
                         Previous
@@ -1916,7 +1916,7 @@ export default function RecommendationsPhase({
                         !currentQuestion ||
                         !answerLooksFilled(interactiveAnswers[currentQuestion.id])
                       }
-                      className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
+                      className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 text-base font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
                     >
                       {isLastQuestion ? 'See Summary' : 'Next Question'}
                       <ChevronRight className="ml-1 h-4 w-4" />
@@ -1931,7 +1931,7 @@ export default function RecommendationsPhase({
                       type="button"
                       variant="outline"
                       onClick={handlePreviousQuestion}
-                      className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-slate-300 sm:w-auto"
+                      className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-base text-slate-300 sm:w-auto"
                     >
                       <ChevronLeft className="mr-1 h-4 w-4" />
                       Previous
@@ -1955,7 +1955,7 @@ export default function RecommendationsPhase({
                       }
                     }}
                     disabled={!currentAnswer.trim()}
-                    className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
+                    className={`h-11 w-full rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 text-base font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300 disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
                     <ChevronRight className="ml-1 h-4 w-4" />
@@ -2161,7 +2161,7 @@ export default function RecommendationsPhase({
                       setParentLiked(true);
                     })();
                   }}
-                  className="h-11 flex-1 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300"
+                  className="h-11 flex-1 rounded-2xl bg-gradient-to-r from-teal-500 to-teal-400 text-base font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300"
                 >
                   Explore Child Activity
                 </Button>
@@ -2178,7 +2178,7 @@ export default function RecommendationsPhase({
                       setShowGame(false);
                     })();
                   }}
-                  className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-2xl bg-transparent text-slate-300"
+                  className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-2xl bg-transparent text-base text-slate-300"
                 >
                   Next Growth Area
                 </Button>
@@ -2188,7 +2188,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="h-11 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
+                className="h-11 w-full rounded-2xl border border-teal-500/30 bg-transparent text-base text-teal-400 hover:bg-teal-500/10"
               >
                 <ChevronRight className="mr-2 h-4 w-4" />
                 Go to Life Journey
@@ -2215,7 +2215,7 @@ export default function RecommendationsPhase({
                     setShowGame(true);
                   })();
                 }}
-                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base"
               >
                 Present a fun game to {String(data['name'])} on the same topic
               </Button>
@@ -2232,7 +2232,7 @@ export default function RecommendationsPhase({
                   })();
                 }}
                 variant="outline"
-                className="h-12 w-full rounded-2xl border-2"
+                className="h-12 w-full rounded-2xl border-2 text-base"
               >
                 Explore Later
               </Button>
@@ -2241,7 +2241,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
+                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-base text-teal-400 hover:bg-teal-500/10"
               >
                 <ChevronRight className="mr-2 h-5 w-5" />
                 Go to Life Journey
@@ -2413,7 +2413,7 @@ export default function RecommendationsPhase({
                   onClick={() => {
                     void generateAiRecommendations(childGameResults);
                   }}
-                  className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+                  className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Generate Recommendations
@@ -2489,7 +2489,7 @@ export default function RecommendationsPhase({
                     }
                   })();
                 }}
-                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+                className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base"
               >
                 {currentAreaIndex < growthAreas.length - 1
                   ? 'Explore More Growth Areas'
@@ -2500,7 +2500,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-teal-400 hover:bg-teal-500/10"
+                className="h-12 w-full rounded-2xl border border-teal-500/30 bg-transparent text-base text-teal-400 hover:bg-teal-500/10"
               >
                 <ChevronRight className="mr-2 h-5 w-5" />
                 Go to Life Journey
@@ -2531,7 +2531,7 @@ export default function RecommendationsPhase({
           onClick={() => {
             navigate(createPageUrl('LifePathway'), { replace: true });
           }}
-          className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8"
+          className="h-12 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8 text-base"
         >
           Continue to Life Journey
           <ChevronRight className="ml-2 h-5 w-5" />

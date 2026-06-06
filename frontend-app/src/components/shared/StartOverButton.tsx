@@ -116,14 +116,15 @@ export default function StartOverButton({
   return (
     <>
       <Button
+        size="xl"
         variant="outline"
         onPress={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`h-12 rounded-2xl px-6 ${className}`}
+        className={`rounded-2xl ${className}`}
       >
         <View className="flex-row items-center gap-1">
           <RotateCcw size={14} color="#e2e8f0" />
-          <Text className="text-sm font-medium text-foreground">
+          <Text className="text-base font-medium text-foreground">
             {isStartingOver ? 'Resetting…' : 'Start Over'}
           </Text>
         </View>

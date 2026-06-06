@@ -165,8 +165,9 @@ export default function Home() {
               {onboardingInProgress ? (
                 <>
                   <Button
+                    size="xl"
                     onClick={() => navigate('/Onboarding')}
-                    className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
+                    className="btn-primary rounded-2xl transition-all duration-200"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
                     Continue Onboarding
@@ -179,8 +180,9 @@ export default function Home() {
                 </>
               ) : (
                 <Button
+                  size="xl"
                   onClick={handleStartJourney}
-                  className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
+                  className="btn-primary rounded-2xl transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Start Your Journey
@@ -356,8 +358,9 @@ export default function Home() {
                 best self.
               </p>
               <Button
+                size="xl"
                 onClick={handleStartJourney}
-                className="btn-primary h-12 rounded-2xl px-6 text-base transition-all duration-200"
+                className="btn-primary rounded-2xl transition-all duration-200"
               >
                 Get Started Free
                 <ArrowRight className="ml-2 h-4 w-4" />

@@ -513,7 +513,7 @@ export default function ChildActivityGame({
           void handleSubmit();
         }}
         disabled={ids.length === 0 || isSubmitting}
-        className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+        className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base"
       >
         {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}
       </Button>

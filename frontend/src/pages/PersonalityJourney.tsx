@@ -259,16 +259,18 @@ export default function PersonalityJourney() {
                   </p>
                   <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
                     <Button
+                      size="xl"
                       onClick={() => navigate(`/GrowthAreas/${childId}`)}
-                      className="h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
+                      className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
                     >
                       <Zap className="mr-2 h-4 w-4" />
                       Continue Now
                     </Button>
                     <Button
+                      size="xl"
                       variant="outline"
                       onClick={() => navigate('/Home')}
-                      className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+                      className="border-edge-strong hover:bg-subtle rounded-2xl bg-transparent px-8 text-slate-300"
                     >
                       <Clock className="mr-2 h-4 w-4" />
                       Catch Up Later
@@ -280,11 +282,12 @@ export default function PersonalityJourney() {
               {/* Navigation */}
               <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() =>
                     navigate(`/PersonalityType/${childId}`, { state: { fromBack: true } })
                   }
-                  className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                  className="btn-secondary w-full rounded-2xl sm:w-auto"
                 >
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   Back

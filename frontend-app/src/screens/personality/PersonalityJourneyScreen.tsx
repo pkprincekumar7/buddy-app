@@ -464,13 +464,14 @@ export default function PersonalityJourneyScreen() {
                   </View>
                 </GradientButton>
                 <Button
+                  size="xl"
                   variant="outline"
                   onPress={() => navigation.navigate('Main')}
-                  className="h-12 rounded-2xl"
+                  className="rounded-2xl"
                 >
                   <View className="flex-row items-center gap-2">
                     <Clock size={16} color="#cbd5e1" />
-                    <Text className="text-sm text-slate-300">
+                    <Text className="text-base text-slate-300">
                       Catch Up Later
                     </Text>
                   </View>
@@ -495,11 +496,11 @@ export default function PersonalityJourneyScreen() {
                     childId ? { childId, fromBack: true } : { fromBack: true },
                   )
                 }
-                className="h-12 w-full rounded-2xl px-6"
+                className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
                   <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-sm font-medium text-slate-300">
+                  <Text className="text-base font-medium text-slate-300">
                     Back
                   </Text>
                 </View>

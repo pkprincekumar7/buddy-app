@@ -146,9 +146,10 @@ export default function OnboardingScreen() {
               className="mt-8"
               left={
                 <Button
+                  size="xl"
                   variant="outline"
                   onPress={() => navigateTo('Main')}
-                  className="h-12 w-full rounded-2xl px-6"
+                  className="w-full rounded-2xl"
                 >
                   <Text className="text-slate-300">← Back</Text>
                 </Button>

@@ -294,9 +294,10 @@ export default function GrowthAreasActivity() {
           className="mt-10"
           left={
             <Button
+              size="xl"
               variant="outline"
               onClick={handleBack}
-              className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+              className="btn-secondary w-full rounded-2xl sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
               Back
@@ -305,9 +306,10 @@ export default function GrowthAreasActivity() {
           center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
+              size="xl"
               onClick={() => handleAnswer(currentAnswer)}
               disabled={!currentAnswer.trim()}
-              className={`h-12 w-full rounded-2xl bg-gradient-to-r ${area.color} px-8 text-white disabled:opacity-50 sm:w-auto`}
+              className={`w-full rounded-2xl bg-gradient-to-r ${area.color} px-8 text-white disabled:opacity-50 sm:w-auto`}
             >
               {qIndex >= questions.length - 1 ? 'Finish' : 'Next'}
               <ChevronRight className="ml-1 h-4 w-4" />

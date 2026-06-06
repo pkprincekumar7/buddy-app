@@ -237,11 +237,11 @@ export default function GrowthAreasScreen() {
                       : { fromBack: true },
                   })
                 }
-                className="h-12 w-full rounded-2xl px-6"
+                className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
                   <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-sm font-medium text-slate-300">
+                  <Text className="text-base font-medium text-slate-300">
                     Back
                   </Text>
                 </View>

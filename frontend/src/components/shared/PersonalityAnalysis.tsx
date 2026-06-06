@@ -538,12 +538,15 @@ interface PersonalityAnalysisProps {
   childName?: string;
   /** Defer TTS until splash/loading is fully gone. Defaults to true. */
   ready?: boolean;
+  /** Whether TTS is enabled per user preferences. Defaults to true. */
+  ttsEnabled?: boolean;
 }
 
 export default function PersonalityAnalysis({
   mbtiResult,
   childName,
   ready = true,
+  ttsEnabled = true,
 }: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
 
@@ -552,8 +555,9 @@ export default function PersonalityAnalysis({
   const hasSpokeRef = useRef(false);
   useEffect(() => {
     if (!ready || hasSpokeRef.current) return;
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     hasSpokeRef.current = true;
+    if (!ttsEnabled) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const famousNames = (profile?.famous_people ?? []).map((p) => p.name).join(' and ');
     const text = `${profile?.description ?? ''}${famousNames ? ` Famous people who share similar traits include ${famousNames}.` : ''}`;
     const utter = new SpeechSynthesisUtterance(text);
@@ -566,8 +570,7 @@ export default function PersonalityAnalysis({
     return () => {
       window.speechSynthesis.cancel();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, ttsEnabled, profile?.description, profile?.famous_people]);
 
   // Get top 3 personality types by score
   const topTypes = Object.entries(scores)

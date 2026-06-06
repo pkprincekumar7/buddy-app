@@ -331,7 +331,7 @@ export default function GrowthAreasActivityGreatInsights() {
               onClick={() => {
                 void generateRecommendations();
               }}
-              className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+              className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base text-white"
             >
               <Sparkles className="mr-2 h-4 w-4" />
               Generate Recommendations
@@ -386,9 +386,10 @@ export default function GrowthAreasActivityGreatInsights() {
           className="pt-4"
           left={
             <Button
+              size="xl"
               variant="outline"
               onClick={() => navigate(`/GrowthAreas/${childId}`)}
-              className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+              className="btn-secondary w-full rounded-2xl sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
               Back
@@ -397,8 +398,9 @@ export default function GrowthAreasActivityGreatInsights() {
           center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
+              size="xl"
               onClick={() => navigate(`/GrowthAreas/${childId}`)}
-              className={`h-12 w-full rounded-2xl bg-gradient-to-r ${area.color} px-10 text-white sm:w-auto`}
+              className={`w-full rounded-2xl bg-gradient-to-r ${area.color} px-10 text-white sm:w-auto`}
             >
               Done
               <ChevronRight className="ml-1 h-4 w-4" />

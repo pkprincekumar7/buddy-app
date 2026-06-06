@@ -65,14 +65,14 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
             variant="outline"
             onClick={onCancel}
             disabled={isStartingOver}
-            className="btn-secondary h-11 flex-1 rounded-xl"
+            className="btn-secondary h-11 flex-1 rounded-xl text-base"
           >
             Cancel
           </Button>
           <Button
             onClick={onConfirm}
             disabled={isStartingOver}
-            className="h-11 flex-1 rounded-xl bg-red-600 text-white hover:bg-red-500 disabled:opacity-50"
+            className="h-11 flex-1 rounded-xl bg-red-600 text-base text-white hover:bg-red-500 disabled:opacity-50"
           >
             {isStartingOver ? (
               <span className="flex items-center gap-2">
@@ -109,10 +109,11 @@ export default function StartOverButton({ childId, className = '' }: StartOverBu
   return (
     <>
       <Button
+        size="xl"
         variant="outline"
         onClick={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`btn-start-over h-12 rounded-2xl px-6 ${className}`}
+        className={`btn-start-over rounded-2xl ${className}`}
       >
         <RotateCcw className="mr-1 h-4 w-4" />
         {isStartingOver ? 'Resetting…' : 'Start Over'}

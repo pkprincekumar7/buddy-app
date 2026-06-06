@@ -167,12 +167,13 @@ export default function GrowthAreasActivityGame() {
         />
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button
+            size="xl"
             variant="outline"
             onClick={() => {
               const questions = AREA_QUESTIONS[area.id] ?? [];
               navigate(`/GrowthAreas/${childId}/Activity/${activity}?q=${questions.length}`);
             }}
-            className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+            className="btn-secondary w-full rounded-2xl sm:w-auto"
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back

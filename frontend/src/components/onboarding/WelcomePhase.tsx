@@ -118,8 +118,9 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               </div>
 
               <Button
+                size="xl"
                 onClick={handleGoogleLogin}
-                className="border-edge-strong h-12 w-full rounded-xl bg-[#242424] text-sm font-medium text-white transition-all duration-200 hover:bg-[#2a2a2a]"
+                className="border-edge-strong w-full rounded-xl bg-[#242424] text-sm font-medium text-white transition-all duration-200 hover:bg-[#2a2a2a]"
               >
                 <svg className="mr-3 h-4 w-4" viewBox="0 0 24 24">
                   <path

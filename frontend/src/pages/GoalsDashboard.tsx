@@ -474,7 +474,7 @@ export default function GoalsDashboard() {
                   <div className="flex justify-center pt-2">
                     <Button
                       onClick={() => setShowProgress(true)}
-                      className="btn-primary h-11 rounded-2xl px-8 transition-all"
+                      className="btn-primary h-11 rounded-2xl px-8 text-base transition-all"
                     >
                       View Progress And Insights
                     </Button>
@@ -488,7 +488,7 @@ export default function GoalsDashboard() {
                         onClick={() =>
                           navigate(`/LifePathway/${childId}`, { state: { fromBack: true } })
                         }
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         ← Back
                       </Button>
@@ -500,7 +500,7 @@ export default function GoalsDashboard() {
                         onClick={() => {
                           void handleRegenerate();
                         }}
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         <RefreshCw className="mr-2 h-4 w-4" />
                         Regenerate Plan

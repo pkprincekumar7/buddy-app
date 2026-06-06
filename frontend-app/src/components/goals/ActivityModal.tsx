@@ -698,14 +698,14 @@ export default function ActivityModal({
             </Pressable>
 
             <View className="mb-4 flex-row items-start gap-4 pr-10">
-              <View className="h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20">
+              <View className="w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20">
                 <Sparkles size={28} color="white" />
               </View>
               <View className="flex-1">
                 <Text className="text-xl font-bold leading-tight text-white">
                   {activity.title}
                 </Text>
-                <Text className="mt-0.5 text-sm leading-snug text-white/90">
+                <Text className="mt-0.5 text-base leading-snug text-white/90">
                   {activity.objective as string}
                 </Text>
               </View>
@@ -796,9 +796,10 @@ export default function ActivityModal({
                     <View className="flex-row gap-3">
                       {currentQuestionIndex > 0 ? (
                         <Button
+                          size="xl"
                           variant="outline"
                           onPress={handleGoBack}
-                          className="flex-1 h-12 rounded-2xl"
+                          className="flex-1 rounded-2xl"
                         >
                           <View className="flex-row items-center gap-1">
                             <ChevronLeft size={20} color="#94a3b8" />
@@ -809,9 +810,10 @@ export default function ActivityModal({
                         <View className="flex-1" />
                       )}
                       <Button
+                        size="xl"
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl bg-teal-500"
                       >
                         <View className="flex-row items-center gap-1">
                           <Text className="font-semibold text-white">Next</Text>
@@ -866,9 +868,10 @@ export default function ActivityModal({
                     <View className="flex-row gap-3">
                       {currentQuestionIndex > 0 ? (
                         <Button
+                          size="xl"
                           variant="outline"
                           onPress={handleGoBack}
-                          className="flex-1 h-12 rounded-2xl"
+                          className="flex-1 rounded-2xl"
                         >
                           <View className="flex-row items-center gap-1">
                             <ChevronLeft size={20} color="#94a3b8" />
@@ -879,9 +882,10 @@ export default function ActivityModal({
                         <View className="flex-1" />
                       )}
                       <Button
+                        size="xl"
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl bg-teal-500"
                       >
                         <View className="flex-row items-center gap-1">
                           <Text className="font-semibold text-white">Next</Text>
@@ -898,12 +902,12 @@ export default function ActivityModal({
               <View className="items-center gap-4 py-16">
                 <Animated.View
                   style={spinnerStyle}
-                  className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+                  className="w-12 rounded-full border-4 border-teal-500 border-t-transparent"
                 />
                 <Text className="text-lg font-semibold text-white">
                   Analysing the response...
                 </Text>
-                <Text className="text-sm text-slate-500">Just a moment</Text>
+                <Text className="text-base text-slate-500">Just a moment</Text>
               </View>
             )}
 
@@ -995,7 +999,7 @@ export default function ActivityModal({
                         });
                       }}
                       disabled={isSaving}
-                      className="h-12 w-full rounded-2xl bg-teal-500"
+                      className="w-full rounded-2xl bg-teal-500"
                     >
                       <Text className="font-semibold text-white">
                         {isSaving ? 'Saving...' : 'Acknowledge & Continue'}
@@ -1010,7 +1014,7 @@ export default function ActivityModal({
                         })
                       }
                       disabled={isSaving}
-                      className="h-12 w-full rounded-2xl"
+                      className="w-full rounded-2xl"
                     >
                       <Text className="font-semibold text-slate-300">
                         Give Feedback
@@ -1047,7 +1051,7 @@ export default function ActivityModal({
                             value: 'options',
                           })
                         }
-                        className="flex-1 h-12 rounded-2xl"
+                        className="flex-1 rounded-2xl"
                       >
                         <Text className="text-slate-400">← Back</Text>
                       </Button>
@@ -1064,7 +1068,7 @@ export default function ActivityModal({
                           );
                         }}
                         disabled={isSaving}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl bg-teal-500"
                       >
                         <Text className="font-semibold text-white">
                           {isSaving ? 'Saving...' : 'Submit Feedback'}

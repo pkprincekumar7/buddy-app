@@ -610,7 +610,7 @@ export default function GoalsDashboardScreen() {
                       onPress={() => setShowProgress(true)}
                       className="h-11 rounded-2xl px-8"
                     >
-                      <Text className="text-[#0a0a0a] font-semibold">
+                      <Text className="text-sm font-semibold text-[#0a0a0a]">
                         View Progress And Insights
                       </Text>
                     </Button>
@@ -633,7 +633,7 @@ export default function GoalsDashboardScreen() {
                         }
                         className="h-11 w-full rounded-2xl px-6"
                       >
-                        <Text className="text-slate-300">← Back</Text>
+                        <Text className="text-sm text-slate-300">← Back</Text>
                       </Button>
                     }
                     center={
@@ -652,7 +652,7 @@ export default function GoalsDashboardScreen() {
                       >
                         <View className="flex-row items-center gap-2">
                           <RefreshCw size={16} color="#cbd5e1" />
-                          <Text className="text-slate-300">
+                          <Text className="text-sm text-slate-300">
                             Regenerate Plan
                           </Text>
                         </View>

@@ -1583,7 +1583,7 @@ export default function ConversationalOnboarding({
                 placeholder={
                   currentStepData.placeholder ?? 'Type your response...'
                 }
-                className="flex-1 h-12 rounded-xl bg-surface-input text-white px-3"
+                className="flex-1 rounded-xl bg-surface-input text-white px-3"
                 style={{
                   borderWidth: 1,
                   borderColor: 'rgba(255,255,255,0.10)',
@@ -1595,7 +1595,7 @@ export default function ConversationalOnboarding({
               {/* Reset button — matches web's RotateCcw outline button in input row */}
               <Pressable
                 onPress={handleReset}
-                className="h-12 w-12 items-center justify-center rounded-xl"
+                className="w-12 items-center justify-center rounded-xl"
                 style={{
                   borderWidth: 1,
                   borderColor: 'rgba(255,255,255,0.10)',
@@ -1608,7 +1608,7 @@ export default function ConversationalOnboarding({
               {/* Send button — matches web's Send icon button */}
               <Pressable
                 onPress={handleSubmit}
-                className="h-12 w-12 items-center justify-center rounded-xl bg-teal-500"
+                className="w-12 items-center justify-center rounded-xl bg-teal-500"
               >
                 <Send size={16} color="white" />
               </Pressable>
@@ -1626,8 +1626,9 @@ export default function ConversationalOnboarding({
           }}
         >
           <Button
+            size="xl"
             onPress={() => onContinueToPersonality()}
-            className="h-12 w-full rounded-2xl bg-teal-500 items-center justify-center"
+            className="w-full rounded-2xl bg-teal-500 items-center justify-center"
           >
             <Text className="font-semibold text-[#0a0a0a]">
               Continue to personality analysis

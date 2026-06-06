@@ -574,11 +574,12 @@ export default function ChildActivityGame({
         </View>
 
         <Button
+          size="xl"
           onPress={() => {
             void handleSubmit();
           }}
           disabled={ids.length === 0 || isSubmitting}
-          className="h-12 w-full rounded-2xl bg-emerald-500 items-center justify-center"
+          className="w-full rounded-2xl bg-emerald-500 items-center justify-center"
         >
           <Text className="font-semibold text-white">
             {isSubmitting
