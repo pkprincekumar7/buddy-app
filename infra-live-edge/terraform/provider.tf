@@ -42,17 +42,3 @@ provider "aws" {
     }
   }
 }
-
-# SSM reads/writes always go to us-east-1 (control-plane region).
-provider "aws" {
-  alias  = "ssm"
-  region = "us-east-1"
-
-  default_tags {
-    tags = {
-      Project     = var.app_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
-  }
-}

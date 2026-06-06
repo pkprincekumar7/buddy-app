@@ -95,6 +95,24 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Verify SSM parameters exist and are readable
+        run: |
+          check_ssm() {
+            local name="$1"
+            local value
+            value=$(aws ssm get-parameter --region us-east-1 --name "$name" --query "Parameter.Value" --output text 2>&1)
+            if [[ $? -ne 0 ]]; then
+              echo "ERROR: Cannot read SSM parameter '$name': $value"
+              echo "Ensure infra-live-edge has been applied and the IAM role has ssm:GetParameter on this path."
+              return 1
+            fi
+            echo "OK: $name"
+          }
+          APP="${{ secrets.APP_NAME }}"
+          ENV="${{ inputs.environment }}"
+          check_ssm "/$APP/$ENV/edge/cloudfront_arn"
+          check_ssm "/$APP/$ENV/edge/s3_bucket_name"
+
       - name: Terraform Init
         run: |
           terraform init \
