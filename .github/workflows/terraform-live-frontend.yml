@@ -96,6 +96,7 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Verify SSM parameters exist and are readable
+        if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
           check_ssm() {
             local name="$1"
