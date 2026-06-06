@@ -8,6 +8,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import StageSplash from '@/components/shared/StageSplash';
@@ -49,34 +50,54 @@ const PHASES = [
 ];
 
 function PhaseBar() {
+  const { colors } = useTheme();
   return (
-    <View className="bg-slate-900/90 border-b border-slate-800 px-4 py-3">
+    <View
+      style={{
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.card,
+      }}
+      className="px-4 py-3"
+    >
       <View className="flex-row items-center justify-between gap-2">
         {PHASES.map(phase => (
           <View
             key={phase.label}
-            className={`flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 ${
-              phase.active
-                ? 'border border-teal-500/25 bg-teal-500/10'
+            className="flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 border"
+            style={{
+              borderColor: phase.active
+                ? colors.primary + '40'
                 : phase.done
-                ? 'border border-emerald-500/20 bg-emerald-500/10'
-                : 'border border-slate-800 bg-transparent opacity-50'
-            }`}
+                ? colors.success + '33'
+                : colors.border,
+              backgroundColor: phase.active
+                ? colors.primary + '1A'
+                : phase.done
+                ? colors.success + '1A'
+                : 'transparent',
+              opacity: !phase.active && !phase.done ? 0.5 : 1,
+            }}
           >
             <EmojiText size="base">{phase.icon}</EmojiText>
             <Text
-              className={`text-xs font-medium flex-1 ${
-                phase.active
-                  ? 'text-teal-400'
+              style={{
+                color: phase.active
+                  ? colors.primary
                   : phase.done
-                  ? 'text-emerald-400'
-                  : 'text-slate-600'
-              }`}
+                  ? colors.success
+                  : colors.iconColor,
+              }}
+              className="text-xs font-medium flex-1"
               numberOfLines={1}
             >
               {phase.label}
             </Text>
-            {phase.done && <Text className="text-xs text-emerald-400">✓</Text>}
+            {phase.done && (
+              <Text style={{ color: colors.success }} className="text-xs">
+                ✓
+              </Text>
+            )}
           </View>
         ))}
       </View>
@@ -86,6 +107,7 @@ function PhaseBar() {
 
 export default function PersonalityTypeScreen() {
   const navigation = useNavigation<PersonalityTypeNavProp>();
+  const { colors } = useTheme();
   const route = useRoute<PersonalityTypeRouteProp>();
 
   // Prefer explicit childId from navigation params (onboarding flow);
@@ -244,8 +266,11 @@ export default function PersonalityTypeScreen() {
   // — Loading state
   if (isLoadingAuth || status === 'loading') {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="items-center justify-center"
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -253,9 +278,15 @@ export default function PersonalityTypeScreen() {
   // — Analysing state
   if (status === 'analysing') {
     return (
-      <View className="flex-1 flex-col items-center justify-center gap-4 bg-background px-4">
-        <ActivityIndicator size="large" color="#14b8a6" />
-        <Text className="max-w-xs text-center font-medium text-slate-400 mt-4">
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="flex-col items-center justify-center gap-4 px-4"
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text
+          style={{ color: colors.textMuted }}
+          className="max-w-xs text-center font-medium mt-4"
+        >
           Shaping personality insights from your questionnaire…
         </Text>
       </View>
@@ -265,8 +296,11 @@ export default function PersonalityTypeScreen() {
   // — Error / no result state
   if (status === 'error' || !mbtiResult) {
     return (
-      <View className="flex-1 flex-col items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400 text-center mb-4">
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="flex-col items-center justify-center gap-4 px-4"
+      >
+        <Text style={{ color: colors.textMuted }} className="text-center mb-4">
           Something went wrong. Please try again.
         </Text>
         <Button
@@ -278,7 +312,15 @@ export default function PersonalityTypeScreen() {
           }
           className="rounded-2xl px-8"
         >
-          <Text className="text-sm font-semibold text-[#0a0a0a]">Go Back</Text>
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: colors.primaryForeground,
+            }}
+          >
+            Go Back
+          </Text>
         </Button>
       </View>
     );
@@ -287,7 +329,10 @@ export default function PersonalityTypeScreen() {
   // — Ready state
   return (
     <View style={{ flex: 1 }}>
-      <Animated.View style={contentStyle} className="flex-1 bg-background">
+      <Animated.View
+        style={[contentStyle, { backgroundColor: colors.background }]}
+        className="flex-1"
+      >
         <PhaseBar />
 
         <ScrollView
@@ -320,8 +365,11 @@ export default function PersonalityTypeScreen() {
                 className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
-                  <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-base font-medium text-slate-300">
+                  <ChevronLeft size={16} color={colors.textMuted} />
+                  <Text
+                    style={{ color: colors.textMuted }}
+                    className="text-base font-medium"
+                  >
                     Back
                   </Text>
                 </View>
@@ -342,10 +390,16 @@ export default function PersonalityTypeScreen() {
                 className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
-                  <Text className="text-base font-semibold text-[#0a0a0a]">
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      color: colors.primaryForeground,
+                    }}
+                  >
                     Continue
                   </Text>
-                  <ChevronRight size={16} color="#0a0a0a" />
+                  <ChevronRight size={16} color={colors.primaryForeground} />
                 </View>
               </Button>
             }

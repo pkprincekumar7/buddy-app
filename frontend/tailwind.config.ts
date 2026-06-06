@@ -42,6 +42,18 @@ const config: Config = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          muted: 'hsl(var(--success-muted))',
+        },
+        error: {
+          DEFAULT: 'hsl(var(--error))',
+          muted: 'hsl(var(--error-muted))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          muted: 'hsl(var(--info-muted))',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',

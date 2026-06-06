@@ -13,6 +13,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
+import { readStoredDarkMode, applyTheme } from '@/lib/theme';
 
 const GrowthAreasActivity = lazy(() => import('./pages/GrowthAreasActivity'));
 const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGame'));
@@ -46,12 +47,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     if (this.state.hasError) {
       return (
         <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
-          <p className="max-w-lg text-center text-slate-300">
+          <p className="max-w-lg text-center text-foreground">
             Something went wrong. Please refresh the page.
           </p>
           <Button
             type="button"
-            className="bg-teal-600 hover:bg-teal-700"
+            className="bg-primary hover:bg-primary/80"
             onClick={() => this.setState({ hasError: false })}
           >
             Try again
@@ -78,7 +79,7 @@ interface LayoutWrapperProps {
 
 const PageFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center">
-    <div className="h-8 w-8 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
   </div>
 );
 
@@ -226,7 +227,7 @@ function AppShell() {
   if (isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center">
-        <div className="border-c-md h-8 w-8 animate-spin rounded-full border-2 border-t-white"></div>
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
       </div>
     );
   }
@@ -234,10 +235,10 @@ function AppShell() {
   if (authError?.type === 'unknown') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center gap-4 bg-background p-6">
-        <p className="max-w-lg text-center text-slate-300">{authError.message}</p>
+        <p className="max-w-lg text-center text-foreground">{authError.message}</p>
         <Button
           type="button"
-          className="bg-teal-600 hover:bg-teal-700"
+          className="bg-primary hover:bg-primary/80"
           onClick={() => {
             void checkAppState();
           }}
@@ -272,6 +273,13 @@ function AppShell() {
 }
 
 function App() {
+  // Apply theme from localStorage on every React mount (covers all routes, including
+  // Login/Register where Layout doesn't render). The inline script in index.html
+  // handles zero-flash on hard reload; this catches Vite HMR and in-app navigations.
+  useEffect(() => {
+    applyTheme(readStoredDarkMode());
+  }, []);
+
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>

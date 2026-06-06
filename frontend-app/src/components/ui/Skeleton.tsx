@@ -9,12 +9,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 export interface SkeletonProps extends ViewProps {
   className?: string;
 }
 
 function Skeleton({ className, ...props }: SkeletonProps) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(1);
 
   useEffect(() => {
@@ -32,7 +34,11 @@ function Skeleton({ className, ...props }: SkeletonProps) {
 
   return (
     <Animated.View style={animatedStyle}>
-      <View className={cn('rounded-md bg-primary/10', className)} {...props} />
+      <View
+        className={cn('rounded-md', className)}
+        style={{ backgroundColor: colors.primary + '1A' }}
+        {...props}
+      />
     </Animated.View>
   );
 }

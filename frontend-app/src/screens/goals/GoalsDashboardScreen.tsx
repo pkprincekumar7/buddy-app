@@ -30,6 +30,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { MainTabParamList } from '@/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { Button } from '@/components/ui/Button';
 import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
 import { toast } from '@/lib/toast';
@@ -44,6 +45,7 @@ import {
   GradientIconBox,
   GradientSurface,
 } from '@/components/shared/GradientView';
+import { MONTH_GRADIENTS } from '@/lib/gradientColors';
 
 interface DashActivity {
   completed?: boolean;
@@ -87,8 +89,10 @@ interface MonthColor {
   gradFrom: string;
   gradTo: string;
   objectiveStrip: string;
+  objectiveStripStyle?: object;
   labelText: string;
   dotBg: string;
+  dotStyle?: object;
 }
 
 interface MonthData {
@@ -98,24 +102,21 @@ interface MonthData {
   periods?: { label?: string; activities?: DashActivity[] }[];
 }
 
-const monthColors: MonthColor[] = [
+const STATIC_MONTH_COLORS: Omit<
+  MonthColor,
+  'gradFrom' | 'gradTo' | 'objectiveStripStyle'
+>[] = [
   {
-    gradFrom: '#0d9488',
-    gradTo: '#14b8a6',
-    objectiveStrip: 'bg-teal-500/10 border-teal-500/25',
+    objectiveStrip: 'border',
     labelText: 'text-teal-400',
     dotBg: 'bg-teal-500',
   },
   {
-    gradFrom: '#2563eb',
-    gradTo: '#3b82f6',
     objectiveStrip: 'bg-blue-500/10 border-blue-500/25',
     labelText: 'text-blue-400',
     dotBg: 'bg-blue-500',
   },
   {
-    gradFrom: '#9333ea',
-    gradTo: '#a855f7',
     objectiveStrip: 'bg-purple-500/10 border-purple-500/25',
     labelText: 'text-purple-400',
     dotBg: 'bg-purple-500',
@@ -126,32 +127,44 @@ function ActivityCardIcon({
   completed,
   isLocked,
   dotBg,
+  dotStyle,
   index,
 }: {
   completed?: boolean;
   isLocked: boolean;
   dotBg: string;
+  dotStyle?: object;
   index: number;
 }) {
+  const { colors } = useTheme();
   if (completed) {
     return (
       <View className="mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center">
-        <CheckCircle2 size={20} color="#34d399" />
+        <CheckCircle2 size={20} color={colors.success} />
       </View>
     );
   }
   if (isLocked) {
     return (
-      <View className="mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-800">
-        <Lock size={12} color="#475569" />
+      <View
+        className="mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
+        style={{ backgroundColor: colors.card }}
+      >
+        <Lock size={12} color={colors.textMuted} />
       </View>
     );
   }
   return (
     <View
       className={`mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${dotBg}`}
+      style={dotStyle}
     >
-      <Text className="text-[10px] font-bold text-white">{index + 1}</Text>
+      <Text
+        className="text-[10px] font-bold"
+        style={{ color: colors.primaryForeground }}
+      >
+        {index + 1}
+      </Text>
     </View>
   );
 }
@@ -235,6 +248,7 @@ function MonthCard({
   onToggle: () => void;
 }) {
   const ctx = useContext(GoalPlanContext);
+  const { colors } = useTheme();
 
   const chevronRot = useSharedValue(isOpen ? 180 : 0);
   useEffect(() => {
@@ -249,7 +263,10 @@ function MonthCard({
     ctx;
 
   return (
-    <View className="rounded-2xl border border-slate-700 bg-slate-900 mb-4">
+    <View
+      className="rounded-2xl border mb-4"
+      style={{ borderColor: colors.border, backgroundColor: colors.background }}
+    >
       <Pressable onPress={onToggle}>
         <GradientSurface
           from={color.gradFrom}
@@ -258,23 +275,38 @@ function MonthCard({
         >
           <View className="flex-row items-center gap-3 flex-1 mr-2">
             <View className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/20">
-              <Text className="font-bold text-white">{month.month}</Text>
+              <Text
+                className="font-bold"
+                style={{ color: colors.primaryForeground }}
+              >
+                {month.month}
+              </Text>
             </View>
             <View className="flex-1">
-              <Text className="text-xs font-medium uppercase tracking-widest text-white/70">
+              <Text
+                className="text-xs font-medium uppercase tracking-widest"
+                style={{ color: colors.primaryForeground, opacity: 0.7 }}
+              >
                 Month {month.month}
               </Text>
-              <Text className="font-bold text-white" numberOfLines={2}>
+              <Text
+                className="font-bold"
+                style={{ color: colors.primaryForeground }}
+                numberOfLines={2}
+              >
                 {month.goal}
               </Text>
             </View>
           </View>
           <Animated.View style={chevronStyle}>
-            <ChevronDown size={20} color="rgba(255,255,255,0.7)" />
+            <ChevronDown size={20} color={colors.text} />
           </Animated.View>
         </GradientSurface>
         {month.objective && (
-          <View className={`px-6 py-2.5 border-b ${color.objectiveStrip}`}>
+          <View
+            className={`px-6 py-2.5 border-b ${color.objectiveStrip}`}
+            style={color.objectiveStripStyle}
+          >
             <Text className={`text-sm font-medium ${color.labelText}`}>
               🎯 {month.objective}
             </Text>
@@ -298,44 +330,60 @@ function MonthCard({
                   const isActive = flatIdx === firstActiveFlat;
                   const isLocked = flatIdx > firstActiveFlat;
 
-                  let cardClass = 'bg-slate-800 border border-slate-600';
-                  if (act.completed)
+                  let cardClass = 'border';
+                  let cardStyle: Record<string, string> = {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  };
+                  if (act.completed) {
                     cardClass =
                       'border border-emerald-500/20 bg-emerald-500/10';
-                  else if (isLocked)
-                    cardClass =
-                      'border border-dashed border-slate-700 bg-slate-900';
+                    cardStyle = {};
+                  } else if (isLocked) {
+                    cardClass = 'border border-dashed';
+                    cardStyle = {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    };
+                  }
 
                   return (
                     <View
                       key={`${idx}-${pIdx}-${aIdx}`}
                       className={`relative flex-row items-start gap-3 rounded-xl p-4 ${cardClass}`}
+                      style={cardStyle}
                     >
                       <ActivityCardIcon
                         completed={act.completed}
                         isLocked={isLocked}
                         dotBg={color.dotBg}
+                        dotStyle={color.dotStyle}
                         index={aIdx}
                       />
                       <View className="flex-1 min-w-0">
                         <Text
-                          className={`text-sm font-semibold ${
-                            isLocked ? 'text-slate-600' : 'text-white'
-                          }`}
+                          className="text-sm font-semibold"
+                          style={{
+                            color: isLocked ? colors.border : colors.text,
+                          }}
                         >
                           {act.title}
                         </Text>
                         <Text
-                          className={`mt-0.5 text-xs ${
-                            isLocked ? 'text-slate-700' : 'text-slate-500'
-                          }`}
+                          className="mt-0.5 text-xs"
+                          style={{
+                            color: isLocked ? colors.border : colors.iconColor,
+                          }}
                         >
                           {act.objective}
                         </Text>
                         {act.completed ? (
                           <View className="mt-2 gap-1.5">
                             {act.scorable !== false ? (
-                              <Text className="text-xs font-bold text-slate-300">
+                              <Text
+                                className="text-xs font-bold"
+                                style={{ color: colors.text }}
+                              >
                                 Score:{' '}
                                 {String(
                                   (act.score as
@@ -348,7 +396,10 @@ function MonthCard({
                                 /10
                               </Text>
                             ) : (
-                              <Text className="text-xs font-bold text-slate-300">
+                              <Text
+                                className="text-xs font-bold"
+                                style={{ color: colors.text }}
+                              >
                                 Note:{' '}
                                 {String(
                                   (act.note as
@@ -361,29 +412,47 @@ function MonthCard({
                               </Text>
                             )}
                             {!!act.what_changed && (
-                              <Text className="text-xs text-slate-400">
-                                <Text className="font-semibold text-slate-300">
+                              <Text
+                                className="text-xs"
+                                style={{ color: colors.textMuted }}
+                              >
+                                <Text
+                                  className="font-semibold"
+                                  style={{ color: colors.text }}
+                                >
                                   What changed:{' '}
                                 </Text>
                                 {String(act.what_changed)}
                               </Text>
                             )}
                             {!!act.what_learned && (
-                              <Text className="text-xs text-slate-400">
-                                <Text className="font-semibold text-slate-300">
+                              <Text
+                                className="text-xs"
+                                style={{ color: colors.textMuted }}
+                              >
+                                <Text
+                                  className="font-semibold"
+                                  style={{ color: colors.text }}
+                                >
                                   Learnt:{' '}
                                 </Text>
                                 {String(act.what_learned)}
                               </Text>
                             )}
                             {!!act.recommendation && (
-                              <Text className="text-xs text-teal-400">
+                              <Text
+                                className="text-xs"
+                                style={{ color: colors.primary }}
+                              >
                                 <Text className="font-semibold">Next: </Text>
                                 {String(act.recommendation)}
                               </Text>
                             )}
                             {!!act.parent_feedback && (
-                              <Text className="text-xs italic text-slate-500">
+                              <Text
+                                className="text-xs italic"
+                                style={{ color: colors.iconColor }}
+                              >
                                 Parent:{' '}
                                 {typeof act.parent_feedback === 'string'
                                   ? act.parent_feedback
@@ -427,9 +496,13 @@ function MonthCard({
                             void onResetActivity(idx, pIdx, aIdx);
                           }}
                           accessibilityLabel="Reset activity"
-                          className="absolute right-3 top-3 h-6 w-6 items-center justify-center rounded-full bg-slate-800 border border-slate-600"
+                          className="absolute right-3 top-3 h-6 w-6 items-center justify-center rounded-full border"
+                          style={{
+                            backgroundColor: colors.card,
+                            borderColor: colors.border,
+                          }}
                         >
-                          <RotateCcw size={12} color="#64748b" />
+                          <RotateCcw size={12} color={colors.iconColor} />
                         </Pressable>
                       )}
                     </View>
@@ -476,6 +549,32 @@ type GoalsDashboardNavigationProp = StackNavigationProp<MainTabParamList>;
 export default function GoalsDashboardScreen() {
   const navigation = useNavigation<GoalsDashboardNavigationProp>();
 
+  const { colors } = useTheme();
+  const monthColors = useMemo<MonthColor[]>(
+    () => [
+      {
+        ...STATIC_MONTH_COLORS[0]!,
+        gradFrom: colors.primaryDark,
+        gradTo: colors.primary,
+        objectiveStripStyle: {
+          borderColor: colors.primary + '40',
+          backgroundColor: colors.primary + '1A',
+        },
+        dotStyle: { backgroundColor: colors.primary },
+      },
+      {
+        ...STATIC_MONTH_COLORS[1]!,
+        gradFrom: MONTH_GRADIENTS[1]!.from,
+        gradTo: MONTH_GRADIENTS[1]!.to,
+      },
+      {
+        ...STATIC_MONTH_COLORS[2]!,
+        gradFrom: MONTH_GRADIENTS[2]!.from,
+        gradTo: MONTH_GRADIENTS[2]!.to,
+      },
+    ],
+    [colors.primary, colors.primaryDark],
+  );
   const { activeChildId: childId } = useAuth();
 
   const {
@@ -544,7 +643,7 @@ export default function GoalsDashboardScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <View className="flex-1 bg-background">
+      <View className="flex-1" style={{ backgroundColor: colors.background }}>
         <ScrollView
           ref={scrollRef}
           className="flex-1"
@@ -554,25 +653,37 @@ export default function GoalsDashboardScreen() {
           <View className="mb-8 items-center">
             <View className="mb-4">
               <GradientIconBox
-                from="#2dd4bf"
-                to="#0d9488"
+                from={colors.primaryLight}
+                to={colors.primary}
                 size={56}
                 radius={16}
               >
-                <Target size={28} color="white" />
+                <Target size={28} color={colors.primaryForeground} />
               </GradientIconBox>
             </View>
-            <Text className="mb-2 text-3xl font-bold tracking-tight text-white text-center">
+            <Text
+              className="mb-2 text-3xl font-bold tracking-tight text-center"
+              style={{ color: colors.text }}
+            >
               3-Month Growth Plan for{' '}
               {(childData?.['name'] as string | undefined) ?? 'Your Child'}
             </Text>
-            <Text className="text-slate-400 text-center">
+            <Text className="text-center" style={{ color: colors.textMuted }}>
               Personalized goals powered by Buddy360
             </Text>
 
             {concern ? (
-              <View className="mt-4 w-full max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3">
-                <Text className="text-sm text-amber-400 text-center">
+              <View
+                className="mt-4 w-full max-w-xl rounded-2xl border px-5 py-3"
+                style={{
+                  borderColor: colors.warning + '40',
+                  backgroundColor: colors.warning + '1A',
+                }}
+              >
+                <Text
+                  className="text-sm text-center"
+                  style={{ color: colors.warning }}
+                >
                   <Text className="font-semibold">Focus area: </Text>
                   {concern}
                 </Text>
@@ -583,10 +694,16 @@ export default function GoalsDashboardScreen() {
           {isLoading ? (
             <View className="items-center justify-center py-24 gap-4">
               <Animated.View
-                style={spinnerStyle}
-                className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+                style={[
+                  spinnerStyle,
+                  {
+                    borderColor: colors.primary,
+                    borderTopColor: 'transparent',
+                  },
+                ]}
+                className="h-10 w-10 rounded-full border-2"
               />
-              <Text className="text-slate-500">
+              <Text style={{ color: colors.iconColor }}>
                 Building your 3-month plan...
               </Text>
             </View>
@@ -610,7 +727,13 @@ export default function GoalsDashboardScreen() {
                       onPress={() => setShowProgress(true)}
                       className="h-11 rounded-2xl px-8"
                     >
-                      <Text className="text-sm font-semibold text-[#0a0a0a]">
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: colors.primaryForeground,
+                        }}
+                      >
                         View Progress And Insights
                       </Text>
                     </Button>
@@ -633,7 +756,12 @@ export default function GoalsDashboardScreen() {
                         }
                         className="h-11 w-full rounded-2xl px-6"
                       >
-                        <Text className="text-sm text-slate-300">← Back</Text>
+                        <Text
+                          className="text-sm"
+                          style={{ color: colors.text }}
+                        >
+                          ← Back
+                        </Text>
                       </Button>
                     }
                     center={
@@ -651,8 +779,11 @@ export default function GoalsDashboardScreen() {
                         className="h-11 w-full rounded-2xl px-6"
                       >
                         <View className="flex-row items-center gap-2">
-                          <RefreshCw size={16} color="#cbd5e1" />
-                          <Text className="text-sm text-slate-300">
+                          <RefreshCw size={16} color={colors.textMuted} />
+                          <Text
+                            className="text-sm"
+                            style={{ color: colors.text }}
+                          >
                             Regenerate Plan
                           </Text>
                         </View>

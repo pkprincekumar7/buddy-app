@@ -128,7 +128,7 @@ export default function GrowthAreasActivityGame() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <motion.div
           {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
         />
       </div>
     );
@@ -149,7 +149,7 @@ export default function GrowthAreasActivityGame() {
             >
               <area.icon className="h-5 w-5 text-white" />
             </div>
-            <p className="text-sm font-semibold text-white">{area.name} — Activity</p>
+            <p className="text-sm font-semibold text-foreground">{area.name} — Activity</p>
           </div>
         </div>
       </div>

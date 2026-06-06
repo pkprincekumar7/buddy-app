@@ -7,6 +7,7 @@ import {
 import { Mic, MicOff } from 'lucide-react-native';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import { useTheme } from '@/lib/ThemeContext';
 
 export interface VoiceInputProps {
   onTranscript: (transcript: string) => void;
@@ -23,6 +24,7 @@ export default function VoiceInput({
   setIsRecording,
   'aria-label': ariaLabel,
 }: VoiceInputProps) {
+  const { colors } = useTheme();
   const [isPendingPermission, setIsPendingPermission] = useState(false);
 
   // Keep latest callbacks in refs so event handlers always call the current version.
@@ -115,20 +117,23 @@ export default function VoiceInput({
       accessibilityRole="button"
       className={cn(
         'h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl',
-        isRecording
-          ? 'bg-red-500'
-          : isPendingPermission
-          ? 'bg-slate-400'
-          : 'bg-transparent',
+        isRecording ? '' : 'bg-transparent',
         isPendingPermission && 'opacity-50',
       )}
+      style={
+        isRecording
+          ? { backgroundColor: colors.error }
+          : isPendingPermission
+          ? { backgroundColor: colors.iconColor }
+          : undefined
+      }
     >
       {isPendingPermission ? (
-        <ActivityIndicator size="small" color="#ffffff" />
+        <ActivityIndicator size="small" color={colors.primaryForeground} />
       ) : isRecording ? (
-        <MicOff size={16} color="#ffffff" />
+        <MicOff size={16} color={colors.primaryForeground} />
       ) : (
-        <Mic size={16} color="#94a3b8" />
+        <Mic size={16} color={colors.iconColor} />
       )}
     </Pressable>
   );

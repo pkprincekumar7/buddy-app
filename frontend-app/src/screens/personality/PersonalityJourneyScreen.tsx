@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { useFocusEntranceAnim } from '@/lib/animations';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
@@ -40,6 +41,7 @@ import {
   GradientIconBox,
   GradientButton,
 } from '@/components/shared/GradientView';
+import { PERSONALITY_JOURNEY_GRADIENT } from '@/lib/gradientColors';
 import type { RootStackParamList } from '@/navigation';
 
 type PersonalityJourneyNavProp = StackNavigationProp<RootStackParamList>;
@@ -57,34 +59,54 @@ const PHASES = [
 ];
 
 function PhaseBar() {
+  const { colors } = useTheme();
   return (
-    <View className="bg-slate-900/90 border-b border-slate-800 px-4 py-3">
+    <View
+      style={{
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.card,
+      }}
+      className="px-4 py-3"
+    >
       <View className="flex-row items-center justify-between gap-2">
         {PHASES.map(phase => (
           <View
             key={phase.label}
-            className={`flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 ${
-              phase.active
-                ? 'border border-teal-500/25 bg-teal-500/10'
+            className="flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 border"
+            style={{
+              borderColor: phase.active
+                ? colors.primary + '40'
                 : phase.done
-                ? 'border border-emerald-500/20 bg-emerald-500/10'
-                : 'border border-slate-800 bg-transparent opacity-50'
-            }`}
+                ? colors.success + '33'
+                : colors.border,
+              backgroundColor: phase.active
+                ? colors.primary + '1A'
+                : phase.done
+                ? colors.success + '1A'
+                : 'transparent',
+              opacity: !phase.active && !phase.done ? 0.5 : 1,
+            }}
           >
             <EmojiText size="sm">{phase.icon}</EmojiText>
             <Text
-              className={`text-xs font-medium flex-1 ${
-                phase.active
-                  ? 'text-teal-400'
+              style={{
+                color: phase.active
+                  ? colors.primary
                   : phase.done
-                  ? 'text-emerald-400'
-                  : 'text-slate-600'
-              }`}
+                  ? colors.success
+                  : colors.iconColor,
+              }}
+              className="text-xs font-medium flex-1"
               numberOfLines={1}
             >
               {phase.label}
             </Text>
-            {phase.done && <Text className="text-xs text-emerald-400">✓</Text>}
+            {phase.done && (
+              <Text style={{ color: colors.success }} className="text-xs">
+                ✓
+              </Text>
+            )}
           </View>
         ))}
       </View>
@@ -100,6 +122,7 @@ function AnimatedStrengthItem({
   strength: string;
   index: number;
 }) {
+  const { colors: strengthColors } = useTheme();
   const opacity = useSharedValue(0);
   const translateX = useSharedValue(-20);
 
@@ -126,14 +149,25 @@ function AnimatedStrengthItem({
           gap: 12,
           borderRadius: 12,
           padding: 12,
+          backgroundColor: strengthColors.muted,
         },
       ]}
-      className="bg-surface-input"
     >
-      <View className="h-7 w-7 flex-shrink-0 rounded-lg bg-amber-500/15 items-center justify-center">
-        <Text className="text-xs font-bold text-amber-400">{index + 1}</Text>
+      <View
+        className="h-7 w-7 flex-shrink-0 rounded-lg items-center justify-center"
+        style={{ backgroundColor: strengthColors.warning + '26' }}
+      >
+        <Text
+          style={{ color: strengthColors.warning }}
+          className="text-xs font-bold"
+        >
+          {index + 1}
+        </Text>
       </View>
-      <Text className="text-sm font-semibold text-white flex-1">
+      <Text
+        style={{ color: strengthColors.text }}
+        className="text-sm font-semibold flex-1"
+      >
         {strength}
       </Text>
     </Animated.View>
@@ -142,6 +176,7 @@ function AnimatedStrengthItem({
 
 export default function PersonalityJourneyScreen() {
   const navigation = useNavigation<PersonalityJourneyNavProp>();
+  const { colors } = useTheme();
   const route = useRoute<PersonalityJourneyRouteProp>();
 
   // Prefer explicit childId from navigation params (onboarding flow);
@@ -291,8 +326,11 @@ export default function PersonalityJourneyScreen() {
   // — Loading state
   if (isLoadingAuth || status === 'loading') {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="items-center justify-center"
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -300,9 +338,15 @@ export default function PersonalityJourneyScreen() {
   // — Generating state
   if (status === 'generating') {
     return (
-      <View className="flex-1 flex-col items-center justify-center gap-4 bg-background px-4">
-        <ActivityIndicator size="large" color="#14b8a6" />
-        <Text className="max-w-xs text-center font-medium text-slate-400 mt-4">
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="flex-col items-center justify-center gap-4 px-4"
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text
+          style={{ color: colors.textMuted }}
+          className="max-w-xs text-center font-medium mt-4"
+        >
           Mapping personalized recommendations…
         </Text>
       </View>
@@ -312,8 +356,11 @@ export default function PersonalityJourneyScreen() {
   // — Error state
   if (status === 'error') {
     return (
-      <View className="flex-1 flex-col items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400 text-center mb-4">
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="flex-col items-center justify-center gap-4 px-4"
+      >
+        <Text style={{ color: colors.textMuted }} className="text-center mb-4">
           Something went wrong. Please try again.
         </Text>
         <Button
@@ -329,7 +376,15 @@ export default function PersonalityJourneyScreen() {
           }
           className="rounded-2xl px-8"
         >
-          <Text className="text-sm font-semibold text-[#0a0a0a]">Go Back</Text>
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: colors.primaryForeground,
+            }}
+          >
+            Go Back
+          </Text>
         </Button>
       </View>
     );
@@ -338,7 +393,10 @@ export default function PersonalityJourneyScreen() {
   // — Ready state
   return (
     <View style={{ flex: 1 }}>
-      <Animated.View style={contentStyle} className="flex-1 bg-background">
+      <Animated.View
+        style={[contentStyle, { backgroundColor: colors.background }]}
+        className="flex-1"
+      >
         <PhaseBar />
 
         <ScrollView
@@ -353,18 +411,24 @@ export default function PersonalityJourneyScreen() {
           {/* Header — mirrors web: gradient rounded-3xl box + Sparkles icon */}
           <Animated.View style={headerAnim} className="items-center mb-6">
             <GradientIconBox
-              from="#2dd4bf"
-              to="#10b981"
+              from={colors.primaryLight}
+              to={colors.primary}
               size={96}
               radius={24}
               diagonal
             >
-              <Sparkles size={48} color="white" />
+              <Sparkles size={48} color={colors.primaryForeground} />
             </GradientIconBox>
-            <Text className="text-xl font-bold text-white text-center mb-2 mt-5">
+            <Text
+              style={{ color: colors.text }}
+              className="text-xl font-bold text-center mb-2 mt-5"
+            >
               Your Personalized Journey
             </Text>
-            <Text className="text-sm text-slate-400 text-center">
+            <Text
+              style={{ color: colors.textMuted }}
+              className="text-sm text-center"
+            >
               Here's what we've discovered about {childName}
             </Text>
           </Animated.View>
@@ -374,36 +438,52 @@ export default function PersonalityJourneyScreen() {
             <Animated.View
               style={[
                 profileAnim,
-                { borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+                {
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.card,
+                },
               ]}
-              className="rounded-2xl bg-card p-6 mb-5"
+              className="rounded-2xl p-6 mb-5"
             >
               <View className="flex-row items-start gap-4 mb-4">
                 <GradientIconBox
-                  from="#2dd4bf"
-                  to="#0d9488"
+                  from={colors.primaryLight}
+                  to={colors.primary}
                   size={48}
                   radius={12}
                   diagonal
                 >
-                  <Star size={24} color="white" />
+                  <Star size={24} color={colors.primaryForeground} />
                 </GradientIconBox>
                 <View className="flex-1">
-                  <Text className="text-lg font-bold text-white">
+                  <Text
+                    style={{ color: colors.text }}
+                    className="text-lg font-bold"
+                  >
                     {childName}'s Profile
                   </Text>
-                  <Text className="text-sm font-medium text-teal-400">
+                  <Text
+                    style={{ color: colors.primary }}
+                    className="text-sm font-medium"
+                  >
                     {profile.personality_type?.split(' - ')[1] ??
                       profile.personality_type}
                   </Text>
                 </View>
               </View>
 
-              <Text className="text-sm leading-relaxed text-slate-400 mb-5">
+              <Text
+                style={{ color: colors.textMuted }}
+                className="text-sm leading-relaxed mb-5"
+              >
                 {profile.summary}
               </Text>
 
-              <Text className="text-xs font-semibold uppercase tracking-widest text-slate-600 mb-3">
+              <Text
+                style={{ color: colors.iconColor }}
+                className="text-xs font-semibold uppercase tracking-widest mb-3"
+              >
                 Emerging Strengths
               </Text>
               <View className="gap-2">
@@ -420,31 +500,37 @@ export default function PersonalityJourneyScreen() {
 
           {/* Growth areas prompt — mirrors web: gradient compass icon + gradient Continue + Clock Later */}
           <Animated.View
-            style={growthAnim}
-            className="rounded-2xl border border-purple-500/20 bg-card p-6 mb-5"
+            style={[growthAnim, { backgroundColor: colors.card }]}
+            className="rounded-2xl border border-purple-500/20 p-6 mb-5"
           >
             <View className="items-center gap-4">
               <GradientIconBox
-                from="#a855f7"
-                to="#4f46e5"
+                from={PERSONALITY_JOURNEY_GRADIENT.from}
+                to={PERSONALITY_JOURNEY_GRADIENT.to}
                 size={56}
                 radius={16}
                 diagonal
               >
-                <Compass size={28} color="white" />
+                <Compass size={28} color={colors.primaryForeground} />
               </GradientIconBox>
-              <Text className="text-base font-bold text-white text-center">
+              <Text
+                style={{ color: colors.text }}
+                className="text-base font-bold text-center"
+              >
                 Do you want to explore the specific growth areas for {childName}{' '}
                 to become their best version?
               </Text>
-              <Text className="text-sm text-slate-400 text-center">
+              <Text
+                style={{ color: colors.textMuted }}
+                className="text-sm text-center"
+              >
                 Discover personalized activities to help {childName} develop key
                 life skills
               </Text>
               <View className="w-full gap-3 pt-1">
                 <GradientButton
-                  from="#a855f7"
-                  to="#4f46e5"
+                  from={PERSONALITY_JOURNEY_GRADIENT.from}
+                  to={PERSONALITY_JOURNEY_GRADIENT.to}
                   height={48}
                   borderRadius={16}
                   onPress={() =>
@@ -457,8 +543,11 @@ export default function PersonalityJourneyScreen() {
                   style={{ width: '100%' }}
                 >
                   <View className="flex-row items-center gap-2">
-                    <Zap size={16} color="white" />
-                    <Text className="text-sm font-semibold text-white">
+                    <Zap size={16} color={colors.primaryForeground} />
+                    <Text
+                      className="text-sm font-semibold"
+                      style={{ color: colors.primaryForeground }}
+                    >
                       Continue Now
                     </Text>
                   </View>
@@ -470,8 +559,11 @@ export default function PersonalityJourneyScreen() {
                   className="rounded-2xl"
                 >
                   <View className="flex-row items-center gap-2">
-                    <Clock size={16} color="#cbd5e1" />
-                    <Text className="text-base text-slate-300">
+                    <Clock size={16} color={colors.textMuted} />
+                    <Text
+                      style={{ color: colors.textMuted }}
+                      className="text-base"
+                    >
                       Catch Up Later
                     </Text>
                   </View>
@@ -499,8 +591,11 @@ export default function PersonalityJourneyScreen() {
                 className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
-                  <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-base font-medium text-slate-300">
+                  <ChevronLeft size={16} color={colors.textMuted} />
+                  <Text
+                    style={{ color: colors.textMuted }}
+                    className="text-base font-medium"
+                  >
                     Back
                   </Text>
                 </View>

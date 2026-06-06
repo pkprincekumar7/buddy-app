@@ -8,6 +8,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -64,8 +65,10 @@ function SheetContent({
   children,
   className,
   onClose,
+  style,
   ...props
 }: SheetContentProps) {
+  const { colors } = useTheme();
   const translateY = useSharedValue(SCREEN_HEIGHT);
 
   useEffect(() => {
@@ -94,21 +97,21 @@ function SheetContent({
         onPress={handleClose}
       />
       <Animated.View
-        style={animatedStyle}
-        className={cn(
-          'relative z-10 rounded-t-2xl bg-background p-6 shadow-lg',
-          className,
-        )}
+        style={[animatedStyle, { backgroundColor: colors.background }, style]}
+        className={cn('relative z-10 rounded-t-2xl p-6 shadow-lg', className)}
         {...props}
       >
         <View className="mb-4 flex-row items-center justify-between">
-          <View className="mx-auto h-1.5 w-12 rounded-full bg-muted" />
+          <View
+            className="mx-auto h-1.5 w-12 rounded-full"
+            style={{ backgroundColor: colors.muted }}
+          />
           {onClose && (
             <Pressable
               className="absolute right-0 opacity-70"
               onPress={handleClose}
             >
-              <Text className="text-foreground">✕</Text>
+              <Text style={{ color: colors.text }}>✕</Text>
             </Pressable>
           )}
         </View>
@@ -144,8 +147,12 @@ function SheetTitle({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
-    <Text className={cn('text-lg font-semibold text-foreground', className)}>
+    <Text
+      className={cn('text-lg font-semibold', className)}
+      style={{ color: colors.text }}
+    >
       {children}
     </Text>
   );
@@ -158,8 +165,12 @@ function SheetDescription({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
-    <Text className={cn('text-sm text-muted-foreground', className)}>
+    <Text
+      className={cn('text-sm', className)}
+      style={{ color: colors.textMuted }}
+    >
       {children}
     </Text>
   );

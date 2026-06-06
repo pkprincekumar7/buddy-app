@@ -22,6 +22,7 @@ import ChildActivityGame, {
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { normalizeAge } from '@/lib/insightsUtils';
 import { useSlideUp } from '@/lib/animations';
+import { useTheme } from '@/lib/ThemeContext';
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -921,6 +922,7 @@ interface PhaseState {
 // ── Sub-screen components (each can safely call hooks) ────────────────────────
 
 function IntroScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 1000);
   const profileAnim = useSlideUp(0.8, 1000);
   const exploreAnim = useSlideUp(1.8, 1000);
@@ -929,31 +931,49 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-8">
-        <View className="mb-6 h-24 w-24 items-center justify-center rounded-3xl bg-teal-500">
+        <View
+          className="mb-6 h-24 w-24 items-center justify-center rounded-3xl"
+          style={{ backgroundColor: colors.primary }}
+        >
           <EmojiText size="4xl">✨</EmojiText>
         </View>
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           Your Personalized Journey
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           Here's what we've discovered about {String(data['name'])}
         </Text>
       </Animated.View>
 
       {profile && (
         <Animated.View
-          style={profileAnim}
-          className="mb-8 rounded-2xl bg-card border border-white/10 p-6"
+          style={[
+            profileAnim,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+          className="mb-8 rounded-2xl border p-6"
         >
           <View className="mb-4 flex-row items-start gap-4">
-            <View className="w-12 shrink-0 items-center justify-center rounded-xl bg-teal-500">
+            <View
+              className="w-12 shrink-0 items-center justify-center rounded-xl"
+              style={{ backgroundColor: colors.primary }}
+            >
               <EmojiText size="xl">⭐</EmojiText>
             </View>
             <View>
-              <Text className="text-lg font-bold text-white">
+              <Text
+                className="text-lg font-bold"
+                style={{ color: colors.text }}
+              >
                 {String(data['name'])}'s Profile
               </Text>
-              <Text className="text-base font-medium text-teal-400">
+              <Text
+                className="text-base font-medium"
+                style={{ color: colors.primary }}
+              >
                 {(() => {
                   const pt =
                     typeof profile['personality_type'] === 'string'
@@ -964,11 +984,17 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
               </Text>
             </View>
           </View>
-          <Text className="mb-5 text-sm leading-relaxed text-slate-400">
+          <Text
+            className="mb-5 text-sm leading-relaxed"
+            style={{ color: colors.textMuted }}
+          >
             {typeof profile['summary'] === 'string' ? profile['summary'] : ''}
           </Text>
           <View>
-            <Text className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">
+            <Text
+              className="mb-3 text-xs font-semibold uppercase tracking-widest"
+              style={{ color: colors.iconColor }}
+            >
               Emerging Strengths
             </Text>
             {(Array.isArray(profile['top_strengths'])
@@ -977,14 +1003,25 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             ).map((strength, index) => (
               <View
                 key={String(strength)}
-                className="flex-row items-start gap-3 rounded-xl bg-surface-input p-3 border border-white/5 mb-2"
+                className="flex-row items-start gap-3 rounded-xl p-3 mb-2"
+                style={{
+                  backgroundColor: colors.surfaceElevated,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
               >
-                <View className="h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/15">
+                <View
+                  className="h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: colors.warning + '26' }}
+                >
                   <Text className="text-xs font-bold text-amber-400">
                     {index + 1}
                   </Text>
                 </View>
-                <Text className="text-sm font-semibold text-white">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.text }}
+                >
                   {String(strength)}
                 </Text>
               </View>
@@ -994,18 +1031,24 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
       )}
 
       <Animated.View
-        style={exploreAnim}
-        className="rounded-2xl border border-purple-500/20 bg-card p-6"
+        style={[exploreAnim, { backgroundColor: colors.card }]}
+        className="rounded-2xl border border-purple-500/20 p-6"
       >
         <View className="items-center">
           <View className="h-14 w-14 items-center justify-center rounded-2xl bg-purple-500 mb-4">
             <EmojiText size="2xl">🧭</EmojiText>
           </View>
-          <Text className="text-center text-lg font-bold text-white mb-2">
+          <Text
+            className="text-center text-lg font-bold mb-2"
+            style={{ color: colors.text }}
+          >
             Do you want to explore the specific growth areas for{' '}
             {String(data['name'])} to become their best version?
           </Text>
-          <Text className="text-center text-sm text-slate-400 mb-6">
+          <Text
+            className="text-center text-sm mb-6"
+            style={{ color: colors.textMuted }}
+          >
             Discover personalized activities to help {String(data['name'])}{' '}
             develop key life skills
           </Text>
@@ -1014,16 +1057,22 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             onPress={() => setStep('area_selection')}
             className="w-full rounded-2xl bg-purple-500 items-center justify-center mb-3"
           >
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.primaryForeground }}
+            >
               Continue Now
             </Text>
           </Button>
           <Button
             size="xl"
             onPress={() => navigation.navigate('Main' as never)}
-            className="w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border bg-transparent items-center justify-center"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-base text-slate-300">Catch Up Later</Text>
+            <Text className="text-base" style={{ color: colors.textMuted }}>
+              Catch Up Later
+            </Text>
           </Button>
         </View>
       </Animated.View>
@@ -1032,6 +1081,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
 }
 
 function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.5, 1000);
   const {
     data,
@@ -1059,10 +1109,13 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           Growth Areas
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           Choose an area to explore for {String(data['name'])}
         </Text>
       </Animated.View>
@@ -1211,19 +1264,26 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                 }
               })();
             }}
-            className="rounded-2xl bg-card border border-white/10 p-4 mb-1"
-            style={{ width: '47%' }}
-            android_ripple={{ color: 'rgba(255,255,255,0.05)' }}
+            className="rounded-2xl border p-4 mb-1"
+            style={{
+              width: '47%',
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            }}
+            android_ripple={{ color: colors.pressedBackground }}
           >
             <View
               className={`h-11 w-11 rounded-xl ${area.color} mb-3 items-center justify-center`}
             >
               <EmojiText size="lg">{area.emoji}</EmojiText>
             </View>
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.text }}
+            >
               {area.name}
             </Text>
-            <Text className="mt-1 text-xs text-slate-500">
+            <Text className="mt-1 text-xs" style={{ color: colors.iconColor }}>
               {area.description}
             </Text>
           </Pressable>
@@ -1234,6 +1294,7 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
 }
 
 function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 1000);
   const { data, setStep, selectedArea, selectedActivity, setSelectedActivity } =
     ps;
@@ -1249,10 +1310,13 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
         >
           <EmojiText size="2xl">{selectedArea?.emoji}</EmojiText>
         </View>
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           {selectedArea?.name}
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           Choose an activity to try with {String(data['name'])}
         </Text>
       </Animated.View>
@@ -1268,21 +1332,38 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
             className={`w-full rounded-2xl border p-4 mb-3 ${
               selectedActivity?.title === activity.title
                 ? 'border-purple-500/50 bg-purple-500/10'
-                : 'border-white/10 bg-card'
+                : ''
             }`}
-            android_ripple={{ color: 'rgba(255,255,255,0.05)' }}
+            style={
+              selectedActivity?.title !== activity.title
+                ? { borderColor: colors.border, backgroundColor: colors.card }
+                : undefined
+            }
+            android_ripple={{ color: colors.pressedBackground }}
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <Text className="text-sm font-semibold text-white">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.text }}
+                >
                   {activity.title}
                 </Text>
-                <Text className="mt-1 text-xs text-slate-500">
+                <Text
+                  className="mt-1 text-xs"
+                  style={{ color: colors.iconColor }}
+                >
                   {activity.description}
                 </Text>
                 <View className="mt-2 flex-row gap-2">
-                  <View className="rounded-full bg-white/10 px-2 py-0.5">
-                    <Text className="text-xs text-slate-400">
+                  <View
+                    className="rounded-full px-2 py-0.5"
+                    style={{ backgroundColor: colors.muted }}
+                  >
+                    <Text
+                      className="text-xs"
+                      style={{ color: colors.textMuted }}
+                    >
                       ⏱ {activity.duration}
                     </Text>
                   </View>
@@ -1293,7 +1374,12 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
                   </View>
                 </View>
               </View>
-              <Text className="text-slate-600 ml-2 text-lg">›</Text>
+              <Text
+                className="ml-2 text-lg"
+                style={{ color: colors.iconColor }}
+              >
+                ›
+              </Text>
             </View>
           </Pressable>
         ))}
@@ -1303,13 +1389,14 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
         onPress={() => setStep('area_selection')}
         className="items-center py-2"
       >
-        <Text className="text-slate-500">← Back to Growth Areas</Text>
+        <Text style={{ color: colors.iconColor }}>← Back to Growth Areas</Text>
       </Pressable>
     </ScrollView>
   );
 }
 
 function ParentActivityScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 1000);
   const cardAnim = useSlideUp(0.8, 1000);
   const { selectedArea, selectedActivity, setParentLiked, setStep } = ps;
@@ -1324,14 +1411,23 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
       >
         <View className="items-center">
           <Text className="text-4xl mb-3">🏆</Text>
-          <Text className="text-center text-xl font-bold text-white">
+          <Text
+            className="text-center text-xl font-bold"
+            style={{ color: colors.primaryForeground }}
+          >
             {selectedActivity?.title}
           </Text>
-          <Text className="text-center text-sm text-white/80 mt-1">
+          <Text
+            className="text-center text-sm mt-1"
+            style={{ color: colors.primaryForeground, opacity: 0.8 }}
+          >
             {selectedActivity?.description}
           </Text>
-          <View className="rounded-full bg-white/20 px-3 py-1 mt-3">
-            <Text className="text-xs text-white">
+          <View className="rounded-full px-3 py-1 mt-3 bg-white/20">
+            <Text
+              className="text-xs"
+              style={{ color: colors.primaryForeground }}
+            >
               ⏱ {selectedActivity?.duration}
             </Text>
           </View>
@@ -1339,10 +1435,16 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
       </Animated.View>
 
       <Animated.View
-        style={cardAnim}
-        className="rounded-2xl border border-white/10 bg-card p-6 mb-6"
+        style={[
+          cardAnim,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        className="rounded-2xl border p-6 mb-6"
       >
-        <Text className="text-center text-sm font-bold text-white mb-5">
+        <Text
+          className="text-center text-sm font-bold mb-5"
+          style={{ color: colors.text }}
+        >
           Did you like this activity suggestion?
         </Text>
         <View className="flex-row justify-center gap-4">
@@ -1352,9 +1454,13 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
               setParentLiked(true);
               setStep('child_activity_prompt');
             }}
-            className="rounded-2xl bg-emerald-500 px-8 items-center justify-center"
+            className="rounded-2xl px-8 items-center justify-center"
+            style={{ backgroundColor: colors.success }}
           >
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.primaryForeground }}
+            >
               Yes, I like it!
             </Text>
           </Button>
@@ -1364,9 +1470,12 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
               setParentLiked(false);
               setStep('feedback');
             }}
-            className="rounded-2xl border border-white/10 bg-transparent px-8 items-center justify-center"
+            className="rounded-2xl border bg-transparent px-8 items-center justify-center"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-sm text-slate-300">Not quite</Text>
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
+              Not quite
+            </Text>
           </Button>
         </View>
       </Animated.View>
@@ -1375,13 +1484,16 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
         onPress={() => setStep('activity_selection')}
         className="items-center py-2"
       >
-        <Text className="text-slate-500">← Choose Different Activity</Text>
+        <Text style={{ color: colors.iconColor }}>
+          ← Choose Different Activity
+        </Text>
       </Pressable>
     </ScrollView>
   );
 }
 
 function FeedbackScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 1000);
   const cardAnim = useSlideUp(0.8, 1000);
   const { data, feedback, setFeedback, setStep, debouncedSaveAreaProgress } =
@@ -1390,31 +1502,45 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           We'd love your feedback
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           What kind of activity would you like for {String(data['name'])}?
         </Text>
       </Animated.View>
 
       <Animated.View
-        style={cardAnim}
-        className="rounded-2xl border border-white/10 bg-card p-6"
+        style={[
+          cardAnim,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        className="rounded-2xl border p-6"
       >
         <TextareaWithVoice
           placeholder="Tell us what you're looking for... (e.g., more interactive, shorter duration, different topic)"
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
-          className="min-h-[120px] rounded-xl bg-surface-input text-white p-3 border border-white/10 mb-4"
-          placeholderTextColor="#475569"
+          className="min-h-[120px] rounded-xl p-3 border mb-4"
+          style={{
+            backgroundColor: colors.surfaceElevated,
+            borderColor: colors.inputBorder,
+            color: colors.text,
+          }}
+          placeholderTextColor={colors.iconColor}
         />
         <View className="flex-row justify-end gap-3">
           <Button
             onPress={() => setStep('activity_selection')}
-            className="rounded-2xl border border-white/10 bg-transparent px-4 py-2 items-center justify-center"
+            className="rounded-2xl border bg-transparent px-4 py-2 items-center justify-center"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-sm text-slate-300">Go Back</Text>
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
+              Go Back
+            </Text>
           </Button>
           <Button
             onPress={() => {
@@ -1423,7 +1549,10 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
             }}
             className="rounded-2xl bg-purple-500 px-4 py-2 items-center justify-center"
           >
-            <Text className="text-sm font-medium text-white">
+            <Text
+              className="text-sm font-medium"
+              style={{ color: colors.primaryForeground }}
+            >
               Submit & Try Another
             </Text>
           </Button>
@@ -1434,41 +1563,58 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
 }
 
 function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const cardAnim = useSlideUp(0.1, 1000);
   const { data, selectedArea, setStep, navigation } = ps;
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View
-        style={cardAnim}
-        className="rounded-2xl border border-emerald-500/20 bg-card p-6"
+        style={[cardAnim, { backgroundColor: colors.card }]}
+        className="rounded-2xl border border-emerald-500/20 p-6"
       >
         <View className="items-center">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500 mb-4">
+          <View
+            className="h-14 w-14 items-center justify-center rounded-2xl mb-4"
+            style={{ backgroundColor: colors.success }}
+          >
             <EmojiText size="2xl">⚡</EmojiText>
           </View>
-          <Text className="text-center text-lg font-bold text-white mb-2">
+          <Text
+            className="text-center text-lg font-bold mb-2"
+            style={{ color: colors.text }}
+          >
             Do you want {String(data['name'])} to take a fun activity on{' '}
             {selectedArea?.name}?
           </Text>
-          <Text className="text-center text-sm text-slate-400 mb-6">
+          <Text
+            className="text-center text-sm mb-6"
+            style={{ color: colors.textMuted }}
+          >
             {String(data['name'])} can complete this as a game on their device
           </Text>
           <Button
             size="xl"
             onPress={() => setStep('results')}
-            className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl items-center justify-center mb-3"
+            style={{ backgroundColor: colors.success }}
           >
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.primaryForeground }}
+            >
               Yes, Start Activity
             </Text>
           </Button>
           <Button
             size="xl"
             onPress={() => navigation.navigate('Main' as never)}
-            className="w-full rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border bg-transparent items-center justify-center"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-base text-slate-300">Catch Up Later</Text>
+            <Text className="text-base" style={{ color: colors.textMuted }}>
+              Catch Up Later
+            </Text>
           </Button>
         </View>
       </Animated.View>
@@ -1477,6 +1623,7 @@ function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
 }
 
 function ResultsPreviewScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 1000);
   const cardAnim = useSlideUp(0.8, 1000);
   const ctaAnim = useSlideUp(1.6, 1000);
@@ -1485,40 +1632,70 @@ function ResultsPreviewScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
-        <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-emerald-500">
+        <View
+          className="mb-4 h-20 w-20 items-center justify-center rounded-full"
+          style={{ backgroundColor: colors.success }}
+        >
           <EmojiText size="4xl">🏆</EmojiText>
         </View>
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           Activity Results Preview
         </Text>
       </Animated.View>
 
       <Animated.View
-        style={cardAnim}
-        className="rounded-2xl border border-white/10 bg-card p-6 mb-6"
+        style={[
+          cardAnim,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        className="rounded-2xl border p-6 mb-6"
       >
         <View className="items-center mb-4">
-          <Text className="mb-2 text-xs uppercase tracking-widest text-slate-500">
+          <Text
+            className="mb-2 text-xs uppercase tracking-widest"
+            style={{ color: colors.iconColor }}
+          >
             {selectedArea?.name} Quotient
           </Text>
-          <Text className="text-5xl font-bold text-teal-400">--</Text>
-          <Text className="mt-1 text-sm text-slate-600">
+          <Text
+            className="text-5xl font-bold"
+            style={{ color: colors.primary }}
+          >
+            --
+          </Text>
+          <Text className="mt-1 text-sm" style={{ color: colors.iconColor }}>
             Score will appear after activity
           </Text>
         </View>
-        <View className="border-t border-white/5 pt-4">
-          <Text className="mb-3 text-sm font-semibold text-white">
+        <View className="border-t pt-4" style={{ borderColor: colors.border }}>
+          <Text
+            className="mb-3 text-sm font-semibold"
+            style={{ color: colors.text }}
+          >
             Personalized Recommendations
           </Text>
           {[1, 2, 3].map(i => (
             <View
               key={i}
-              className="flex-row items-center gap-3 rounded-xl bg-surface-input p-3 mb-2"
+              className="flex-row items-center gap-3 rounded-xl p-3 mb-2"
+              style={{ backgroundColor: colors.surfaceElevated }}
             >
-              <View className="h-8 w-8 rounded-lg bg-white/10" />
+              <View
+                className="h-8 w-8 rounded-lg"
+                style={{ backgroundColor: colors.muted }}
+              />
               <View className="flex-1">
-                <View className="h-3 w-3/4 rounded bg-white/10 mb-2" />
-                <View className="h-2.5 w-1/2 rounded bg-white/5" />
+                <View
+                  className="h-3 w-3/4 rounded mb-2"
+                  style={{ backgroundColor: colors.muted }}
+                />
+                <View
+                  className="h-2.5 w-1/2 rounded"
+                  style={{ backgroundColor: colors.border }}
+                />
               </View>
             </View>
           ))}
@@ -1526,9 +1703,12 @@ function ResultsPreviewScreen({ ps }: { ps: PhaseState }) {
       </Animated.View>
 
       <Animated.View style={ctaAnim} className="py-4 items-center">
-        <Text className="text-center text-sm text-slate-400">
+        <Text
+          className="text-center text-sm"
+          style={{ color: colors.textMuted }}
+        >
           🎉 You're all set! Tap{' '}
-          <Text className="font-semibold text-teal-400">
+          <Text className="font-semibold" style={{ color: colors.primary }}>
             "Start the Journey"
           </Text>{' '}
           to go to your dashboard.
@@ -1539,6 +1719,7 @@ function ResultsPreviewScreen({ ps }: { ps: PhaseState }) {
 }
 
 function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const progressAnim = useSlideUp(0.3, 1000);
   const questionAnim = useSlideUp(0, 900);
   const {
@@ -1588,9 +1769,18 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={progressAnim} className="items-center mb-6">
-        <View className="mb-4 flex-row items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/10 px-4 py-2">
+        <View
+          className="mb-4 flex-row items-center gap-2 rounded-full border px-4 py-2"
+          style={{
+            borderColor: colors.primary + '33',
+            backgroundColor: colors.primary + '1A',
+          }}
+        >
           <EmojiText size="sm">{selectedArea?.emoji}</EmojiText>
-          <Text className="text-sm font-medium text-teal-400">
+          <Text
+            className="text-sm font-medium"
+            style={{ color: colors.primary }}
+          >
             {selectedArea?.name} Activity
           </Text>
         </View>
@@ -1598,31 +1788,42 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
           {questions.map((_: unknown, i: number) => (
             <View
               key={i}
-              className={`h-1.5 w-8 rounded-full ${
-                i === interactiveStep
-                  ? 'bg-teal-400'
-                  : i < interactiveStep
-                  ? 'bg-emerald-500'
-                  : 'bg-white/10'
-              }`}
+              className="h-1.5 w-8 rounded-full"
+              style={{
+                backgroundColor:
+                  i === interactiveStep
+                    ? colors.primaryLight
+                    : i < interactiveStep
+                    ? colors.success
+                    : colors.muted,
+              }}
             />
           ))}
         </View>
-        <Text className="text-xs text-slate-500">
+        <Text className="text-xs" style={{ color: colors.iconColor }}>
           Question {interactiveStep + 1} of {questions.length}
         </Text>
       </Animated.View>
 
       <Animated.View
         key={interactiveStep}
-        style={questionAnim}
-        className="rounded-2xl border border-white/10 bg-card p-6"
+        style={[
+          questionAnim,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        className="rounded-2xl border p-6"
       >
         <View className="mb-5">
-          <View className="mb-4 h-10 w-10 items-center justify-center rounded-xl bg-teal-500">
+          <View
+            className="mb-4 h-10 w-10 items-center justify-center rounded-xl"
+            style={{ backgroundColor: colors.primary }}
+          >
             <EmojiText size="base">💬</EmojiText>
           </View>
-          <Text className="mb-1 text-lg font-bold text-white">
+          <Text
+            className="mb-1 text-lg font-bold"
+            style={{ color: colors.text }}
+          >
             {questionText}
           </Text>
         </View>
@@ -1633,16 +1834,24 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
               value={currentAnswer}
               onChange={e => setCurrentAnswer(e.target.value)}
               placeholder={currentQuestion?.placeholder}
-              className="min-h-[100px] rounded-xl bg-surface-input text-white p-3 border border-white/10 mb-3"
-              placeholderTextColor="#475569"
+              className="min-h-[100px] rounded-xl p-3 border mb-3"
+              style={{
+                backgroundColor: colors.surfaceElevated,
+                borderColor: colors.inputBorder,
+                color: colors.text,
+              }}
+              placeholderTextColor={colors.iconColor}
             />
             <View className="flex-row gap-3">
               {!isFirstQuestion && (
                 <Button
                   onPress={handlePreviousQuestion}
-                  className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+                  className="h-11 flex-1 rounded-2xl border bg-transparent items-center justify-center"
+                  style={{ borderColor: colors.border }}
                 >
-                  <Text className="text-sm text-slate-300">‹ Previous</Text>
+                  <Text className="text-sm" style={{ color: colors.textMuted }}>
+                    ‹ Previous
+                  </Text>
                 </Button>
               )}
               <Button
@@ -1663,11 +1872,15 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   }
                 }}
                 disabled={!currentAnswer.trim()}
-                className={`h-11 rounded-2xl bg-teal-500 items-center justify-center px-6 ${
+                className={`h-11 rounded-2xl items-center justify-center px-6 ${
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
+                style={{ backgroundColor: colors.primary }}
               >
-                <Text className="text-sm font-semibold text-white">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.primaryForeground }}
+                >
                   {isLastQuestion ? 'See Summary' : 'Next ›'}
                 </Text>
               </Button>
@@ -1690,17 +1903,27 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                         [currentQuestion.id]: option,
                       });
                     }}
-                    className={`w-full rounded-xl border p-3.5 mb-2 ${
+                    className="w-full rounded-xl border p-3.5 mb-2"
+                    style={
                       selected
-                        ? 'border-teal-500/50 bg-teal-500/10'
-                        : 'border-white/10 bg-surface-input'
-                    }`}
-                    android_ripple={{ color: 'rgba(255,255,255,0.05)' }}
+                        ? {
+                            borderColor: colors.primary + '80',
+                            backgroundColor: colors.primary + '1A',
+                          }
+                        : {
+                            borderColor: colors.border,
+                            backgroundColor: colors.surfaceElevated,
+                          }
+                    }
+                    android_ripple={{ color: colors.pressedBackground }}
                   >
                     <Text
-                      className={`font-medium ${
-                        selected ? 'text-teal-300' : 'text-slate-300'
-                      }`}
+                      className="font-medium"
+                      style={{
+                        color: selected
+                          ? colors.primaryLight
+                          : colors.textMuted,
+                      }}
                     >
                       {option}
                     </Text>
@@ -1712,9 +1935,12 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
               {!isFirstQuestion && (
                 <Button
                   onPress={handlePreviousQuestion}
-                  className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+                  className="h-11 flex-1 rounded-2xl border bg-transparent items-center justify-center"
+                  style={{ borderColor: colors.border }}
                 >
-                  <Text className="text-sm text-slate-300">‹ Previous</Text>
+                  <Text className="text-sm" style={{ color: colors.textMuted }}>
+                    ‹ Previous
+                  </Text>
                 </Button>
               )}
               <Button
@@ -1736,11 +1962,15 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                   !currentQuestion ||
                   !answerLooksFilled(interactiveAnswers[currentQuestion.id])
                 }
-                className={`h-11 rounded-2xl bg-teal-500 items-center justify-center px-6 ${
+                className={`h-11 rounded-2xl items-center justify-center px-6 ${
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
+                style={{ backgroundColor: colors.primary }}
               >
-                <Text className="text-sm font-semibold text-white">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.primaryForeground }}
+                >
                   {isLastQuestion ? 'See Summary' : 'Next ›'}
                 </Text>
               </Button>
@@ -1753,6 +1983,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
 }
 
 function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const headerAnim = useSlideUp(0.1, 800);
   const qaAnim = useSlideUp(0.3, 800);
   const {
@@ -1797,10 +2028,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
         >
           <EmojiText size="4xl">{selectedArea?.emoji}</EmojiText>
         </View>
-        <Text className="mb-2 text-center text-2xl font-bold text-white">
+        <Text
+          className="mb-2 text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           Great Insights!
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           Here's what we learned about {String(data['name'])}'s{' '}
           {selectedArea?.name}
         </Text>
@@ -1808,8 +2042,11 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
 
       {/* Q&A summary */}
       <Animated.View
-        style={qaAnim}
-        className="rounded-2xl border border-white/10 bg-card p-6 mb-6"
+        style={[
+          qaAnim,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+        className="rounded-2xl border p-6 mb-6"
       >
         {questions.map((q: { id: string; question: string }, _i: number) => {
           const answer = interactiveAnswers[q.id];
@@ -1817,12 +2054,19 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           return (
             <View
               key={`${qaAnimKey}-${q.id}`}
-              className="pb-3 border-b border-white/5 mb-3 last:border-0 last:mb-0"
+              className="pb-3 border-b mb-3 last:border-0 last:mb-0"
+              style={{ borderColor: colors.border }}
             >
-              <Text className="mb-1 text-xs text-slate-500">
+              <Text
+                className="mb-1 text-xs"
+                style={{ color: colors.iconColor }}
+              >
                 {q.question.replace('{name}', String(data['name']))}
               </Text>
-              <Text className="text-sm font-medium text-white">
+              <Text
+                className="text-sm font-medium"
+                style={{ color: colors.text }}
+              >
                 {typeof answer === 'string'
                   ? answer
                   : typeof answer === 'number' || typeof answer === 'boolean'
@@ -1836,20 +2080,29 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
 
       {/* Selected activity */}
       {selectedActivity && !childGameResults && (
-        <View className="space-y-4 rounded-2xl border border-purple-500/20 bg-card p-5 mb-6">
+        <View
+          className="space-y-4 rounded-2xl border border-purple-500/20 p-5 mb-6"
+          style={{ backgroundColor: colors.card }}
+        >
           <Text className="text-xs font-semibold uppercase tracking-widest text-purple-400">
             Your selected activity
           </Text>
           <View>
-            <Text className="text-base font-bold text-white">
+            <Text
+              className="text-base font-bold"
+              style={{ color: colors.text }}
+            >
               {selectedActivity.title}
             </Text>
-            <Text className="mt-1 text-sm text-slate-400">
+            <Text className="mt-1 text-sm" style={{ color: colors.textMuted }}>
               {selectedActivity.description}
             </Text>
             <View className="mt-3 flex-row flex-wrap gap-2">
-              <View className="rounded-full bg-white/10 px-2 py-0.5">
-                <Text className="text-xs text-slate-400">
+              <View
+                className="rounded-full px-2 py-0.5"
+                style={{ backgroundColor: colors.muted }}
+              >
+                <Text className="text-xs" style={{ color: colors.textMuted }}>
                   ⏱ {selectedActivity.duration}
                 </Text>
               </View>
@@ -1864,15 +2117,19 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
             onPress={() => setStep('parent_activity')}
             className="rounded-2xl bg-purple-500 items-center justify-center py-2.5 mb-2"
           >
-            <Text className="text-sm font-medium text-white">
+            <Text
+              className="text-sm font-medium"
+              style={{ color: colors.primaryForeground }}
+            >
               Open activity details
             </Text>
           </Button>
           <Button
             onPress={() => setStep('activity_selection')}
-            className="rounded-2xl border border-white/10 bg-transparent items-center justify-center py-2.5"
+            className="rounded-2xl border bg-transparent items-center justify-center py-2.5"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-sm text-slate-300">
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
               Pick a different activity
             </Text>
           </Button>
@@ -1893,9 +2150,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   setParentLiked(true);
                 })();
               }}
-              className="h-11 flex-1 rounded-2xl bg-teal-500 items-center justify-center"
+              className="h-11 flex-1 rounded-2xl items-center justify-center"
+              style={{ backgroundColor: colors.primary }}
             >
-              <Text className="text-sm font-semibold text-white">
+              <Text
+                className="text-sm font-semibold"
+                style={{ color: colors.primaryForeground }}
+              >
                 Explore Child Activity
               </Text>
             </Button>
@@ -1915,18 +2176,24 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   setShowGame(false);
                 })();
               }}
-              className="h-11 flex-1 rounded-2xl border border-white/10 bg-transparent items-center justify-center"
+              className="h-11 flex-1 rounded-2xl border bg-transparent items-center justify-center"
+              style={{ borderColor: colors.border }}
             >
-              <Text className="text-sm text-slate-300">Next Growth Area</Text>
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
+                Next Growth Area
+              </Text>
             </Button>
           </View>
           <Button
             onPress={() => {
               void handleFinishRef.current?.();
             }}
-            className="h-11 w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
+            className="h-11 w-full rounded-2xl border bg-transparent items-center justify-center"
+            style={{ borderColor: colors.primary + '4D' }}
           >
-            <Text className="text-sm text-teal-400">› Go to Life Journey</Text>
+            <Text className="text-sm" style={{ color: colors.primary }}>
+              › Go to Life Journey
+            </Text>
           </Button>
         </View>
       )}
@@ -1944,9 +2211,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 setShowGame(true);
               })();
             }}
-            className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl items-center justify-center mb-3"
+            style={{ backgroundColor: colors.success }}
           >
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.primaryForeground }}
+            >
               Present a fun game to {String(data['name'])} on the same topic
             </Text>
           </Button>
@@ -1966,25 +2237,34 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 setShowGame(false);
               })();
             }}
-            className="w-full rounded-2xl border-2 border-white/10 bg-transparent items-center justify-center mb-3"
+            className="w-full rounded-2xl border-2 bg-transparent items-center justify-center mb-3"
+            style={{ borderColor: colors.border }}
           >
-            <Text className="text-sm text-slate-300">Explore Later</Text>
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
+              Explore Later
+            </Text>
           </Button>
           <Button
             size="xl"
             onPress={() => {
               void handleFinishRef.current?.();
             }}
-            className="w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
+            className="w-full rounded-2xl border bg-transparent items-center justify-center"
+            style={{ borderColor: colors.primary + '4D' }}
           >
-            <Text className="text-sm text-teal-400">› Go to Life Journey</Text>
+            <Text className="text-sm" style={{ color: colors.primary }}>
+              › Go to Life Journey
+            </Text>
           </Button>
         </View>
       )}
 
       {/* Child game */}
       {showGame && !childGameResults && selectedArea?.id && (
-        <View className="rounded-3xl border border-emerald-500/20 bg-card p-6 mb-6">
+        <View
+          className="rounded-3xl border border-emerald-500/20 p-6 mb-6"
+          style={{ backgroundColor: colors.card }}
+        >
           <ChildActivityGame
             key={selectedArea.id}
             childName={
@@ -2039,34 +2319,60 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {/* Results after game */}
       {childGameResults && (
         <View>
-          <View className="rounded-3xl border border-emerald-500/20 bg-card p-6 mb-4">
+          <View
+            className="rounded-3xl border border-emerald-500/20 p-6 mb-4"
+            style={{ backgroundColor: colors.card }}
+          >
             <View className="items-center mb-4">
-              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-emerald-500">
+              <View
+                className="mb-3 h-16 w-16 items-center justify-center rounded-full"
+                style={{ backgroundColor: colors.success }}
+              >
                 <EmojiText size="3xl">✨</EmojiText>
               </View>
-              <Text className="text-center text-xl font-bold text-white">
+              <Text
+                className="text-center text-xl font-bold"
+                style={{ color: colors.text }}
+              >
                 Recommendations for {String(data['name'])}
               </Text>
             </View>
 
-            <View className="mb-4 rounded-2xl bg-surface-elevated p-4">
-              <Text className="mb-2 font-semibold text-white">
+            <View
+              className="mb-4 rounded-2xl p-4"
+              style={{ backgroundColor: colors.surfaceElevated }}
+            >
+              <Text
+                className="mb-2 font-semibold"
+                style={{ color: colors.text }}
+              >
                 What This Reveals
               </Text>
-              <Text className="text-sm text-slate-400">
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
                 {childGameResults?.summary ?? ''}
               </Text>
             </View>
 
-            <View className="mb-4 rounded-2xl bg-surface-elevated p-4">
-              <Text className="mb-2 font-semibold text-white">
+            <View
+              className="mb-4 rounded-2xl p-4"
+              style={{ backgroundColor: colors.surfaceElevated }}
+            >
+              <Text
+                className="mb-2 font-semibold"
+                style={{ color: colors.text }}
+              >
                 Suggested Activities
               </Text>
               {suggestedActivitiesFromGameRecommendations(childGameResults).map(
                 (activity, i) => (
                   <View key={i} className="flex-row items-start gap-2 mb-2">
-                    <Text className="text-emerald-500 mt-0.5">✓</Text>
-                    <Text className="flex-1 text-sm text-slate-400">
+                    <Text className="mt-0.5" style={{ color: colors.success }}>
+                      ✓
+                    </Text>
+                    <Text
+                      className="flex-1 text-sm"
+                      style={{ color: colors.textMuted }}
+                    >
                       {activity}
                     </Text>
                   </View>
@@ -2074,8 +2380,14 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
               )}
             </View>
 
-            <View className="rounded-2xl bg-surface-elevated p-4">
-              <Text className="mb-2 font-semibold text-white">
+            <View
+              className="rounded-2xl p-4"
+              style={{ backgroundColor: colors.surfaceElevated }}
+            >
+              <Text
+                className="mb-2 font-semibold"
+                style={{ color: colors.text }}
+              >
                 Strengths to Encourage
               </Text>
               {(Array.isArray(childGameResults?.strengths)
@@ -2083,8 +2395,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 : []
               ).map((strength, i) => (
                 <View key={i} className="flex-row items-start gap-2 mb-2">
-                  <Text className="text-emerald-500 mt-0.5">★</Text>
-                  <Text className="flex-1 text-sm text-slate-400">
+                  <Text className="mt-0.5" style={{ color: colors.success }}>
+                    ★
+                  </Text>
+                  <Text
+                    className="flex-1 text-sm"
+                    style={{ color: colors.textMuted }}
+                  >
                     {strength}
                   </Text>
                 </View>
@@ -2092,10 +2409,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
             </View>
           </View>
 
-          <View className="rounded-3xl border border-emerald-500/15 bg-card p-6 mb-4">
+          <View
+            className="rounded-3xl border border-emerald-500/15 p-6 mb-4"
+            style={{ backgroundColor: colors.card }}
+          >
             <View className="flex-row items-center gap-2 mb-3">
-              <Text className="text-emerald-600">🎯</Text>
-              <Text className="font-bold text-white">
+              <Text style={{ color: colors.success }}>🎯</Text>
+              <Text className="font-bold" style={{ color: colors.text }}>
                 3-Month Recommendations for {selectedArea?.name}
               </Text>
             </View>
@@ -2105,9 +2425,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 onPress={() => {
                   void generateAiRecommendations(childGameResults);
                 }}
-                className="h-11 w-full rounded-2xl bg-emerald-500 items-center justify-center"
+                className="h-11 w-full rounded-2xl items-center justify-center"
+                style={{ backgroundColor: colors.success }}
               >
-                <Text className="text-sm font-semibold text-white">
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.primaryForeground }}
+                >
                   ✨ Generate Recommendations
                 </Text>
               </Button>
@@ -2115,11 +2439,17 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
 
             {loadingRecommendations && (
               <View className="items-center justify-center py-10">
-                <ActivityIndicator size="large" color="#14b8a6" />
-                <Text className="text-sm font-semibold text-white mt-4">
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text
+                  className="text-sm font-semibold mt-4"
+                  style={{ color: colors.text }}
+                >
                   Building your 3-Month Plan
                 </Text>
-                <Text className="text-xs text-slate-500 mt-1">
+                <Text
+                  className="text-xs mt-1"
+                  style={{ color: colors.iconColor }}
+                >
                   Personalising recommendations for{' '}
                   {typeof data?.['name'] === 'string' ? data['name'] : ''}…
                 </Text>
@@ -2131,12 +2461,21 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 <View>
                   {aiRecommendations.map((rec, i) => (
                     <View key={i} className="flex-row items-start gap-3 mb-3">
-                      <View className="h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
-                        <Text className="text-xs font-bold text-white">
+                      <View
+                        className="h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                        style={{ backgroundColor: colors.success }}
+                      >
+                        <Text
+                          className="text-xs font-bold"
+                          style={{ color: colors.primaryForeground }}
+                        >
                           {i + 1}
                         </Text>
                       </View>
-                      <Text className="flex-1 text-sm text-slate-300">
+                      <Text
+                        className="flex-1 text-sm"
+                        style={{ color: colors.textMuted }}
+                      >
                         {typeof rec === 'string' ? rec : ''}
                       </Text>
                     </View>
@@ -2172,9 +2511,13 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   }
                 })();
               }}
-              className="w-full rounded-2xl bg-emerald-500 items-center justify-center mb-3"
+              className="w-full rounded-2xl items-center justify-center mb-3"
+              style={{ backgroundColor: colors.success }}
             >
-              <Text className="text-sm font-semibold text-white">
+              <Text
+                className="text-sm font-semibold"
+                style={{ color: colors.primaryForeground }}
+              >
                 {currentAreaIndex < growthAreas.length - 1
                   ? 'Explore More Growth Areas'
                   : 'Explore Life Journey'}
@@ -2185,9 +2528,10 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
               onPress={() => {
                 void handleFinishRef.current?.();
               }}
-              className="w-full rounded-2xl border border-teal-500/30 bg-transparent items-center justify-center"
+              className="w-full rounded-2xl border bg-transparent items-center justify-center"
+              style={{ borderColor: colors.primary + '4D' }}
             >
-              <Text className="text-sm text-teal-400">
+              <Text className="text-sm" style={{ color: colors.primary }}>
                 › Go to Life Journey
               </Text>
             </Button>
@@ -2199,6 +2543,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
 }
 
 function SkipScreen({ ps }: { ps: PhaseState }) {
+  const { colors } = useTheme();
   const anim = useSlideUp(0.1, 1000);
   const { data, navigation } = ps;
   return (
@@ -2207,21 +2552,31 @@ function SkipScreen({ ps }: { ps: PhaseState }) {
       contentContainerClassName="pb-8 px-4 items-center"
     >
       <Animated.View style={anim} className="items-center gap-6 pt-8">
-        <View className="h-20 w-20 items-center justify-center rounded-full bg-teal-500">
+        <View
+          className="h-20 w-20 items-center justify-center rounded-full"
+          style={{ backgroundColor: colors.primary }}
+        >
           <EmojiText size="4xl">✨</EmojiText>
         </View>
-        <Text className="text-center text-2xl font-bold text-white">
+        <Text
+          className="text-center text-2xl font-bold"
+          style={{ color: colors.text }}
+        >
           Ready for the Next Step!
         </Text>
-        <Text className="text-center text-slate-400">
+        <Text className="text-center" style={{ color: colors.textMuted }}>
           Let's explore the Life Journey designed for {String(data['name'])}.
         </Text>
         <Button
           size="xl"
           onPress={() => navigation.navigate('Main' as never)}
-          className="rounded-2xl bg-emerald-500 px-8 items-center justify-center"
+          className="rounded-2xl px-8 items-center justify-center"
+          style={{ backgroundColor: colors.success }}
         >
-          <Text className="text-sm font-semibold text-white">
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: colors.primaryForeground }}
+          >
             Continue to Life Journey ›
           </Text>
         </Button>

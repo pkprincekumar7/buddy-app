@@ -35,6 +35,7 @@ import {
 import { generateInsights } from '@/lib/generateInsights';
 import type { Observation } from '@/lib/insightsUtils';
 import type { GoalPlan } from '@/hooks/useGoalPlan';
+import { CHART_BAND_COLORS } from '@/lib/gradientColors';
 
 interface ChartEntry {
   key: string;
@@ -82,24 +83,24 @@ const obsToScore = (obs: Observation): number | null => {
 const ObsBadge = ({ obs }: { obs: Observation }) => {
   const cfg: Record<string, { cls: string; icon: ReactElement }> = {
     improved: {
-      cls: 'text-emerald-700',
-      icon: <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-500" />,
+      cls: 'text-success',
+      icon: <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-success" />,
     },
     declined: {
       cls: 'text-amber-700',
       icon: <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-500" />,
     },
     noImprovement: {
-      cls: 'text-slate-500',
-      icon: <Minus className="h-4 w-4 flex-shrink-0 text-slate-400" />,
+      cls: 'text-muted-foreground',
+      icon: <Minus className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
     },
     inProgress: {
-      cls: 'text-blue-600',
-      icon: <Clock className="h-4 w-4 flex-shrink-0 text-blue-400" />,
+      cls: 'text-info',
+      icon: <Clock className="h-4 w-4 flex-shrink-0 text-info-muted" />,
     },
     notStarted: {
-      cls: 'text-slate-400',
-      icon: <Lock className="h-4 w-4 flex-shrink-0 text-slate-300" />,
+      cls: 'text-muted-foreground',
+      icon: <Lock className="h-4 w-4 flex-shrink-0 text-foreground" />,
     },
   };
   const entry = cfg[obs.type] ?? cfg['notStarted'];
@@ -128,7 +129,7 @@ const ArrowLabel = ({ x = 0, y = 0, width = 0, height = 0, value }: ArrowLabelPr
         x={x + width / 2}
         y={y - 8}
         textAnchor="middle"
-        fill="#94a3b8"
+        style={{ fill: 'hsl(var(--muted-foreground))' }}
         fontSize={18}
         fontWeight="bold"
       >
@@ -142,7 +143,7 @@ const ArrowLabel = ({ x = 0, y = 0, width = 0, height = 0, value }: ArrowLabelPr
       x={x + width / 2}
       y={labelY}
       textAnchor="middle"
-      fill={isUp ? '#10b981' : '#f87171'}
+      fill={isUp ? 'hsl(var(--success))' : 'hsl(var(--error))'}
       fontSize={22}
       fontWeight="bold"
     >
@@ -168,11 +169,24 @@ const buildCustomTick = (chartData: ChartEntry[]) =>
     if (!entry) return null;
     return (
       <g transform={`translate(${x},${y})`}>
-        <text x={0} dy={14} textAnchor="middle" fill="#475569" fontSize={11}>
+        <text
+          x={0}
+          dy={14}
+          textAnchor="middle"
+          style={{ fill: 'hsl(var(--muted-foreground))' }}
+          fontSize={11}
+        >
           A{entry.actIdx + 1}
         </text>
         {entry.actIdx === 0 && (
-          <text x={48} dy={28} textAnchor="middle" fill="#64748b" fontSize={10} fontWeight={700}>
+          <text
+            x={48}
+            dy={28}
+            textAnchor="middle"
+            style={{ fill: 'hsl(var(--muted-foreground))' }}
+            fontSize={10}
+            fontWeight={700}
+          >
             Month {entry.monthNum}
           </text>
         )}
@@ -194,18 +208,18 @@ const buildCustomTooltip = (_chartData: ChartEntry[]) =>
     const entry = firstEntry.payload;
     const obsColor =
       entry.obsType === 'improved'
-        ? 'text-emerald-600'
+        ? 'text-success'
         : entry.obsType === 'declined'
-          ? 'text-red-500'
+          ? 'text-destructive'
           : entry.obsType === 'noImprovement'
-            ? 'text-slate-500'
-            : 'text-blue-500';
+            ? 'text-muted-foreground'
+            : 'text-info';
     return (
       <div className="border-edge max-w-[200px] rounded-xl bg-surface-elevated px-3 py-2.5 text-sm shadow-lg">
-        <p className="mb-0.5 break-words font-semibold leading-snug text-white">
+        <p className="mb-0.5 break-words font-semibold leading-snug text-foreground">
           {entry.fullLabel}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Month {entry.monthNum} · Activity {entry.actIdx + 1}
         </p>
         <p className={`mt-1 font-medium ${obsColor}`}>{entry.obsLabel}</p>
@@ -373,8 +387,8 @@ export default function ProgressInsightsModal({
               onClick={() => setActiveTab(key!)}
               className={`border-b-2 px-5 pb-3 text-sm font-semibold transition-colors ${
                 activeTab === key
-                  ? 'border-teal-500 text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {label}
@@ -405,8 +419,8 @@ export default function ProgressInsightsModal({
                       onClick={() => setProgressTab(key!)}
                       className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
                         progressTab === key
-                          ? 'bg-teal-500 text-white shadow-sm'
-                          : 'bg-ghost-light hover:bg-ghost-strong text-slate-400'
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
                       }`}
                     >
                       {label}
@@ -428,16 +442,16 @@ export default function ProgressInsightsModal({
                       <table className="w-full border-collapse text-sm">
                         <thead>
                           <tr className="bg-surface-elevated">
-                            <th className="border-b-edge-faint w-20 px-4 py-3 text-left font-semibold text-slate-400">
+                            <th className="border-b-edge-faint w-20 px-4 py-3 text-left font-semibold text-muted-foreground">
                               Month
                             </th>
-                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-slate-400">
+                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-muted-foreground">
                               Goal
                             </th>
-                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-slate-400">
+                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-muted-foreground">
                               Objective
                             </th>
-                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-slate-400">
+                            <th className="border-b-edge-faint px-4 py-3 text-left font-semibold text-muted-foreground">
                               Observation
                             </th>
                           </tr>
@@ -452,7 +466,7 @@ export default function ProgressInsightsModal({
                                 {pIdx === 0 && (
                                   <td
                                     rowSpan={pairs.length}
-                                    className="border-r-edge-faint whitespace-nowrap px-4 py-3 align-middle font-bold text-slate-300"
+                                    className="border-r-edge-faint whitespace-nowrap px-4 py-3 align-middle font-bold text-foreground"
                                   >
                                     Month {month.month}
                                   </td>
@@ -460,12 +474,12 @@ export default function ProgressInsightsModal({
                                 {pIdx === 0 && (
                                   <td
                                     rowSpan={pairs.length}
-                                    className="border-r-edge-faint max-w-[160px] px-4 py-3 align-middle text-slate-300"
+                                    className="border-r-edge-faint max-w-[160px] px-4 py-3 align-middle text-foreground"
                                   >
                                     {truncate(month.goal, 42)}
                                   </td>
                                 )}
-                                <td className="border-r-edge-faint max-w-[160px] px-4 py-3 text-slate-400">
+                                <td className="border-r-edge-faint max-w-[160px] px-4 py-3 text-muted-foreground">
                                   {pair.label}
                                 </td>
                                 <td className="px-4 py-3">
@@ -488,7 +502,7 @@ export default function ProgressInsightsModal({
                       exit={{ opacity: 0, y: -8, transition: { duration: 0.2, ease: 'easeIn' } }}
                       transition={{ duration: 0.4, ease: 'easeOut' }}
                     >
-                      <p className="mb-4 text-center text-sm text-slate-400">
+                      <p className="mb-4 text-center text-sm text-muted-foreground">
                         Per-objective comparison: original (Week 1&amp;2) vs follow-up (Week
                         3&amp;4)
                       </p>
@@ -503,21 +517,21 @@ export default function ProgressInsightsModal({
                           <ReferenceArea
                             x1="1-0"
                             x2="1-1"
-                            fill="rgba(20,255,160,0.03)"
+                            fill={CHART_BAND_COLORS[0]}
                             fillOpacity={1}
                             ifOverflow="visible"
                           />
                           <ReferenceArea
                             x1="2-0"
                             x2="2-1"
-                            fill="rgba(60,120,255,0.03)"
+                            fill={CHART_BAND_COLORS[1]}
                             fillOpacity={1}
                             ifOverflow="visible"
                           />
                           <ReferenceArea
                             x1="3-0"
                             x2="3-1"
-                            fill="rgba(160,60,255,0.03)"
+                            fill={CHART_BAND_COLORS[2]}
                             fillOpacity={1}
                             ifOverflow="visible"
                           />
@@ -525,7 +539,7 @@ export default function ProgressInsightsModal({
                           <CartesianGrid
                             strokeDasharray="3 3"
                             vertical={false}
-                            stroke="rgba(255,255,255,0.05)"
+                            stroke="rgb(var(--edge-rgb) / 0.05)"
                           />
                           <XAxis
                             dataKey="key"
@@ -535,15 +549,15 @@ export default function ProgressInsightsModal({
                             height={48}
                           />
                           <YAxis
-                            tick={{ fill: '#94a3b8', fontSize: 12 }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                             axisLine={false}
                             tickLine={false}
                             tickFormatter={(v: number) => `${v}%`}
                           />
-                          <ReferenceLine y={0} stroke="#cbd5e1" strokeWidth={2} />
+                          <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={2} />
                           <Tooltip
                             content={<CustomTooltip />}
-                            cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                            cursor={{ fill: 'rgb(var(--edge-rgb) / 0.04)' }}
                           />
                           <Bar dataKey="score" radius={[6, 6, 0, 0]}>
                             <LabelList dataKey="score" content={<ArrowLabel />} />
@@ -552,12 +566,12 @@ export default function ProgressInsightsModal({
                                 key={entry.key}
                                 fill={
                                   entry.isNA
-                                    ? '#e2e8f0'
+                                    ? 'hsl(var(--muted))'
                                     : entry.score > 0
-                                      ? '#6ee7b7'
+                                      ? 'hsl(var(--success-muted))'
                                       : entry.score < 0
-                                        ? '#fca5a5'
-                                        : '#e2e8f0'
+                                        ? 'hsl(var(--error-muted))'
+                                        : 'hsl(var(--muted))'
                                 }
                               />
                             ))}
@@ -565,14 +579,15 @@ export default function ProgressInsightsModal({
                         </BarChart>
                       </ResponsiveContainer>
                       <div className="mt-1 flex justify-center gap-6">
-                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <span className="inline-block h-3 w-3 rounded-sm bg-emerald-300" />{' '}
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="inline-block h-3 w-3 rounded-sm bg-success/60" />{' '}
                           Improvement
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <span className="inline-block h-3 w-3 rounded-sm bg-red-300" /> Decline
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="inline-block h-3 w-3 rounded-sm bg-error-muted" />{' '}
+                          Decline
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="bg-na-dim inline-block h-3 w-3 rounded-sm" /> N/A
                         </span>
                       </div>
@@ -601,11 +616,13 @@ export default function ProgressInsightsModal({
                     <motion.div
                       animate={{ rotate: 360 }}
                       transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                      className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+                      className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent"
                       aria-hidden="true"
                     />
-                    <p className="font-semibold text-white">Generating personalised insights…</p>
-                    <p className="text-sm text-slate-500">
+                    <p className="font-semibold text-foreground">
+                      Generating personalised insights…
+                    </p>
+                    <p className="text-sm text-muted-foreground">
                       Analysing {childName ? `${childName}'s` : 'the'} assessment data
                     </p>
                   </div>
@@ -614,7 +631,7 @@ export default function ProgressInsightsModal({
                 {/* Error */}
                 {insightsError && !insightsLoading && (
                   <div className="flex flex-col items-center gap-4 py-16">
-                    <p className="text-sm text-slate-400">
+                    <p className="text-sm text-muted-foreground">
                       Failed to generate insights. Please try again.
                     </p>
                     <button
@@ -623,7 +640,7 @@ export default function ProgressInsightsModal({
                         setInsightsError(false);
                         setInsightsData(null);
                       }}
-                      className="flex items-center gap-2 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-600"
+                      className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
                     >
                       <RefreshCw className="h-4 w-4" /> Retry
                     </button>
@@ -633,8 +650,8 @@ export default function ProgressInsightsModal({
                 {/* Empty state — no completed activities yet */}
                 {insightsData && !insightsLoading && insightsData.insight_items.length === 0 && (
                   <div className="flex flex-col items-center gap-3 py-16 text-center">
-                    <p className="text-base font-semibold text-slate-300">No insights yet</p>
-                    <p className="max-w-xs text-sm text-slate-500">
+                    <p className="text-base font-semibold text-foreground">No insights yet</p>
+                    <p className="max-w-xs text-sm text-muted-foreground">
                       Complete at least one activity to generate personalised insights for{' '}
                       {childName ?? 'your child'}.
                     </p>
@@ -662,12 +679,12 @@ export default function ProgressInsightsModal({
                               {isAnomaly ? (
                                 <AlertTriangle className="h-4 w-4 text-amber-500" />
                               ) : (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                <CheckCircle2 className="h-4 w-4 text-success" />
                               )}
                             </div>
                             <p
                               className={`flex-1 text-sm font-medium leading-snug ${
-                                isAnomaly ? 'text-amber-300' : 'text-slate-300'
+                                isAnomaly ? 'text-amber-300' : 'text-foreground'
                               }`}
                             >
                               {item.text}
@@ -680,7 +697,7 @@ export default function ProgressInsightsModal({
                               className={`ml-2 flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                                 isAnomaly
                                   ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                                  : 'bg-teal-500/10 text-teal-400 hover:bg-teal-500/20'
+                                  : 'hover:bg-primary/90/20 bg-primary/10 text-primary'
                               }`}
                             >
                               {isExpanded ? 'Hide Details' : 'View Details'}
@@ -715,19 +732,19 @@ export default function ProgressInsightsModal({
                                     : 'border-c-xs bg-ghost'
                                 }`}
                               >
-                                <p className="pb-4 pt-4 text-sm leading-relaxed text-slate-400">
+                                <p className="pb-4 pt-4 text-sm leading-relaxed text-muted-foreground">
                                   {item.details}
                                 </p>
                                 <div className="flex flex-wrap gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-xl bg-teal-500 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-600"
+                                    className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90"
                                   >
                                     Start Monitoring
                                   </button>
                                   <button
                                     type="button"
-                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-slate-300 transition-colors"
+                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-foreground transition-colors"
                                   >
                                     Check-in Later
                                   </button>

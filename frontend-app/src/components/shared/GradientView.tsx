@@ -7,6 +7,7 @@
  */
 import React, { useState } from 'react';
 import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useTheme } from '@/lib/ThemeContext';
 import type { ViewStyle, TouchableOpacityProps } from 'react-native';
 import Svg, {
   LinearGradient as SvgLinearGradient,
@@ -16,34 +17,14 @@ import Svg, {
 } from 'react-native-svg';
 
 // ── Tailwind area.color → hex gradient pairs ──────────────────────────────────
-
-/** Maps Tailwind growth-area `.color` strings to actual hex gradient pairs. */
-export const AREA_GRADIENT_COLORS: Record<
-  string,
-  { from: string; to: string }
-> = {
-  'from-purple-500 to-indigo-600': { from: '#a855f7', to: '#4f46e5' },
-  'from-rose-500 to-pink-600': { from: '#f43f5e', to: '#db2777' },
-  'from-blue-500 to-cyan-600': { from: '#3b82f6', to: '#0891b2' },
-  'from-amber-500 to-orange-600': { from: '#f59e0b', to: '#ea580c' },
-  'from-emerald-500 to-teal-600': { from: '#10b981', to: '#0d9488' },
-  'from-violet-500 to-purple-600': { from: '#8b5cf6', to: '#9333ea' },
-};
-
-/** Lighter tile palette used in GrowthAreasActivityGame. */
-export const TILE_GRADIENT_COLORS: Record<
-  string,
-  { from: string; to: string }
-> = {
-  'from-purple-400 to-indigo-500': { from: '#c084fc', to: '#6366f1' },
-  'from-rose-400 to-pink-500': { from: '#fb7185', to: '#ec4899' },
-  'from-amber-400 to-orange-500': { from: '#fbbf24', to: '#f97316' },
-  'from-emerald-400 to-teal-500': { from: '#34d399', to: '#14b8a6' },
-  'from-blue-400 to-cyan-500': { from: '#60a5fa', to: '#06b6d4' },
-  'from-violet-400 to-purple-500': { from: '#a78bfa', to: '#a855f7' },
-};
-
-const FALLBACK = { from: '#14b8a6', to: '#0d9488' };
+// All color values live in gradientColors.ts.
+// Re-exported here so existing consumers of GradientView keep working.
+import {
+  AREA_GRADIENT_COLORS,
+  TILE_GRADIENT_COLORS,
+  GRADIENT_FALLBACK as FALLBACK,
+} from '@/lib/gradientColors';
+export { AREA_GRADIENT_COLORS, TILE_GRADIENT_COLORS };
 
 export function areaGrad(colorClass: string): { from: string; to: string } {
   return AREA_GRADIENT_COLORS[colorClass] ?? FALLBACK;
@@ -203,6 +184,7 @@ export function GradientButton({
   onPress,
   ...rest
 }: GradientButtonProps) {
+  const { colors } = useTheme();
   const base = color ? areaGrad(color) : FALLBACK;
   const gradFrom = fromOverride ?? base.from;
   const gradTo = toOverride ?? base.to;
@@ -253,7 +235,11 @@ export function GradientButton({
           />
         </Svg>
       )}
-      {loading ? <ActivityIndicator color="#0a0a0a" /> : children}
+      {loading ? (
+        <ActivityIndicator color={colors.primaryForeground} />
+      ) : (
+        children
+      )}
     </TouchableOpacity>
   );
 }

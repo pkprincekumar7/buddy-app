@@ -29,6 +29,7 @@ import Speech from '@mhpdev/react-native-speech';
 import InputWithVoice from '@/components/shared/InputWithVoice';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
+import { useTheme } from '@/lib/ThemeContext';
 import {
   CHATBOT_CAPTURED_FIELDS,
   questionnaireFieldHasValue,
@@ -187,10 +188,18 @@ function GradientRoundedBox({
 // Three vertically-bouncing dots with 150 ms stagger — mirrors web's `animate-bounce`.
 // `colors` defaults to gray (typing indicator); pass teal for the loading-dots footer.
 function BouncingDots({
-  colors = ['#475569', '#475569', '#475569'],
+  colors: dotColors,
 }: {
   colors?: [string, string, string];
 }) {
+  const { colors: themeColors } = useTheme();
+  const colors =
+    dotColors ??
+    ([themeColors.iconColor, themeColors.iconColor, themeColors.iconColor] as [
+      string,
+      string,
+      string,
+    ]);
   const d1 = useSharedValue(0);
   const d2 = useSharedValue(0);
   const d3 = useSharedValue(0);
@@ -230,6 +239,7 @@ function BouncingDots({
 // Exit:  opacity 1→0 + y 0→-6 (300ms easeIn).
 // Mirrors web's AnimatePresence exit={{ opacity:0, y:-6, transition:{ duration:0.3 } }}.
 function TypingIndicatorBubble({ visible }: { visible: boolean }) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(10);
 
@@ -264,8 +274,12 @@ function TypingIndicatorBubble({ visible }: { visible: boolean }) {
   return (
     <Animated.View style={style} className="flex-row justify-start">
       <View
-        className="rounded-2xl rounded-tl-sm bg-surface-input px-4 py-3"
-        style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+        className="rounded-2xl rounded-tl-sm px-4 py-3"
+        style={{
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.muted,
+        }}
       >
         <BouncingDots />
       </View>
@@ -345,6 +359,7 @@ function AnimatedChoiceChip({
   isSelected: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
 
@@ -365,25 +380,24 @@ function AnimatedChoiceChip({
     <Animated.View style={animStyle}>
       <Pressable
         onPress={onPress}
-        className={
-          isSelected
-            ? 'rounded-xl border border-teal-500 bg-teal-500/15 px-3 py-1.5'
-            : 'rounded-xl px-3 py-1.5'
-        }
+        className="rounded-xl px-3 py-1.5"
         style={
-          !isSelected
+          isSelected
             ? {
-                backgroundColor: 'rgba(255,255,255,0.08)',
                 borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.10)',
+                borderColor: colors.primary,
+                backgroundColor: `${colors.primary}26`,
               }
-            : undefined
+            : {
+                backgroundColor: colors.muted,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }
         }
       >
         <Text
-          className={`text-xs font-medium ${
-            isSelected ? 'text-teal-300' : 'text-slate-400'
-          }`}
+          className="text-xs font-medium"
+          style={{ color: isSelected ? colors.primaryLight : colors.textMuted }}
         >
           {option}
         </Text>
@@ -404,6 +418,7 @@ function AnalyzingScreen({
   analyzingName: string;
   analyzeProgress: number;
 }) {
+  const { colors } = useTheme();
   // Brain container rotation — matches web's rotate:360 / duration:3 / repeat:Infinity / ease:linear
   const rotation = useSharedValue(0);
   useEffect(() => {
@@ -446,17 +461,20 @@ function AnalyzingScreen({
     <View className="flex-1 items-center justify-center px-6 py-10 gap-8">
       {/* Spinning gradient brain icon — web: motion.div rotate:360 / 3s / Infinity */}
       <Animated.View style={rotateStyle}>
-        <GradientRoundedBox from="#2dd4bf" size={64} radius={16}>
-          <Brain size={32} color="white" />
+        <GradientRoundedBox from={colors.primaryLight} size={64} radius={16}>
+          <Brain size={32} color={colors.primaryForeground} />
         </GradientRoundedBox>
       </Animated.View>
 
       {/* Title + current step label */}
       <View className="items-center gap-2">
-        <Text className="text-center text-xl font-bold text-white">
+        <Text
+          className="text-center text-xl font-bold"
+          style={{ color: colors.text }}
+        >
           Analyzing {analyzingName}'s personality
         </Text>
-        <Text className="text-sm font-medium text-teal-400">
+        <Text className="text-sm font-medium" style={{ color: colors.primary }}>
           {currentLabel}
         </Text>
       </View>
@@ -467,7 +485,7 @@ function AnalyzingScreen({
           style={{
             height: 8,
             borderRadius: 999,
-            backgroundColor: 'rgba(255,255,255,0.06)',
+            backgroundColor: colors.muted,
             overflow: 'hidden',
           }}
           onLayout={e => {
@@ -484,7 +502,7 @@ function AnalyzingScreen({
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  backgroundColor: '#14b8a6',
+                  backgroundColor: colors.primary,
                   borderRadius: 4,
                 },
                 progressBarStyle,
@@ -492,7 +510,10 @@ function AnalyzingScreen({
             />
           )}
         </View>
-        <Text className="text-right text-xs font-medium text-slate-500">
+        <Text
+          className="text-right text-xs font-medium"
+          style={{ color: colors.iconColor }}
+        >
           {analyzeProgress}%
         </Text>
       </View>
@@ -513,8 +534,8 @@ function AnalyzingScreen({
             >
               {done ? (
                 // Done: gradient icon — web: bg-gradient-to-br from-emerald-500 to-teal-600
-                <GradientRoundedBox from="#10b981" size={32} radius={10}>
-                  <Icon size={16} color="white" />
+                <GradientRoundedBox from={colors.primary} size={32} radius={10}>
+                  <Icon size={16} color={colors.primaryForeground} />
                 </GradientRoundedBox>
               ) : active ? (
                 // Active: teal tinted with ring — web: bg-teal-500/20 ring-1 ring-teal-500/30
@@ -523,14 +544,14 @@ function AnalyzingScreen({
                     width: 32,
                     height: 32,
                     borderRadius: 10,
-                    backgroundColor: 'rgba(20,184,166,0.20)',
+                    backgroundColor: colors.primary + '33',
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 1,
-                    borderColor: 'rgba(20,184,166,0.30)',
+                    borderColor: colors.primary + '4D',
                   }}
                 >
-                  <Icon size={16} color="#2dd4bf" />
+                  <Icon size={16} color={colors.primaryLight} />
                 </View>
               ) : (
                 // Inactive: subtle dark background
@@ -539,22 +560,25 @@ function AnalyzingScreen({
                     width: 32,
                     height: 32,
                     borderRadius: 10,
-                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    backgroundColor: colors.muted,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <Icon size={16} color="#64748b" />
+                  <Icon size={16} color={colors.iconColor} />
                 </View>
               )}
               <Text
                 className={`text-sm flex-1 ${
-                  done
-                    ? 'font-medium text-emerald-400'
-                    : active
-                    ? 'font-semibold text-white'
-                    : 'text-slate-500'
+                  done ? 'font-medium' : active ? 'font-semibold' : ''
                 }`}
+                style={{
+                  color: done
+                    ? colors.success
+                    : active
+                    ? colors.text
+                    : colors.iconColor,
+                }}
               >
                 {s.label}
               </Text>
@@ -577,6 +601,7 @@ export default function ConversationalOnboarding({
   onQuestionnairePersisted,
   onQuestionnaireCleared,
 }: ConversationalOnboardingProps) {
+  const { colors } = useTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
@@ -1383,29 +1408,40 @@ export default function ConversationalOnboarding({
   // ── Chat UI ───────────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
-      className="flex-1 rounded-2xl bg-card overflow-hidden"
-      style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+      className="flex-1 rounded-2xl overflow-hidden"
+      style={{
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={80}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
       {/* Web: border-b-edge-faint flex items-center justify-between bg-surface-elevated px-5 py-4 */}
       <View
-        className="flex-row items-center justify-between bg-surface-elevated px-5 py-4"
+        className="flex-row items-center justify-between px-5 py-4"
         style={{
+          backgroundColor: colors.surfaceElevated,
           borderBottomWidth: 1,
-          borderBottomColor: 'rgba(255,255,255,0.06)',
+          borderBottomColor: colors.border,
         }}
       >
         <View className="flex-row items-center gap-3">
-          <View className="h-9 w-9 items-center justify-center rounded-xl bg-teal-500/20">
+          <View
+            className="h-9 w-9 items-center justify-center rounded-xl"
+            style={{ backgroundColor: colors.primary + '33' }}
+          >
             <EmojiText size="lg">🌱</EmojiText>
           </View>
           <View>
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.text }}
+            >
               Buddy360 Guide
             </Text>
-            <Text className="text-xs text-slate-500">
+            <Text className="text-xs" style={{ color: colors.iconColor }}>
               Your growth companion
             </Text>
           </View>
@@ -1419,9 +1455,9 @@ export default function ConversationalOnboarding({
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {voiceEnabled ? (
-            <Volume2 size={16} color="#64748b" />
+            <Volume2 size={16} color={colors.iconColor} />
           ) : (
-            <VolumeX size={16} color="#64748b" />
+            <VolumeX size={16} color={colors.iconColor} />
           )}
         </Pressable>
       </View>
@@ -1448,24 +1484,32 @@ export default function ConversationalOnboarding({
             // Bot: fade + slide up — opacity 2000ms bezier(0,0,0.6,1) / y 1600ms easeOut
             <AnimatedMessage key={msg.id} role="bot">
               <View
-                className="rounded-2xl rounded-tl-sm bg-surface-input px-4 py-2.5"
+                className="rounded-2xl rounded-tl-sm px-4 py-2.5"
                 style={{
                   maxWidth: '80%',
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.06)',
+                  borderColor: colors.border,
+                  backgroundColor: colors.muted,
                 }}
               >
-                <Text className="text-sm text-slate-300">{msg.content}</Text>
+                <Text className="text-sm" style={{ color: colors.textMuted }}>
+                  {msg.content}
+                </Text>
               </View>
             </AnimatedMessage>
           ) : (
             // User: fade + slide from right — opacity 1600ms / x 1400ms bezier(0.22,1,0.36,1)
             <AnimatedMessage key={msg.id} role="user">
               <View
-                className="rounded-2xl rounded-tr-sm bg-teal-500 px-4 py-2.5"
-                style={{ maxWidth: '80%' }}
+                className="rounded-2xl rounded-tr-sm px-4 py-2.5"
+                style={{ maxWidth: '80%', backgroundColor: colors.primary }}
               >
-                <Text className="text-sm text-white">{msg.content}</Text>
+                <Text
+                  className="text-sm"
+                  style={{ color: colors.primaryForeground }}
+                >
+                  {msg.content}
+                </Text>
               </View>
             </AnimatedMessage>
           ),
@@ -1482,7 +1526,7 @@ export default function ConversationalOnboarding({
           className="px-4 pb-4 pt-2"
           style={{
             borderTopWidth: 1,
-            borderTopColor: 'rgba(255,255,255,0.06)',
+            borderTopColor: colors.border,
           }}
         >
           <View
@@ -1490,26 +1534,42 @@ export default function ConversationalOnboarding({
             style={{
               maxWidth: '90%',
               borderWidth: 1,
-              borderColor: 'rgba(20,184,166,0.20)',
-              backgroundColor: 'rgba(20,184,166,0.05)',
+              borderColor: colors.primary + '33',
+              backgroundColor: colors.primary + '0D',
             }}
           >
             <View className="flex-row items-start gap-3">
               {/* Gradient icon — web: bg-gradient-to-br from-teal-400 to-teal-600 glow-teal-sm */}
-              <GradientRoundedBox from="#2dd4bf" size={36} radius={10}>
-                <Sparkles size={16} color="white" />
+              <GradientRoundedBox
+                from={colors.primaryLight}
+                size={36}
+                radius={10}
+              >
+                <Sparkles size={16} color={colors.primaryForeground} />
               </GradientRoundedBox>
               <View className="flex-1 pt-0.5">
-                <Text className="text-sm font-semibold text-white leading-snug">
+                <Text
+                  className="text-sm font-semibold leading-snug"
+                  style={{ color: colors.text }}
+                >
                   Let's do a personality analysis
                   {'.'.repeat(1 + (dotCount % 3))}
                 </Text>
-                <Text className="mt-1.5 text-xs text-teal-400">
+                <Text
+                  className="mt-1.5 text-xs"
+                  style={{ color: colors.primary }}
+                >
                   Getting things ready — almost there
                 </Text>
                 {/* Web: three animate-bounce teal dots (teal-400 / teal-500 / teal-600) */}
                 <View className="mt-3">
-                  <BouncingDots colors={['#2dd4bf', '#14b8a6', '#0d9488']} />
+                  <BouncingDots
+                    colors={[
+                      colors.primaryLight,
+                      colors.primary,
+                      colors.primaryDark,
+                    ]}
+                  />
                 </View>
               </View>
             </View>
@@ -1526,7 +1586,7 @@ export default function ConversationalOnboarding({
             className="px-4 pb-4 pt-3"
             style={{
               borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
+              borderTopColor: colors.border,
             }}
           >
             <View className="flex-row flex-wrap gap-2">
@@ -1551,8 +1611,10 @@ export default function ConversationalOnboarding({
                 className="flex-row items-center gap-1 p-1"
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <RotateCcw size={12} color="#475569" />
-                <Text className="text-xs text-slate-600">Reset</Text>
+                <RotateCcw size={12} color={colors.iconColor} />
+                <Text className="text-xs" style={{ color: colors.iconColor }}>
+                  Reset
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1568,11 +1630,14 @@ export default function ConversationalOnboarding({
             className="p-4"
             style={{
               borderTopWidth: 1,
-              borderTopColor: 'rgba(255,255,255,0.06)',
+              borderTopColor: colors.border,
             }}
           >
             {currentStepData.hint && (
-              <Text className="mb-2 text-xs text-slate-500">
+              <Text
+                className="mb-2 text-xs"
+                style={{ color: colors.iconColor }}
+              >
                 {currentStepData.hint}
               </Text>
             )}
@@ -1583,12 +1648,14 @@ export default function ConversationalOnboarding({
                 placeholder={
                   currentStepData.placeholder ?? 'Type your response...'
                 }
-                className="flex-1 rounded-xl bg-surface-input text-white px-3"
+                className="flex-1 rounded-xl px-3"
                 style={{
+                  color: colors.text,
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.10)',
+                  borderColor: colors.border,
+                  backgroundColor: colors.muted,
                 }}
-                placeholderTextColor="#475569"
+                placeholderTextColor={colors.iconColor}
                 onSubmitEditing={handleSubmit}
                 returnKeyType="send"
               />
@@ -1598,19 +1665,20 @@ export default function ConversationalOnboarding({
                 className="w-12 items-center justify-center rounded-xl"
                 style={{
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.10)',
+                  borderColor: colors.border,
                   backgroundColor: 'transparent',
                 }}
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
-                <RotateCcw size={16} color="#475569" />
+                <RotateCcw size={16} color={colors.iconColor} />
               </Pressable>
               {/* Send button — matches web's Send icon button */}
               <Pressable
                 onPress={handleSubmit}
-                className="w-12 items-center justify-center rounded-xl bg-teal-500"
+                className="w-12 items-center justify-center rounded-xl"
+                style={{ backgroundColor: colors.primary }}
               >
-                <Send size={16} color="white" />
+                <Send size={16} color={colors.primaryForeground} />
               </Pressable>
             </View>
           </View>
@@ -1622,15 +1690,19 @@ export default function ConversationalOnboarding({
           className="shrink-0 p-4"
           style={{
             borderTopWidth: 1,
-            borderTopColor: 'rgba(255,255,255,0.06)',
+            borderTopColor: colors.border,
           }}
         >
           <Button
             size="xl"
             onPress={() => onContinueToPersonality()}
-            className="w-full rounded-2xl bg-teal-500 items-center justify-center"
+            className="w-full rounded-2xl items-center justify-center"
+            style={{ backgroundColor: colors.primary }}
           >
-            <Text className="font-semibold text-[#0a0a0a]">
+            <Text
+              className="font-semibold"
+              style={{ color: colors.primaryForeground }}
+            >
               Continue to personality analysis
             </Text>
           </Button>

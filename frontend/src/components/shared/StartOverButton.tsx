@@ -51,8 +51,8 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
 
         {/* Text */}
         <div className="mb-7 space-y-2 text-center">
-          <h3 className="text-lg font-bold text-white">Start Over?</h3>
-          <p className="text-sm leading-relaxed text-slate-400">
+          <h3 className="text-lg font-bold text-foreground">Start Over?</h3>
+          <p className="text-sm leading-relaxed text-muted-foreground">
             This will permanently delete all progress for this child, including personality results,
             growth area answers, and goal plans.
           </p>

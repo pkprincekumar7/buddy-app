@@ -18,12 +18,12 @@ const UserNotRegisteredError = () => {
               />
             </svg>
           </div>
-          <h1 className="mb-4 text-3xl font-bold text-white">Access Restricted</h1>
-          <p className="mb-8 text-slate-400">
+          <h1 className="mb-4 text-3xl font-bold text-foreground">Access Restricted</h1>
+          <p className="mb-8 text-muted-foreground">
             You are not registered to use this application. Please contact the app administrator to
             request access.
           </p>
-          <div className="rounded-md bg-surface-elevated p-4 text-sm text-slate-400">
+          <div className="rounded-md bg-surface-elevated p-4 text-sm text-muted-foreground">
             <p>If you believe this is an error, you can:</p>
             <ul className="mt-2 list-inside list-disc space-y-1">
               <li>Verify you are logged in with the correct account</li>

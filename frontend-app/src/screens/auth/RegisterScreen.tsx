@@ -14,6 +14,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { COUNTRIES } from '@/lib/countries';
@@ -25,6 +26,7 @@ type RegisterNavProp = StackNavigationProp<AuthStackParamList, 'Register'>;
 export default function RegisterScreen() {
   const navigation = useNavigation<RegisterNavProp>();
   const { refetchUser, refetchChildren } = useAuth();
+  const { colors } = useTheme();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -84,7 +86,7 @@ export default function RegisterScreen() {
   return (
     <SafeAreaView
       className="flex-1 bg-background"
-      style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+      style={{ flex: 1, backgroundColor: colors.background }}
     >
       <KeyboardAvoidingView
         className="flex-1"
@@ -103,18 +105,35 @@ export default function RegisterScreen() {
         >
           {/* Card */}
           <Animated.View
-            style={cardFade}
-            className="w-full max-w-md rounded-2xl bg-card p-8 border border-border"
+            style={[
+              cardFade,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            className="w-full max-w-md rounded-2xl p-8 border"
           >
             {/* Header */}
             <View className="mb-8 items-center">
-              <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-teal-500">
-                <Text className="text-lg font-bold text-white">LP</Text>
+              <View
+                className="mb-3 h-12 w-12 items-center justify-center rounded-xl"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <Text
+                  className="text-lg font-bold"
+                  style={{ color: colors.primaryForeground }}
+                >
+                  LP
+                </Text>
               </View>
-              <Text className="text-2xl font-bold text-white">
+              <Text
+                className="text-2xl font-bold"
+                style={{ color: colors.text }}
+              >
                 Create account
               </Text>
-              <Text className="mt-1 text-sm text-slate-400">
+              <Text
+                className="mt-1 text-sm"
+                style={{ color: colors.textMuted }}
+              >
                 Choose an email and password for Buddy360
               </Text>
             </View>
@@ -122,16 +141,24 @@ export default function RegisterScreen() {
             <View className="gap-4">
               {/* Full name */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">
+                <Text
+                  className="mb-1 text-sm font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Full name
                 </Text>
                 <TextInput
-                  className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  style={{
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.surfaceElevated,
+                    color: colors.text,
+                  }}
                   autoComplete="name"
                   autoCapitalize="words"
                   autoCorrect={false}
                   placeholder="e.g. Sarah Johnson"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={colors.textMuted}
                   maxLength={255}
                   value={fullName}
                   onChangeText={setFullName}
@@ -140,17 +167,25 @@ export default function RegisterScreen() {
 
               {/* Email */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">
+                <Text
+                  className="mb-1 text-sm font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Username (email)
                 </Text>
                 <TextInput
-                  className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  style={{
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.surfaceElevated,
+                    color: colors.text,
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoComplete="email"
                   placeholder="you@example.com"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={colors.textMuted}
                   value={email}
                   onChangeText={setEmail}
                 />
@@ -158,7 +193,10 @@ export default function RegisterScreen() {
 
               {/* Country */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">
+                <Text
+                  className="mb-1 text-sm font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Country
                 </Text>
                 <Button
@@ -166,11 +204,14 @@ export default function RegisterScreen() {
                   onPress={() => setShowCountryPicker(true)}
                   className="w-full justify-start"
                 >
-                  <Text className="text-sm text-foreground">
+                  <Text className="text-sm" style={{ color: colors.text }}>
                     {selectedCountryLabel}
                   </Text>
                 </Button>
-                <Text className="mt-1 text-xs text-slate-400">
+                <Text
+                  className="mt-1 text-xs"
+                  style={{ color: colors.textMuted }}
+                >
                   Determines where your data is stored to comply with local
                   privacy laws.
                 </Text>
@@ -178,15 +219,23 @@ export default function RegisterScreen() {
 
               {/* Password */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">
+                <Text
+                  className="mb-1 text-sm font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Password
                 </Text>
                 <TextInput
-                  className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  style={{
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.surfaceElevated,
+                    color: colors.text,
+                  }}
                   secureTextEntry
                   autoComplete="new-password"
                   placeholder="Min. 8 characters"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
                 />
@@ -194,22 +243,32 @@ export default function RegisterScreen() {
 
               {/* Confirm password */}
               <View>
-                <Text className="mb-1 text-sm font-medium text-slate-300">
+                <Text
+                  className="mb-1 text-sm font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Confirm password
                 </Text>
                 <TextInput
-                  className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                  className="rounded-lg border px-3 py-2 text-sm"
+                  style={{
+                    borderColor: colors.inputBorder,
+                    backgroundColor: colors.surfaceElevated,
+                    color: colors.text,
+                  }}
                   secureTextEntry
                   autoComplete="new-password"
                   placeholder="Repeat password"
-                  placeholderTextColor="#64748b"
+                  placeholderTextColor={colors.textMuted}
                   value={confirm}
                   onChangeText={setConfirm}
                 />
               </View>
 
               {error ? (
-                <Text className="text-sm text-red-500">{error}</Text>
+                <Text className="text-sm" style={{ color: colors.error }}>
+                  {error}
+                </Text>
               ) : null}
 
               <Button
@@ -225,7 +284,7 @@ export default function RegisterScreen() {
 
             {/* Navigate to Login */}
             <View className="mt-8 flex-row justify-center">
-              <Text className="text-sm text-slate-400">
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
                 Already have an account?{' '}
               </Text>
               <Button
@@ -234,7 +293,10 @@ export default function RegisterScreen() {
                 onPress={() => navigation.navigate('Login')}
                 className="p-0"
               >
-                <Text className="text-sm font-medium text-teal-500">
+                <Text
+                  className="text-sm font-medium"
+                  style={{ color: colors.primary }}
+                >
                   Sign in
                 </Text>
               </Button>
@@ -252,13 +314,16 @@ export default function RegisterScreen() {
       >
         <SafeAreaView
           className="flex-1 bg-background"
-          style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+          style={{ flex: 1, backgroundColor: colors.background }}
         >
           <View
             className="flex-row items-center justify-between border-b border-border px-4 py-3"
-            style={{ borderBottomColor: '#1e293b' }}
+            style={{ borderBottomColor: colors.border }}
           >
-            <Text className="text-base font-semibold text-white">
+            <Text
+              className="text-base font-semibold"
+              style={{ color: colors.text }}
+            >
               Select Country
             </Text>
             <Button
@@ -274,7 +339,8 @@ export default function RegisterScreen() {
               <Button
                 key={code}
                 variant="ghost"
-                className="w-full justify-start rounded-none border-b border-border/30 px-4"
+                className="w-full justify-start rounded-none border-b px-4"
+                style={{ borderBottomColor: colors.border + '4D' }}
                 onPress={() => {
                   setCountryCode(code);
                   setShowCountryPicker(false);
@@ -282,10 +348,11 @@ export default function RegisterScreen() {
               >
                 <Text
                   className={`text-sm ${
-                    countryCode === code
-                      ? 'font-semibold text-teal-400'
-                      : 'text-foreground'
+                    countryCode === code ? 'font-semibold' : ''
                   }`}
+                  style={{
+                    color: countryCode === code ? colors.primary : colors.text,
+                  }}
                 >
                   {label}
                 </Text>

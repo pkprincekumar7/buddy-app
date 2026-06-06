@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
+import { useTheme } from '@/lib/ThemeContext';
 
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts and app-level rerenders.
@@ -376,6 +377,7 @@ export default function ChildActivityGame({
   onSelectedIdsChange,
   onComplete,
 }: ChildActivityGameProps) {
+  const { colors } = useTheme();
   const game = areaGames[areaId] ?? areaGames['life_ambition']!;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(
@@ -510,11 +512,16 @@ export default function ChildActivityGame({
     <ScrollView className="flex-1" contentContainerClassName="pb-6">
       <View className="space-y-6">
         <View className="items-center">
-          <Text className="mb-2 text-center text-2xl font-bold text-white">
+          <Text
+            className="mb-2 text-center text-2xl font-bold"
+            style={{ color: colors.text }}
+          >
             {game.question}
           </Text>
-          <Text className="text-center text-slate-500">{game.subtitle}</Text>
-          <Text className="mt-2 text-sm text-emerald-600">
+          <Text className="text-center" style={{ color: colors.iconColor }}>
+            {game.subtitle}
+          </Text>
+          <Text className="mt-2 text-sm" style={{ color: colors.success }}>
             Selected: {ids.length}/{game.maxSelections}
           </Text>
         </View>
@@ -528,11 +535,12 @@ export default function ChildActivityGame({
               <Pressable
                 key={option.id}
                 onPress={() => toggleSelection(option.id)}
-                className={`overflow-hidden rounded-2xl border-4 ${
-                  isSelected ? 'border-emerald-500' : 'border-white/10'
-                }`}
-                style={{ width: '47%' }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                className="overflow-hidden rounded-2xl border-4"
+                style={{
+                  width: '47%',
+                  borderColor: isSelected ? colors.success : colors.border,
+                }}
+                android_ripple={{ color: colors.ripple }}
               >
                 {/* Image or fallback emoji tile */}
                 {!hasFailed ? (
@@ -562,7 +570,10 @@ export default function ChildActivityGame({
                 {/* Label overlay */}
                 <View className="absolute inset-0 flex-col justify-end p-3 bg-gradient-to-t from-black/60 to-transparent">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-sm font-semibold text-white flex-1 mr-1">
+                    <Text
+                      className="text-sm font-semibold flex-1 mr-1"
+                      style={{ color: colors.text }}
+                    >
                       {option.label}
                     </Text>
                     <EmojiText size="lg">{isSelected ? '✅' : '⭕'}</EmojiText>
@@ -579,9 +590,13 @@ export default function ChildActivityGame({
             void handleSubmit();
           }}
           disabled={ids.length === 0 || isSubmitting}
-          className="w-full rounded-2xl bg-emerald-500 items-center justify-center"
+          className="w-full rounded-2xl items-center justify-center"
+          style={{ backgroundColor: colors.success }}
         >
-          <Text className="font-semibold text-white">
+          <Text
+            className="font-semibold"
+            style={{ color: colors.primaryForeground }}
+          >
             {isSubmitting
               ? 'Generating Recommendations...'
               : 'Submit My Choices'}

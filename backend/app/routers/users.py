@@ -66,6 +66,7 @@ def _doc_to_preferences(user: dict) -> UserPreferences:
     prefs = user.get("preferences") or {}
     return UserPreferences(
         tts_enabled=prefs.get("tts_enabled", True),
+        dark_mode=prefs.get("dark_mode", True),
         last_visited_path=prefs.get("last_visited_path"),
     )
 
@@ -130,6 +131,8 @@ async def patch_preferences(
     set_fields: dict = {"updated_at": datetime.now(UTC)}
     if "tts_enabled" in body.model_fields_set:
         set_fields["preferences.tts_enabled"] = body.tts_enabled
+    if "dark_mode" in body.model_fields_set:
+        set_fields["preferences.dark_mode"] = body.dark_mode
     if "last_visited_path" in body.model_fields_set:
         set_fields["preferences.last_visited_path"] = body.last_visited_path
 

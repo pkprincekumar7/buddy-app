@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, View, Pressable, Text, ScrollView } from 'react-native';
 import type { ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 // Dialog (maps to RN Modal)
 
@@ -56,14 +57,16 @@ function DialogContent({
   onClose,
   ...props
 }: DialogContentProps) {
+  const { colors } = useTheme();
   return (
     <View className="flex-1 items-center justify-center bg-black/80">
       <Pressable className="absolute inset-0" onPress={onClose} />
       <View
         className={cn(
-          'relative z-10 w-[90%] max-w-lg rounded-lg bg-background p-6 shadow-lg',
+          'relative z-10 w-[90%] max-w-lg rounded-lg p-6 shadow-lg',
           className,
         )}
+        style={{ backgroundColor: colors.background }}
         {...props}
       >
         {onClose && (
@@ -71,7 +74,9 @@ function DialogContent({
             className="absolute right-4 top-4 opacity-70"
             onPress={onClose}
           >
-            <Text className="text-foreground text-lg">✕</Text>
+            <Text className="text-lg" style={{ color: colors.text }}>
+              ✕
+            </Text>
           </Pressable>
         )}
         {children}
@@ -106,12 +111,11 @@ function DialogTitle({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
     <Text
-      className={cn(
-        'text-lg font-semibold leading-none text-foreground',
-        className,
-      )}
+      className={cn('text-lg font-semibold leading-none', className)}
+      style={{ color: colors.text }}
     >
       {children}
     </Text>
@@ -125,8 +129,12 @@ function DialogDescription({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   return (
-    <Text className={cn('text-sm text-muted-foreground', className)}>
+    <Text
+      className={cn('text-sm', className)}
+      style={{ color: colors.textMuted }}
+    >
       {children}
     </Text>
   );
@@ -138,14 +146,16 @@ function DialogScrollContent({
   onClose,
   ...props
 }: DialogContentProps) {
+  const { colors } = useTheme();
   return (
     <View className="flex-1 items-center justify-center bg-black/80">
       <Pressable className="absolute inset-0" onPress={onClose} />
       <View
         className={cn(
-          'relative z-10 w-[90%] max-w-lg rounded-lg bg-background shadow-lg',
+          'relative z-10 w-[90%] max-w-lg rounded-lg shadow-lg',
           className,
         )}
+        style={{ backgroundColor: colors.background }}
         {...props}
       >
         {onClose && (
@@ -153,7 +163,9 @@ function DialogScrollContent({
             className="absolute right-4 top-4 z-10 opacity-70"
             onPress={onClose}
           >
-            <Text className="text-foreground text-lg">✕</Text>
+            <Text className="text-lg" style={{ color: colors.text }}>
+              ✕
+            </Text>
           </Pressable>
         )}
         <ScrollView className="max-h-[80vh] p-6">{children}</ScrollView>

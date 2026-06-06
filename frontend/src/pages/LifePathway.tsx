@@ -24,15 +24,12 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-// Hex values kept for recharts SVG strokes and chart dot fills.
-const areaColors = {
-  life_ambition: '#8b5cf6',
-  self_care: '#ec4899',
-  critical_thinking: '#3b82f6',
-  creativity: '#f59e0b',
-  physical_wellness: '#10b981',
-  social_skills: '#7c3aed',
-};
+import { AREA_LINE_COLORS as areaColors } from '@/lib/gradientColors';
+
+const PRIMARY_CSS = 'hsl(var(--primary))';
+const MUTED_FG_CSS = 'hsl(var(--muted-foreground))';
+const SUCCESS_CSS = 'hsl(var(--success))';
+const CARD_CSS = 'hsl(var(--card))';
 
 // Tailwind bg classes for CSS (non-SVG) elements — avoids inline backgroundColor styles.
 const areaBgTw = {
@@ -40,7 +37,7 @@ const areaBgTw = {
   self_care: 'bg-pink-500',
   critical_thinking: 'bg-blue-500',
   creativity: 'bg-amber-400',
-  physical_wellness: 'bg-emerald-500',
+  physical_wellness: 'bg-success',
   social_skills: 'bg-violet-600',
 };
 
@@ -106,9 +103,9 @@ function CustomDot({
 }) {
   const color = milestoneAgeColorMap?.[payload?.['age'] as number];
   return color ? (
-    <circle cx={cx} cy={cy} r={7} fill={color} stroke="white" strokeWidth={2} />
+    <circle cx={cx} cy={cy} r={7} fill={color} stroke={CARD_CSS} strokeWidth={2} />
   ) : (
-    <circle cx={cx} cy={cy} r={4} fill="#10b981" />
+    <circle cx={cx} cy={cy} r={4} fill={SUCCESS_CSS} />
   );
 }
 
@@ -246,9 +243,7 @@ export default function LifePathway() {
                 age: currentAge + m.yearOffset,
                 text: m.text,
                 area: areaName ?? '',
-                color:
-                  (areaId ? (areaColors as Record<string, string>)[areaId] : undefined) ??
-                  '#10b981',
+                color: (areaId ? areaColors[areaId] : undefined) ?? SUCCESS_CSS,
               }));
             })
             .sort((a, b) => a.age - b.age)
@@ -257,37 +252,37 @@ export default function LifePathway() {
               age: currentAge,
               text: 'Personalized profile created',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
             {
               age: currentAge + 1,
               text: 'Core strengths identified & enhanced',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
             {
               age: currentAge + 2,
               text: 'Weekly missions mastered',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
             {
               age: currentAge + 5,
               text: 'Multiple talents developed',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
             {
               age: currentAge + 7,
               text: 'Character strengths solidified',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
             {
               age: currentAge + 10,
               text: 'Ready for exceptional future',
               area: 'Core',
-              color: '#10b981',
+              color: SUCCESS_CSS,
             },
           ],
     [completedAreas, currentAge],
@@ -313,7 +308,7 @@ export default function LifePathway() {
           <div className="flex min-h-screen items-center justify-center bg-background">
             <motion.div
               {...SPINNER}
-              className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+              className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent"
             />
           </div>
         ) : (
@@ -330,7 +325,7 @@ export default function LifePathway() {
                   <div className="glow-teal-sm mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
                     <TrendingUp className="h-8 w-8 text-white" />
                   </div>
-                  <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
+                  <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                     Take a look at {childName}'s life journey planned and powered by Buddy360
                   </h1>
                   {completedAreas.length > 0 && (
@@ -341,7 +336,7 @@ export default function LifePathway() {
                           className={cn(
                             'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-white',
                             (area.area_id && (areaBgTw as Record<string, string>)[area.area_id]) ??
-                              'bg-emerald-500',
+                              'bg-success',
                           )}
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
@@ -358,10 +353,10 @@ export default function LifePathway() {
                   className="border-edge rounded-2xl bg-card p-6 md:p-8"
                 >
                   <div className="mb-6 text-center">
-                    <h2 className="mb-2 text-2xl font-bold tracking-tight text-white md:text-3xl">
+                    <h2 className="mb-2 text-2xl font-bold tracking-tight text-foreground md:text-3xl">
                       10-Year Growth Journey Comparison
                     </h2>
-                    <p className="text-slate-400">
+                    <p className="text-muted-foreground">
                       See how {childName}'s development accelerates with Buddy360
                       {completedAreas.length > 0 &&
                         ` across ${completedAreas.length} growth area${completedAreas.length > 1 ? 's' : ''}`}
@@ -371,25 +366,29 @@ export default function LifePathway() {
                   <div className="mb-6 h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={journeyData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="year" stroke="#475569" style={{ fontSize: '12px' }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--edge-rgb) / 0.05)" />
+                        <XAxis
+                          dataKey="year"
+                          stroke="hsl(var(--muted-foreground))"
+                          style={{ fontSize: '12px' }}
+                        />
                         <YAxis
-                          stroke="#475569"
+                          stroke="hsl(var(--muted-foreground))"
                           style={{ fontSize: '12px' }}
                           label={{
                             value: 'Growth Level',
                             angle: -90,
                             position: 'insideLeft',
-                            style: { fontSize: '12px', fill: '#475569' },
+                            style: { fontSize: '12px', fill: 'hsl(var(--muted-foreground))' },
                           }}
                         />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: '#1a1a1a',
-                            border: '1px solid rgba(255,255,255,0.08)',
+                            backgroundColor: 'hsl(var(--card))',
+                            border: '1px solid hsl(var(--border))',
                             borderRadius: '12px',
                             padding: '12px',
-                            color: '#e2e8f0',
+                            color: 'hsl(var(--foreground))',
                           }}
                           formatter={(value, name) => [`${String(value)}%`, name]}
                         />
@@ -397,10 +396,10 @@ export default function LifePathway() {
                         <Line
                           type="monotone"
                           dataKey="standard"
-                          stroke="#94a3b8"
+                          stroke={MUTED_FG_CSS}
                           strokeWidth={3}
                           name="Standard Journey"
-                          dot={{ fill: '#94a3b8', r: 4 }}
+                          dot={{ fill: MUTED_FG_CSS, r: 4 }}
                         />
                         {completedAreas.length > 0 ? (
                           completedAreas.map((area) => (
@@ -408,11 +407,7 @@ export default function LifePathway() {
                               key={area.area_id ?? area.area_name}
                               type="monotone"
                               dataKey={area.area_id ?? ''}
-                              stroke={
-                                (area.area_id &&
-                                  (areaColors as Record<string, string>)[area.area_id]) ??
-                                '#10b981'
-                              }
+                              stroke={(area.area_id && areaColors[area.area_id]) ?? SUCCESS_CSS}
                               strokeWidth={3}
                               name={`${area.area_name ?? ''} (Buddy360)`}
                               dot={<CustomDot milestoneAgeColorMap={milestoneAgeColorMap} />}
@@ -422,7 +417,7 @@ export default function LifePathway() {
                           <Line
                             type="monotone"
                             dataKey="buddy360"
-                            stroke="#10b981"
+                            stroke={PRIMARY_CSS}
                             strokeWidth={3}
                             name="Buddy360 Journey"
                             dot={<CustomDot milestoneAgeColorMap={milestoneAgeColorMap} />}
@@ -435,20 +430,20 @@ export default function LifePathway() {
                   {/* Milestone Legend */}
                   {buddy360Milestones.length > 0 && (
                     <div className="border-edge-faint mb-6 rounded-xl bg-surface-elevated p-4">
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                         ● Milestone markers on the Buddy360 line
                       </p>
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         {buddy360Milestones.map((m) => (
                           <div
                             key={`${m.age}-${m.text}`}
-                            className="flex items-center gap-2 text-sm text-slate-400"
+                            className="flex items-center gap-2 text-sm text-muted-foreground"
                           >
                             <span
                               className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
                               style={{ backgroundColor: m.color }}
                             />
-                            <span className="w-14 flex-shrink-0 font-medium text-slate-300">
+                            <span className="w-14 flex-shrink-0 font-medium text-foreground">
                               Age {m.age}
                             </span>
                             <span className="text-xs">{m.text}</span>
@@ -471,33 +466,35 @@ export default function LifePathway() {
                     {/* Standard Journey */}
                     <div className="space-y-4">
                       <div className="mb-4 flex items-center gap-2">
-                        <span className="bg-ghost-strong inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-slate-300">
+                        <span className="bg-ghost-strong inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-foreground">
                           1
                         </span>
-                        <h3 className="text-lg font-bold text-white">Standard Life Journey</h3>
+                        <h3 className="text-lg font-bold text-foreground">Standard Life Journey</h3>
                       </div>
                       <div className="border-edge-faint rounded-xl bg-surface-elevated p-4">
-                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-                          <Sparkles className="h-4 w-4 text-slate-400" />
+                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <Sparkles className="h-4 w-4 text-muted-foreground" />
                           The Analysis
                         </h4>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-muted-foreground">
                           {profile?.summary ??
                             `${childName} shows natural growth through standard educational pathways with typical developmental milestones.`}
                         </p>
                       </div>
                       <div className="border-edge-faint rounded-xl bg-surface-elevated p-4">
-                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                          <Target className="h-4 w-4 text-slate-400" />
+                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <Target className="h-4 w-4 text-muted-foreground" />
                           Key Milestones
                         </h4>
                         <div className="space-y-2.5">
                           {standardMilestones.map((milestone) => (
                             <div key={milestone.text} className="flex items-start gap-3">
-                              <div className="w-14 flex-shrink-0 text-xs font-medium text-slate-500">
+                              <div className="w-14 flex-shrink-0 text-xs font-medium text-muted-foreground">
                                 Age {milestone.age}
                               </div>
-                              <div className="flex-1 text-xs text-slate-400">{milestone.text}</div>
+                              <div className="flex-1 text-xs text-muted-foreground">
+                                {milestone.text}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -510,17 +507,17 @@ export default function LifePathway() {
                         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-sm font-bold text-white">
                           2
                         </span>
-                        <h3 className="text-lg font-bold text-white">
+                        <h3 className="text-lg font-bold text-foreground">
                           {childName}'s Journey with Buddy360
                         </h3>
                       </div>
 
-                      <div className="bg-brand-teal rounded-xl border border-teal-500/20 p-4">
-                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-teal-400">
+                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
+                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
                           <Sparkles className="h-4 w-4" />
                           Analysis
                         </h4>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-muted-foreground">
                           {profile?.summary ??
                             `${childName} experiences accelerated holistic growth through personalized guidance, targeted skill development, and continuous support.`}
                           {completedAreas.length > 0 &&
@@ -528,25 +525,25 @@ export default function LifePathway() {
                         </p>
                       </div>
 
-                      <div className="bg-brand-teal rounded-xl border border-teal-500/20 p-4">
-                        <h4 className="mb-2 text-sm font-semibold text-teal-400">
+                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
+                        <h4 className="mb-2 text-sm font-semibold text-primary">
                           Strengths Improvised by Buddy360
                         </h4>
                         <ul className="space-y-1.5">
                           {strengths.map((strength) => (
                             <li
                               key={strength}
-                              className="flex items-start gap-2 text-sm text-slate-400"
+                              className="flex items-start gap-2 text-sm text-muted-foreground"
                             >
-                              <span className="mt-0.5 text-teal-400">✓</span>
+                              <span className="mt-0.5 text-primary">✓</span>
                               <span>{strength}</span>
                             </li>
                           ))}
                         </ul>
                       </div>
 
-                      <div className="bg-brand-teal rounded-xl border border-teal-500/20 p-4">
-                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-teal-400">
+                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
+                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
                           <Award className="h-4 w-4" />
                           Accomplishments & Milestones
                         </h4>
@@ -556,10 +553,10 @@ export default function LifePathway() {
                               key={`${milestone.age}-${milestone.text}`}
                               className="flex items-start gap-3"
                             >
-                              <div className="w-14 flex-shrink-0 text-xs font-medium text-teal-500">
+                              <div className="w-14 flex-shrink-0 text-xs font-medium text-primary">
                                 Age {milestone.age}
                               </div>
-                              <div className="flex-1 text-xs font-medium text-slate-300">
+                              <div className="flex-1 text-xs font-medium text-foreground">
                                 {milestone.text}
                               </div>
                               {milestone.area !== 'Core' && (
@@ -581,15 +578,17 @@ export default function LifePathway() {
                 {/* Per-Growth-Area Detail Sections */}
                 {completedAreas.length > 0 && (
                   <motion.div {...slideUp(1.6)} className="space-y-4">
-                    <h2 className="text-2xl font-bold tracking-tight text-white">
+                    <h2 className="text-2xl font-bold tracking-tight text-foreground">
                       Growth Area Insights
                     </h2>
-                    <p className="text-slate-400">Recommendations for each area for {childName}</p>
+                    <p className="text-muted-foreground">
+                      Recommendations for each area for {childName}
+                    </p>
 
                     {completedAreas.map((area, idx) => {
                       const bgTw =
                         (area.area_id && (areaBgTw as Record<string, string>)[area.area_id]) ??
-                        'bg-emerald-500';
+                        'bg-success';
                       const recs: unknown[] =
                         Array.isArray(area.ai_three_month_recommendations) &&
                         area.ai_three_month_recommendations.length > 0
@@ -610,7 +609,7 @@ export default function LifePathway() {
                             >
                               {idx + 1}
                             </span>
-                            <h3 className="text-lg font-bold text-white">{area.area_name}</h3>
+                            <h3 className="text-lg font-bold text-foreground">{area.area_name}</h3>
                             <span
                               className={cn(
                                 'ml-auto rounded-full px-2 py-0.5 text-xs font-medium text-white',
@@ -623,14 +622,14 @@ export default function LifePathway() {
 
                           {recs.length > 0 ? (
                             <div>
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                                 3-Month Recommendations
                               </p>
                               <ul className="space-y-2">
                                 {recs.map((rec, i) => (
                                   <li
                                     key={`${area.area_id ?? idx}-${i}`}
-                                    className="flex items-start gap-2 text-sm text-slate-400"
+                                    className="flex items-start gap-2 text-sm text-muted-foreground"
                                   >
                                     <span
                                       className={cn(
@@ -646,7 +645,7 @@ export default function LifePathway() {
                               </ul>
                             </div>
                           ) : (
-                            <p className="text-sm italic text-slate-600">
+                            <p className="text-sm italic text-muted-foreground">
                               No recommendations generated for this area yet.
                             </p>
                           )}
@@ -665,18 +664,18 @@ export default function LifePathway() {
                         <span className="text-3xl">🎉</span>
                         <Sparkles className="h-6 w-6 text-amber-400" />
                       </div>
-                      <p className="text-xl font-bold leading-relaxed text-white md:text-2xl">
+                      <p className="text-xl font-bold leading-relaxed text-foreground md:text-2xl">
                         Welcome{' '}
-                        <span className="text-teal-400">
+                        <span className="text-primary">
                           {user?.full_name?.split(' ')[0] ?? 'Parent'}
                         </span>{' '}
-                        and <span className="text-emerald-400">{childName}</span> to Buddy360. We
-                        look forward to powering up your life in all possible dimensions.
+                        and <span className="text-success">{childName}</span> to Buddy360. We look
+                        forward to powering up your life in all possible dimensions.
                       </p>
                     </div>
                   )}
                   <div className="mx-auto max-w-3xl">
-                    <p className="mt-2 text-sm text-slate-500">
+                    <p className="mt-2 text-sm text-muted-foreground">
                       Click below to continue this interesting journey with Buddy360.
                     </p>
                   </div>
@@ -726,7 +725,7 @@ export default function LifePathway() {
                     <button
                       type="button"
                       onClick={closeConcernModal}
-                      className="hover:bg-ghost-strong absolute right-4 top-4 rounded-xl p-2 text-slate-500 transition-colors hover:text-white focus:outline-none"
+                      className="hover:bg-ghost-strong absolute right-4 top-4 rounded-xl p-2 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
                       aria-label="Close dialog"
                     >
                       <X className="h-5 w-5" />
@@ -750,30 +749,32 @@ export default function LifePathway() {
                               <Sparkles className="h-5 w-5 text-white" />
                             </div>
                             <div>
-                              <h3 className="text-lg font-bold text-white">One last thing!</h3>
-                              <p className="text-sm text-slate-500">Buddy360 wants to know</p>
+                              <h3 className="text-lg font-bold text-foreground">One last thing!</h3>
+                              <p className="text-sm text-muted-foreground">
+                                Buddy360 wants to know
+                              </p>
                             </div>
                           </div>
-                          <p className="text-base leading-relaxed text-slate-300">
+                          <p className="text-base leading-relaxed text-foreground">
                             Hey{' '}
-                            <span className="font-semibold text-teal-400">
+                            <span className="font-semibold text-primary">
                               {user?.full_name?.split(' ')[0] ?? 'there'}
                             </span>
                             , is there anything that you want Buddy360 to work on currently with
                             respect to{' '}
-                            <span className="font-semibold text-emerald-400">{childName}</span>?
+                            <span className="font-semibold text-success">{childName}</span>?
                           </p>
                           <TextareaWithVoice
                             value={concernInput}
                             onChange={(e) => setConcernInput(e.target.value)}
                             placeholder={`e.g., I want to improve English speaking skills for ${childName}.`}
-                            className="border-edge-strong min-h-[120px] w-full resize-none rounded-xl bg-section-dark p-4 text-white placeholder:text-slate-600 focus:border-teal-500/50"
+                            className="border-edge-strong min-h-[120px] w-full resize-none rounded-xl bg-section-dark p-4 text-foreground placeholder:text-muted-foreground focus:border-primary/50"
                           />
                           <div className="flex gap-3">
                             <Button
                               variant="outline"
                               onClick={handleProceedToDashboard}
-                              className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-xl bg-transparent text-base text-slate-300"
+                              className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-xl bg-transparent text-base text-foreground"
                             >
                               Skip for now
                             </Button>
@@ -801,11 +802,11 @@ export default function LifePathway() {
                             <span className="text-2xl">✅</span>
                           </div>
                           <div>
-                            <h3 className="mb-2 text-lg font-bold text-white">Got it!</h3>
-                            <p className="leading-relaxed text-slate-400">
+                            <h3 className="mb-2 text-lg font-bold text-foreground">Got it!</h3>
+                            <p className="leading-relaxed text-muted-foreground">
                               I got that. We will work with{' '}
-                              <span className="font-semibold text-emerald-400">{childName}</span> on
-                              the same.
+                              <span className="font-semibold text-success">{childName}</span> on the
+                              same.
                             </p>
                           </div>
                           <Button

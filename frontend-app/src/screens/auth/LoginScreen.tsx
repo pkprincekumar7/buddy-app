@@ -23,6 +23,7 @@ import {
   statusCodes,
 } from '@react-native-google-signin/google-signin';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +36,7 @@ type LoginNavProp = StackNavigationProp<AuthStackParamList, 'Login'>;
 export default function LoginScreen() {
   const navigation = useNavigation<LoginNavProp>();
   const { refetchUser, refetchChildren } = useAuth();
+  const { colors } = useTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -174,7 +176,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView
       className="flex-1 bg-background"
-      style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+      style={{ flex: 1, backgroundColor: colors.background }}
     >
       <KeyboardAvoidingView
         className="flex-1"
@@ -193,16 +195,35 @@ export default function LoginScreen() {
         >
           {/* Card */}
           <Animated.View
-            style={cardFade}
-            className="w-full max-w-md rounded-2xl bg-card p-8 border border-border"
+            style={[
+              cardFade,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            className="w-full max-w-md rounded-2xl p-8 border"
           >
             {/* Header */}
             <View className="mb-8 items-center">
-              <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-teal-500">
-                <Text className="text-lg font-bold text-white">LP</Text>
+              <View
+                className="mb-3 h-12 w-12 items-center justify-center rounded-xl"
+                style={{ backgroundColor: colors.primary }}
+              >
+                <Text
+                  className="text-lg font-bold"
+                  style={{ color: colors.primaryForeground }}
+                >
+                  LP
+                </Text>
               </View>
-              <Text className="text-2xl font-bold text-white">Sign in</Text>
-              <Text className="mt-1 text-sm text-slate-400">
+              <Text
+                className="text-2xl font-bold"
+                style={{ color: colors.text }}
+              >
+                Sign in
+              </Text>
+              <Text
+                className="mt-1 text-sm"
+                style={{ color: colors.textMuted }}
+              >
                 Buddy360 — continue to your pathway
               </Text>
             </View>
@@ -211,11 +232,19 @@ export default function LoginScreen() {
               <View className="gap-4">
                 {/* Email */}
                 <View>
-                  <Text className="mb-1 text-sm font-medium text-slate-300">
+                  <Text
+                    className="mb-1 text-sm font-medium"
+                    style={{ color: colors.textMuted }}
+                  >
                     Username (email)
                   </Text>
                   <TextInput
-                    className="form-input rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                    className="form-input rounded-lg border px-3 py-2 text-sm"
+                    style={{
+                      borderColor: colors.inputBorder,
+                      backgroundColor: colors.surfaceElevated,
+                      color: colors.text,
+                    }}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -223,28 +252,38 @@ export default function LoginScreen() {
                     value={email}
                     onChangeText={setEmail}
                     placeholder="you@example.com"
-                    placeholderTextColor="#64748b"
+                    placeholderTextColor={colors.textMuted}
                   />
                 </View>
 
                 {/* Password */}
                 <View>
-                  <Text className="mb-1 text-sm font-medium text-slate-300">
+                  <Text
+                    className="mb-1 text-sm font-medium"
+                    style={{ color: colors.textMuted }}
+                  >
                     Password
                   </Text>
                   <TextInput
-                    className="form-input rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+                    className="form-input rounded-lg border px-3 py-2 text-sm"
+                    style={{
+                      borderColor: colors.inputBorder,
+                      backgroundColor: colors.surfaceElevated,
+                      color: colors.text,
+                    }}
                     secureTextEntry
                     autoComplete="password"
                     value={password}
                     onChangeText={setPassword}
                     placeholder="••••••••"
-                    placeholderTextColor="#64748b"
+                    placeholderTextColor={colors.textMuted}
                   />
                 </View>
 
                 {error ? (
-                  <Text className="text-sm text-red-500">{error}</Text>
+                  <Text className="text-sm" style={{ color: colors.error }}>
+                    {error}
+                  </Text>
                 ) : null}
 
                 <Button
@@ -260,7 +299,9 @@ export default function LoginScreen() {
                 {/* Google Sign-In — Android only (iOS sign-in not yet supported) */}
                 {Platform.OS !== 'ios' && (
                   <View style={{ marginTop: 8, alignItems: 'center', gap: 12 }}>
-                    <Text style={{ fontSize: 12, color: '#64748b' }}>or</Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                      or
+                    </Text>
                     <GoogleSigninButton
                       size={GoogleSigninButton.Size.Wide}
                       color={GoogleSigninButton.Color.Light}
@@ -281,16 +322,33 @@ export default function LoginScreen() {
 
             {/* Google new-user: country selector step */}
             {pendingGoogleToken ? (
-              <View className="mt-6 rounded-xl border border-teal-500/25 bg-card p-4">
-                <Text className="mb-3 text-sm font-medium text-white">
+              <View
+                className="mt-6 rounded-xl border p-4"
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.primary + '40',
+                }}
+              >
+                <Text
+                  className="mb-3 text-sm font-medium"
+                  style={{ color: colors.text }}
+                >
                   One more step
                 </Text>
-                <Text className="mb-3 text-xs text-slate-400">
+                <Text
+                  className="mb-3 text-xs"
+                  style={{ color: colors.textMuted }}
+                >
                   Select your country so we can store your data in the right
                   region.
                 </Text>
                 {error ? (
-                  <Text className="mb-3 text-sm text-red-400">{error}</Text>
+                  <Text
+                    className="mb-3 text-sm"
+                    style={{ color: colors.error }}
+                  >
+                    {error}
+                  </Text>
                 ) : null}
 
                 {/* Country picker trigger */}
@@ -299,7 +357,7 @@ export default function LoginScreen() {
                   onPress={() => setShowCountryPicker(true)}
                   className="mb-3 w-full justify-start"
                 >
-                  <Text className="text-sm text-foreground">
+                  <Text className="text-sm" style={{ color: colors.text }}>
                     {selectedCountryLabel}
                   </Text>
                 </Button>
@@ -313,13 +371,16 @@ export default function LoginScreen() {
                 >
                   <SafeAreaView
                     className="flex-1 bg-background"
-                    style={{ flex: 1, backgroundColor: '#0a0a0a' }}
+                    style={{ flex: 1, backgroundColor: colors.background }}
                   >
                     <View
                       className="flex-row items-center justify-between border-b border-border px-4 py-3"
-                      style={{ borderBottomColor: '#1e293b' }}
+                      style={{ borderBottomColor: colors.border }}
                     >
-                      <Text className="text-base font-semibold text-white">
+                      <Text
+                        className="text-base font-semibold"
+                        style={{ color: colors.text }}
+                      >
                         Select Country
                       </Text>
                       <Button
@@ -335,7 +396,8 @@ export default function LoginScreen() {
                         <Button
                           key={code}
                           variant="ghost"
-                          className="w-full justify-start rounded-none border-b border-border/30 px-4"
+                          className="w-full justify-start rounded-none border-b px-4"
+                          style={{ borderBottomColor: colors.border + '4D' }}
                           onPress={() => {
                             setGoogleCountry(code);
                             setShowCountryPicker(false);
@@ -343,10 +405,14 @@ export default function LoginScreen() {
                         >
                           <Text
                             className={`text-sm ${
-                              googleCountry === code
-                                ? 'font-semibold text-teal-400'
-                                : 'text-foreground'
+                              googleCountry === code ? 'font-semibold' : ''
                             }`}
+                            style={{
+                              color:
+                                googleCountry === code
+                                  ? colors.primary
+                                  : colors.text,
+                            }}
                           >
                             {label}
                           </Text>
@@ -383,9 +449,14 @@ export default function LoginScreen() {
 
             {/* Navigate to Register */}
             <View className="mt-8 flex-row items-center justify-center">
-              <Text className="text-sm text-slate-400">New here? </Text>
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
+                New here?{' '}
+              </Text>
               <Pressable onPress={() => navigation.navigate('Register')}>
-                <Text className="text-sm font-medium text-teal-500">
+                <Text
+                  className="text-sm font-medium"
+                  style={{ color: colors.primary }}
+                >
                   Create an account
                 </Text>
               </Pressable>
@@ -400,17 +471,26 @@ export default function LoginScreen() {
         transparent
         animationType="fade"
       >
-        <View className="flex-1 items-center justify-center gap-8 bg-background/95">
+        <View
+          className="flex-1 items-center justify-center gap-8"
+          style={{ backgroundColor: colors.background, opacity: 0.97 }}
+        >
           {/* Dual-ring spinner */}
           <View className="relative h-20 w-20 items-center justify-center">
-            <View className="absolute inset-0 rounded-full border-4 border-teal-500/20" />
-            <ActivityIndicator size="large" color="#14b8a6" />
+            <View
+              className="absolute inset-0 rounded-full border-4"
+              style={{ borderColor: colors.primary + '33' }}
+            />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
           <View className="items-center gap-1">
-            <Text className="text-base font-semibold text-white">
+            <Text
+              className="text-base font-semibold"
+              style={{ color: colors.text }}
+            >
               {loadingMessage}
             </Text>
-            <Text className="text-sm text-slate-500">
+            <Text className="text-sm" style={{ color: colors.iconColor }}>
               Please wait a moment…
             </Text>
           </View>

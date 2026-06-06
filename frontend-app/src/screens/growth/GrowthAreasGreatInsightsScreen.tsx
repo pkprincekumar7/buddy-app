@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { toast } from '@/lib/toast';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
@@ -63,6 +64,7 @@ type GameResults = {
 
 // ── Double-ring spinner — mirrors web CSS double-ring animation ───────────────
 function DoubleRingSpinner() {
+  const { colors } = useTheme();
   const rot1 = useSharedValue(0);
   const rot2 = useSharedValue(0);
 
@@ -99,7 +101,7 @@ function DoubleRingSpinner() {
           left: 0,
           borderRadius: 32,
           borderWidth: 4,
-          borderColor: 'rgba(16,185,129,0.2)',
+          borderColor: `${colors.success}33`,
         }}
       />
       {/* Outer spinner */}
@@ -115,7 +117,7 @@ function DoubleRingSpinner() {
             borderRadius: 32,
             borderWidth: 4,
             borderColor: 'transparent',
-            borderTopColor: '#10b981',
+            borderTopColor: colors.primary,
           },
         ]}
       />
@@ -132,7 +134,7 @@ function DoubleRingSpinner() {
             borderRadius: 24,
             borderWidth: 4,
             borderColor: 'transparent',
-            borderTopColor: '#2dd4bf',
+            borderTopColor: colors.success,
           },
         ]}
       />
@@ -150,6 +152,7 @@ function AnimatedRecItem({
   index: number;
   areaColor: string;
 }) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0);
   const translateX = useSharedValue(-16);
 
@@ -178,14 +181,22 @@ function AnimatedRecItem({
           gap: 12,
           borderRadius: 12,
           padding: 12,
+          backgroundColor: colors.muted,
         },
       ]}
-      className="bg-surface-input"
     >
       <GradientIconBox from={from} to={to} size={24} radius={8} diagonal>
-        <Text className="text-xs font-bold text-white">{index + 1}</Text>
+        <Text
+          className="text-xs font-bold"
+          style={{ color: colors.primaryForeground }}
+        >
+          {index + 1}
+        </Text>
       </GradientIconBox>
-      <Text className="flex-1 text-sm leading-relaxed text-slate-300">
+      <Text
+        className="flex-1 text-sm leading-relaxed"
+        style={{ color: colors.textMuted }}
+      >
         {rec}
       </Text>
     </Animated.View>
@@ -194,6 +205,7 @@ function AnimatedRecItem({
 
 export default function GrowthAreasGreatInsightsScreen() {
   const navigation = useNavigation<GrowthNavProp>();
+  const { colors } = useTheme();
   const route = useRoute<GrowthRouteProp>();
   const { activityId } = route.params as { activityId: string };
   const {
@@ -377,23 +389,31 @@ export default function GrowthAreasGreatInsightsScreen() {
 
   if (isLoadingAuth || status === 'loading') {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: colors.background }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (status === 'error' || !area) {
     return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400">
+      <View
+        className="flex-1 items-center justify-center gap-4 px-4"
+        style={{ backgroundColor: colors.background }}
+      >
+        <Text style={{ color: colors.textMuted }}>
           Could not load insights. Please try again.
         </Text>
         <Button
           onPress={() => navigation.navigate('GrowthAreas')}
           className="rounded-2xl px-8"
         >
-          <Text className="text-white">Back to Growth Areas</Text>
+          <Text style={{ color: colors.primaryForeground }}>
+            Back to Growth Areas
+          </Text>
         </Button>
       </View>
     );
@@ -407,9 +427,15 @@ export default function GrowthAreasGreatInsightsScreen() {
   const answeredQuestions = questions.filter(q => interactiveAnswers[q.id]);
 
   return (
-    <Animated.View style={contentStyle} className="flex-1 bg-background">
+    <Animated.View
+      style={[contentStyle, { backgroundColor: colors.background }]}
+      className="flex-1"
+    >
       {/* Area header */}
-      <View className="border-b border-white/10 bg-slate-900/90 px-4 py-3">
+      <View
+        className="border-b px-4 py-3"
+        style={{ backgroundColor: colors.card, borderColor: colors.border }}
+      >
         <View className="flex-row items-center gap-3">
           <GradientIconBox
             from={gradFrom}
@@ -418,9 +444,12 @@ export default function GrowthAreasGreatInsightsScreen() {
             radius={12}
             diagonal
           >
-            <Icon size={20} color="white" />
+            <Icon size={20} color={colors.primaryForeground} />
           </GradientIconBox>
-          <Text className="text-sm font-semibold text-white">
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: colors.text }}
+          >
             {area.name} — Great Insights
           </Text>
         </View>
@@ -445,12 +474,15 @@ export default function GrowthAreasGreatInsightsScreen() {
             radius={20}
             diagonal
           >
-            <Icon size={40} color="white" />
+            <Icon size={40} color={colors.primaryForeground} />
           </GradientIconBox>
-          <Text className="mb-2 text-2xl font-bold text-white mt-4">
+          <Text
+            className="mb-2 text-2xl font-bold mt-4"
+            style={{ color: colors.text }}
+          >
             Great Insights!
           </Text>
-          <Text className="text-slate-400">
+          <Text style={{ color: colors.textMuted }}>
             Here's what we learned about {childName}'s {area.name}
           </Text>
         </View>
@@ -459,23 +491,34 @@ export default function GrowthAreasGreatInsightsScreen() {
           {/* Q&A summary */}
           {answeredQuestions.length > 0 && (
             <View
-              className="gap-3 rounded-2xl bg-card p-6"
-              style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+              className="gap-3 rounded-2xl p-6"
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+              }}
             >
               {answeredQuestions.map(q => {
                 const answerVal = interactiveAnswers[q.id];
                 return (
                   <View
                     key={q.id}
-                    className="border-b border-white/5 pb-3 last:border-0 last:pb-0"
+                    className="border-b pb-3 last:border-0 last:pb-0"
+                    style={{ borderColor: colors.border }}
                   >
-                    <Text className="mb-1 text-xs text-slate-500">
+                    <Text
+                      className="mb-1 text-xs"
+                      style={{ color: colors.iconColor }}
+                    >
                       {q.question.replace(
                         /\{name\}/g,
                         childName || 'your child',
                       )}
                     </Text>
-                    <Text className="text-sm font-medium text-white">
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: colors.text }}
+                    >
                       {typeof answerVal === 'string' ? answerVal : ''}
                     </Text>
                   </View>
@@ -487,31 +530,41 @@ export default function GrowthAreasGreatInsightsScreen() {
           {/* Child game results — bg-surface-elevated sub-cards (matches web) */}
           {childGameResults && (
             <View
-              className="gap-4 rounded-2xl bg-card p-6"
-              style={{ borderWidth: 1, borderColor: 'rgba(52,211,153,0.20)' }}
+              className="gap-4 rounded-2xl p-6"
+              style={{
+                borderWidth: 1,
+                borderColor: colors.success + '33',
+                backgroundColor: colors.card,
+              }}
             >
               <View className="mb-2 flex-row items-center gap-2">
                 {/* Always emerald→teal, mirrors web's from-emerald-500 to-teal-600 */}
                 <GradientIconBox
-                  from="#10b981"
-                  to="#0d9488"
+                  from={colors.primary}
+                  to={colors.primaryDark}
                   size={40}
                   radius={20}
                   diagonal
                 >
-                  <Sparkles size={20} color="white" />
+                  <Sparkles size={20} color={colors.primaryForeground} />
                 </GradientIconBox>
-                <Text className="font-bold text-white">
+                <Text className="font-bold" style={{ color: colors.text }}>
                   Recommendations for {childName}
                 </Text>
               </View>
 
               {childGameResults.summary ? (
-                <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">
+                <View
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: colors.surfaceElevated }}
+                >
+                  <Text
+                    className="mb-2 font-semibold"
+                    style={{ color: colors.text }}
+                  >
                     What This Reveals
                   </Text>
-                  <Text className="text-sm text-slate-400">
+                  <Text className="text-sm" style={{ color: colors.textMuted }}>
                     {childGameResults.summary}
                   </Text>
                 </View>
@@ -519,15 +572,24 @@ export default function GrowthAreasGreatInsightsScreen() {
 
               {Array.isArray(childGameResults.suggested_activities) &&
               childGameResults.suggested_activities.length > 0 ? (
-                <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">
+                <View
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: colors.surfaceElevated }}
+                >
+                  <Text
+                    className="mb-2 font-semibold"
+                    style={{ color: colors.text }}
+                  >
                     Suggested Activities
                   </Text>
                   <View className="gap-2">
                     {childGameResults.suggested_activities.map(act => (
                       <View key={act} className="flex-row items-start gap-2">
-                        <Text className="text-emerald-500">✓</Text>
-                        <Text className="flex-1 text-sm text-slate-400">
+                        <Text style={{ color: colors.success }}>✓</Text>
+                        <Text
+                          className="flex-1 text-sm"
+                          style={{ color: colors.textMuted }}
+                        >
                           {act}
                         </Text>
                       </View>
@@ -538,15 +600,24 @@ export default function GrowthAreasGreatInsightsScreen() {
 
               {Array.isArray(childGameResults.strengths) &&
               childGameResults.strengths.length > 0 ? (
-                <View className="rounded-xl bg-surface-elevated p-4">
-                  <Text className="mb-2 font-semibold text-white">
+                <View
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: colors.surfaceElevated }}
+                >
+                  <Text
+                    className="mb-2 font-semibold"
+                    style={{ color: colors.text }}
+                  >
                     Strengths to Encourage
                   </Text>
                   <View className="gap-2">
                     {childGameResults.strengths.map(s => (
                       <View key={s} className="flex-row items-start gap-2">
-                        <Text className="text-emerald-500">★</Text>
-                        <Text className="flex-1 text-sm text-slate-400">
+                        <Text style={{ color: colors.success }}>★</Text>
+                        <Text
+                          className="flex-1 text-sm"
+                          style={{ color: colors.textMuted }}
+                        >
                           {s}
                         </Text>
                       </View>
@@ -559,12 +630,16 @@ export default function GrowthAreasGreatInsightsScreen() {
 
           {/* 3-month recommendations */}
           <View
-            className="rounded-2xl bg-card p-6"
-            style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+            className="rounded-2xl p-6"
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
           >
             <View className="mb-4 flex-row items-center gap-2">
-              <Target size={20} color="#10b981" />
-              <Text className="font-semibold text-white">
+              <Target size={20} color={colors.success} />
+              <Text className="font-semibold" style={{ color: colors.text }}>
                 3-Month Recommendations for {area.name}
               </Text>
             </View>
@@ -572,8 +647,8 @@ export default function GrowthAreasGreatInsightsScreen() {
             {/* Idle — generate button */}
             {status === 'idle' && (
               <GradientButton
-                from="#10b981"
-                to="#0d9488"
+                from={colors.primary}
+                to={colors.primaryDark}
                 height={44}
                 borderRadius={16}
                 onPress={() => {
@@ -582,8 +657,13 @@ export default function GrowthAreasGreatInsightsScreen() {
                 style={{ width: '100%' }}
               >
                 <View className="flex-row items-center gap-2">
-                  <Sparkles size={16} color="#0a0a0a" />
-                  <Text className="font-semibold text-[#0a0a0a]">
+                  <Sparkles size={16} color={colors.primaryForeground} />
+                  <Text
+                    style={{
+                      fontWeight: '600',
+                      color: colors.primaryForeground,
+                    }}
+                  >
                     Generate Recommendations
                   </Text>
                 </View>
@@ -595,10 +675,13 @@ export default function GrowthAreasGreatInsightsScreen() {
               <View className="items-center gap-5 py-10">
                 <DoubleRingSpinner />
                 <View className="items-center gap-1">
-                  <Text className="text-sm font-semibold text-white">
+                  <Text
+                    className="text-sm font-semibold"
+                    style={{ color: colors.text }}
+                  >
                     Building your 3-Month Plan
                   </Text>
-                  <Text className="text-xs text-slate-500">
+                  <Text className="text-xs" style={{ color: colors.iconColor }}>
                     Personalising recommendations for {childName}…
                   </Text>
                 </View>
@@ -633,8 +716,12 @@ export default function GrowthAreasGreatInsightsScreen() {
               style={{ width: '100%' }}
             >
               <View className="flex-row items-center gap-1.5">
-                <Text className="font-semibold text-[#0a0a0a]">Done</Text>
-                <ChevronRight size={16} color="#0a0a0a" />
+                <Text
+                  style={{ fontWeight: '600', color: colors.primaryForeground }}
+                >
+                  Done
+                </Text>
+                <ChevronRight size={16} color={colors.primaryForeground} />
               </View>
             </GradientButton>
 
@@ -645,8 +732,11 @@ export default function GrowthAreasGreatInsightsScreen() {
               className="w-full rounded-2xl"
             >
               <View className="flex-row items-center gap-1.5">
-                <ChevronLeft size={16} color="#cbd5e1" />
-                <Text className="text-base font-medium text-slate-300">
+                <ChevronLeft size={16} color={colors.textMuted} />
+                <Text
+                  className="text-base font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Back
                 </Text>
               </View>

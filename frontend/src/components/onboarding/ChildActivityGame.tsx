@@ -456,11 +456,11 @@ export default function ChildActivityGame({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="mb-2 text-2xl font-bold text-white">
+        <h2 className="mb-2 text-2xl font-bold text-foreground">
           {game.question.replace('[child name]', childName?.trim() ?? 'your child')}
         </h2>
-        <p className="text-slate-500">{game.subtitle}</p>
-        <p className="mt-2 text-sm text-emerald-600">
+        <p className="text-muted-foreground">{game.subtitle}</p>
+        <p className="mt-2 text-sm text-success">
           Selected: {ids.length}/{game.maxSelections}
         </p>
       </div>
@@ -473,8 +473,8 @@ export default function ChildActivityGame({
             onClick={() => toggleSelection(option.id)}
             className={`relative overflow-hidden rounded-2xl border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
               ids.includes(option.id)
-                ? 'border-emerald-500 shadow-lg'
-                : 'border-c-edge hover:border-emerald-500/50'
+                ? 'border-success shadow-lg'
+                : 'border-c-edge hover:border-success/50'
             }`}
           >
             {option.image && !failedImages.has(option.id) ? (

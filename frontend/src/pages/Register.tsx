@@ -60,8 +60,10 @@ export default function Register() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
             <span className="text-lg font-bold text-white">LP</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">Create account</h1>
-          <p className="mt-1 text-sm text-slate-400">Choose an email and password for Buddy360</p>
+          <h1 className="text-2xl font-bold text-foreground">Create account</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Choose an email and password for Buddy360
+          </p>
         </div>
 
         <form
@@ -71,7 +73,7 @@ export default function Register() {
           className="space-y-4"
         >
           <div>
-            <label htmlFor="reg-name" className="mb-1 block text-sm font-medium text-slate-300">
+            <label htmlFor="reg-name" className="mb-1 block text-sm font-medium text-foreground">
               Full name
             </label>
             <input
@@ -87,7 +89,7 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-email" className="mb-1 block text-sm font-medium text-slate-300">
+            <label htmlFor="reg-email" className="mb-1 block text-sm font-medium text-foreground">
               Username (email)
             </label>
             <input
@@ -101,7 +103,7 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-country" className="mb-1 block text-sm font-medium text-slate-300">
+            <label htmlFor="reg-country" className="mb-1 block text-sm font-medium text-foreground">
               Country
             </label>
             <select
@@ -120,12 +122,15 @@ export default function Register() {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-muted-foreground">
               Determines where your data is stored to comply with local privacy laws.
             </p>
           </div>
           <div>
-            <label htmlFor="reg-password" className="mb-1 block text-sm font-medium text-slate-300">
+            <label
+              htmlFor="reg-password"
+              className="mb-1 block text-sm font-medium text-foreground"
+            >
               Password
             </label>
             <input
@@ -139,7 +144,7 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-confirm" className="mb-1 block text-sm font-medium text-slate-300">
+            <label htmlFor="reg-confirm" className="mb-1 block text-sm font-medium text-foreground">
               Confirm password
             </label>
             <input
@@ -153,14 +158,14 @@ export default function Register() {
             />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={busy}>
+          <Button type="submit" className="w-full bg-primary hover:bg-primary/80" disabled={busy}>
             {busy ? 'Creating account…' : 'Register'}
           </Button>
         </form>
 
-        <p className="mt-8 text-center text-sm text-slate-400">
+        <p className="mt-8 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link to="/Login" className="font-medium text-teal-700 hover:text-teal-800">
+          <Link to="/Login" className="font-medium text-primary hover:text-primary">
             Sign in
           </Link>
         </p>

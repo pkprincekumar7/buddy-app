@@ -200,7 +200,7 @@ export default function VoiceInput({
       ) : isRecording ? (
         <MicOff className="h-4 w-4 text-white" />
       ) : (
-        <Mic className="h-4 w-4 text-slate-400" />
+        <Mic className="h-4 w-4 text-muted-foreground" />
       )}
     </Button>
   );

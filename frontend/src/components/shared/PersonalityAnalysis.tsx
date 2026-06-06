@@ -591,10 +591,10 @@ export default function PersonalityAnalysis({
       <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
         <div className="mb-4 text-center">
           <div className="mb-3 flex items-center justify-center gap-2">
-            <Sparkles className="h-6 w-6 text-teal-400" />
-            <h3 className="text-2xl font-bold text-white">{profile.name}</h3>
+            <Sparkles className="h-6 w-6 text-primary" />
+            <h3 className="text-2xl font-bold text-foreground">{profile.name}</h3>
           </div>
-          <p className="text-sm text-slate-500">{childName}'s personality type</p>
+          <p className="text-sm text-muted-foreground">{childName}'s personality type</p>
         </div>
 
         <div className="mb-4 flex flex-wrap justify-center gap-2">
@@ -604,19 +604,23 @@ export default function PersonalityAnalysis({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: ANIM_TRAIT_BASE + i * ANIM_TRAIT_STEP }}
-              className="bg-ghost-light border-edge-faint rounded-full px-3 py-1 text-xs text-slate-300"
+              className="bg-ghost-light border-edge-faint rounded-full px-3 py-1 text-xs text-foreground"
             >
               {trait}
             </motion.span>
           ))}
         </div>
 
-        <p className="text-center text-sm leading-relaxed text-slate-400">{profile.description}</p>
+        <p className="text-center text-sm leading-relaxed text-muted-foreground">
+          {profile.description}
+        </p>
       </motion.div>
 
       {/* Section 3 — Personality Profile Breakdown */}
       <motion.div {...sectionAnim(1.6)} className="border-edge rounded-2xl bg-card p-6">
-        <h4 className="mb-4 text-sm font-semibold text-white">Personality Profile Breakdown</h4>
+        <h4 className="mb-4 text-sm font-semibold text-foreground">
+          Personality Profile Breakdown
+        </h4>
         <div className="space-y-4">
           {topTypes.map((item, index) => {
             const maxScore = topTypes[0]?.score ?? 0;
@@ -631,8 +635,8 @@ export default function PersonalityAnalysis({
                 transition={{ duration: 0.8, delay: ANIM_BAR_BASE + index * ANIM_BAR_STEP }}
               >
                 <div className="mb-1.5 flex justify-between text-xs">
-                  <span className="font-medium text-slate-300">{itemProfile.name}</span>
-                  <span className="text-slate-500">{Math.round(percentage)}%</span>
+                  <span className="font-medium text-foreground">{itemProfile.name}</span>
+                  <span className="text-muted-foreground">{Math.round(percentage)}%</span>
                 </div>
                 <div className="bg-ghost-light h-2 overflow-hidden rounded-full">
                   <motion.div
@@ -654,8 +658,8 @@ export default function PersonalityAnalysis({
 
       {/* Section 4 — Famous People */}
       <motion.div {...sectionAnim(2.4)} className="border-edge rounded-2xl bg-surface-elevated p-6">
-        <h4 className="mb-1 text-sm font-semibold text-white">Famous People</h4>
-        <p className="mb-5 text-xs text-slate-500">
+        <h4 className="mb-1 text-sm font-semibold text-foreground">Famous People</h4>
+        <p className="mb-5 text-xs text-muted-foreground">
           {childName} may relate to who share similar personality traits.
         </p>
         <div className="flex flex-wrap justify-center gap-6">
@@ -673,14 +677,23 @@ export default function PersonalityAnalysis({
                   alt={person.name}
                   className="h-full w-full object-cover"
                   onError={(e) => {
+                    const cardHSL =
+                      typeof document !== 'undefined'
+                        ? getComputedStyle(document.documentElement)
+                            .getPropertyValue('--card')
+                            .trim()
+                        : '0 0% 8%';
+                    const primaryHSL = getComputedStyle(document.documentElement)
+                      .getPropertyValue('--primary')
+                      .trim();
                     (e.target as HTMLImageElement).src = generateAvatarDataUri(person.name, {
-                      background: '1a1a1a',
-                      color: '#2dd4bf',
+                      background: `hsl(${cardHSL})`,
+                      color: `hsl(${primaryHSL})`,
                     });
                   }}
                 />
               </div>
-              <span className="max-w-[80px] text-center text-xs font-medium leading-tight text-slate-400">
+              <span className="max-w-[80px] text-center text-xs font-medium leading-tight text-muted-foreground">
                 {person.name}
               </span>
             </motion.div>
@@ -691,9 +704,9 @@ export default function PersonalityAnalysis({
       {/* Section 5 — Strengths */}
       <motion.div
         {...sectionAnim(3.2)}
-        className="rounded-2xl border border-emerald-500/15 bg-card p-5"
+        className="rounded-2xl border border-success/15 bg-card p-5"
       >
-        <h4 className="mb-3 text-sm font-semibold text-emerald-400">💪 Strengths</h4>
+        <h4 className="mb-3 text-sm font-semibold text-success">💪 Strengths</h4>
         <ul className="space-y-2">
           {(profile.strengths ?? []).map((s, i) => (
             <motion.li
@@ -701,9 +714,9 @@ export default function PersonalityAnalysis({
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.7, delay: ANIM_STRENGTH_BASE + i * ANIM_STRENGTH_STEP }}
-              className="flex items-center gap-2.5 text-sm text-slate-400"
+              className="flex items-center gap-2.5 text-sm text-muted-foreground"
             >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
               {s}
             </motion.li>
           ))}

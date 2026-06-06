@@ -31,6 +31,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { MainTabParamList } from '@/navigation';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { Button } from '@/components/ui/Button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
@@ -43,6 +44,7 @@ import {
   GradientIconBox,
   GradientButton,
 } from '@/components/shared/GradientView';
+import { AREA_LINE_COLORS } from '@/lib/gradientColors';
 import {
   TrendingUp,
   Sparkles,
@@ -91,15 +93,6 @@ const areaMilestoneMap: Record<string, { yearOffset: number; text: string }[]> =
       { yearOffset: 8, text: 'Strong social network' },
     ],
   };
-
-const areaColors: Record<string, string> = {
-  life_ambition: '#8b5cf6',
-  self_care: '#ec4899',
-  critical_thinking: '#3b82f6',
-  creativity: '#f59e0b',
-  physical_wellness: '#10b981',
-  social_skills: '#7c3aed',
-};
 
 const areaBgTw: Record<string, string> = {
   life_ambition: 'bg-violet-500',
@@ -198,6 +191,7 @@ function GrowthLineChart({
   /** Maps each yKey → display name shown in the tooltip (mirrors recharts Line name prop) */
   seriesNames: Record<string, string>;
 }) {
+  const { colors: themeColors } = useTheme();
   const PAD = { top: 12, right: 12, bottom: 28, left: 42 };
   const CHART_HEIGHT = 280;
   const innerW = chartWidth - PAD.left - PAD.right;
@@ -278,7 +272,7 @@ function GrowthLineChart({
             y1={sy(tick)}
             x2={PAD.left + innerW}
             y2={sy(tick)}
-            stroke="rgba(255,255,255,0.05)"
+            stroke={themeColors.subtleGridLine}
             strokeWidth={1}
             strokeDasharray="3,3"
           />
@@ -289,7 +283,7 @@ function GrowthLineChart({
           y1={PAD.top}
           x2={PAD.left}
           y2={PAD.top + innerH}
-          stroke="#475569"
+          stroke={themeColors.iconColor}
           strokeWidth={1}
         />
         <SvgLine
@@ -297,7 +291,7 @@ function GrowthLineChart({
           y1={PAD.top + innerH}
           x2={PAD.left + innerW}
           y2={PAD.top + innerH}
-          stroke="#475569"
+          stroke={themeColors.iconColor}
           strokeWidth={1}
         />
         {/* Y labels */}
@@ -306,7 +300,7 @@ function GrowthLineChart({
             key={`yl${tick}`}
             x={PAD.left - 5}
             y={sy(tick) + 3.5}
-            fill="#475569"
+            fill={themeColors.iconColor}
             fontSize={9}
             textAnchor="end"
           >
@@ -319,7 +313,7 @@ function GrowthLineChart({
             key={`xl${d['age']}`}
             x={sx(d['age'] ?? 0)}
             y={PAD.top + innerH + 16}
-            fill="#475569"
+            fill={themeColors.iconColor}
             fontSize={9}
             textAnchor="middle"
           >
@@ -331,7 +325,7 @@ function GrowthLineChart({
           <SvgPath
             key={key}
             d={makePath(key)}
-            stroke={colors[key] ?? '#10b981'}
+            stroke={colors[key] ?? themeColors.primary}
             strokeWidth={3}
             fill="none"
             strokeLinecap="round"
@@ -350,7 +344,7 @@ function GrowthLineChart({
                 cx={sx(age)}
                 cy={sy(yVal)}
                 r={4}
-                fill={colors[key] ?? '#10b981'}
+                fill={colors[key] ?? themeColors.primary}
               />
             );
           }),
@@ -369,7 +363,7 @@ function GrowthLineChart({
                 cy={sy(yVal)}
                 r={7}
                 fill={dotColor}
-                stroke="white"
+                stroke={themeColors.card}
                 strokeWidth={2}
               />
             );
@@ -382,7 +376,7 @@ function GrowthLineChart({
             y1={PAD.top}
             x2={cursorX}
             y2={PAD.top + innerH}
-            stroke="rgba(255,255,255,0.30)"
+            stroke={themeColors.cursorLine}
             strokeWidth={1.5}
             strokeDasharray="4,4"
           />
@@ -398,8 +392,8 @@ function GrowthLineChart({
                 cx={cursorX}
                 cy={sy(yVal)}
                 r={6}
-                fill={colors[key] ?? '#10b981'}
-                stroke="white"
+                fill={colors[key] ?? themeColors.primary}
+                stroke={themeColors.card}
                 strokeWidth={2}
               />
             );
@@ -431,14 +425,14 @@ function GrowthLineChart({
             top: tooltipTop,
             left: tooltipLeft,
             width: TOOLTIP_W,
-            backgroundColor: '#1a1a1a',
+            backgroundColor: themeColors.card,
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.08)',
+            borderColor: themeColors.border,
             borderRadius: 12,
             padding: 12,
             zIndex: 20,
             // Subtle shadow to lift above chart
-            shadowColor: '#000',
+            shadowColor: themeColors.shadowColor,
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.4,
             shadowRadius: 8,
@@ -448,7 +442,7 @@ function GrowthLineChart({
           {/* Title — "Age X" */}
           <Text
             style={{
-              color: '#e2e8f0',
+              color: themeColors.text,
               fontSize: 11,
               fontWeight: '600',
               marginBottom: 6,
@@ -475,18 +469,26 @@ function GrowthLineChart({
                     width: 8,
                     height: 8,
                     borderRadius: 4,
-                    backgroundColor: colors[key] ?? '#10b981',
+                    backgroundColor: colors[key] ?? themeColors.primary,
                     flexShrink: 0,
                   }}
                 />
                 <Text
-                  style={{ color: '#94a3b8', fontSize: 10, flex: 1 }}
+                  style={{
+                    color: themeColors.textMuted,
+                    fontSize: 10,
+                    flex: 1,
+                  }}
                   numberOfLines={1}
                 >
                   {seriesNames[key] ?? key}
                 </Text>
                 <Text
-                  style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '600' }}
+                  style={{
+                    color: themeColors.text,
+                    fontSize: 11,
+                    fontWeight: '600',
+                  }}
                 >
                   {val}%
                 </Text>
@@ -508,6 +510,7 @@ type LifePathwayNavigationProp = StackNavigationProp<MainTabParamList>;
 export default function LifePathwayScreen() {
   const navigation = useNavigation<LifePathwayNavigationProp>();
 
+  const { colors } = useTheme();
   const { activeChildId: childId } = useAuth();
   const { user } = useAuth();
   const {
@@ -640,7 +643,9 @@ export default function LifePathwayScreen() {
                 age: currentAge + m.yearOffset,
                 text: m.text,
                 area: areaName ?? '',
-                color: (areaId ? areaColors[areaId] : undefined) ?? '#10b981',
+                color:
+                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ??
+                  colors.primary,
               }));
             })
             .sort((a, b) => a.age - b.age)
@@ -649,40 +654,40 @@ export default function LifePathwayScreen() {
               age: currentAge,
               text: 'Personalized profile created',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
             {
               age: currentAge + 1,
               text: 'Core strengths identified & enhanced',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
             {
               age: currentAge + 2,
               text: 'Weekly missions mastered',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
             {
               age: currentAge + 5,
               text: 'Multiple talents developed',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
             {
               age: currentAge + 7,
               text: 'Character strengths solidified',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
             {
               age: currentAge + 10,
               text: 'Ready for exceptional future',
               area: 'Core',
-              color: '#10b981',
+              color: colors.primary,
             },
           ],
-    [completedAreas, currentAge],
+    [completedAreas, currentAge, colors.primary],
   );
 
   // Maps age → first milestone color — used for chart dots (mirrors web milestoneAgeColorMap)
@@ -718,15 +723,15 @@ export default function LifePathwayScreen() {
 
   const chartColors = useMemo<Record<string, string>>(() => {
     const m: Record<string, string> = {
-      standard: '#94a3b8',
-      buddy360: '#10b981',
+      standard: colors.textMuted,
+      buddy360: colors.primary,
     };
     completedAreas.forEach(a => {
       const id = a.area_id as string | undefined;
-      if (id) m[id] = areaColors[id] ?? '#10b981';
+      if (id) m[id] = AREA_LINE_COLORS[id] ?? colors.primary;
     });
     return m;
-  }, [completedAreas]);
+  }, [completedAreas, colors]);
 
   const chartYKeys = useMemo<string[]>(() => {
     if (completedAreas.length === 0) return ['standard', 'buddy360'];
@@ -751,15 +756,21 @@ export default function LifePathwayScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        style={{ flex: 1, backgroundColor: colors.background }}
+        className="items-center justify-center"
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
     <View style={{ flex: 1 }}>
-      <Animated.View style={contentStyle} className="flex-1 bg-background">
+      <Animated.View
+        style={[contentStyle, { backgroundColor: colors.background }]}
+        className="flex-1"
+      >
         <ScrollView
           ref={scrollRef}
           className="flex-1"
@@ -775,16 +786,19 @@ export default function LifePathwayScreen() {
             {/* Gradient icon box — mirrors web glow-teal-sm bg-gradient-to-br from-teal-400 to-teal-600 */}
             <View style={{ marginBottom: 8 }}>
               <GradientIconBox
-                from="#2dd4bf"
-                to="#0d9488"
+                from={colors.primaryLight}
+                to={colors.primary}
                 size={64}
                 radius={16}
                 diagonal
               >
-                <TrendingUp size={32} color="white" />
+                <TrendingUp size={32} color={colors.primaryForeground} />
               </GradientIconBox>
             </View>
-            <Text className="text-3xl font-bold tracking-tight text-white text-center">
+            <Text
+              style={{ color: colors.text }}
+              className="text-3xl font-bold tracking-tight text-center"
+            >
               Take a look at {childName}'s life journey planned and powered by
               Buddy360
             </Text>
@@ -800,8 +814,11 @@ export default function LifePathwayScreen() {
                       className={`flex-row items-center gap-1.5 rounded-full px-3 py-1 ${bgTw}`}
                     >
                       {/* CheckCircle mirrors web <CheckCircle className="h-3.5 w-3.5"> */}
-                      <CheckCircle size={14} color="white" />
-                      <Text className="text-sm font-medium text-white">
+                      <CheckCircle size={14} color={colors.primaryForeground} />
+                      <Text
+                        className="text-sm font-medium"
+                        style={{ color: colors.primaryForeground }}
+                      >
                         {area.area_name as string}
                       </Text>
                     </View>
@@ -815,15 +832,22 @@ export default function LifePathwayScreen() {
           <Animated.View
             style={[
               chartAnim,
-              { borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' },
+              {
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+              },
             ]}
-            className="rounded-2xl bg-card p-6 mb-6"
+            className="rounded-2xl p-6 mb-6"
           >
             <View className="mb-6 items-center">
-              <Text className="mb-2 text-2xl font-bold tracking-tight text-white text-center">
+              <Text
+                style={{ color: colors.text }}
+                className="mb-2 text-2xl font-bold tracking-tight text-center"
+              >
                 10-Year Growth Journey Comparison
               </Text>
-              <Text className="text-slate-400 text-center">
+              <Text style={{ color: colors.textMuted }} className="text-center">
                 See how {childName}'s development accelerates with Buddy360
                 {completedAreas.length > 0 &&
                   ` across ${completedAreas.length} growth area${
@@ -847,14 +871,20 @@ export default function LifePathwayScreen() {
             {/* Chart legend — mirrors web recharts <Legend> */}
             <View className="mb-6 flex-row flex-wrap gap-x-4 gap-y-2">
               <View className="flex-row items-center gap-2">
-                <View className="h-0.5 w-6 bg-slate-400" />
-                <Text className="text-xs text-slate-500">Standard Journey</Text>
+                <View
+                  className="h-0.5 w-6"
+                  style={{ backgroundColor: colors.textMuted }}
+                />
+                <Text style={{ color: colors.iconColor }} className="text-xs">
+                  Standard Journey
+                </Text>
               </View>
               {completedAreas.length > 0 ? (
                 completedAreas.map(area => {
                   const areaId = area.area_id as string | undefined;
                   const lineColor =
-                    (areaId ? areaColors[areaId] : undefined) ?? '#10b981';
+                    (areaId ? AREA_LINE_COLORS[areaId] : undefined) ??
+                    colors.primary;
                   return (
                     <View
                       key={String(areaId)}
@@ -864,7 +894,10 @@ export default function LifePathwayScreen() {
                         className="h-0.5 w-6"
                         style={{ backgroundColor: lineColor }}
                       />
-                      <Text className="text-xs text-slate-500">
+                      <Text
+                        style={{ color: colors.iconColor }}
+                        className="text-xs"
+                      >
                         {String(area.area_name ?? '')} (Buddy360)
                       </Text>
                     </View>
@@ -872,8 +905,11 @@ export default function LifePathwayScreen() {
                 })
               ) : (
                 <View className="flex-row items-center gap-2">
-                  <View className="h-0.5 w-6 bg-teal-400" />
-                  <Text className="text-xs text-slate-500">
+                  <View
+                    className="h-0.5 w-6"
+                    style={{ backgroundColor: colors.primaryLight }}
+                  />
+                  <Text style={{ color: colors.iconColor }} className="text-xs">
                     Buddy360 Journey
                   </Text>
                 </View>
@@ -885,11 +921,15 @@ export default function LifePathwayScreen() {
               <View
                 style={{
                   borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.06)',
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceElevated,
                 }}
-                className="rounded-xl bg-surface-elevated p-4 mb-6"
+                className="rounded-xl p-4 mb-6"
               >
-                <Text className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <Text
+                  style={{ color: colors.iconColor }}
+                  className="mb-3 text-xs font-semibold uppercase tracking-widest"
+                >
                   ● Milestone markers on the Buddy360 line
                 </Text>
                 {/* 2-column flex-wrap layout mirrors web grid-cols-2 */}
@@ -904,11 +944,15 @@ export default function LifePathwayScreen() {
                         className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
                         style={{ backgroundColor: m.color }}
                       />
-                      <Text className="w-14 flex-shrink-0 text-xs font-medium text-slate-300">
+                      <Text
+                        style={{ color: colors.textMuted }}
+                        className="w-14 flex-shrink-0 text-xs font-medium"
+                      >
                         Age {m.age}
                       </Text>
                       <Text
-                        className="flex-1 text-xs text-slate-400"
+                        style={{ color: colors.textMuted }}
+                        className="flex-1 text-xs"
                         numberOfLines={2}
                       >
                         {m.text}
@@ -918,7 +962,12 @@ export default function LifePathwayScreen() {
                           className="flex-shrink-0 rounded-full px-1.5 py-0.5"
                           style={{ backgroundColor: m.color }}
                         >
-                          <Text className="text-xs text-white">{m.area}</Text>
+                          <Text
+                            className="text-xs"
+                            style={{ color: colors.primaryForeground }}
+                          >
+                            {m.area}
+                          </Text>
                         </View>
                       )}
                     </View>
@@ -935,11 +984,19 @@ export default function LifePathwayScreen() {
                   {/* bg-ghost-strong equivalent: translucent white */}
                   <View
                     className="h-8 w-8 items-center justify-center rounded-full"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    style={{ backgroundColor: colors.pressedBackground }}
                   >
-                    <Text className="text-sm font-bold text-slate-300">1</Text>
+                    <Text
+                      style={{ color: colors.textMuted }}
+                      className="text-sm font-bold"
+                    >
+                      1
+                    </Text>
                   </View>
-                  <Text className="text-lg font-bold text-white">
+                  <Text
+                    style={{ color: colors.text }}
+                    className="text-lg font-bold"
+                  >
                     Standard Life Journey
                   </Text>
                 </View>
@@ -948,17 +1005,21 @@ export default function LifePathwayScreen() {
                 <View
                   style={{
                     borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.06)',
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceElevated,
                   }}
-                  className="rounded-xl bg-surface-elevated p-4"
+                  className="rounded-xl p-4"
                 >
                   <View className="flex-row items-center gap-2 mb-2">
-                    <Sparkles size={16} color="#94a3b8" />
-                    <Text className="text-sm font-semibold text-white">
+                    <Sparkles size={16} color={colors.iconColor} />
+                    <Text
+                      style={{ color: colors.text }}
+                      className="text-sm font-semibold"
+                    >
                       The Analysis
                     </Text>
                   </View>
-                  <Text className="text-sm text-slate-400">
+                  <Text style={{ color: colors.textMuted }} className="text-sm">
                     {(profile?.summary as string | undefined) ??
                       `${childName} shows natural growth through standard educational pathways with typical developmental milestones.`}
                   </Text>
@@ -968,13 +1029,17 @@ export default function LifePathwayScreen() {
                 <View
                   style={{
                     borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.06)',
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceElevated,
                   }}
-                  className="rounded-xl bg-surface-elevated p-4"
+                  className="rounded-xl p-4"
                 >
                   <View className="flex-row items-center gap-2 mb-3">
-                    <Target size={16} color="#94a3b8" />
-                    <Text className="text-sm font-semibold text-white">
+                    <Target size={16} color={colors.iconColor} />
+                    <Text
+                      style={{ color: colors.text }}
+                      className="text-sm font-semibold"
+                    >
                       Key Milestones
                     </Text>
                   </View>
@@ -984,10 +1049,16 @@ export default function LifePathwayScreen() {
                         key={milestone.text}
                         className="flex-row items-start gap-3"
                       >
-                        <Text className="w-14 flex-shrink-0 text-xs font-medium text-slate-500">
+                        <Text
+                          style={{ color: colors.iconColor }}
+                          className="w-14 flex-shrink-0 text-xs font-medium"
+                        >
                           Age {milestone.age}
                         </Text>
-                        <Text className="flex-1 text-xs text-slate-400">
+                        <Text
+                          style={{ color: colors.textMuted }}
+                          className="flex-1 text-xs"
+                        >
                           {milestone.text}
                         </Text>
                       </View>
@@ -1001,28 +1072,45 @@ export default function LifePathwayScreen() {
                 <View className="mb-4 flex-row items-center gap-2">
                   {/* Gradient badge — mirrors web bg-gradient-to-br from-teal-500 to-teal-700 */}
                   <GradientIconBox
-                    from="#14b8a6"
-                    to="#0f766e"
+                    from={colors.primary}
+                    to={colors.primaryDark}
                     size={32}
                     radius={16}
                     diagonal
                   >
-                    <Text className="text-sm font-bold text-white">2</Text>
+                    <Text
+                      className="text-sm font-bold"
+                      style={{ color: colors.primaryForeground }}
+                    >
+                      2
+                    </Text>
                   </GradientIconBox>
-                  <Text className="text-lg font-bold text-white">
+                  <Text
+                    style={{ color: colors.text }}
+                    className="text-lg font-bold"
+                  >
                     {childName}'s Journey with Buddy360
                   </Text>
                 </View>
 
                 {/* Analysis teal card */}
-                <View className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-4">
+                <View
+                  className="rounded-xl border p-4"
+                  style={{
+                    borderColor: colors.primary + '33',
+                    backgroundColor: colors.primary + '1A',
+                  }}
+                >
                   <View className="flex-row items-center gap-2 mb-2">
-                    <Sparkles size={16} color="#2dd4bf" />
-                    <Text className="text-sm font-semibold text-teal-400">
+                    <Sparkles size={16} color={colors.primary} />
+                    <Text
+                      style={{ color: colors.primary }}
+                      className="text-sm font-semibold"
+                    >
                       Analysis
                     </Text>
                   </View>
-                  <Text className="text-sm text-slate-400">
+                  <Text style={{ color: colors.textMuted }} className="text-sm">
                     {(profile?.summary as string | undefined) ??
                       `${childName} experiences accelerated holistic growth through personalized guidance, targeted skill development, and continuous support.`}
                     {completedAreas.length > 0 &&
@@ -1033,8 +1121,17 @@ export default function LifePathwayScreen() {
                 </View>
 
                 {/* Strengths teal card */}
-                <View className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-4">
-                  <Text className="mb-2 text-sm font-semibold text-teal-400">
+                <View
+                  className="rounded-xl border p-4"
+                  style={{
+                    borderColor: colors.primary + '33',
+                    backgroundColor: colors.primary + '1A',
+                  }}
+                >
+                  <Text
+                    style={{ color: colors.primary }}
+                    className="mb-2 text-sm font-semibold"
+                  >
                     Strengths Improvised by Buddy360
                   </Text>
                   <View className="gap-1.5">
@@ -1043,8 +1140,16 @@ export default function LifePathwayScreen() {
                         key={strength}
                         className="flex-row items-start gap-2"
                       >
-                        <Text className="mt-0.5 text-teal-400">✓</Text>
-                        <Text className="flex-1 text-sm text-slate-400">
+                        <Text
+                          style={{ color: colors.primary }}
+                          className="mt-0.5"
+                        >
+                          ✓
+                        </Text>
+                        <Text
+                          style={{ color: colors.textMuted }}
+                          className="flex-1 text-sm"
+                        >
                           {strength}
                         </Text>
                       </View>
@@ -1053,10 +1158,19 @@ export default function LifePathwayScreen() {
                 </View>
 
                 {/* Accomplishments teal card */}
-                <View className="rounded-xl border border-teal-500/20 bg-teal-500/10 p-4">
+                <View
+                  className="rounded-xl border p-4"
+                  style={{
+                    borderColor: colors.primary + '33',
+                    backgroundColor: colors.primary + '1A',
+                  }}
+                >
                   <View className="flex-row items-center gap-2 mb-3">
-                    <Award size={16} color="#2dd4bf" />
-                    <Text className="text-sm font-semibold text-teal-400">
+                    <Award size={16} color={colors.primary} />
+                    <Text
+                      style={{ color: colors.primary }}
+                      className="text-sm font-semibold"
+                    >
                       Accomplishments & Milestones
                     </Text>
                   </View>
@@ -1066,10 +1180,16 @@ export default function LifePathwayScreen() {
                         key={`${milestone.age}-${milestone.text}`}
                         className="flex-row items-start gap-3"
                       >
-                        <Text className="w-14 flex-shrink-0 text-xs font-medium text-teal-500">
+                        <Text
+                          style={{ color: colors.primary }}
+                          className="w-14 flex-shrink-0 text-xs font-medium"
+                        >
                           Age {milestone.age}
                         </Text>
-                        <Text className="flex-1 text-xs font-medium text-slate-300">
+                        <Text
+                          style={{ color: colors.textMuted }}
+                          className="flex-1 text-xs font-medium"
+                        >
                           {milestone.text}
                         </Text>
                         {milestone.area !== 'Core' && (
@@ -1077,7 +1197,10 @@ export default function LifePathwayScreen() {
                             className="flex-shrink-0 self-start rounded-full px-1.5 py-0.5"
                             style={{ backgroundColor: milestone.color }}
                           >
-                            <Text className="text-xs text-white">
+                            <Text
+                              className="text-xs"
+                              style={{ color: colors.primaryForeground }}
+                            >
                               {milestone.area}
                             </Text>
                           </View>
@@ -1093,10 +1216,13 @@ export default function LifePathwayScreen() {
           {/* ── Per-Growth-Area Detail Sections ───────────────────────────── */}
           {completedAreas.length > 0 && (
             <Animated.View style={insightsAnim} className="gap-4 mb-6">
-              <Text className="text-2xl font-bold tracking-tight text-white">
+              <Text
+                style={{ color: colors.text }}
+                className="text-2xl font-bold tracking-tight"
+              >
                 Growth Area Insights
               </Text>
-              <Text className="text-slate-400">
+              <Text style={{ color: colors.textMuted }}>
                 Recommendations for each area for {childName}
               </Text>
 
@@ -1119,23 +1245,33 @@ export default function LifePathwayScreen() {
                     <View
                       style={{
                         borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.10)',
+                        borderColor: colors.border,
+                        backgroundColor: colors.card,
                       }}
-                      className="rounded-2xl bg-card p-6"
+                      className="rounded-2xl p-6"
                     >
                       <View className="mb-4 flex-row items-center gap-3">
                         <View
                           className={`h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${bgTw}`}
                         >
-                          <Text className="font-bold text-white">
+                          <Text
+                            className="font-bold"
+                            style={{ color: colors.primaryForeground }}
+                          >
                             {idx + 1}
                           </Text>
                         </View>
-                        <Text className="flex-1 text-lg font-bold text-white">
+                        <Text
+                          style={{ color: colors.text }}
+                          className="flex-1 text-lg font-bold"
+                        >
                           {area.area_name as string}
                         </Text>
                         <View className={`rounded-full px-2 py-0.5 ${bgTw}`}>
-                          <Text className="text-xs font-medium text-white">
+                          <Text
+                            className="text-xs font-medium"
+                            style={{ color: colors.primaryForeground }}
+                          >
                             Completed
                           </Text>
                         </View>
@@ -1143,7 +1279,10 @@ export default function LifePathwayScreen() {
 
                       {recs.length > 0 ? (
                         <View>
-                          <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                          <Text
+                            style={{ color: colors.iconColor }}
+                            className="mb-2 text-xs font-semibold uppercase tracking-widest"
+                          >
                             3-Month Recommendations
                           </Text>
                           <View className="gap-2">
@@ -1157,11 +1296,17 @@ export default function LifePathwayScreen() {
                                 <View
                                   className={`mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${bgTw}`}
                                 >
-                                  <Text className="text-xs font-bold text-white">
+                                  <Text
+                                    className="text-xs font-bold"
+                                    style={{ color: colors.primaryForeground }}
+                                  >
                                     {i + 1}
                                   </Text>
                                 </View>
-                                <Text className="flex-1 text-sm text-slate-400">
+                                <Text
+                                  style={{ color: colors.textMuted }}
+                                  className="flex-1 text-sm"
+                                >
                                   {String(rec)}
                                 </Text>
                               </View>
@@ -1169,7 +1314,10 @@ export default function LifePathwayScreen() {
                           </View>
                         </View>
                       ) : (
-                        <Text className="text-sm italic text-slate-600">
+                        <Text
+                          style={{ color: colors.iconColor }}
+                          className="text-sm italic"
+                        >
                           No recommendations generated for this area yet.
                         </Text>
                       )}
@@ -1184,29 +1332,39 @@ export default function LifePathwayScreen() {
           <Animated.View style={ctaAnim} className="items-center gap-6">
             {childName ? (
               <View
-                style={{ borderWidth: 1, borderColor: 'rgba(251,191,36,0.20)' }}
-                className="w-full rounded-2xl bg-card p-8 items-center"
+                style={{
+                  borderWidth: 1,
+                  borderColor: colors.warning + '33',
+                  backgroundColor: colors.card,
+                }}
+                className="w-full rounded-2xl p-8 items-center"
               >
                 {/* Sparkles icons flank the 🎉 — mirrors web Sparkles + 🎉 + Sparkles */}
                 <View className="flex-row items-center justify-center gap-3 mb-4">
-                  <Sparkles size={24} color="#fbbf24" />
+                  <Sparkles size={24} color={colors.warning} />
                   <EmojiText size="3xl">🎉</EmojiText>
-                  <Sparkles size={24} color="#fbbf24" />
+                  <Sparkles size={24} color={colors.warning} />
                 </View>
-                <Text className="text-xl font-bold leading-relaxed text-white text-center">
+                <Text
+                  style={{ color: colors.text }}
+                  className="text-xl font-bold leading-relaxed text-center"
+                >
                   Welcome{' '}
-                  <Text className="text-teal-400">
+                  <Text style={{ color: colors.primary }}>
                     {(user?.full_name as string | undefined)?.split(' ')[0] ??
                       'Parent'}
                   </Text>{' '}
-                  and <Text className="text-emerald-400">{childName}</Text> to
-                  Buddy360. We look forward to powering up your life in all
+                  and <Text style={{ color: colors.success }}>{childName}</Text>{' '}
+                  to Buddy360. We look forward to powering up your life in all
                   possible dimensions.
                 </Text>
               </View>
             ) : null}
 
-            <Text className="mt-2 text-sm text-slate-500 text-center">
+            <Text
+              style={{ color: colors.iconColor }}
+              className="mt-2 text-sm text-center"
+            >
               Click below to continue this interesting journey with Buddy360.
             </Text>
 
@@ -1220,8 +1378,11 @@ export default function LifePathwayScreen() {
                   className="h-11 w-full rounded-2xl px-6"
                 >
                   <View className="flex-row items-center gap-1.5">
-                    <ChevronLeft size={16} color="#cbd5e1" />
-                    <Text className="text-sm font-medium text-slate-300">
+                    <ChevronLeft size={16} color={colors.textMuted} />
+                    <Text
+                      style={{ color: colors.textMuted }}
+                      className="text-sm font-medium"
+                    >
                       Back
                     </Text>
                   </View>
@@ -1235,18 +1396,23 @@ export default function LifePathwayScreen() {
               }
               right={
                 <GradientButton
-                  from="#14b8a6"
-                  to="#059669"
+                  from={colors.primary}
+                  to={colors.success}
                   height={44}
                   borderRadius={16}
                   onPress={handleStartJourney}
                   style={{ width: '100%' }}
                 >
                   <View className="flex-row items-center gap-2">
-                    <Text className="font-semibold text-[#0a0a0a]">
+                    <Text
+                      style={{
+                        fontWeight: '600',
+                        color: colors.primaryForeground,
+                      }}
+                    >
                       Continue Journey
                     </Text>
-                    <ChevronRight size={16} color="#0a0a0a" />
+                    <ChevronRight size={16} color={colors.primaryForeground} />
                   </View>
                 </GradientButton>
               }
@@ -1266,8 +1432,12 @@ export default function LifePathwayScreen() {
             onPress={closeConcernModal}
           >
             <Pressable
-              className="relative w-full max-w-lg rounded-2xl bg-surface-elevated p-8 pt-12"
-              style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}
+              className="relative w-full max-w-lg rounded-2xl p-8 pt-12"
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceElevated,
+              }}
               onPress={e => e.stopPropagation()}
             >
               {/* Close button — mirrors web <X className="h-5 w-5"> */}
@@ -1276,7 +1446,7 @@ export default function LifePathwayScreen() {
                 accessibilityLabel="Close dialog"
                 className="absolute right-4 top-4 rounded-xl p-2"
               >
-                <X size={20} color="#64748b" />
+                <X size={20} color={colors.iconColor} />
               </Pressable>
 
               {!concernSubmitted ? (
@@ -1285,33 +1455,48 @@ export default function LifePathwayScreen() {
                     <View className="mb-2 flex-row items-center gap-3">
                       {/* Gradient icon — mirrors web glow-teal-sm from-teal-400 to-teal-600 */}
                       <GradientIconBox
-                        from="#2dd4bf"
-                        to="#0d9488"
+                        from={colors.primaryLight}
+                        to={colors.primary}
                         size={44}
                         radius={12}
                         diagonal
                       >
-                        <Sparkles size={20} color="white" />
+                        <Sparkles size={20} color={colors.primaryForeground} />
                       </GradientIconBox>
                       <View>
-                        <Text className="text-lg font-bold text-white">
+                        <Text
+                          style={{ color: colors.text }}
+                          className="text-lg font-bold"
+                        >
                           One last thing!
                         </Text>
-                        <Text className="text-sm text-slate-500">
+                        <Text
+                          style={{ color: colors.iconColor }}
+                          className="text-sm"
+                        >
                           Buddy360 wants to know
                         </Text>
                       </View>
                     </View>
-                    <Text className="text-base leading-relaxed text-slate-300">
+                    <Text
+                      style={{ color: colors.textMuted }}
+                      className="text-base leading-relaxed"
+                    >
                       Hey{' '}
-                      <Text className="font-semibold text-teal-400">
+                      <Text
+                        style={{ color: colors.primary }}
+                        className="font-semibold"
+                      >
                         {(user?.full_name as string | undefined)?.split(
                           ' ',
                         )[0] ?? 'there'}
                       </Text>
                       , is there anything that you want Buddy360 to work on
                       currently with respect to{' '}
-                      <Text className="font-semibold text-emerald-400">
+                      <Text
+                        style={{ color: colors.success }}
+                        className="font-semibold"
+                      >
                         {childName}
                       </Text>
                       ?
@@ -1328,14 +1513,17 @@ export default function LifePathwayScreen() {
                         onPress={handleProceedToDashboard}
                         className="flex-1 h-11 rounded-xl"
                       >
-                        <Text className="text-sm text-slate-300">
+                        <Text
+                          style={{ color: colors.textMuted }}
+                          className="text-sm"
+                        >
                           Skip for now
                         </Text>
                       </Button>
                       {/* Gradient submit — mirrors web btn-primary */}
                       <GradientButton
-                        from="#14b8a6"
-                        to="#059669"
+                        from={colors.primary}
+                        to={colors.success}
                         height={44}
                         borderRadius={12}
                         disabled={!concernInput.trim()}
@@ -1345,10 +1533,18 @@ export default function LifePathwayScreen() {
                         style={{ flex: 1 }}
                       >
                         <View className="flex-row items-center gap-1.5">
-                          <Text className="font-semibold text-[#0a0a0a]">
+                          <Text
+                            style={{
+                              fontWeight: '600',
+                              color: colors.primaryForeground,
+                            }}
+                          >
                             Submit
                           </Text>
-                          <ChevronRight size={16} color="#0a0a0a" />
+                          <ChevronRight
+                            size={16}
+                            color={colors.primaryForeground}
+                          />
                         </View>
                       </GradientButton>
                     </View>
@@ -1382,8 +1578,8 @@ export default function LifePathwayScreen() {
                             x2="1"
                             y2="1"
                           >
-                            <Stop offset="0%" stopColor="#34d399" />
-                            <Stop offset="100%" stopColor="#14b8a6" />
+                            <Stop offset="0%" stopColor={colors.success} />
+                            <Stop offset="100%" stopColor={colors.primary} />
                           </SvgLinearGradient>
                         </Defs>
                         <Rect width={56} height={56} fill="url(#successGrad)" />
@@ -1391,12 +1587,21 @@ export default function LifePathwayScreen() {
                       <Text style={{ fontSize: 24, zIndex: 1 }}>✅</Text>
                     </View>
                     <View className="items-center">
-                      <Text className="mb-2 text-lg font-bold text-white">
+                      <Text
+                        style={{ color: colors.text }}
+                        className="mb-2 text-lg font-bold"
+                      >
                         Got it!
                       </Text>
-                      <Text className="text-center leading-relaxed text-slate-400">
+                      <Text
+                        style={{ color: colors.textMuted }}
+                        className="text-center leading-relaxed"
+                      >
                         I got that. We will work with{' '}
-                        <Text className="font-semibold text-emerald-400">
+                        <Text
+                          style={{ color: colors.success }}
+                          className="font-semibold"
+                        >
                           {childName}
                         </Text>{' '}
                         on the same.
@@ -1404,18 +1609,26 @@ export default function LifePathwayScreen() {
                     </View>
                     {/* Gradient go-to-dashboard — mirrors web btn-primary */}
                     <GradientButton
-                      from="#14b8a6"
-                      to="#059669"
+                      from={colors.primary}
+                      to={colors.success}
                       height={44}
                       borderRadius={12}
                       onPress={handleProceedToDashboard}
                       style={{ width: '100%' }}
                     >
                       <View className="flex-row items-center gap-2">
-                        <Text className="font-semibold text-[#0a0a0a]">
+                        <Text
+                          style={{
+                            fontWeight: '600',
+                            color: colors.primaryForeground,
+                          }}
+                        >
                           Go to Dashboard
                         </Text>
-                        <ChevronRight size={16} color="#0a0a0a" />
+                        <ChevronRight
+                          size={16}
+                          color={colors.primaryForeground}
+                        />
                       </View>
                     </GradientButton>
                   </View>

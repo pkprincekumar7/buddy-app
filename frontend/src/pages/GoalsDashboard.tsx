@@ -102,11 +102,11 @@ function ActivityCardIcon({
   colorDot: string;
   index: number;
 }) {
-  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-400" />;
+  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success" />;
   if (isLocked)
     return (
       <div className="bg-ghost-strong mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full">
-        <Lock className="h-3 w-3 text-slate-600" />
+        <Lock className="h-3 w-3 text-muted-foreground" />
       </div>
     );
   return (
@@ -119,7 +119,7 @@ function ActivityCardIcon({
 }
 
 function getActivityCardClasses(completed: boolean | undefined, isLocked: boolean) {
-  if (completed) return 'bg-emerald-500/[0.07] border-emerald-500/20';
+  if (completed) return 'bg-success/[0.07] border-success/20';
   if (isLocked) return 'bg-ghost border-edge-xs border-dashed';
   return 'bg-surface-elevated border-c-edge';
 }
@@ -232,20 +232,16 @@ function MonthCard({
                           />
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`text-sm font-semibold ${isLocked ? 'text-slate-600' : 'text-white'}`}
+                              className={`text-sm font-semibold ${isLocked ? 'text-muted-foreground' : 'text-foreground'}`}
                             >
                               {act.title}
                             </p>
-                            <p
-                              className={`mt-0.5 text-xs ${isLocked ? 'text-slate-700' : 'text-slate-500'}`}
-                            >
-                              {act.objective}
-                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{act.objective}</p>
                             {act.completed ? (
                               <div className="mt-2 space-y-1.5">
                                 {/* Score / Note */}
                                 {act.scorable !== false ? (
-                                  <p className="text-xs font-bold text-slate-300">
+                                  <p className="text-xs font-bold text-foreground">
                                     Score:{' '}
                                     {String(
                                       (act.score as string | number | boolean | null | undefined) ??
@@ -254,7 +250,7 @@ function MonthCard({
                                     /10
                                   </p>
                                 ) : (
-                                  <p className="text-xs font-bold text-slate-300">
+                                  <p className="text-xs font-bold text-foreground">
                                     Note:{' '}
                                     {String(
                                       (act.note as string | number | boolean | null | undefined) ??
@@ -264,8 +260,8 @@ function MonthCard({
                                 )}
                                 {/* What changed */}
                                 {!!act.what_changed && (
-                                  <p className="text-xs text-slate-400">
-                                    <span className="font-semibold text-slate-300">
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">
                                       What changed:{' '}
                                     </span>
                                     {String(act.what_changed)}
@@ -273,21 +269,21 @@ function MonthCard({
                                 )}
                                 {/* What learned */}
                                 {!!act.what_learned && (
-                                  <p className="text-xs text-slate-400">
-                                    <span className="font-semibold text-slate-300">Learnt: </span>
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">Learnt: </span>
                                     {String(act.what_learned)}
                                   </p>
                                 )}
                                 {/* Recommendation */}
                                 {!!act.recommendation && (
-                                  <p className="text-xs text-teal-400">
+                                  <p className="text-xs text-primary">
                                     <span className="font-semibold">Next: </span>
                                     {String(act.recommendation)}
                                   </p>
                                 )}
                                 {/* Parent feedback */}
                                 {!!act.parent_feedback && (
-                                  <p className="text-xs italic text-slate-500">
+                                  <p className="text-xs italic text-muted-foreground">
                                     Parent:{' '}
                                     {typeof act.parent_feedback === 'string'
                                       ? act.parent_feedback
@@ -329,7 +325,7 @@ function MonthCard({
                               aria-label="Reset activity"
                               className="bg-ghost-light border-edge hover:bg-ghost-strong absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full transition-colors"
                             >
-                              <RotateCcw className="h-3 w-3 text-slate-500" />
+                              <RotateCcw className="h-3 w-3 text-muted-foreground" />
                             </button>
                           )}
                         </div>
@@ -349,9 +345,9 @@ function MonthCard({
 const monthColors = [
   {
     bg: 'from-teal-600 to-teal-500',
-    light: 'bg-teal-500/10 border-teal-500/25',
-    text: 'text-teal-400',
-    dot: 'bg-teal-500',
+    light: 'bg-primary/10 border-primary/25',
+    text: 'text-primary',
+    dot: 'bg-primary',
   },
   {
     bg: 'from-blue-600 to-blue-500',
@@ -430,11 +426,11 @@ export default function GoalsDashboard() {
               <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
                 <Target className="h-7 w-7 text-white" />
               </div>
-              <h1 className="mb-2 text-3xl font-bold tracking-tight text-white">
+              <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">
                 3-Month Growth Plan for{' '}
                 {(childData?.['name'] as string | undefined) ?? 'Your Child'}
               </h1>
-              <p className="text-slate-400">Personalized goals powered by Buddy360</p>
+              <p className="text-muted-foreground">Personalized goals powered by Buddy360</p>
 
               {concern && (
                 <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3 text-sm text-amber-400">
@@ -452,10 +448,10 @@ export default function GoalsDashboard() {
               >
                 <motion.div
                   {...SPINNER}
-                  className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+                  className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="text-slate-500">Building your 3-month plan...</p>
+                <p className="text-muted-foreground">Building your 3-month plan...</p>
               </div>
             ) : (
               <GoalPlanContext.Provider value={contextValue}>

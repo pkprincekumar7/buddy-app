@@ -2,8 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ─── CENTRALIZED THEME TOKENS ───────────────────────────────────────────────
+ * All colors are defined here as CSS custom properties (HSL channels).
+ * Both dark (default) and light (`.light` class on <html>) are declared below.
+ *
+ * DO NOT use hardcoded Tailwind colors (slate-*, gray-*, zinc-*) in components.
+ * Always use the semantic tokens below via Tailwind classes:
+ *
+ *  bg-background / text-foreground      — page background & primary text
+ *  bg-card / text-card-foreground       — card / panel surfaces
+ *  bg-popover / text-popover-foreground — dropdowns, tooltips, popovers
+ *  bg-surface-elevated                  — raised surfaces (hover states, modals)
+ *  bg-surface-input                     — input field backgrounds
+ *  bg-muted / text-muted-foreground     — subtle backgrounds & secondary text
+ *  bg-section-alt / bg-section-dark     — alternating page sections
+ *  text-primary / bg-primary            — brand teal accent
+ *  border-border                        — default border
+ *  border-edge / border-edge-*          — theme-aware semi-transparent borders
+ *  bg-ghost / bg-ghost-*               — semi-transparent surface tints
+ *  bg-subtle                           — faintest tinted overlay (5 % tint)
+ *  bg-na-dim                           — N/A / disabled dim overlay (15 % tint)
+ *
+ * Light mode is activated by adding the `.light` class to <html> (see Layout.tsx).
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
 @layer base {
   :root {
+    /* Theme-aware edge/ghost tint channel — flip to 0 0 0 in .light */
+    --edge-rgb: 255 255 255;
+
     --background: 0 0% 4%;
     --foreground: 0 0% 98%;
     --card: 0 0% 8%;
@@ -44,6 +73,71 @@
     --scrollbar-track: 0 0% 6.7%;
     --scrollbar-thumb: 0 0% 16.5%;
     --scrollbar-thumb-hover: 0 0% 22.7%;
+    /* Semantic status colors */
+    --success: 160 84% 39%;
+    --success-muted: 152 76% 79%;
+    --error: 0 91% 71%;
+    --error-muted: 0 93% 81%;
+    --info: 217 91% 60%;
+    --info-muted: 214 80% 75%;
+    /* RGB channels for glow utilities (no alpha — alpha is applied at the use site) */
+    --glow-primary-rgb: 45 212 191;
+    --glow-warning-rgb: 245 158 11;
+  }
+}
+
+/* Light mode overrides — applied when <html> carries the .light class */
+@layer base {
+  .light {
+    /* Flip tint channel so edge/ghost utilities use dark tints on light backgrounds */
+    --edge-rgb: 0 0 0;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 174 72% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 0 0% 15%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 92%;
+    --accent-foreground: 0 0% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 85%;
+    --input: 0 0% 85%;
+    --ring: 174 72% 40%;
+    --chart-1: 174 72% 40%;
+    --chart-2: 160 60% 38%;
+    --chart-3: 43 96% 46%;
+    --chart-4: 280 65% 52%;
+    --chart-5: 340 75% 48%;
+    --sidebar-background: 0 0% 96%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 174 72% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 90%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 82%;
+    --sidebar-ring: 174 72% 40%;
+    --surface-elevated: 0 0% 100%;
+    --surface-input: 0 0% 96%;
+    --section-alt: 0 0% 96%;
+    --section-dark: 0 0% 93%;
+    --scrollbar-track: 0 0% 93%;
+    --scrollbar-thumb: 0 0% 75%;
+    --scrollbar-thumb-hover: 0 0% 60%;
+    --success: 160 84% 30%;
+    --success-muted: 152 60% 55%;
+    --error: 0 72% 51%;
+    --error-muted: 0 80% 70%;
+    --info: 217 91% 45%;
+    --info-muted: 214 80% 60%;
+    --glow-primary-rgb: 13 148 136;
+    --glow-warning-rgb: 217 119 6;
   }
 }
 
@@ -84,86 +178,94 @@
 @layer utilities {
   .glow-teal {
     box-shadow:
-      0 0 20px rgba(45, 212, 191, 0.15),
-      0 0 40px rgba(45, 212, 191, 0.05);
+      0 0 20px rgb(var(--glow-primary-rgb) / 0.15),
+      0 0 40px rgb(var(--glow-primary-rgb) / 0.05);
   }
   .glow-teal-sm {
-    box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
+    box-shadow: 0 0 12px rgb(var(--glow-primary-rgb) / 0.2);
   }
   .glow-amber {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+    box-shadow: 0 0 20px rgb(var(--glow-warning-rgb) / 0.15);
   }
   /* Dynamic per-element glow: set --pillar-glow on the element to activate. */
   .glow-pillar {
     box-shadow: 0 0 20px var(--pillar-glow, transparent);
   }
 
-  /* Semantic surface/border tokens — replaces repeated arbitrary opacity values */
+  /* Semantic surface/border tokens.
+     All tint values use --edge-rgb so they automatically flip between
+     white (dark theme) and black (light theme) without any extra overrides. */
   .border-edge {
-    @apply border border-white/[0.08];
+    border: 1px solid rgb(var(--edge-rgb) / 0.08);
   }
   .border-edge-faint {
-    @apply border border-white/[0.06];
+    border: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-edge-strong {
-    @apply border border-white/[0.12];
+    border: 1px solid rgb(var(--edge-rgb) / 0.12);
   }
   .border-edge-xs {
-    @apply border border-white/[0.04];
+    border: 1px solid rgb(var(--edge-rgb) / 0.04);
   }
   .border-edge-md {
-    @apply border border-white/[0.10];
+    border: 1px solid rgb(var(--edge-rgb) / 0.1);
   }
+
   /* Single-side variants for dividers */
   .border-b-edge {
-    @apply border-b border-white/[0.08];
+    border-bottom: 1px solid rgb(var(--edge-rgb) / 0.08);
   }
   .border-b-edge-faint {
-    @apply border-b border-white/[0.06];
+    border-bottom: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-t-edge-faint {
-    @apply border-t border-white/[0.06];
+    border-top: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-r-edge-faint {
-    @apply border-r border-white/[0.06];
+    border-right: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-t-edge-xs {
-    @apply border-t border-white/[0.04];
+    border-top: 1px solid rgb(var(--edge-rgb) / 0.04);
   }
-  /* Color-only border aliases — use when border-width is already set (border/border-2/outline variant) */
+
+  /* Color-only border aliases — use when border-width is already set */
   .border-c-xs {
-    @apply border-white/[0.04];
+    border-color: rgb(var(--edge-rgb) / 0.04);
   }
   .border-c-edge {
-    @apply border-white/[0.08];
+    border-color: rgb(var(--edge-rgb) / 0.08);
   }
   .border-c-md {
-    @apply border-white/[0.10];
+    border-color: rgb(var(--edge-rgb) / 0.1);
   }
   .border-c-bright {
-    @apply border-white/[0.18];
+    border-color: rgb(var(--edge-rgb) / 0.18);
   }
+
+  /* Background ghost/tint utilities */
   .bg-ghost {
-    @apply bg-white/[0.02];
+    background-color: rgb(var(--edge-rgb) / 0.02);
   }
   .bg-ghost-md {
-    @apply bg-white/[0.04];
+    background-color: rgb(var(--edge-rgb) / 0.04);
   }
   .bg-ghost-light {
-    @apply bg-white/[0.06];
+    background-color: rgb(var(--edge-rgb) / 0.06);
   }
   .bg-ghost-strong {
-    @apply bg-white/[0.08];
+    background-color: rgb(var(--edge-rgb) / 0.08);
   }
   .bg-ghost-hover {
-    @apply bg-white/[0.12];
+    background-color: rgb(var(--edge-rgb) / 0.12);
   }
   .bg-na-dim {
-    @apply bg-white/[0.15];
+    background-color: rgb(var(--edge-rgb) / 0.15);
   }
   .bg-subtle {
-    @apply bg-white/[0.05];
+    background-color: rgb(var(--edge-rgb) / 0.05);
   }
+
+  /* Brand tints — teal/emerald are intentional brand colors, fine in both themes */
   .bg-brand-sub {
     @apply bg-teal-500/10;
   }
@@ -175,10 +277,231 @@
   }
 }
 
+/*
+ * ─── LIGHT-MODE ACCENT TEXT CONTRAST OVERRIDES ──────────────────────────────
+ *
+ * Light teal/emerald/amber/purple/blue Tailwind shades (300–400) are designed
+ * for dark backgrounds. On the light theme's near-white surfaces they fail
+ * WCAG AA contrast (need ≥4.5:1 for normal text):
+ *
+ *   text-teal-300   #5eead4  →  1.3:1  ❌
+ *   text-teal-400   #2dd4bf  →  2.2:1  ❌
+ *   text-emerald-400 #34d399 →  2.5:1  ❌
+ *   text-amber-300  #fcd34d  →  3.0:1  ❌
+ *   text-amber-400  #fbbf24  →  2.0:1  ❌
+ *   text-purple-400 #c084fc  →  2.8:1  ❌
+ *   text-blue-400   #60a5fa  →  2.6:1  ❌
+ *   text-red-400    #f87171  →  2.3:1  ❌
+ *
+ * Overriding them here — centrally, once — bumps each to its 600/700
+ * equivalent which all pass (≥4.5:1). Component files stay untouched.
+ * Hover and checked variants are handled by matching selectors below.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+@layer utilities {
+  /* teal-300 → teal-700 (#0f766e, 6.2:1) */
+  .light .text-teal-300 {
+    color: #0f766e;
+  }
+  .light .hover\:text-teal-300:hover {
+    color: #0f766e;
+  }
+  .light .focus\:text-teal-300:focus {
+    color: #0f766e;
+  }
+  .light .active\:text-teal-300:active {
+    color: #0f766e;
+  }
+  .light [data-state='active'].text-teal-300 {
+    color: #0f766e;
+  }
+
+  /* teal-400 → teal-700 (#0f766e, 6.2:1) */
+  .light .text-teal-400 {
+    color: #0f766e;
+  }
+  .light .hover\:text-teal-400:hover {
+    color: #0f766e;
+  }
+  .light .focus\:text-teal-400:focus {
+    color: #0f766e;
+  }
+  .light .active\:text-teal-400:active {
+    color: #0f766e;
+  }
+  .light [data-state='active'].text-teal-400 {
+    color: #0f766e;
+  }
+
+  /* emerald-400 → emerald-700 (#047857, 5.9:1) */
+  .light .text-emerald-400 {
+    color: #047857;
+  }
+  .light .hover\:text-emerald-400:hover {
+    color: #047857;
+  }
+  .light .focus\:text-emerald-400:focus {
+    color: #047857;
+  }
+  .light .active\:text-emerald-400:active {
+    color: #047857;
+  }
+  .light [data-state='active'].text-emerald-400 {
+    color: #047857;
+  }
+
+  /* amber-300/400/500 → amber-700 (#b45309, 5.3:1) */
+  .light .text-amber-300 {
+    color: #b45309;
+  }
+  .light .hover\:text-amber-300:hover {
+    color: #b45309;
+  }
+  .light .focus\:text-amber-300:focus {
+    color: #b45309;
+  }
+  .light .active\:text-amber-300:active {
+    color: #b45309;
+  }
+  .light .text-amber-400 {
+    color: #b45309;
+  }
+  .light .hover\:text-amber-400:hover {
+    color: #b45309;
+  }
+  .light .focus\:text-amber-400:focus {
+    color: #b45309;
+  }
+  .light .active\:text-amber-400:active {
+    color: #b45309;
+  }
+  .light [data-state='active'].text-amber-400 {
+    color: #b45309;
+  }
+  .light .text-amber-500 {
+    color: #b45309;
+  }
+  .light .hover\:text-amber-500:hover {
+    color: #b45309;
+  }
+  .light .focus\:text-amber-500:focus {
+    color: #b45309;
+  }
+  .light .active\:text-amber-500:active {
+    color: #b45309;
+  }
+
+  /* purple-400 → purple-700 (#7e22ce, 7.2:1) */
+  .light .text-purple-400 {
+    color: #7e22ce;
+  }
+  .light .hover\:text-purple-400:hover {
+    color: #7e22ce;
+  }
+  .light .focus\:text-purple-400:focus {
+    color: #7e22ce;
+  }
+  .light .active\:text-purple-400:active {
+    color: #7e22ce;
+  }
+  .light [data-state='active'].text-purple-400 {
+    color: #7e22ce;
+  }
+
+  /* blue-400 → blue-700 (#1d4ed8, 5.1:1) */
+  .light .text-blue-400 {
+    color: #1d4ed8;
+  }
+  .light .hover\:text-blue-400:hover {
+    color: #1d4ed8;
+  }
+  .light .focus\:text-blue-400:focus {
+    color: #1d4ed8;
+  }
+  .light .active\:text-blue-400:active {
+    color: #1d4ed8;
+  }
+  .light [data-state='active'].text-blue-400 {
+    color: #1d4ed8;
+  }
+
+  /* violet-400 → violet-700 (#6d28d9, 6.8:1) */
+  .light .text-violet-400 {
+    color: #6d28d9;
+  }
+  .light .hover\:text-violet-400:hover {
+    color: #6d28d9;
+  }
+  .light .focus\:text-violet-400:focus {
+    color: #6d28d9;
+  }
+  .light .active\:text-violet-400:active {
+    color: #6d28d9;
+  }
+  .light [data-state='active'].text-violet-400 {
+    color: #6d28d9;
+  }
+
+  /* pink-400 → pink-700 (#be185d, 5.5:1) */
+  .light .text-pink-400 {
+    color: #be185d;
+  }
+  .light .hover\:text-pink-400:hover {
+    color: #be185d;
+  }
+  .light .focus\:text-pink-400:focus {
+    color: #be185d;
+  }
+  .light .active\:text-pink-400:active {
+    color: #be185d;
+  }
+  .light [data-state='active'].text-pink-400 {
+    color: #be185d;
+  }
+
+  /* red-400 → red-700 (#b91c1c, 5.5:1) — error messages, destructive labels */
+  .light .text-red-400 {
+    color: #b91c1c;
+  }
+  .light .hover\:text-red-400:hover {
+    color: #b91c1c;
+  }
+  .light .focus\:text-red-400:focus {
+    color: #b91c1c;
+  }
+  .light .active\:text-red-400:active {
+    color: #b91c1c;
+  }
+  .light [data-state='active'].text-red-400 {
+    color: #b91c1c;
+  }
+}
+
+/*
+ * ─── CHART / RECHARTS THEME HELPERS ─────────────────────────────────────────
+ * Use these CSS-variable expressions wherever Recharts requires inline style
+ * objects (contentStyle, wrapperStyle, tick, stroke, cursor, etc.).
+ *
+ *  Chart grid lines:      rgb(var(--edge-rgb) / 0.05)
+ *  Chart cursor overlay:  rgb(var(--edge-rgb) / 0.04)
+ *  Chart axis stroke:     hsl(var(--muted-foreground))
+ *  Chart axis tick fill:  hsl(var(--muted-foreground))
+ *  Chart N/A bar fill:    hsl(var(--muted))
+ *  Chart reference line:  hsl(var(--border))
+ *  Tooltip bg:            hsl(var(--card))
+ *  Tooltip border:        1px solid hsl(var(--border))
+ *  Tooltip text:          hsl(var(--foreground))
+ *
+ * --edge-rgb flips between 255 255 255 (dark) and 0 0 0 (light), so
+ * rgb(var(--edge-rgb) / X) automatically becomes a white tint in dark
+ * mode and a black tint in light mode — no manual dark: override needed.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
 @layer components {
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
-    @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
+    @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-foreground outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
   }
 
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
@@ -188,7 +511,7 @@
 
   /* Secondary ghost/outline button */
   .btn-secondary {
-    @apply border-edge-strong hover:bg-subtle bg-transparent text-slate-300 hover:text-white;
+    @apply border-edge-strong hover:bg-subtle bg-transparent text-muted-foreground hover:text-foreground;
   }
 
   /* Amber destructive-light button (Start Over, etc.) */

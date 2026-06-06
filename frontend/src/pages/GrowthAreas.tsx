@@ -85,7 +85,7 @@ export default function GrowthAreas() {
           <div className="flex min-h-screen items-center justify-center bg-background">
             <motion.div
               {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
           </div>
         ) : (
@@ -97,8 +97,8 @@ export default function GrowthAreas() {
                 transition={{ duration: 0.8 }}
                 className="mb-8 text-center"
               >
-                <h2 className="mb-2 text-2xl font-bold text-white">Growth Areas</h2>
-                <p className="text-slate-400">Choose an area to explore</p>
+                <h2 className="mb-2 text-2xl font-bold text-foreground">Growth Areas</h2>
+                <p className="text-muted-foreground">Choose an area to explore</p>
               </motion.div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -122,8 +122,8 @@ export default function GrowthAreas() {
                       }
                       className={`relative flex flex-col items-start gap-3 rounded-2xl border p-4 text-left transition-all hover:scale-[1.02] ${
                         done
-                          ? 'border-emerald-500/30 bg-emerald-500/10'
-                          : 'border-edge-faint bg-card hover:border-white/20'
+                          ? 'border-success/30 bg-success/10'
+                          : 'border-edge-faint bg-card hover:border-border'
                       }`}
                     >
                       <div
@@ -132,11 +132,11 @@ export default function GrowthAreas() {
                         <Icon className="h-6 w-6 text-white" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-white">{area.name}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{area.description}</p>
+                        <p className="text-sm font-semibold text-foreground">{area.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{area.description}</p>
                       </div>
                       {done && (
-                        <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-emerald-400" />
+                        <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-success" />
                       )}
                     </motion.button>
                   );

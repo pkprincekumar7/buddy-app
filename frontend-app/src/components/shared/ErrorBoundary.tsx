@@ -1,6 +1,7 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { useTheme } from '@/lib/ThemeContext';
 
 interface Props {
   children: ReactNode;
@@ -8,6 +9,46 @@ interface Props {
 
 interface State {
   hasError: boolean;
+}
+
+function ErrorFallback({ onReset }: { onReset: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.background,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        gap: 16,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.textMuted,
+          textAlign: 'center',
+          maxWidth: 320,
+          lineHeight: 22,
+        }}
+      >
+        Something went wrong. Please try again.
+      </Text>
+      <TouchableOpacity
+        style={{
+          backgroundColor: colors.primary,
+          paddingHorizontal: 24,
+          paddingVertical: 12,
+          borderRadius: 12,
+        }}
+        onPress={onReset}
+      >
+        <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
+          Try again
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -27,40 +68,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: '#0a0a0a',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-            gap: 16,
-          }}
-        >
-          <Text
-            style={{
-              color: '#cbd5e1',
-              textAlign: 'center',
-              maxWidth: 320,
-              lineHeight: 22,
-            }}
-          >
-            Something went wrong. Please try again.
-          </Text>
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#0d9488',
-              paddingHorizontal: 24,
-              paddingVertical: 12,
-              borderRadius: 12,
-            }}
-            onPress={() => this.setState({ hasError: false })}
-          >
-            <Text style={{ color: '#ffffff', fontWeight: '600' }}>
-              Try again
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <ErrorFallback onReset={() => this.setState({ hasError: false })} />
       );
     }
     return this.props.children;

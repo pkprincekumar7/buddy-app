@@ -15,6 +15,7 @@ import type { OnboardingStackParamList } from '@/navigation';
 import { navigateTo } from '@/lib/navigationRef';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
@@ -36,6 +37,7 @@ type ConversationalOnboardingRouteProp = RouteProp<
 export default function ConversationalOnboardingScreen() {
   const navigation = useNavigation<ConversationalOnboardingNavigationProp>();
   const _route = useRoute<ConversationalOnboardingRouteProp>();
+  const { colors } = useTheme();
   const { activeChildId: childId } = useAuth();
   const { user, isAuthenticated, isLoading } = useAuth();
   const [childData, setChildData] = useState<Record<string, unknown> | null>(
@@ -148,13 +150,25 @@ export default function ConversationalOnboardingScreen() {
           Mirrors web: <motion.div initial={{ opacity:0 }} animate={{ opacity: showSplash ? 0 : 1 }}> */}
       <Animated.View style={[{ flex: 1 }, pageStyle]}>
         {isLoading || !hydrated ? (
-          <View className="flex-1 items-center justify-center bg-background">
-            <ActivityIndicator size="large" color="#14b8a6" />
+          <View
+            className="flex-1 items-center justify-center"
+            style={{ backgroundColor: colors.background }}
+          >
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
         ) : (
-          <View className="flex-1 bg-background">
+          <View
+            className="flex-1"
+            style={{ backgroundColor: colors.background }}
+          >
             {/* Progress indicator — fixed at top */}
-            <View className="border-b border-slate-800 bg-slate-900/90 px-4 py-3 z-40">
+            <View
+              className="border-b px-4 py-3 z-40"
+              style={{
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+              }}
+            >
               <View className="flex-row items-center justify-between gap-2">
                 {[
                   { label: 'Getting to Know', icon: '💬', active: true },
@@ -163,26 +177,27 @@ export default function ConversationalOnboardingScreen() {
                 ].map(phase => (
                   <View
                     key={phase.label}
-                    className={`flex-row items-center gap-2 rounded-xl px-3 py-2 flex-1 ${
-                      phase.active
-                        ? 'border border-teal-500/25 bg-teal-500/10'
-                        : 'opacity-50'
+                    className={`flex-row items-center gap-2 rounded-xl px-3 py-2 flex-1 border ${
+                      phase.active ? '' : 'opacity-50'
                     }`}
                     style={
-                      !phase.active
+                      phase.active
                         ? {
-                            backgroundColor: 'rgba(255,255,255,0.04)',
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.06)',
+                            borderColor: colors.primary + '40',
+                            backgroundColor: colors.primary + '1A',
                           }
-                        : undefined
+                        : {
+                            backgroundColor: colors.inactiveSurface,
+                            borderColor: colors.border,
+                          }
                     }
                   >
                     <EmojiText size="base">{phase.icon}</EmojiText>
                     <Text
-                      className={`text-xs font-medium flex-shrink-1 ${
-                        phase.active ? 'text-teal-400' : 'text-slate-600'
-                      }`}
+                      className="text-xs font-medium flex-shrink-1"
+                      style={{
+                        color: phase.active ? colors.primary : colors.iconColor,
+                      }}
                       numberOfLines={1}
                     >
                       {phase.label}
@@ -222,7 +237,10 @@ export default function ConversationalOnboardingScreen() {
             </View>
 
             {/* Back + Start Over — fixed at the bottom, never scrolls */}
-            <View className="px-4 pb-6 pt-3 border-t border-slate-800">
+            <View
+              className="px-4 pb-6 pt-3 border-t"
+              style={{ borderColor: colors.border }}
+            >
               <PageActions
                 left={
                   <Button
@@ -234,8 +252,11 @@ export default function ConversationalOnboardingScreen() {
                     className="w-full rounded-2xl"
                   >
                     <View className="flex-row items-center gap-1.5">
-                      <ChevronLeft size={16} color="#cbd5e1" />
-                      <Text className="text-base font-medium text-slate-300">
+                      <ChevronLeft size={16} color={colors.textMuted} />
+                      <Text
+                        className="text-base font-medium"
+                        style={{ color: colors.textMuted }}
+                      >
                         Back
                       </Text>
                     </View>

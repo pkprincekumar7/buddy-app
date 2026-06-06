@@ -18,20 +18,8 @@ import { Sparkles } from 'lucide-react-native';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import { personalityTypes, type MbtiResult } from '@/lib/personalityLogic';
 import { getInitials, nameToColor } from '@/lib/avatarUtils';
-
-// ── Gradient lookup tables (match web personalityTypes/personalityCategories colors) ────
-// Source: frontend/src/components/shared/PersonalityAnalysis.tsx – each type's `.color` field.
-const TYPE_GRADIENT: Record<string, { from: string; to: string }> = {
-  Ambitious: { from: '#ef4444', to: '#db2777' }, // from-red-500 to-pink-600
-  Determined: { from: '#f97316', to: '#dc2626' }, // from-orange-500 to-red-600
-  Outgoing: { from: '#facc15', to: '#f97316' }, // from-yellow-400 to-orange-500
-  Creative: { from: '#c084fc', to: '#ec4899' }, // from-purple-400 to-pink-500
-  Enthusiastic: { from: '#34d399', to: '#eab308' }, // from-emerald-400 to-yellow-500
-  Restless: { from: '#fb923c', to: '#ef4444' }, // from-orange-400 to-red-500
-  'Highly Energetic': { from: '#ef4444', to: '#eab308' }, // from-red-500 to-yellow-500
-  Thinker: { from: '#60a5fa', to: '#6366f1' }, // from-blue-400 to-indigo-500
-  Playful: { from: '#f472b6', to: '#a855f7' }, // from-pink-400 to-purple-500
-};
+import { useTheme } from '@/lib/ThemeContext';
+import { TYPE_GRADIENT } from '@/lib/gradientColors';
 
 // ── Timing constants matching web PersonalityAnalysis ────────────────────────
 // Web uses seconds; these are milliseconds for Reanimated.
@@ -40,9 +28,7 @@ const ANIM_BAR_W_STEP = 300;
 const ANIM_FAMOUS_BASE = 2700;
 const ANIM_FAMOUS_STEP = 300;
 
-// Card background (hsl(0 0% 8%) ≈ #141414) — used as mask overlay for gradient bars
-// so the unrevealed right portion matches the card surface.
-const CARD_BG = '#141414';
+// CARD_BG is now passed as a prop to AnimatedBarRow from the parent (colors.card).
 
 interface FamousPersonItem {
   name: string;
@@ -104,13 +90,16 @@ function AnimatedBarRow({
   gradient,
   delayMs,
   ready,
+  cardBg,
 }: {
   name: string;
   percentage: number;
   gradient: { from: string; to: string };
   delayMs: number;
   ready: boolean;
+  cardBg: string;
 }) {
+  const { colors } = useTheme();
   const rowOpacity = useSharedValue(0);
   const rowTransX = useSharedValue(-16);
   // Start with a huge mask so gradient is hidden until ready fires.
@@ -164,23 +153,24 @@ function AnimatedBarRow({
     top: 0,
     bottom: 0,
     width: maskWidth.value,
-    backgroundColor: CARD_BG,
+    backgroundColor: cardBg,
   }));
 
   return (
     <Animated.View style={rowStyle}>
       <View className="flex-row justify-between mb-1.5">
-        <Text className="text-xs font-medium text-slate-300">{name}</Text>
-        <Text className="text-xs text-slate-500">
+        <Text className="text-xs font-medium" style={{ color: colors.text }}>
+          {name}
+        </Text>
+        <Text className="text-xs" style={{ color: colors.iconColor }}>
           {Math.round(percentage)}%
         </Text>
       </View>
-      {/* Track — bg-ghost-light = rgba(255,255,255,0.06), matches web */}
       <View
         style={{
           height: 8,
           borderRadius: 999,
-          backgroundColor: 'rgba(255,255,255,0.06)',
+          backgroundColor: colors.border,
           overflow: 'hidden',
         }}
         onLayout={e => setTrackPx(e.nativeEvent.layout.width)}
@@ -223,10 +213,12 @@ function FamousPersonCard({
   person,
   index,
   ready,
+  colors,
 }: {
   person: FamousPersonItem;
   index: number;
   ready: boolean;
+  colors: import('@/lib/themeColors').AppColors;
 }) {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.85);
@@ -263,8 +255,8 @@ function FamousPersonCard({
         className="h-14 w-14 rounded-full overflow-hidden"
         style={{
           borderWidth: 2,
-          borderColor: 'rgba(255,255,255,0.10)',
-          backgroundColor: '#1e293b',
+          borderColor: colors.border,
+          backgroundColor: colors.card,
         }}
       >
         {isHttpsImage ? (
@@ -282,7 +274,9 @@ function FamousPersonCard({
               backgroundColor: bgColor,
             }}
           >
-            <Text style={{ color: '#ffffff', fontSize: 20, fontWeight: '600' }}>
+            <Text
+              style={{ color: colors.text, fontSize: 20, fontWeight: '600' }}
+            >
               {initials}
             </Text>
           </View>
@@ -290,8 +284,8 @@ function FamousPersonCard({
       </View>
       {/* max-w-[80px] matches web */}
       <Text
-        className="text-xs font-medium text-slate-400 text-center leading-tight"
-        style={{ maxWidth: 80 }}
+        className="text-xs font-medium text-center leading-tight"
+        style={{ maxWidth: 80, color: colors.textMuted }}
       >
         {person.name}
       </Text>
@@ -306,6 +300,7 @@ export default function PersonalityAnalysis({
   ready = true,
   ttsEnabled = true,
 }: PersonalityAnalysisProps) {
+  const { colors } = useTheme();
   const { scores, profile } = mbtiResult;
 
   // Fire TTS exactly once when the splash/loading overlay is gone.
@@ -353,19 +348,25 @@ export default function PersonalityAnalysis({
       {/* Web: border-edge rounded-2xl bg-card p-6                              */}
       <SlideSection delayMs={800} ready={ready}>
         <View
-          className="rounded-2xl bg-card p-6"
-          style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+          className="rounded-2xl p-6"
+          style={{
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
         >
           <View className="items-center mb-4">
             <View className="flex-row items-center gap-2 mb-2">
-              {/* Web: <Sparkles className="h-6 w-6 text-teal-400" /> */}
-              <Sparkles size={24} color="#2dd4bf" />
-              <Text className="text-2xl font-bold text-white">
+              <Sparkles size={24} color={colors.primary} />
+              <Text
+                className="text-2xl font-bold"
+                style={{ color: colors.text }}
+              >
                 {profile?.name}
               </Text>
             </View>
             {/* Web: text-sm text-slate-500 */}
-            <Text className="text-sm text-slate-500">
+            <Text className="text-sm" style={{ color: colors.iconColor }}>
               {childName}'s personality type
             </Text>
           </View>
@@ -377,18 +378,23 @@ export default function PersonalityAnalysis({
                 <View
                   className="rounded-full px-3 py-1"
                   style={{
-                    backgroundColor: 'rgba(255,255,255,0.06)',
+                    backgroundColor: colors.pressedBackground,
                     borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.06)',
+                    borderColor: colors.border,
                   }}
                 >
-                  <Text className="text-xs text-slate-300">{trait}</Text>
+                  <Text className="text-xs" style={{ color: colors.text }}>
+                    {trait}
+                  </Text>
                 </View>
               </FadeItem>
             ))}
           </View>
 
-          <Text className="text-sm leading-relaxed text-slate-400 text-center">
+          <Text
+            className="text-sm leading-relaxed text-center"
+            style={{ color: colors.textMuted }}
+          >
             {profile?.description}
           </Text>
         </View>
@@ -398,10 +404,17 @@ export default function PersonalityAnalysis({
       {/* Web: border-edge rounded-2xl bg-card p-6                              */}
       <SlideSection delayMs={1600} ready={ready}>
         <View
-          className="rounded-2xl bg-card p-6"
-          style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+          className="rounded-2xl p-6"
+          style={{
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
         >
-          <Text className="text-sm font-semibold text-white mb-4">
+          <Text
+            className="text-sm font-semibold mb-4"
+            style={{ color: colors.text }}
+          >
             Personality Profile Breakdown
           </Text>
           <View className="gap-4">
@@ -412,8 +425,8 @@ export default function PersonalityAnalysis({
               const itemProfile = personalityTypes[item.name];
               if (!itemProfile) return null;
               const grad = TYPE_GRADIENT[item.name] ?? {
-                from: '#14b8a6',
-                to: '#0ea5e9',
+                from: colors.primary,
+                to: colors.primaryLight,
               };
               return (
                 <AnimatedBarRow
@@ -423,6 +436,7 @@ export default function PersonalityAnalysis({
                   gradient={grad}
                   delayMs={ANIM_BAR_ROW_BASE + index * ANIM_BAR_W_STEP}
                   ready={ready}
+                  cardBg={colors.card}
                 />
               );
             })}
@@ -434,13 +448,20 @@ export default function PersonalityAnalysis({
       {/* Web: border-edge rounded-2xl bg-surface-elevated p-6                  */}
       <SlideSection delayMs={2400} ready={ready}>
         <View
-          className="rounded-2xl bg-surface-elevated p-6"
-          style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+          className="rounded-2xl p-6"
+          style={{
+            backgroundColor: colors.surfaceElevated,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
         >
-          <Text className="text-sm font-semibold text-white mb-1">
+          <Text
+            className="text-sm font-semibold mb-1"
+            style={{ color: colors.text }}
+          >
             Famous People
           </Text>
-          <Text className="text-xs text-slate-500 mb-5">
+          <Text className="text-xs mb-5" style={{ color: colors.iconColor }}>
             {childName} may relate to who share similar personality traits.
           </Text>
           {/* Web: flex flex-wrap justify-center gap-6 */}
@@ -451,6 +472,7 @@ export default function PersonalityAnalysis({
                 person={person}
                 index={i}
                 ready={ready}
+                colors={colors}
               />
             ))}
           </View>
@@ -461,18 +483,33 @@ export default function PersonalityAnalysis({
       {/* Web: rounded-2xl border border-emerald-500/15 bg-card p-5             */}
       <SlideSection delayMs={3200} ready={ready}>
         <View
-          className="rounded-2xl bg-card p-5"
-          style={{ borderWidth: 1, borderColor: 'rgba(16,185,129,0.15)' }}
+          className="rounded-2xl p-5"
+          style={{
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.success + '26',
+          }}
         >
-          <Text className="text-sm font-semibold text-emerald-400 mb-3">
+          <Text
+            className="text-sm font-semibold mb-3"
+            style={{ color: colors.success }}
+          >
             💪 Strengths
           </Text>
           <View className="gap-2">
             {strengthsList.map((s, i) => (
               <FadeItem key={s} delayMs={3500 + i * 150} ready={ready}>
                 <View className="flex-row items-center gap-2.5">
-                  <View className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                  <Text className="text-sm text-slate-400 flex-1">{s}</Text>
+                  <View
+                    className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colors.success }}
+                  />
+                  <Text
+                    className="text-sm flex-1"
+                    style={{ color: colors.textMuted }}
+                  >
+                    {s}
+                  </Text>
                 </View>
               </FadeItem>
             ))}

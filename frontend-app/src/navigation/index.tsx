@@ -3,9 +3,12 @@ import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import {
   NavigationContainer,
   DarkTheme,
+  DefaultTheme,
   getStateFromPath as defaultGetStateFromPath,
 } from '@react-navigation/native';
 import type { LinkingOptions, Theme } from '@react-navigation/native';
+import { ThemeProvider, useTheme } from '../lib/ThemeContext';
+import { darkColors, lightColors } from '../lib/themeColors';
 import { navigationRef } from '../lib/navigationRef';
 import { useAuth } from '../lib/AuthContext';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -104,6 +107,7 @@ const TAB_ICONS: Record<
 
 function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const unlockedTabs = useContext(UnlockedTabsContext);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const focusedRouteName = state.routes[state.index]?.name;
 
@@ -115,8 +119,8 @@ function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#0a0a0a',
-        borderTopColor: '#1a1a1a',
+        backgroundColor: colors.card,
+        borderTopColor: colors.border,
         borderTopWidth: 1,
         paddingBottom: insets.bottom,
         paddingTop: 8,
@@ -124,7 +128,7 @@ function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     >
       {visibleRoutes.map(route => {
         const isFocused = route.name === focusedRouteName;
-        const color = isFocused ? '#14b8a6' : '#6b7280';
+        const color = isFocused ? colors.primary : colors.tabInactive;
         const { options } = descriptors[route.key];
 
         return (
@@ -160,34 +164,46 @@ function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
-/**
- * Custom dark theme matching the app's background (#0a0a0a) and teal accent (#14b8a6).
- * Applied to NavigationContainer so all headers and tab bars are dark by default.
- */
-const AppTheme: Theme = {
+/** Dark navigation theme — built from darkColors token object. */
+const DarkAppTheme: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: '#0a0a0a',
-    card: '#0a0a0a',
-    text: '#ffffff',
-    border: '#1a1a1a',
-    primary: '#14b8a6',
-    notification: '#14b8a6',
+    background: darkColors.background,
+    card: darkColors.card,
+    text: darkColors.text,
+    border: darkColors.border,
+    primary: darkColors.primary,
+    notification: darkColors.primary,
+  },
+};
+
+/** Light navigation theme — built from lightColors token object. */
+const LightAppTheme: Theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: lightColors.background,
+    card: lightColors.card,
+    text: lightColors.text,
+    border: lightColors.border,
+    primary: lightColors.primary,
+    notification: lightColors.primary,
   },
 };
 
 function HeaderTitle({ children }: { children?: React.ReactNode }) {
+  const { colors } = useTheme();
   return (
     <Text
       style={{
         fontSize: 17,
         fontWeight: '700',
         letterSpacing: 0.6,
-        color: '#ffffff',
-        textShadowColor: 'rgba(45,212,191,0.45)',
+        color: colors.text,
+        textShadowColor: colors.headerShadowColor,
         textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 10,
+        textShadowRadius: colors.headerShadowRadius,
       }}
       numberOfLines={1}
     >
@@ -196,17 +212,20 @@ function HeaderTitle({ children }: { children?: React.ReactNode }) {
   );
 }
 
-/** Shared dark header options reused across all navigators. */
-const darkHeader = {
-  headerStyle: { backgroundColor: '#0a0a0a' },
-  headerTintColor: '#ffffff' as const,
-  headerTitleStyle: { color: '#ffffff' as const },
-  headerTitle: (props: { children?: React.ReactNode }) => (
-    <HeaderTitle {...props} />
-  ),
-  headerLeft: () => null,
-  headerRight: () => <HeaderRight />,
-};
+/** Returns header options that match the current theme. */
+function useHeaderOptions() {
+  const { colors } = useTheme();
+  return {
+    headerStyle: { backgroundColor: colors.card },
+    headerTintColor: colors.text,
+    headerTitleStyle: { color: colors.text },
+    headerTitle: (props: { children?: React.ReactNode }) => (
+      <HeaderTitle {...props} />
+    ),
+    headerLeft: () => null,
+    headerRight: () => <HeaderRight />,
+  };
+}
 
 function AuthNavigator() {
   return (
@@ -218,8 +237,9 @@ function AuthNavigator() {
 }
 
 function OnboardingNavigator() {
+  const headerOptions = useHeaderOptions();
   return (
-    <OnboardingStack.Navigator screenOptions={darkHeader}>
+    <OnboardingStack.Navigator screenOptions={headerOptions}>
       {/* headerLeft: null removes the back arrow on the root screen (nothing to go back to) */}
       <OnboardingStack.Screen
         name="Onboarding"
@@ -236,8 +256,9 @@ function OnboardingNavigator() {
 }
 
 function GrowthNavigator() {
+  const headerOptions = useHeaderOptions();
   return (
-    <GrowthStack.Navigator screenOptions={darkHeader}>
+    <GrowthStack.Navigator screenOptions={headerOptions}>
       <GrowthStack.Screen
         name="GrowthAreas"
         component={GrowthAreasScreen}
@@ -263,8 +284,9 @@ function GrowthNavigator() {
 }
 
 function PersonalityNavigator() {
+  const headerOptions = useHeaderOptions();
   return (
-    <PersonalityStack.Navigator screenOptions={darkHeader}>
+    <PersonalityStack.Navigator screenOptions={headerOptions}>
       <PersonalityStack.Screen
         name="PersonalityType"
         component={PersonalityTypeScreen}
@@ -287,6 +309,7 @@ const stableTabBar = (props: BottomTabBarProps) => (
 
 function MainTabNavigator() {
   const { activeChild } = useAuth();
+  const headerOptions = useHeaderOptions();
 
   // Seed from the database — activeChild is kept fresh by AuthContext (React Query).
   const dbTabs = activeChild?.visited_tabs;
@@ -366,7 +389,7 @@ function MainTabNavigator() {
 
   return (
     <UnlockedTabsContext.Provider value={unlockedTabs}>
-      <MainTab.Navigator tabBar={stableTabBar} screenOptions={darkHeader}>
+      <MainTab.Navigator tabBar={stableTabBar} screenOptions={headerOptions}>
         <MainTab.Screen
           name="Home"
           component={HomeScreen}
@@ -446,18 +469,19 @@ function RootNavigator() {
     checkAppState,
     logout,
   } = useAuth();
+  const { colors } = useTheme();
 
   if (isLoading) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: '#0a0a0a',
+          backgroundColor: colors.background,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <ActivityIndicator size="large" color="#2dd4bf" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -471,7 +495,7 @@ function RootNavigator() {
       <View
         style={{
           flex: 1,
-          backgroundColor: '#0a0a0a',
+          backgroundColor: colors.background,
           alignItems: 'center',
           justifyContent: 'center',
           padding: 24,
@@ -480,7 +504,7 @@ function RootNavigator() {
       >
         <Text
           style={{
-            color: '#cbd5e1',
+            color: colors.textMuted,
             textAlign: 'center',
             maxWidth: 320,
             lineHeight: 22,
@@ -490,14 +514,16 @@ function RootNavigator() {
         </Text>
         <TouchableOpacity
           style={{
-            backgroundColor: '#0d9488',
+            backgroundColor: colors.primary,
             paddingHorizontal: 24,
             paddingVertical: 12,
             borderRadius: 12,
           }}
           onPress={() => void checkAppState()}
         >
-          <Text style={{ color: '#ffffff', fontWeight: '600' }}>Retry</Text>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
+            Retry
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -529,10 +555,23 @@ function RootNavigator() {
   );
 }
 
-export default function Navigation() {
+function NavigationWithTheme() {
+  const { isDark } = useTheme();
   return (
-    <NavigationContainer ref={navigationRef} linking={linking} theme={AppTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linking}
+      theme={isDark ? DarkAppTheme : LightAppTheme}
+    >
       <RootNavigator />
     </NavigationContainer>
+  );
+}
+
+export default function Navigation() {
+  return (
+    <ThemeProvider>
+      <NavigationWithTheme />
+    </ThemeProvider>
   );
 }

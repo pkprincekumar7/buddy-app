@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, View, Text, Modal } from 'react-native';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 // Lightweight tooltip: long-press to show, tap outside to dismiss.
 
@@ -47,6 +48,7 @@ function TooltipContent({
   visible = false,
   onDismiss,
 }: TooltipContentProps) {
+  const { colors } = useTheme();
   if (!visible) return null;
   return (
     <Modal
@@ -60,12 +62,12 @@ function TooltipContent({
         onPress={onDismiss}
       >
         <View
-          className={cn(
-            'rounded-md bg-primary px-3 py-1.5 shadow-md',
-            className,
-          )}
+          className={cn('rounded-md px-3 py-1.5 shadow-md', className)}
+          style={{ backgroundColor: colors.primary }}
         >
-          <Text className="text-xs text-primary-foreground">{children}</Text>
+          <Text className="text-xs" style={{ color: colors.primaryForeground }}>
+            {children}
+          </Text>
         </View>
       </Pressable>
     </Modal>
