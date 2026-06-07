@@ -145,7 +145,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
-              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
                 <span className="text-sm font-bold text-white">B</span>
               </div>
               <span className="hidden text-lg font-bold tracking-tight text-sidebar-foreground sm:block">
@@ -190,7 +190,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 <div className="relative" ref={profileRef}>
                   <button
                     onClick={() => setProfileOpen((prev) => !prev)}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 text-xs font-bold text-white ring-2 ring-transparent transition-all hover:scale-105 hover:ring-primary/40"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-xs font-bold text-white ring-2 ring-transparent transition-all hover:scale-105 hover:ring-primary/40"
                     title="Your profile"
                     aria-label="Your profile"
                     aria-expanded={profileOpen}
@@ -206,9 +206,9 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                       className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-border bg-surface-elevated shadow-2xl"
                     >
                       {/* Header gradient strip */}
-                      <div className="bg-gradient-to-r from-teal-600/30 to-emerald-600/20 px-5 py-4">
+                      <div className="bg-gradient-to-r from-primary-dark/30 to-success-strong/20 px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 text-lg font-bold text-white shadow-lg">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-lg font-bold text-white shadow-lg">
                             {getInitials(user?.full_name ?? user?.email ?? '?')}
                           </div>
                           <div className="min-w-0">
@@ -243,7 +243,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                             setProfileOpen(false);
                             handleLogout();
                           }}
-                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-error-medium/10 hover:text-error"
                         >
                           <LogOut className="h-4 w-4" />
                           Sign out

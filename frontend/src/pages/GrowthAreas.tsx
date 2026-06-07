@@ -136,7 +136,7 @@ export default function GrowthAreas() {
                         <p className="mt-0.5 text-xs text-muted-foreground">{area.description}</p>
                       </div>
                       {done && (
-                        <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-success" />
+                        <CheckCircle2 className="absolute right-3 top-3 h-5 w-5 text-success-bright" />
                       )}
                     </motion.button>
                   );
@@ -169,7 +169,7 @@ export default function GrowthAreas() {
                       <Button
                         size="xl"
                         onClick={() => navigate(`/LifePathway/${childId}`)}
-                        className="w-full rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-10 text-white sm:w-auto"
+                        className="w-full rounded-2xl bg-gradient-to-r from-primary-medium to-success-strong px-10 text-white sm:w-auto"
                       >
                         View Your Life Pathway
                       </Button>

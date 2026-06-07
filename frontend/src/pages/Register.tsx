@@ -57,7 +57,7 @@ export default function Register() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
       <div className="border-edge w-full max-w-md rounded-2xl bg-card p-8">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-medium to-success">
             <span className="text-lg font-bold text-white">LP</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground">Create account</h1>
@@ -157,8 +157,8 @@ export default function Register() {
               className="form-input"
             />
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          <Button type="submit" className="w-full bg-primary hover:bg-primary/80" disabled={busy}>
+          {error ? <p className="text-sm text-error-strong">{error}</p> : null}
+          <Button type="submit" className="w-full bg-primary-action hover:bg-primary-action/80" disabled={busy}>
             {busy ? 'Creating account…' : 'Register'}
           </Button>
         </form>

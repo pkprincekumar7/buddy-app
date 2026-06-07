@@ -200,11 +200,11 @@ export default function PersonalityType() {
                         {phase.icon}
                       </span>
                       <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success' : 'text-muted-foreground'}`}
+                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success-bright' : 'text-muted-foreground'}`}
                       >
                         {phase.label}
                       </span>
-                      {phase.done && <span className="text-xs text-success">✓</span>}
+                      {phase.done && <span className="text-xs text-success-bright">✓</span>}
                     </div>
                   ))}
                 </div>

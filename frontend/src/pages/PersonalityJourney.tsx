@@ -183,11 +183,11 @@ export default function PersonalityJourney() {
                         {phase.icon}
                       </span>
                       <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success' : 'text-muted-foreground'}`}
+                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success-bright' : 'text-muted-foreground'}`}
                       >
                         {phase.label}
                       </span>
-                      {phase.done && <span className="text-xs text-success">✓</span>}
+                      {phase.done && <span className="text-xs text-success-bright">✓</span>}
                     </div>
                   ))}
                 </div>
@@ -197,7 +197,7 @@ export default function PersonalityJourney() {
             <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 md:py-12">
               {/* Header */}
               <motion.div {...sectionAnim(0.1)} className="text-center">
-                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500">
+                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-success">
                   <Sparkles className="h-12 w-12 text-white" />
                 </div>
                 <h2 className="mb-2 text-2xl font-bold text-foreground">
@@ -212,7 +212,7 @@ export default function PersonalityJourney() {
               {profile && (
                 <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
                   <div className="mb-4 flex items-start gap-4">
-                    <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                    <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
                       <Star className="h-6 w-6 text-white" />
                     </div>
                     <div>
@@ -237,8 +237,8 @@ export default function PersonalityJourney() {
                         transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
                         className="border-edge-faint flex items-start gap-3 rounded-xl bg-surface-input p-3"
                       >
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-amber-500/15">
-                          <span className="text-xs font-bold text-amber-400">{index + 1}</span>
+                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-warning-medium/15">
+                          <span className="text-xs font-bold text-warning">{index + 1}</span>
                         </div>
                         <p className="text-sm font-semibold text-foreground">{strength}</p>
                       </motion.div>
@@ -250,10 +250,10 @@ export default function PersonalityJourney() {
               {/* Growth areas prompt */}
               <motion.div
                 {...sectionAnim(1.8)}
-                className="rounded-2xl border border-purple-500/20 bg-card p-6"
+                className="rounded-2xl border border-personality/20 bg-card p-6"
               >
                 <div className="space-y-4 text-center">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-personality to-personality-alt-strong">
                     <Compass className="h-7 w-7 text-white" />
                   </div>
                   <h3 className="text-lg font-bold text-foreground">
@@ -267,7 +267,7 @@ export default function PersonalityJourney() {
                     <Button
                       size="xl"
                       onClick={() => navigate(`/GrowthAreas/${childId}`)}
-                      className="rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
+                      className="rounded-2xl bg-gradient-to-r from-personality to-personality-alt-strong px-8 text-white hover:from-personality-light hover:to-personality-alt"
                     >
                       <Zap className="mr-2 h-4 w-4" />
                       Continue Now

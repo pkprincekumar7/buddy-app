@@ -15,7 +15,7 @@ export const GROWTH_AREAS = [
     urlName: 'LifeAmbition',
     name: 'Life Ambition',
     icon: Rocket,
-    color: 'from-purple-500 to-indigo-600',
+    color: 'from-personality to-personality-alt-strong',
     description: 'Discovering purpose and future goals',
   },
   {
@@ -23,7 +23,7 @@ export const GROWTH_AREAS = [
     urlName: 'SelfCare',
     name: 'Self Care',
     icon: Heart,
-    color: 'from-rose-500 to-pink-600',
+    color: 'from-error-medium to-accent-pink',
     description: 'Building healthy habits and emotional wellness',
   },
   {
@@ -31,7 +31,7 @@ export const GROWTH_AREAS = [
     urlName: 'CriticalThinking',
     name: 'Critical Thinking',
     icon: Brain,
-    color: 'from-blue-500 to-cyan-600',
+    color: 'from-info-medium to-primary-medium',
     description: 'Problem solving and analytical skills',
   },
   {
@@ -39,7 +39,7 @@ export const GROWTH_AREAS = [
     urlName: 'Creativity',
     name: 'Creativity',
     icon: Palette,
-    color: 'from-amber-500 to-orange-600',
+    color: 'from-warning-medium to-warning-orange-medium',
     description: 'Imagination and creative expression',
   },
   {
@@ -47,7 +47,7 @@ export const GROWTH_AREAS = [
     urlName: 'PhysicalWellness',
     name: 'Physical Wellness',
     icon: Dumbbell,
-    color: 'from-emerald-500 to-teal-600',
+    color: 'from-success to-primary-dark',
     description: 'Body awareness and physical health',
   },
   {
@@ -55,7 +55,7 @@ export const GROWTH_AREAS = [
     urlName: 'SocialSkills',
     name: 'Social Skills',
     icon: MessageSquare,
-    color: 'from-violet-500 to-purple-600',
+    color: 'from-personality-alt to-personality-alt-strong',
     description: 'Communication and relationship building',
   },
 ];

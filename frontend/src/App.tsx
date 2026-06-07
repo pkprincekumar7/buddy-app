@@ -52,7 +52,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           </p>
           <Button
             type="button"
-            className="bg-primary hover:bg-primary/80"
+            className="bg-primary-action hover:bg-primary-action/80"
             onClick={() => this.setState({ hasError: false })}
           >
             Try again
@@ -238,7 +238,7 @@ function AppShell() {
         <p className="max-w-lg text-center text-foreground">{authError.message}</p>
         <Button
           type="button"
-          className="bg-primary hover:bg-primary/80"
+          className="bg-primary-action hover:bg-primary-action/80"
           onClick={() => {
             void checkAppState();
           }}

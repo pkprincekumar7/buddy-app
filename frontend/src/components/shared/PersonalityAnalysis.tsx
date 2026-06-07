@@ -16,22 +16,22 @@ interface PersonalityCategory {
 export const personalityCategories: Record<string, PersonalityCategory> = {
   motivators: {
     name: 'Motivators',
-    color: 'from-red-500 to-orange-600',
+    color: 'from-error-medium to-warning-orange-medium',
     description: 'Driven by goals, ambition, and achievement',
   },
   socializers: {
     name: 'Socializers',
-    color: 'from-yellow-400 to-orange-500',
+    color: 'from-warning to-warning-orange',
     description: 'Energized by people and connection',
   },
   creatives: {
     name: 'Creatives',
-    color: 'from-purple-400 to-pink-500',
+    color: 'from-personality-light to-accent-pink',
     description: 'Inspired by imagination and expression',
   },
   adventurers: {
     name: 'Adventurers',
-    color: 'from-orange-400 to-red-500',
+    color: 'from-warning-orange to-error-medium',
     description: 'Seeking variety and new experiences',
   },
 };
@@ -72,7 +72,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Elon_Musk_Royal_Society_%28crop2%29.jpg/220px-Elon_Musk_Royal_Society_%28crop2%29.jpg',
       },
     ],
-    color: 'from-red-500 to-pink-600',
+    color: 'from-error-medium to-accent-pink',
     strengths: ['Persistence', 'High standards', 'Focus on goals', 'Motivation'],
     growth_areas: ['Patience', 'Managing stress', 'Flexibility in approach'],
   },
@@ -94,7 +94,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg/220px-Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg',
       },
     ],
-    color: 'from-orange-500 to-red-600',
+    color: 'from-warning-orange-medium to-error-strong',
     strengths: ['Persistence', 'Goal completion', 'Hard work', 'Motivation under pressure'],
     growth_areas: ['Flexibility', 'Handling setbacks calmly', 'Seeking help when needed'],
   },
@@ -116,7 +116,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Will_Smith_2011.jpg/220px-Will_Smith_2011.jpg',
       },
     ],
-    color: 'from-yellow-400 to-orange-500',
+    color: 'from-warning to-warning-orange',
     strengths: ['Networking', 'Communication', 'Confidence', 'Positive energy'],
     growth_areas: ['Listening skills', 'Sensitivity to introverts', 'Managing overstimulation'],
   },
@@ -138,7 +138,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg/220px-Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg',
       },
     ],
-    color: 'from-purple-400 to-pink-500',
+    color: 'from-personality-light to-accent-pink',
     strengths: ['Imagination', 'Problem-solving', 'Adaptability', 'Artistic skills'],
     growth_areas: ['Practical implementation', 'Time management', 'Accepting criticism'],
   },
@@ -160,7 +160,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Ellen_DeGeneres_2011.jpg/220px-Ellen_DeGeneres_2011.jpg',
       },
     ],
-    color: 'from-emerald-400 to-yellow-500',
+    color: 'from-success-bright to-warning-medium',
     strengths: ['Positive energy', 'Motivation', 'Inspiration to others', 'Optimism'],
     growth_areas: ['Focusing energy', 'Patience', 'Managing disappointment'],
   },
@@ -182,7 +182,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bear_Grylls_at_the_Webby_Awards.jpg/220px-Bear_Grylls_at_the_Webby_Awards.jpg',
       },
     ],
-    color: 'from-orange-400 to-red-500',
+    color: 'from-warning-orange to-error-medium',
     strengths: ['Adaptability', 'Energy', 'Variety-seeking', 'Quick learning'],
     growth_areas: ['Patience', 'Long-term focus', 'Consistency'],
   },
@@ -204,7 +204,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Dwayne_Johnson_2014.jpg/220px-Dwayne_Johnson_2014.jpg',
       },
     ],
-    color: 'from-red-500 to-yellow-500',
+    color: 'from-error-medium to-warning-medium',
     strengths: ['Stamina', 'Multitasking', 'Enthusiasm', 'Persistence'],
     growth_areas: ['Rest and recovery', 'Focus', 'Patience with slower activities'],
   },
@@ -226,7 +226,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Marie_Curie_c1920.jpg/220px-Marie_Curie_c1920.jpg',
       },
     ],
-    color: 'from-blue-400 to-indigo-500',
+    color: 'from-info to-personality-alt-strong',
     strengths: ['Analytical thinking', 'Problem-solving', 'Curiosity', 'Reflection'],
     growth_areas: ['Action-taking', 'Practical application', 'Social interaction'],
   },
@@ -248,7 +248,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg',
       },
     ],
-    color: 'from-pink-400 to-purple-500',
+    color: 'from-accent-pink to-personality',
     strengths: ['Humor', 'Joy', 'Creativity', 'Social engagement'],
     growth_areas: ['Focus', 'Handling serious tasks', 'Patience'],
   },
@@ -706,7 +706,7 @@ export default function PersonalityAnalysis({
         {...sectionAnim(3.2)}
         className="rounded-2xl border border-success/15 bg-card p-5"
       >
-        <h4 className="mb-3 text-sm font-semibold text-success">💪 Strengths</h4>
+        <h4 className="mb-3 text-sm font-semibold text-success-bright">💪 Strengths</h4>
         <ul className="space-y-2">
           {(profile.strengths ?? []).map((s, i) => (
             <motion.li

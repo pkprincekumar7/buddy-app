@@ -11,12 +11,12 @@ const _failedAssetPaths = new Set<string>();
 
 // Fallback gradient palette shown when an image fails to load.
 const TILE_GRADIENTS = [
-  'from-purple-400 to-indigo-500',
-  'from-rose-400 to-pink-500',
-  'from-amber-400 to-orange-500',
-  'from-emerald-400 to-teal-500',
-  'from-blue-400 to-cyan-500',
-  'from-violet-400 to-purple-500',
+  'from-personality-light to-personality-alt-strong',
+  'from-error-light to-accent-pink',
+  'from-warning to-warning-orange',
+  'from-success-bright to-primary-medium',
+  'from-info to-primary-medium',
+  'from-personality-alt to-personality',
 ];
 
 interface AreaGameOption {
@@ -499,7 +499,7 @@ export default function ChildActivityGame({
             <div className="absolute inset-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3">
               <span className="text-sm font-semibold text-white">{option.label}</span>
               {ids.includes(option.id) ? (
-                <CheckCircle className="h-6 w-6 fill-emerald-500 text-white" />
+                <CheckCircle className="h-6 w-6 fill-success text-white" />
               ) : (
                 <Circle className="h-6 w-6 text-white/80" />
               )}
@@ -513,7 +513,7 @@ export default function ChildActivityGame({
           void handleSubmit();
         }}
         disabled={ids.length === 0 || isSubmitting}
-        className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base"
+        className="h-12 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
       >
         {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}
       </Button>

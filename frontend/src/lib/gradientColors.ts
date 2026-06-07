@@ -6,7 +6,21 @@
  * All hardcoded hex values must live here — never inline in components.
  */
 
-/** Area key → single line/dot color for recharts strokes and SVG fills. */
+/**
+ * Area key → single line/dot color for recharts strokes and SVG fills.
+ *
+ * IMPORTANT: Must stay as hardcoded hex. SVG presentation attributes (stroke,
+ * fill) do NOT resolve CSS custom properties — only inline styles do. The hex
+ * values match the dark-theme token equivalents and are categorical chart colors
+ * that intentionally do not invert in light mode.
+ *
+ *   life_ambition      → --personality-alt        (violet-500  #8b5cf6)
+ *   self_care          → --accent-pink             (pink-500    #ec4899)
+ *   critical_thinking  → --info-medium             (blue-500    #3b82f6)
+ *   creativity         → --warning-medium          (amber-500   #f59e0b)
+ *   physical_wellness  → --success                 (emerald-500 #10b981)
+ *   social_skills      → --personality-alt-strong  (violet-600  #7c3aed)
+ */
 export const AREA_LINE_COLORS: Record<string, string> = {
   life_ambition: '#8b5cf6',
   self_care: '#ec4899',

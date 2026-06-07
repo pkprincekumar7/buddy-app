@@ -102,11 +102,11 @@ function ActivityCardIcon({
   colorDot: string;
   index: number;
 }) {
-  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success" />;
+  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success-bright" />;
   if (isLocked)
     return (
       <div className="bg-ghost-strong mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full">
-        <Lock className="h-3 w-3 text-muted-foreground" />
+        <Lock className="h-3 w-3 text-faint" />
       </div>
     );
   return (
@@ -344,22 +344,22 @@ function MonthCard({
 
 const monthColors = [
   {
-    bg: 'from-teal-600 to-teal-500',
+    bg: 'from-primary-dark to-primary-medium',
     light: 'bg-primary/10 border-primary/25',
     text: 'text-primary',
     dot: 'bg-primary',
   },
   {
-    bg: 'from-blue-600 to-blue-500',
-    light: 'bg-blue-500/10 border-blue-500/25',
-    text: 'text-blue-400',
-    dot: 'bg-blue-500',
+    bg: 'from-info-strong to-info-medium',
+    light: 'bg-info-medium/10 border-info-medium/25',
+    text: 'text-info',
+    dot: 'bg-info-medium',
   },
   {
-    bg: 'from-purple-600 to-purple-500',
-    light: 'bg-purple-500/10 border-purple-500/25',
-    text: 'text-purple-400',
-    dot: 'bg-purple-500',
+    bg: 'from-personality-alt-strong to-personality',
+    light: 'bg-personality/10 border-personality/25',
+    text: 'text-personality',
+    dot: 'bg-personality',
   },
 ];
 
@@ -423,7 +423,7 @@ export default function GoalsDashboard() {
         <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
           <div className="mx-auto max-w-4xl px-4 py-10">
             <motion.div {...slideUp(0.1)} className="mb-8 text-center">
-              <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
+              <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark">
                 <Target className="h-7 w-7 text-white" />
               </div>
               <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">
@@ -433,7 +433,7 @@ export default function GoalsDashboard() {
               <p className="text-muted-foreground">Personalized goals powered by Buddy360</p>
 
               {concern && (
-                <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3 text-sm text-amber-400">
+                <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-warning-medium/25 bg-warning-medium/10 px-5 py-3 text-sm text-warning">
                   <span className="font-semibold">Focus area: </span>
                   {concern}
                 </div>

@@ -146,7 +146,7 @@ export default function Login() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
       <div className="border-edge w-full max-w-md rounded-2xl bg-card p-8">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-medium to-success">
             <span className="text-lg font-bold text-white">LP</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground">Sign in</h1>
@@ -195,10 +195,10 @@ export default function Login() {
                   className="form-input"
                 />
               </div>
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? <p className="text-sm text-error-strong">{error}</p> : null}
               <Button
                 type="submit"
-                className="w-full bg-primary hover:bg-primary/80"
+                className="w-full bg-primary-action hover:bg-primary-action/80"
                 disabled={busy}
               >
                 {busy ? 'Signing in…' : 'Sign in'}
@@ -226,7 +226,7 @@ export default function Login() {
             <p className="mb-3 text-xs text-muted-foreground">
               Select your country so we can store your data in the right region.
             </p>
-            {error ? <p className="mb-3 text-sm text-red-400">{error}</p> : null}
+            {error ? <p className="mb-3 text-sm text-error">{error}</p> : null}
             <select
               value={googleCountry}
               onChange={(e) => setGoogleCountry(e.target.value)}
@@ -247,7 +247,7 @@ export default function Login() {
                   void onGoogleCountrySubmit();
                 }}
                 disabled={!googleCountry || googleCountryBusy}
-                className="flex-1 bg-primary text-sm hover:bg-primary/80"
+                className="flex-1 bg-primary-action text-sm hover:bg-primary-action/80"
               >
                 {googleCountryBusy ? 'Signing in…' : 'Continue'}
               </Button>
@@ -285,9 +285,9 @@ export default function Login() {
             {/* Dual-ring spinner */}
             <div className="relative h-20 w-20">
               <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
-              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-teal-500" />
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-primary-medium" />
               <div
-                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-emerald-400"
+                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-success-bright"
                 style={{ animationDuration: '0.75s', animationDirection: 'reverse' }}
               />
             </div>

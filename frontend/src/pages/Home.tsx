@@ -36,42 +36,42 @@ const PILLARS = [
   {
     icon: Brain,
     label: 'Mind',
-    color: 'from-blue-500 to-blue-700',
+    color: 'from-info-medium to-info-strong',
     glow: PILLAR_GLOW_COLORS.mind,
     description: 'Cognitive growth & curiosity',
   },
   {
     icon: Heart,
     label: 'Heart',
-    color: 'from-rose-500 to-rose-700',
+    color: 'from-error-medium to-error-strong',
     glow: PILLAR_GLOW_COLORS.heart,
     description: 'Emotional intelligence',
   },
   {
     icon: Dumbbell,
     label: 'Body',
-    color: 'from-emerald-500 to-emerald-700',
+    color: 'from-success to-success-strong',
     glow: PILLAR_GLOW_COLORS.body,
     description: 'Physical wellbeing',
   },
   {
     icon: Palette,
     label: 'Talents',
-    color: 'from-purple-500 to-purple-700',
+    color: 'from-personality to-personality-alt-strong',
     glow: PILLAR_GLOW_COLORS.talents,
     description: 'Skill discovery',
   },
   {
     icon: Star,
     label: 'Character',
-    color: 'from-amber-500 to-amber-700',
+    color: 'from-warning-medium to-warning-strong',
     glow: PILLAR_GLOW_COLORS.character,
     description: 'Values & integrity',
   },
   {
     icon: Rocket,
     label: 'Future',
-    color: 'from-teal-500 to-teal-700',
+    color: 'from-primary-medium to-primary-stronger',
     glow: PILLAR_GLOW_COLORS.future,
     description: 'Life direction',
   },
@@ -135,7 +135,7 @@ export default function Home() {
         {/* Ambient glows */}
         <div className="pointer-events-none absolute left-1/2 top-0 h-[400px] w-[600px] -translate-x-1/2 rounded-full bg-primary/[0.04] blur-3xl" />
         <div className="pointer-events-none absolute left-10 top-40 h-72 w-72 rounded-full bg-primary/[0.05] blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-purple-500/[0.04] blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-personality/[0.04] blur-3xl" />
 
         <div className="relative mx-auto max-w-6xl px-4 py-24 md:py-36">
           <motion.div
@@ -153,7 +153,7 @@ export default function Home() {
 
             <h1 className="mx-auto mb-6 max-w-4xl px-4 text-4xl font-bold leading-tight tracking-tight text-foreground md:text-6xl lg:text-7xl">
               Preparing Children to{' '}
-              <span className="bg-gradient-to-r from-teal-400 to-teal-300 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-primary to-primary-light bg-clip-text text-transparent">
                 Unlock Their Super Powers
               </span>
             </h1>
@@ -206,10 +206,10 @@ export default function Home() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="border-edge flex flex-col items-center gap-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-teal-400/5 to-emerald-500/10 px-6 py-5 sm:flex-row sm:justify-between"
+              className="border-edge flex flex-col items-center gap-4 rounded-2xl bg-gradient-to-r from-primary-medium/10 via-primary/5 to-success/10 px-6 py-5 sm:flex-row sm:justify-between"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-600">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-medium to-success-strong">
                   <Smartphone className="h-5 w-5 text-white" />
                 </div>
                 <div className="text-left">
@@ -353,7 +353,7 @@ export default function Home() {
             viewport={{ once: true }}
             className="border-edge-faint relative overflow-hidden rounded-3xl bg-section-dark p-10 text-center md:p-16"
           >
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal-500/[0.04] via-transparent to-purple-500/[0.04]" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-medium/[0.04] via-transparent to-personality/[0.04]" />
             <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-96 -translate-x-1/2 rounded-full bg-primary/[0.06] blur-3xl" />
             <div className="relative">
               <h2 className="mb-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
@@ -380,7 +380,7 @@ export default function Home() {
       <footer className="border-t-edge-faint py-8">
         <div className="mx-auto max-w-6xl px-4 text-center">
           <div className="mb-2 flex items-center justify-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-teal-400 to-teal-600">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary-dark">
               <span className="text-[10px] font-bold text-white">B</span>
             </div>
             <span className="text-sm font-semibold text-foreground">Buddy360</span>

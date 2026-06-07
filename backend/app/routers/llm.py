@@ -198,7 +198,7 @@ _INVOKERS: dict[ProviderName, Any] = {
 
 
 class LLMInvokeBody(BaseModel):
-    prompt: str = Field(max_length=10000)
+    prompt: str = Field(max_length=32000)
     response_json_schema: dict[str, Any] | None = None
     provider: ProviderName | None = None
 

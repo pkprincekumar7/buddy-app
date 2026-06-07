@@ -28,7 +28,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 60, damping: 14, delay: 0.1 }}
-          className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
+          className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark"
         >
           <span className="text-2xl font-bold text-white">B</span>
         </motion.div>
@@ -122,7 +122,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               <Button
                 size="xl"
                 onClick={handleGoogleLogin}
-                className="border-edge-strong w-full rounded-xl bg-secondary text-sm font-medium text-foreground transition-all duration-200 hover:bg-accent"
+                className="border-edge-strong w-full rounded-xl bg-secondary text-sm font-medium text-secondary-foreground transition-all duration-200 hover:bg-accent"
               >
                 <svg className="mr-3 h-4 w-4" viewBox="0 0 24 24">
                   <path

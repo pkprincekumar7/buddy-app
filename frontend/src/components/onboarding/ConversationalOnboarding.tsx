@@ -755,7 +755,7 @@ export default function ConversationalOnboarding({
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
-          className="glow-teal flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
+          className="glow-teal flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark"
         >
           <Brain className="h-8 w-8 text-white" />
         </motion.div>
@@ -771,7 +771,7 @@ export default function ConversationalOnboarding({
         <div className="w-full max-w-md space-y-2">
           <div className="bg-ghost-light h-2 w-full overflow-hidden rounded-full">
             <div
-              className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-teal-300 transition-all duration-100"
+              className="h-2 rounded-full bg-gradient-to-r from-primary-medium to-primary-light transition-all duration-100"
               style={{ width: `${analyzeProgress}%` }}
             />
           </div>
@@ -793,7 +793,7 @@ export default function ConversationalOnboarding({
                 <div
                   className={cn(
                     'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl transition-all duration-500',
-                    done && 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white',
+                    done && 'bg-gradient-to-br from-success to-primary-dark text-white',
                     active && 'bg-primary/20 text-primary ring-1 ring-primary/30',
                     !done && !active && 'bg-subtle text-muted-foreground',
                   )}
@@ -802,7 +802,7 @@ export default function ConversationalOnboarding({
                 </div>
                 <div className="relative">
                   <span
-                    className={`text-sm transition-colors duration-500 ${done ? 'font-medium text-success' : active ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+                    className={`text-sm transition-colors duration-500 ${done ? 'font-medium text-success-bright' : active ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
                   >
                     {s.label}
                   </span>
@@ -885,7 +885,7 @@ export default function ConversationalOnboarding({
               }}
               className="flex justify-end"
             >
-              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-white">
+              <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary-action px-4 py-2.5 text-sm text-white">
                 <p className="whitespace-pre-line">{msg.content}</p>
               </div>
             </motion.div>
@@ -905,15 +905,15 @@ export default function ConversationalOnboarding({
               <div className="border-edge-faint rounded-2xl rounded-tl-sm bg-surface-input px-4 py-3">
                 <div className="flex gap-1">
                   <span
-                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground"
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/30"
                     style={{ animationDelay: '0ms' }}
                   />
                   <span
-                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground"
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/30"
                     style={{ animationDelay: '150ms' }}
                   />
                   <span
-                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground"
+                    className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/30"
                     style={{ animationDelay: '300ms' }}
                   />
                 </div>
@@ -936,7 +936,7 @@ export default function ConversationalOnboarding({
           >
             <div className="max-w-[90%] rounded-2xl rounded-tl-sm border border-primary/20 bg-primary/[0.05] px-4 py-4 sm:max-w-[85%]">
               <div className="flex items-start gap-3">
-                <div className="glow-teal-sm flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                <div className="glow-teal-sm flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
                   <Sparkles className="h-4 w-4 text-white" />
                 </div>
                 <div className="min-w-0 pt-0.5">
@@ -950,11 +950,11 @@ export default function ConversationalOnboarding({
                       style={{ animationDelay: '0ms' }}
                     />
                     <span
-                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary-action/80"
                       style={{ animationDelay: '150ms' }}
                     />
                     <span
-                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"
+                      className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary-action"
                       style={{ animationDelay: '300ms' }}
                     />
                   </div>
@@ -982,8 +982,8 @@ export default function ConversationalOnboarding({
                   onClick={() => handleChoiceSelect(option)}
                   className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                     isSelected
-                      ? 'border-primary bg-primary/15 text-primary/80'
-                      : 'bg-ghost-md border-c-md hover:bg-primary/90/10 text-muted-foreground hover:border-primary/50 hover:text-primary'
+                      ? 'border-primary-medium bg-primary-medium/15 text-primary-light'
+                      : 'bg-ghost-md border-c-md hover:bg-primary/10 text-muted-foreground hover:border-primary/50 hover:text-primary'
                   }`}
                 >
                   {option}
@@ -995,7 +995,7 @@ export default function ConversationalOnboarding({
             <button
               onClick={handleReset}
               title="Reset conversation"
-              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-red-400"
+              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-error"
             >
               <RotateCcw className="h-3 w-3" />
               Reset
@@ -1023,14 +1023,14 @@ export default function ConversationalOnboarding({
                 type="button"
                 variant="outline"
                 onClick={handleReset}
-                className="border-edge-md h-btn-md rounded-xl bg-transparent px-3 text-muted-foreground hover:border-red-500/30 hover:text-red-400"
+                className="border-edge-md h-btn-md rounded-xl bg-transparent px-3 text-muted-foreground hover:border-error-medium/30 hover:text-error"
                 title="Reset conversation"
               >
                 <RotateCcw className="h-4 w-4" />
               </Button>
               <Button
                 type="submit"
-                className="h-btn-md rounded-xl bg-primary px-4 text-primary-foreground hover:bg-primary/90"
+                className="h-btn-md rounded-xl bg-primary-action px-4 text-primary-foreground hover:bg-primary-action/90"
               >
                 <Send className="h-4 w-4" />
               </Button>

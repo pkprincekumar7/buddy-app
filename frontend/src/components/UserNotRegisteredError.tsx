@@ -3,9 +3,9 @@ const UserNotRegisteredError = () => {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background">
       <div className="border-edge w-full max-w-md rounded-lg bg-card p-8">
         <div className="text-center">
-          <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-orange-500/10">
+          <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full bg-warning-orange/10">
             <svg
-              className="h-8 w-8 text-orange-400"
+              className="h-8 w-8 text-warning-orange"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

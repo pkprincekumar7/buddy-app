@@ -189,9 +189,9 @@ export default function VoiceInput({
       aria-label={ariaLabel ?? defaultLabel}
       className={`h-10 w-10 flex-shrink-0 rounded-xl ${
         isRecording
-          ? 'bg-red-500 hover:bg-red-600'
+          ? 'bg-error-medium hover:bg-error-strong'
           : isTranscribing
-            ? 'cursor-wait bg-amber-400'
+            ? 'cursor-wait bg-warning'
             : 'bg-ghost-strong hover:bg-ghost-hover'
       }`}
     >

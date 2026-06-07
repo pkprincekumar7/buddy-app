@@ -50,8 +50,8 @@ export default function PageNotFound() {
           {isFetched && authData?.isAuthenticated && authData.user?.role === USER_ROLES.ADMIN && (
             <div className="border-edge mt-8 rounded-lg bg-surface-elevated p-4">
               <div className="flex items-start space-x-3">
-                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-500/10">
-                  <div className="h-2 w-2 rounded-full bg-orange-400" />
+                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-warning-orange/10">
+                  <div className="h-2 w-2 rounded-full bg-warning-orange" />
                 </div>
                 <div className="space-y-1 text-left">
                   <p className="text-sm font-medium text-foreground">Admin Note</p>

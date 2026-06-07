@@ -33,12 +33,12 @@ const CARD_CSS = 'hsl(var(--card))';
 
 // Tailwind bg classes for CSS (non-SVG) elements — avoids inline backgroundColor styles.
 const areaBgTw = {
-  life_ambition: 'bg-violet-500',
-  self_care: 'bg-pink-500',
-  critical_thinking: 'bg-blue-500',
-  creativity: 'bg-amber-400',
+  life_ambition: 'bg-personality-alt',
+  self_care: 'bg-accent-pink',
+  critical_thinking: 'bg-info-medium',
+  creativity: 'bg-warning',
   physical_wellness: 'bg-success',
-  social_skills: 'bg-violet-600',
+  social_skills: 'bg-personality-alt-strong',
 };
 
 // Milestone events per growth area mapped to journey years
@@ -322,7 +322,7 @@ export default function LifePathway() {
               >
                 {/* Header */}
                 <motion.div {...slideUp(0.1)} className="space-y-4 text-center">
-                  <div className="glow-teal-sm mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
+                  <div className="glow-teal-sm mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark">
                     <TrendingUp className="h-8 w-8 text-white" />
                   </div>
                   <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
@@ -504,7 +504,7 @@ export default function LifePathway() {
                     {/* Buddy360 Journey */}
                     <div className="space-y-4">
                       <div className="mb-4 flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-sm font-bold text-white">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-primary-stronger text-sm font-bold text-white">
                           2
                         </span>
                         <h3 className="text-lg font-bold text-foreground">
@@ -658,18 +658,18 @@ export default function LifePathway() {
                 {/* CTA */}
                 <motion.div {...slideUp(1.8)} className="space-y-6 pt-8 text-center">
                   {childName && (
-                    <div className="mx-auto max-w-3xl rounded-2xl border border-amber-500/20 bg-card p-8">
+                    <div className="mx-auto max-w-3xl rounded-2xl border border-warning-medium/20 bg-card p-8">
                       <div className="mb-4 flex items-center justify-center gap-3">
-                        <Sparkles className="h-6 w-6 text-amber-400" />
+                        <Sparkles className="h-6 w-6 text-warning" />
                         <span className="text-3xl">🎉</span>
-                        <Sparkles className="h-6 w-6 text-amber-400" />
+                        <Sparkles className="h-6 w-6 text-warning" />
                       </div>
                       <p className="text-xl font-bold leading-relaxed text-foreground md:text-2xl">
                         Welcome{' '}
                         <span className="text-primary">
                           {user?.full_name?.split(' ')[0] ?? 'Parent'}
                         </span>{' '}
-                        and <span className="text-success">{childName}</span> to Buddy360. We look
+                        and <span className="text-success-bright">{childName}</span> to Buddy360. We look
                         forward to powering up your life in all possible dimensions.
                       </p>
                     </div>
@@ -745,7 +745,7 @@ export default function LifePathway() {
                           className="space-y-5"
                         >
                           <div className="mb-2 flex items-center gap-3">
-                            <div className="glow-teal-sm flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 text-base">
+                            <div className="glow-teal-sm flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark text-base">
                               <Sparkles className="h-5 w-5 text-white" />
                             </div>
                             <div>
@@ -762,7 +762,7 @@ export default function LifePathway() {
                             </span>
                             , is there anything that you want Buddy360 to work on currently with
                             respect to{' '}
-                            <span className="font-semibold text-success">{childName}</span>?
+                            <span className="font-semibold text-success-bright">{childName}</span>?
                           </p>
                           <TextareaWithVoice
                             value={concernInput}
@@ -798,14 +798,14 @@ export default function LifePathway() {
                           transition={{ duration: 0.5, ease: 'easeOut' }}
                           className="space-y-6 text-center"
                         >
-                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-success-bright to-primary-medium">
                             <span className="text-2xl">✅</span>
                           </div>
                           <div>
                             <h3 className="mb-2 text-lg font-bold text-foreground">Got it!</h3>
                             <p className="leading-relaxed text-muted-foreground">
                               I got that. We will work with{' '}
-                              <span className="font-semibold text-success">{childName}</span> on the
+                              <span className="font-semibold text-success-bright">{childName}</span> on the
                               same.
                             </p>
                           </div>

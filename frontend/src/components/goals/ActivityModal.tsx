@@ -547,7 +547,7 @@ export default function ActivityModal({
         className="border-edge max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-card shadow-2xl"
       >
         {/* Header */}
-        <div className="relative rounded-t-3xl bg-gradient-to-br from-teal-400 to-emerald-500 p-6">
+        <div className="relative rounded-t-3xl bg-gradient-to-br from-primary-dark to-primary-medium p-6">
           <button
             onClick={onClose}
             aria-label="Close activity"
@@ -637,7 +637,7 @@ export default function ActivityModal({
                         onClick={() => handleChoiceSelect(option)}
                         className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
                           currentAnswer === option
-                            ? 'border-primary bg-primary/10'
+                            ? 'border-primary-medium bg-primary-medium/10'
                             : 'border-c-edge hover:border-c-bright bg-surface-input'
                         }`}
                       >
@@ -683,7 +683,7 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="h-12 rounded-2xl bg-primary text-base font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                        className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>
@@ -703,7 +703,7 @@ export default function ActivityModal({
                           }
                           className={`h-16 flex-1 rounded-2xl text-xl font-bold transition-all ${
                             currentAnswer === value.toString()
-                              ? 'bg-primary text-white shadow-lg'
+                              ? 'bg-primary-action text-white shadow-lg'
                               : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
                           }`}
                         >
@@ -712,7 +712,7 @@ export default function ActivityModal({
                       ))}
                     </div>
                     {currentQuestion.labels && currentQuestion.labels.length > 0 && (
-                      <div className="flex justify-between px-1 text-sm text-muted-foreground">
+                      <div className="flex justify-between px-1 text-sm text-subtle">
                         <span>{currentQuestion.labels[0]}</span>
                         <span>{currentQuestion.labels[1]}</span>
                       </div>
@@ -734,8 +734,8 @@ export default function ActivityModal({
                         disabled={!currentAnswer}
                         className={`h-12 rounded-2xl text-base font-semibold transition-all ${
                           currentAnswer
-                            ? 'bg-primary text-white hover:bg-primary/90'
-                            : 'cursor-not-allowed bg-primary/30 text-white'
+                            ? 'bg-primary-action text-white hover:bg-primary-action/90'
+                            : 'cursor-not-allowed bg-primary-action/30 text-white'
                         }`}
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
@@ -763,7 +763,7 @@ export default function ActivityModal({
                   aria-hidden="true"
                 />
                 <p className="text-lg font-semibold text-foreground">Analysing the response...</p>
-                <p className="text-sm text-muted-foreground">Just a moment</p>
+                <p className="text-sm text-subtle">Just a moment</p>
               </motion.div>
             )}
 
@@ -777,8 +777,8 @@ export default function ActivityModal({
               >
                 {/* Header */}
                 <div className="flex flex-col items-center gap-2">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
-                    <Trophy className="h-8 w-8 text-amber-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-warning-medium/10">
+                    <Trophy className="h-8 w-8 text-warning" />
                   </div>
                   <h3 className="text-2xl font-bold text-foreground">
                     Activity Complete! <span aria-hidden="true">🎉</span>
@@ -796,7 +796,7 @@ export default function ActivityModal({
                         </p>
                         <p className="text-3xl font-bold leading-none text-foreground">
                           {aiScore}
-                          <span className="text-base font-normal text-muted-foreground">/10</span>
+                          <span className="text-base font-normal text-subtle">/10</span>
                         </p>
                       </>
                     ) : (
@@ -808,12 +808,12 @@ export default function ActivityModal({
                       </>
                     )}
                   </div>
-                  <div className="h-12 w-px bg-border" />
+                  <div className="h-12 w-px bg-ghost-strong" />
                   <div className="flex-1 space-y-3 text-sm">
                     {/* What changed */}
                     {whatChanged && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-subtle">
                           What changed
                         </p>
                         <p className="leading-snug text-foreground">{whatChanged}</p>
@@ -822,7 +822,7 @@ export default function ActivityModal({
                     {/* What learned */}
                     {whatLearned && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-subtle">
                           What was learnt
                         </p>
                         <p className="leading-snug text-foreground">{whatLearned}</p>
@@ -831,10 +831,10 @@ export default function ActivityModal({
                     {/* Recommendation */}
                     {recommendation && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-primary">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-primary-medium">
                           Recommendation
                         </p>
-                        <p className="leading-snug text-primary/80">{recommendation}</p>
+                        <p className="leading-snug text-primary-light">{recommendation}</p>
                       </div>
                     )}
                   </div>
@@ -866,7 +866,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving}
-                          className="h-12 rounded-2xl bg-primary text-base font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Acknowledge ✓'}
                         </Button>
@@ -928,7 +928,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving || !parentFeedback.trim()}
-                          className="h-12 rounded-2xl bg-primary text-base font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Submit Feedback'}
                         </Button>

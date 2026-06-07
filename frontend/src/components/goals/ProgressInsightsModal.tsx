@@ -83,24 +83,24 @@ const obsToScore = (obs: Observation): number | null => {
 const ObsBadge = ({ obs }: { obs: Observation }) => {
   const cfg: Record<string, { cls: string; icon: ReactElement }> = {
     improved: {
-      cls: 'text-success',
+      cls: 'text-success-xstrong',
       icon: <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-success" />,
     },
     declined: {
-      cls: 'text-amber-700',
-      icon: <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-500" />,
+      cls: 'text-warning-strong',
+      icon: <AlertTriangle className="h-4 w-4 flex-shrink-0 text-warning-medium" />,
     },
     noImprovement: {
-      cls: 'text-muted-foreground',
+      cls: 'text-subtle',
       icon: <Minus className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
     },
     inProgress: {
-      cls: 'text-info',
-      icon: <Clock className="h-4 w-4 flex-shrink-0 text-info-muted" />,
+      cls: 'text-info-strong',
+      icon: <Clock className="h-4 w-4 flex-shrink-0 text-info" />,
     },
     notStarted: {
       cls: 'text-muted-foreground',
-      icon: <Lock className="h-4 w-4 flex-shrink-0 text-foreground" />,
+      icon: <Lock className="h-4 w-4 flex-shrink-0 text-dim" />,
     },
   };
   const entry = cfg[obs.type] ?? cfg['notStarted'];
@@ -208,12 +208,12 @@ const buildCustomTooltip = (_chartData: ChartEntry[]) =>
     const entry = firstEntry.payload;
     const obsColor =
       entry.obsType === 'improved'
-        ? 'text-success'
+        ? 'text-success-strong'
         : entry.obsType === 'declined'
-          ? 'text-destructive'
+          ? 'text-error-medium'
           : entry.obsType === 'noImprovement'
-            ? 'text-muted-foreground'
-            : 'text-info';
+            ? 'text-subtle'
+            : 'text-info-medium';
     return (
       <div className="border-edge max-w-[200px] rounded-xl bg-surface-elevated px-3 py-2.5 text-sm shadow-lg">
         <p className="mb-0.5 break-words font-semibold leading-snug text-foreground">
@@ -355,7 +355,7 @@ export default function ProgressInsightsModal({
         className="border-edge flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-card shadow-2xl"
       >
         {/* Header */}
-        <div className="flex flex-shrink-0 items-center justify-between bg-gradient-to-br from-teal-400 to-emerald-500 px-6 py-5">
+        <div className="flex flex-shrink-0 items-center justify-between bg-gradient-to-br from-primary-dark to-primary-medium px-6 py-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
               <BarChart3 className="h-6 w-6 text-white" />
@@ -387,8 +387,8 @@ export default function ProgressInsightsModal({
               onClick={() => setActiveTab(key!)}
               className={`border-b-2 px-5 pb-3 text-sm font-semibold transition-colors ${
                 activeTab === key
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'border-primary-medium text-primary-light'
+                  : 'border-transparent text-subtle hover:text-dim'
               }`}
             >
               {label}
@@ -419,7 +419,7 @@ export default function ProgressInsightsModal({
                       onClick={() => setProgressTab(key!)}
                       className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
                         progressTab === key
-                          ? 'bg-primary text-white shadow-sm'
+                          ? 'bg-primary-action text-white shadow-sm'
                           : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
                       }`}
                     >
@@ -466,7 +466,7 @@ export default function ProgressInsightsModal({
                                 {pIdx === 0 && (
                                   <td
                                     rowSpan={pairs.length}
-                                    className="border-r-edge-faint whitespace-nowrap px-4 py-3 align-middle font-bold text-foreground"
+                                    className="border-r-edge-faint whitespace-nowrap px-4 py-3 align-middle font-bold text-dim"
                                   >
                                     Month {month.month}
                                   </td>
@@ -474,7 +474,7 @@ export default function ProgressInsightsModal({
                                 {pIdx === 0 && (
                                   <td
                                     rowSpan={pairs.length}
-                                    className="border-r-edge-faint max-w-[160px] px-4 py-3 align-middle text-foreground"
+                                    className="border-r-edge-faint max-w-[160px] px-4 py-3 align-middle text-dim"
                                   >
                                     {truncate(month.goal, 42)}
                                   </td>
@@ -554,7 +554,7 @@ export default function ProgressInsightsModal({
                             tickLine={false}
                             tickFormatter={(v: number) => `${v}%`}
                           />
-                          <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={2} />
+                          <ReferenceLine y={0} stroke="rgb(var(--edge-rgb) / 0.35)" strokeWidth={2} />
                           <Tooltip
                             content={<CustomTooltip />}
                             cursor={{ fill: 'rgb(var(--edge-rgb) / 0.04)' }}
@@ -566,12 +566,12 @@ export default function ProgressInsightsModal({
                                 key={entry.key}
                                 fill={
                                   entry.isNA
-                                    ? 'hsl(var(--muted))'
+                                    ? 'rgb(var(--edge-rgb) / 0.2)'
                                     : entry.score > 0
                                       ? 'hsl(var(--success-muted))'
                                       : entry.score < 0
                                         ? 'hsl(var(--error-muted))'
-                                        : 'hsl(var(--muted))'
+                                        : 'rgb(var(--edge-rgb) / 0.2)'
                                 }
                               />
                             ))}
@@ -580,14 +580,14 @@ export default function ProgressInsightsModal({
                       </ResponsiveContainer>
                       <div className="mt-1 flex justify-center gap-6">
                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="inline-block h-3 w-3 rounded-sm bg-success/60" />{' '}
+                          <span className="inline-block h-3 w-3 rounded-sm bg-success-light" />{' '}
                           Improvement
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="inline-block h-3 w-3 rounded-sm bg-error-muted" />{' '}
+                        <span className="flex items-center gap-1.5 text-xs text-subtle">
+                          <span className="inline-block h-3 w-3 rounded-sm bg-error-light" />
                           Decline
                         </span>
-                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 text-xs text-subtle">
                           <span className="bg-na-dim inline-block h-3 w-3 rounded-sm" /> N/A
                         </span>
                       </div>
@@ -622,7 +622,7 @@ export default function ProgressInsightsModal({
                     <p className="font-semibold text-foreground">
                       Generating personalised insights…
                     </p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-subtle">
                       Analysing {childName ? `${childName}'s` : 'the'} assessment data
                     </p>
                   </div>
@@ -640,7 +640,7 @@ export default function ProgressInsightsModal({
                         setInsightsError(false);
                         setInsightsData(null);
                       }}
-                      className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
+                      className="flex items-center gap-2 rounded-xl bg-primary-action px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-action/90"
                     >
                       <RefreshCw className="h-4 w-4" /> Retry
                     </button>
@@ -650,7 +650,7 @@ export default function ProgressInsightsModal({
                 {/* Empty state — no completed activities yet */}
                 {insightsData && !insightsLoading && insightsData.insight_items.length === 0 && (
                   <div className="flex flex-col items-center gap-3 py-16 text-center">
-                    <p className="text-base font-semibold text-foreground">No insights yet</p>
+                    <p className="text-base font-semibold text-dim">No insights yet</p>
                     <p className="max-w-xs text-sm text-muted-foreground">
                       Complete at least one activity to generate personalised insights for{' '}
                       {childName ?? 'your child'}.
@@ -671,20 +671,20 @@ export default function ProgressInsightsModal({
                           initial={{ opacity: 0, y: 16 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ duration: 0.5, delay: idx * 0.1, ease: 'easeOut' }}
-                          className={isAnomaly ? 'bg-amber-500/[0.07]' : 'bg-card'}
+                          className={isAnomaly ? 'bg-warning-medium/[0.07]' : 'bg-card'}
                         >
                           {/* Row */}
                           <div className="flex items-center gap-3 px-5 py-4">
                             <div className="flex-shrink-0">
                               {isAnomaly ? (
-                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                <AlertTriangle className="h-4 w-4 text-warning-medium" />
                               ) : (
                                 <CheckCircle2 className="h-4 w-4 text-success" />
                               )}
                             </div>
                             <p
                               className={`flex-1 text-sm font-medium leading-snug ${
-                                isAnomaly ? 'text-amber-300' : 'text-foreground'
+                                isAnomaly ? 'text-warning-light' : 'text-foreground'
                               }`}
                             >
                               {item.text}
@@ -696,8 +696,8 @@ export default function ProgressInsightsModal({
                               }
                               className={`ml-2 flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                                 isAnomaly
-                                  ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
-                                  : 'hover:bg-primary/90/20 bg-primary/10 text-primary'
+                                  ? 'bg-warning-medium/10 text-warning-light hover:bg-warning-medium/20'
+                                  : 'bg-primary-medium/10 text-primary-light hover:bg-primary-medium/20'
                               }`}
                             >
                               {isExpanded ? 'Hide Details' : 'View Details'}
@@ -728,7 +728,7 @@ export default function ProgressInsightsModal({
                                 }}
                                 className={`overflow-hidden border-t px-5 pb-5 ${
                                   isAnomaly
-                                    ? 'border-amber-500/15 bg-amber-500/[0.05]'
+                                    ? 'border-warning-medium/15 bg-warning-medium/[0.05]'
                                     : 'border-c-xs bg-ghost'
                                 }`}
                               >
@@ -738,13 +738,13 @@ export default function ProgressInsightsModal({
                                 <div className="flex flex-wrap gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90"
+                                    className="rounded-xl bg-primary-action px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-action/90"
                                   >
                                     Start Monitoring
                                   </button>
                                   <button
                                     type="button"
-                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-foreground transition-colors"
+                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-dim transition-colors"
                                   >
                                     Check-in Later
                                   </button>

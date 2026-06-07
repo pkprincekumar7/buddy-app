@@ -44,8 +44,8 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
       >
         {/* Icon */}
         <div className="mb-5 flex justify-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
-            <AlertTriangle className="h-7 w-7 text-red-400" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-error-medium/30 bg-error-medium/10">
+            <AlertTriangle className="h-7 w-7 text-error" />
           </div>
         </div>
 
@@ -56,7 +56,7 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
             This will permanently delete all progress for this child, including personality results,
             growth area answers, and goal plans.
           </p>
-          <p className="text-xs font-medium text-red-400">This cannot be undone.</p>
+          <p className="text-xs font-medium text-error">This cannot be undone.</p>
         </div>
 
         {/* Actions */}
@@ -72,7 +72,7 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
           <Button
             onClick={onConfirm}
             disabled={isStartingOver}
-            className="h-11 flex-1 rounded-xl bg-red-600 text-base text-white hover:bg-red-500 disabled:opacity-50"
+            className="h-11 flex-1 rounded-xl bg-error-strong text-base text-white hover:bg-error-medium disabled:opacity-50"
           >
             {isStartingOver ? (
               <span className="flex items-center gap-2">

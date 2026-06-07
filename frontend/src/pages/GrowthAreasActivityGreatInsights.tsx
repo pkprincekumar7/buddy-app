@@ -269,7 +269,7 @@ export default function GrowthAreasActivityGreatInsights() {
             className="space-y-4 rounded-2xl border border-success/20 bg-card p-6"
           >
             <div className="mb-2 flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-success to-primary-dark">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <h3 className="font-bold text-foreground">Recommendations for {childName}</h3>
@@ -336,7 +336,7 @@ export default function GrowthAreasActivityGreatInsights() {
               onClick={() => {
                 void generateRecommendations();
               }}
-              className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-base text-white"
+              className="h-11 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base text-white"
             >
               <Sparkles className="mr-2 h-4 w-4" />
               Generate Recommendations
@@ -348,9 +348,9 @@ export default function GrowthAreasActivityGreatInsights() {
             <div className="flex flex-col items-center justify-center gap-5 py-10">
               <div className="relative h-16 w-16">
                 <div className="absolute inset-0 rounded-full border-4 border-success/20" />
-                <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-emerald-500" />
+                <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-success" />
                 <div
-                  className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-teal-400"
+                  className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-primary"
                   style={{ animationDuration: '0.7s', animationDirection: 'reverse' }}
                 />
               </div>
