@@ -79,3 +79,55 @@ export const CHART_BAND_COLORS = [
 
 /** Default text color rendered on top of colored avatar backgrounds. */
 export const AVATAR_TEXT_COLOR = '#ffffff';
+
+/**
+ * Home screen pillar icon-box background colors (matches dark-mode -700 Tailwind shades
+ * from main branch: blue-700, rose-700, emerald-700, purple-700, amber-700, teal-700).
+ * Order matches the PILLARS array in HomeScreen.
+ */
+export const PILLAR_BG_COLORS = [
+  '#1d4ed8', // mind — blue-700
+  '#be123c', // heart — rose-700
+  '#047857', // body — emerald-700
+  '#7e22ce', // talents — purple-700
+  '#b45309', // character — amber-700
+  '#0f766e', // future — teal-700
+];
+
+/**
+ * Fallback tile background colors for ChildActivityGame image-fail states.
+ * Order: purple, rose, amber, emerald, blue, violet.
+ */
+export const TILE_BG_HEX_COLORS = [
+  '#a855f7', // purple-500
+  '#f43f5e', // rose-500
+  '#f59e0b', // amber-500
+  '#10b981', // emerald-500
+  '#3b82f6', // blue-500
+  '#8b5cf6', // violet-500
+];
+
+/**
+ * Goal dashboard per-month accent colors for label text, dot, and objective strip.
+ * Index 0 is null — month 0 uses theme `colors.primary` from ThemeContext.
+ */
+export const MONTH_ACCENT_COLORS: Array<{
+  label: string;
+  dot: string;
+  stripBg: string;
+  stripBorder: string;
+} | null> = [
+  null,
+  {
+    label: '#60a5fa',
+    dot: '#3b82f6',
+    stripBg: 'rgba(59,130,246,0.1)',
+    stripBorder: 'rgba(59,130,246,0.25)',
+  },
+  {
+    label: '#c084fc',
+    dot: '#a855f7',
+    stripBg: 'rgba(168,85,247,0.1)',
+    stripBorder: 'rgba(168,85,247,0.25)',
+  },
+];

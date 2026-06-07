@@ -554,7 +554,11 @@ export default function ProgressInsightsModal({
                             tickLine={false}
                             tickFormatter={(v: number) => `${v}%`}
                           />
-                          <ReferenceLine y={0} stroke="rgb(var(--edge-rgb) / 0.35)" strokeWidth={2} />
+                          <ReferenceLine
+                            y={0}
+                            stroke="rgb(var(--edge-rgb) / 0.35)"
+                            strokeWidth={2}
+                          />
                           <Tooltip
                             content={<CustomTooltip />}
                             cursor={{ fill: 'rgb(var(--edge-rgb) / 0.04)' }}
@@ -744,7 +748,7 @@ export default function ProgressInsightsModal({
                                   </button>
                                   <button
                                     type="button"
-                                    className="bg-subtle border-edge-md hover:bg-ghost-strong rounded-xl px-4 py-2 text-xs font-semibold text-dim transition-colors"
+                                    className="border-edge-md hover:bg-ghost-strong rounded-xl bg-subtle px-4 py-2 text-xs font-semibold text-dim transition-colors"
                                   >
                                     Check-in Later
                                   </button>

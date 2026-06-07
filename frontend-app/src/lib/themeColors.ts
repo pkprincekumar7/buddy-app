@@ -50,19 +50,19 @@ export interface AppColors {
 }
 
 export const darkColors: AppColors = {
-  background: '#0a0a0a',
-  card: '#141414',
-  surfaceElevated: '#1a1a1a',
-  muted: '#1f1f1f',
+  background: '#0a0a0a', // matches main branch — near-black screen bg
+  card: '#0f172a', // slate-900 — matches main branch card surfaces
+  surfaceElevated: '#1e293b', // slate-800 — matches main branch elevated panels
+  muted: '#1e293b', // slate-800 — tag chips, inactive tabs
   text: '#ffffff',
-  textMuted: '#cbd5e1',
-  border: '#1a1a1a',
+  textMuted: '#cbd5e1', // slate-300 — matches main branch
+  border: '#334155', // slate-700 — matches main branch, clearly visible
   primary: '#14b8a6',
   primaryLight: '#2dd4bf',
   primaryDark: '#0f766e',
   primaryForeground: '#ffffff',
   tabInactive: '#6b7280',
-  iconColor: '#64748b',
+  iconColor: '#64748b', // slate-500 — matches main branch
   pressedBackground: 'rgba(255,255,255,0.08)',
   headerShadowColor: 'rgba(45,212,191,0.45)',
   headerShadowRadius: 10,
@@ -76,7 +76,7 @@ export const darkColors: AppColors = {
   cursorLine: 'rgba(255,255,255,0.30)',
   inactiveSurface: 'rgba(255,255,255,0.04)',
   ripple: 'rgba(0,0,0,0.1)',
-  inputBorder: '#2d2d2d',
+  inputBorder: '#475569', // slate-600 — matches main branch input borders
 };
 
 export const lightColors: AppColors = {

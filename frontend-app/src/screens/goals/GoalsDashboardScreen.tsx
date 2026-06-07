@@ -45,7 +45,7 @@ import {
   GradientIconBox,
   GradientSurface,
 } from '@/components/shared/GradientView';
-import { MONTH_GRADIENTS } from '@/lib/gradientColors';
+import { MONTH_GRADIENTS, MONTH_ACCENT_COLORS } from '@/lib/gradientColors';
 
 interface DashActivity {
   completed?: boolean;
@@ -88,11 +88,9 @@ const GoalPlanContext = createContext<GoalPlanContextValue | null>(null);
 interface MonthColor {
   gradFrom: string;
   gradTo: string;
-  objectiveStrip: string;
-  objectiveStripStyle?: object;
-  labelText: string;
-  dotBg: string;
-  dotStyle?: object;
+  objectiveStripStyle: { borderColor: string; backgroundColor: string };
+  labelColor: string;
+  dotStyle: { backgroundColor: string };
 }
 
 interface MonthData {
@@ -102,38 +100,15 @@ interface MonthData {
   periods?: { label?: string; activities?: DashActivity[] }[];
 }
 
-const STATIC_MONTH_COLORS: Omit<
-  MonthColor,
-  'gradFrom' | 'gradTo' | 'objectiveStripStyle'
->[] = [
-  {
-    objectiveStrip: 'border',
-    labelText: 'text-teal-400',
-    dotBg: 'bg-teal-500',
-  },
-  {
-    objectiveStrip: 'bg-blue-500/10 border-blue-500/25',
-    labelText: 'text-blue-400',
-    dotBg: 'bg-blue-500',
-  },
-  {
-    objectiveStrip: 'bg-purple-500/10 border-purple-500/25',
-    labelText: 'text-purple-400',
-    dotBg: 'bg-purple-500',
-  },
-];
-
 function ActivityCardIcon({
   completed,
   isLocked,
-  dotBg,
   dotStyle,
   index,
 }: {
   completed?: boolean;
   isLocked: boolean;
-  dotBg: string;
-  dotStyle?: object;
+  dotStyle: { backgroundColor: string };
   index: number;
 }) {
   const { colors } = useTheme();
@@ -156,7 +131,7 @@ function ActivityCardIcon({
   }
   return (
     <View
-      className={`mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${dotBg}`}
+      className="mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
       style={dotStyle}
     >
       <Text
@@ -304,10 +279,13 @@ function MonthCard({
         </GradientSurface>
         {month.objective && (
           <View
-            className={`px-6 py-2.5 border-b ${color.objectiveStrip}`}
+            className="px-6 py-2.5 border-b"
             style={color.objectiveStripStyle}
           >
-            <Text className={`text-sm font-medium ${color.labelText}`}>
+            <Text
+              className="text-sm font-medium"
+              style={{ color: color.labelColor }}
+            >
               🎯 {month.objective}
             </Text>
           </View>
@@ -319,7 +297,8 @@ function MonthCard({
           {month.periods?.map((period, pIdx) => (
             <View key={`${idx}-${pIdx}`}>
               <Text
-                className={`mb-3 text-xs font-bold uppercase tracking-widest ${color.labelText}`}
+                className="mb-3 text-xs font-bold uppercase tracking-widest"
+                style={{ color: color.labelColor }}
               >
                 {period.label}
               </Text>
@@ -336,9 +315,11 @@ function MonthCard({
                     borderColor: colors.border,
                   };
                   if (act.completed) {
-                    cardClass =
-                      'border border-emerald-500/20 bg-emerald-500/10';
-                    cardStyle = {};
+                    cardClass = 'border';
+                    cardStyle = {
+                      borderColor: colors.success + '33',
+                      backgroundColor: colors.success + '1A',
+                    };
                   } else if (isLocked) {
                     cardClass = 'border border-dashed';
                     cardStyle = {
@@ -356,7 +337,6 @@ function MonthCard({
                       <ActivityCardIcon
                         completed={act.completed}
                         isLocked={isLocked}
-                        dotBg={color.dotBg}
                         dotStyle={color.dotStyle}
                         index={aIdx}
                       />
@@ -483,7 +463,8 @@ function MonthCard({
                             }}
                           >
                             <Text
-                              className={`mt-1.5 text-xs font-medium ${color.labelText}`}
+                              className="mt-1.5 text-xs font-medium"
+                              style={{ color: color.labelColor }}
                             >
                               Tap to start activity →
                             </Text>
@@ -553,24 +534,34 @@ export default function GoalsDashboardScreen() {
   const monthColors = useMemo<MonthColor[]>(
     () => [
       {
-        ...STATIC_MONTH_COLORS[0]!,
         gradFrom: colors.primaryDark,
         gradTo: colors.primary,
         objectiveStripStyle: {
           borderColor: colors.primary + '40',
           backgroundColor: colors.primary + '1A',
         },
+        labelColor: colors.primary,
         dotStyle: { backgroundColor: colors.primary },
       },
       {
-        ...STATIC_MONTH_COLORS[1]!,
         gradFrom: MONTH_GRADIENTS[1]!.from,
         gradTo: MONTH_GRADIENTS[1]!.to,
+        objectiveStripStyle: {
+          borderColor: MONTH_ACCENT_COLORS[1]!.stripBorder,
+          backgroundColor: MONTH_ACCENT_COLORS[1]!.stripBg,
+        },
+        labelColor: MONTH_ACCENT_COLORS[1]!.label,
+        dotStyle: { backgroundColor: MONTH_ACCENT_COLORS[1]!.dot },
       },
       {
-        ...STATIC_MONTH_COLORS[2]!,
         gradFrom: MONTH_GRADIENTS[2]!.from,
         gradTo: MONTH_GRADIENTS[2]!.to,
+        objectiveStripStyle: {
+          borderColor: MONTH_ACCENT_COLORS[2]!.stripBorder,
+          backgroundColor: MONTH_ACCENT_COLORS[2]!.stripBg,
+        },
+        labelColor: MONTH_ACCENT_COLORS[2]!.label,
+        dotStyle: { backgroundColor: MONTH_ACCENT_COLORS[2]!.dot },
       },
     ],
     [colors.primary, colors.primaryDark],

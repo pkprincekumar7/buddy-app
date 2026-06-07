@@ -40,16 +40,16 @@ React Native 0.85.3 mobile app (Android & iOS).
 
 ## Prerequisites
 
-| Tool | Required version | Check command |
-|---|---|---|
-| Node.js | 22.13.0 or higher | `node --version` |
-| npm | 9 or higher | `npm --version` |
-| yarn | 1.22 or higher | `yarn --version` |
-| Java JDK | 17 (LTS) | `java -version` |
-| Homebrew | any (macOS only) | `brew --version` |
-| Android Studio | Hedgehog (2023.1) or newer | — |
-| Xcode | 15 or newer (macOS only) | `xcodebuild -version` |
-| CocoaPods | 1.14 or higher (macOS only) | `pod --version` |
+| Tool           | Required version            | Check command         |
+| -------------- | --------------------------- | --------------------- |
+| Node.js        | 22.13.0 or higher           | `node --version`      |
+| npm            | 9 or higher                 | `npm --version`       |
+| yarn           | 1.22 or higher              | `yarn --version`      |
+| Java JDK       | 17 (LTS)                    | `java -version`       |
+| Homebrew       | any (macOS only)            | `brew --version`      |
+| Android Studio | Hedgehog (2023.1) or newer  | —                     |
+| Xcode          | 15 or newer (macOS only)    | `xcodebuild -version` |
+| CocoaPods      | 1.14 or higher (macOS only) | `pod --version`       |
 
 ---
 
@@ -93,13 +93,13 @@ yarn works on Windows. All commands in this README work in **PowerShell** or **G
 
 ### Prerequisites (Windows)
 
-| Tool | Install |
-|---|---|
-| Node.js 18+ | [nodejs.org](https://nodejs.org) or `winget install OpenJS.NodeJS.LTS` |
-| yarn | `npm install -g yarn` |
-| Java JDK 17 | `winget install EclipseAdoptium.Temurin.17.JDK` |
-| Android Studio | [developer.android.com/studio](https://developer.android.com/studio) |
-| Git | `winget install Git.Git` |
+| Tool           | Install                                                                |
+| -------------- | ---------------------------------------------------------------------- |
+| Node.js 18+    | [nodejs.org](https://nodejs.org) or `winget install OpenJS.NodeJS.LTS` |
+| yarn           | `npm install -g yarn`                                                  |
+| Java JDK 17    | `winget install EclipseAdoptium.Temurin.17.JDK`                        |
+| Android Studio | [developer.android.com/studio](https://developer.android.com/studio)   |
+| Git            | `winget install Git.Git`                                               |
 
 ### Windows-Specific Environment Variables
 
@@ -110,6 +110,7 @@ ANDROID_HOME   = C:\Users\<YourUser>\AppData\Local\Android\Sdk
 ```
 
 Add to **Path**:
+
 ```
 %ANDROID_HOME%\platform-tools
 %ANDROID_HOME%\emulator
@@ -117,6 +118,7 @@ C:\Program Files\Eclipse Adoptium\jdk-17\bin   (adjust to your JDK install path)
 ```
 
 Reload your terminal after saving. Verify:
+
 ```powershell
 adb --version
 java -version   # must print 17.x.x
@@ -161,9 +163,11 @@ Or download from https://developer.android.com/studio
 Open Android Studio → **Tools → SDK Manager** and install:
 
 **SDK Platforms tab:**
+
 - Android 14.0 (API Level 34) or higher
 
-**SDK Tools tab** (enable *Show Package Details* to see version numbers):
+**SDK Tools tab** (enable _Show Package Details_ to see version numbers):
+
 - Android SDK Build-Tools **36.x**
 - NDK (Side by side) → **27.1.12297006** (exact version required)
 - Android Emulator
@@ -236,6 +240,7 @@ yarn android
 Every time you come back to work, follow these steps in order:
 
 **Step 1 — Start the backend**
+
 ```bash
 docker compose up
 ```
@@ -278,15 +283,15 @@ Edit any `.ts` / `.tsx` file and save. Metro hot-reloads instantly — no rebuil
 
 ### When to Rebuild (Android)
 
-| What changed | Action required |
-|---|---|
-| `.ts` / `.tsx` / `.js` file | Nothing — Metro hot-reloads on save |
-| Change not appearing | Press `r` in the Metro terminal |
-| Still not appearing after `r` | `yarn start --reset-cache` then press `r` |
-| New JS-only package | `yarn add <package>` → press `r` |
-| New native package | `yarn add <package>` → rebuild (see below) |
-| `.env` file changed | Rebuild (see below) |
-| `android/build.gradle` changed | Rebuild (see below) |
+| What changed                   | Action required                            |
+| ------------------------------ | ------------------------------------------ |
+| `.ts` / `.tsx` / `.js` file    | Nothing — Metro hot-reloads on save        |
+| Change not appearing           | Press `r` in the Metro terminal            |
+| Still not appearing after `r`  | `yarn start --reset-cache` then press `r`  |
+| New JS-only package            | `yarn add <package>` → press `r`           |
+| New native package             | `yarn add <package>` → rebuild (see below) |
+| `.env` file changed            | Rebuild (see below)                        |
+| `android/build.gradle` changed | Rebuild (see below)                        |
 
 **Rebuild command** (use this whenever a rebuild is needed):
 
@@ -307,8 +312,7 @@ adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb shell am start -n com.buddyapp/.MainActivity
 ```
 
-> **Why `rm -rf app/build` and not `./gradlew clean`?**
-> `./gradlew clean` wipes build artifacts from all modules including `react-native-reanimated`. This causes a CMake prefab error on the next build. Deleting only `app/build` keeps library artifacts intact and avoids this issue.
+> **Why `rm -rf app/build` and not `./gradlew clean`?** > `./gradlew clean` wipes build artifacts from all modules including `react-native-reanimated`. This causes a CMake prefab error on the next build. Deleting only `app/build` keeps library artifacts intact and avoids this issue.
 
 **If you get a CMake / prefab ordering error:**
 
@@ -334,7 +338,7 @@ adb shell am start -n com.buddyapp/.MainActivity
 
 ### Build a Debug APK
 
-A debug APK can be shared and installed on any Android device with *Install from Unknown Sources* enabled.
+A debug APK can be shared and installed on any Android device with _Install from Unknown Sources_ enabled.
 
 ```bash
 cd frontend-app/android
@@ -342,12 +346,14 @@ cd frontend-app/android
 ```
 
 APK location:
+
 ```
 frontend-app/android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk   ← Apple Silicon Mac emulator + any physical ARM64 Android device
 frontend-app/android/app/build/outputs/apk/debug/app-x86_64-debug.apk      ← Intel Mac emulator only
 ```
 
 Install on a connected device or emulator:
+
 ```bash
 cd frontend-app/android
 
@@ -415,6 +421,7 @@ cd frontend-app/android
 ```
 
 Output:
+
 ```
 frontend-app/android/app/build/outputs/apk/release/app-release.apk
 ```
@@ -441,11 +448,13 @@ xcode-select --install
 After installing Xcode, you need to download at least one iOS simulator runtime — Xcode does **not** include one by default.
 
 **Xcode 15+:**
+
 ```
 Xcode → Settings (⌘,) → Platforms → click + → iOS → Download
 ```
 
 **Xcode 14 and below:**
+
 ```
 Xcode → Preferences (⌘,) → Components → download iOS simulator
 ```
@@ -453,6 +462,7 @@ Xcode → Preferences (⌘,) → Components → download iOS simulator
 Download **iOS 17** (or the latest available, ~7 GB). Wait for the download to complete before running the app.
 
 Verify a simulator is available:
+
 ```bash
 xcrun simctl list devices available
 ```
@@ -476,6 +486,7 @@ gem install cocoapods
 ```
 
 Verify:
+
 ```bash
 ruby --version   # must print 3.3.0 — if it prints an older version, the PATH export is missing
 pod --version    # should print 1.14.x or higher
@@ -497,6 +508,7 @@ npx pod-install
 > First pod install takes 5–15 minutes — compiles native modules (Skia, Reanimated, Notifee).
 
 Always open the **workspace**, never the project file. To open it in Xcode:
+
 ```bash
 open frontend-app/ios/BuddyApp.xcworkspace
 ```
@@ -520,11 +532,13 @@ yarn ios
 > First run takes 10–20 minutes — compiles native modules. Subsequent runs take 1–3 minutes.
 
 To target a specific simulator:
+
 ```bash
 yarn ios --simulator="iPhone 15 Pro"
 ```
 
 List available simulators if unsure of the name:
+
 ```bash
 xcrun simctl list devices available
 ```
@@ -534,23 +548,27 @@ xcrun simctl list devices available
 ### Daily Workflow (iOS)
 
 **Step 1 — Start the backend**
+
 ```bash
 docker compose up
 ```
 
 **Step 2 — Start Metro (Terminal 1)**
+
 ```bash
 cd frontend-app
 yarn start
 ```
 
 **Step 3 — Launch the app (Terminal 2)**
+
 ```bash
 cd frontend-app
 yarn ios
 ```
 
 Or open a specific simulator:
+
 ```bash
 cd frontend-app
 yarn ios --simulator="iPhone 15 Pro"
@@ -564,14 +582,14 @@ Edit any `.ts` / `.tsx` file and save. Metro hot-reloads instantly. Press `r` in
 
 ### When to Rebuild (iOS)
 
-| What changed | Action required |
-|---|---|
-| `.ts` / `.tsx` / `.js` file | Nothing — Metro hot-reloads on save |
-| Change not appearing | Press `r` in the Metro terminal |
-| New JS-only package | `yarn add <package>` → press `r` |
-| New native package | `yarn add <package>` → `yarn ios` (handles pod install internally) |
-| `ios/Podfile` changed | `yarn ios` (handles pod install internally) |
-| `.env` file changed | `yarn ios` (full rebuild) |
+| What changed                | Action required                                                    |
+| --------------------------- | ------------------------------------------------------------------ |
+| `.ts` / `.tsx` / `.js` file | Nothing — Metro hot-reloads on save                                |
+| Change not appearing        | Press `r` in the Metro terminal                                    |
+| New JS-only package         | `yarn add <package>` → press `r`                                   |
+| New native package          | `yarn add <package>` → `yarn ios` (handles pod install internally) |
+| `ios/Podfile` changed       | `yarn ios` (handles pod install internally)                        |
+| `.env` file changed         | `yarn ios` (full rebuild)                                          |
 
 **Full clean rebuild (after config or native changes):**
 
@@ -652,10 +670,10 @@ xcodebuild -exportArchive \
 
 Two workflow files build and publish the mobile app to S3:
 
-| Workflow | File | Runner | Output |
-|---|---|---|---|
+| Workflow          | File                                      | Runner          | Output |
+| ----------------- | ----------------------------------------- | --------------- | ------ |
 | Build Android APK | `.github/workflows/build-android-apk.yml` | `ubuntu-latest` | `.apk` |
-| Build iOS IPA | `.github/workflows/build-ios-ipa.yml` | `macos-latest` | `.ipa` |
+| Build iOS IPA     | `.github/workflows/build-ios-ipa.yml`     | `macos-latest`  | `.ipa` |
 
 Both are triggered manually from **GitHub → Actions → select workflow → Run workflow**, and require choosing an environment (`dev`, `stg`, or `prod`). The built artifact is uploaded both as a **GitHub Actions artifact** (retained 14 days) and pushed to the **S3 backend bucket**.
 
@@ -673,13 +691,13 @@ Environments used: `dev`, `stg`, `prod`. Each environment needs its own copy of 
 
 Add these to **every** environment that will run CI builds.
 
-| Secret | Description | Example |
-|---|---|---|
-| `SUBDOMAIN` | CloudFront subdomain prefix | `buddy` |
-| `DOMAIN_NAME` | Root domain | `learning-dev.com` |
-| `GOOGLE_CLIENT_ID` | Web OAuth 2.0 Client ID (same value as `.env`) | `491922250866-xxx.apps.googleusercontent.com` |
-| `ROLE_ARN` | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
-| `BACKEND_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded | `buddy360-assets-dev` |
+| Secret                | Description                                     | Example                                          |
+| --------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| `SUBDOMAIN`           | CloudFront subdomain prefix                     | `buddy`                                          |
+| `DOMAIN_NAME`         | Root domain                                     | `learning-dev.com`                               |
+| `GOOGLE_CLIENT_ID`    | Web OAuth 2.0 Client ID (same value as `.env`)  | `491922250866-xxx.apps.googleusercontent.com`    |
+| `ROLE_ARN`            | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
+| `BACKEND_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded    | `buddy360-assets-dev`                            |
 
 **How the API URL is derived at build time:**
 
@@ -698,12 +716,12 @@ The current release build uses the **debug keystore** for signing (suitable for 
 
 For Play Store submission in the future, replace the debug keystore with a production keystore and add these secrets:
 
-| Secret | Description |
-|---|---|
-| `KEYSTORE_FILE_BASE64` | Base64-encoded `.jks` release keystore |
-| `KEYSTORE_PASSWORD` | Keystore store password |
-| `KEY_ALIAS` | Key alias inside the keystore (e.g. `buddyapp`) |
-| `KEY_PASSWORD` | Key password |
+| Secret                 | Description                                     |
+| ---------------------- | ----------------------------------------------- |
+| `KEYSTORE_FILE_BASE64` | Base64-encoded `.jks` release keystore          |
+| `KEYSTORE_PASSWORD`    | Keystore store password                         |
+| `KEY_ALIAS`            | Key alias inside the keystore (e.g. `buddyapp`) |
+| `KEY_PASSWORD`         | Key password                                    |
 
 See [Build a Release APK](#build-a-release-apk) for keystore generation instructions.
 
@@ -715,16 +733,16 @@ See [Build a Release APK](#build-a-release-apk) for keystore generation instruct
 
 Apple offers two tiers. The CI/CD workflow requires the **paid program**.
 
-| Capability | Free Apple ID | Paid ($99 / year) |
-|---|---|---|
-| Run app on **your own device** via Xcode | ✅ | ✅ |
-| Provisioning profile expires after **7 days** (app stops launching; reinstall via Xcode) | ⚠️ | No expiry |
-| Max **3 apps** on your device at once | ⚠️ | Unlimited |
-| **Distribution certificate** (required by CI) | ❌ | ✅ |
-| **Ad Hoc provisioning profile** (required by CI) | ❌ | ✅ |
-| **TestFlight** beta distribution | ❌ | ✅ |
-| **App Store** submission | ❌ | ✅ |
-| Push notifications, CloudKit, etc. | ❌ | ✅ |
+| Capability                                                                               | Free Apple ID | Paid ($99 / year) |
+| ---------------------------------------------------------------------------------------- | ------------- | ----------------- |
+| Run app on **your own device** via Xcode                                                 | ✅            | ✅                |
+| Provisioning profile expires after **7 days** (app stops launching; reinstall via Xcode) | ⚠️            | No expiry         |
+| Max **3 apps** on your device at once                                                    | ⚠️            | Unlimited         |
+| **Distribution certificate** (required by CI)                                            | ❌            | ✅                |
+| **Ad Hoc provisioning profile** (required by CI)                                         | ❌            | ✅                |
+| **TestFlight** beta distribution                                                         | ❌            | ✅                |
+| **App Store** submission                                                                 | ❌            | ✅                |
+| Push notifications, CloudKit, etc.                                                       | ❌            | ✅                |
 
 The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **Distribution certificate** and an **Ad Hoc provisioning profile** — both are locked behind the paid program.
 
@@ -757,13 +775,13 @@ This is fine for development testing on your own device. CI builds and distribut
 
 iOS builds require four extra secrets on top of the shared set. The steps below show how to generate each one.
 
-| Secret | Description |
-|---|---|
-| `IOS_CLIENT_ID` | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
-| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded Apple Distribution certificate (`.p12`) |
-| `IOS_CERTIFICATE_PASSWORD` | Password chosen when exporting the `.p12` |
-| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`) |
-| `IOS_APPLE_TEAM_ID` | 10-character Apple Developer Team ID |
+| Secret                            | Description                                                              |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `IOS_CLIENT_ID`                   | Google iOS OAuth 2.0 Client ID (same value as `IOS_CLIENT_ID` in `.env`) |
+| `IOS_CERTIFICATE_P12_BASE64`      | Base64-encoded Apple Distribution certificate (`.p12`)                   |
+| `IOS_CERTIFICATE_PASSWORD`        | Password chosen when exporting the `.p12`                                |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded Ad Hoc provisioning profile (`.mobileprovision`)          |
+| `IOS_APPLE_TEAM_ID`               | 10-character Apple Developer Team ID                                     |
 
 #### Step 1 — Find your Apple Team ID
 
@@ -821,9 +839,9 @@ Ad Hoc distribution requires each test device's UDID to be registered:
 Approximate build times:
 
 | Platform | Cached run | Cold run (no cache) |
-|---|---|---|
-| Android | ~8 min | ~20 min |
-| iOS | ~15 min | ~50 min |
+| -------- | ---------- | ------------------- |
+| Android  | ~8 min     | ~20 min             |
+| iOS      | ~15 min    | ~50 min             |
 
 ---
 
@@ -834,6 +852,7 @@ Approximate build times:
 Go to the completed workflow run → scroll to the **Artifacts** section at the bottom of the page → download the zip.
 
 Artifact name format:
+
 ```
 buddy360-android-{env}-{git-sha}
 buddy360-ios-{env}-{git-sha}
@@ -929,14 +948,15 @@ Copy the Role ARN (format: `arn:aws:iam::123456789012:role/role-name`) and add i
 
 Managed by `react-native-config`. File location: `frontend-app/.env`
 
-| Variable | Description | Local dev value |
-|---|---|---|
-| `API_URL` | Backend base URL | `http://localhost:8000` |
-| `CDN_BASE_URL` | CDN base URL for static assets | `http://localhost:8000` |
-| `GOOGLE_CLIENT_ID` | Google Web OAuth 2.0 Client ID | from Google Cloud Console |
-| `IOS_CLIENT_ID` | Google iOS OAuth 2.0 Client ID (iOS only) | from Google Cloud Console |
+| Variable           | Description                               | Local dev value           |
+| ------------------ | ----------------------------------------- | ------------------------- |
+| `API_URL`          | Backend base URL                          | `http://localhost:8000`   |
+| `CDN_BASE_URL`     | CDN base URL for static assets            | `http://localhost:8000`   |
+| `GOOGLE_CLIENT_ID` | Google Web OAuth 2.0 Client ID            | from Google Cloud Console |
+| `IOS_CLIENT_ID`    | Google iOS OAuth 2.0 Client ID (iOS only) | from Google Cloud Console |
 
 **Important rules:**
+
 - Changing `.env` always requires a **native rebuild** (`yarn android` for Android, `yarn ios` for iOS)
 - `yarn start --reset-cache` alone is **not** enough after a `.env` change
 - For Android emulator, always run `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000` after starting the emulator — `8081` is Metro (blank screen without it), `8000` is the backend API
@@ -972,6 +992,7 @@ keytool -list -v \
 ```
 
 Example output:
+
 ```
 SHA1: AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD
 ```
@@ -1044,12 +1065,14 @@ IOS_CLIENT_ID=491922250866-xxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
 Because `@react-native-google-signin/google-signin` is a native module and `.env` changed, a full rebuild is required. A Metro reload (`r`) is not enough.
 
 **Android:**
+
 ```bash
 cd frontend-app
 yarn android
 ```
 
 **iOS:**
+
 ```bash
 cd frontend-app
 yarn ios
@@ -1070,15 +1093,15 @@ adb reverse tcp:8000 tcp:8000
 
 ### Troubleshooting Google Sign-In
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Sign-in sheet does not appear | Native module not linked | Full rebuild (Step 6) |
-| `DEVELOPER_ERROR` / error code 10 (Android) | SHA-1 not registered, wrong package name, or wrong Client ID type | Re-check Steps 1–2 and 4; ensure SHA-1 is registered for the **debug** keystore and `GOOGLE_CLIENT_ID` is the **Web** client ID |
-| `RNGoogleSignin: failed to determine clientID` (iOS) | `IOS_CLIENT_ID` not set in `.env` | Follow Step 3 to create an iOS OAuth Client ID, add to `.env` as `IOS_CLIENT_ID`, then rebuild with `yarn ios` |
-| `SIGN_IN_CANCELLED` | User dismissed the sheet | No action needed |
-| `PLAY_SERVICES_NOT_AVAILABLE` | Emulator image has no Play Services | Use a Play Store system image in Android Studio (e.g. Pixel 7 API 34 with Google Play) |
-| "Google sign-in is not configured on the server" | Backend `GOOGLE_CLIENT_ID` not set | Set `GOOGLE_CLIENT_ID` in the backend environment and redeploy |
-| Sign-in works locally but fails on release APK | Release keystore SHA-1 not registered | Register the release keystore SHA-1 (Steps 1 + 2), then rebuild |
+| Symptom                                              | Likely cause                                                      | Fix                                                                                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in sheet does not appear                        | Native module not linked                                          | Full rebuild (Step 6)                                                                                                           |
+| `DEVELOPER_ERROR` / error code 10 (Android)          | SHA-1 not registered, wrong package name, or wrong Client ID type | Re-check Steps 1–2 and 4; ensure SHA-1 is registered for the **debug** keystore and `GOOGLE_CLIENT_ID` is the **Web** client ID |
+| `RNGoogleSignin: failed to determine clientID` (iOS) | `IOS_CLIENT_ID` not set in `.env`                                 | Follow Step 3 to create an iOS OAuth Client ID, add to `.env` as `IOS_CLIENT_ID`, then rebuild with `yarn ios`                  |
+| `SIGN_IN_CANCELLED`                                  | User dismissed the sheet                                          | No action needed                                                                                                                |
+| `PLAY_SERVICES_NOT_AVAILABLE`                        | Emulator image has no Play Services                               | Use a Play Store system image in Android Studio (e.g. Pixel 7 API 34 with Google Play)                                          |
+| "Google sign-in is not configured on the server"     | Backend `GOOGLE_CLIENT_ID` not set                                | Set `GOOGLE_CLIENT_ID` in the backend environment and redeploy                                                                  |
+| Sign-in works locally but fails on release APK       | Release keystore SHA-1 not registered                             | Register the release keystore SHA-1 (Steps 1 + 2), then rebuild                                                                 |
 
 ---
 
@@ -1175,7 +1198,7 @@ NDK folder exists but was never properly downloaded. Delete it first:
 rm -rf ~/Library/Android/sdk/ndk/27.1.12297006
 ```
 
-Then reinstall via Android Studio → **Tools → SDK Manager → SDK Tools tab** → enable *Show Package Details* → **NDK (Side by side) → 27.1.12297006** → Apply.
+Then reinstall via Android Studio → **Tools → SDK Manager → SDK Tools tab** → enable _Show Package Details_ → **NDK (Side by side) → 27.1.12297006** → Apply.
 
 ### CMake prefab ordering error after a clean
 

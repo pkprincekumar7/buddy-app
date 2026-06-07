@@ -68,7 +68,7 @@ export default function PageNotFound() {
           <div className="pt-6">
             <button
               onClick={() => navigate('/')}
-              className="border-edge hover:bg-subtle hover:border-edge-strong inline-flex items-center rounded-lg bg-surface-elevated px-4 py-2 text-sm font-medium text-foreground transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/[0.20] focus:ring-offset-2"
+              className="border-edge hover:border-edge-strong inline-flex items-center rounded-lg bg-surface-elevated px-4 py-2 text-sm font-medium text-foreground transition-colors duration-200 hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-white/[0.20] focus:ring-offset-2"
             >
               <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path

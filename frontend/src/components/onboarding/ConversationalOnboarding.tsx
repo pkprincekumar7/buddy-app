@@ -983,7 +983,7 @@ export default function ConversationalOnboarding({
                   className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                     isSelected
                       ? 'border-primary-medium bg-primary-medium/15 text-primary-light'
-                      : 'bg-ghost-md border-c-md hover:bg-primary/10 text-muted-foreground hover:border-primary/50 hover:text-primary'
+                      : 'bg-ghost-md border-c-md text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary'
                   }`}
                 >
                   {option}

@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { readStoredDarkMode } from '@/lib/theme';
 
 /**
  * Full-screen stage image splash.
@@ -23,6 +24,14 @@ interface StageSplashProps {
 export default function StageSplash({ stage, onReady }: StageSplashProps) {
   const padded = String(stage).padStart(2, '0');
   const [imageReady, setImageReady] = useState(false);
+  const [isDark, setIsDark] = useState(readStoredDarkMode);
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(!document.documentElement.classList.contains('light'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   const handleLoad = useCallback(() => {
     setImageReady(true);
@@ -37,7 +46,7 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
       className="fixed inset-0 z-[100] bg-background"
     >
       <motion.img
-        src={`/app-assets/avatars/stage-${padded}.png`}
+        src={`/app-assets/avatars/stage-${padded}-${isDark ? 'dark' : 'light'}.png`}
         alt={`Stage ${stage}`}
         initial={{ opacity: 0, scale: 1.04 }}
         animate={imageReady ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 1.04 }}

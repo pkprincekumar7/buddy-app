@@ -23,6 +23,7 @@ import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { normalizeAge } from '@/lib/insightsUtils';
 import { useSlideUp } from '@/lib/animations';
 import { useTheme } from '@/lib/ThemeContext';
+import { AREA_LINE_COLORS } from '@/lib/gradientColors';
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -73,42 +74,42 @@ const growthAreas: AreaDef[] = [
     id: 'life_ambition',
     name: 'Life Ambition',
     emoji: '🚀',
-    color: 'bg-purple-500',
+    color: AREA_LINE_COLORS['life_ambition']!,
     description: 'Discovering purpose and future goals',
   },
   {
     id: 'self_care',
     name: 'Self Care',
     emoji: '❤️',
-    color: 'bg-rose-500',
+    color: AREA_LINE_COLORS['self_care']!,
     description: 'Building healthy habits and emotional wellness',
   },
   {
     id: 'critical_thinking',
     name: 'Critical Thinking',
     emoji: '🧠',
-    color: 'bg-blue-500',
+    color: AREA_LINE_COLORS['critical_thinking']!,
     description: 'Problem solving and analytical skills',
   },
   {
     id: 'creativity',
     name: 'Creativity',
     emoji: '🎨',
-    color: 'bg-amber-500',
+    color: AREA_LINE_COLORS['creativity']!,
     description: 'Imagination and creative expression',
   },
   {
     id: 'physical_wellness',
     name: 'Physical Wellness',
     emoji: '💪',
-    color: 'bg-emerald-500',
+    color: AREA_LINE_COLORS['physical_wellness']!,
     description: 'Body awareness and physical health',
   },
   {
     id: 'social_skills',
     name: 'Social Skills',
     emoji: '💬',
-    color: 'bg-violet-500',
+    color: AREA_LINE_COLORS['social_skills']!,
     description: 'Communication and relationship building',
   },
 ];
@@ -1014,7 +1015,10 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
                   className="h-7 w-7 shrink-0 items-center justify-center rounded-lg"
                   style={{ backgroundColor: colors.warning + '26' }}
                 >
-                  <Text className="text-xs font-bold text-amber-400">
+                  <Text
+                    className="text-xs font-bold"
+                    style={{ color: colors.warning }}
+                  >
                     {index + 1}
                   </Text>
                 </View>
@@ -1031,11 +1035,21 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
       )}
 
       <Animated.View
-        style={[exploreAnim, { backgroundColor: colors.card }]}
-        className="rounded-2xl border border-purple-500/20 p-6"
+        style={[
+          exploreAnim,
+          {
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.primary + '33',
+          },
+        ]}
+        className="rounded-2xl p-6"
       >
         <View className="items-center">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-purple-500 mb-4">
+          <View
+            className="h-14 w-14 items-center justify-center rounded-2xl mb-4"
+            style={{ backgroundColor: colors.primary }}
+          >
             <EmojiText size="2xl">🧭</EmojiText>
           </View>
           <Text
@@ -1055,7 +1069,8 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
           <Button
             size="xl"
             onPress={() => setStep('area_selection')}
-            className="w-full rounded-2xl bg-purple-500 items-center justify-center mb-3"
+            className="w-full rounded-2xl items-center justify-center mb-3"
+            style={{ backgroundColor: colors.primary }}
           >
             <Text
               className="text-sm font-semibold"
@@ -1273,7 +1288,8 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
             android_ripple={{ color: colors.pressedBackground }}
           >
             <View
-              className={`h-11 w-11 rounded-xl ${area.color} mb-3 items-center justify-center`}
+              className="h-11 w-11 rounded-xl mb-3 items-center justify-center"
+              style={{ backgroundColor: area.color }}
             >
               <EmojiText size="lg">{area.emoji}</EmojiText>
             </View>
@@ -1304,9 +1320,8 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View style={headerAnim} className="items-center mb-6">
         <View
-          className={`mx-auto h-16 w-16 rounded-2xl ${
-            selectedArea?.color ?? 'bg-teal-500'
-          } mb-4 items-center justify-center`}
+          className="mx-auto h-16 w-16 rounded-2xl mb-4 items-center justify-center"
+          style={{ backgroundColor: selectedArea?.color ?? colors.primary }}
         >
           <EmojiText size="2xl">{selectedArea?.emoji}</EmojiText>
         </View>
@@ -1329,15 +1344,15 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
               setSelectedActivity(activity);
               setStep('parent_activity');
             }}
-            className={`w-full rounded-2xl border p-4 mb-3 ${
-              selectedActivity?.title === activity.title
-                ? 'border-purple-500/50 bg-purple-500/10'
-                : ''
-            }`}
+            className="w-full rounded-2xl border p-4 mb-3"
             style={
-              selectedActivity?.title !== activity.title
-                ? { borderColor: colors.border, backgroundColor: colors.card }
-                : undefined
+              selectedActivity?.title === activity.title
+                ? {
+                    borderColor: (selectedArea?.color ?? colors.primary) + '80',
+                    backgroundColor:
+                      (selectedArea?.color ?? colors.primary) + '1A',
+                  }
+                : { borderColor: colors.border, backgroundColor: colors.card }
             }
             android_ripple={{ color: colors.pressedBackground }}
           >
@@ -1367,8 +1382,17 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
                       ⏱ {activity.duration}
                     </Text>
                   </View>
-                  <View className="rounded-full bg-purple-500/15 px-2 py-0.5">
-                    <Text className="text-xs capitalize text-purple-400">
+                  <View
+                    className="rounded-full px-2 py-0.5"
+                    style={{
+                      backgroundColor:
+                        (selectedArea?.color ?? colors.primary) + '26',
+                    }}
+                  >
+                    <Text
+                      className="text-xs capitalize"
+                      style={{ color: selectedArea?.color ?? colors.primary }}
+                    >
                       {activity.type}
                     </Text>
                   </View>
@@ -1404,10 +1428,11 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View
-        style={headerAnim}
-        className={`${
-          selectedArea?.color ?? 'bg-teal-500'
-        } rounded-2xl p-6 mb-6`}
+        style={[
+          headerAnim,
+          { backgroundColor: selectedArea?.color ?? colors.primary },
+        ]}
+        className="rounded-2xl p-6 mb-6"
       >
         <View className="items-center">
           <Text className="text-4xl mb-3">🏆</Text>
@@ -1547,7 +1572,8 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
               debouncedSaveAreaProgress.flush?.();
               setStep('activity_selection');
             }}
-            className="rounded-2xl bg-purple-500 px-4 py-2 items-center justify-center"
+            className="rounded-2xl px-4 py-2 items-center justify-center"
+            style={{ backgroundColor: colors.primary }}
           >
             <Text
               className="text-sm font-medium"
@@ -1570,8 +1596,11 @@ function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
       <Animated.View
-        style={[cardAnim, { backgroundColor: colors.card }]}
-        className="rounded-2xl border border-emerald-500/20 p-6"
+        style={[
+          cardAnim,
+          { backgroundColor: colors.card, borderColor: colors.success + '33' },
+        ]}
+        className="rounded-2xl border p-6"
       >
         <View className="items-center">
           <View
@@ -2022,9 +2051,8 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {/* Header */}
       <Animated.View style={headerAnim} className="items-center mb-6">
         <View
-          className={`mx-auto mb-4 h-20 w-20 rounded-2xl ${
-            selectedArea?.color ?? 'bg-emerald-500'
-          } items-center justify-center`}
+          className="mx-auto mb-4 h-20 w-20 rounded-2xl items-center justify-center"
+          style={{ backgroundColor: selectedArea?.color ?? colors.primary }}
         >
           <EmojiText size="4xl">{selectedArea?.emoji}</EmojiText>
         </View>
@@ -2081,10 +2109,16 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {/* Selected activity */}
       {selectedActivity && !childGameResults && (
         <View
-          className="space-y-4 rounded-2xl border border-purple-500/20 p-5 mb-6"
-          style={{ backgroundColor: colors.card }}
+          className="space-y-4 rounded-2xl border p-5 mb-6"
+          style={{
+            backgroundColor: colors.card,
+            borderColor: (selectedArea?.color ?? colors.primary) + '33',
+          }}
         >
-          <Text className="text-xs font-semibold uppercase tracking-widest text-purple-400">
+          <Text
+            className="text-xs font-semibold uppercase tracking-widest"
+            style={{ color: selectedArea?.color ?? colors.primary }}
+          >
             Your selected activity
           </Text>
           <View>
@@ -2106,8 +2140,17 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   ⏱ {selectedActivity.duration}
                 </Text>
               </View>
-              <View className="rounded-full bg-purple-500/15 px-2 py-0.5">
-                <Text className="text-xs capitalize text-purple-400">
+              <View
+                className="rounded-full px-2 py-0.5"
+                style={{
+                  backgroundColor:
+                    (selectedArea?.color ?? colors.primary) + '26',
+                }}
+              >
+                <Text
+                  className="text-xs capitalize"
+                  style={{ color: selectedArea?.color ?? colors.primary }}
+                >
                   {selectedActivity.type}
                 </Text>
               </View>
@@ -2115,7 +2158,8 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           </View>
           <Button
             onPress={() => setStep('parent_activity')}
-            className="rounded-2xl bg-purple-500 items-center justify-center py-2.5 mb-2"
+            className="rounded-2xl items-center justify-center py-2.5 mb-2"
+            style={{ backgroundColor: selectedArea?.color ?? colors.primary }}
           >
             <Text
               className="text-sm font-medium"
@@ -2262,8 +2306,11 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {/* Child game */}
       {showGame && !childGameResults && selectedArea?.id && (
         <View
-          className="rounded-3xl border border-emerald-500/20 p-6 mb-6"
-          style={{ backgroundColor: colors.card }}
+          className="rounded-3xl border p-6 mb-6"
+          style={{
+            backgroundColor: colors.card,
+            borderColor: colors.success + '33',
+          }}
         >
           <ChildActivityGame
             key={selectedArea.id}
@@ -2320,8 +2367,11 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
       {childGameResults && (
         <View>
           <View
-            className="rounded-3xl border border-emerald-500/20 p-6 mb-4"
-            style={{ backgroundColor: colors.card }}
+            className="rounded-3xl border p-6 mb-4"
+            style={{
+              backgroundColor: colors.card,
+              borderColor: colors.success + '33',
+            }}
           >
             <View className="items-center mb-4">
               <View
@@ -2410,8 +2460,11 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           </View>
 
           <View
-            className="rounded-3xl border border-emerald-500/15 p-6 mb-4"
-            style={{ backgroundColor: colors.card }}
+            className="rounded-3xl border p-6 mb-4"
+            style={{
+              backgroundColor: colors.card,
+              borderColor: colors.success + '26',
+            }}
           >
             <View className="flex-row items-center gap-2 mb-3">
               <Text style={{ color: colors.success }}>🎯</Text>

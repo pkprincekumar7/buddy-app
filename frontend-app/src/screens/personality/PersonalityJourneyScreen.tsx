@@ -500,8 +500,14 @@ export default function PersonalityJourneyScreen() {
 
           {/* Growth areas prompt — mirrors web: gradient compass icon + gradient Continue + Clock Later */}
           <Animated.View
-            style={[growthAnim, { backgroundColor: colors.card }]}
-            className="rounded-2xl border border-purple-500/20 p-6 mb-5"
+            style={[
+              growthAnim,
+              {
+                backgroundColor: colors.card,
+                borderColor: PERSONALITY_JOURNEY_GRADIENT.from + '33',
+              },
+            ]}
+            className="rounded-2xl border p-6 mb-5"
           >
             <View className="items-center gap-4">
               <GradientIconBox

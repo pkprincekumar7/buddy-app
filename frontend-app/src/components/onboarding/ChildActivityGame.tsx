@@ -6,20 +6,15 @@ import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
 import { useTheme } from '@/lib/ThemeContext';
+import { TILE_BG_HEX_COLORS } from '@/lib/gradientColors';
 
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts and app-level rerenders.
 const _failedAssetPaths = new Set<string>();
 
-// Fallback gradient colours shown when an image fails to load.
-const TILE_BG_COLORS = [
-  'bg-purple-500',
-  'bg-rose-500',
-  'bg-amber-500',
-  'bg-emerald-500',
-  'bg-blue-500',
-  'bg-violet-500',
-];
+function themedImagePath(path: string, isDark: boolean): string {
+  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
+}
 
 interface AreaGameOption {
   id: string;
@@ -377,7 +372,7 @@ export default function ChildActivityGame({
   onSelectedIdsChange,
   onComplete,
 }: ChildActivityGameProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const game = areaGames[areaId] ?? areaGames['life_ambition']!;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(
@@ -546,7 +541,10 @@ export default function ChildActivityGame({
                 {!hasFailed ? (
                   <Image
                     source={{
-                      uri: `${env.CDN_BASE_URL}/app-assets/${option.image}`,
+                      uri: `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
+                        option.image,
+                        isDark,
+                      )}`,
                     }}
                     className="w-full"
                     style={{ aspectRatio: 4 / 3 }}
@@ -558,10 +556,12 @@ export default function ChildActivityGame({
                   />
                 ) : (
                   <View
-                    className={`w-full items-center justify-center ${
-                      TILE_BG_COLORS[index % TILE_BG_COLORS.length]
-                    }`}
-                    style={{ aspectRatio: 4 / 3 }}
+                    className="w-full items-center justify-center"
+                    style={{
+                      aspectRatio: 4 / 3,
+                      backgroundColor:
+                        TILE_BG_HEX_COLORS[index % TILE_BG_HEX_COLORS.length],
+                    }}
                   >
                     <Text style={{ fontSize: 48 }}>{option.emoji}</Text>
                   </View>

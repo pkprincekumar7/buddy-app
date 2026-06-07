@@ -102,7 +102,8 @@ function ActivityCardIcon({
   colorDot: string;
   index: number;
 }) {
-  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success-bright" />;
+  if (completed)
+    return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success-bright" />;
   if (isLocked)
     return (
       <div className="bg-ghost-strong mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full">

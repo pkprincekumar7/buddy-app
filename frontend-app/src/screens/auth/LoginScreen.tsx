@@ -291,7 +291,7 @@ export default function LoginScreen() {
                     void onSubmit();
                   }}
                   disabled={busy}
-                  className="w-full bg-teal-600"
+                  className="w-full"
                 >
                   {busy ? 'Signing in…' : 'Sign in'}
                 </Button>
@@ -428,7 +428,7 @@ export default function LoginScreen() {
                       void onGoogleCountrySubmit();
                     }}
                     disabled={!googleCountry || googleCountryBusy}
-                    className="flex-1 bg-teal-600"
+                    className="flex-1"
                   >
                     {googleCountryBusy ? 'Signing in…' : 'Continue'}
                   </Button>

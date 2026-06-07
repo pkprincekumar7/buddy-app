@@ -276,7 +276,7 @@ export default function PersonalityJourney() {
                       size="xl"
                       variant="outline"
                       onClick={() => navigate('/Home')}
-                      className="border-edge-strong hover:bg-subtle rounded-2xl bg-transparent px-8 text-foreground"
+                      className="border-edge-strong rounded-2xl bg-transparent px-8 text-foreground hover:bg-subtle"
                     >
                       <Clock className="mr-2 h-4 w-4" />
                       Catch Up Later

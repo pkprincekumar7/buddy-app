@@ -1028,7 +1028,13 @@ export default function ActivityModal({
                 </View>
 
                 {/* Score / Note */}
-                <View className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <View
+                  className="rounded-2xl border p-4"
+                  style={{
+                    borderColor: colors.success + '33',
+                    backgroundColor: colors.success + '1A',
+                  }}
+                >
                   {isScorableActivity ? (
                     <View className="flex-row items-center gap-3">
                       <View>

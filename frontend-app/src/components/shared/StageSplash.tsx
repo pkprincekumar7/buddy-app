@@ -41,7 +41,7 @@ interface StageSplashProps {
 }
 
 export default function StageSplash({ stage, onReady }: StageSplashProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const padded = String(stage).padStart(2, '0');
 
   // Image: starts invisible + slightly zoomed in, fades in on load
@@ -98,7 +98,9 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
       <Animated.View style={[StyleSheet.absoluteFill, imgStyle]}>
         <Image
           source={{
-            uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}.png`,
+            uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}-${
+              isDark ? 'dark' : 'light'
+            }.png`,
           }}
           style={styles.image}
           resizeMode="contain"

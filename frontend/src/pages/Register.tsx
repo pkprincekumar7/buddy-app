@@ -158,7 +158,11 @@ export default function Register() {
             />
           </div>
           {error ? <p className="text-sm text-error-strong">{error}</p> : null}
-          <Button type="submit" className="w-full bg-primary-action hover:bg-primary-action/80" disabled={busy}>
+          <Button
+            type="submit"
+            className="w-full bg-primary-action hover:bg-primary-action/80"
+            disabled={busy}
+          >
             {busy ? 'Creating account…' : 'Register'}
           </Button>
         </form>

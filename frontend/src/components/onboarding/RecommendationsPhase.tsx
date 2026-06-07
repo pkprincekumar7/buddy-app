@@ -1284,7 +1284,7 @@ export default function RecommendationsPhase({
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-foreground"
+                className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 <Clock className="mr-2 h-4 w-4" />
                 Catch Up Later
@@ -1604,7 +1604,7 @@ export default function RecommendationsPhase({
                 setParentLiked(false);
                 setStep('feedback');
               }}
-              className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-foreground"
+              className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
             >
               <ThumbsDown className="mr-2 h-4 w-4" />
               Not quite
@@ -1657,7 +1657,7 @@ export default function RecommendationsPhase({
             <Button
               variant="outline"
               onClick={() => setStep('activity_selection')}
-              className="border-edge-strong hover:bg-subtle bg-transparent text-foreground"
+              className="border-edge-strong bg-transparent text-foreground hover:bg-subtle"
             >
               Go Back
             </Button>
@@ -1706,7 +1706,7 @@ export default function RecommendationsPhase({
               <Button
                 variant="outline"
                 onClick={() => navigate(createPageUrl('Home'))}
-                className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-base text-foreground"
+                className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 Catch Up Later
               </Button>
@@ -1886,7 +1886,7 @@ export default function RecommendationsPhase({
                           className={`w-full rounded-xl border p-3.5 text-left text-sm transition-all ${
                             selected
                               ? 'border-primary-medium/50 bg-primary-medium/10 text-primary-light'
-                              : 'border-c-edge hover:bg-primary/5 bg-surface-input text-foreground hover:border-primary/30'
+                              : 'border-c-edge bg-surface-input text-foreground hover:border-primary/30 hover:bg-primary/5'
                           }`}
                         >
                           <span className="font-medium">{option}</span>
@@ -1900,7 +1900,7 @@ export default function RecommendationsPhase({
                         type="button"
                         variant="outline"
                         onClick={handlePreviousQuestion}
-                        className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-base text-foreground sm:w-auto"
+                        className="border-edge-strong h-11 w-full rounded-2xl bg-transparent text-base text-foreground hover:bg-subtle sm:w-auto"
                       >
                         <ChevronLeft className="mr-1 h-4 w-4" />
                         Previous
@@ -1939,7 +1939,7 @@ export default function RecommendationsPhase({
                       type="button"
                       variant="outline"
                       onClick={handlePreviousQuestion}
-                      className="border-edge-strong hover:bg-subtle h-11 w-full rounded-2xl bg-transparent text-base text-foreground sm:w-auto"
+                      className="border-edge-strong h-11 w-full rounded-2xl bg-transparent text-base text-foreground hover:bg-subtle sm:w-auto"
                     >
                       <ChevronLeft className="mr-1 h-4 w-4" />
                       Previous
@@ -2142,7 +2142,7 @@ export default function RecommendationsPhase({
                 type="button"
                 variant="outline"
                 onClick={() => setStep('activity_selection')}
-                className="border-edge-strong hover:bg-subtle rounded-2xl bg-transparent text-foreground"
+                className="border-edge-strong rounded-2xl bg-transparent text-foreground hover:bg-subtle"
               >
                 Pick a different activity
               </Button>
@@ -2186,7 +2186,7 @@ export default function RecommendationsPhase({
                       setShowGame(false);
                     })();
                   }}
-                  className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-2xl bg-transparent text-base text-foreground"
+                  className="border-edge-strong h-11 flex-1 rounded-2xl bg-transparent text-base text-foreground hover:bg-subtle"
                 >
                   Next Growth Area
                 </Button>
@@ -2196,7 +2196,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="hover:bg-primary/10 h-11 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary"
+                className="h-11 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary hover:bg-primary/10"
               >
                 <ChevronRight className="mr-2 h-4 w-4" />
                 Go to Life Journey
@@ -2249,7 +2249,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="hover:bg-primary/10 h-12 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary"
+                className="h-12 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary hover:bg-primary/10"
               >
                 <ChevronRight className="mr-2 h-5 w-5" />
                 Go to Life Journey
@@ -2510,7 +2510,7 @@ export default function RecommendationsPhase({
                 onClick={() => {
                   void handleFinishRef.current?.();
                 }}
-                className="hover:bg-primary/10 h-12 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary"
+                className="h-12 w-full rounded-2xl border border-primary/30 bg-transparent text-base text-primary hover:bg-primary/10"
               >
                 <ChevronRight className="mr-2 h-5 w-5" />
                 Go to Life Journey

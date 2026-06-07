@@ -73,6 +73,10 @@ interface AreaGame {
   promptContext: (labels: string[]) => string;
 }
 
+function themedImagePath(path: string, isDark: boolean): string {
+  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
+}
+
 const TILE_COLORS = [
   'from-purple-400 to-indigo-500',
   'from-rose-400 to-pink-500',
@@ -385,7 +389,7 @@ function normalizeChildGameRecommendations(
 
 export default function GrowthAreasActivityGameScreen() {
   const navigation = useNavigation<GrowthNavProp>();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const route = useRoute<GrowthRouteProp>();
   const { activityId } = route.params as { activityId: string };
   const {
@@ -682,7 +686,10 @@ export default function GrowthAreasActivityGameScreen() {
             TILE_COLORS[index % TILE_COLORS.length] ?? TILE_COLORS[0]!;
           const { from: tFrom, to: tTo } = tileGrad(tileColor);
           const imageUrl = option.image
-            ? `${env.CDN_BASE_URL}/app-assets/${option.image}`
+            ? `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
+                option.image,
+                isDark,
+              )}`
             : undefined;
           return (
             <TouchableOpacity

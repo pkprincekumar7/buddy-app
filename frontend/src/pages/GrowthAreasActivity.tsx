@@ -256,7 +256,7 @@ export default function GrowthAreasActivity() {
             className="space-y-6"
           >
             {/* Question */}
-            <div className="rounded-2xl border border-edge-faint bg-card p-6">
+            <div className="border-edge-faint rounded-2xl border bg-card p-6">
               <p className="text-lg font-semibold leading-relaxed text-foreground">
                 {questionText}
               </p>
@@ -272,7 +272,7 @@ export default function GrowthAreasActivity() {
                     className={`w-full rounded-2xl border px-5 py-4 text-left text-sm font-medium transition-all hover:scale-[1.01] ${
                       currentAnswer === option
                         ? `border-transparent bg-gradient-to-r ${area.color} text-white`
-                        : 'border-edge-faint bg-card text-dim hover:border-edge hover:text-foreground'
+                        : 'border-edge-faint hover:border-edge bg-card text-dim hover:text-foreground'
                     }`}
                   >
                     {option}

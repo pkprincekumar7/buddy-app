@@ -669,8 +669,8 @@ export default function LifePathway() {
                         <span className="text-primary">
                           {user?.full_name?.split(' ')[0] ?? 'Parent'}
                         </span>{' '}
-                        and <span className="text-success-bright">{childName}</span> to Buddy360. We look
-                        forward to powering up your life in all possible dimensions.
+                        and <span className="text-success-bright">{childName}</span> to Buddy360. We
+                        look forward to powering up your life in all possible dimensions.
                       </p>
                     </div>
                   )}
@@ -774,7 +774,7 @@ export default function LifePathway() {
                             <Button
                               variant="outline"
                               onClick={handleProceedToDashboard}
-                              className="border-edge-strong hover:bg-subtle h-11 flex-1 rounded-xl bg-transparent text-base text-foreground"
+                              className="border-edge-strong h-11 flex-1 rounded-xl bg-transparent text-base text-foreground hover:bg-subtle"
                             >
                               Skip for now
                             </Button>
@@ -805,8 +805,8 @@ export default function LifePathway() {
                             <h3 className="mb-2 text-lg font-bold text-foreground">Got it!</h3>
                             <p className="leading-relaxed text-muted-foreground">
                               I got that. We will work with{' '}
-                              <span className="font-semibold text-success-bright">{childName}</span> on the
-                              same.
+                              <span className="font-semibold text-success-bright">{childName}</span>{' '}
+                              on the same.
                             </p>
                           </div>
                           <Button

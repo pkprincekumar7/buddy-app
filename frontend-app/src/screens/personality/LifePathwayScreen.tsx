@@ -94,14 +94,8 @@ const areaMilestoneMap: Record<string, { yearOffset: number; text: string }[]> =
     ],
   };
 
-const areaBgTw: Record<string, string> = {
-  life_ambition: 'bg-violet-500',
-  self_care: 'bg-pink-500',
-  critical_thinking: 'bg-blue-500',
-  creativity: 'bg-amber-400',
-  physical_wellness: 'bg-emerald-500',
-  social_skills: 'bg-violet-600',
-};
+// AREA_LINE_COLORS (imported from gradientColors) doubles as the icon-box background
+// for each area — same hex values used in charts, keeping them consistent.
 
 function getAreaBoost(area: Record<string, unknown>) {
   const answers =
@@ -806,12 +800,14 @@ export default function LifePathwayScreen() {
               <View className="flex-row flex-wrap justify-center gap-2 pt-2">
                 {completedAreas.map(area => {
                   const areaId = area.area_id as string | undefined;
-                  const bgTw =
-                    (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
+                  const areaBg =
+                    (areaId ? AREA_LINE_COLORS[areaId] : undefined) ??
+                    '#10b981';
                   return (
                     <View
                       key={(area.area_id ?? area.area_name) as string}
-                      className={`flex-row items-center gap-1.5 rounded-full px-3 py-1 ${bgTw}`}
+                      className="flex-row items-center gap-1.5 rounded-full px-3 py-1"
+                      style={{ backgroundColor: areaBg }}
                     >
                       {/* CheckCircle mirrors web <CheckCircle className="h-3.5 w-3.5"> */}
                       <CheckCircle size={14} color={colors.primaryForeground} />
@@ -1228,8 +1224,8 @@ export default function LifePathwayScreen() {
 
               {completedAreas.map((area, idx) => {
                 const areaId = area.area_id as string | undefined;
-                const bgTw =
-                  (areaId ? areaBgTw[areaId] : undefined) ?? 'bg-emerald-500';
+                const areaBg =
+                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ?? '#10b981';
                 const recs: unknown[] =
                   Array.isArray(area.ai_three_month_recommendations) &&
                   (area.ai_three_month_recommendations as unknown[]).length > 0
@@ -1252,7 +1248,8 @@ export default function LifePathwayScreen() {
                     >
                       <View className="mb-4 flex-row items-center gap-3">
                         <View
-                          className={`h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${bgTw}`}
+                          className="h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
+                          style={{ backgroundColor: areaBg }}
                         >
                           <Text
                             className="font-bold"
@@ -1267,7 +1264,10 @@ export default function LifePathwayScreen() {
                         >
                           {area.area_name as string}
                         </Text>
-                        <View className={`rounded-full px-2 py-0.5 ${bgTw}`}>
+                        <View
+                          className="rounded-full px-2 py-0.5"
+                          style={{ backgroundColor: areaBg }}
+                        >
                           <Text
                             className="text-xs font-medium"
                             style={{ color: colors.primaryForeground }}
@@ -1294,7 +1294,8 @@ export default function LifePathwayScreen() {
                                 className="flex-row items-start gap-2"
                               >
                                 <View
-                                  className={`mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full ${bgTw}`}
+                                  className="mt-0.5 h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
+                                  style={{ backgroundColor: areaBg }}
                                 >
                                   <Text
                                     className="text-xs font-bold"

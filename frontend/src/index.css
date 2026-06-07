@@ -39,8 +39,8 @@
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 8%;
     --popover-foreground: 0 0% 98%;
-    --primary: 174 72% 56%;           /* = teal-400 #2dd4bf — for text accents, borders, rings */
-    --primary-action: 174 84% 32%;    /* = teal-600 #0d9488 — for filled action buttons */
+    --primary: 174 72% 56%; /* = teal-400 #2dd4bf — for text accents, borders, rings */
+    --primary-action: 174 84% 32%; /* = teal-600 #0d9488 — for filled action buttons */
     --primary-foreground: 0 0% 4%;
     --secondary: 0 0% 12%;
     --secondary-foreground: 0 0% 98%;
@@ -75,58 +75,58 @@
     --scrollbar-thumb: 0 0% 16.5%;
     --scrollbar-thumb-hover: 0 0% 22.7%;
     /* Primary/Teal scale extensions */
-    --primary-light: 172 66% 67%;        /* teal-300 */
+    --primary-light: 172 66% 67%; /* teal-300 */
     /* --primary already = teal-400 */
-    --primary-medium: 174 84% 39%;       /* teal-500 */
-    --primary-dark: 174 84% 29%;         /* teal-600 */
-    --primary-stronger: 175 77% 26%;     /* teal-700 */
-    --primary-xstrong: 176 69% 22%;      /* teal-800 */
-    --primary-bg-light: 166 76% 80%;     /* teal-200 */
+    --primary-medium: 174 84% 39%; /* teal-500 */
+    --primary-dark: 174 84% 29%; /* teal-600 */
+    --primary-stronger: 175 77% 26%; /* teal-700 */
+    --primary-xstrong: 176 69% 22%; /* teal-800 */
+    --primary-bg-light: 166 76% 80%; /* teal-200 */
 
     /* Semantic status colors */
-    --success: 160 84% 39%;        /* = emerald-500 #10b981 */
+    --success: 160 84% 39%; /* = emerald-500 #10b981 */
     --success-bright: 160 84% 51%; /* = emerald-400 #34d399 — for accent text/icons */
-    --success-light: 156 72% 67%;        /* emerald-300 */
-    --success-strong: 161 94% 30%;       /* emerald-600 */
-    --success-xstrong: 163 94% 24%;      /* emerald-700 */
+    --success-light: 156 72% 67%; /* emerald-300 */
+    --success-strong: 161 94% 30%; /* emerald-600 */
+    --success-xstrong: 163 94% 24%; /* emerald-700 */
     --success-muted: 152 76% 79%;
 
     /* Warning/Amber scale */
-    --warning-light: 46 97% 65%;         /* amber-300 */
-    --warning: 43 96% 56%;               /* amber-400 */
-    --warning-medium: 38 92% 50%;        /* amber-500 */
-    --warning-strong: 26 90% 37%;        /* amber-700 */
-    --warning-orange: 25 95% 53%;        /* orange-400 */
+    --warning-light: 46 97% 65%; /* amber-300 */
+    --warning: 43 96% 56%; /* amber-400 */
+    --warning-medium: 38 92% 50%; /* amber-500 */
+    --warning-strong: 26 90% 37%; /* amber-700 */
+    --warning-orange: 25 95% 53%; /* orange-400 */
     --warning-orange-medium: 21 90% 48%; /* orange-500 */
 
     --error: 0 91% 71%;
-    --error-xlight: 0 86% 97%;           /* red-50 */
-    --error-light: 0 94% 82%;            /* red-300 */
-    --error-medium: 0 84% 60%;           /* red-500 */
-    --error-strong: 0 72% 45%;           /* red-600 */
+    --error-xlight: 0 86% 97%; /* red-50 */
+    --error-light: 0 94% 82%; /* red-300 */
+    --error-medium: 0 84% 60%; /* red-500 */
+    --error-strong: 0 72% 45%; /* red-600 */
     --error-muted: 0 93% 81%;
 
-    --info: 217 91% 60%;                 /* blue-400 */
-    --info-medium: 217 91% 49%;          /* blue-500 */
-    --info-strong: 221 83% 53%;          /* blue-600 */
+    --info: 217 91% 60%; /* blue-400 */
+    --info-medium: 217 91% 49%; /* blue-500 */
+    --info-strong: 221 83% 53%; /* blue-600 */
     --info-muted: 214 80% 75%;
 
     /* Personality/Purple scale */
-    --personality-light: 271 70% 47%;    /* purple-400 */
-    --personality: 271 81% 56%;          /* purple-500 */
-    --personality-alt: 258 90% 66%;      /* violet-500 */
+    --personality-light: 271 70% 47%; /* purple-400 */
+    --personality: 271 81% 56%; /* purple-500 */
+    --personality-alt: 258 90% 66%; /* violet-500 */
     --personality-alt-strong: 263 70% 50%; /* violet-600 */
 
     /* Pink */
-    --accent-pink: 330 81% 60%;          /* pink-500 */
+    --accent-pink: 330 81% 60%; /* pink-500 */
 
     /* Neutral/Slate text scale */
-    --dim-foreground: 213 27% 84%;       /* slate-300 */
-    --subtle-foreground: 215 16% 47%;    /* slate-500 */
-    --faint-foreground: 215 19% 35%;     /* slate-600 */
-    --xfaint-foreground: 215 25% 27%;    /* slate-700 */
-    --surface-muted-bg: 215 19% 35%;     /* slate-600 bg */
-    --surface-dark: 217 33% 17%;         /* slate-800 */
+    --dim-foreground: 213 27% 84%; /* slate-300 */
+    --subtle-foreground: 215 16% 47%; /* slate-500 */
+    --faint-foreground: 215 19% 35%; /* slate-600 */
+    --xfaint-foreground: 215 25% 27%; /* slate-700 */
+    --surface-muted-bg: 215 19% 35%; /* slate-600 bg */
+    --surface-dark: 217 33% 17%; /* slate-800 */
 
     /* RGB channels for glow utilities (no alpha — alpha is applied at the use site) */
     --glow-primary-rgb: 45 212 191;
@@ -370,69 +370,179 @@
 /* Semantic token utility classes */
 @layer utilities {
   /* Text utilities */
-  .text-primary-light   { color: hsl(var(--primary-light)); }
-  .text-primary-medium  { color: hsl(var(--primary-medium)); }
-  .text-success-bright  { color: hsl(var(--success-bright)); }
-  .text-success         { color: hsl(var(--success)); }
-  .text-success-strong  { color: hsl(var(--success-strong)); }
-  .text-success-xstrong { color: hsl(var(--success-xstrong)); }
-  .text-warning-light   { color: hsl(var(--warning-light)); }
-  .text-warning         { color: hsl(var(--warning)); }
-  .text-warning-medium  { color: hsl(var(--warning-medium)); }
-  .text-warning-strong  { color: hsl(var(--warning-strong)); }
-  .text-warning-orange  { color: hsl(var(--warning-orange)); }
-  .text-error           { color: hsl(var(--error)); }
-  .text-error-xlight    { color: hsl(var(--error-xlight)); }
-  .text-error-light     { color: hsl(var(--error-light)); }
-  .text-error-medium    { color: hsl(var(--error-medium)); }
-  .text-error-strong    { color: hsl(var(--error-strong)); }
-  .text-info            { color: hsl(var(--info)); }
-  .text-info-medium     { color: hsl(var(--info-medium)); }
-  .text-info-strong     { color: hsl(var(--info-strong)); }
-  .text-personality     { color: hsl(var(--personality)); }
-  .text-dim             { color: hsl(var(--dim-foreground)); }
-  .text-subtle          { color: hsl(var(--subtle-foreground)); }
-  .text-faint           { color: hsl(var(--faint-foreground)); }
-  .text-xfaint          { color: hsl(var(--xfaint-foreground)); }
+  .text-primary-light {
+    color: hsl(var(--primary-light));
+  }
+  .text-primary-medium {
+    color: hsl(var(--primary-medium));
+  }
+  .text-success-bright {
+    color: hsl(var(--success-bright));
+  }
+  .text-success {
+    color: hsl(var(--success));
+  }
+  .text-success-strong {
+    color: hsl(var(--success-strong));
+  }
+  .text-success-xstrong {
+    color: hsl(var(--success-xstrong));
+  }
+  .text-warning-light {
+    color: hsl(var(--warning-light));
+  }
+  .text-warning {
+    color: hsl(var(--warning));
+  }
+  .text-warning-medium {
+    color: hsl(var(--warning-medium));
+  }
+  .text-warning-strong {
+    color: hsl(var(--warning-strong));
+  }
+  .text-warning-orange {
+    color: hsl(var(--warning-orange));
+  }
+  .text-error {
+    color: hsl(var(--error));
+  }
+  .text-error-xlight {
+    color: hsl(var(--error-xlight));
+  }
+  .text-error-light {
+    color: hsl(var(--error-light));
+  }
+  .text-error-medium {
+    color: hsl(var(--error-medium));
+  }
+  .text-error-strong {
+    color: hsl(var(--error-strong));
+  }
+  .text-info {
+    color: hsl(var(--info));
+  }
+  .text-info-medium {
+    color: hsl(var(--info-medium));
+  }
+  .text-info-strong {
+    color: hsl(var(--info-strong));
+  }
+  .text-personality {
+    color: hsl(var(--personality));
+  }
+  .text-dim {
+    color: hsl(var(--dim-foreground));
+  }
+  .text-subtle {
+    color: hsl(var(--subtle-foreground));
+  }
+  .text-faint {
+    color: hsl(var(--faint-foreground));
+  }
+  .text-xfaint {
+    color: hsl(var(--xfaint-foreground));
+  }
 
   /* Background utilities */
-  .bg-primary-bg-light    { background-color: hsl(var(--primary-bg-light)); }
-  .bg-primary-medium      { background-color: hsl(var(--primary-medium)); }
-  .bg-primary-dark        { background-color: hsl(var(--primary-dark)); }
-  .bg-primary-stronger    { background-color: hsl(var(--primary-stronger)); }
-  .bg-success-light       { background-color: hsl(var(--success-light)); }
-  .bg-success-bright      { background-color: hsl(var(--success-bright)); }
-  .bg-success             { background-color: hsl(var(--success)); }
-  .bg-warning             { background-color: hsl(var(--warning)); }
-  .bg-warning-medium      { background-color: hsl(var(--warning-medium)); }
-  .bg-warning-orange      { background-color: hsl(var(--warning-orange)); }
-  .bg-warning-orange-medium { background-color: hsl(var(--warning-orange-medium)); }
-  .bg-error-light         { background-color: hsl(var(--error-light)); }
-  .bg-error-medium        { background-color: hsl(var(--error-medium)); }
-  .bg-error-strong        { background-color: hsl(var(--error-strong)); }
-  .bg-info-medium         { background-color: hsl(var(--info-medium)); }
-  .bg-personality-light   { background-color: hsl(var(--personality-light)); }
-  .bg-personality         { background-color: hsl(var(--personality)); }
-  .bg-personality-alt     { background-color: hsl(var(--personality-alt)); }
-  .bg-personality-alt-strong { background-color: hsl(var(--personality-alt-strong)); }
-  .bg-accent-pink         { background-color: hsl(var(--accent-pink)); }
-  .bg-surface-muted       { background-color: hsl(var(--surface-muted-bg)); }
-  .bg-surface-dark        { background-color: hsl(var(--surface-dark)); }
+  .bg-primary-bg-light {
+    background-color: hsl(var(--primary-bg-light));
+  }
+  .bg-primary-medium {
+    background-color: hsl(var(--primary-medium));
+  }
+  .bg-primary-dark {
+    background-color: hsl(var(--primary-dark));
+  }
+  .bg-primary-stronger {
+    background-color: hsl(var(--primary-stronger));
+  }
+  .bg-success-light {
+    background-color: hsl(var(--success-light));
+  }
+  .bg-success-bright {
+    background-color: hsl(var(--success-bright));
+  }
+  .bg-success {
+    background-color: hsl(var(--success));
+  }
+  .bg-warning {
+    background-color: hsl(var(--warning));
+  }
+  .bg-warning-medium {
+    background-color: hsl(var(--warning-medium));
+  }
+  .bg-warning-orange {
+    background-color: hsl(var(--warning-orange));
+  }
+  .bg-warning-orange-medium {
+    background-color: hsl(var(--warning-orange-medium));
+  }
+  .bg-error-light {
+    background-color: hsl(var(--error-light));
+  }
+  .bg-error-medium {
+    background-color: hsl(var(--error-medium));
+  }
+  .bg-error-strong {
+    background-color: hsl(var(--error-strong));
+  }
+  .bg-info-medium {
+    background-color: hsl(var(--info-medium));
+  }
+  .bg-personality-light {
+    background-color: hsl(var(--personality-light));
+  }
+  .bg-personality {
+    background-color: hsl(var(--personality));
+  }
+  .bg-personality-alt {
+    background-color: hsl(var(--personality-alt));
+  }
+  .bg-personality-alt-strong {
+    background-color: hsl(var(--personality-alt-strong));
+  }
+  .bg-accent-pink {
+    background-color: hsl(var(--accent-pink));
+  }
+  .bg-surface-muted {
+    background-color: hsl(var(--surface-muted-bg));
+  }
+  .bg-surface-dark {
+    background-color: hsl(var(--surface-dark));
+  }
 
   /* Border utilities */
-  .border-primary-medium    { border-color: hsl(var(--primary-medium)); }
-  .border-success           { border-color: hsl(var(--success)); }
-  .border-warning-medium    { border-color: hsl(var(--warning-medium)); }
-  .border-error-medium      { border-color: hsl(var(--error-medium)); }
-  .border-info-medium       { border-color: hsl(var(--info-medium)); }
-  .border-personality       { border-color: hsl(var(--personality)); }
+  .border-primary-medium {
+    border-color: hsl(var(--primary-medium));
+  }
+  .border-success {
+    border-color: hsl(var(--success));
+  }
+  .border-warning-medium {
+    border-color: hsl(var(--warning-medium));
+  }
+  .border-error-medium {
+    border-color: hsl(var(--error-medium));
+  }
+  .border-info-medium {
+    border-color: hsl(var(--info-medium));
+  }
+  .border-personality {
+    border-color: hsl(var(--personality));
+  }
 
   /* Ring utilities */
-  .ring-primary-medium  { --tw-ring-color: hsl(var(--primary-medium)); }
-  .ring-error           { --tw-ring-color: hsl(var(--error)); }
+  .ring-primary-medium {
+    --tw-ring-color: hsl(var(--primary-medium));
+  }
+  .ring-error {
+    --tw-ring-color: hsl(var(--error));
+  }
 
   /* Fill utility */
-  .fill-success         { fill: hsl(var(--success)); }
+  .fill-success {
+    fill: hsl(var(--success));
+  }
 }
 
 /*
@@ -460,10 +570,18 @@
    These mirror what tailwind.config.ts declares but are guaranteed to be in the bundle. */
 @layer utilities {
   /* primary-action — for filled CTA buttons (opacity variants needed explicitly) */
-  .bg-primary-action            { background-color: hsl(var(--primary-action)); }
-  .bg-primary-action\/30        { background-color: hsl(var(--primary-action) / 0.3); }
-  .hover\:bg-primary-action\/80:hover { background-color: hsl(var(--primary-action) / 0.8); }
-  .hover\:bg-primary-action\/90:hover { background-color: hsl(var(--primary-action) / 0.9); }
+  .bg-primary-action {
+    background-color: hsl(var(--primary-action));
+  }
+  .bg-primary-action\/30 {
+    background-color: hsl(var(--primary-action) / 0.3);
+  }
+  .hover\:bg-primary-action\/80:hover {
+    background-color: hsl(var(--primary-action) / 0.8);
+  }
+  .hover\:bg-primary-action\/90:hover {
+    background-color: hsl(var(--primary-action) / 0.9);
+  }
 }
 
 @layer components {
@@ -479,7 +597,7 @@
 
   /* Secondary ghost/outline button */
   .btn-secondary {
-    @apply border-edge-strong hover:bg-subtle bg-transparent text-muted-foreground hover:text-foreground;
+    @apply border-edge-strong bg-transparent text-muted-foreground hover:bg-subtle hover:text-foreground;
   }
 
   /* Amber destructive-light button (Start Over, etc.) */

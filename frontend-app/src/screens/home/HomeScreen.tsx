@@ -10,6 +10,7 @@ import { EmojiText } from '@/components/ui/EmojiText';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import { useTheme } from '@/lib/ThemeContext';
+import { PILLAR_BG_COLORS } from '@/lib/gradientColors';
 import type { RootStackParamList } from '@/navigation';
 
 type HomeNavProp = StackNavigationProp<RootStackParamList>;
@@ -25,37 +26,37 @@ const PILLARS: PillarItem[] = [
   {
     emoji: '🧠',
     label: 'Mind',
-    bgColor: 'bg-blue-700',
+    bgColor: PILLAR_BG_COLORS[0]!,
     description: 'Cognitive growth & curiosity',
   },
   {
     emoji: '❤️',
     label: 'Heart',
-    bgColor: 'bg-rose-700',
+    bgColor: PILLAR_BG_COLORS[1]!,
     description: 'Emotional intelligence',
   },
   {
     emoji: '💪',
     label: 'Body',
-    bgColor: 'bg-emerald-700',
+    bgColor: PILLAR_BG_COLORS[2]!,
     description: 'Physical wellbeing',
   },
   {
     emoji: '🎨',
     label: 'Talents',
-    bgColor: 'bg-purple-700',
+    bgColor: PILLAR_BG_COLORS[3]!,
     description: 'Skill discovery',
   },
   {
     emoji: '⭐',
     label: 'Character',
-    bgColor: 'bg-amber-700',
+    bgColor: PILLAR_BG_COLORS[4]!,
     description: 'Values & integrity',
   },
   {
     emoji: '🚀',
     label: 'Future',
-    bgColor: 'bg-teal-700',
+    bgColor: PILLAR_BG_COLORS[5]!,
     description: 'Life direction',
   },
 ];
@@ -97,7 +98,8 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
         style={{ backgroundColor: colors.card, borderColor: colors.border }}
       >
         <View
-          className={`h-10 w-10 rounded-xl ${pillar.bgColor} items-center justify-center mb-3`}
+          className="h-10 w-10 rounded-xl items-center justify-center mb-3"
+          style={{ backgroundColor: pillar.bgColor }}
         >
           <EmojiText size="lg">{pillar.emoji}</EmojiText>
         </View>

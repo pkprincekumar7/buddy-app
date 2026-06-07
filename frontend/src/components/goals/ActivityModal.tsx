@@ -673,7 +673,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-muted-foreground"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -722,7 +722,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-muted-foreground"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -808,7 +808,7 @@ export default function ActivityModal({
                       </>
                     )}
                   </div>
-                  <div className="h-12 w-px bg-ghost-strong" />
+                  <div className="bg-ghost-strong h-12 w-px" />
                   <div className="flex-1 space-y-3 text-sm">
                     {/* What changed */}
                     {whatChanged && (
@@ -876,7 +876,7 @@ export default function ActivityModal({
                           }
                           disabled={isSaving}
                           variant="outline"
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base font-semibold text-foreground"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base font-semibold text-foreground hover:bg-subtle"
                         >
                           Give Feedback
                         </Button>
@@ -913,7 +913,7 @@ export default function ActivityModal({
                           onClick={() =>
                             dispatch({ type: 'SET_CONFIRMATION_STEP', value: 'options' })
                           }
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-base text-muted-foreground"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           ← Back
                         </Button>

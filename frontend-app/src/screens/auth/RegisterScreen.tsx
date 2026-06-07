@@ -276,7 +276,7 @@ export default function RegisterScreen() {
                   void onSubmit();
                 }}
                 disabled={busy}
-                className="w-full bg-teal-600"
+                className="w-full"
               >
                 {busy ? 'Creating account…' : 'Register'}
               </Button>
