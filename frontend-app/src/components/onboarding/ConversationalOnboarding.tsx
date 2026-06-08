@@ -110,10 +110,10 @@ function buildReplayMessages(
     const userDisplay = Array.isArray(val)
       ? val.join(', ')
       : typeof val === 'string'
-        ? val
-        : typeof val === 'number' || typeof val === 'boolean'
-          ? String(val)
-          : '';
+      ? val
+      : typeof val === 'number' || typeof val === 'boolean'
+      ? String(val)
+      : '';
     msgs.push({ id: newMsgId(), role: 'user', content: userDisplay });
   }
   return msgs;
@@ -223,7 +223,7 @@ function BouncingDots({
   }));
 
   const dot = (color: string) =>
-    ({ width: 6, height: 6, borderRadius: 3, backgroundColor: color }) as const;
+    ({ width: 6, height: 6, borderRadius: 3, backgroundColor: color } as const);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -576,8 +576,8 @@ function AnalyzingScreen({
                   color: done
                     ? colors.success
                     : active
-                      ? colors.text
-                      : colors.iconColor,
+                    ? colors.text
+                    : colors.iconColor,
                 }}
               >
                 {s.label}
@@ -1092,10 +1092,10 @@ export default function ConversationalOnboarding({
     const text = Array.isArray(raw)
       ? raw.join(', ')
       : typeof raw === 'string'
-        ? raw
-        : typeof raw === 'number' || typeof raw === 'boolean'
-          ? String(raw)
-          : '';
+      ? raw
+      : typeof raw === 'number' || typeof raw === 'boolean'
+      ? String(raw)
+      : '';
     setCurrentInput(text);
   }, [
     waitingForResponse,
