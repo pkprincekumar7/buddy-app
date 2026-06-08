@@ -342,7 +342,7 @@ export default function ProgressInsightsModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
     >
       <motion.div
         role="dialog"
@@ -357,7 +357,7 @@ export default function ProgressInsightsModal({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between bg-gradient-to-br from-primary-dark to-primary-medium px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+            <div className="bg-ghost-xl flex h-10 w-10 items-center justify-center rounded-2xl">
               <BarChart3 className="h-6 w-6 text-white" />
             </div>
             <div>
@@ -369,7 +369,7 @@ export default function ProgressInsightsModal({
             type="button"
             onClick={onClose}
             aria-label="Close progress modal"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+            className="bg-ghost-xl hover:bg-ghost-xl flex h-8 w-8 items-center justify-center rounded-full transition-colors"
           >
             <X className="h-5 w-5 text-white" />
           </button>

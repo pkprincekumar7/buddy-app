@@ -1570,7 +1570,7 @@ export default function RecommendationsPhase({
             <h2 className="text-xl font-bold">{selectedActivity?.title}</h2>
             <p className="text-sm text-white/80">{selectedActivity?.description}</p>
             <div className="flex justify-center gap-4 pt-1">
-              <span className="rounded-full bg-white/20 px-3 py-1 text-xs">
+              <span className="bg-ghost-xl rounded-full px-3 py-1 text-xs">
                 ⏱ {selectedActivity?.duration}
               </span>
             </div>

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, Image } from 'react-native';
-import { EmojiText } from '@/components/ui/EmojiText';
+import { CheckCircle, Circle } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
@@ -373,7 +373,7 @@ export default function ChildActivityGame({
   onComplete,
 }: ChildActivityGameProps) {
   const { colors, isDark } = useTheme();
-  const game = areaGames[areaId] ?? areaGames['life_ambition']!;
+  const game = areaGames[areaId] ?? areaGames.life_ambition!;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(
     () =>
@@ -567,17 +567,27 @@ export default function ChildActivityGame({
                   </View>
                 )}
 
-                {/* Label overlay */}
-                <View className="absolute inset-0 flex-col justify-end p-3 bg-gradient-to-t from-black/60 to-transparent">
-                  <View className="flex-row items-center justify-between">
-                    <Text
-                      className="text-sm font-semibold flex-1 mr-1"
-                      style={{ color: colors.text }}
-                    >
-                      {option.label}
-                    </Text>
-                    <EmojiText size="lg">{isSelected ? '✅' : '⭕'}</EmojiText>
-                  </View>
+                {/* Label bar — bottom only, preserves image visibility */}
+                <View
+                  className="absolute bottom-0 left-0 right-0 flex-row items-center justify-between px-3 py-2"
+                  style={{ backgroundColor: colors.imageScrimColor }}
+                >
+                  <Text
+                    className="text-sm font-semibold flex-1 mr-1"
+                    style={{ color: '#ffffff' }}
+                    numberOfLines={1}
+                  >
+                    {option.label}
+                  </Text>
+                  {isSelected ? (
+                    <CheckCircle
+                      size={22}
+                      color={colors.primaryForeground}
+                      fill={colors.success}
+                    />
+                  ) : (
+                    <Circle size={22} color="rgba(255,255,255,0.7)" />
+                  )}
                 </View>
               </Pressable>
             );

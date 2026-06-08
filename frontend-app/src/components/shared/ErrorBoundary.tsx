@@ -36,7 +36,7 @@ function ErrorFallback({ onReset }: { onReset: () => void }) {
       </Text>
       <TouchableOpacity
         style={{
-          backgroundColor: colors.primary,
+          backgroundColor: colors.primaryAction,
           paddingHorizontal: 24,
           paddingVertical: 12,
           borderRadius: 12,

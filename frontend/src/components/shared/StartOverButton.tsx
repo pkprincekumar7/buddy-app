@@ -30,7 +30,7 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
   return createPortal(
     <motion.div
       {...MODAL_BACKDROP}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
       onClick={onCancel}
       role="presentation"
     >

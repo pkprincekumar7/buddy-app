@@ -509,7 +509,7 @@ export default function ChildActivityGame({
                 <span className="select-none text-5xl">{option.emoji}</span>
               </div>
             )}
-            <div className="absolute inset-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3">
+            <div className="bg-image-scrim absolute inset-0 flex items-end justify-between p-3">
               <span className="text-sm font-semibold text-white">{option.label}</span>
               {ids.includes(option.id) ? (
                 <CheckCircle className="h-6 w-6 fill-success text-white" />

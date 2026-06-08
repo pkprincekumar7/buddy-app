@@ -114,7 +114,7 @@ describe('adaptAiPersonalityToViewModel', () => {
       { ...validAi, personalized_traits: [] },
       'Alex',
     );
-    const base = personalityTypes['Thinker']!;
+    const base = personalityTypes.Thinker!;
     expect(vm.profile.traits).toEqual(base.traits);
   });
 
@@ -128,12 +128,12 @@ describe('adaptAiPersonalityToViewModel', () => {
 
   it('dominant personality gets score 100 in scores map', () => {
     const vm = adaptAiPersonalityToViewModel(validAi, 'Jordan');
-    expect(vm.scores['Thinker']).toBe(100);
+    expect(vm.scores.Thinker).toBe(100);
   });
 
   it('secondary style gets elevated score', () => {
     const vm = adaptAiPersonalityToViewModel(validAi, 'Jordan');
-    expect(vm.scores['Creative'] ?? 0).toBeGreaterThan(14);
+    expect(vm.scores.Creative ?? 0).toBeGreaterThan(14);
   });
 
   it('produces two famous_people entries', () => {

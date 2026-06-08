@@ -131,6 +131,13 @@
     /* RGB channels for glow utilities (no alpha — alpha is applied at the use site) */
     --glow-primary-rgb: 45 212 191;
     --glow-warning-rgb: 245 158 11;
+
+    /* Modal/drawer backdrop overlay */
+    --overlay: 0 0% 0% / 0.75;
+
+    /* Image scrim — dark gradient over photos/tiles for text legibility */
+    --image-scrim-rgb: 0 0 0;
+    --image-scrim-opacity: 0.6;
   }
 }
 
@@ -228,6 +235,12 @@
 
     --glow-primary-rgb: 13 148 136;
     --glow-warning-rgb: 217 119 6;
+
+    --overlay: 0 0% 0% / 0.6;
+
+    /* Image scrim stays dark in light mode — photos always need a dark overlay for text legibility */
+    --image-scrim-rgb: 0 0 0;
+    --image-scrim-opacity: 0.6;
   }
 }
 
@@ -351,8 +364,24 @@
   .bg-na-dim {
     background-color: rgb(var(--edge-rgb) / 0.15);
   }
+  .bg-ghost-xl {
+    background-color: rgb(var(--edge-rgb) / 0.2);
+  }
   .bg-subtle {
     background-color: rgb(var(--edge-rgb) / 0.05);
+  }
+  /* Theme-aware modal/drawer backdrop */
+  .bg-overlay {
+    background-color: hsl(var(--overlay));
+  }
+
+  /* Dark gradient scrim over images/tiles for text legibility */
+  .bg-image-scrim {
+    background: linear-gradient(
+      to top,
+      rgb(var(--image-scrim-rgb) / var(--image-scrim-opacity)),
+      transparent
+    );
   }
 
   /* Brand tints — teal/emerald are intentional brand colors, fine in both themes */

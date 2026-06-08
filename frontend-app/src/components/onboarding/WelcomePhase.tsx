@@ -168,7 +168,7 @@ export default function WelcomePhase({
             <Button
               onPress={onContinue}
               className="w-full rounded-2xl h-14 items-center justify-center"
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: colors.primaryAction }}
             >
               <Text
                 className="text-base font-semibold"

@@ -259,9 +259,9 @@ export default function PersonalityJourneyScreen() {
         const recommendations = child.recommendations;
         if (
           recommendations &&
-          (typeof recommendations['pathway_overview'] === 'string' ||
-            (Array.isArray(recommendations['focus_areas']) &&
-              (recommendations['focus_areas'] as unknown[]).length > 0))
+          (typeof recommendations.pathway_overview === 'string' ||
+            (Array.isArray(recommendations.focus_areas) &&
+              (recommendations.focus_areas as unknown[]).length > 0))
         ) {
           setStatus('ready');
           return;
@@ -289,7 +289,7 @@ export default function PersonalityJourneyScreen() {
               personalityType:
                 gp?.personality_type ??
                 `${viewModel?.type ?? 'Unknown'} (${
-                  (viewModel?.profile?.['name'] as string) ?? ''
+                  (viewModel?.profile?.name as string) ?? ''
                 })`,
               personalityNarrative: gp?.summary,
               growthAreas: gp?.growth_areas as string[] | undefined,

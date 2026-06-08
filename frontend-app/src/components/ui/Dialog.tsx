@@ -59,7 +59,10 @@ function DialogContent({
 }: DialogContentProps) {
   const { colors } = useTheme();
   return (
-    <View className="flex-1 items-center justify-center bg-black/80">
+    <View
+      className="flex-1 items-center justify-center"
+      style={{ backgroundColor: colors.overlayBackground }}
+    >
       <Pressable className="absolute inset-0" onPress={onClose} />
       <View
         className={cn(
@@ -148,7 +151,10 @@ function DialogScrollContent({
 }: DialogContentProps) {
   const { colors } = useTheme();
   return (
-    <View className="flex-1 items-center justify-center bg-black/80">
+    <View
+      className="flex-1 items-center justify-center"
+      style={{ backgroundColor: colors.overlayBackground }}
+    >
       <Pressable className="absolute inset-0" onPress={onClose} />
       <View
         className={cn(

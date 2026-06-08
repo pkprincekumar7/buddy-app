@@ -170,7 +170,7 @@ function MonthCard({
           className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
+            <div className="bg-ghost-xl flex h-10 w-10 items-center justify-center rounded-xl">
               <span className="font-bold text-white">{month.month}</span>
             </div>
             <div>

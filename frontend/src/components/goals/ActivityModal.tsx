@@ -534,7 +534,7 @@ export default function ActivityModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
     >
       <motion.div
         role="dialog"
@@ -551,13 +551,13 @@ export default function ActivityModal({
           <button
             onClick={onClose}
             aria-label="Close activity"
-            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+            className="bg-ghost-xl hover:bg-ghost-xl absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors"
           >
             <X className="h-5 w-5 text-white" />
           </button>
 
           <div className="mb-4 flex items-start gap-4 pr-10">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+            <div className="bg-ghost-xl flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl backdrop-blur-sm">
               <Sparkles className="h-7 w-7 text-white" />
             </div>
             <div>
@@ -576,7 +576,7 @@ export default function ActivityModal({
                 </span>
                 <span>{Math.round(progress)}%</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
+              <div className="bg-ghost-xl h-1.5 overflow-hidden rounded-full">
                 <motion.div
                   className="h-full rounded-full bg-white"
                   initial={{ width: 0 }}

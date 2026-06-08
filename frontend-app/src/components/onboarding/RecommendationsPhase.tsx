@@ -74,42 +74,42 @@ const growthAreas: AreaDef[] = [
     id: 'life_ambition',
     name: 'Life Ambition',
     emoji: '🚀',
-    color: AREA_LINE_COLORS['life_ambition']!,
+    color: AREA_LINE_COLORS.life_ambition!,
     description: 'Discovering purpose and future goals',
   },
   {
     id: 'self_care',
     name: 'Self Care',
     emoji: '❤️',
-    color: AREA_LINE_COLORS['self_care']!,
+    color: AREA_LINE_COLORS.self_care!,
     description: 'Building healthy habits and emotional wellness',
   },
   {
     id: 'critical_thinking',
     name: 'Critical Thinking',
     emoji: '🧠',
-    color: AREA_LINE_COLORS['critical_thinking']!,
+    color: AREA_LINE_COLORS.critical_thinking!,
     description: 'Problem solving and analytical skills',
   },
   {
     id: 'creativity',
     name: 'Creativity',
     emoji: '🎨',
-    color: AREA_LINE_COLORS['creativity']!,
+    color: AREA_LINE_COLORS.creativity!,
     description: 'Imagination and creative expression',
   },
   {
     id: 'physical_wellness',
     name: 'Physical Wellness',
     emoji: '💪',
-    color: AREA_LINE_COLORS['physical_wellness']!,
+    color: AREA_LINE_COLORS.physical_wellness!,
     description: 'Body awareness and physical health',
   },
   {
     id: 'social_skills',
     name: 'Social Skills',
     emoji: '💬',
-    color: AREA_LINE_COLORS['social_skills']!,
+    color: AREA_LINE_COLORS.social_skills!,
     description: 'Communication and relationship building',
   },
 ];
@@ -593,7 +593,7 @@ function buildAreaProgressPayload(args: {
     aiRecommendations,
     childGameResults,
   } = args;
-  const qs = areaQuestions[area.id] ?? areaQuestions['life_ambition']!;
+  const qs = areaQuestions[area.id] ?? areaQuestions.life_ambition!;
   const cq = step === 'interactive_activity' ? qs[interactiveStep] : null;
   const interactive_draft =
     cq?.type === 'text'
@@ -639,7 +639,7 @@ function answersForArea(
   areaId: string,
   rawAnswers: unknown,
 ): Record<string, unknown> {
-  const qs = areaQuestions[areaId] ?? areaQuestions['life_ambition']!;
+  const qs = areaQuestions[areaId] ?? areaQuestions.life_ambition!;
   const allowed = new Set(qs.map(q => q.id));
   const src =
     rawAnswers && typeof rawAnswers === 'object'
@@ -672,9 +672,9 @@ function extractAnswersFromCompletedGrowthAreas(
     e =>
       e &&
       typeof e === 'object' &&
-      (e as Record<string, unknown>)['area_id'] === areaId,
+      (e as Record<string, unknown>).area_id === areaId,
   ) as Record<string, unknown> | undefined;
-  const ans = entry?.['answers'];
+  const ans = entry?.answers;
   return ans && typeof ans === 'object'
     ? { ...(ans as Record<string, unknown>) }
     : {};
@@ -689,9 +689,9 @@ function extractAiRecommendationsFromCompleted(
     e =>
       e &&
       typeof e === 'object' &&
-      (e as Record<string, unknown>)['area_id'] === areaId,
+      (e as Record<string, unknown>).area_id === areaId,
   ) as Record<string, unknown> | undefined;
-  const recs = entry?.['recommendations'];
+  const recs = entry?.recommendations;
   if (!Array.isArray(recs) || recs.length === 0) return null;
   return recs as unknown[];
 }
@@ -714,10 +714,10 @@ function deriveInteractiveUiFromProgress(
       currentAnswer: '',
     };
 
-  const qs = areaQuestions[area.id] ?? areaQuestions['life_ambition']!;
+  const qs = areaQuestions[area.id] ?? areaQuestions.life_ambition!;
   const rawProgress =
-    p['interactive_answers'] && typeof p['interactive_answers'] === 'object'
-      ? { ...(p['interactive_answers'] as Record<string, unknown>) }
+    p.interactive_answers && typeof p.interactive_answers === 'object'
+      ? { ...(p.interactive_answers as Record<string, unknown>) }
       : {};
   const fromCompleted = extractAnswersFromCompletedGrowthAreas(
     completedGrowthAreas,
@@ -728,14 +728,14 @@ function deriveInteractiveUiFromProgress(
     ...rawProgress,
   });
 
-  const areaMatchesPersisted = p['area_id'] === area.id;
-  const stepVal = typeof p['step'] === 'string' ? p['step'] : 'intro';
+  const areaMatchesPersisted = p.area_id === area.id;
+  const stepVal = typeof p.step === 'string' ? p.step : 'intro';
   const completedHasArea = Array.isArray(completedGrowthAreas)
     ? completedGrowthAreas.some(
         e =>
           e &&
           typeof e === 'object' &&
-          (e as Record<string, unknown>)['area_id'] === area.id,
+          (e as Record<string, unknown>).area_id === area.id,
       )
     : false;
   const hasAnswersForArea = qs.some(q =>
@@ -777,7 +777,7 @@ function deriveInteractiveUiFromProgress(
       mergedAnswers,
       step: 'interactive_activity',
       interactiveStep:
-        typeof p['interactive_step'] === 'number' ? p['interactive_step'] : 0,
+        typeof p.interactive_step === 'number' ? p.interactive_step : 0,
       currentAnswer: '',
     };
 
@@ -806,17 +806,17 @@ function deriveInteractiveUiFromProgress(
 
   const cq = qs[interactiveStepIx];
   const draft =
-    p['interactive_draft'] && typeof p['interactive_draft'] === 'object'
-      ? (p['interactive_draft'] as Record<string, unknown>)
+    p.interactive_draft && typeof p.interactive_draft === 'object'
+      ? (p.interactive_draft as Record<string, unknown>)
       : null;
   let currentAnswer = '';
   const useDraft =
     areaMatchesPersisted &&
     cq?.type === 'text' &&
-    draft?.['question_id'] === cq?.id &&
-    typeof draft['text'] === 'string';
+    draft?.question_id === cq?.id &&
+    typeof draft.text === 'string';
   if (useDraft && draft) {
-    currentAnswer = draft['text'] as string;
+    currentAnswer = draft.text as string;
   } else if (
     cq?.type === 'text' &&
     mergedAnswers[cq.id] != null &&
@@ -842,7 +842,7 @@ function applyTileEntryInteractivePreference(
     currentAnswer: string;
   },
 ): { step: string; interactiveStep: number; currentAnswer: string } {
-  const qs = areaQuestions[area.id] ?? areaQuestions['life_ambition']!;
+  const qs = areaQuestions[area.id] ?? areaQuestions.life_ambition!;
   const anyFilled = qs.some(q => answerLooksFilled(d.mergedAnswers[q.id]));
   if (d.step === 'activity_summary' && anyFilled) {
     const cq = qs[0];
@@ -945,7 +945,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
           Your Personalized Journey
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          Here's what we've discovered about {String(data['name'])}
+          Here's what we've discovered about {String(data.name)}
         </Text>
       </Animated.View>
 
@@ -969,7 +969,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
                 className="text-lg font-bold"
                 style={{ color: colors.text }}
               >
-                {String(data['name'])}'s Profile
+                {String(data.name)}'s Profile
               </Text>
               <Text
                 className="text-base font-medium"
@@ -977,8 +977,8 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
               >
                 {(() => {
                   const pt =
-                    typeof profile['personality_type'] === 'string'
-                      ? profile['personality_type']
+                    typeof profile.personality_type === 'string'
+                      ? profile.personality_type
                       : '';
                   return pt.split(' - ')[1] ?? pt;
                 })()}
@@ -989,7 +989,7 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             className="mb-5 text-sm leading-relaxed"
             style={{ color: colors.textMuted }}
           >
-            {typeof profile['summary'] === 'string' ? profile['summary'] : ''}
+            {typeof profile.summary === 'string' ? profile.summary : ''}
           </Text>
           <View>
             <Text
@@ -998,8 +998,8 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             >
               Emerging Strengths
             </Text>
-            {(Array.isArray(profile['top_strengths'])
-              ? (profile['top_strengths'] as unknown[])
+            {(Array.isArray(profile.top_strengths)
+              ? (profile.top_strengths as unknown[])
               : []
             ).map((strength, index) => (
               <View
@@ -1057,20 +1057,20 @@ function IntroScreen({ ps }: { ps: PhaseState }) {
             style={{ color: colors.text }}
           >
             Do you want to explore the specific growth areas for{' '}
-            {String(data['name'])} to become their best version?
+            {String(data.name)} to become their best version?
           </Text>
           <Text
             className="text-center text-sm mb-6"
             style={{ color: colors.textMuted }}
           >
-            Discover personalized activities to help {String(data['name'])}{' '}
-            develop key life skills
+            Discover personalized activities to help {String(data.name)} develop
+            key life skills
           </Text>
           <Button
             size="xl"
             onPress={() => setStep('area_selection')}
             className="w-full rounded-2xl items-center justify-center mb-3"
-            style={{ backgroundColor: colors.primary }}
+            style={{ backgroundColor: colors.primaryAction }}
           >
             <Text
               className="text-sm font-semibold"
@@ -1131,7 +1131,7 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
           Growth Areas
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          Choose an area to explore for {String(data['name'])}
+          Choose an area to explore for {String(data.name)}
         </Text>
       </Animated.View>
 
@@ -1158,11 +1158,9 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                     : [];
                   const p: Record<string, unknown> =
                     allDocs.find(
-                      a =>
-                        a['area_id'] === area.id &&
-                        a['status'] === 'in_progress',
+                      a => a.area_id === area.id && a.status === 'in_progress',
                     ) ??
-                    allDocs.find(a => a['area_id'] === area.id) ??
+                    allDocs.find(a => a.area_id === area.id) ??
                     {};
                   const isInProgress = p.status === 'in_progress';
 
@@ -1176,7 +1174,7 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                   const isSameArea = area.id === selectedArea?.id;
                   const completedDocs = allDocs.filter(
                     (a: Record<string, unknown>) =>
-                      a['status'] === 'completed' || !a['status'],
+                      a.status === 'completed' || !a.status,
                   );
                   const dbRecs =
                     Array.isArray(p.ai_three_month_recommendations) &&
@@ -1197,23 +1195,20 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                   setAiRecommendations(airMerged);
 
                   if (isInProgress) {
-                    if (p['selected_activity'])
-                      setSelectedActivity(
-                        p['selected_activity'] as ActivityDef,
-                      );
+                    if (p.selected_activity)
+                      setSelectedActivity(p.selected_activity as ActivityDef);
                     else setSelectedActivity(null);
-                    if (p['parent_liked'] != null)
-                      setParentLiked(p['parent_liked'] as boolean);
-                    if (p['want_child_activity'] != null)
-                      setWantChildActivity(p['want_child_activity'] as boolean);
-                    if (typeof p['feedback'] === 'string')
-                      setFeedback(p['feedback']);
-                    if (p['generated_activity'])
-                      setGeneratedActivity(p['generated_activity']);
+                    if (p.parent_liked != null)
+                      setParentLiked(p.parent_liked as boolean);
+                    if (p.want_child_activity != null)
+                      setWantChildActivity(p.want_child_activity as boolean);
+                    if (typeof p.feedback === 'string') setFeedback(p.feedback);
+                    if (p.generated_activity)
+                      setGeneratedActivity(p.generated_activity);
                     else setGeneratedActivity(null);
-                    if (typeof p['show_game'] === 'boolean')
-                      setShowGame(p['show_game']);
-                    const ca2 = p['child_activity'] as
+                    if (typeof p.show_game === 'boolean')
+                      setShowGame(p.show_game);
+                    const ca2 = p.child_activity as
                       | { selections?: unknown; results?: ChildGameResults }
                       | null
                       | undefined;
@@ -1230,8 +1225,8 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                       }
                     } else {
                       setChildActivitySelections(
-                        Array.isArray(p['child_activity_selections'])
-                          ? (p['child_activity_selections'] as string[])
+                        Array.isArray(p.child_activity_selections)
+                          ? (p.child_activity_selections as string[])
                           : [],
                       );
                     }
@@ -1245,7 +1240,7 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                   setGeneratedActivity(null);
                   setWantChildActivity(null);
                   setFeedback('');
-                  const ca3 = p['child_activity'] as
+                  const ca3 = p.child_activity as
                     | { selections?: unknown }
                     | null
                     | undefined;
@@ -1257,8 +1252,8 @@ function AreaSelectionScreen({ ps }: { ps: PhaseState }) {
                     );
                   } else {
                     setChildActivitySelections(
-                      Array.isArray(p['child_activity_selections'])
-                        ? (p['child_activity_selections'] as string[])
+                      Array.isArray(p.child_activity_selections)
+                        ? (p.child_activity_selections as string[])
                         : [],
                     );
                   }
@@ -1332,7 +1327,7 @@ function ActivitySelectionScreen({ ps }: { ps: PhaseState }) {
           {selectedArea?.name}
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          Choose an activity to try with {String(data['name'])}
+          Choose an activity to try with {String(data.name)}
         </Text>
       </Animated.View>
 
@@ -1448,7 +1443,10 @@ function ParentActivityScreen({ ps }: { ps: PhaseState }) {
           >
             {selectedActivity?.description}
           </Text>
-          <View className="rounded-full px-3 py-1 mt-3 bg-white/20">
+          <View
+            className="rounded-full px-3 py-1 mt-3"
+            style={{ backgroundColor: colors.ghostXL }}
+          >
             <Text
               className="text-xs"
               style={{ color: colors.primaryForeground }}
@@ -1534,7 +1532,7 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
           We'd love your feedback
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          What kind of activity would you like for {String(data['name'])}?
+          What kind of activity would you like for {String(data.name)}?
         </Text>
       </Animated.View>
 
@@ -1573,7 +1571,7 @@ function FeedbackScreen({ ps }: { ps: PhaseState }) {
               setStep('activity_selection');
             }}
             className="rounded-2xl px-4 py-2 items-center justify-center"
-            style={{ backgroundColor: colors.primary }}
+            style={{ backgroundColor: colors.primaryAction }}
           >
             <Text
               className="text-sm font-medium"
@@ -1613,14 +1611,14 @@ function ChildActivityPromptScreen({ ps }: { ps: PhaseState }) {
             className="text-center text-lg font-bold mb-2"
             style={{ color: colors.text }}
           >
-            Do you want {String(data['name'])} to take a fun activity on{' '}
+            Do you want {String(data.name)} to take a fun activity on{' '}
             {selectedArea?.name}?
           </Text>
           <Text
             className="text-center text-sm mb-6"
             style={{ color: colors.textMuted }}
           >
-            {String(data['name'])} can complete this as a game on their device
+            {String(data.name)} can complete this as a game on their device
           </Text>
           <Button
             size="xl"
@@ -1766,11 +1764,11 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
   } = ps;
 
   const questions =
-    areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions['life_ambition']!;
+    areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions.life_ambition!;
   const currentQuestion = questions[interactiveStep];
   const questionText = currentQuestion?.question.replace(
     '{name}',
-    String(data['name']),
+    String(data.name),
   );
   const isLastQuestion = interactiveStep === questions.length - 1;
   const isFirstQuestion = interactiveStep === 0;
@@ -1904,7 +1902,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                 className={`h-11 rounded-2xl items-center justify-center px-6 ${
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryAction }}
               >
                 <Text
                   className="text-sm font-semibold"
@@ -1994,7 +1992,7 @@ function InteractiveActivityScreen({ ps }: { ps: PhaseState }) {
                 className={`h-11 rounded-2xl items-center justify-center px-6 ${
                   !isFirstQuestion ? '' : 'flex-1'
                 }`}
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryAction }}
               >
                 <Text
                   className="text-sm font-semibold"
@@ -2044,7 +2042,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
     navigation,
   } = ps;
   const questions =
-    areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions['life_ambition']!;
+    areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions.life_ambition!;
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="pb-8 px-4">
@@ -2063,7 +2061,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           Great Insights!
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          Here's what we learned about {String(data['name'])}'s{' '}
+          Here's what we learned about {String(data.name)}'s{' '}
           {selectedArea?.name}
         </Text>
       </Animated.View>
@@ -2089,7 +2087,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 className="mb-1 text-xs"
                 style={{ color: colors.iconColor }}
               >
-                {q.question.replace('{name}', String(data['name']))}
+                {q.question.replace('{name}', String(data.name))}
               </Text>
               <Text
                 className="text-sm font-medium"
@@ -2195,7 +2193,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 })();
               }}
               className="h-11 flex-1 rounded-2xl items-center justify-center"
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: colors.primaryAction }}
             >
               <Text
                 className="text-sm font-semibold"
@@ -2262,7 +2260,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
               className="text-sm font-semibold"
               style={{ color: colors.primaryForeground }}
             >
-              Present a fun game to {String(data['name'])} on the same topic
+              Present a fun game to {String(data.name)} on the same topic
             </Text>
           </Button>
           <Button
@@ -2315,13 +2313,11 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
           <ChildActivityGame
             key={selectedArea.id}
             childName={
-              typeof data['name'] === 'string'
-                ? data['name']
-                : String(data['name'])
+              typeof data.name === 'string' ? data.name : String(data.name)
             }
-            childAge={normalizeAge(data['age'])}
+            childAge={normalizeAge(data.age)}
             childGender={
-              typeof data['gender'] === 'string' ? data['gender'] : undefined
+              typeof data.gender === 'string' ? data.gender : undefined
             }
             areaId={selectedArea.id}
             activeChildId={activeChildId}
@@ -2384,7 +2380,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                 className="text-center text-xl font-bold"
                 style={{ color: colors.text }}
               >
-                Recommendations for {String(data['name'])}
+                Recommendations for {String(data.name)}
               </Text>
             </View>
 
@@ -2504,7 +2500,7 @@ function ActivitySummaryScreen({ ps }: { ps: PhaseState }) {
                   style={{ color: colors.iconColor }}
                 >
                   Personalising recommendations for{' '}
-                  {typeof data?.['name'] === 'string' ? data['name'] : ''}…
+                  {typeof data?.name === 'string' ? data.name : ''}…
                 </Text>
               </View>
             )}
@@ -2618,7 +2614,7 @@ function SkipScreen({ ps }: { ps: PhaseState }) {
           Ready for the Next Step!
         </Text>
         <Text className="text-center" style={{ color: colors.textMuted }}>
-          Let's explore the Life Journey designed for {String(data['name'])}.
+          Let's explore the Life Journey designed for {String(data.name)}.
         </Text>
         <Button
           size="xl"
@@ -2709,7 +2705,7 @@ export default function RecommendationsPhase({
         if (cancelled) return;
         const completedData = completedDataRaw as Record<string, unknown>;
         const allDocs = (
-          Array.isArray(completedData['areas']) ? completedData['areas'] : []
+          Array.isArray(completedData.areas) ? completedData.areas : []
         ) as Record<string, unknown>[];
         const completedDocs = allDocs.filter(
           a => a.status === 'completed' || !a.status,
@@ -2800,7 +2796,7 @@ export default function RecommendationsPhase({
         } else if (step === 'activity_summary') {
           const qs =
             areaQuestions[selectedArea?.id ?? ''] ??
-            areaQuestions['life_ambition']!;
+            areaQuestions.life_ambition!;
           const firstIncomplete = qs.findIndex(
             (q: { id: string }) => !answerLooksFilled(interactiveAnswers[q.id]),
           );
@@ -2866,7 +2862,7 @@ export default function RecommendationsPhase({
     if (!resumeLoaded || step !== 'interactive_activity' || !selectedArea)
       return;
     const questions =
-      areaQuestions[selectedArea.id] ?? areaQuestions['life_ambition']!;
+      areaQuestions[selectedArea.id] ?? areaQuestions.life_ambition!;
     const cq = questions[interactiveStep];
     if (cq?.type !== 'text') return;
     const saved = interactiveAnswers[cq.id];
@@ -2947,11 +2943,9 @@ export default function RecommendationsPhase({
         const completedData = completedDataRaw as {
           areas?: Record<string, unknown>[];
         } | null;
-        const areaDoc = completedData?.areas?.find(
-          a => a['area_id'] === areaId,
-        );
+        const areaDoc = completedData?.areas?.find(a => a.area_id === areaId);
         const ca = areaDoc
-          ? (areaDoc['child_activity'] as
+          ? (areaDoc.child_activity as
               | { selections?: unknown; results?: ChildGameResults }
               | null
               | undefined)
@@ -2971,7 +2965,7 @@ export default function RecommendationsPhase({
           }
         } else {
           const savedSels = areaDoc
-            ? areaDoc['child_activity_selections']
+            ? areaDoc.child_activity_selections
             : undefined;
           setChildActivitySelections(
             Array.isArray(savedSels) ? (savedSels as string[]) : [],
@@ -2995,19 +2989,17 @@ export default function RecommendationsPhase({
           areas?: Record<string, unknown>[];
         } | null;
         const existing = completedDataObj?.areas?.find(
-          (a: Record<string, unknown>) => a['area_id'] === selectedArea?.id,
+          (a: Record<string, unknown>) => a.area_id === selectedArea?.id,
         );
         const existingRecs = existing
-          ? (existing['recommendations'] as unknown[] | undefined)
+          ? (existing.recommendations as unknown[] | undefined)
           : undefined;
         if (Array.isArray(existingRecs) && existingRecs.length > 0) {
           setAiRecommendations(existingRecs);
           return;
         }
         const existingAiRecs = existing
-          ? (existing['ai_three_month_recommendations'] as
-              | unknown[]
-              | undefined)
+          ? (existing.ai_three_month_recommendations as unknown[] | undefined)
           : undefined;
         if (Array.isArray(existingAiRecs) && existingAiRecs.length > 0) {
           setAiRecommendations(existingAiRecs);
@@ -3023,16 +3015,12 @@ export default function RecommendationsPhase({
       setLoadingRecommendations(true);
       try {
         const questions =
-          areaQuestions[selectedArea?.id ?? ''] ??
-          areaQuestions['life_ambition']!;
+          areaQuestions[selectedArea?.id ?? ''] ?? areaQuestions.life_ambition!;
         const qaContext = questions
           .filter(q => interactiveAnswers[q.id])
           .map(q => {
             const ans = interactiveAnswers[q.id];
-            return `Q: ${q.question.replace(
-              '{name}',
-              String(data['name']),
-            )}\nA: ${
+            return `Q: ${q.question.replace('{name}', String(data.name))}\nA: ${
               typeof ans === 'string'
                 ? ans
                 : typeof ans === 'number' || typeof ans === 'boolean'
@@ -3047,21 +3035,21 @@ export default function RecommendationsPhase({
           : null;
         const result = await api.integrations.Core.InvokeLLM({
           prompt: buildGrowthAreaRecommendationsPrompt({
-            childName: String(data['name']),
-            childAge: normalizeAge(data['age']),
+            childName: String(data.name),
+            childAge: normalizeAge(data.age),
             childGender:
-              typeof data['gender'] === 'string' ? data['gender'] : undefined,
+              typeof data.gender === 'string' ? data.gender : undefined,
             areaName: selectedArea?.name ?? '',
             qaContext,
             childGameSummary:
-              typeof gr?.['summary'] === 'string' ? gr['summary'] : null,
-            childGameStrengths: Array.isArray(gr?.['strengths'])
-              ? (gr['strengths'] as string[])
+              typeof gr?.summary === 'string' ? gr.summary : null,
+            childGameStrengths: Array.isArray(gr?.strengths)
+              ? (gr.strengths as string[])
               : null,
             childGameSuggestedActivities: Array.isArray(
-              gr?.['suggested_activities'],
+              gr?.suggested_activities,
             )
-              ? (gr['suggested_activities'] as string[])
+              ? (gr.suggested_activities as string[])
               : null,
             parentFeedback: feedback?.trim() || null,
           }),
@@ -3081,8 +3069,8 @@ export default function RecommendationsPhase({
         const list: unknown[] =
           result &&
           typeof result === 'object' &&
-          Array.isArray(resultObj['recommendations'])
-            ? (resultObj['recommendations'] as unknown[])
+          Array.isArray(resultObj.recommendations)
+            ? (resultObj.recommendations as unknown[])
             : [];
         setAiRecommendations(list);
       } catch (err) {

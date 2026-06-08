@@ -81,7 +81,7 @@ async function request(
   // work on React Native (fetch has no cookie jar).
   const accessToken = await tokenStore.getAccess();
   if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
+    headers.Authorization = `Bearer ${accessToken}`;
   }
 
   const res = await fetch(joinApi(path), {
@@ -137,7 +137,7 @@ async function request(
       try {
         const json: unknown = JSON.parse(text);
         if (json !== null && typeof json === 'object' && 'detail' in json) {
-          const d = (json as Record<string, unknown>)['detail'];
+          const d = (json as Record<string, unknown>).detail;
           if (typeof d === 'string') {
             detail = d;
           } else if (d !== null && typeof d === 'object') {
@@ -168,7 +168,7 @@ async function refreshTokenPair(): Promise<void> {
     'Content-Type': 'application/json',
   };
   if (refreshToken) {
-    headers['Authorization'] = `Bearer ${refreshToken}`;
+    headers.Authorization = `Bearer ${refreshToken}`;
   }
 
   const controller = new AbortController();

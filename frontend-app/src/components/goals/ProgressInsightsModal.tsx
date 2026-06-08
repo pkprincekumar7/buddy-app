@@ -126,7 +126,7 @@ function ObsBadge({ obs }: ObsBadgeProps) {
       Icon: Lock,
     },
   };
-  const entry = cfg[obs.type] ?? cfg['notStarted']!;
+  const entry = cfg[obs.type] ?? cfg.notStarted!;
   const { Icon } = entry;
   return (
     <View className="flex-row items-center gap-1.5">
@@ -510,7 +510,7 @@ function InsightRow({
           <View className="flex-row flex-wrap gap-2">
             <Pressable
               className="rounded-xl px-4 py-2"
-              style={{ backgroundColor: colors.primary }}
+              style={{ backgroundColor: colors.primaryAction }}
             >
               <Text
                 className="text-xs font-semibold"
@@ -701,7 +701,10 @@ export default function ProgressInsightsModal({
 
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/40 p-4">
+      <View
+        className="flex-1 items-center justify-center p-4"
+        style={{ backgroundColor: colors.overlayBackground }}
+      >
         <Animated.View
           accessibilityRole="none"
           accessibilityLabel="Progress and Insights"
@@ -719,14 +722,17 @@ export default function ProgressInsightsModal({
         >
           {/* Header */}
           <GradientSurface
-            from={colors.primaryLight}
-            to={colors.primary}
+            from={colors.primaryDark}
+            to={colors.primaryMedium}
             diagonal
             style={{ flexShrink: 0 }}
             className="flex-row items-center justify-between rounded-t-3xl px-6 py-5"
           >
             <View className="flex-row items-center gap-3">
-              <View className="h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
+              <View
+                className="h-10 w-10 items-center justify-center rounded-2xl"
+                style={{ backgroundColor: colors.ghostXL }}
+              >
                 <BarChart3 size={24} color={colors.primaryForeground} />
               </View>
               <View>
@@ -747,7 +753,8 @@ export default function ProgressInsightsModal({
             <Pressable
               onPress={onClose}
               accessibilityLabel="Close progress modal"
-              className="h-8 w-8 items-center justify-center rounded-full bg-white/20"
+              className="h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.ghostXL }}
             >
               <X size={20} color={colors.primaryForeground} />
             </Pressable>
@@ -1022,7 +1029,7 @@ export default function ProgressInsightsModal({
                           setInsightsData(null);
                         }}
                         className="flex-row items-center gap-2 rounded-xl px-4 py-2"
-                        style={{ backgroundColor: colors.primary }}
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <RefreshCw size={16} color={colors.primaryForeground} />
                         <Text

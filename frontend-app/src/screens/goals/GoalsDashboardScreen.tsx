@@ -249,7 +249,10 @@ function MonthCard({
           className="flex-row items-center justify-between rounded-t-2xl px-6 py-4"
         >
           <View className="flex-row items-center gap-3 flex-1 mr-2">
-            <View className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/20">
+            <View
+              className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+              style={{ backgroundColor: colors.ghostXL }}
+            >
               <Text
                 className="font-bold"
                 style={{ color: colors.primaryForeground }}
@@ -657,7 +660,7 @@ export default function GoalsDashboardScreen() {
               style={{ color: colors.text }}
             >
               3-Month Growth Plan for{' '}
-              {(childData?.['name'] as string | undefined) ?? 'Your Child'}
+              {(childData?.name as string | undefined) ?? 'Your Child'}
             </Text>
             <Text className="text-center" style={{ color: colors.textMuted }}>
               Personalized goals powered by Buddy360
@@ -704,7 +707,7 @@ export default function GoalsDashboardScreen() {
                 <View>
                   {goalPlan?.months?.map((month, idx) => (
                     <MonthCard
-                      key={(month as MonthData)['month'] ?? idx}
+                      key={(month as MonthData).month ?? idx}
                       month={month}
                       idx={idx}
                       color={monthColors[idx] ?? monthColors[0]!}
@@ -801,9 +804,9 @@ export default function GoalsDashboardScreen() {
                   | { title?: string; [key: string]: unknown }
                   | undefined) ?? undefined
               }
-              childName={childData?.['name'] as string | undefined}
-              childAge={childData?.['age'] as number | string | undefined}
-              childGender={childData?.['gender'] as string | undefined}
+              childName={childData?.name as string | undefined}
+              childAge={childData?.age as number | string | undefined}
+              childGender={childData?.gender as string | undefined}
               goal={activeActivity.monthGoal || concern || undefined}
               impact={activeActivity.monthObjective || undefined}
               onClose={() => setActiveActivity(null)}
@@ -813,10 +816,10 @@ export default function GoalsDashboardScreen() {
           {showProgress && goalPlan ? (
             <ProgressInsightsModal
               goalPlan={goalPlan}
-              childId={childData?.['id'] as string | undefined}
-              childName={childData?.['name'] as string | undefined}
-              childAge={childData?.['age'] as number | string | undefined}
-              childGender={childData?.['gender'] as string | undefined}
+              childId={childData?.id as string | undefined}
+              childName={childData?.name as string | undefined}
+              childAge={childData?.age as number | string | undefined}
+              childGender={childData?.gender as string | undefined}
               onPlanUpdate={plan => setGoalPlan(plan)}
               onClose={() => setShowProgress(false)}
             />

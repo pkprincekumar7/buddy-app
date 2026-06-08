@@ -110,10 +110,10 @@ function buildReplayMessages(
     const userDisplay = Array.isArray(val)
       ? val.join(', ')
       : typeof val === 'string'
-      ? val
-      : typeof val === 'number' || typeof val === 'boolean'
-      ? String(val)
-      : '';
+        ? val
+        : typeof val === 'number' || typeof val === 'boolean'
+          ? String(val)
+          : '';
     msgs.push({ id: newMsgId(), role: 'user', content: userDisplay });
   }
   return msgs;
@@ -223,7 +223,7 @@ function BouncingDots({
   }));
 
   const dot = (color: string) =>
-    ({ width: 6, height: 6, borderRadius: 3, backgroundColor: color } as const);
+    ({ width: 6, height: 6, borderRadius: 3, backgroundColor: color }) as const;
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -576,8 +576,8 @@ function AnalyzingScreen({
                   color: done
                     ? colors.success
                     : active
-                    ? colors.text
-                    : colors.iconColor,
+                      ? colors.text
+                      : colors.iconColor,
                 }}
               >
                 {s.label}
@@ -699,7 +699,7 @@ export default function ConversationalOnboarding({
         id: 'age',
         message: data =>
           `Wonderful! And how old is ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           }?`,
         field: 'age',
         type: 'text',
@@ -710,7 +710,7 @@ export default function ConversationalOnboarding({
         id: 'gender',
         message: data =>
           `Got it! What is ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           }'s gender?`,
         field: 'gender',
         type: 'choice',
@@ -721,7 +721,7 @@ export default function ConversationalOnboarding({
         id: 'school',
         message: data =>
           `Great! Which school does ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } go to?`,
         field: 'school',
         type: 'text',
@@ -731,9 +731,9 @@ export default function ConversationalOnboarding({
         id: 'ready_check',
         message: data =>
           `Fantastic, Let's start exploring ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           }'s best version for life right away.\nMention the top 3 strengths that ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } has from your perspective.`,
         field: 'strengths',
         type: 'multi_text',
@@ -745,7 +745,7 @@ export default function ConversationalOnboarding({
         id: 'strengths_response',
         message: data =>
           `Happy to know that! You are a lucky parent 😊.\n\nMention the top 3 hobbies where ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } spends their time.`,
         field: 'hobbies',
         type: 'multi_text',
@@ -756,7 +756,7 @@ export default function ConversationalOnboarding({
         id: 'thinking_pattern',
         message: data =>
           `Choose the kind of thinking pattern that ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } predominantly has:`,
         field: 'thinking_pattern',
         type: 'choice',
@@ -767,7 +767,7 @@ export default function ConversationalOnboarding({
         id: 'communication_style',
         message: data =>
           `Choose the kind of communication style that ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } predominantly has:`,
         field: 'communication_style',
         type: 'choice',
@@ -785,7 +785,7 @@ export default function ConversationalOnboarding({
         id: 'energy_level',
         message: data =>
           `How would you describe ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           }'s energy level?`,
         field: 'energy_level',
         type: 'choice',
@@ -801,7 +801,7 @@ export default function ConversationalOnboarding({
         id: 'social_behaviour',
         message: data =>
           `How does ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } behave in social situations?`,
         field: 'social_behaviour',
         type: 'choice',
@@ -818,7 +818,7 @@ export default function ConversationalOnboarding({
         id: 'emotional_behaviour',
         message: data =>
           `What kind of a child ${
-            typeof data['name'] === 'string' ? data['name'] : ''
+            typeof data.name === 'string' ? data.name : ''
           } emotionally is?`,
         field: 'emotional_behaviour',
         type: 'choice',
@@ -1092,10 +1092,10 @@ export default function ConversationalOnboarding({
     const text = Array.isArray(raw)
       ? raw.join(', ')
       : typeof raw === 'string'
-      ? raw
-      : typeof raw === 'number' || typeof raw === 'boolean'
-      ? String(raw)
-      : '';
+        ? raw
+        : typeof raw === 'number' || typeof raw === 'boolean'
+          ? String(raw)
+          : '';
     setCurrentInput(text);
   }, [
     waitingForResponse,
@@ -1225,9 +1225,7 @@ export default function ConversationalOnboarding({
           show: true,
           progress: 0,
           name:
-            typeof finalData['name'] === 'string'
-              ? finalData['name']
-              : 'your child',
+            typeof finalData.name === 'string' ? finalData.name : 'your child',
           showingDots: false,
           dotCount: 0,
         });
@@ -1365,9 +1363,7 @@ export default function ConversationalOnboarding({
           show: true,
           progress: 0,
           name:
-            typeof finalData['name'] === 'string'
-              ? finalData['name']
-              : 'your child',
+            typeof finalData.name === 'string' ? finalData.name : 'your child',
           showingDots: false,
           dotCount: 0,
         });
@@ -1502,7 +1498,10 @@ export default function ConversationalOnboarding({
             <AnimatedMessage key={msg.id} role="user">
               <View
                 className="rounded-2xl rounded-tr-sm px-4 py-2.5"
-                style={{ maxWidth: '80%', backgroundColor: colors.primary }}
+                style={{
+                  maxWidth: '80%',
+                  backgroundColor: colors.primaryAction,
+                }}
               >
                 <Text
                   className="text-sm"
@@ -1676,7 +1675,7 @@ export default function ConversationalOnboarding({
               <Pressable
                 onPress={handleSubmit}
                 className="w-12 items-center justify-center rounded-xl"
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryAction }}
               >
                 <Send size={16} color={colors.primaryForeground} />
               </Pressable>
@@ -1697,7 +1696,7 @@ export default function ConversationalOnboarding({
             size="xl"
             onPress={() => onContinueToPersonality()}
             className="w-full rounded-2xl items-center justify-center"
-            style={{ backgroundColor: colors.primary }}
+            style={{ backgroundColor: colors.primaryAction }}
           >
             <Text
               className="font-semibold"

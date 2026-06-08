@@ -93,7 +93,8 @@ function SheetContent({
   return (
     <View className="flex-1 justify-end">
       <Pressable
-        className="absolute inset-0 bg-black/80"
+        className="absolute inset-0"
+        style={{ backgroundColor: colors.overlayBackground }}
         onPress={handleClose}
       />
       <Animated.View

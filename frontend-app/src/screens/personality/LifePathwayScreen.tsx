@@ -98,15 +98,14 @@ const areaMilestoneMap: Record<string, { yearOffset: number; text: string }[]> =
 // for each area — same hex values used in charts, keeping them consistent.
 
 function getAreaBoost(area: Record<string, unknown>) {
-  const answers =
-    (area['answers'] as Record<string, unknown> | undefined) ?? {};
+  const answers = (area.answers as Record<string, unknown> | undefined) ?? {};
   const answerCount = Object.values(answers).filter(Boolean).length;
-  const aiRecs = area['ai_three_month_recommendations'];
+  const aiRecs = area.ai_three_month_recommendations;
   const recs: unknown[] =
     Array.isArray(aiRecs) && aiRecs.length > 0
       ? aiRecs
-      : Array.isArray(area['recommendations'])
-      ? (area['recommendations'] as unknown[])
+      : Array.isArray(area.recommendations)
+      ? (area.recommendations as unknown[])
       : [];
   return 5 + answerCount * 0.8 + (recs.length > 0 ? 2 : 0);
 }
@@ -193,7 +192,7 @@ function GrowthLineChart({
   const Y_MIN = 28;
   const Y_MAX = 108;
 
-  const ages = data.map(d => d['age'] ?? 0);
+  const ages = data.map(d => d.age ?? 0);
   const xMin = Math.min(...ages);
   const xMax = Math.max(...ages);
 
@@ -205,7 +204,7 @@ function GrowthLineChart({
     data
       .map(
         (d, i) =>
-          `${i === 0 ? 'M' : 'L'}${sx(d['age'] ?? 0).toFixed(1)},${sy(
+          `${i === 0 ? 'M' : 'L'}${sx(d.age ?? 0).toFixed(1)},${sy(
             d[key] ?? 0,
           ).toFixed(1)}`,
       )
@@ -241,7 +240,7 @@ function GrowthLineChart({
 
   // Derived tooltip values
   const activePoint =
-    activeAge !== null ? data.find(d => d['age'] === activeAge) : null;
+    activeAge !== null ? data.find(d => d.age === activeAge) : null;
   const cursorX = activeAge !== null ? sx(activeAge) : 0;
   // Flip tooltip to the left when near the right edge
   const tooltipLeft =
@@ -304,14 +303,14 @@ function GrowthLineChart({
         {/* X labels */}
         {xTicks.map(d => (
           <SvgText
-            key={`xl${d['age']}`}
-            x={sx(d['age'] ?? 0)}
+            key={`xl${d.age}`}
+            x={sx(d.age ?? 0)}
             y={PAD.top + innerH + 16}
             fill={themeColors.iconColor}
             fontSize={9}
             textAnchor="middle"
           >
-            {String(d['age'])}
+            {String(d.age)}
           </SvgText>
         ))}
         {/* Lines */}
@@ -329,7 +328,7 @@ function GrowthLineChart({
         {/* Small dots on all data points */}
         {yKeys.map(key =>
           data.map(d => {
-            const age = d['age'] ?? 0;
+            const age = d.age ?? 0;
             const yVal = d[key];
             if (yVal === undefined) return null;
             return (
@@ -346,7 +345,7 @@ function GrowthLineChart({
         {/* Milestone dots (larger, colored, white stroke) */}
         {buddy360Keys.map(key =>
           data.map(d => {
-            const age = d['age'] ?? 0;
+            const age = d.age ?? 0;
             const dotColor = milestoneAgeColorMap[age];
             const yVal = d[key];
             if (!dotColor || yVal === undefined) return null;
@@ -515,7 +514,7 @@ export default function LifePathwayScreen() {
     savedConcern,
     setSavedConcern,
   } = useLifePathwayData(childId);
-  const childName = (childData?.['name'] as string | undefined) ?? '';
+  const childName = (childData?.name as string | undefined) ?? '';
 
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');
@@ -536,7 +535,7 @@ export default function LifePathwayScreen() {
   };
 
   const handleConcernSubmit = useCallback(async () => {
-    const activeChildId = childData?.['id'] as string | undefined;
+    const activeChildId = childData?.id as string | undefined;
     if (!concernInput.trim() || !activeChildId) return;
     try {
       await api.goals.patch(activeChildId, {
@@ -577,9 +576,7 @@ export default function LifePathwayScreen() {
   const currentAge = useMemo(
     () =>
       parseInt(
-        String(
-          (childData?.['age'] as string | number | null | undefined) ?? '',
-        ),
+        String((childData?.age as string | number | null | undefined) ?? ''),
       ) || 10,
     [childData],
   );
@@ -596,7 +593,7 @@ export default function LifePathwayScreen() {
         if (completedAreas.length > 0) {
           completedAreas.forEach(area => {
             const boost = getAreaBoost(area);
-            const areaId = area['area_id'];
+            const areaId = area.area_id;
             if (areaId)
               point[areaId] = Math.min(
                 Math.round(40 + i * boost + i * i * 0.25),
@@ -604,7 +601,7 @@ export default function LifePathwayScreen() {
               );
           });
         } else {
-          point['buddy360'] = Math.min(
+          point.buddy360 = Math.min(
             Math.round(40 + i * 6.5 + i * i * 0.3),
             100,
           );
@@ -1429,7 +1426,8 @@ export default function LifePathwayScreen() {
           onRequestClose={closeConcernModal}
         >
           <Pressable
-            className="flex-1 items-center justify-center bg-black/70 p-4"
+            className="flex-1 items-center justify-center p-4"
+            style={{ backgroundColor: colors.overlayBackground }}
             onPress={closeConcernModal}
           >
             <Pressable

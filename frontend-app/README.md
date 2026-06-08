@@ -35,6 +35,7 @@ React Native 0.85.3 mobile app (Android & iOS).
 - [Environment Variables](#environment-variables)
 - [Google Sign-In Setup](#google-sign-in-setup)
 - [Troubleshooting](#troubleshooting)
+  - [`INSTALL_FAILED_INSUFFICIENT_STORAGE`](#install_failed_insufficient_storage)
 
 ---
 
@@ -1189,6 +1190,35 @@ cd frontend-app/android
 adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
 adb shell am start -n com.buddyapp/.MainActivity
 ```
+
+### `INSTALL_FAILED_INSUFFICIENT_STORAGE`
+
+The emulator's `/data` partition is full. Android needs free space beyond the APK size to extract and install — even if the raw APK fits, it may fail when updating an existing install.
+
+**Quick fix — uninstall the old build first, then reinstall:**
+
+```bash
+adb uninstall com.buddyapp
+cd frontend-app/android
+adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+adb shell am start -n com.buddyapp/.MainActivity
+```
+
+Uninstalling the previous version typically frees enough space for the new build.
+
+**If the issue keeps coming back — increase the emulator's storage:**
+
+1. Open Android Studio → **Device Manager**
+2. Click the **pencil (edit)** icon next to your AVD
+3. Click **Show Advanced Settings**
+4. Under **Memory and Storage**, increase **Internal Storage** (e.g. from 6 GB to 12 GB)
+5. Click **Finish** — the AVD will cold-boot on next launch with the larger partition
+
+**Alternative — wipe the emulator's data (loses all installed apps and app data):**
+
+Android Studio → Device Manager → click the **▼** arrow next to your AVD → **Wipe Data**.
+
+---
 
 ### `NDK did not have a source.properties file`
 

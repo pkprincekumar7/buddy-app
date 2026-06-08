@@ -115,7 +115,7 @@ export default function RegisterScreen() {
             <View className="mb-8 items-center">
               <View
                 className="mb-3 h-12 w-12 items-center justify-center rounded-xl"
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryAction }}
               >
                 <Text
                   className="text-lg font-bold"

@@ -31,7 +31,8 @@ function ConfirmModal({
       onRequestClose={onCancel}
     >
       <Pressable
-        className="flex-1 items-center justify-center bg-black/70 p-4"
+        className="flex-1 items-center justify-center p-4"
+        style={{ backgroundColor: colors.overlayBackground }}
         onPress={onCancel}
         accessible={false}
       >

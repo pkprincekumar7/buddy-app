@@ -136,7 +136,7 @@ export default function LoginScreen() {
           e instanceof ApiError &&
           e.detail !== null &&
           typeof e.detail === 'object'
-            ? (e.detail as Record<string, unknown>)['code']
+            ? (e.detail as Record<string, unknown>).code
             : undefined;
         if (
           e instanceof ApiError &&
@@ -205,7 +205,7 @@ export default function LoginScreen() {
             <View className="mb-8 items-center">
               <View
                 className="mb-3 h-12 w-12 items-center justify-center rounded-xl"
-                style={{ backgroundColor: colors.primary }}
+                style={{ backgroundColor: colors.primaryAction }}
               >
                 <Text
                   className="text-lg font-bold"

@@ -9,7 +9,7 @@ jest
   .mockImplementation((msg: string, ...rest: unknown[]) => {
     if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
     if (typeof msg === 'string' && msg.includes('NativeWind')) return;
-    // eslint-disable-next-line no-console
+
     console.warn(msg, ...rest);
   });
 

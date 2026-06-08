@@ -36,7 +36,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
-import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
+import { areaByUrlName } from '@/lib/growthAreaData';
 import {
   GradientIconBox,
   GradientButton,
@@ -409,8 +409,8 @@ export default function GrowthAreasActivityGameScreen() {
   const game = useMemo(
     () =>
       area
-        ? areaGames[area.id] ?? areaGames['life_ambition']!
-        : areaGames['life_ambition']!,
+        ? areaGames[area.id] ?? areaGames.life_ambition!
+        : areaGames.life_ambition!,
     [area],
   );
 
@@ -440,7 +440,7 @@ export default function GrowthAreasActivityGameScreen() {
         const areaDoc = allDocs.find(a => a.area_id === area.id);
         const childActivity = areaDoc?.child_activity;
         const saved =
-          (childActivity?.['selections'] as string[] | undefined) ??
+          (childActivity?.selections as string[] | undefined) ??
           areaDoc?.child_activity_selections ??
           [];
         if (Array.isArray(saved) && saved.length > 0) setSelectedIds(saved);
@@ -711,7 +711,10 @@ export default function GrowthAreasActivityGameScreen() {
                 emoji={option.emoji}
               />
               {/* Label row */}
-              <View className="flex-row items-center justify-between bg-black/60 px-3 py-2">
+              <View
+                className="flex-row items-center justify-between px-3 py-2"
+                style={{ backgroundColor: colors.imageScrimColor }}
+              >
                 <Text
                   className="text-sm font-semibold"
                   style={{ color: colors.primaryForeground }}
@@ -721,7 +724,7 @@ export default function GrowthAreasActivityGameScreen() {
                 {isSelected ? (
                   <CheckCircle
                     size={20}
-                    color={colors.success}
+                    color={colors.primaryForeground}
                     fill={colors.success}
                   />
                 ) : (
@@ -757,11 +760,7 @@ export default function GrowthAreasActivityGameScreen() {
 
             <Button
               variant="outline"
-              onPress={() => {
-                const questions = AREA_QUESTIONS[area.id] ?? [];
-                navigation.navigate('GrowthAreasActivity', { activityId });
-                void questions;
-              }}
+              onPress={() => navigation.goBack()}
               className="w-full rounded-2xl"
             >
               <View className="flex-row items-center gap-1.5">

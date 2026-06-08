@@ -103,7 +103,7 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
 
         <TouchableOpacity
           style={{
-            backgroundColor: colors.primary,
+            backgroundColor: colors.primaryAction,
             paddingHorizontal: 32,
             paddingVertical: 12,
             borderRadius: 12,

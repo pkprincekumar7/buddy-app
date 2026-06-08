@@ -77,7 +77,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         case 'destructive':
           return {
             backgroundColor:
-              variant === 'destructive' ? colors.error : colors.primary,
+              variant === 'destructive' ? colors.error : colors.primaryAction,
           };
         case 'secondary':
           return { backgroundColor: colors.muted };
@@ -91,7 +91,7 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
         case 'link':
           return { backgroundColor: 'transparent' as const };
         default:
-          return { backgroundColor: colors.primary };
+          return { backgroundColor: colors.primaryAction };
       }
     })();
 

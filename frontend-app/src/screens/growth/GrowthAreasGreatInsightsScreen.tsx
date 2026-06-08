@@ -266,7 +266,7 @@ export default function GrowthAreasGreatInsightsScreen() {
         setInteractiveAnswers(ia);
 
         const childActivity = areaDoc?.child_activity;
-        const rawGameResults = childActivity?.['results'];
+        const rawGameResults = childActivity?.results;
         if (rawGameResults) {
           setChildGameResults(
             normalizeChildGameRecommendations(rawGameResults) as GameResults,
@@ -355,8 +355,8 @@ export default function GrowthAreasGreatInsightsScreen() {
       });
 
       const resultRecord = result as Record<string, unknown> | null;
-      const list: string[] = Array.isArray(resultRecord?.['recommendations'])
-        ? (resultRecord['recommendations'] as string[])
+      const list: string[] = Array.isArray(resultRecord?.recommendations)
+        ? (resultRecord.recommendations as string[])
         : [];
       setRecommendations(list);
 

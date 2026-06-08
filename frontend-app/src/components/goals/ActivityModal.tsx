@@ -675,8 +675,8 @@ export default function ActivityModal({
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose}>
       <Animated.View
-        style={overlayStyle}
-        className="flex-1 items-center justify-center bg-black/40 p-4"
+        style={[overlayStyle, { backgroundColor: colors.overlayBackground }]}
+        className="flex-1 items-center justify-center p-4"
       >
         <Animated.View
           accessibilityRole="none"
@@ -694,21 +694,25 @@ export default function ActivityModal({
         >
           {/* Header */}
           <GradientSurface
-            from={colors.primaryLight}
-            to={colors.primary}
+            from={colors.primaryDark}
+            to={colors.primaryMedium}
             diagonal
             className="rounded-t-3xl p-6"
           >
             <Pressable
               onPress={onClose}
               accessibilityLabel="Close activity"
-              className="absolute right-4 top-4 h-8 w-8 items-center justify-center rounded-full bg-white/20"
+              className="absolute right-4 top-4 h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.ghostXL }}
             >
               <X size={20} color={colors.primaryForeground} />
             </Pressable>
 
             <View className="mb-4 flex-row items-start gap-4 pr-10">
-              <View className="w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20">
+              <View
+                className="w-12 flex-shrink-0 items-center justify-center rounded-2xl"
+                style={{ backgroundColor: colors.ghostXL }}
+              >
                 <Sparkles size={28} color={colors.primaryForeground} />
               </View>
               <View className="flex-1">
@@ -743,10 +747,16 @@ export default function ActivityModal({
                     {Math.round(progress)}%
                   </Text>
                 </View>
-                <View className="h-1.5 overflow-hidden rounded-full bg-white/20">
+                <View
+                  className="h-1.5 overflow-hidden rounded-full"
+                  style={{ backgroundColor: colors.ghostXL }}
+                >
                   <Animated.View
-                    style={progressStyle}
-                    className="h-full rounded-full bg-white"
+                    style={[
+                      progressStyle,
+                      { backgroundColor: colors.primaryBgLight },
+                    ]}
+                    className="h-full rounded-full"
                   />
                 </View>
               </View>
@@ -868,7 +878,7 @@ export default function ActivityModal({
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
                         className="flex-1 rounded-2xl"
-                        style={{ backgroundColor: colors.primary }}
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <View className="flex-row items-center gap-1">
                           <Text
@@ -962,7 +972,7 @@ export default function ActivityModal({
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer}
                         className="flex-1 rounded-2xl"
-                        style={{ backgroundColor: colors.primary }}
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <View className="flex-row items-center gap-1">
                           <Text
@@ -1150,7 +1160,7 @@ export default function ActivityModal({
                       }}
                       disabled={isSaving}
                       className="w-full rounded-2xl"
-                      style={{ backgroundColor: colors.primary }}
+                      style={{ backgroundColor: colors.primaryAction }}
                     >
                       <Text
                         className="font-semibold"
@@ -1232,7 +1242,7 @@ export default function ActivityModal({
                         }}
                         disabled={isSaving}
                         className="flex-1 rounded-2xl"
-                        style={{ backgroundColor: colors.primary }}
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <Text
                           className="font-semibold"
