@@ -168,7 +168,7 @@ export default function GrowthAreasActivityGreatInsights() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <motion.div
           {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
         />
       </div>
     );
@@ -177,7 +177,7 @@ export default function GrowthAreasActivityGreatInsights() {
   if (status === 'error' || !area) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <p className="text-slate-400">Could not load insights. Please try again.</p>
+        <p className="text-muted-foreground">Could not load insights. Please try again.</p>
         <Button
           onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
           className="btn-primary rounded-2xl px-8"
@@ -201,7 +201,7 @@ export default function GrowthAreasActivityGreatInsights() {
             >
               <Icon className="h-5 w-5 text-white" />
             </div>
-            <p className="text-sm font-semibold text-white">{area.name} — Great Insights</p>
+            <p className="text-sm font-semibold text-foreground">{area.name} — Great Insights</p>
           </div>
         </div>
       </div>
@@ -219,8 +219,8 @@ export default function GrowthAreasActivityGreatInsights() {
           >
             <Icon className="h-10 w-10 text-white" />
           </div>
-          <h2 className="mb-2 text-2xl font-bold text-white">Great Insights!</h2>
-          <p className="text-slate-400">
+          <h2 className="mb-2 text-2xl font-bold text-foreground">Great Insights!</h2>
+          <p className="text-muted-foreground">
             Here's what we learned about {childName}'s {area.name}
           </p>
         </motion.div>
@@ -235,7 +235,7 @@ export default function GrowthAreasActivityGreatInsights() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.3 }}
-              className="space-y-3 rounded-2xl border border-white/10 bg-card p-6"
+              className="space-y-3 rounded-2xl border border-border bg-card p-6"
             >
               {answered.map((q, i) => {
                 const answerVal = interactiveAnswers[q.id];
@@ -245,12 +245,12 @@ export default function GrowthAreasActivityGreatInsights() {
                     initial={{ opacity: 0, x: -16 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.7, delay: 0.4 + i * 0.15 }}
-                    className="border-b border-white/5 pb-3 last:border-0 last:pb-0"
+                    className="border-b border-border pb-3 last:border-0 last:pb-0"
                   >
-                    <p className="mb-1 text-xs text-slate-500">
+                    <p className="mb-1 text-xs text-muted-foreground">
                       {q.question.replace(/\{name\}/g, childName || 'your child')}
                     </p>
-                    <p className="text-sm font-medium text-white">
+                    <p className="text-sm font-medium text-foreground">
                       {typeof answerVal === 'string' ? answerVal : ''}
                     </p>
                   </motion.div>
@@ -266,30 +266,33 @@ export default function GrowthAreasActivityGreatInsights() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.5 }}
-            className="space-y-4 rounded-2xl border border-emerald-500/20 bg-card p-6"
+            className="space-y-4 rounded-2xl border border-success/20 bg-card p-6"
           >
             <div className="mb-2 flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-success to-primary-dark">
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
-              <h3 className="font-bold text-white">Recommendations for {childName}</h3>
+              <h3 className="font-bold text-foreground">Recommendations for {childName}</h3>
             </div>
 
             {childGameResults.summary && (
               <div className="rounded-xl bg-surface-elevated p-4">
-                <h4 className="mb-2 font-semibold text-white">What This Reveals</h4>
-                <p className="text-sm text-slate-400">{childGameResults.summary}</p>
+                <h4 className="mb-2 font-semibold text-foreground">What This Reveals</h4>
+                <p className="text-sm text-muted-foreground">{childGameResults.summary}</p>
               </div>
             )}
 
             {Array.isArray(childGameResults.suggested_activities) &&
               childGameResults.suggested_activities.length > 0 && (
                 <div className="rounded-xl bg-surface-elevated p-4">
-                  <h4 className="mb-2 font-semibold text-white">Suggested Activities</h4>
+                  <h4 className="mb-2 font-semibold text-foreground">Suggested Activities</h4>
                   <ul className="space-y-2">
                     {childGameResults.suggested_activities.map((act) => (
-                      <li key={act} className="flex items-start gap-2 text-sm text-slate-400">
-                        <span className="mt-0.5 text-emerald-500">✓</span>
+                      <li
+                        key={act}
+                        className="flex items-start gap-2 text-sm text-muted-foreground"
+                      >
+                        <span className="mt-0.5 text-success">✓</span>
                         <span>{act}</span>
                       </li>
                     ))}
@@ -299,11 +302,11 @@ export default function GrowthAreasActivityGreatInsights() {
 
             {Array.isArray(childGameResults.strengths) && childGameResults.strengths.length > 0 && (
               <div className="rounded-xl bg-surface-elevated p-4">
-                <h4 className="mb-2 font-semibold text-white">Strengths to Encourage</h4>
+                <h4 className="mb-2 font-semibold text-foreground">Strengths to Encourage</h4>
                 <ul className="space-y-2">
                   {childGameResults.strengths.map((s) => (
-                    <li key={s} className="flex items-start gap-2 text-sm text-slate-400">
-                      <span className="mt-0.5 text-emerald-500">★</span>
+                    <li key={s} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <span className="mt-0.5 text-success">★</span>
                       <span>{s}</span>
                     </li>
                   ))}
@@ -318,11 +321,13 @@ export default function GrowthAreasActivityGreatInsights() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.6 }}
-          className="rounded-2xl border border-white/10 bg-card p-6"
+          className="rounded-2xl border border-border bg-card p-6"
         >
           <div className="mb-4 flex items-center gap-2">
-            <Target className="h-5 w-5 text-emerald-500" />
-            <h3 className="font-semibold text-white">3-Month Recommendations for {area.name}</h3>
+            <Target className="h-5 w-5 text-success" />
+            <h3 className="font-semibold text-foreground">
+              3-Month Recommendations for {area.name}
+            </h3>
           </div>
 
           {/* Button state */}
@@ -331,7 +336,7 @@ export default function GrowthAreasActivityGreatInsights() {
               onClick={() => {
                 void generateRecommendations();
               }}
-              className="h-11 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+              className="h-11 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base text-white"
             >
               <Sparkles className="mr-2 h-4 w-4" />
               Generate Recommendations
@@ -342,16 +347,16 @@ export default function GrowthAreasActivityGreatInsights() {
           {status === 'generating' && (
             <div className="flex flex-col items-center justify-center gap-5 py-10">
               <div className="relative h-16 w-16">
-                <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20" />
-                <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-emerald-500" />
+                <div className="absolute inset-0 rounded-full border-4 border-success/20" />
+                <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-success" />
                 <div
-                  className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-teal-400"
+                  className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-primary"
                   style={{ animationDuration: '0.7s', animationDirection: 'reverse' }}
                 />
               </div>
               <div className="space-y-1 text-center">
-                <p className="text-sm font-semibold text-white">Building your 3-Month Plan</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-semibold text-foreground">Building your 3-Month Plan</p>
+                <p className="text-xs text-muted-foreground">
                   Personalising recommendations for {childName}…
                 </p>
               </div>
@@ -374,7 +379,7 @@ export default function GrowthAreasActivityGreatInsights() {
                   >
                     <span className="text-xs font-bold text-white">{i + 1}</span>
                   </div>
-                  <p className="text-sm leading-relaxed text-slate-300">{rec}</p>
+                  <p className="text-sm leading-relaxed text-foreground">{rec}</p>
                 </motion.div>
               ))}
             </div>
@@ -386,9 +391,10 @@ export default function GrowthAreasActivityGreatInsights() {
           className="pt-4"
           left={
             <Button
+              size="xl"
               variant="outline"
               onClick={() => navigate(`/GrowthAreas/${childId}`)}
-              className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+              className="btn-secondary w-full rounded-2xl sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
               Back
@@ -397,8 +403,9 @@ export default function GrowthAreasActivityGreatInsights() {
           center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
+              size="xl"
               onClick={() => navigate(`/GrowthAreas/${childId}`)}
-              className={`h-12 w-full rounded-2xl bg-gradient-to-r ${area.color} px-10 text-white sm:w-auto`}
+              className={`w-full rounded-2xl bg-gradient-to-r ${area.color} px-10 text-white sm:w-auto`}
             >
               Done
               <ChevronRight className="ml-1 h-4 w-4" />

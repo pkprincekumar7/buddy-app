@@ -30,17 +30,3 @@ provider "aws" {
     }
   }
 }
-
-# Explicit alias used by ssm_read.tf — consistent with the SSM control-plane pattern.
-provider "aws" {
-  alias  = "ssm"
-  region = "us-east-1"
-
-  default_tags {
-    tags = {
-      Project     = var.app_name
-      Environment = var.environment
-      ManagedBy   = "terraform"
-    }
-  }
-}

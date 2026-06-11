@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Trophy,
 } from 'lucide-react-native';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { unwrapLLM } from '@/lib/llmUtils';
 import { activityQuestionsSchema } from '@/lib/llmSchemas';
@@ -262,6 +263,7 @@ export default function ActivityModal({
   onClose,
   onComplete,
 }: ActivityModalProps) {
+  const { colors } = useTheme();
   const isScorableActivity = activity.scorable !== false;
   const [state, dispatch] = useReducer(activityReducer, initialActivityState);
   const {
@@ -673,39 +675,57 @@ export default function ActivityModal({
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose}>
       <Animated.View
-        style={overlayStyle}
-        className="flex-1 items-center justify-center bg-black/40 p-4"
+        style={[overlayStyle, { backgroundColor: colors.overlayBackground }]}
+        className="flex-1 items-center justify-center p-4"
       >
         <Animated.View
           accessibilityRole="none"
           accessibilityLabel={activity.title}
-          style={[cardStyle, { maxHeight: '90%' as const }]}
-          className="border border-slate-700 w-full max-w-lg rounded-3xl bg-slate-900 shadow-2xl overflow-hidden"
+          style={[
+            cardStyle,
+            {
+              maxHeight: '90%' as const,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+          className="border w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
         >
           {/* Header */}
           <GradientSurface
-            from="#2dd4bf"
-            to="#10b981"
+            from={colors.primaryDark}
+            to={colors.primaryMedium}
             diagonal
             className="rounded-t-3xl p-6"
           >
             <Pressable
               onPress={onClose}
               accessibilityLabel="Close activity"
-              className="absolute right-4 top-4 h-8 w-8 items-center justify-center rounded-full bg-white/20"
+              className="absolute right-4 top-4 h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.ghostXL }}
             >
-              <X size={20} color="white" />
+              <X size={20} color={colors.primaryForeground} />
             </Pressable>
 
             <View className="mb-4 flex-row items-start gap-4 pr-10">
-              <View className="h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20">
-                <Sparkles size={28} color="white" />
+              <View
+                className="w-12 flex-shrink-0 items-center justify-center rounded-2xl"
+                style={{ backgroundColor: colors.ghostXL }}
+              >
+                <Sparkles size={28} color={colors.primaryForeground} />
               </View>
               <View className="flex-1">
-                <Text className="text-xl font-bold leading-tight text-white">
+                <Text
+                  className="text-xl font-bold leading-tight"
+                  style={{ color: colors.primaryForeground }}
+                >
                   {activity.title}
                 </Text>
-                <Text className="mt-0.5 text-sm leading-snug text-white/90">
+                <Text
+                  className="mt-0.5 text-base leading-snug"
+                  style={{ color: colors.primaryForeground, opacity: 0.9 }}
+                >
                   {activity.objective as string}
                 </Text>
               </View>
@@ -714,17 +734,29 @@ export default function ActivityModal({
             {step === ACTIVITY_STEPS.QUESTIONS && questions.length > 0 && (
               <View className="gap-1.5">
                 <View className="flex-row justify-between">
-                  <Text className="text-sm text-white/90">
+                  <Text
+                    className="text-sm"
+                    style={{ color: colors.primaryForeground, opacity: 0.9 }}
+                  >
                     Question {currentQuestionIndex + 1} of {questions.length}
                   </Text>
-                  <Text className="text-sm text-white/90">
+                  <Text
+                    className="text-sm"
+                    style={{ color: colors.primaryForeground, opacity: 0.9 }}
+                  >
                     {Math.round(progress)}%
                   </Text>
                 </View>
-                <View className="h-1.5 overflow-hidden rounded-full bg-white/20">
+                <View
+                  className="h-1.5 overflow-hidden rounded-full"
+                  style={{ backgroundColor: colors.ghostXL }}
+                >
                   <Animated.View
-                    style={progressStyle}
-                    className="h-full rounded-full bg-white"
+                    style={[
+                      progressStyle,
+                      { backgroundColor: colors.primaryBgLight },
+                    ]}
+                    className="h-full rounded-full"
                   />
                 </View>
               </View>
@@ -732,14 +764,26 @@ export default function ActivityModal({
           </GradientSurface>
 
           {/* Body */}
-          <ScrollView className="p-6">
+          <ScrollView
+            className="p-6"
+            contentContainerStyle={{ paddingBottom: 24 }}
+          >
             {step === ACTIVITY_STEPS.LOADING && (
               <View className="items-center gap-4 py-16">
                 <Animated.View
-                  style={spinnerStyle}
-                  className="h-10 w-10 rounded-full border-4 border-teal-500 border-t-transparent"
+                  style={[
+                    spinnerStyle,
+                    {
+                      borderColor: colors.primary,
+                      borderTopColor: 'transparent',
+                    },
+                  ]}
+                  className="h-10 w-10 rounded-full border-4"
                 />
-                <Text className="font-medium text-slate-400">
+                <Text
+                  className="font-medium"
+                  style={{ color: colors.textMuted }}
+                >
                   Preparing activity...
                 </Text>
               </View>
@@ -747,7 +791,10 @@ export default function ActivityModal({
 
             {step === ACTIVITY_STEPS.QUESTIONS && currentQuestion && (
               <Animated.View style={questionSlideStyle} className="py-4">
-                <Text className="mb-6 text-lg font-bold leading-snug text-white">
+                <Text
+                  className="mb-6 text-lg font-bold leading-snug"
+                  style={{ color: colors.text }}
+                >
                   {currentQuestion.question}
                 </Text>
 
@@ -757,13 +804,23 @@ export default function ActivityModal({
                       <Pressable
                         key={option}
                         onPress={() => handleChoiceSelect(option)}
-                        className={`w-full rounded-2xl border-2 p-4 ${
+                        className="w-full rounded-2xl border-2 p-4"
+                        style={
                           currentAnswer === option
-                            ? 'border-teal-500 bg-teal-500/10'
-                            : 'border-slate-700 bg-slate-800'
-                        }`}
+                            ? {
+                                borderColor: colors.primary,
+                                backgroundColor: colors.primary + '1A',
+                              }
+                            : {
+                                borderColor: colors.border,
+                                backgroundColor: colors.card,
+                              }
+                        }
                       >
-                        <Text className="font-medium text-slate-300">
+                        <Text
+                          className="font-medium"
+                          style={{ color: colors.text }}
+                        >
                           {option}
                         </Text>
                       </Pressable>
@@ -773,8 +830,13 @@ export default function ActivityModal({
                         onPress={handleGoBack}
                         className="mt-2 flex-row items-center gap-1"
                       >
-                        <ChevronLeft size={16} color="#64748b" />
-                        <Text className="text-sm text-slate-500">Previous</Text>
+                        <ChevronLeft size={16} color={colors.iconColor} />
+                        <Text
+                          className="text-sm"
+                          style={{ color: colors.iconColor }}
+                        >
+                          Previous
+                        </Text>
                       </Pressable>
                     )}
                   </View>
@@ -796,26 +858,39 @@ export default function ActivityModal({
                     <View className="flex-row gap-3">
                       {currentQuestionIndex > 0 ? (
                         <Button
+                          size="xl"
                           variant="outline"
                           onPress={handleGoBack}
-                          className="flex-1 h-12 rounded-2xl"
+                          className="flex-1 rounded-2xl"
                         >
                           <View className="flex-row items-center gap-1">
-                            <ChevronLeft size={20} color="#94a3b8" />
-                            <Text className="text-slate-400">Previous</Text>
+                            <ChevronLeft size={20} color={colors.iconColor} />
+                            <Text style={{ color: colors.textMuted }}>
+                              Previous
+                            </Text>
                           </View>
                         </Button>
                       ) : (
                         <View className="flex-1" />
                       )}
                       <Button
+                        size="xl"
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl"
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <View className="flex-row items-center gap-1">
-                          <Text className="font-semibold text-white">Next</Text>
-                          <ChevronRight size={20} color="white" />
+                          <Text
+                            className="font-semibold"
+                            style={{ color: colors.primaryForeground }}
+                          >
+                            Next
+                          </Text>
+                          <ChevronRight
+                            size={20}
+                            color={colors.primaryForeground}
+                          />
                         </View>
                       </Button>
                     </View>
@@ -825,40 +900,51 @@ export default function ActivityModal({
                 {currentQuestion.type === 'scale' && (
                   <View className="gap-6">
                     <View className="flex-row items-center justify-between gap-2">
-                      {[1, 2, 3, 4, 5].map(value => (
-                        <Pressable
-                          key={value}
-                          onPress={() =>
-                            dispatch({
-                              type: 'SET_CURRENT_ANSWER',
-                              value: value.toString(),
-                            })
-                          }
-                          className={`h-16 flex-1 items-center justify-center rounded-2xl ${
-                            currentAnswer === value.toString()
-                              ? 'bg-teal-500'
-                              : 'bg-slate-800'
-                          }`}
-                        >
-                          <Text
-                            className={`text-xl font-bold ${
-                              currentAnswer === value.toString()
-                                ? 'text-white'
-                                : 'text-slate-400'
-                            }`}
+                      {[1, 2, 3, 4, 5].map(value => {
+                        const isSelected = currentAnswer === value.toString();
+                        return (
+                          <Pressable
+                            key={value}
+                            onPress={() =>
+                              dispatch({
+                                type: 'SET_CURRENT_ANSWER',
+                                value: value.toString(),
+                              })
+                            }
+                            className="h-16 flex-1 items-center justify-center rounded-2xl"
+                            style={{
+                              backgroundColor: isSelected
+                                ? colors.primary
+                                : colors.card,
+                            }}
                           >
-                            {value}
-                          </Text>
-                        </Pressable>
-                      ))}
+                            <Text
+                              className="text-xl font-bold"
+                              style={{
+                                color: isSelected
+                                  ? colors.primaryForeground
+                                  : colors.textMuted,
+                              }}
+                            >
+                              {value}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </View>
                     {currentQuestion.labels &&
                       currentQuestion.labels.length > 0 && (
                         <View className="flex-row justify-between px-1">
-                          <Text className="text-sm text-slate-500">
+                          <Text
+                            className="text-sm"
+                            style={{ color: colors.iconColor }}
+                          >
                             {currentQuestion.labels[0]}
                           </Text>
-                          <Text className="text-sm text-slate-500">
+                          <Text
+                            className="text-sm"
+                            style={{ color: colors.iconColor }}
+                          >
                             {currentQuestion.labels[1]}
                           </Text>
                         </View>
@@ -866,26 +952,39 @@ export default function ActivityModal({
                     <View className="flex-row gap-3">
                       {currentQuestionIndex > 0 ? (
                         <Button
+                          size="xl"
                           variant="outline"
                           onPress={handleGoBack}
-                          className="flex-1 h-12 rounded-2xl"
+                          className="flex-1 rounded-2xl"
                         >
                           <View className="flex-row items-center gap-1">
-                            <ChevronLeft size={20} color="#94a3b8" />
-                            <Text className="text-slate-400">Previous</Text>
+                            <ChevronLeft size={20} color={colors.iconColor} />
+                            <Text style={{ color: colors.textMuted }}>
+                              Previous
+                            </Text>
                           </View>
                         </Button>
                       ) : (
                         <View className="flex-1" />
                       )}
                       <Button
+                        size="xl"
                         onPress={handleAnswerQuestion}
                         disabled={!currentAnswer}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl"
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
                         <View className="flex-row items-center gap-1">
-                          <Text className="font-semibold text-white">Next</Text>
-                          <ChevronRight size={20} color="white" />
+                          <Text
+                            className="font-semibold"
+                            style={{ color: colors.primaryForeground }}
+                          >
+                            Next
+                          </Text>
+                          <ChevronRight
+                            size={20}
+                            color={colors.primaryForeground}
+                          />
                         </View>
                       </Button>
                     </View>
@@ -897,41 +996,73 @@ export default function ActivityModal({
             {step === ACTIVITY_STEPS.ANALYZING && (
               <View className="items-center gap-4 py-16">
                 <Animated.View
-                  style={spinnerStyle}
-                  className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+                  style={[
+                    spinnerStyle,
+                    {
+                      borderColor: colors.primary,
+                      borderTopColor: 'transparent',
+                    },
+                  ]}
+                  className="h-12 w-12 rounded-full border-4"
                 />
-                <Text className="text-lg font-semibold text-white">
+                <Text
+                  className="text-lg font-semibold"
+                  style={{ color: colors.text }}
+                >
                   Analysing the response...
                 </Text>
-                <Text className="text-sm text-slate-500">Just a moment</Text>
+                <Text className="text-base" style={{ color: colors.iconColor }}>
+                  Just a moment
+                </Text>
               </View>
             )}
 
             {step === ACTIVITY_STEPS.COMPLETE && (
               <Animated.View style={completeStyle} className="gap-5 py-4">
                 <View className="items-center gap-2">
-                  <View className="h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
-                    <Trophy size={32} color="#fbbf24" />
+                  <View
+                    className="h-16 w-16 items-center justify-center rounded-full"
+                    style={{ backgroundColor: colors.warning + '1A' }}
+                  >
+                    <Trophy size={32} color={colors.warning} />
                   </View>
-                  <Text className="text-2xl font-bold text-white">
+                  <Text
+                    className="text-2xl font-bold"
+                    style={{ color: colors.text }}
+                  >
                     Activity Complete! 🎉
                   </Text>
-                  <Text className="text-slate-400">
+                  <Text style={{ color: colors.textMuted }}>
                     Well done, {childName ?? 'there'}!
                   </Text>
                 </View>
 
                 {/* Score / Note */}
-                <View className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <View
+                  className="rounded-2xl border p-4"
+                  style={{
+                    borderColor: colors.success + '33',
+                    backgroundColor: colors.success + '1A',
+                  }}
+                >
                   {isScorableActivity ? (
                     <View className="flex-row items-center gap-3">
                       <View>
-                        <Text className="mb-0.5 text-xs font-semibold text-emerald-400">
+                        <Text
+                          className="mb-0.5 text-xs font-semibold"
+                          style={{ color: colors.success }}
+                        >
                           AI Score
                         </Text>
-                        <Text className="text-3xl font-bold leading-none text-emerald-300">
+                        <Text
+                          className="text-3xl font-bold leading-none"
+                          style={{ color: colors.success }}
+                        >
                           {aiScore}
-                          <Text className="text-base font-normal text-emerald-500">
+                          <Text
+                            className="text-base font-normal"
+                            style={{ color: colors.success }}
+                          >
                             /10
                           </Text>
                         </Text>
@@ -939,10 +1070,16 @@ export default function ActivityModal({
                     </View>
                   ) : (
                     <View>
-                      <Text className="mb-0.5 text-xs font-semibold text-emerald-400">
+                      <Text
+                        className="mb-0.5 text-xs font-semibold"
+                        style={{ color: colors.success }}
+                      >
                         Note
                       </Text>
-                      <Text className="text-base font-bold leading-snug text-emerald-300">
+                      <Text
+                        className="text-base font-bold leading-snug"
+                        style={{ color: colors.success }}
+                      >
                         {aiNote}
                       </Text>
                     </View>
@@ -951,31 +1088,58 @@ export default function ActivityModal({
 
                 {/* What changed / learned / recommendation */}
                 {whatChanged && (
-                  <View className="rounded-2xl border border-slate-700 bg-slate-800 p-4 gap-1">
-                    <Text className="text-xs font-semibold text-teal-400">
+                  <View
+                    className="rounded-2xl border p-4 gap-1"
+                    style={{
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-semibold"
+                      style={{ color: colors.primary }}
+                    >
                       What Changed
                     </Text>
-                    <Text className="text-sm text-slate-300">
+                    <Text className="text-sm" style={{ color: colors.text }}>
                       {whatChanged}
                     </Text>
                   </View>
                 )}
                 {whatLearned && (
-                  <View className="rounded-2xl border border-slate-700 bg-slate-800 p-4 gap-1">
-                    <Text className="text-xs font-semibold text-teal-400">
+                  <View
+                    className="rounded-2xl border p-4 gap-1"
+                    style={{
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-semibold"
+                      style={{ color: colors.primary }}
+                    >
                       What Was Learned
                     </Text>
-                    <Text className="text-sm text-slate-300">
+                    <Text className="text-sm" style={{ color: colors.text }}>
                       {whatLearned}
                     </Text>
                   </View>
                 )}
                 {recommendation && (
-                  <View className="rounded-2xl border border-slate-700 bg-slate-800 p-4 gap-1">
-                    <Text className="text-xs font-semibold text-amber-400">
+                  <View
+                    className="rounded-2xl border p-4 gap-1"
+                    style={{
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-semibold"
+                      style={{ color: colors.warning }}
+                    >
                       Recommendation
                     </Text>
-                    <Text className="text-sm text-slate-300">
+                    <Text className="text-sm" style={{ color: colors.text }}>
                       {recommendation}
                     </Text>
                   </View>
@@ -995,9 +1159,13 @@ export default function ActivityModal({
                         });
                       }}
                       disabled={isSaving}
-                      className="h-12 w-full rounded-2xl bg-teal-500"
+                      className="w-full rounded-2xl"
+                      style={{ backgroundColor: colors.primaryAction }}
                     >
-                      <Text className="font-semibold text-white">
+                      <Text
+                        className="font-semibold"
+                        style={{ color: colors.primaryForeground }}
+                      >
                         {isSaving ? 'Saving...' : 'Acknowledge & Continue'}
                       </Text>
                     </Button>
@@ -1010,9 +1178,12 @@ export default function ActivityModal({
                         })
                       }
                       disabled={isSaving}
-                      className="h-12 w-full rounded-2xl"
+                      className="w-full rounded-2xl"
                     >
-                      <Text className="font-semibold text-slate-300">
+                      <Text
+                        className="font-semibold"
+                        style={{ color: colors.text }}
+                      >
                         Give Feedback
                       </Text>
                     </Button>
@@ -1021,9 +1192,15 @@ export default function ActivityModal({
 
                 {confirmationStep === 'feedback_form' && (
                   <View className="gap-3">
-                    <Text className="font-semibold text-slate-300">
+                    <Text
+                      className="font-semibold"
+                      style={{ color: colors.text }}
+                    >
                       Parent Feedback{' '}
-                      <Text className="font-normal text-slate-400">
+                      <Text
+                        className="font-normal"
+                        style={{ color: colors.textMuted }}
+                      >
                         (optional)
                       </Text>
                     </Text>
@@ -1047,9 +1224,9 @@ export default function ActivityModal({
                             value: 'options',
                           })
                         }
-                        className="flex-1 h-12 rounded-2xl"
+                        className="flex-1 rounded-2xl"
                       >
-                        <Text className="text-slate-400">← Back</Text>
+                        <Text style={{ color: colors.textMuted }}>← Back</Text>
                       </Button>
                       <Button
                         onPress={() => {
@@ -1064,9 +1241,13 @@ export default function ActivityModal({
                           );
                         }}
                         disabled={isSaving}
-                        className="flex-1 h-12 rounded-2xl bg-teal-500"
+                        className="flex-1 rounded-2xl"
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
-                        <Text className="font-semibold text-white">
+                        <Text
+                          className="font-semibold"
+                          style={{ color: colors.primaryForeground }}
+                        >
                           {isSaving ? 'Saving...' : 'Submit Feedback'}
                         </Text>
                       </Button>
@@ -1077,10 +1258,16 @@ export default function ActivityModal({
                 {(confirmationStep === 'thank_you_acknowledge' ||
                   confirmationStep === 'thank_you_feedback') && (
                   <View className="items-center gap-2 py-4">
-                    <Text className="text-lg font-bold text-white">
+                    <Text
+                      className="text-lg font-bold"
+                      style={{ color: colors.text }}
+                    >
                       Thank you! 🌟
                     </Text>
-                    <Text className="text-sm text-slate-400 text-center">
+                    <Text
+                      className="text-sm text-center"
+                      style={{ color: colors.textMuted }}
+                    >
                       {confirmationStep === 'thank_you_feedback'
                         ? 'Your feedback has been saved.'
                         : 'Activity saved successfully.'}

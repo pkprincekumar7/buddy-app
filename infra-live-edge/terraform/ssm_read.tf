@@ -5,7 +5,5 @@
 # ---------------------------------------------------------------------------
 
 data "aws_ssm_parameter" "alb_internal_fqdn" {
-  provider = aws.ssm
-
   name = "/${var.app_name}/${var.environment}/backend/${var.backend_region}/alb_internal_fqdn"
 }

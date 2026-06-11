@@ -4,27 +4,56 @@ import '@testing-library/jest-native/extend-expect';
 import 'react-native-gesture-handler/jestSetup';
 
 // Silence non-critical RN warnings in tests
-jest.spyOn(console, 'warn').mockImplementation((msg: string, ...rest: unknown[]) => {
-  if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
-  if (typeof msg === 'string' && msg.includes('NativeWind')) return;
-  // eslint-disable-next-line no-console
-  console.warn(msg, ...rest);
-});
+jest
+  .spyOn(console, 'warn')
+  .mockImplementation((msg: string, ...rest: unknown[]) => {
+    if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
+    if (typeof msg === 'string' && msg.includes('NativeWind')) return;
+
+    console.warn(msg, ...rest);
+  });
 
 // Mock react-native-config so env vars resolve to empty strings in tests
-jest.mock('react-native-config', () => ({ default: {}, GOOGLE_CLIENT_ID: '', API_URL: '' }));
+jest.mock('react-native-config', () => ({
+  default: {},
+  GOOGLE_CLIENT_ID: '',
+  API_URL: '',
+}));
 
 // Mock AsyncStorage (no official jest mock shipped in this version)
 jest.mock('@react-native-async-storage/async-storage', () => {
   const store: Record<string, string> = {};
   return {
-    setItem: jest.fn((key: string, value: string) => { store[key] = value; return Promise.resolve(); }),
+    setItem: jest.fn((key: string, value: string) => {
+      store[key] = value;
+      return Promise.resolve();
+    }),
     getItem: jest.fn((key: string) => Promise.resolve(store[key] ?? null)),
-    removeItem: jest.fn((key: string) => { delete store[key]; return Promise.resolve(); }),
-    multiGet: jest.fn((keys: string[]) => Promise.resolve(keys.map(k => [k, store[k] ?? null]))),
-    multiSet: jest.fn((pairs: [string, string][]) => { pairs.forEach(([k, v]) => { store[k] = v; }); return Promise.resolve(); }),
-    multiRemove: jest.fn((keys: string[]) => { keys.forEach(k => { delete store[k]; }); return Promise.resolve(); }),
-    clear: jest.fn(() => { Object.keys(store).forEach(k => { delete store[k]; }); return Promise.resolve(); }),
+    removeItem: jest.fn((key: string) => {
+      delete store[key];
+      return Promise.resolve();
+    }),
+    multiGet: jest.fn((keys: string[]) =>
+      Promise.resolve(keys.map(k => [k, store[k] ?? null])),
+    ),
+    multiSet: jest.fn((pairs: [string, string][]) => {
+      pairs.forEach(([k, v]) => {
+        store[k] = v;
+      });
+      return Promise.resolve();
+    }),
+    multiRemove: jest.fn((keys: string[]) => {
+      keys.forEach(k => {
+        delete store[k];
+      });
+      return Promise.resolve();
+    }),
+    clear: jest.fn(() => {
+      Object.keys(store).forEach(k => {
+        delete store[k];
+      });
+      return Promise.resolve();
+    }),
     getAllKeys: jest.fn(() => Promise.resolve(Object.keys(store))),
   };
 });
@@ -39,7 +68,9 @@ jest.mock('@notifee/react-native', () => ({
   __esModule: true,
   default: {
     requestPermission: jest.fn().mockResolvedValue({ authorizationStatus: 1 }),
-    getNotificationSettings: jest.fn().mockResolvedValue({ authorizationStatus: 1 }),
+    getNotificationSettings: jest
+      .fn()
+      .mockResolvedValue({ authorizationStatus: 1 }),
     createChannel: jest.fn().mockResolvedValue('buddy360'),
     displayNotification: jest.fn().mockResolvedValue(undefined),
     createTriggerNotification: jest.fn().mockResolvedValue('notification-id'),
@@ -90,7 +121,13 @@ jest.mock('react-native-reanimated', () => {
     withDelay: (_: unknown, v: unknown) => v,
     withRepeat: (v: unknown) => v,
     withSequence: (...v: unknown[]) => v[0],
-    Easing: { out: (e: unknown) => e, in: (e: unknown) => e, inOut: (e: unknown) => e, linear: (v: unknown) => v, ease: 0 },
+    Easing: {
+      out: (e: unknown) => e,
+      in: (e: unknown) => e,
+      inOut: (e: unknown) => e,
+      linear: (v: unknown) => v,
+      ease: 0,
+    },
     cancelAnimation: jest.fn(),
     runOnJS: (fn: unknown) => fn,
     runOnUI: (fn: unknown) => fn,

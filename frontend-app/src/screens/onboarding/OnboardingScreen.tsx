@@ -14,6 +14,7 @@ import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
+import { useTheme } from '@/lib/ThemeContext';
 
 type OnboardingNavigationProp = StackNavigationProp<
   OnboardingStackParamList,
@@ -22,6 +23,7 @@ type OnboardingNavigationProp = StackNavigationProp<
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<OnboardingNavigationProp>();
+  const { colors } = useTheme();
   const {
     user,
     isAuthenticated,
@@ -113,8 +115,11 @@ export default function OnboardingScreen() {
 
   if (isLoading || checking) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: colors.background }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -123,7 +128,10 @@ export default function OnboardingScreen() {
     // Outer wrapper holds page content + absolute-positioned splash overlay.
     // Mirrors web: <> <motion.div opacity={showSplash ? 0 : 1}>…</motion.div> <StageSplash stage={1} /> </>
     <View style={{ flex: 1 }}>
-      <Animated.View style={contentStyle} className="flex-1 bg-background">
+      <Animated.View
+        style={[contentStyle, { backgroundColor: colors.background }]}
+        className="flex-1"
+      >
         <ScrollView
           className="flex-1"
           contentContainerStyle={{
@@ -146,11 +154,12 @@ export default function OnboardingScreen() {
               className="mt-8"
               left={
                 <Button
+                  size="xl"
                   variant="outline"
                   onPress={() => navigateTo('Main')}
-                  className="h-12 w-full rounded-2xl px-6"
+                  className="w-full rounded-2xl"
                 >
-                  <Text className="text-slate-300">← Back</Text>
+                  <Text style={{ color: colors.textMuted }}>← Back</Text>
                 </Button>
               }
               center={

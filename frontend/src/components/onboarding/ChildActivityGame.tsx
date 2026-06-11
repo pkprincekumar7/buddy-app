@@ -3,20 +3,25 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
+import { readStoredDarkMode } from '@/lib/theme';
 
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts, StrictMode double-invocations,
 // and HMR restarts — preventing any failed image from ever being retried in the session.
 const _failedAssetPaths = new Set<string>();
 
+function themedImagePath(path: string, isDark: boolean): string {
+  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
+}
+
 // Fallback gradient palette shown when an image fails to load.
 const TILE_GRADIENTS = [
-  'from-purple-400 to-indigo-500',
-  'from-rose-400 to-pink-500',
-  'from-amber-400 to-orange-500',
-  'from-emerald-400 to-teal-500',
-  'from-blue-400 to-cyan-500',
-  'from-violet-400 to-purple-500',
+  'from-personality-light to-personality-alt-strong',
+  'from-error-light to-accent-pink',
+  'from-warning to-warning-orange',
+  'from-success-bright to-primary-medium',
+  'from-info to-primary-medium',
+  'from-personality-alt to-personality',
 ];
 
 interface AreaGameOption {
@@ -133,7 +138,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these activities as things that make them feel calm and happy: ${labels.join(', ')}. These selections will be used to generate a personalised self-care development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these self-care choices reveal about this child's emotional needs and coping style, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and strengthen these self-care habits at home. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 emotional or wellbeing strengths these choices suggest the child has or is developing.`,
   },
   critical_thinking: {
-    question: 'Which challenges do you enjoy most?',
+    question: 'Which activity does [child name] enjoy the most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
@@ -352,6 +357,14 @@ export default function ChildActivityGame({
 }: ChildActivityGameProps) {
   const game = areaGames[areaId] ?? areaGames['life_ambition']!;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDark, setIsDark] = useState(readStoredDarkMode);
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(!document.documentElement.classList.contains('light'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
   const [failedImages, setFailedImages] = useState<Set<string>>(
     () => new Set(game.options.filter((o) => _failedAssetPaths.has(o.image)).map((o) => o.id)),
   );
@@ -456,9 +469,11 @@ export default function ChildActivityGame({
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="mb-2 text-2xl font-bold text-white">{game.question}</h2>
-        <p className="text-slate-500">{game.subtitle}</p>
-        <p className="mt-2 text-sm text-emerald-600">
+        <h2 className="mb-2 text-2xl font-bold text-foreground">
+          {game.question.replace('[child name]', childName?.trim() ?? 'your child')}
+        </h2>
+        <p className="text-muted-foreground">{game.subtitle}</p>
+        <p className="mt-2 text-sm text-success">
           Selected: {ids.length}/{game.maxSelections}
         </p>
       </div>
@@ -471,14 +486,14 @@ export default function ChildActivityGame({
             onClick={() => toggleSelection(option.id)}
             className={`relative overflow-hidden rounded-2xl border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
               ids.includes(option.id)
-                ? 'border-emerald-500 shadow-lg'
-                : 'border-c-edge hover:border-emerald-500/50'
+                ? 'border-success shadow-lg'
+                : 'border-c-edge hover:border-success/50'
             }`}
           >
             {option.image && !failedImages.has(option.id) ? (
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
-                  src={`/app-assets/${option.image}`}
+                  src={`/app-assets/${themedImagePath(option.image, isDark)}`}
                   alt={option.label}
                   className="h-full w-full object-cover"
                   onError={() => {
@@ -494,10 +509,10 @@ export default function ChildActivityGame({
                 <span className="select-none text-5xl">{option.emoji}</span>
               </div>
             )}
-            <div className="absolute inset-0 flex items-end justify-between bg-gradient-to-t from-black/60 to-transparent p-3">
+            <div className="bg-image-scrim absolute inset-0 flex items-end justify-between p-3">
               <span className="text-sm font-semibold text-white">{option.label}</span>
               {ids.includes(option.id) ? (
-                <CheckCircle className="h-6 w-6 fill-emerald-500 text-white" />
+                <CheckCircle className="h-6 w-6 fill-success text-white" />
               ) : (
                 <Circle className="h-6 w-6 text-white/80" />
               )}
@@ -511,7 +526,7 @@ export default function ChildActivityGame({
           void handleSubmit();
         }}
         disabled={ids.length === 0 || isSubmitting}
-        className="h-12 w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600"
+        className="h-12 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
       >
         {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}
       </Button>

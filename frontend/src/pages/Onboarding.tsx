@@ -85,7 +85,7 @@ export default function Onboarding() {
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
           </div>
         ) : (
@@ -109,9 +109,10 @@ export default function Onboarding() {
                 className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => navigate('/Home')}
-                  className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                  className="btn-secondary w-full rounded-2xl sm:w-auto"
                 >
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   Back

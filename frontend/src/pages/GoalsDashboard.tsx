@@ -102,11 +102,12 @@ function ActivityCardIcon({
   colorDot: string;
   index: number;
 }) {
-  if (completed) return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-400" />;
+  if (completed)
+    return <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-success-bright" />;
   if (isLocked)
     return (
       <div className="bg-ghost-strong mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full">
-        <Lock className="h-3 w-3 text-slate-600" />
+        <Lock className="h-3 w-3 text-faint" />
       </div>
     );
   return (
@@ -119,7 +120,7 @@ function ActivityCardIcon({
 }
 
 function getActivityCardClasses(completed: boolean | undefined, isLocked: boolean) {
-  if (completed) return 'bg-emerald-500/[0.07] border-emerald-500/20';
+  if (completed) return 'bg-success/[0.07] border-success/20';
   if (isLocked) return 'bg-ghost border-edge-xs border-dashed';
   return 'bg-surface-elevated border-c-edge';
 }
@@ -169,7 +170,7 @@ function MonthCard({
           className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20">
+            <div className="bg-ghost-xl flex h-10 w-10 items-center justify-center rounded-xl">
               <span className="font-bold text-white">{month.month}</span>
             </div>
             <div>
@@ -232,20 +233,16 @@ function MonthCard({
                           />
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`text-sm font-semibold ${isLocked ? 'text-slate-600' : 'text-white'}`}
+                              className={`text-sm font-semibold ${isLocked ? 'text-muted-foreground' : 'text-foreground'}`}
                             >
                               {act.title}
                             </p>
-                            <p
-                              className={`mt-0.5 text-xs ${isLocked ? 'text-slate-700' : 'text-slate-500'}`}
-                            >
-                              {act.objective}
-                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{act.objective}</p>
                             {act.completed ? (
                               <div className="mt-2 space-y-1.5">
                                 {/* Score / Note */}
                                 {act.scorable !== false ? (
-                                  <p className="text-xs font-bold text-slate-300">
+                                  <p className="text-xs font-bold text-foreground">
                                     Score:{' '}
                                     {String(
                                       (act.score as string | number | boolean | null | undefined) ??
@@ -254,7 +251,7 @@ function MonthCard({
                                     /10
                                   </p>
                                 ) : (
-                                  <p className="text-xs font-bold text-slate-300">
+                                  <p className="text-xs font-bold text-foreground">
                                     Note:{' '}
                                     {String(
                                       (act.note as string | number | boolean | null | undefined) ??
@@ -264,8 +261,8 @@ function MonthCard({
                                 )}
                                 {/* What changed */}
                                 {!!act.what_changed && (
-                                  <p className="text-xs text-slate-400">
-                                    <span className="font-semibold text-slate-300">
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">
                                       What changed:{' '}
                                     </span>
                                     {String(act.what_changed)}
@@ -273,21 +270,21 @@ function MonthCard({
                                 )}
                                 {/* What learned */}
                                 {!!act.what_learned && (
-                                  <p className="text-xs text-slate-400">
-                                    <span className="font-semibold text-slate-300">Learnt: </span>
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="font-semibold text-foreground">Learnt: </span>
                                     {String(act.what_learned)}
                                   </p>
                                 )}
                                 {/* Recommendation */}
                                 {!!act.recommendation && (
-                                  <p className="text-xs text-teal-400">
+                                  <p className="text-xs text-primary">
                                     <span className="font-semibold">Next: </span>
                                     {String(act.recommendation)}
                                   </p>
                                 )}
                                 {/* Parent feedback */}
                                 {!!act.parent_feedback && (
-                                  <p className="text-xs italic text-slate-500">
+                                  <p className="text-xs italic text-muted-foreground">
                                     Parent:{' '}
                                     {typeof act.parent_feedback === 'string'
                                       ? act.parent_feedback
@@ -329,7 +326,7 @@ function MonthCard({
                               aria-label="Reset activity"
                               className="bg-ghost-light border-edge hover:bg-ghost-strong absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full transition-colors"
                             >
-                              <RotateCcw className="h-3 w-3 text-slate-500" />
+                              <RotateCcw className="h-3 w-3 text-muted-foreground" />
                             </button>
                           )}
                         </div>
@@ -348,22 +345,22 @@ function MonthCard({
 
 const monthColors = [
   {
-    bg: 'from-teal-600 to-teal-500',
-    light: 'bg-teal-500/10 border-teal-500/25',
-    text: 'text-teal-400',
-    dot: 'bg-teal-500',
+    bg: 'from-primary-dark to-primary-medium',
+    light: 'bg-primary/10 border-primary/25',
+    text: 'text-primary',
+    dot: 'bg-primary',
   },
   {
-    bg: 'from-blue-600 to-blue-500',
-    light: 'bg-blue-500/10 border-blue-500/25',
-    text: 'text-blue-400',
-    dot: 'bg-blue-500',
+    bg: 'from-info-strong to-info-medium',
+    light: 'bg-info-medium/10 border-info-medium/25',
+    text: 'text-info',
+    dot: 'bg-info-medium',
   },
   {
-    bg: 'from-purple-600 to-purple-500',
-    light: 'bg-purple-500/10 border-purple-500/25',
-    text: 'text-purple-400',
-    dot: 'bg-purple-500',
+    bg: 'from-personality-alt-strong to-personality',
+    light: 'bg-personality/10 border-personality/25',
+    text: 'text-personality',
+    dot: 'bg-personality',
   },
 ];
 
@@ -427,17 +424,17 @@ export default function GoalsDashboard() {
         <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
           <div className="mx-auto max-w-4xl px-4 py-10">
             <motion.div {...slideUp(0.1)} className="mb-8 text-center">
-              <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600">
+              <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark">
                 <Target className="h-7 w-7 text-white" />
               </div>
-              <h1 className="mb-2 text-3xl font-bold tracking-tight text-white">
+              <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">
                 3-Month Growth Plan for{' '}
                 {(childData?.['name'] as string | undefined) ?? 'Your Child'}
               </h1>
-              <p className="text-slate-400">Personalized goals powered by Buddy360</p>
+              <p className="text-muted-foreground">Personalized goals powered by Buddy360</p>
 
               {concern && (
-                <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-5 py-3 text-sm text-amber-400">
+                <div className="mx-auto mt-4 max-w-xl rounded-2xl border border-warning-medium/25 bg-warning-medium/10 px-5 py-3 text-sm text-warning">
                   <span className="font-semibold">Focus area: </span>
                   {concern}
                 </div>
@@ -452,10 +449,10 @@ export default function GoalsDashboard() {
               >
                 <motion.div
                   {...SPINNER}
-                  className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+                  className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="text-slate-500">Building your 3-month plan...</p>
+                <p className="text-muted-foreground">Building your 3-month plan...</p>
               </div>
             ) : (
               <GoalPlanContext.Provider value={contextValue}>
@@ -474,7 +471,7 @@ export default function GoalsDashboard() {
                   <div className="flex justify-center pt-2">
                     <Button
                       onClick={() => setShowProgress(true)}
-                      className="btn-primary h-11 rounded-2xl px-8 transition-all"
+                      className="btn-primary h-11 rounded-2xl px-8 text-base transition-all"
                     >
                       View Progress And Insights
                     </Button>
@@ -488,7 +485,7 @@ export default function GoalsDashboard() {
                         onClick={() =>
                           navigate(`/LifePathway/${childId}`, { state: { fromBack: true } })
                         }
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         ← Back
                       </Button>
@@ -500,7 +497,7 @@ export default function GoalsDashboard() {
                         onClick={() => {
                           void handleRegenerate();
                         }}
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 sm:w-auto"
+                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         <RefreshCw className="mr-2 h-4 w-4" />
                         Regenerate Plan

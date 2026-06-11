@@ -31,6 +31,7 @@ export default function PersonalityType() {
   const [mbtiResult, setMbtiResult] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState('loading'); // loading | analysing | ready | error
   const [showSplash, startTimer] = useStageSplash();
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -46,12 +47,19 @@ export default function PersonalityType() {
 
     void (async () => {
       try {
-        const child = await api.entities.Child.get(childId);
+        const [child, prefs] = await Promise.all([
+          api.entities.Child.get(childId),
+          api.preferences.get().catch(() => null),
+        ]);
         if (cancelled) return;
 
         if (!child) {
           navigate('/Home', { replace: true });
           return;
+        }
+
+        if (prefs && typeof prefs.tts_enabled === 'boolean') {
+          setTtsEnabled(prefs.tts_enabled);
         }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
@@ -144,22 +152,22 @@ export default function PersonalityType() {
           <div className="flex min-h-screen items-center justify-center bg-background">
             <motion.div
               {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
           </div>
         ) : status === 'analysing' ? (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
             <motion.div
               {...SPINNER}
-              className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-12 w-12 rounded-full border-2 border-primary border-t-transparent"
             />
-            <p className="max-w-md text-center font-medium text-slate-400">
+            <p className="max-w-md text-center font-medium text-muted-foreground">
               Shaping personality insights from your questionnaire…
             </p>
           </div>
         ) : status === 'error' || !mbtiResult ? (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-            <p className="text-slate-400">Something went wrong. Please try again.</p>
+            <p className="text-muted-foreground">Something went wrong. Please try again.</p>
             <Button
               onClick={() => navigate(childId ? `/ConversationalOnboarding/${childId}` : '/Home')}
               className="btn-primary rounded-2xl px-8"
@@ -182,9 +190,9 @@ export default function PersonalityType() {
                       key={phase.label}
                       className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 transition-all ${
                         phase.active
-                          ? 'border border-teal-500/25 bg-teal-500/10'
+                          ? 'border border-primary/25 bg-primary/10'
                           : phase.done
-                            ? 'border border-emerald-500/20 bg-emerald-500/10'
+                            ? 'border border-success/20 bg-success/10'
                             : 'bg-ghost border-edge-faint opacity-50'
                       }`}
                     >
@@ -192,11 +200,11 @@ export default function PersonalityType() {
                         {phase.icon}
                       </span>
                       <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}
+                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success-bright' : 'text-muted-foreground'}`}
                       >
                         {phase.label}
                       </span>
-                      {phase.done && <span className="text-xs text-emerald-400">✓</span>}
+                      {phase.done && <span className="text-xs text-success-bright">✓</span>}
                     </div>
                   ))}
                 </div>
@@ -207,6 +215,8 @@ export default function PersonalityType() {
               <PersonalityAnalysis
                 mbtiResult={mbtiResult as unknown as MbtiResult}
                 childName={childName}
+                ready={!showSplash}
+                ttsEnabled={ttsEnabled}
               />
 
               <PageActions
@@ -219,7 +229,7 @@ export default function PersonalityType() {
                         state: { fromBack: true },
                       })
                     }
-                    className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                    className="btn-secondary h-12 w-full rounded-2xl px-6 text-base sm:w-auto"
                   >
                     <ChevronLeft className="mr-1 h-4 w-4" />
                     Back
@@ -228,10 +238,11 @@ export default function PersonalityType() {
                 center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                 right={
                   <Button
+                    size="xl"
                     onClick={() => {
                       void handleContinue();
                     }}
-                    className="btn-primary h-12 w-full rounded-2xl px-8 sm:w-auto"
+                    className="btn-primary w-full rounded-2xl px-8 sm:w-auto"
                   >
                     Continue
                     <ChevronRight className="ml-1 h-5 w-5" />

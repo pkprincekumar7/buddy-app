@@ -186,7 +186,7 @@ export default function GrowthAreasActivity() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <motion.div
           {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
         />
       </div>
     );
@@ -195,7 +195,7 @@ export default function GrowthAreasActivity() {
   if (!area || questions.length === 0) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <p className="text-slate-400">Area not found.</p>
+        <p className="text-muted-foreground">Area not found.</p>
         <Button
           onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
           className="btn-primary rounded-2xl px-8"
@@ -210,7 +210,7 @@ export default function GrowthAreasActivity() {
   if (!currentQuestion) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <p className="text-slate-400">Question not found.</p>
+        <p className="text-muted-foreground">Question not found.</p>
       </div>
     );
   }
@@ -230,15 +230,15 @@ export default function GrowthAreasActivity() {
               <Icon className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-white">{area.name}</p>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <p className="text-sm font-semibold text-foreground">{area.name}</p>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-dark">
                 <div
                   className={`h-full rounded-full bg-gradient-to-r ${area.color} transition-all duration-300`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {qIndex + 1} / {questions.length}
             </p>
           </div>
@@ -256,8 +256,10 @@ export default function GrowthAreasActivity() {
             className="space-y-6"
           >
             {/* Question */}
-            <div className="rounded-2xl border border-white/10 bg-card p-6">
-              <p className="text-lg font-semibold leading-relaxed text-white">{questionText}</p>
+            <div className="border-edge-faint rounded-2xl border bg-card p-6">
+              <p className="text-lg font-semibold leading-relaxed text-foreground">
+                {questionText}
+              </p>
             </div>
 
             {/* Answer input */}
@@ -270,7 +272,7 @@ export default function GrowthAreasActivity() {
                     className={`w-full rounded-2xl border px-5 py-4 text-left text-sm font-medium transition-all hover:scale-[1.01] ${
                       currentAnswer === option
                         ? `border-transparent bg-gradient-to-r ${area.color} text-white`
-                        : 'border-edge-faint bg-card text-slate-300 hover:border-white/20 hover:text-white'
+                        : 'border-edge-faint hover:border-edge bg-card text-dim hover:text-foreground'
                     }`}
                   >
                     {option}
@@ -283,7 +285,7 @@ export default function GrowthAreasActivity() {
                 onChange={(e) => setCurrentAnswer(e.target.value)}
                 placeholder={currentQuestion.placeholder ?? ''}
                 rows={3}
-                className="border-edge-faint w-full resize-none rounded-2xl border bg-card px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/20"
+                className="border-edge-faint w-full resize-none rounded-2xl border bg-card px-4 py-3 text-sm text-foreground outline-none placeholder:text-subtle focus:border-primary-medium/50 focus:ring-1 focus:ring-primary-medium/20"
               />
             )}
           </motion.div>
@@ -294,9 +296,10 @@ export default function GrowthAreasActivity() {
           className="mt-10"
           left={
             <Button
+              size="xl"
               variant="outline"
               onClick={handleBack}
-              className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+              className="btn-secondary w-full rounded-2xl sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
               Back
@@ -305,9 +308,10 @@ export default function GrowthAreasActivity() {
           center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
+              size="xl"
               onClick={() => handleAnswer(currentAnswer)}
               disabled={!currentAnswer.trim()}
-              className={`h-12 w-full rounded-2xl bg-gradient-to-r ${area.color} px-8 text-white disabled:opacity-50 sm:w-auto`}
+              className={`w-full rounded-2xl bg-gradient-to-r ${area.color} px-8 text-white disabled:opacity-50 sm:w-auto`}
             >
               {qIndex >= questions.length - 1 ? 'Finish' : 'Next'}
               <ChevronRight className="ml-1 h-4 w-4" />

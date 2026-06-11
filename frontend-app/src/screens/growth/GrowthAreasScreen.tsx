@@ -18,6 +18,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import { CheckCircle2, ChevronLeft } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { GROWTH_AREAS } from '@/lib/growthAreaData';
 import { useFocusEntranceAnim, useFadeIn } from '@/lib/animations';
@@ -46,6 +47,7 @@ function AnimatedAreaCard({
   done: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(20);
 
@@ -74,27 +76,28 @@ function AnimatedAreaCard({
           borderRadius: 16,
           padding: 16,
           borderWidth: 1,
-          borderColor: done ? 'rgba(52,211,153,0.3)' : 'rgba(255,255,255,0.06)',
-          backgroundColor: done ? 'rgba(16,185,129,0.10)' : undefined,
+          borderColor: done ? `${colors.success}4d` : colors.border,
+          backgroundColor: done ? `${colors.success}1a` : colors.card,
           position: 'relative',
         }}
-        className={done ? '' : 'bg-card'}
       >
         {/* Gradient icon box */}
         <View style={{ marginBottom: 12 }}>
           <GradientIconBox from={from} to={to} size={44} radius={12} diagonal>
-            <Icon size={24} color="white" />
+            <Icon size={24} color={colors.primaryForeground} />
           </GradientIconBox>
         </View>
 
-        <Text className="text-sm font-semibold text-white">{area.name}</Text>
-        <Text className="mt-0.5 text-xs text-slate-500">
+        <Text className="text-sm font-semibold" style={{ color: colors.text }}>
+          {area.name}
+        </Text>
+        <Text className="mt-0.5 text-xs" style={{ color: colors.iconColor }}>
           {area.description}
         </Text>
 
         {done && (
           <View style={{ position: 'absolute', top: 12, right: 12 }}>
-            <CheckCircle2 size={20} color="#34d399" />
+            <CheckCircle2 size={20} color={colors.success} />
           </View>
         )}
       </TouchableOpacity>
@@ -104,6 +107,7 @@ function AnimatedAreaCard({
 
 export default function GrowthAreasScreen() {
   const navigation = useNavigation<GrowthNavProp>();
+  const { colors } = useTheme();
   const {
     activeChildId,
     isAuthenticated,
@@ -174,15 +178,21 @@ export default function GrowthAreasScreen() {
 
   if (isLoadingAuth || !hydrated) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: colors.background }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
     <View style={{ flex: 1 }}>
-      <Animated.View style={contentStyle} className="flex-1 bg-background">
+      <Animated.View
+        style={[contentStyle, { backgroundColor: colors.background }]}
+        className="flex-1"
+      >
         <ScrollView
           ref={scrollRef}
           className="flex-1"
@@ -195,10 +205,15 @@ export default function GrowthAreasScreen() {
         >
           {/* Header */}
           <View className="mb-8 items-center">
-            <Text className="mb-2 text-2xl font-bold text-white">
+            <Text
+              className="mb-2 text-2xl font-bold"
+              style={{ color: colors.text }}
+            >
               Growth Areas
             </Text>
-            <Text className="text-slate-400">Choose an area to explore</Text>
+            <Text style={{ color: colors.textMuted }}>
+              Choose an area to explore
+            </Text>
           </View>
 
           {/* Grid — 2-column, staggered entrance */}
@@ -237,11 +252,14 @@ export default function GrowthAreasScreen() {
                       : { fromBack: true },
                   })
                 }
-                className="h-12 w-full rounded-2xl px-6"
+                className="w-full rounded-2xl"
               >
                 <View className="flex-row items-center gap-1.5">
-                  <ChevronLeft size={16} color="#cbd5e1" />
-                  <Text className="text-sm font-medium text-slate-300">
+                  <ChevronLeft size={16} color={colors.textMuted} />
+                  <Text
+                    className="text-base font-medium"
+                    style={{ color: colors.textMuted }}
+                  >
                     Back
                   </Text>
                 </View>
@@ -257,8 +275,8 @@ export default function GrowthAreasScreen() {
               anyDone ? (
                 <Animated.View style={pathwayFadeStyle} className="w-full">
                   <GradientButton
-                    from="#14b8a6"
-                    to="#059669"
+                    from={colors.primary}
+                    to={colors.success}
                     height={48}
                     borderRadius={16}
                     onPress={() => {
@@ -266,7 +284,12 @@ export default function GrowthAreasScreen() {
                     }}
                     style={{ width: '100%' }}
                   >
-                    <Text className="font-semibold text-[#0a0a0a]">
+                    <Text
+                      style={{
+                        fontWeight: '600',
+                        color: colors.primaryForeground,
+                      }}
+                    >
                       View Your Life Pathway
                     </Text>
                   </GradientButton>

@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { Image, StyleSheet } from 'react-native';
 import { env } from '@/lib/env';
+import { useTheme } from '@/lib/ThemeContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -40,6 +41,7 @@ interface StageSplashProps {
 }
 
 export default function StageSplash({ stage, onReady }: StageSplashProps) {
+  const { colors, isDark } = useTheme();
   const padded = String(stage).padStart(2, '0');
 
   // Image: starts invisible + slightly zoomed in, fades in on load
@@ -85,13 +87,20 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
   return (
     // Outer animated wrapper handles the full-screen fade-out
     <Animated.View
-      style={[StyleSheet.absoluteFill, styles.container, containerStyle]}
+      style={[
+        StyleSheet.absoluteFill,
+        styles.container,
+        { backgroundColor: colors.background },
+        containerStyle,
+      ]}
     >
       {/* Inner wrapper handles the image fade-in + scale */}
       <Animated.View style={[StyleSheet.absoluteFill, imgStyle]}>
         <Image
           source={{
-            uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}.png`,
+            uri: `${env.CDN_BASE_URL}/app-assets/avatars/stage-${padded}-${
+              isDark ? 'dark' : 'light'
+            }.png`,
           }}
           style={styles.image}
           resizeMode="contain"
@@ -105,7 +114,6 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#080808',
     zIndex: 100,
     elevation: 100,
   },

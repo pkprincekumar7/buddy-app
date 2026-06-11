@@ -339,82 +339,82 @@ export function calculateMBTI(data: CalculateMbtiData) {
 
   if (data.energy_level === 'High energy - always active') {
     scores['Highly Energetic']! += 3;
-    scores['Restless']! += 2;
-    scores['Enthusiastic']! += 2;
+    scores.Restless! += 2;
+    scores.Enthusiastic! += 2;
   } else if (data.energy_level === 'Moderate - balanced') {
-    scores['Determined']! += 2;
-    scores['Ambitious']! += 1;
+    scores.Determined! += 2;
+    scores.Ambitious! += 1;
   } else if (data.energy_level === 'Calm and composed') {
-    scores['Thinker']! += 3;
-    scores['Creative']! += 1;
+    scores.Thinker! += 3;
+    scores.Creative! += 1;
   } else {
-    scores['Restless']! += 2;
+    scores.Restless! += 2;
     scores['Highly Energetic']! += 1;
   }
 
   if (data.thinking_pattern === 'Visual') {
-    scores['Creative']! += 2;
-    scores['Thinker']! += 1;
+    scores.Creative! += 2;
+    scores.Thinker! += 1;
   } else if (data.thinking_pattern === 'Analytical') {
-    scores['Thinker']! += 3;
-    scores['Ambitious']! += 2;
+    scores.Thinker! += 3;
+    scores.Ambitious! += 2;
   } else if (data.thinking_pattern === 'Imaginative') {
-    scores['Creative']! += 3;
-    scores['Playful']! += 1;
+    scores.Creative! += 3;
+    scores.Playful! += 1;
   } else {
-    scores['Creative']! += 1;
+    scores.Creative! += 1;
   }
 
   if (data.communication_style === 'Talkative') {
-    scores['Outgoing']! += 3;
-    scores['Enthusiastic']! += 2;
+    scores.Outgoing! += 3;
+    scores.Enthusiastic! += 2;
   } else if (data.communication_style === 'Deep Listener') {
-    scores['Thinker']! += 2;
-    scores['Determined']! += 1;
+    scores.Thinker! += 2;
+    scores.Determined! += 1;
   } else if (data.communication_style === 'Communicates through gestures') {
-    scores['Creative']! += 2;
+    scores.Creative! += 2;
   } else if (data.communication_style === 'Silent') {
-    scores['Thinker']! += 3;
+    scores.Thinker! += 3;
   } else if (data.communication_style === 'Observant') {
-    scores['Thinker']! += 2;
-    scores['Creative']! += 1;
+    scores.Thinker! += 2;
+    scores.Creative! += 1;
   }
 
   if (data.social_behaviour === 'Confident') {
-    scores['Outgoing']! += 3;
-    scores['Ambitious']! += 2;
+    scores.Outgoing! += 3;
+    scores.Ambitious! += 2;
   } else if (data.social_behaviour === 'Friendly') {
-    scores['Outgoing']! += 2;
-    scores['Enthusiastic']! += 2;
-    scores['Playful']! += 1;
+    scores.Outgoing! += 2;
+    scores.Enthusiastic! += 2;
+    scores.Playful! += 1;
   } else if (data.social_behaviour === 'Reserved') {
-    scores['Thinker']! += 2;
-    scores['Creative']! += 1;
+    scores.Thinker! += 2;
+    scores.Creative! += 1;
   } else if (data.social_behaviour === 'Expressive') {
-    scores['Enthusiastic']! += 2;
-    scores['Playful']! += 2;
-    scores['Creative']! += 1;
+    scores.Enthusiastic! += 2;
+    scores.Playful! += 2;
+    scores.Creative! += 1;
   } else if (data.social_behaviour === 'Withdrawn') {
-    scores['Thinker']! += 3;
-    scores['Creative']! += 1;
+    scores.Thinker! += 3;
+    scores.Creative! += 1;
   }
 
   if (data.emotional_behaviour === 'Calm') {
-    scores['Thinker']! += 2;
-    scores['Determined']! += 2;
+    scores.Thinker! += 2;
+    scores.Determined! += 2;
   } else if (data.emotional_behaviour === 'Sensitive') {
-    scores['Creative']! += 2;
-    scores['Enthusiastic']! += 1;
+    scores.Creative! += 2;
+    scores.Enthusiastic! += 1;
   } else if (data.emotional_behaviour === 'Reserved') {
-    scores['Thinker']! += 2;
-    scores['Determined']! += 1;
+    scores.Thinker! += 2;
+    scores.Determined! += 1;
   } else if (data.emotional_behaviour === 'Impulsive') {
-    scores['Restless']! += 3;
-    scores['Playful']! += 2;
+    scores.Restless! += 3;
+    scores.Playful! += 2;
     scores['Highly Energetic']! += 1;
   } else if (data.emotional_behaviour === 'Moody') {
-    scores['Creative']! += 2;
-    scores['Restless']! += 1;
+    scores.Creative! += 2;
+    scores.Restless! += 1;
   }
 
   let maxScore = 0;
@@ -425,8 +425,7 @@ export function calculateMBTI(data: CalculateMbtiData) {
       dominantType = type;
     }
   });
-  const profile =
-    personalityTypes[dominantType] ?? personalityTypes['Creative']!;
+  const profile = personalityTypes[dominantType] ?? personalityTypes.Creative!;
   return {
     type: dominantType,
     scores,
@@ -492,7 +491,7 @@ export function adaptAiPersonalityToViewModel(
     PERSONALITY_CATEGORY_KEYS.includes(ai.personality_category)
       ? ai.personality_category
       : personalityTypes[dominant]?.category ?? 'creatives';
-  const base = personalityTypes[dominant] ?? personalityTypes['Creative']!;
+  const base = personalityTypes[dominant] ?? personalityTypes.Creative!;
   const traitsRaw = ai?.personalized_traits;
   const traits =
     Array.isArray(traitsRaw) && traitsRaw.length > 0

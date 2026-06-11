@@ -1,19 +1,9 @@
+import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Sprout } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
 import { generateAvatarDataUri } from '@/lib/avatarUtils';
-
-const FAMOUS_LABEL: Record<string, string> = {
-  Ambitious: 'Achievers',
-  Determined: 'Strivers',
-  Outgoing: 'Socializers',
-  Creative: 'Creators',
-  Enthusiastic: 'Enthusiasts',
-  Restless: 'Explorers',
-  'Highly Energetic': 'Energizers',
-  Thinker: 'Thinkers',
-  Playful: 'Players',
-};
+import { pickPreferredVoice } from '@/lib/tts';
 
 interface PersonalityCategory {
   name: string;
@@ -26,22 +16,22 @@ interface PersonalityCategory {
 export const personalityCategories: Record<string, PersonalityCategory> = {
   motivators: {
     name: 'Motivators',
-    color: 'from-red-500 to-orange-600',
+    color: 'from-error-medium to-warning-orange-medium',
     description: 'Driven by goals, ambition, and achievement',
   },
   socializers: {
     name: 'Socializers',
-    color: 'from-yellow-400 to-orange-500',
+    color: 'from-warning to-warning-orange',
     description: 'Energized by people and connection',
   },
   creatives: {
     name: 'Creatives',
-    color: 'from-purple-400 to-pink-500',
+    color: 'from-personality-light to-accent-pink',
     description: 'Inspired by imagination and expression',
   },
   adventurers: {
     name: 'Adventurers',
-    color: 'from-orange-400 to-red-500',
+    color: 'from-warning-orange to-error-medium',
     description: 'Seeking variety and new experiences',
   },
 };
@@ -82,7 +72,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Elon_Musk_Royal_Society_%28crop2%29.jpg/220px-Elon_Musk_Royal_Society_%28crop2%29.jpg',
       },
     ],
-    color: 'from-red-500 to-pink-600',
+    color: 'from-error-medium to-accent-pink',
     strengths: ['Persistence', 'High standards', 'Focus on goals', 'Motivation'],
     growth_areas: ['Patience', 'Managing stress', 'Flexibility in approach'],
   },
@@ -104,7 +94,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg/220px-Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg',
       },
     ],
-    color: 'from-orange-500 to-red-600',
+    color: 'from-warning-orange-medium to-error-strong',
     strengths: ['Persistence', 'Goal completion', 'Hard work', 'Motivation under pressure'],
     growth_areas: ['Flexibility', 'Handling setbacks calmly', 'Seeking help when needed'],
   },
@@ -126,7 +116,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Will_Smith_2011.jpg/220px-Will_Smith_2011.jpg',
       },
     ],
-    color: 'from-yellow-400 to-orange-500',
+    color: 'from-warning to-warning-orange',
     strengths: ['Networking', 'Communication', 'Confidence', 'Positive energy'],
     growth_areas: ['Listening skills', 'Sensitivity to introverts', 'Managing overstimulation'],
   },
@@ -148,7 +138,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg/220px-Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg',
       },
     ],
-    color: 'from-purple-400 to-pink-500',
+    color: 'from-personality-light to-accent-pink',
     strengths: ['Imagination', 'Problem-solving', 'Adaptability', 'Artistic skills'],
     growth_areas: ['Practical implementation', 'Time management', 'Accepting criticism'],
   },
@@ -170,7 +160,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Ellen_DeGeneres_2011.jpg/220px-Ellen_DeGeneres_2011.jpg',
       },
     ],
-    color: 'from-emerald-400 to-yellow-500',
+    color: 'from-success-bright to-warning-medium',
     strengths: ['Positive energy', 'Motivation', 'Inspiration to others', 'Optimism'],
     growth_areas: ['Focusing energy', 'Patience', 'Managing disappointment'],
   },
@@ -192,7 +182,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bear_Grylls_at_the_Webby_Awards.jpg/220px-Bear_Grylls_at_the_Webby_Awards.jpg',
       },
     ],
-    color: 'from-orange-400 to-red-500',
+    color: 'from-warning-orange to-error-medium',
     strengths: ['Adaptability', 'Energy', 'Variety-seeking', 'Quick learning'],
     growth_areas: ['Patience', 'Long-term focus', 'Consistency'],
   },
@@ -214,7 +204,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Dwayne_Johnson_2014.jpg/220px-Dwayne_Johnson_2014.jpg',
       },
     ],
-    color: 'from-red-500 to-yellow-500',
+    color: 'from-error-medium to-warning-medium',
     strengths: ['Stamina', 'Multitasking', 'Enthusiasm', 'Persistence'],
     growth_areas: ['Rest and recovery', 'Focus', 'Patience with slower activities'],
   },
@@ -236,7 +226,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Marie_Curie_c1920.jpg/220px-Marie_Curie_c1920.jpg',
       },
     ],
-    color: 'from-blue-400 to-indigo-500',
+    color: 'from-info to-personality-alt-strong',
     strengths: ['Analytical thinking', 'Problem-solving', 'Curiosity', 'Reflection'],
     growth_areas: ['Action-taking', 'Practical application', 'Social interaction'],
   },
@@ -258,7 +248,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
           'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg',
       },
     ],
-    color: 'from-pink-400 to-purple-500',
+    color: 'from-accent-pink to-personality',
     strengths: ['Humor', 'Joy', 'Creativity', 'Social engagement'],
     growth_areas: ['Focus', 'Handling serious tasks', 'Patience'],
   },
@@ -527,8 +517,6 @@ const ANIM_FAMOUS_BASE = 2.7;
 const ANIM_FAMOUS_STEP = 0.3;
 const ANIM_STRENGTH_BASE = 3.5;
 const ANIM_STRENGTH_STEP = 0.15;
-const ANIM_GROWTH_BASE = 4.3;
-const ANIM_GROWTH_STEP = 0.15;
 
 export interface MbtiResult {
   type: string;
@@ -548,13 +536,41 @@ export interface MbtiResult {
 interface PersonalityAnalysisProps {
   mbtiResult: MbtiResult;
   childName?: string;
+  /** Defer TTS until splash/loading is fully gone. Defaults to true. */
+  ready?: boolean;
+  /** Whether TTS is enabled per user preferences. Defaults to true. */
+  ttsEnabled?: boolean;
 }
 
-export default function PersonalityAnalysis({ mbtiResult, childName }: PersonalityAnalysisProps) {
+export default function PersonalityAnalysis({
+  mbtiResult,
+  childName,
+  ready = true,
+  ttsEnabled = true,
+}: PersonalityAnalysisProps) {
   const { scores, profile } = mbtiResult;
-  const category =
-    (profile?.category ? personalityCategories[profile.category] : undefined) ??
-    personalityCategories['creatives']!;
+
+  // Fire TTS exactly once — only after the splash/loading overlay is gone (ready=true).
+  // Using a ref to prevent re-firing if the parent re-renders with ready=true again.
+  const hasSpokeRef = useRef(false);
+  useEffect(() => {
+    if (!ready || hasSpokeRef.current) return;
+    hasSpokeRef.current = true;
+    if (!ttsEnabled) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const famousNames = (profile?.famous_people ?? []).map((p) => p.name).join(' and ');
+    const text = `${profile?.description ?? ''}${famousNames ? ` Famous people who share similar traits include ${famousNames}.` : ''}`;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.95;
+    utter.pitch = 1.15;
+    const voice = pickPreferredVoice();
+    if (voice) utter.voice = voice;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, [ready, ttsEnabled, profile?.description, profile?.famous_people]);
 
   // Get top 3 personality types by score
   const topTypes = Object.entries(scores)
@@ -562,8 +578,6 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
     .sort(([, a], [, b]) => b - a)
     .slice(0, 3)
     .map(([typeName, score]) => ({ name: typeName, score: score }));
-
-  const growthAreasList = Array.isArray(profile?.growth_areas) ? profile.growth_areas : [];
 
   const sectionAnim = (delay: number) => ({
     initial: { opacity: 0, y: 24 },
@@ -573,23 +587,14 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
 
   return (
     <div className="space-y-6">
-      {/* Section 1 — Category Badge */}
-      <motion.div
-        {...sectionAnim(0.1)}
-        className={`bg-gradient-to-r ${category.color} rounded-2xl p-4 text-center text-white`}
-      >
-        <p className="text-sm font-medium opacity-90">{category.name}</p>
-        <p className="mt-1 text-xs opacity-75">{category.description}</p>
-      </motion.div>
-
       {/* Section 2 — Main Type Card */}
       <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
         <div className="mb-4 text-center">
           <div className="mb-3 flex items-center justify-center gap-2">
-            <Sparkles className="h-6 w-6 text-teal-400" />
-            <h3 className="text-2xl font-bold text-white">{profile.name}</h3>
+            <Sparkles className="h-6 w-6 text-primary" />
+            <h3 className="text-2xl font-bold text-foreground">{profile.name}</h3>
           </div>
-          <p className="text-sm text-slate-500">{childName}'s personality type</p>
+          <p className="text-sm text-muted-foreground">{childName}'s personality type</p>
         </div>
 
         <div className="mb-4 flex flex-wrap justify-center gap-2">
@@ -599,19 +604,23 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: ANIM_TRAIT_BASE + i * ANIM_TRAIT_STEP }}
-              className="bg-ghost-light border-edge-faint rounded-full px-3 py-1 text-xs text-slate-300"
+              className="bg-ghost-light border-edge-faint rounded-full px-3 py-1 text-xs text-foreground"
             >
               {trait}
             </motion.span>
           ))}
         </div>
 
-        <p className="text-center text-sm leading-relaxed text-slate-400">{profile.description}</p>
+        <p className="text-center text-sm leading-relaxed text-muted-foreground">
+          {profile.description}
+        </p>
       </motion.div>
 
       {/* Section 3 — Personality Profile Breakdown */}
       <motion.div {...sectionAnim(1.6)} className="border-edge rounded-2xl bg-card p-6">
-        <h4 className="mb-4 text-sm font-semibold text-white">Personality Profile Breakdown</h4>
+        <h4 className="mb-4 text-sm font-semibold text-foreground">
+          Personality Profile Breakdown
+        </h4>
         <div className="space-y-4">
           {topTypes.map((item, index) => {
             const maxScore = topTypes[0]?.score ?? 0;
@@ -626,8 +635,8 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
                 transition={{ duration: 0.8, delay: ANIM_BAR_BASE + index * ANIM_BAR_STEP }}
               >
                 <div className="mb-1.5 flex justify-between text-xs">
-                  <span className="font-medium text-slate-300">{itemProfile.name}</span>
-                  <span className="text-slate-500">{Math.round(percentage)}%</span>
+                  <span className="font-medium text-foreground">{itemProfile.name}</span>
+                  <span className="text-muted-foreground">{Math.round(percentage)}%</span>
                 </div>
                 <div className="bg-ghost-light h-2 overflow-hidden rounded-full">
                   <motion.div
@@ -649,10 +658,10 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
 
       {/* Section 4 — Famous People */}
       <motion.div {...sectionAnim(2.4)} className="border-edge rounded-2xl bg-surface-elevated p-6">
-        <h4 className="mb-1 text-sm font-semibold text-white">
-          Famous {profile.name ? (FAMOUS_LABEL[profile.name] ?? `${profile.name}s`) : 'Role Models'}
-        </h4>
-        <p className="mb-5 text-xs text-slate-500">People {childName} may relate to</p>
+        <h4 className="mb-1 text-sm font-semibold text-foreground">Famous People</h4>
+        <p className="mb-5 text-xs text-muted-foreground">
+          {childName} may relate to who share similar personality traits.
+        </p>
         <div className="flex flex-wrap justify-center gap-6">
           {(profile.famous_people ?? []).map((person, i) => (
             <motion.div
@@ -668,14 +677,23 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
                   alt={person.name}
                   className="h-full w-full object-cover"
                   onError={(e) => {
+                    const cardHSL =
+                      typeof document !== 'undefined'
+                        ? getComputedStyle(document.documentElement)
+                            .getPropertyValue('--card')
+                            .trim()
+                        : '0 0% 8%';
+                    const primaryHSL = getComputedStyle(document.documentElement)
+                      .getPropertyValue('--primary')
+                      .trim();
                     (e.target as HTMLImageElement).src = generateAvatarDataUri(person.name, {
-                      background: '1a1a1a',
-                      color: '#2dd4bf',
+                      background: `hsl(${cardHSL})`,
+                      color: `hsl(${primaryHSL})`,
                     });
                   }}
                 />
               </div>
-              <span className="max-w-[80px] text-center text-xs font-medium leading-tight text-slate-400">
+              <span className="max-w-[80px] text-center text-xs font-medium leading-tight text-muted-foreground">
                 {person.name}
               </span>
             </motion.div>
@@ -686,9 +704,9 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
       {/* Section 5 — Strengths */}
       <motion.div
         {...sectionAnim(3.2)}
-        className="rounded-2xl border border-emerald-500/15 bg-card p-5"
+        className="rounded-2xl border border-success/15 bg-card p-5"
       >
-        <h4 className="mb-3 text-sm font-semibold text-emerald-400">💪 Strengths</h4>
+        <h4 className="mb-3 text-sm font-semibold text-success-bright">💪 Strengths</h4>
         <ul className="space-y-2">
           {(profile.strengths ?? []).map((s, i) => (
             <motion.li
@@ -696,44 +714,14 @@ export default function PersonalityAnalysis({ mbtiResult, childName }: Personali
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.7, delay: ANIM_STRENGTH_BASE + i * ANIM_STRENGTH_STEP }}
-              className="flex items-center gap-2.5 text-sm text-slate-400"
+              className="flex items-center gap-2.5 text-sm text-muted-foreground"
             >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
               {s}
             </motion.li>
           ))}
         </ul>
       </motion.div>
-
-      {/* Section 6 — Growth Areas */}
-      {growthAreasList.length > 0 && (
-        <motion.div
-          {...sectionAnim(4.0)}
-          className="rounded-2xl border border-amber-500/15 bg-card p-5"
-        >
-          <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-400">
-            <Sprout className="h-4 w-4 shrink-0" aria-hidden />
-            Growth Areas
-          </h4>
-          <ul className="space-y-2">
-            {growthAreasList.map((item, i) => (
-              <motion.li
-                key={`${item}-${i}`}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.7, delay: ANIM_GROWTH_BASE + i * ANIM_GROWTH_STEP }}
-                className="flex items-start gap-2.5 text-sm text-slate-400"
-              >
-                <span
-                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-                  aria-hidden
-                />
-                <span>{item}</span>
-              </motion.li>
-            ))}
-          </ul>
-        </motion.div>
-      )}
     </div>
   );
 }

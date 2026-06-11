@@ -24,7 +24,9 @@ import { env } from './src/lib/env';
 GoogleSignin.configure({
   webClientId: env.GOOGLE_CLIENT_ID,
   ...(Platform.OS === 'ios' && {
-    iosClientId: env.IOS_CLIENT_ID || '491922250866-oj7n68jvo5faorv0aedoc6ps5inn4k93.apps.googleusercontent.com',
+    iosClientId:
+      env.IOS_CLIENT_ID ||
+      '491922250866-oj7n68jvo5faorv0aedoc6ps5inn4k93.apps.googleusercontent.com',
   }),
 });
 
@@ -38,7 +40,9 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <AuthProvider>
           <SafeAreaProvider>
-            <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+            <StatusBar
+              barStyle={isDarkMode ? 'light-content' : 'dark-content'}
+            />
             <ErrorBoundary>
               <Navigation />
             </ErrorBoundary>

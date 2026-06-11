@@ -122,6 +122,24 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Verify SSM parameters exist and are readable
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: |
+          check_ssm() {
+            local name="$1"
+            local value
+            value=$(aws ssm get-parameter --region us-east-1 --name "$name" --query "Parameter.Value" --output text 2>&1)
+            if [[ $? -ne 0 ]]; then
+              echo "ERROR: Cannot read SSM parameter '$name': $value"
+              echo "Ensure infra-live-backend has been applied and the IAM role has ssm:GetParameter on this path."
+              return 1
+            fi
+            echo "OK: $name"
+          }
+          APP="${{ secrets.APP_NAME }}"
+          ENV="${{ inputs.environment }}"
+          check_ssm "/$APP/$ENV/backend/${{ inputs.backend_region }}/alb_internal_fqdn"
+
       - name: Terraform Init
         run: |
           terraform init \
@@ -185,3 +203,10 @@ jobs:
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         run: terraform apply -auto-approve tfplan.bin
+
+      - name: Delete runtime SSM parameters
+        if: inputs.action == 'destroy'
+        run: |
+          aws ssm delete-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" || true

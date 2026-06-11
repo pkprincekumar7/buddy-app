@@ -135,22 +135,22 @@ export default function PersonalityJourney() {
           <div className="flex min-h-screen items-center justify-center bg-background">
             <motion.div
               {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
           </div>
         ) : status === 'generating' ? (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
             <motion.div
               {...SPINNER}
-              className="h-12 w-12 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-12 w-12 rounded-full border-2 border-primary border-t-transparent"
             />
-            <p className="max-w-md text-center font-medium text-slate-400">
+            <p className="max-w-md text-center font-medium text-muted-foreground">
               Mapping personalized recommendations…
             </p>
           </div>
         ) : status === 'error' ? (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-            <p className="text-slate-400">Something went wrong. Please try again.</p>
+            <p className="text-muted-foreground">Something went wrong. Please try again.</p>
             <Button
               onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')}
               className="btn-primary rounded-2xl px-8"
@@ -173,9 +173,9 @@ export default function PersonalityJourney() {
                       key={phase.label}
                       className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 transition-all ${
                         phase.active
-                          ? 'border border-teal-500/25 bg-teal-500/10'
+                          ? 'border border-primary/25 bg-primary/10'
                           : phase.done
-                            ? 'border border-emerald-500/20 bg-emerald-500/10'
+                            ? 'border border-success/20 bg-success/10'
                             : 'bg-ghost border-edge-faint opacity-50'
                       }`}
                     >
@@ -183,11 +183,11 @@ export default function PersonalityJourney() {
                         {phase.icon}
                       </span>
                       <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : phase.done ? 'text-emerald-400' : 'text-slate-600'}`}
+                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : phase.done ? 'text-success-bright' : 'text-muted-foreground'}`}
                       >
                         {phase.label}
                       </span>
-                      {phase.done && <span className="text-xs text-emerald-400">✓</span>}
+                      {phase.done && <span className="text-xs text-success-bright">✓</span>}
                     </div>
                   ))}
                 </div>
@@ -197,30 +197,36 @@ export default function PersonalityJourney() {
             <div className="mx-auto max-w-3xl space-y-8 px-4 py-8 md:py-12">
               {/* Header */}
               <motion.div {...sectionAnim(0.1)} className="text-center">
-                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-400 to-emerald-500">
+                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-primary to-success">
                   <Sparkles className="h-12 w-12 text-white" />
                 </div>
-                <h2 className="mb-2 text-2xl font-bold text-white">Your Personalized Journey</h2>
-                <p className="text-slate-400">Here's what we've discovered about {childName}</p>
+                <h2 className="mb-2 text-2xl font-bold text-foreground">
+                  Your Personalized Journey
+                </h2>
+                <p className="text-muted-foreground">
+                  Here's what we've discovered about {childName}
+                </p>
               </motion.div>
 
               {/* Profile summary */}
               {profile && (
                 <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
                   <div className="mb-4 flex items-start gap-4">
-                    <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-400 to-teal-600">
+                    <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
                       <Star className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-white">{childName}'s Profile</h3>
-                      <p className="text-sm font-medium text-teal-400">
+                      <h3 className="text-lg font-bold text-foreground">{childName}'s Profile</h3>
+                      <p className="text-sm font-medium text-primary">
                         {profile.personality_type?.split(' - ')[1] ?? profile.personality_type}
                       </p>
                     </div>
                   </div>
-                  <p className="mb-5 text-sm leading-relaxed text-slate-400">{profile.summary}</p>
+                  <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
+                    {profile.summary}
+                  </p>
                   <div className="space-y-2">
-                    <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                       Emerging Strengths
                     </p>
                     {(profile.top_strengths as string[])?.map((strength, index) => (
@@ -231,10 +237,10 @@ export default function PersonalityJourney() {
                         transition={{ duration: 0.8, delay: 1.1 + index * 0.25 }}
                         className="border-edge-faint flex items-start gap-3 rounded-xl bg-surface-input p-3"
                       >
-                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-amber-500/15">
-                          <span className="text-xs font-bold text-amber-400">{index + 1}</span>
+                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-warning-medium/15">
+                          <span className="text-xs font-bold text-warning">{index + 1}</span>
                         </div>
-                        <p className="text-sm font-semibold text-white">{strength}</p>
+                        <p className="text-sm font-semibold text-foreground">{strength}</p>
                       </motion.div>
                     ))}
                   </div>
@@ -244,31 +250,33 @@ export default function PersonalityJourney() {
               {/* Growth areas prompt */}
               <motion.div
                 {...sectionAnim(1.8)}
-                className="rounded-2xl border border-purple-500/20 bg-card p-6"
+                className="rounded-2xl border border-personality/20 bg-card p-6"
               >
                 <div className="space-y-4 text-center">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-personality to-personality-alt-strong">
                     <Compass className="h-7 w-7 text-white" />
                   </div>
-                  <h3 className="text-lg font-bold text-white">
+                  <h3 className="text-lg font-bold text-foreground">
                     Do you want to explore the specific growth areas for {childName} to become their
                     best version?
                   </h3>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     Discover personalized activities to help {childName} develop key life skills
                   </p>
                   <div className="flex flex-col justify-center gap-3 pt-2 sm:flex-row">
                     <Button
+                      size="xl"
                       onClick={() => navigate(`/GrowthAreas/${childId}`)}
-                      className="h-12 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 px-8 text-white hover:from-purple-400 hover:to-indigo-500"
+                      className="rounded-2xl bg-gradient-to-r from-personality to-personality-alt-strong px-8 text-white hover:from-personality-light hover:to-personality-alt"
                     >
                       <Zap className="mr-2 h-4 w-4" />
                       Continue Now
                     </Button>
                     <Button
+                      size="xl"
                       variant="outline"
                       onClick={() => navigate('/Home')}
-                      className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent px-8 text-slate-300"
+                      className="border-edge-strong rounded-2xl bg-transparent px-8 text-foreground hover:bg-subtle"
                     >
                       <Clock className="mr-2 h-4 w-4" />
                       Catch Up Later
@@ -280,11 +288,12 @@ export default function PersonalityJourney() {
               {/* Navigation */}
               <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() =>
                     navigate(`/PersonalityType/${childId}`, { state: { fromBack: true } })
                   }
-                  className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                  className="btn-secondary w-full rounded-2xl sm:w-auto"
                 >
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   Back

@@ -189,9 +189,9 @@ export default function VoiceInput({
       aria-label={ariaLabel ?? defaultLabel}
       className={`h-10 w-10 flex-shrink-0 rounded-xl ${
         isRecording
-          ? 'bg-red-500 hover:bg-red-600'
+          ? 'bg-error-medium hover:bg-error-strong'
           : isTranscribing
-            ? 'cursor-wait bg-amber-400'
+            ? 'cursor-wait bg-warning'
             : 'bg-ghost-strong hover:bg-ghost-hover'
       }`}
     >
@@ -200,7 +200,7 @@ export default function VoiceInput({
       ) : isRecording ? (
         <MicOff className="h-4 w-4 text-white" />
       ) : (
-        <Mic className="h-4 w-4 text-slate-400" />
+        <Mic className="h-4 w-4 text-muted-foreground" />
       )}
     </Button>
   );

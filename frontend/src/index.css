@@ -2,20 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ─── CENTRALIZED THEME TOKENS ───────────────────────────────────────────────
+ * All colors are defined here as CSS custom properties (HSL channels).
+ * Both dark (default) and light (`.light` class on <html>) are declared below.
+ *
+ * DO NOT use hardcoded Tailwind colors (slate-*, gray-*, zinc-*) in components.
+ * Always use the semantic tokens below via Tailwind classes:
+ *
+ *  bg-background / text-foreground      — page background & primary text
+ *  bg-card / text-card-foreground       — card / panel surfaces
+ *  bg-popover / text-popover-foreground — dropdowns, tooltips, popovers
+ *  bg-surface-elevated                  — raised surfaces (hover states, modals)
+ *  bg-surface-input                     — input field backgrounds
+ *  bg-muted / text-muted-foreground     — subtle backgrounds & secondary text
+ *  bg-section-alt / bg-section-dark     — alternating page sections
+ *  text-primary / bg-primary            — brand teal accent
+ *  border-border                        — default border
+ *  border-edge / border-edge-*          — theme-aware semi-transparent borders
+ *  bg-ghost / bg-ghost-*               — semi-transparent surface tints
+ *  bg-subtle                           — faintest tinted overlay (5 % tint)
+ *  bg-na-dim                           — N/A / disabled dim overlay (15 % tint)
+ *
+ * Light mode is activated by adding the `.light` class to <html> (see Layout.tsx).
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
 @layer base {
   :root {
+    /* Theme-aware edge/ghost tint channel — flip to 0 0 0 in .light */
+    --edge-rgb: 255 255 255;
+
     --background: 0 0% 4%;
     --foreground: 0 0% 98%;
     --card: 0 0% 8%;
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 8%;
     --popover-foreground: 0 0% 98%;
-    --primary: 174 72% 56%;
+    --primary: 174 72% 56%; /* = teal-400 #2dd4bf — for text accents, borders, rings */
+    --primary-action: 174 84% 32%; /* = teal-600 #0d9488 — for filled action buttons */
     --primary-foreground: 0 0% 4%;
     --secondary: 0 0% 12%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 55%;
+    --muted-foreground: 215 20% 65%;
     --accent: 0 0% 12%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
@@ -44,6 +74,173 @@
     --scrollbar-track: 0 0% 6.7%;
     --scrollbar-thumb: 0 0% 16.5%;
     --scrollbar-thumb-hover: 0 0% 22.7%;
+    /* Primary/Teal scale extensions */
+    --primary-light: 172 66% 67%; /* teal-300 */
+    /* --primary already = teal-400 */
+    --primary-medium: 174 84% 39%; /* teal-500 */
+    --primary-dark: 174 84% 29%; /* teal-600 */
+    --primary-stronger: 175 77% 26%; /* teal-700 */
+    --primary-xstrong: 176 69% 22%; /* teal-800 */
+    --primary-bg-light: 166 76% 80%; /* teal-200 */
+
+    /* Semantic status colors */
+    --success: 160 84% 39%; /* = emerald-500 #10b981 */
+    --success-bright: 160 84% 51%; /* = emerald-400 #34d399 — for accent text/icons */
+    --success-light: 156 72% 67%; /* emerald-300 */
+    --success-strong: 161 94% 30%; /* emerald-600 */
+    --success-xstrong: 163 94% 24%; /* emerald-700 */
+    --success-muted: 152 76% 79%;
+
+    /* Warning/Amber scale */
+    --warning-light: 46 97% 65%; /* amber-300 */
+    --warning: 43 96% 56%; /* amber-400 */
+    --warning-medium: 38 92% 50%; /* amber-500 */
+    --warning-strong: 26 90% 37%; /* amber-700 */
+    --warning-orange: 25 95% 53%; /* orange-400 */
+    --warning-orange-medium: 21 90% 48%; /* orange-500 */
+
+    --error: 0 91% 71%;
+    --error-xlight: 0 86% 97%; /* red-50 */
+    --error-light: 0 94% 82%; /* red-300 */
+    --error-medium: 0 84% 60%; /* red-500 */
+    --error-strong: 0 72% 45%; /* red-600 */
+    --error-muted: 0 93% 81%;
+
+    --info: 217 91% 60%; /* blue-400 */
+    --info-medium: 217 91% 49%; /* blue-500 */
+    --info-strong: 221 83% 53%; /* blue-600 */
+    --info-muted: 214 80% 75%;
+
+    /* Personality/Purple scale */
+    --personality-light: 271 70% 47%; /* purple-400 */
+    --personality: 271 81% 56%; /* purple-500 */
+    --personality-alt: 258 90% 66%; /* violet-500 */
+    --personality-alt-strong: 263 70% 50%; /* violet-600 */
+
+    /* Pink */
+    --accent-pink: 330 81% 60%; /* pink-500 */
+
+    /* Neutral/Slate text scale */
+    --dim-foreground: 213 27% 84%; /* slate-300 */
+    --subtle-foreground: 215 16% 47%; /* slate-500 */
+    --faint-foreground: 215 19% 35%; /* slate-600 */
+    --xfaint-foreground: 215 25% 27%; /* slate-700 */
+    --surface-muted-bg: 215 19% 35%; /* slate-600 bg */
+    --surface-dark: 217 33% 17%; /* slate-800 */
+
+    /* RGB channels for glow utilities (no alpha — alpha is applied at the use site) */
+    --glow-primary-rgb: 45 212 191;
+    --glow-warning-rgb: 245 158 11;
+
+    /* Modal/drawer backdrop overlay */
+    --overlay: 0 0% 0% / 0.75;
+
+    /* Image scrim — dark gradient over photos/tiles for text legibility */
+    --image-scrim-rgb: 0 0 0;
+    --image-scrim-opacity: 0.6;
+  }
+}
+
+/* Light mode overrides — applied when <html> carries the .light class */
+@layer base {
+  .light {
+    /* Flip tint channel so edge/ghost utilities use dark tints on light backgrounds */
+    --edge-rgb: 0 0 0;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 174 72% 40%;
+    --primary-action: 174 72% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 0 0% 15%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 92%;
+    --accent-foreground: 0 0% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 85%;
+    --input: 0 0% 85%;
+    --ring: 174 72% 40%;
+    --chart-1: 174 72% 40%;
+    --chart-2: 160 60% 38%;
+    --chart-3: 43 96% 46%;
+    --chart-4: 280 65% 52%;
+    --chart-5: 340 75% 48%;
+    --sidebar-background: 0 0% 96%;
+    --sidebar-foreground: 0 0% 20%;
+    --sidebar-primary: 174 72% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 90%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 82%;
+    --sidebar-ring: 174 72% 40%;
+    --surface-elevated: 0 0% 100%;
+    --surface-input: 0 0% 96%;
+    --section-alt: 0 0% 96%;
+    --section-dark: 0 0% 93%;
+    --scrollbar-track: 0 0% 93%;
+    --scrollbar-thumb: 0 0% 75%;
+    --scrollbar-thumb-hover: 0 0% 60%;
+    --primary-light: 175 77% 26%;
+    --primary-medium: 174 84% 29%;
+    --primary-dark: 174 84% 21%;
+    --primary-stronger: 176 69% 17%;
+    --primary-xstrong: 176 69% 15%;
+    --primary-bg-light: 174 60% 90%;
+
+    --success: 160 84% 30%;
+    --success-light: 156 72% 40%;
+    --success-bright: 160 84% 35%;
+    --success-strong: 161 94% 24%;
+    --success-xstrong: 163 94% 18%;
+    --success-muted: 152 60% 55%;
+
+    --warning-light: 32 90% 45%;
+    --warning: 26 90% 37%;
+    --warning-medium: 26 90% 33%;
+    --warning-strong: 26 90% 28%;
+    --warning-orange: 21 90% 35%;
+    --warning-orange-medium: 21 90% 30%;
+
+    --error: 0 72% 51%;
+    --error-xlight: 0 86% 95%;
+    --error-light: 0 84% 50%;
+    --error-medium: 0 72% 45%;
+    --error-strong: 0 63% 35%;
+    --error-muted: 0 80% 70%;
+
+    --info: 221 83% 40%;
+    --info-medium: 221 83% 35%;
+    --info-strong: 221 83% 30%;
+    --info-muted: 214 80% 60%;
+
+    --personality-light: 271 70% 52%;
+    --personality: 271 81% 40%;
+    --personality-alt: 258 90% 48%;
+    --personality-alt-strong: 263 70% 38%;
+
+    --accent-pink: 330 81% 40%;
+
+    --dim-foreground: 215 19% 35%;
+    --subtle-foreground: 215 16% 28%;
+    --faint-foreground: 215 19% 20%;
+    --xfaint-foreground: 215 25% 15%;
+    --surface-muted-bg: 215 20% 75%;
+    --surface-dark: 215 20% 85%;
+
+    --glow-primary-rgb: 13 148 136;
+    --glow-warning-rgb: 217 119 6;
+
+    --overlay: 0 0% 0% / 0.6;
+
+    /* Image scrim stays dark in light mode — photos always need a dark overlay for text legibility */
+    --image-scrim-rgb: 0 0 0;
+    --image-scrim-opacity: 0.6;
   }
 }
 
@@ -84,115 +281,356 @@
 @layer utilities {
   .glow-teal {
     box-shadow:
-      0 0 20px rgba(45, 212, 191, 0.15),
-      0 0 40px rgba(45, 212, 191, 0.05);
+      0 0 20px rgb(var(--glow-primary-rgb) / 0.15),
+      0 0 40px rgb(var(--glow-primary-rgb) / 0.05);
   }
   .glow-teal-sm {
-    box-shadow: 0 0 12px rgba(45, 212, 191, 0.2);
+    box-shadow: 0 0 12px rgb(var(--glow-primary-rgb) / 0.2);
   }
   .glow-amber {
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+    box-shadow: 0 0 20px rgb(var(--glow-warning-rgb) / 0.15);
   }
   /* Dynamic per-element glow: set --pillar-glow on the element to activate. */
   .glow-pillar {
     box-shadow: 0 0 20px var(--pillar-glow, transparent);
   }
 
-  /* Semantic surface/border tokens — replaces repeated arbitrary opacity values */
+  /* Semantic surface/border tokens.
+     All tint values use --edge-rgb so they automatically flip between
+     white (dark theme) and black (light theme) without any extra overrides. */
   .border-edge {
-    @apply border border-white/[0.08];
+    border: 1px solid rgb(var(--edge-rgb) / 0.08);
   }
   .border-edge-faint {
-    @apply border border-white/[0.06];
+    border: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-edge-strong {
-    @apply border border-white/[0.12];
+    border: 1px solid rgb(var(--edge-rgb) / 0.12);
   }
   .border-edge-xs {
-    @apply border border-white/[0.04];
+    border: 1px solid rgb(var(--edge-rgb) / 0.04);
   }
   .border-edge-md {
-    @apply border border-white/[0.10];
+    border: 1px solid rgb(var(--edge-rgb) / 0.1);
   }
+
   /* Single-side variants for dividers */
   .border-b-edge {
-    @apply border-b border-white/[0.08];
+    border-bottom: 1px solid rgb(var(--edge-rgb) / 0.08);
   }
   .border-b-edge-faint {
-    @apply border-b border-white/[0.06];
+    border-bottom: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-t-edge-faint {
-    @apply border-t border-white/[0.06];
+    border-top: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-r-edge-faint {
-    @apply border-r border-white/[0.06];
+    border-right: 1px solid rgb(var(--edge-rgb) / 0.06);
   }
   .border-t-edge-xs {
-    @apply border-t border-white/[0.04];
+    border-top: 1px solid rgb(var(--edge-rgb) / 0.04);
   }
-  /* Color-only border aliases — use when border-width is already set (border/border-2/outline variant) */
+
+  /* Color-only border aliases — use when border-width is already set */
   .border-c-xs {
-    @apply border-white/[0.04];
+    border-color: rgb(var(--edge-rgb) / 0.04);
   }
   .border-c-edge {
-    @apply border-white/[0.08];
+    border-color: rgb(var(--edge-rgb) / 0.08);
   }
   .border-c-md {
-    @apply border-white/[0.10];
+    border-color: rgb(var(--edge-rgb) / 0.1);
   }
   .border-c-bright {
-    @apply border-white/[0.18];
+    border-color: rgb(var(--edge-rgb) / 0.18);
   }
+
+  /* Background ghost/tint utilities */
   .bg-ghost {
-    @apply bg-white/[0.02];
+    background-color: rgb(var(--edge-rgb) / 0.02);
   }
   .bg-ghost-md {
-    @apply bg-white/[0.04];
+    background-color: rgb(var(--edge-rgb) / 0.04);
   }
   .bg-ghost-light {
-    @apply bg-white/[0.06];
+    background-color: rgb(var(--edge-rgb) / 0.06);
   }
   .bg-ghost-strong {
-    @apply bg-white/[0.08];
+    background-color: rgb(var(--edge-rgb) / 0.08);
   }
   .bg-ghost-hover {
-    @apply bg-white/[0.12];
+    background-color: rgb(var(--edge-rgb) / 0.12);
   }
   .bg-na-dim {
-    @apply bg-white/[0.15];
+    background-color: rgb(var(--edge-rgb) / 0.15);
+  }
+  .bg-ghost-xl {
+    background-color: rgb(var(--edge-rgb) / 0.2);
   }
   .bg-subtle {
-    @apply bg-white/[0.05];
+    background-color: rgb(var(--edge-rgb) / 0.05);
   }
+  /* Theme-aware modal/drawer backdrop */
+  .bg-overlay {
+    background-color: hsl(var(--overlay));
+  }
+
+  /* Dark gradient scrim over images/tiles for text legibility */
+  .bg-image-scrim {
+    background: linear-gradient(
+      to top,
+      rgb(var(--image-scrim-rgb) / var(--image-scrim-opacity)),
+      transparent
+    );
+  }
+
+  /* Brand tints — teal/emerald are intentional brand colors, fine in both themes */
   .bg-brand-sub {
-    @apply bg-teal-500/10;
+    @apply bg-primary-medium/10;
   }
   .bg-brand-teal {
-    @apply bg-teal-500/[0.07];
+    background-color: hsl(var(--primary-medium) / 0.07);
   }
   .bg-success-sub {
-    @apply bg-emerald-500/[0.07];
+    background-color: hsl(var(--success) / 0.07);
+  }
+}
+
+/* Semantic token utility classes */
+@layer utilities {
+  /* Text utilities */
+  .text-primary-light {
+    color: hsl(var(--primary-light));
+  }
+  .text-primary-medium {
+    color: hsl(var(--primary-medium));
+  }
+  .text-success-bright {
+    color: hsl(var(--success-bright));
+  }
+  .text-success {
+    color: hsl(var(--success));
+  }
+  .text-success-strong {
+    color: hsl(var(--success-strong));
+  }
+  .text-success-xstrong {
+    color: hsl(var(--success-xstrong));
+  }
+  .text-warning-light {
+    color: hsl(var(--warning-light));
+  }
+  .text-warning {
+    color: hsl(var(--warning));
+  }
+  .text-warning-medium {
+    color: hsl(var(--warning-medium));
+  }
+  .text-warning-strong {
+    color: hsl(var(--warning-strong));
+  }
+  .text-warning-orange {
+    color: hsl(var(--warning-orange));
+  }
+  .text-error {
+    color: hsl(var(--error));
+  }
+  .text-error-xlight {
+    color: hsl(var(--error-xlight));
+  }
+  .text-error-light {
+    color: hsl(var(--error-light));
+  }
+  .text-error-medium {
+    color: hsl(var(--error-medium));
+  }
+  .text-error-strong {
+    color: hsl(var(--error-strong));
+  }
+  .text-info {
+    color: hsl(var(--info));
+  }
+  .text-info-medium {
+    color: hsl(var(--info-medium));
+  }
+  .text-info-strong {
+    color: hsl(var(--info-strong));
+  }
+  .text-personality {
+    color: hsl(var(--personality));
+  }
+  .text-dim {
+    color: hsl(var(--dim-foreground));
+  }
+  .text-subtle {
+    color: hsl(var(--subtle-foreground));
+  }
+  .text-faint {
+    color: hsl(var(--faint-foreground));
+  }
+  .text-xfaint {
+    color: hsl(var(--xfaint-foreground));
+  }
+
+  /* Background utilities */
+  .bg-primary-bg-light {
+    background-color: hsl(var(--primary-bg-light));
+  }
+  .bg-primary-medium {
+    background-color: hsl(var(--primary-medium));
+  }
+  .bg-primary-dark {
+    background-color: hsl(var(--primary-dark));
+  }
+  .bg-primary-stronger {
+    background-color: hsl(var(--primary-stronger));
+  }
+  .bg-success-light {
+    background-color: hsl(var(--success-light));
+  }
+  .bg-success-bright {
+    background-color: hsl(var(--success-bright));
+  }
+  .bg-success {
+    background-color: hsl(var(--success));
+  }
+  .bg-warning {
+    background-color: hsl(var(--warning));
+  }
+  .bg-warning-medium {
+    background-color: hsl(var(--warning-medium));
+  }
+  .bg-warning-orange {
+    background-color: hsl(var(--warning-orange));
+  }
+  .bg-warning-orange-medium {
+    background-color: hsl(var(--warning-orange-medium));
+  }
+  .bg-error-light {
+    background-color: hsl(var(--error-light));
+  }
+  .bg-error-medium {
+    background-color: hsl(var(--error-medium));
+  }
+  .bg-error-strong {
+    background-color: hsl(var(--error-strong));
+  }
+  .bg-info-medium {
+    background-color: hsl(var(--info-medium));
+  }
+  .bg-personality-light {
+    background-color: hsl(var(--personality-light));
+  }
+  .bg-personality {
+    background-color: hsl(var(--personality));
+  }
+  .bg-personality-alt {
+    background-color: hsl(var(--personality-alt));
+  }
+  .bg-personality-alt-strong {
+    background-color: hsl(var(--personality-alt-strong));
+  }
+  .bg-accent-pink {
+    background-color: hsl(var(--accent-pink));
+  }
+  .bg-surface-muted {
+    background-color: hsl(var(--surface-muted-bg));
+  }
+  .bg-surface-dark {
+    background-color: hsl(var(--surface-dark));
+  }
+
+  /* Border utilities */
+  .border-primary-medium {
+    border-color: hsl(var(--primary-medium));
+  }
+  .border-success {
+    border-color: hsl(var(--success));
+  }
+  .border-warning-medium {
+    border-color: hsl(var(--warning-medium));
+  }
+  .border-error-medium {
+    border-color: hsl(var(--error-medium));
+  }
+  .border-info-medium {
+    border-color: hsl(var(--info-medium));
+  }
+  .border-personality {
+    border-color: hsl(var(--personality));
+  }
+
+  /* Ring utilities */
+  .ring-primary-medium {
+    --tw-ring-color: hsl(var(--primary-medium));
+  }
+  .ring-error {
+    --tw-ring-color: hsl(var(--error));
+  }
+
+  /* Fill utility */
+  .fill-success {
+    fill: hsl(var(--success));
+  }
+}
+
+/*
+ * ─── CHART / RECHARTS THEME HELPERS ─────────────────────────────────────────
+ * Use these CSS-variable expressions wherever Recharts requires inline style
+ * objects (contentStyle, wrapperStyle, tick, stroke, cursor, etc.).
+ *
+ *  Chart grid lines:      rgb(var(--edge-rgb) / 0.05)
+ *  Chart cursor overlay:  rgb(var(--edge-rgb) / 0.04)
+ *  Chart axis stroke:     hsl(var(--muted-foreground))
+ *  Chart axis tick fill:  hsl(var(--muted-foreground))
+ *  Chart N/A bar fill:    hsl(var(--muted))
+ *  Chart reference line:  hsl(var(--border))
+ *  Tooltip bg:            hsl(var(--card))
+ *  Tooltip border:        1px solid hsl(var(--border))
+ *  Tooltip text:          hsl(var(--foreground))
+ *
+ * --edge-rgb flips between 255 255 255 (dark) and 0 0 0 (light), so
+ * rgb(var(--edge-rgb) / X) automatically becomes a white tint in dark
+ * mode and a black tint in light mode — no manual dark: override needed.
+ * ────────────────────────────────────────────────────────────────────────────
+ */
+
+/* Explicit utility classes for tokens not reliably picked up by Tailwind JIT.
+   These mirror what tailwind.config.ts declares but are guaranteed to be in the bundle. */
+@layer utilities {
+  /* primary-action — for filled CTA buttons (opacity variants needed explicitly) */
+  .bg-primary-action {
+    background-color: hsl(var(--primary-action));
+  }
+  .bg-primary-action\/30 {
+    background-color: hsl(var(--primary-action) / 0.3);
+  }
+  .hover\:bg-primary-action\/80:hover {
+    background-color: hsl(var(--primary-action) / 0.8);
+  }
+  .hover\:bg-primary-action\/90:hover {
+    background-color: hsl(var(--primary-action) / 0.9);
   }
 }
 
 @layer components {
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
-    @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-white outline-none ring-teal-500 focus:border-teal-500 focus:ring-2;
+    @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-foreground outline-none ring-primary-medium focus:border-primary-medium/50 focus:ring-2;
   }
 
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */
   .btn-primary {
-    @apply glow-teal bg-gradient-to-r from-teal-500 to-teal-400 font-semibold text-primary-foreground hover:from-teal-400 hover:to-teal-300;
+    @apply glow-teal bg-gradient-to-r from-primary-medium to-primary font-semibold text-primary-foreground hover:from-primary hover:to-primary-light;
   }
 
   /* Secondary ghost/outline button */
   .btn-secondary {
-    @apply border-edge-strong hover:bg-subtle bg-transparent text-slate-300 hover:text-white;
+    @apply border-edge-strong bg-transparent text-muted-foreground hover:bg-subtle hover:text-foreground;
   }
 
   /* Amber destructive-light button (Start Over, etc.) */
   .btn-start-over {
-    @apply border border-amber-500/30 bg-transparent text-amber-400 hover:bg-amber-500/10;
+    @apply border border-warning-medium/30 bg-transparent text-warning hover:bg-warning-medium/10;
   }
 }

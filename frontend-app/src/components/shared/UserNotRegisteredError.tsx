@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity } from 'react-native';
 import { AlertTriangle } from 'lucide-react-native';
+import { useTheme } from '@/lib/ThemeContext';
 
 interface Props {
   onLogout: () => void;
@@ -12,11 +13,12 @@ const SUGGESTIONS = [
 ];
 
 export default function UserNotRegisteredError({ onLogout }: Props) {
+  const { colors } = useTheme();
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: colors.background,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
@@ -24,10 +26,10 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
     >
       <View
         style={{
-          backgroundColor: '#111827',
+          backgroundColor: colors.card,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: '#1f2937',
+          borderColor: colors.border,
           padding: 32,
           width: '100%',
           maxWidth: 400,
@@ -36,18 +38,18 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
       >
         <View
           style={{
-            backgroundColor: 'rgba(249,115,22,0.1)',
+            backgroundColor: colors.warning + '1A',
             borderRadius: 48,
             padding: 20,
             marginBottom: 24,
           }}
         >
-          <AlertTriangle size={32} color="#fb923c" />
+          <AlertTriangle size={32} color={colors.warning} />
         </View>
 
         <Text
           style={{
-            color: '#ffffff',
+            color: colors.text,
             fontSize: 22,
             fontWeight: '700',
             marginBottom: 12,
@@ -59,7 +61,7 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
 
         <Text
           style={{
-            color: '#94a3b8',
+            color: colors.textMuted,
             textAlign: 'center',
             marginBottom: 24,
             lineHeight: 22,
@@ -71,21 +73,23 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
 
         <View
           style={{
-            backgroundColor: '#0f172a',
+            backgroundColor: colors.background,
             borderRadius: 8,
             padding: 16,
             width: '100%',
             marginBottom: 24,
           }}
         >
-          <Text style={{ color: '#94a3b8', fontSize: 13, marginBottom: 8 }}>
+          <Text
+            style={{ color: colors.textMuted, fontSize: 13, marginBottom: 8 }}
+          >
             If you believe this is an error, you can:
           </Text>
           {SUGGESTIONS.map(item => (
             <Text
               key={item}
               style={{
-                color: '#94a3b8',
+                color: colors.textMuted,
                 fontSize: 13,
                 marginTop: 4,
                 lineHeight: 20,
@@ -99,14 +103,16 @@ export default function UserNotRegisteredError({ onLogout }: Props) {
 
         <TouchableOpacity
           style={{
-            backgroundColor: '#0d9488',
+            backgroundColor: colors.primaryAction,
             paddingHorizontal: 32,
             paddingVertical: 12,
             borderRadius: 12,
           }}
           onPress={onLogout}
         >
-          <Text style={{ color: '#ffffff', fontWeight: '600' }}>Log Out</Text>
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
+            Log Out
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

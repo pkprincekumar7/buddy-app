@@ -18,11 +18,13 @@ _SAFE_PATH_RE = re.compile(r'^/(?!/)[^\x00-\x1f\\<>"\':`]*$')
 
 class UserPreferences(BaseModel):
     tts_enabled: bool = True
+    dark_mode: bool = True
     last_visited_path: str | None = None
 
 
 class UserPreferencesPatch(BaseModel):
     tts_enabled: bool | None = None
+    dark_mode: bool | None = None
     last_visited_path: str | None = Field(None, max_length=500)
 
     @field_validator("last_visited_path")

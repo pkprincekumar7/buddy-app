@@ -534,7 +534,7 @@ export default function ActivityModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
     >
       <motion.div
         role="dialog"
@@ -547,17 +547,17 @@ export default function ActivityModal({
         className="border-edge max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-card shadow-2xl"
       >
         {/* Header */}
-        <div className="relative rounded-t-3xl bg-gradient-to-br from-teal-400 to-emerald-500 p-6">
+        <div className="relative rounded-t-3xl bg-gradient-to-br from-primary-dark to-primary-medium p-6">
           <button
             onClick={onClose}
             aria-label="Close activity"
-            className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+            className="bg-ghost-xl hover:bg-ghost-xl absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors"
           >
             <X className="h-5 w-5 text-white" />
           </button>
 
           <div className="mb-4 flex items-start gap-4 pr-10">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+            <div className="bg-ghost-xl flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl backdrop-blur-sm">
               <Sparkles className="h-7 w-7 text-white" />
             </div>
             <div>
@@ -576,7 +576,7 @@ export default function ActivityModal({
                 </span>
                 <span>{Math.round(progress)}%</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
+              <div className="bg-ghost-xl h-1.5 overflow-hidden rounded-full">
                 <motion.div
                   className="h-full rounded-full bg-white"
                   initial={{ width: 0 }}
@@ -604,10 +604,10 @@ export default function ActivityModal({
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                  className="h-10 w-10 rounded-full border-4 border-teal-500 border-t-transparent"
+                  className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="font-medium text-slate-400">Preparing activity...</p>
+                <p className="font-medium text-muted-foreground">Preparing activity...</p>
               </motion.div>
             )}
 
@@ -624,7 +624,7 @@ export default function ActivityModal({
                 transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="py-4"
               >
-                <h3 className="mb-6 text-lg font-bold leading-snug text-white">
+                <h3 className="mb-6 text-lg font-bold leading-snug text-foreground">
                   {currentQuestion.question}
                 </h3>
 
@@ -637,17 +637,17 @@ export default function ActivityModal({
                         onClick={() => handleChoiceSelect(option)}
                         className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
                           currentAnswer === option
-                            ? 'border-teal-500 bg-teal-500/10'
+                            ? 'border-primary-medium bg-primary-medium/10'
                             : 'border-c-edge hover:border-c-bright bg-surface-input'
                         }`}
                       >
-                        <span className="font-medium text-slate-300">{option}</span>
+                        <span className="font-medium text-foreground">{option}</span>
                       </motion.button>
                     ))}
                     {currentQuestionIndex > 0 && (
                       <button
                         onClick={handleGoBack}
-                        className="mt-2 flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-300"
+                        className="mt-2 flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
                       >
                         <ChevronLeft className="h-4 w-4" /> Previous
                       </button>
@@ -673,7 +673,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -683,7 +683,7 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer.trim()}
-                        className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                        className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>
@@ -703,8 +703,8 @@ export default function ActivityModal({
                           }
                           className={`h-16 flex-1 rounded-2xl text-xl font-bold transition-all ${
                             currentAnswer === value.toString()
-                              ? 'bg-teal-500 text-white shadow-lg'
-                              : 'bg-ghost-light hover:bg-ghost-strong text-slate-400'
+                              ? 'bg-primary-action text-white shadow-lg'
+                              : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
                           }`}
                         >
                           {value}
@@ -712,7 +712,7 @@ export default function ActivityModal({
                       ))}
                     </div>
                     {currentQuestion.labels && currentQuestion.labels.length > 0 && (
-                      <div className="flex justify-between px-1 text-sm text-slate-500">
+                      <div className="flex justify-between px-1 text-sm text-subtle">
                         <span>{currentQuestion.labels[0]}</span>
                         <span>{currentQuestion.labels[1]}</span>
                       </div>
@@ -722,7 +722,7 @@ export default function ActivityModal({
                         <Button
                           variant="outline"
                           onClick={handleGoBack}
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           <ChevronLeft className="mr-1 h-5 w-5" /> Previous
                         </Button>
@@ -732,10 +732,10 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer}
-                        className={`h-12 rounded-2xl font-semibold transition-all ${
+                        className={`h-12 rounded-2xl text-base font-semibold transition-all ${
                           currentAnswer
-                            ? 'bg-teal-500 text-white hover:bg-teal-600'
-                            : 'cursor-not-allowed bg-teal-200 text-white'
+                            ? 'bg-primary-action text-white hover:bg-primary-action/90'
+                            : 'cursor-not-allowed bg-primary-action/30 text-white'
                         }`}
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
@@ -759,11 +759,11 @@ export default function ActivityModal({
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                  className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+                  className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent"
                   aria-hidden="true"
                 />
-                <p className="text-lg font-semibold text-white">Analysing the response...</p>
-                <p className="text-sm text-slate-500">Just a moment</p>
+                <p className="text-lg font-semibold text-foreground">Analysing the response...</p>
+                <p className="text-sm text-subtle">Just a moment</p>
               </motion.div>
             )}
 
@@ -777,62 +777,64 @@ export default function ActivityModal({
               >
                 {/* Header */}
                 <div className="flex flex-col items-center gap-2">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
-                    <Trophy className="h-8 w-8 text-amber-400" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-warning-medium/10">
+                    <Trophy className="h-8 w-8 text-warning" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white">
+                  <h3 className="text-2xl font-bold text-foreground">
                     Activity Complete! <span aria-hidden="true">🎉</span>
                   </h3>
-                  <p className="text-slate-400">Well done, {childName ?? 'there'}!</p>
+                  <p className="text-muted-foreground">Well done, {childName ?? 'there'}!</p>
                 </div>
 
                 {/* Score / Note */}
-                <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.05] p-4">
+                <div className="border-edge bg-ghost-md flex items-center gap-4 rounded-2xl p-4">
                   <div className="flex-shrink-0 text-center">
                     {isScorableActivity ? (
                       <>
-                        <p className="mb-0.5 text-xs font-semibold text-slate-400">AI Score</p>
-                        <p className="text-3xl font-bold leading-none text-white">
+                        <p className="mb-0.5 text-xs font-semibold text-muted-foreground">
+                          AI Score
+                        </p>
+                        <p className="text-3xl font-bold leading-none text-foreground">
                           {aiScore}
-                          <span className="text-base font-normal text-slate-500">/10</span>
+                          <span className="text-base font-normal text-subtle">/10</span>
                         </p>
                       </>
                     ) : (
                       <>
-                        <p className="mb-0.5 text-xs font-semibold text-slate-400">Note</p>
-                        <p className="max-w-[110px] text-sm font-bold leading-snug text-white">
+                        <p className="mb-0.5 text-xs font-semibold text-muted-foreground">Note</p>
+                        <p className="max-w-[110px] text-sm font-bold leading-snug text-foreground">
                           {aiNote}
                         </p>
                       </>
                     )}
                   </div>
-                  <div className="h-12 w-px bg-white/10" />
+                  <div className="bg-ghost-strong h-12 w-px" />
                   <div className="flex-1 space-y-3 text-sm">
                     {/* What changed */}
                     {whatChanged && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-subtle">
                           What changed
                         </p>
-                        <p className="leading-snug text-slate-300">{whatChanged}</p>
+                        <p className="leading-snug text-foreground">{whatChanged}</p>
                       </div>
                     )}
                     {/* What learned */}
                     {whatLearned && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-subtle">
                           What was learnt
                         </p>
-                        <p className="leading-snug text-slate-300">{whatLearned}</p>
+                        <p className="leading-snug text-foreground">{whatLearned}</p>
                       </div>
                     )}
                     {/* Recommendation */}
                     {recommendation && (
                       <div>
-                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-teal-500">
+                        <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-primary-medium">
                           Recommendation
                         </p>
-                        <p className="leading-snug text-teal-300">{recommendation}</p>
+                        <p className="leading-snug text-primary-light">{recommendation}</p>
                       </div>
                     )}
                   </div>
@@ -849,7 +851,7 @@ export default function ActivityModal({
                       transition={{ duration: 0.3 }}
                       className="space-y-3"
                     >
-                      <p className="text-center text-sm font-medium text-slate-400">
+                      <p className="text-center text-sm font-medium text-muted-foreground">
                         Parent — please review and respond:
                       </p>
                       <div className="grid grid-cols-2 gap-3">
@@ -864,7 +866,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving}
-                          className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Acknowledge ✓'}
                         </Button>
@@ -874,7 +876,7 @@ export default function ActivityModal({
                           }
                           disabled={isSaving}
                           variant="outline"
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent font-semibold text-slate-300"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base font-semibold text-foreground hover:bg-subtle"
                         >
                           Give Feedback
                         </Button>
@@ -891,7 +893,7 @@ export default function ActivityModal({
                       transition={{ duration: 0.3 }}
                       className="space-y-3"
                     >
-                      <label className="block text-sm font-semibold text-slate-300">
+                      <label className="block text-sm font-semibold text-foreground">
                         Your feedback
                       </label>
                       <TextareaWithVoice
@@ -911,7 +913,7 @@ export default function ActivityModal({
                           onClick={() =>
                             dispatch({ type: 'SET_CONFIRMATION_STEP', value: 'options' })
                           }
-                          className="border-edge-strong hover:bg-subtle h-12 rounded-2xl bg-transparent text-slate-400"
+                          className="border-edge-strong h-12 rounded-2xl bg-transparent text-base text-muted-foreground hover:bg-subtle"
                         >
                           ← Back
                         </Button>
@@ -926,7 +928,7 @@ export default function ActivityModal({
                             });
                           }}
                           disabled={isSaving || !parentFeedback.trim()}
-                          className="h-12 rounded-2xl bg-teal-500 font-semibold text-white hover:bg-teal-600 disabled:opacity-50"
+                          className="h-12 rounded-2xl bg-primary-action text-base font-semibold text-white hover:bg-primary-action/90 disabled:opacity-50"
                         >
                           {isSaving ? 'Saving…' : 'Submit Feedback'}
                         </Button>
@@ -942,8 +944,8 @@ export default function ActivityModal({
                       transition={{ duration: 0.4 }}
                       className="flex flex-col items-center gap-2 py-4 text-center"
                     >
-                      <p className="text-2xl font-bold text-white">Thank you 🙏</p>
-                      <p className="text-sm text-slate-400">Closing in a moment…</p>
+                      <p className="text-2xl font-bold text-foreground">Thank you 🙏</p>
+                      <p className="text-sm text-muted-foreground">Closing in a moment…</p>
                     </motion.div>
                   )}
 
@@ -955,10 +957,10 @@ export default function ActivityModal({
                       transition={{ duration: 0.4 }}
                       className="flex flex-col items-center gap-2 py-4 text-center"
                     >
-                      <p className="text-2xl font-bold text-white">
+                      <p className="text-2xl font-bold text-foreground">
                         Thank you for your feedback 🙏
                       </p>
-                      <p className="text-sm text-slate-400">
+                      <p className="text-sm text-muted-foreground">
                         Your feedback has been saved. Closing in a moment…
                       </p>
                     </motion.div>

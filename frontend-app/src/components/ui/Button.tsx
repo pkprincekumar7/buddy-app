@@ -3,6 +3,7 @@ import { Pressable, Text, ActivityIndicator } from 'react-native';
 import type { PressableProps } from 'react-native';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 const buttonVariants = cva(
   'flex-row items-center justify-center rounded-md gap-2 select-none',
@@ -11,7 +12,7 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-primary',
         destructive: 'bg-destructive',
-        outline: 'border border-input bg-background',
+        outline: 'border',
         secondary: 'bg-secondary',
         ghost: 'bg-transparent',
         link: 'bg-transparent',
@@ -20,6 +21,7 @@ const buttonVariants = cva(
         default: 'h-9 px-4 py-2',
         sm: 'h-8 px-3',
         lg: 'h-10 px-8',
+        xl: 'h-12 px-6',
         icon: 'h-9 w-9',
       },
     },
@@ -27,18 +29,17 @@ const buttonVariants = cva(
   },
 );
 
-const textVariants = cva('text-sm font-medium', {
+const textSizeClass = cva('font-medium', {
   variants: {
-    variant: {
-      default: 'text-[#0a0a0a]',
-      destructive: 'text-destructive-foreground',
-      outline: 'text-foreground',
-      secondary: 'text-secondary-foreground',
-      ghost: 'text-foreground',
-      link: 'text-primary underline',
+    size: {
+      default: 'text-sm',
+      sm: 'text-xs',
+      lg: 'text-sm',
+      xl: 'text-base',
+      icon: 'text-sm',
     },
   },
-  defaultVariants: { variant: 'default' },
+  defaultVariants: { size: 'default' },
 });
 
 export interface ButtonProps
@@ -60,11 +61,57 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
       children,
       disabled,
       loading,
+      style,
       ...props
     },
     ref,
   ) => {
+    const { colors } = useTheme();
     const isDisabled = disabled || loading;
+
+    // Variant-specific style overrides — always use JS styles for backgrounds so
+    // light mode works (NativeWind tailwind.config only has dark-mode HSL values).
+    const variantStyle = (() => {
+      switch (variant) {
+        case 'default':
+        case 'destructive':
+          return {
+            backgroundColor:
+              variant === 'destructive' ? colors.error : colors.primaryAction,
+          };
+        case 'secondary':
+          return { backgroundColor: colors.muted };
+        case 'outline':
+          return {
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.background,
+          };
+        case 'ghost':
+        case 'link':
+          return { backgroundColor: 'transparent' as const };
+        default:
+          return { backgroundColor: colors.primaryAction };
+      }
+    })();
+
+    const textColor = (() => {
+      switch (variant) {
+        case 'default':
+          return colors.primaryForeground;
+        case 'outline':
+        case 'ghost':
+        case 'secondary':
+          return colors.text;
+        case 'link':
+          return colors.primary;
+        case 'destructive':
+          return colors.primaryForeground;
+        default:
+          return colors.primaryForeground;
+      }
+    })();
+
     return (
       <Pressable
         ref={ref}
@@ -74,11 +121,19 @@ const Button = forwardRef<React.ElementRef<typeof Pressable>, ButtonProps>(
           isDisabled && 'opacity-50',
           className,
         )}
+        style={variantStyle ? [variantStyle, style as any] : style}
         {...props}
       >
-        {loading && <ActivityIndicator size="small" color="currentColor" />}
+        {loading && <ActivityIndicator size="small" color={textColor} />}
         {typeof children === 'string' ? (
-          <Text className={cn(textVariants({ variant }), textClassName)}>
+          <Text
+            className={cn(
+              textSizeClass({ size }),
+              variant === 'link' && 'underline',
+              textClassName,
+            )}
+            style={{ color: textColor }}
+          >
             {children}
           </Text>
         ) : (

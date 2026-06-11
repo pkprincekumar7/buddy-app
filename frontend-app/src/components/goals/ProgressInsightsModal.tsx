@@ -38,6 +38,9 @@ import Svg, {
   Rect as SvgRect,
   G as SvgG,
 } from 'react-native-svg';
+import { useTheme } from '@/lib/ThemeContext';
+import { CHART_BAND_COLORS } from '@/lib/gradientColors';
+import type { AppColors } from '@/lib/themeColors';
 import { api } from '@/api/client';
 import {
   INSIGHTS_SCHEMA_VERSION,
@@ -81,10 +84,10 @@ const obsToBarScore = (obs: Observation): number => {
   return 0; // inProgress / notStarted → neutral
 };
 
-const obsToBarColor = (obs: Observation): string => {
-  if (obs.type === 'improved') return '#6ee7b7';
-  if (obs.type === 'declined') return '#fca5a5';
-  return '#475569';
+const obsToBarColor = (obs: Observation, colors: AppColors): string => {
+  if (obs.type === 'improved') return colors.success;
+  if (obs.type === 'declined') return colors.error;
+  return colors.iconColor;
 };
 
 interface ObsBadgeProps {
@@ -92,38 +95,43 @@ interface ObsBadgeProps {
 }
 
 function ObsBadge({ obs }: ObsBadgeProps) {
+  const { colors } = useTheme();
   const cfg: Record<
     string,
     {
-      textClass: string;
       color: string;
+      textColor: string;
       Icon: React.ComponentType<{ size?: number; color?: string }>;
     }
   > = {
     improved: {
-      textClass: 'text-emerald-400',
-      color: '#34d399',
+      color: colors.success,
+      textColor: colors.success,
       Icon: CheckCircle2,
     },
     declined: {
-      textClass: 'text-amber-400',
-      color: '#fbbf24',
+      color: colors.warning,
+      textColor: colors.warning,
       Icon: AlertTriangle,
     },
     noImprovement: {
-      textClass: 'text-slate-500',
-      color: '#64748b',
+      color: colors.iconColor,
+      textColor: colors.iconColor,
       Icon: Minus,
     },
-    inProgress: { textClass: 'text-blue-400', color: '#60a5fa', Icon: Clock },
-    notStarted: { textClass: 'text-slate-400', color: '#94a3b8', Icon: Lock },
+    inProgress: { color: colors.info, textColor: colors.info, Icon: Clock },
+    notStarted: {
+      color: colors.iconColor,
+      textColor: colors.textMuted,
+      Icon: Lock,
+    },
   };
-  const entry = cfg[obs.type] ?? cfg['notStarted']!;
+  const entry = cfg[obs.type] ?? cfg.notStarted!;
   const { Icon } = entry;
   return (
     <View className="flex-row items-center gap-1.5">
       <Icon size={16} color={entry.color} />
-      <Text className={`text-sm font-medium ${entry.textClass}`}>
+      <Text className="text-sm font-medium" style={{ color: entry.textColor }}>
         {obs.label}
       </Text>
     </View>
@@ -156,33 +164,45 @@ function ChartTooltip({ datum, cx, chartWidth, onDismiss }: ChartTooltipProps) {
     8,
     Math.min(cx - TOOLTIP_W / 2, chartWidth - TOOLTIP_W - 8),
   );
-  const obsColorClass =
+  const { colors } = useTheme();
+  const obsTextColor =
     datum.obsType === 'improved'
-      ? 'text-emerald-400'
+      ? colors.success
       : datum.obsType === 'declined'
-      ? 'text-red-400'
+      ? colors.error
       : datum.obsType === 'noImprovement'
-      ? 'text-slate-500'
-      : 'text-blue-400';
+      ? colors.iconColor
+      : colors.info;
   return (
     <Pressable
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       onPress={onDismiss}
     >
       <View
-        style={{ position: 'absolute', top: 4, left, width: TOOLTIP_W }}
-        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 shadow-lg"
+        style={{
+          position: 'absolute',
+          top: 4,
+          left,
+          width: TOOLTIP_W,
+          borderColor: colors.border,
+          backgroundColor: colors.card,
+        }}
+        className="rounded-xl border px-3 py-2.5 shadow-lg"
       >
         <Text
-          className="text-sm font-semibold leading-snug text-white"
+          className="text-sm font-semibold leading-snug"
+          style={{ color: colors.text }}
           numberOfLines={3}
         >
           {datum.fullLabel}
         </Text>
-        <Text className="mt-0.5 text-xs text-slate-500">
+        <Text className="mt-0.5 text-xs" style={{ color: colors.iconColor }}>
           Month {datum.monthNum} · Activity {datum.actIdx + 1}
         </Text>
-        <Text className={`mt-1 text-sm font-medium ${obsColorClass}`}>
+        <Text
+          className="mt-1 text-sm font-medium"
+          style={{ color: obsTextColor }}
+        >
           {datum.obsLabel}
         </Text>
       </View>
@@ -199,6 +219,7 @@ function ProgressBarChart({
   chartWidth: number;
   onBarPress?: (datum: ChartBarDatum, cx: number) => void;
 }) {
+  const { colors } = useTheme();
   const PAD = { top: 28, right: 12, bottom: 48, left: 38 };
   const totalHeight = 240;
   const innerW = chartWidth - PAD.left - PAD.right;
@@ -218,11 +239,7 @@ function ProgressBarChart({
   const yTicks = [-50, -25, 0, 25, 50];
 
   // Month background bands (2 bars per month)
-  const bandColors = [
-    'rgba(20,255,160,0.04)',
-    'rgba(60,120,255,0.04)',
-    'rgba(160,60,255,0.04)',
-  ];
+  const bandColors = CHART_BAND_COLORS;
   const monthBands = [0, 1, 2].map(m => {
     const first = m * 2;
     const last = m * 2 + 1;
@@ -253,9 +270,7 @@ function ProgressBarChart({
           y1={sy(tick)}
           x2={PAD.left + innerW}
           y2={sy(tick)}
-          stroke={
-            tick === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.05)'
-          }
+          stroke={tick === 0 ? colors.border : `${colors.border}0d`}
           strokeWidth={tick === 0 ? 1.5 : 1}
         />
       ))}
@@ -266,7 +281,7 @@ function ProgressBarChart({
         y1={PAD.top}
         x2={PAD.left}
         y2={PAD.top + innerH}
-        stroke="#334155"
+        stroke={colors.border}
         strokeWidth={1}
       />
 
@@ -276,7 +291,7 @@ function ProgressBarChart({
           key={`yl${tick}`}
           x={PAD.left - 4}
           y={sy(tick) + 3.5}
-          fill="#94a3b8"
+          fill={colors.iconColor}
           fontSize={9}
           textAnchor="end"
         >
@@ -294,10 +309,10 @@ function ProgressBarChart({
         const arrowY = isPositive ? yZero - scoreH - 10 : yZero + scoreH + 16;
         const arrowChar = isPositive ? '↑' : d.score < 0 ? '↓' : '—';
         const arrowColor = isPositive
-          ? '#10b981'
+          ? colors.success
           : d.score < 0
-          ? '#f87171'
-          : '#94a3b8';
+          ? colors.error
+          : colors.iconColor;
 
         return (
           <SvgG key={d.x} onPress={() => onBarPress?.(d, cx)}>
@@ -332,7 +347,7 @@ function ProgressBarChart({
             <SvgText
               x={cx}
               y={PAD.top + innerH + 14}
-              fill="#94a3b8"
+              fill={colors.iconColor}
               fontSize={8}
               textAnchor="middle"
             >
@@ -343,7 +358,7 @@ function ProgressBarChart({
               <SvgText
                 x={cx + slotW / 2}
                 y={PAD.top + innerH + 28}
-                fill="#64748b"
+                fill={colors.iconColor}
                 fontSize={7}
                 textAnchor="middle"
                 fontWeight="bold"
@@ -424,41 +439,50 @@ function InsightRow({
   onToggle,
   ready,
 }: InsightRowProps) {
+  const { colors } = useTheme();
   const rowStyle = useSlideUpWhenReady(ready, idx * 100, 500);
   const isAnomaly = item.type === 'anomaly';
 
   return (
     <Animated.View
-      style={rowStyle}
-      className={`border-t border-slate-800 ${idx === 0 ? 'border-t-0' : ''} ${
-        isAnomaly ? 'bg-amber-500/10' : 'bg-slate-900'
-      }`}
+      style={[
+        rowStyle,
+        idx !== 0
+          ? { borderTopWidth: 1, borderTopColor: colors.border }
+          : undefined,
+        {
+          backgroundColor: isAnomaly
+            ? colors.warning + '1A'
+            : colors.background,
+        },
+      ]}
     >
       <View className="flex-row items-center gap-3 px-5 py-4">
         <View className="flex-shrink-0">
           {isAnomaly ? (
-            <AlertTriangle size={16} color="#f59e0b" />
+            <AlertTriangle size={16} color={colors.warning} />
           ) : (
-            <CheckCircle2 size={16} color="#10b981" />
+            <CheckCircle2 size={16} color={colors.success} />
           )}
         </View>
         <Text
-          className={`flex-1 text-sm font-medium leading-snug ${
-            isAnomaly ? 'text-amber-300' : 'text-slate-300'
-          }`}
+          className="flex-1 text-sm font-medium leading-snug"
+          style={{ color: isAnomaly ? colors.warning : colors.text }}
         >
           {item.text}
         </Text>
         <Pressable
           onPress={onToggle}
-          className={`ml-2 flex-shrink-0 rounded-lg px-3 py-1.5 ${
-            isAnomaly ? 'bg-amber-500/10' : 'bg-teal-500/10'
-          }`}
+          className="ml-2 flex-shrink-0 rounded-lg px-3 py-1.5"
+          style={{
+            backgroundColor: isAnomaly
+              ? colors.warning + '1A'
+              : colors.primary + '1A',
+          }}
         >
           <Text
-            className={`text-xs font-semibold ${
-              isAnomaly ? 'text-amber-300' : 'text-teal-400'
-            }`}
+            className="text-xs font-semibold"
+            style={{ color: isAnomaly ? colors.warning : colors.primary }}
           >
             {isExpanded ? 'Hide Details' : 'View Details'}
           </Text>
@@ -467,23 +491,45 @@ function InsightRow({
 
       <InsightAccordion isOpen={isExpanded}>
         <View
-          className={`border-t px-5 pb-5 ${
+          className="border-t px-5 pb-5"
+          style={
             isAnomaly
-              ? 'border-amber-500/15 bg-amber-500/5'
-              : 'border-slate-800 bg-slate-800'
-          }`}
+              ? {
+                  borderTopColor: colors.warning + '26',
+                  backgroundColor: colors.warning + '0D',
+                }
+              : { borderTopColor: colors.border, backgroundColor: colors.card }
+          }
         >
-          <Text className="pb-4 pt-4 text-sm leading-relaxed text-slate-400">
+          <Text
+            className="pb-4 pt-4 text-sm leading-relaxed"
+            style={{ color: colors.textMuted }}
+          >
             {item.details}
           </Text>
           <View className="flex-row flex-wrap gap-2">
-            <Pressable className="rounded-xl bg-teal-500 px-4 py-2">
-              <Text className="text-xs font-semibold text-white">
+            <Pressable
+              className="rounded-xl px-4 py-2"
+              style={{ backgroundColor: colors.primaryAction }}
+            >
+              <Text
+                className="text-xs font-semibold"
+                style={{ color: colors.primaryForeground }}
+              >
                 Start Monitoring
               </Text>
             </Pressable>
-            <Pressable className="rounded-xl bg-slate-700 border border-slate-600 px-4 py-2">
-              <Text className="text-xs font-semibold text-slate-300">
+            <Pressable
+              className="rounded-xl border px-4 py-2"
+              style={{
+                backgroundColor: colors.surfaceElevated,
+                borderColor: colors.border,
+              }}
+            >
+              <Text
+                className="text-xs font-semibold"
+                style={{ color: colors.text }}
+              >
                 Check-in Later
               </Text>
             </Pressable>
@@ -505,6 +551,7 @@ export default function ProgressInsightsModal({
   onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
+  const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState('progress');
   const [progressTab, setProgressTab] = useState('monthly');
   const [expandedInsight, setExpandedInsight] = useState<number | null>(null);
@@ -539,13 +586,13 @@ export default function ProgressInsightsModal({
           monthNum: month.month ?? 0,
           actIdx: pIdx,
           score: obsToBarScore(pair.observation),
-          obsColor: obsToBarColor(pair.observation),
+          obsColor: obsToBarColor(pair.observation, colors),
           fullLabel: pair.label,
           obsLabel: pair.observation.label,
           obsType: pair.observation.type,
         })),
       ),
-    [monthData],
+    [monthData, colors],
   );
 
   // Modal entrance animation
@@ -654,30 +701,51 @@ export default function ProgressInsightsModal({
 
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose}>
-      <View className="flex-1 items-center justify-center bg-black/40 p-4">
+      <View
+        className="flex-1 items-center justify-center p-4"
+        style={{ backgroundColor: colors.overlayBackground }}
+      >
         <Animated.View
           accessibilityRole="none"
           accessibilityLabel="Progress and Insights"
-          style={[cardStyle, { flex: 1, maxHeight: '90%' as const }]}
-          className="border border-slate-700 w-full max-w-3xl rounded-3xl bg-slate-900 shadow-2xl overflow-hidden"
+          style={[
+            cardStyle,
+            {
+              flex: 1,
+              maxHeight: '90%' as const,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+          className="border w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden"
         >
           {/* Header */}
           <GradientSurface
-            from="#2dd4bf"
-            to="#10b981"
+            from={colors.primaryDark}
+            to={colors.primaryMedium}
             diagonal
             style={{ flexShrink: 0 }}
             className="flex-row items-center justify-between rounded-t-3xl px-6 py-5"
           >
             <View className="flex-row items-center gap-3">
-              <View className="h-10 w-10 items-center justify-center rounded-2xl bg-white/20">
-                <BarChart3 size={24} color="white" />
+              <View
+                className="h-10 w-10 items-center justify-center rounded-2xl"
+                style={{ backgroundColor: colors.ghostXL }}
+              >
+                <BarChart3 size={24} color={colors.primaryForeground} />
               </View>
               <View>
-                <Text className="text-xl font-bold text-white">
+                <Text
+                  className="text-xl font-bold"
+                  style={{ color: colors.primaryForeground }}
+                >
                   Progress & Insights
                 </Text>
-                <Text className="text-sm text-white/80">
+                <Text
+                  className="text-sm"
+                  style={{ color: colors.primaryForeground, opacity: 0.8 }}
+                >
                   3-Month Growth Overview
                 </Text>
               </View>
@@ -685,16 +753,22 @@ export default function ProgressInsightsModal({
             <Pressable
               onPress={onClose}
               accessibilityLabel="Close progress modal"
-              className="h-8 w-8 items-center justify-center rounded-full bg-white/20"
+              className="h-8 w-8 items-center justify-center rounded-full"
+              style={{ backgroundColor: colors.ghostXL }}
             >
-              <X size={20} color="white" />
+              <X size={20} color={colors.primaryForeground} />
             </Pressable>
           </GradientSurface>
 
           {/* Top-level tabs */}
           <View
-            style={{ flexShrink: 0 }}
-            className="flex-row border-b border-slate-800 bg-slate-900 px-6 pt-3"
+            style={{
+              flexShrink: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+              backgroundColor: colors.background,
+            }}
+            className="flex-row px-6 pt-3"
           >
             {[
               ['progress', 'Progress'],
@@ -703,14 +777,18 @@ export default function ProgressInsightsModal({
               <Pressable
                 key={key}
                 onPress={() => switchTab(key!)}
-                className={`border-b-2 px-5 pb-3 ${
-                  activeTab === key ? 'border-teal-500' : 'border-transparent'
-                }`}
+                className="border-b-2 px-5 pb-3"
+                style={{
+                  borderBottomColor:
+                    activeTab === key ? colors.primary : 'transparent',
+                }}
               >
                 <Text
-                  className={`text-sm font-semibold ${
-                    activeTab === key ? 'text-teal-400' : 'text-slate-500'
-                  }`}
+                  className="text-sm font-semibold"
+                  style={{
+                    color:
+                      activeTab === key ? colors.primary : colors.iconColor,
+                  }}
                 >
                   {label}
                 </Text>
@@ -735,16 +813,20 @@ export default function ProgressInsightsModal({
                       <Pressable
                         key={key}
                         onPress={() => switchProgressTab(key!)}
-                        className={`rounded-xl px-4 py-2 ${
-                          progressTab === key ? 'bg-teal-500' : 'bg-slate-800'
-                        }`}
+                        className="rounded-xl px-4 py-2"
+                        style={{
+                          backgroundColor:
+                            progressTab === key ? colors.primary : colors.card,
+                        }}
                       >
                         <Text
-                          className={`text-sm font-semibold ${
-                            progressTab === key
-                              ? 'text-white'
-                              : 'text-slate-400'
-                          }`}
+                          className="text-sm font-semibold"
+                          style={{
+                            color:
+                              progressTab === key
+                                ? colors.primaryForeground
+                                : colors.textMuted,
+                          }}
                         >
                           {label}
                         </Text>
@@ -755,19 +837,37 @@ export default function ProgressInsightsModal({
                   <Animated.View style={subTabFadeStyle}>
                     {/* Monthly table */}
                     {progressTab === 'monthly' && (
-                      <View className="rounded-2xl border border-slate-700 overflow-hidden">
+                      <View
+                        className="rounded-2xl border overflow-hidden"
+                        style={{ borderColor: colors.border }}
+                      >
                         {/* Header row */}
-                        <View className="flex-row bg-slate-800 px-4 py-3">
-                          <Text className="w-20 text-xs font-semibold text-slate-400">
+                        <View
+                          className="flex-row px-4 py-3"
+                          style={{ backgroundColor: colors.card }}
+                        >
+                          <Text
+                            className="w-20 text-xs font-semibold"
+                            style={{ color: colors.textMuted }}
+                          >
                             Month
                           </Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                          <Text
+                            className="flex-1 text-xs font-semibold"
+                            style={{ color: colors.textMuted }}
+                          >
                             Goal
                           </Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                          <Text
+                            className="flex-1 text-xs font-semibold"
+                            style={{ color: colors.textMuted }}
+                          >
                             Objective
                           </Text>
-                          <Text className="flex-1 text-xs font-semibold text-slate-400">
+                          <Text
+                            className="flex-1 text-xs font-semibold"
+                            style={{ color: colors.textMuted }}
+                          >
                             Observation
                           </Text>
                         </View>
@@ -775,23 +875,33 @@ export default function ProgressInsightsModal({
                           pairs.map((pair, pIdx) => (
                             <View
                               key={`${mIdx}-${pIdx}`}
-                              className="flex-row border-t border-slate-800 px-4 py-3"
+                              className="flex-row border-t px-4 py-3"
+                              style={{ borderTopColor: colors.border }}
                             >
                               {pIdx === 0 ? (
-                                <Text className="w-20 text-xs font-bold text-slate-300 self-start">
+                                <Text
+                                  className="w-20 text-xs font-bold self-start"
+                                  style={{ color: colors.text }}
+                                >
                                   Month {month.month}
                                 </Text>
                               ) : (
                                 <View className="w-20" />
                               )}
                               {pIdx === 0 ? (
-                                <Text className="flex-1 text-xs text-slate-300 self-start pr-2">
+                                <Text
+                                  className="flex-1 text-xs self-start pr-2"
+                                  style={{ color: colors.text }}
+                                >
                                   {truncate(month.goal, 42)}
                                 </Text>
                               ) : (
                                 <View className="flex-1" />
                               )}
-                              <Text className="flex-1 text-xs text-slate-400 pr-2">
+                              <Text
+                                className="flex-1 text-xs pr-2"
+                                style={{ color: colors.textMuted }}
+                              >
                                 {pair.label}
                               </Text>
                               <View className="flex-1">
@@ -806,7 +916,10 @@ export default function ProgressInsightsModal({
                     {/* 3-Months bar chart */}
                     {progressTab === '3months' && (
                       <View>
-                        <Text className="mb-4 text-center text-sm text-slate-400">
+                        <Text
+                          className="mb-4 text-center text-sm"
+                          style={{ color: colors.textMuted }}
+                        >
                           Per-objective comparison: original (Week 1&amp;2) vs
                           follow-up (Week 3&amp;4)
                         </Text>
@@ -829,20 +942,40 @@ export default function ProgressInsightsModal({
                         </View>
                         <View className="mt-3 flex-row justify-center gap-6">
                           <View className="flex-row items-center gap-1.5">
-                            <View className="h-3 w-3 rounded-sm bg-emerald-400" />
-                            <Text className="text-xs text-slate-500">
+                            <View
+                              className="h-3 w-3 rounded-sm"
+                              style={{ backgroundColor: colors.success }}
+                            />
+                            <Text
+                              className="text-xs"
+                              style={{ color: colors.iconColor }}
+                            >
                               Improvement
                             </Text>
                           </View>
                           <View className="flex-row items-center gap-1.5">
-                            <View className="h-3 w-3 rounded-sm bg-red-400" />
-                            <Text className="text-xs text-slate-500">
+                            <View
+                              className="h-3 w-3 rounded-sm"
+                              style={{ backgroundColor: colors.error }}
+                            />
+                            <Text
+                              className="text-xs"
+                              style={{ color: colors.iconColor }}
+                            >
                               Decline
                             </Text>
                           </View>
                           <View className="flex-row items-center gap-1.5">
-                            <View className="h-3 w-3 rounded-sm bg-slate-600" />
-                            <Text className="text-xs text-slate-500">N/A</Text>
+                            <View
+                              className="h-3 w-3 rounded-sm"
+                              style={{ backgroundColor: colors.border }}
+                            />
+                            <Text
+                              className="text-xs"
+                              style={{ color: colors.iconColor }}
+                            >
+                              N/A
+                            </Text>
                           </View>
                         </View>
                       </View>
@@ -857,13 +990,25 @@ export default function ProgressInsightsModal({
                   {insightsLoading && (
                     <View className="items-center gap-4 py-20">
                       <Animated.View
-                        style={spinnerStyle}
-                        className="h-12 w-12 rounded-full border-4 border-teal-500 border-t-transparent"
+                        style={[
+                          spinnerStyle,
+                          {
+                            borderColor: colors.primary,
+                            borderTopColor: 'transparent',
+                          },
+                        ]}
+                        className="h-12 w-12 rounded-full border-4"
                       />
-                      <Text className="font-semibold text-white">
+                      <Text
+                        className="font-semibold"
+                        style={{ color: colors.text }}
+                      >
                         Generating personalised insights…
                       </Text>
-                      <Text className="text-sm text-slate-500">
+                      <Text
+                        className="text-sm"
+                        style={{ color: colors.iconColor }}
+                      >
                         Analysing {childName ? `${childName}'s` : 'the'}{' '}
                         assessment data
                       </Text>
@@ -872,7 +1017,10 @@ export default function ProgressInsightsModal({
 
                   {insightsError && !insightsLoading && (
                     <View className="items-center gap-4 py-16">
-                      <Text className="text-sm text-slate-400">
+                      <Text
+                        className="text-sm"
+                        style={{ color: colors.textMuted }}
+                      >
                         Failed to generate insights. Please try again.
                       </Text>
                       <Pressable
@@ -880,10 +1028,14 @@ export default function ProgressInsightsModal({
                           setInsightsError(false);
                           setInsightsData(null);
                         }}
-                        className="flex-row items-center gap-2 rounded-xl bg-teal-500 px-4 py-2"
+                        className="flex-row items-center gap-2 rounded-xl px-4 py-2"
+                        style={{ backgroundColor: colors.primaryAction }}
                       >
-                        <RefreshCw size={16} color="white" />
-                        <Text className="text-sm font-semibold text-white">
+                        <RefreshCw size={16} color={colors.primaryForeground} />
+                        <Text
+                          className="text-sm font-semibold"
+                          style={{ color: colors.primaryForeground }}
+                        >
                           Retry
                         </Text>
                       </Pressable>
@@ -894,10 +1046,16 @@ export default function ProgressInsightsModal({
                     !insightsLoading &&
                     insightsData.insight_items.length === 0 && (
                       <View className="items-center gap-3 py-16">
-                        <Text className="text-base font-semibold text-slate-300">
+                        <Text
+                          className="text-base font-semibold"
+                          style={{ color: colors.text }}
+                        >
                           No insights yet
                         </Text>
-                        <Text className="max-w-xs text-center text-sm text-slate-500">
+                        <Text
+                          className="max-w-xs text-center text-sm"
+                          style={{ color: colors.iconColor }}
+                        >
                           Complete at least one activity to generate
                           personalised insights for {childName ?? 'your child'}.
                         </Text>
@@ -907,7 +1065,10 @@ export default function ProgressInsightsModal({
                   {insightsData &&
                     !insightsLoading &&
                     insightsData.insight_items.length > 0 && (
-                      <View className="rounded-2xl border border-slate-700 overflow-hidden">
+                      <View
+                        className="rounded-2xl border overflow-hidden"
+                        style={{ borderColor: colors.border }}
+                      >
                         {(insightsData.insight_items || []).map(
                           (itemRaw, idx) => {
                             const item = itemRaw as InsightItem;

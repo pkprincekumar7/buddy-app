@@ -30,6 +30,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
 import type { Question } from '@/lib/growthAreaData';
@@ -52,6 +53,7 @@ type GrowthRouteProp = RouteProp<GrowthStackParamList, 'GrowthAreasActivity'>;
 
 export default function GrowthAreasActivityScreen() {
   const navigation = useNavigation<GrowthNavProp>();
+  const { colors } = useTheme();
   const route = useRoute<GrowthRouteProp>();
   const { activityId, fromReview } = route.params as {
     activityId: string;
@@ -254,21 +256,27 @@ export default function GrowthAreasActivityScreen() {
 
   if (isLoadingAuth || !hydrated) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: colors.background }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (!area || questions.length === 0) {
     return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400">Area not found.</Text>
+      <View
+        className="flex-1 items-center justify-center gap-4 px-4"
+        style={{ backgroundColor: colors.background }}
+      >
+        <Text style={{ color: colors.textMuted }}>Area not found.</Text>
         <Button
           onPress={() => navigation.goBack()}
           className="rounded-2xl px-8"
         >
-          <Text className="text-white">Back</Text>
+          <Text style={{ color: colors.primaryForeground }}>Back</Text>
         </Button>
       </View>
     );
@@ -277,8 +285,11 @@ export default function GrowthAreasActivityScreen() {
   const currentQuestion = questions[qIndex];
   if (!currentQuestion) {
     return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-4">
-        <Text className="text-slate-400">Question not found.</Text>
+      <View
+        className="flex-1 items-center justify-center gap-4 px-4"
+        style={{ backgroundColor: colors.background }}
+      >
+        <Text style={{ color: colors.textMuted }}>Question not found.</Text>
       </View>
     );
   }
@@ -294,9 +305,15 @@ export default function GrowthAreasActivityScreen() {
     progressTrackW > 0 ? (progressTrackW * progress) / 100 : 0;
 
   return (
-    <Animated.View style={contentStyle} className="flex-1 bg-background">
+    <Animated.View
+      style={[contentStyle, { backgroundColor: colors.background }]}
+      className="flex-1"
+    >
       {/* Area header — gradient icon + area name + gradient progress bar */}
-      <View className="border-b border-white/10 bg-slate-900/90 px-4 py-3">
+      <View
+        className="border-b px-4 py-3"
+        style={{ backgroundColor: colors.card, borderColor: colors.border }}
+      >
         <View className="flex-row items-center gap-3">
           <GradientIconBox
             from={gradFrom}
@@ -305,16 +322,19 @@ export default function GrowthAreasActivityScreen() {
             radius={12}
             diagonal
           >
-            <Icon size={20} color="white" />
+            <Icon size={20} color={colors.primaryForeground} />
           </GradientIconBox>
           <View className="flex-1">
-            <Text className="text-sm font-semibold text-white">
+            <Text
+              className="text-sm font-semibold"
+              style={{ color: colors.text }}
+            >
               {area.name}
             </Text>
             {/* Gradient progress bar */}
             <View
-              className="mt-1 overflow-hidden rounded-full bg-slate-800"
-              style={{ height: 6 }}
+              className="mt-1 overflow-hidden rounded-full"
+              style={{ height: 6, backgroundColor: colors.surfaceElevated }}
               onLayout={e => setProgressTrackW(e.nativeEvent.layout.width)}
             >
               {progressTrackW > 0 && (
@@ -357,7 +377,7 @@ export default function GrowthAreasActivityScreen() {
               )}
             </View>
           </View>
-          <Text className="text-xs text-slate-500">
+          <Text className="text-xs" style={{ color: colors.iconColor }}>
             {qIndex + 1} / {questions.length}
           </Text>
         </View>
@@ -377,10 +397,17 @@ export default function GrowthAreasActivityScreen() {
         <Animated.View style={[questionStyle, { gap: 24 }]}>
           {/* Question card */}
           <View
-            className="rounded-2xl bg-card p-6"
-            style={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)' }}
+            className="rounded-2xl p-6"
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            }}
           >
-            <Text className="text-lg font-semibold leading-relaxed text-white">
+            <Text
+              className="text-lg font-semibold leading-relaxed"
+              style={{ color: colors.text }}
+            >
               {questionText}
             </Text>
           </View>
@@ -407,7 +434,11 @@ export default function GrowthAreasActivityScreen() {
               value={currentAnswer}
               onChange={e => setCurrentAnswer(e.target.value)}
               placeholder={currentQuestion.placeholder ?? ''}
-              className="border-white/10 bg-card text-white"
+              style={{
+                backgroundColor: colors.card,
+                color: colors.text,
+                borderColor: colors.border,
+              }}
             />
           )}
         </Animated.View>
@@ -417,13 +448,19 @@ export default function GrowthAreasActivityScreen() {
           className="mt-10"
           left={
             <Button
+              size="xl"
               variant="outline"
               onPress={handleBack}
-              className="h-12 w-full rounded-2xl px-6"
+              className="w-full rounded-2xl"
             >
               <View className="flex-row items-center gap-1.5">
-                <ChevronLeft size={16} color="#cbd5e1" />
-                <Text className="text-sm font-medium text-slate-300">Back</Text>
+                <ChevronLeft size={16} color={colors.textMuted} />
+                <Text
+                  className="text-base font-medium"
+                  style={{ color: colors.textMuted }}
+                >
+                  Back
+                </Text>
               </View>
             </Button>
           }
@@ -444,10 +481,12 @@ export default function GrowthAreasActivityScreen() {
               style={{ width: '100%' }}
             >
               <View className="flex-row items-center gap-1.5">
-                <Text className="font-semibold text-[#0a0a0a]">
+                <Text
+                  style={{ fontWeight: '600', color: colors.primaryForeground }}
+                >
                   {qIndex >= questions.length - 1 ? 'Finish' : 'Next'}
                 </Text>
-                <ChevronRight size={16} color="#0a0a0a" />
+                <ChevronRight size={16} color={colors.primaryForeground} />
               </View>
             </GradientButton>
           }
@@ -472,6 +511,7 @@ function ChoiceOption({
   gradTo: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   const [dims, setDims] = useState({ w: 0, h: 0 });
 
   return (
@@ -488,9 +528,9 @@ function ChoiceOption({
         borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: isSelected ? 'transparent' : 'rgba(255,255,255,0.10)',
+        borderColor: isSelected ? 'transparent' : colors.border,
+        backgroundColor: isSelected ? undefined : colors.card,
       }}
-      className={!isSelected ? 'bg-card' : undefined}
     >
       {/* Gradient fill when selected */}
       {isSelected && dims.w > 0 && dims.h > 0 && (
@@ -510,9 +550,10 @@ function ChoiceOption({
       )}
       <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
         <Text
-          className={`text-sm font-medium ${
-            isSelected ? 'text-white' : 'text-slate-300'
-          }`}
+          className="text-sm font-medium"
+          style={{
+            color: isSelected ? colors.primaryForeground : colors.textMuted,
+          }}
         >
           {option}
         </Text>

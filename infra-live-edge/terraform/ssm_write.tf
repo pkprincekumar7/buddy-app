@@ -5,7 +5,6 @@
 
 resource "aws_ssm_parameter" "cloudfront_distribution_id" {
   #checkov:skip=CKV2_AWS_34:Non-sensitive configuration value (CloudFront distribution ID); KMS encryption on plain String params adds cost without security benefit
-  provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/edge/cloudfront_distribution_id"
   value = aws_cloudfront_distribution.frontend.id
@@ -16,7 +15,6 @@ resource "aws_ssm_parameter" "cloudfront_distribution_id" {
 
 resource "aws_ssm_parameter" "cloudfront_arn" {
   #checkov:skip=CKV2_AWS_34:Non-sensitive configuration value (CloudFront ARN); KMS encryption on plain String params adds cost without security benefit
-  provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/edge/cloudfront_arn"
   value = aws_cloudfront_distribution.frontend.arn
@@ -27,7 +25,6 @@ resource "aws_ssm_parameter" "cloudfront_arn" {
 
 resource "aws_ssm_parameter" "app_url" {
   #checkov:skip=CKV2_AWS_34:Non-sensitive configuration value (public app URL); KMS encryption on plain String params adds cost without security benefit
-  provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/edge/app_url"
   value = "https://${local.fqdn}"
@@ -38,7 +35,6 @@ resource "aws_ssm_parameter" "app_url" {
 
 resource "aws_ssm_parameter" "s3_bucket_name" {
   #checkov:skip=CKV2_AWS_34:Non-sensitive configuration value (S3 bucket name); KMS encryption on plain String params adds cost without security benefit
-  provider = aws.ssm
 
   name  = "/${var.app_name}/${var.environment}/edge/s3_bucket_name"
   value = var.frontend_bucket_name

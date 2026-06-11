@@ -1,24 +1,20 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, Pressable, ScrollView, Image } from 'react-native';
-import { EmojiText } from '@/components/ui/EmojiText';
+import { CheckCircle, Circle } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
+import { useTheme } from '@/lib/ThemeContext';
+import { TILE_BG_HEX_COLORS } from '@/lib/gradientColors';
 
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts and app-level rerenders.
 const _failedAssetPaths = new Set<string>();
 
-// Fallback gradient colours shown when an image fails to load.
-const TILE_BG_COLORS = [
-  'bg-purple-500',
-  'bg-rose-500',
-  'bg-amber-500',
-  'bg-emerald-500',
-  'bg-blue-500',
-  'bg-violet-500',
-];
+function themedImagePath(path: string, isDark: boolean): string {
+  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
+}
 
 interface AreaGameOption {
   id: string;
@@ -376,7 +372,8 @@ export default function ChildActivityGame({
   onSelectedIdsChange,
   onComplete,
 }: ChildActivityGameProps) {
-  const game = areaGames[areaId] ?? areaGames['life_ambition']!;
+  const { colors, isDark } = useTheme();
+  const game = areaGames[areaId] ?? areaGames.life_ambition!;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [failedImages, setFailedImages] = useState<Set<string>>(
     () =>
@@ -510,11 +507,16 @@ export default function ChildActivityGame({
     <ScrollView className="flex-1" contentContainerClassName="pb-6">
       <View className="space-y-6">
         <View className="items-center">
-          <Text className="mb-2 text-center text-2xl font-bold text-white">
+          <Text
+            className="mb-2 text-center text-2xl font-bold"
+            style={{ color: colors.text }}
+          >
             {game.question}
           </Text>
-          <Text className="text-center text-slate-500">{game.subtitle}</Text>
-          <Text className="mt-2 text-sm text-emerald-600">
+          <Text className="text-center" style={{ color: colors.iconColor }}>
+            {game.subtitle}
+          </Text>
+          <Text className="mt-2 text-sm" style={{ color: colors.success }}>
             Selected: {ids.length}/{game.maxSelections}
           </Text>
         </View>
@@ -528,17 +530,21 @@ export default function ChildActivityGame({
               <Pressable
                 key={option.id}
                 onPress={() => toggleSelection(option.id)}
-                className={`overflow-hidden rounded-2xl border-4 ${
-                  isSelected ? 'border-emerald-500' : 'border-white/10'
-                }`}
-                style={{ width: '47%' }}
-                android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+                className="overflow-hidden rounded-2xl border-4"
+                style={{
+                  width: '47%',
+                  borderColor: isSelected ? colors.success : colors.border,
+                }}
+                android_ripple={{ color: colors.ripple }}
               >
                 {/* Image or fallback emoji tile */}
                 {!hasFailed ? (
                   <Image
                     source={{
-                      uri: `${env.CDN_BASE_URL}/app-assets/${option.image}`,
+                      uri: `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
+                        option.image,
+                        isDark,
+                      )}`,
                     }}
                     className="w-full"
                     style={{ aspectRatio: 4 / 3 }}
@@ -550,23 +556,38 @@ export default function ChildActivityGame({
                   />
                 ) : (
                   <View
-                    className={`w-full items-center justify-center ${
-                      TILE_BG_COLORS[index % TILE_BG_COLORS.length]
-                    }`}
-                    style={{ aspectRatio: 4 / 3 }}
+                    className="w-full items-center justify-center"
+                    style={{
+                      aspectRatio: 4 / 3,
+                      backgroundColor:
+                        TILE_BG_HEX_COLORS[index % TILE_BG_HEX_COLORS.length],
+                    }}
                   >
                     <Text style={{ fontSize: 48 }}>{option.emoji}</Text>
                   </View>
                 )}
 
-                {/* Label overlay */}
-                <View className="absolute inset-0 flex-col justify-end p-3 bg-gradient-to-t from-black/60 to-transparent">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm font-semibold text-white flex-1 mr-1">
-                      {option.label}
-                    </Text>
-                    <EmojiText size="lg">{isSelected ? '✅' : '⭕'}</EmojiText>
-                  </View>
+                {/* Label bar — bottom only, preserves image visibility */}
+                <View
+                  className="absolute bottom-0 left-0 right-0 flex-row items-center justify-between px-3 py-2"
+                  style={{ backgroundColor: colors.imageScrimColor }}
+                >
+                  <Text
+                    className="text-sm font-semibold flex-1 mr-1"
+                    style={{ color: '#ffffff' }}
+                    numberOfLines={1}
+                  >
+                    {option.label}
+                  </Text>
+                  {isSelected ? (
+                    <CheckCircle
+                      size={22}
+                      color={colors.primaryForeground}
+                      fill={colors.success}
+                    />
+                  ) : (
+                    <Circle size={22} color="rgba(255,255,255,0.7)" />
+                  )}
                 </View>
               </Pressable>
             );
@@ -574,13 +595,18 @@ export default function ChildActivityGame({
         </View>
 
         <Button
+          size="xl"
           onPress={() => {
             void handleSubmit();
           }}
           disabled={ids.length === 0 || isSubmitting}
-          className="h-12 w-full rounded-2xl bg-emerald-500 items-center justify-center"
+          className="w-full rounded-2xl items-center justify-center"
+          style={{ backgroundColor: colors.success }}
         >
-          <Text className="font-semibold text-white">
+          <Text
+            className="font-semibold"
+            style={{ color: colors.primaryForeground }}
+          >
             {isSubmitting
               ? 'Generating Recommendations...'
               : 'Submit My Choices'}

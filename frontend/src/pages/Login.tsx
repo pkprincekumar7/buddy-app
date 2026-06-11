@@ -146,11 +146,11 @@ export default function Login() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-6">
       <div className="border-edge w-full max-w-md rounded-2xl bg-card p-8">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-medium to-success">
             <span className="text-lg font-bold text-white">LP</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-400">Buddy360 — continue to your pathway</p>
+          <h1 className="text-2xl font-bold text-foreground">Sign in</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Buddy360 — continue to your pathway</p>
         </div>
 
         {!pendingGoogleToken && (
@@ -164,7 +164,7 @@ export default function Login() {
               <div>
                 <label
                   htmlFor="login-email"
-                  className="mb-1 block text-sm font-medium text-slate-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Username (email)
                 </label>
@@ -181,7 +181,7 @@ export default function Login() {
               <div>
                 <label
                   htmlFor="login-password"
-                  className="mb-1 block text-sm font-medium text-slate-300"
+                  className="mb-1 block text-sm font-medium text-foreground"
                 >
                   Password
                 </label>
@@ -195,10 +195,10 @@ export default function Login() {
                   className="form-input"
                 />
               </div>
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? <p className="text-sm text-error-strong">{error}</p> : null}
               <Button
                 type="submit"
-                className="w-full bg-teal-600 hover:bg-teal-700"
+                className="w-full bg-primary-action hover:bg-primary-action/80"
                 disabled={busy}
               >
                 {busy ? 'Signing in…' : 'Sign in'}
@@ -207,11 +207,11 @@ export default function Login() {
 
             {googleClientId ? (
               <div className="mt-6 flex flex-col items-center gap-2">
-                <p className="text-xs text-slate-500">or</p>
+                <p className="text-xs text-muted-foreground">or</p>
                 <div ref={googleBtnRef} className="flex min-h-[40px] justify-center" />
               </div>
             ) : (
-              <p className="mt-4 text-center text-xs text-slate-400">
+              <p className="mt-4 text-center text-xs text-muted-foreground">
                 Google sign-in: set{' '}
                 <code className="bg-ghost-strong rounded px-1">VITE_GOOGLE_CLIENT_ID</code> and{' '}
                 <code className="bg-ghost-strong rounded px-1">GOOGLE_CLIENT_ID</code> on the API.
@@ -221,12 +221,12 @@ export default function Login() {
         )}
 
         {pendingGoogleToken ? (
-          <div className="bg-brand-sub mt-6 rounded-xl border border-teal-500/25 p-4">
-            <p className="mb-3 text-sm font-medium text-white">One more step</p>
-            <p className="mb-3 text-xs text-slate-400">
+          <div className="bg-brand-sub mt-6 rounded-xl border border-primary/25 p-4">
+            <p className="mb-3 text-sm font-medium text-foreground">One more step</p>
+            <p className="mb-3 text-xs text-muted-foreground">
               Select your country so we can store your data in the right region.
             </p>
-            {error ? <p className="mb-3 text-sm text-red-400">{error}</p> : null}
+            {error ? <p className="mb-3 text-sm text-error">{error}</p> : null}
             <select
               value={googleCountry}
               onChange={(e) => setGoogleCountry(e.target.value)}
@@ -247,7 +247,7 @@ export default function Login() {
                   void onGoogleCountrySubmit();
                 }}
                 disabled={!googleCountry || googleCountryBusy}
-                className="flex-1 bg-teal-600 text-sm hover:bg-teal-700"
+                className="flex-1 bg-primary-action text-sm hover:bg-primary-action/80"
               >
                 {googleCountryBusy ? 'Signing in…' : 'Continue'}
               </Button>
@@ -267,9 +267,9 @@ export default function Login() {
           </div>
         ) : null}
 
-        <p className="mt-8 text-center text-sm text-slate-400">
+        <p className="mt-8 text-center text-sm text-muted-foreground">
           New here?{' '}
-          <Link to="/Register" className="font-medium text-teal-700 hover:text-teal-800">
+          <Link to="/Register" className="font-medium text-primary hover:text-primary">
             Create an account
           </Link>
         </p>
@@ -284,10 +284,10 @@ export default function Login() {
           >
             {/* Dual-ring spinner */}
             <div className="relative h-20 w-20">
-              <div className="absolute inset-0 rounded-full border-4 border-teal-500/20" />
-              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-teal-500" />
+              <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-primary-medium" />
               <div
-                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-emerald-400"
+                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-success-bright"
                 style={{ animationDuration: '0.75s', animationDirection: 'reverse' }}
               />
             </div>
@@ -298,8 +298,8 @@ export default function Login() {
               transition={{ delay: 0.15, duration: 0.4, ease: 'easeOut' }}
               className="space-y-1 text-center"
             >
-              <p className="text-base font-semibold text-white">{loadingMessage}</p>
-              <p className="text-sm text-slate-500">Please wait a moment…</p>
+              <p className="text-base font-semibold text-foreground">{loadingMessage}</p>
+              <p className="text-sm text-muted-foreground">Please wait a moment…</p>
             </motion.div>
           </motion.div>
         )}

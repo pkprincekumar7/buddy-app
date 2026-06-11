@@ -3,6 +3,7 @@ import { Pressable } from 'react-native';
 import type { PressableProps } from 'react-native';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/lib/ThemeContext';
 
 export const toggleVariants = cva(
   'flex-row items-center justify-center rounded-md gap-2',
@@ -10,7 +11,7 @@ export const toggleVariants = cva(
     variants: {
       variant: {
         default: 'bg-transparent',
-        outline: 'border border-input bg-transparent shadow-sm',
+        outline: 'border bg-transparent shadow-sm',
       },
       size: {
         default: 'h-9 px-2 min-w-[36px]',
@@ -41,10 +42,12 @@ const Toggle = forwardRef<React.ElementRef<typeof Pressable>, ToggleProps>(
       onPressedChange,
       children,
       disabled,
+      style,
       ...props
     },
     ref,
   ) => {
+    const { colors } = useTheme();
     const [internalPressed, setInternalPressed] = useState(false);
     const isPressed = controlledPressed ?? internalPressed;
 
@@ -54,6 +57,14 @@ const Toggle = forwardRef<React.ElementRef<typeof Pressable>, ToggleProps>(
       onPressedChange?.(next);
     };
 
+    const variantStyle =
+      variant === 'outline'
+        ? { borderWidth: 1, borderColor: colors.border }
+        : undefined;
+    const pressedStyle = isPressed
+      ? { backgroundColor: colors.muted }
+      : undefined;
+
     return (
       <Pressable
         ref={ref}
@@ -61,10 +72,10 @@ const Toggle = forwardRef<React.ElementRef<typeof Pressable>, ToggleProps>(
         onPress={handlePress}
         className={cn(
           toggleVariants({ variant, size }),
-          isPressed && 'bg-accent',
           disabled && 'opacity-50',
           className,
         )}
+        style={[variantStyle, pressedStyle, style as any]}
         {...props}
       >
         {children}

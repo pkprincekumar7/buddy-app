@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
     <title>Buddy360</title>
+    <!-- Blocking theme init: apply .light class before first paint to avoid flash of wrong theme.
+         Loaded as an external file (not inline) so CSP 'self' covers it without a hash.
+         No defer/async — must execute synchronously. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

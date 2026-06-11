@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
 
 const WELCOME_FEATURES = [
-  { icon: Heart, text: 'Understand your child deeply' },
-  { icon: Compass, text: 'Create a personalized growth pathway' },
-  { icon: Sparkles, text: 'Get life changing recommendations' },
+  { icon: Heart, text: 'Understanding your child deeply' },
+  { icon: Compass, text: 'Creating a personalized growth pathway' },
+  { icon: Sparkles, text: 'Getting life-changing recommendations' },
 ];
 
 interface WelcomePhaseProps {
@@ -28,7 +28,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 60, damping: 14, delay: 0.1 }}
-          className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-400 to-teal-600"
+          className="glow-teal mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark"
         >
           <span className="text-2xl font-bold text-white">B</span>
         </motion.div>
@@ -37,7 +37,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.55, ease: 'easeOut' }}
-          className="mb-3 text-3xl font-bold tracking-tight text-white md:text-4xl"
+          className="mb-3 text-3xl font-bold tracking-tight text-foreground md:text-4xl"
         >
           Welcome to Buddy360
         </motion.h1>
@@ -46,7 +46,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.85, ease: 'easeOut' }}
-          className="mx-auto max-w-md text-base leading-relaxed text-slate-400"
+          className="mx-auto max-w-md text-base leading-relaxed text-muted-foreground"
         >
           A guided journey to help your child discover their strengths and design a meaningful life
         </motion.p>
@@ -59,8 +59,8 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         transition={{ duration: 0.8, delay: 1.15, ease: 'easeOut' }}
         className="border-edge mx-auto max-w-md rounded-2xl bg-surface-elevated p-6"
       >
-        <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          What you'll do today
+        <p className="mb-5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Let's Start By
         </p>
         <div className="space-y-4">
           {WELCOME_FEATURES.map((feature, index) => (
@@ -71,10 +71,10 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               transition={{ duration: 0.7, delay: 1.4 + index * 0.25, ease: 'easeOut' }}
               className="flex items-center gap-3"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10">
-                <feature.icon className="h-4 w-4 text-teal-400" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <feature.icon className="h-4 w-4 text-primary" />
               </div>
-              <span className="text-sm text-slate-300">{feature.text}</span>
+              <span className="text-sm text-foreground">{feature.text}</span>
             </motion.div>
           ))}
         </div>
@@ -90,14 +90,16 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         {isAuthenticated ? (
           <>
             <div className="border-edge flex items-center gap-3 rounded-2xl bg-surface-elevated p-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-500">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
                 <span className="text-sm font-bold text-white">
                   {user?.full_name?.[0] ?? user?.email?.[0] ?? '?'}
                 </span>
               </div>
               <div className="text-left">
-                <p className="text-sm font-medium text-white">{user?.full_name ?? 'Welcome!'}</p>
-                <p className="text-xs text-slate-500">{user?.email}</p>
+                <p className="text-sm font-medium text-foreground">
+                  {user?.full_name ?? 'Welcome!'}
+                </p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
             </div>
 
@@ -112,14 +114,15 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         ) : (
           <>
             <div className="border-edge rounded-2xl bg-surface-elevated p-5">
-              <div className="mb-4 flex items-center justify-center gap-2 text-xs text-slate-500">
+              <div className="mb-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <Shield className="h-3.5 w-3.5" />
                 <span>Sign in to save your progress securely</span>
               </div>
 
               <Button
+                size="xl"
                 onClick={handleGoogleLogin}
-                className="border-edge-strong h-12 w-full rounded-xl bg-[#242424] text-sm font-medium text-white transition-all duration-200 hover:bg-[#2a2a2a]"
+                className="border-edge-strong w-full rounded-xl bg-secondary text-sm font-medium text-secondary-foreground transition-all duration-200 hover:bg-accent"
               >
                 <svg className="mr-3 h-4 w-4" viewBox="0 0 24 24">
                   <path
@@ -143,7 +146,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               </Button>
             </div>
 
-            <p className="text-xs text-slate-600">
+            <p className="text-xs text-muted-foreground">
               By continuing, you agree to our Terms of Service and Privacy Policy
             </p>
           </>
@@ -155,7 +158,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, delay: 2.5, ease: 'easeOut' }}
-        className="text-center text-xs text-slate-600"
+        className="text-center text-xs text-muted-foreground"
       >
         ⏱️ This will take about 5–7 minutes
       </motion.p>

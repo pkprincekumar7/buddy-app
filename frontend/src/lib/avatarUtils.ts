@@ -88,16 +88,18 @@ export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<st
  * Generates an initials avatar as an inline SVG data URI.
  * Safe for use in <img src> or CSS url() — no external requests.
  */
+import { AVATAR_TEXT_COLOR } from '@/lib/gradientColors';
+
 export function generateAvatarDataUri(
   name: string,
   opts?: { background?: string; color?: string; size?: number },
 ): string {
-  const { background = 'random', color = '#ffffff', size = 128 } = opts ?? {};
+  const { background = 'random', color = AVATAR_TEXT_COLOR, size = 128 } = opts ?? {};
   const initials = getInitials(name);
   const bg =
     background === 'random'
       ? nameToColor(name)
-      : background.startsWith('#')
+      : /^(#|hsl|rgb|oklch|color)/.test(background)
         ? background
         : `#${background}`;
   const fontSize = Math.round(size * 0.42);

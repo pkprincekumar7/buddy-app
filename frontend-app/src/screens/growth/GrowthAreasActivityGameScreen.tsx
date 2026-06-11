@@ -32,10 +32,11 @@ import type { RouteProp } from '@react-navigation/native';
 import { ChevronLeft, CheckCircle, Circle } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
-import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
+import { areaByUrlName } from '@/lib/growthAreaData';
 import {
   GradientIconBox,
   GradientButton,
@@ -70,6 +71,10 @@ interface AreaGame {
   maxSelections: number;
   options: AreaGameOption[];
   promptContext: (labels: string[]) => string;
+}
+
+function themedImagePath(path: string, isDark: boolean): string {
+  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
 }
 
 const TILE_COLORS = [
@@ -177,7 +182,7 @@ const areaGames: Record<string, AreaGame> = {
       )}. Generate personalized self-care recommendations for the parent: 1. A brief summary of what these choices reveal about the child's emotional needs, 2. 3-4 specific ways to support these self-care habits at home, 3. 2-3 emotional strengths to encourage.`,
   },
   critical_thinking: {
-    question: 'Which challenges do you enjoy most?',
+    question: 'Which activity does [child name] enjoy the most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
@@ -384,6 +389,7 @@ function normalizeChildGameRecommendations(
 
 export default function GrowthAreasActivityGameScreen() {
   const navigation = useNavigation<GrowthNavProp>();
+  const { colors, isDark } = useTheme();
   const route = useRoute<GrowthRouteProp>();
   const { activityId } = route.params as { activityId: string };
   const {
@@ -403,8 +409,8 @@ export default function GrowthAreasActivityGameScreen() {
   const game = useMemo(
     () =>
       area
-        ? areaGames[area.id] ?? areaGames['life_ambition']!
-        : areaGames['life_ambition']!,
+        ? areaGames[area.id] ?? areaGames.life_ambition!
+        : areaGames.life_ambition!,
     [area],
   );
 
@@ -434,7 +440,7 @@ export default function GrowthAreasActivityGameScreen() {
         const areaDoc = allDocs.find(a => a.area_id === area.id);
         const childActivity = areaDoc?.child_activity;
         const saved =
-          (childActivity?.['selections'] as string[] | undefined) ??
+          (childActivity?.selections as string[] | undefined) ??
           areaDoc?.child_activity_selections ??
           [];
         if (Array.isArray(saved) && saved.length > 0) setSelectedIds(saved);
@@ -605,8 +611,11 @@ export default function GrowthAreasActivityGameScreen() {
 
   if (isLoadingAuth || !hydrated) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="#14b8a6" />
+      <View
+        className="flex-1 items-center justify-center"
+        style={{ backgroundColor: colors.background }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -618,9 +627,15 @@ export default function GrowthAreasActivityGameScreen() {
   const Icon = area.icon;
 
   return (
-    <Animated.View style={contentStyle} className="flex-1 bg-background">
+    <Animated.View
+      style={[contentStyle, { backgroundColor: colors.background }]}
+      className="flex-1"
+    >
       {/* Area header */}
-      <View className="border-b border-white/10 bg-slate-900/90 px-4 py-3">
+      <View
+        className="border-b px-4 py-3"
+        style={{ backgroundColor: colors.card, borderColor: colors.border }}
+      >
         <View className="flex-row items-center gap-3">
           <GradientIconBox
             from={areaGrad(area.color).from}
@@ -629,9 +644,12 @@ export default function GrowthAreasActivityGameScreen() {
             radius={12}
             diagonal
           >
-            <Icon size={20} color="white" />
+            <Icon size={20} color={colors.primaryForeground} />
           </GradientIconBox>
-          <Text className="text-sm font-semibold text-white">
+          <Text
+            className="text-sm font-semibold"
+            style={{ color: colors.text }}
+          >
             {area.name} — Activity
           </Text>
         </View>
@@ -647,11 +665,17 @@ export default function GrowthAreasActivityGameScreen() {
         columnWrapperClassName="gap-4 mb-4"
         ListHeaderComponent={
           <View className="mb-6 items-center">
-            <Text className="mb-2 text-2xl font-bold text-white">
-              {game.question}
+            <Text
+              className="mb-2 text-2xl font-bold"
+              style={{ color: colors.text }}
+            >
+              {game.question.replace(
+                '[child name]',
+                childName?.trim() || 'your child',
+              )}
             </Text>
-            <Text className="text-slate-500">{game.subtitle}</Text>
-            <Text className="mt-2 text-sm text-emerald-600">
+            <Text style={{ color: colors.iconColor }}>{game.subtitle}</Text>
+            <Text className="mt-2 text-sm" style={{ color: colors.success }}>
               Selected: {selectedIds.length}/{game.maxSelections}
             </Text>
           </View>
@@ -662,7 +686,10 @@ export default function GrowthAreasActivityGameScreen() {
             TILE_COLORS[index % TILE_COLORS.length] ?? TILE_COLORS[0]!;
           const { from: tFrom, to: tTo } = tileGrad(tileColor);
           const imageUrl = option.image
-            ? `${env.CDN_BASE_URL}/app-assets/${option.image}`
+            ? `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
+                option.image,
+                isDark,
+              )}`
             : undefined;
           return (
             <TouchableOpacity
@@ -673,7 +700,7 @@ export default function GrowthAreasActivityGameScreen() {
                 overflow: 'hidden',
                 borderRadius: 16,
                 borderWidth: 4,
-                borderColor: isSelected ? '#10b981' : 'rgba(255,255,255,0.10)',
+                borderColor: isSelected ? colors.success : colors.border,
               }}
             >
               {/* Tile — S3 image with gradient+emoji fallback */}
@@ -684,14 +711,24 @@ export default function GrowthAreasActivityGameScreen() {
                 emoji={option.emoji}
               />
               {/* Label row */}
-              <View className="flex-row items-center justify-between bg-black/60 px-3 py-2">
-                <Text className="text-sm font-semibold text-white">
+              <View
+                className="flex-row items-center justify-between px-3 py-2"
+                style={{ backgroundColor: colors.imageScrimColor }}
+              >
+                <Text
+                  className="text-sm font-semibold"
+                  style={{ color: colors.primaryForeground }}
+                >
                   {option.label}
                 </Text>
                 {isSelected ? (
-                  <CheckCircle size={20} color="#10b981" fill="#10b981" />
+                  <CheckCircle
+                    size={20}
+                    color={colors.primaryForeground}
+                    fill={colors.success}
+                  />
                 ) : (
-                  <Circle size={20} color="rgba(255,255,255,0.6)" />
+                  <Circle size={20} color={colors.textMuted} />
                 )}
               </View>
             </TouchableOpacity>
@@ -701,8 +738,8 @@ export default function GrowthAreasActivityGameScreen() {
           <View className="mt-6 gap-3">
             {/* Gradient submit button */}
             <GradientButton
-              from="#10b981"
-              to="#0d9488"
+              from={colors.primary}
+              to={colors.primaryDark}
               height={48}
               borderRadius={16}
               disabled={selectedIds.length === 0 || isSubmitting}
@@ -712,7 +749,9 @@ export default function GrowthAreasActivityGameScreen() {
               }}
               style={{ width: '100%' }}
             >
-              <Text className="font-semibold text-[#0a0a0a]">
+              <Text
+                style={{ fontWeight: '600', color: colors.primaryForeground }}
+              >
                 {isSubmitting
                   ? 'Generating Recommendations...'
                   : 'Submit My Choices'}
@@ -721,16 +760,17 @@ export default function GrowthAreasActivityGameScreen() {
 
             <Button
               variant="outline"
-              onPress={() => {
-                const questions = AREA_QUESTIONS[area.id] ?? [];
-                navigation.navigate('GrowthAreasActivity', { activityId });
-                void questions;
-              }}
-              className="h-12 w-full rounded-2xl px-6"
+              onPress={() => navigation.goBack()}
+              className="w-full rounded-2xl"
             >
               <View className="flex-row items-center gap-1.5">
-                <ChevronLeft size={16} color="#cbd5e1" />
-                <Text className="text-sm font-medium text-slate-300">Back</Text>
+                <ChevronLeft size={16} color={colors.textMuted} />
+                <Text
+                  className="text-base font-medium"
+                  style={{ color: colors.textMuted }}
+                >
+                  Back
+                </Text>
               </View>
             </Button>
           </View>

@@ -3,6 +3,7 @@ import { View, Text, Modal, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LogOut, Mail, Home } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
+import { useTheme } from '@/lib/ThemeContext';
 import { getInitials } from '@/lib/avatarUtils';
 import { navigateTo } from '@/lib/navigationRef';
 
@@ -20,6 +21,7 @@ import { navigateTo } from '@/lib/navigationRef';
  */
 export default function ProfileHeaderButton() {
   const { user, logout } = useAuth();
+  const { colors } = useTheme();
   const [visible, setVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const initials = getInitials(user?.full_name ?? user?.email ?? '?');
@@ -42,12 +44,10 @@ export default function ProfileHeaderButton() {
           width: 36,
           height: 36,
           borderRadius: 18,
-          // Approximate the web's teal-500 → emerald-500 gradient with a mid-point teal
-          backgroundColor: '#0d9488',
+          backgroundColor: colors.primary,
           alignItems: 'center',
           justifyContent: 'center',
-          // Subtle glow matching the web ring on hover
-          shadowColor: '#14b8a6',
+          shadowColor: colors.primary,
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0.4,
           shadowRadius: 6,
@@ -58,7 +58,7 @@ export default function ProfileHeaderButton() {
       >
         <Text
           style={{
-            color: '#ffffff',
+            color: colors.primaryForeground,
             fontSize: 12,
             fontWeight: '700',
             letterSpacing: 0.5,
@@ -78,7 +78,7 @@ export default function ProfileHeaderButton() {
       >
         {/* Full-screen backdrop — tap outside to close */}
         <Pressable
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }}
+          style={{ flex: 1, backgroundColor: colors.overlayBackground }}
           onPress={close}
         />
 
@@ -91,11 +91,10 @@ export default function ProfileHeaderButton() {
             width: 288, // matches web w-72
             borderRadius: 16, // matches web rounded-2xl
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.10)',
+            borderColor: colors.border,
             overflow: 'hidden',
-            // Background: web uses bg-surface-elevated ≈ slate-900 variant
-            backgroundColor: '#0f1629',
-            shadowColor: '#000',
+            backgroundColor: colors.card,
+            shadowColor: colors.shadowColor,
             shadowOffset: { width: 0, height: 12 },
             shadowOpacity: 0.55,
             shadowRadius: 24,
@@ -111,7 +110,7 @@ export default function ProfileHeaderButton() {
               paddingHorizontal: 20, // px-5
               paddingVertical: 20, // slightly more room in header strip
               gap: 12, // gap-3
-              backgroundColor: 'rgba(20,184,166,0.18)', // teal-600/30 approximation
+              backgroundColor: colors.primary + '2E',
             }}
           >
             {/* Avatar — web: h-12 w-12 = 48px, gradient teal→emerald, shadow-lg */}
@@ -120,11 +119,11 @@ export default function ProfileHeaderButton() {
                 width: 48,
                 height: 48,
                 borderRadius: 24,
-                backgroundColor: '#0d9488',
+                backgroundColor: colors.primary,
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0,
-                shadowColor: '#14b8a6',
+                shadowColor: colors.primary,
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: 0.35,
                 shadowRadius: 6,
@@ -132,7 +131,11 @@ export default function ProfileHeaderButton() {
               }}
             >
               <Text
-                style={{ color: '#ffffff', fontSize: 18, fontWeight: '700' }}
+                style={{
+                  color: colors.primaryForeground,
+                  fontSize: 18,
+                  fontWeight: '700',
+                }}
               >
                 {initials}
               </Text>
@@ -141,7 +144,7 @@ export default function ProfileHeaderButton() {
             {/* Name + email */}
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text
-                style={{ color: '#ffffff', fontWeight: '600', fontSize: 14 }}
+                style={{ color: colors.text, fontWeight: '600', fontSize: 14 }}
                 numberOfLines={1}
               >
                 {user?.full_name ?? 'User'}
@@ -155,9 +158,13 @@ export default function ProfileHeaderButton() {
                 }}
               >
                 {/* web: Mail h-3 w-3 shrink-0 */}
-                <Mail size={12} color="#94a3b8" style={{ flexShrink: 0 }} />
+                <Mail
+                  size={12}
+                  color={colors.textMuted}
+                  style={{ flexShrink: 0 }}
+                />
                 <Text
-                  style={{ color: '#94a3b8', fontSize: 12 }}
+                  style={{ color: colors.textMuted, fontSize: 12 }}
                   numberOfLines={1}
                 >
                   {user?.email ?? ''}
@@ -166,10 +173,7 @@ export default function ProfileHeaderButton() {
             </View>
           </View>
 
-          {/* Divider — web: border-t border-white/10 */}
-          <View
-            style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.10)' }}
-          />
+          <View style={{ height: 1, backgroundColor: colors.border }} />
 
           {/* ── Navigation + actions ── */}
           <View style={{ paddingHorizontal: 8, paddingVertical: 8 }}>
@@ -185,7 +189,7 @@ export default function ProfileHeaderButton() {
                   paddingHorizontal: 16,
                   borderRadius: 12,
                   backgroundColor: pressed
-                    ? 'rgba(255,255,255,0.05)'
+                    ? colors.pressedBackground
                     : 'transparent',
                   justifyContent: 'center',
                 })}
@@ -197,10 +201,10 @@ export default function ProfileHeaderButton() {
                     gap: 14,
                   }}
                 >
-                  <Home size={20} color="#cbd5e1" />
+                  <Home size={20} color={colors.textMuted} />
                   <Text
                     style={{
-                      color: '#cbd5e1',
+                      color: colors.textMuted,
                       fontSize: 15,
                       fontWeight: '500',
                     }}
@@ -211,12 +215,11 @@ export default function ProfileHeaderButton() {
               </Pressable>
             </View>
 
-            {/* Thin separator between menu items */}
             <View
               style={{
                 height: 1,
                 marginHorizontal: 16,
-                backgroundColor: 'rgba(255,255,255,0.08)',
+                backgroundColor: colors.border,
               }}
             />
 
@@ -232,7 +235,7 @@ export default function ProfileHeaderButton() {
                   paddingHorizontal: 16,
                   borderRadius: 12,
                   backgroundColor: pressed
-                    ? 'rgba(239,68,68,0.10)'
+                    ? colors.error + '1A'
                     : 'transparent',
                   justifyContent: 'center',
                 })}
@@ -244,10 +247,10 @@ export default function ProfileHeaderButton() {
                     gap: 14,
                   }}
                 >
-                  <LogOut size={20} color="#94a3b8" />
+                  <LogOut size={20} color={colors.textMuted} />
                   <Text
                     style={{
-                      color: '#94a3b8',
+                      color: colors.textMuted,
                       fontSize: 15,
                       fontWeight: '500',
                     }}

@@ -96,7 +96,7 @@ export default function ConversationalOnboarding() {
           <div className="flex min-h-screen items-center justify-center bg-background">
             <motion.div
               {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-teal-500 border-t-transparent"
+              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
           </div>
         ) : (
@@ -114,7 +114,7 @@ export default function ConversationalOnboarding() {
                       key={phase.label}
                       className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 transition-all ${
                         phase.active
-                          ? 'border border-teal-500/25 bg-teal-500/10'
+                          ? 'border border-primary/25 bg-primary/10'
                           : 'bg-ghost border-edge-faint opacity-50'
                       }`}
                     >
@@ -122,7 +122,7 @@ export default function ConversationalOnboarding() {
                         {phase.icon}
                       </span>
                       <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-teal-400' : 'text-slate-600'}`}
+                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : 'text-muted-foreground'}`}
                       >
                         {phase.label}
                       </span>
@@ -150,9 +150,10 @@ export default function ConversationalOnboarding() {
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => navigate('/Onboarding', { state: { fromBack: true } })}
-                  className="btn-secondary h-12 w-full rounded-2xl px-6 sm:w-auto"
+                  className="btn-secondary w-full rounded-2xl sm:w-auto"
                 >
                   <ChevronLeft className="mr-1 h-4 w-4" />
                   Back

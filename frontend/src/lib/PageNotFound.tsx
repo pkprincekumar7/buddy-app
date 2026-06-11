@@ -33,16 +33,16 @@ export default function PageNotFound() {
         <div className="space-y-6 text-center">
           {/* 404 Error Code */}
           <div className="space-y-2">
-            <h1 className="text-7xl font-light text-slate-600">404</h1>
+            <h1 className="text-7xl font-light text-muted-foreground">404</h1>
             <div className="border-edge mx-auto h-0.5 w-16" />
           </div>
 
           {/* Main Message */}
           <div className="space-y-3">
-            <h2 className="text-2xl font-medium text-white">Page Not Found</h2>
-            <p className="leading-relaxed text-slate-400">
-              The page <span className="font-medium text-slate-300">"{pageName}"</span> could not be
-              found in this application.
+            <h2 className="text-2xl font-medium text-foreground">Page Not Found</h2>
+            <p className="leading-relaxed text-muted-foreground">
+              The page <span className="font-medium text-foreground">"{pageName}"</span> could not
+              be found in this application.
             </p>
           </div>
 
@@ -50,12 +50,12 @@ export default function PageNotFound() {
           {isFetched && authData?.isAuthenticated && authData.user?.role === USER_ROLES.ADMIN && (
             <div className="border-edge mt-8 rounded-lg bg-surface-elevated p-4">
               <div className="flex items-start space-x-3">
-                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-500/10">
-                  <div className="h-2 w-2 rounded-full bg-orange-400" />
+                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-warning-orange/10">
+                  <div className="h-2 w-2 rounded-full bg-warning-orange" />
                 </div>
                 <div className="space-y-1 text-left">
-                  <p className="text-sm font-medium text-slate-300">Admin Note</p>
-                  <p className="text-sm leading-relaxed text-slate-400">
+                  <p className="text-sm font-medium text-foreground">Admin Note</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
                     This could mean that the AI hasn't implemented this page yet. Ask it to
                     implement it in the chat.
                   </p>
@@ -68,7 +68,7 @@ export default function PageNotFound() {
           <div className="pt-6">
             <button
               onClick={() => navigate('/')}
-              className="border-edge hover:bg-subtle hover:border-edge-strong inline-flex items-center rounded-lg bg-surface-elevated px-4 py-2 text-sm font-medium text-slate-300 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white/[0.20] focus:ring-offset-2"
+              className="border-edge hover:border-edge-strong inline-flex items-center rounded-lg bg-surface-elevated px-4 py-2 text-sm font-medium text-foreground transition-colors duration-200 hover:bg-subtle focus:outline-none focus:ring-2 focus:ring-white/[0.20] focus:ring-offset-2"
             >
               <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path

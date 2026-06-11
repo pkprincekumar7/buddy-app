@@ -3,6 +3,7 @@ import { View, Text, Modal, Pressable, ActivityIndicator } from 'react-native';
 import { RotateCcw, AlertTriangle } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useStartOver } from '@/hooks/useStartOver';
+import { useTheme } from '@/lib/ThemeContext';
 import { useModalScale } from '@/lib/animations';
 import Animated from 'react-native-reanimated';
 
@@ -19,6 +20,7 @@ function ConfirmModal({
   onConfirm,
   isStartingOver,
 }: ConfirmModalProps) {
+  const { colors } = useTheme();
   const animatedStyle = useModalScale(visible);
 
   return (
@@ -29,31 +31,56 @@ function ConfirmModal({
       onRequestClose={onCancel}
     >
       <Pressable
-        className="flex-1 items-center justify-center bg-black/70 p-4"
+        className="flex-1 items-center justify-center p-4"
+        style={{ backgroundColor: colors.overlayBackground }}
         onPress={onCancel}
         accessible={false}
       >
         <Animated.View
-          style={animatedStyle}
-          className="w-full max-w-sm rounded-2xl border border-border bg-card p-8"
+          style={[
+            animatedStyle,
+            {
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+          ]}
+          className="w-full max-w-sm rounded-2xl p-8"
         >
           <Pressable onPress={e => e.stopPropagation()}>
             {/* Icon */}
             <View className="mb-5 items-center">
-              <View className="h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
-                <AlertTriangle size={28} color="#f87171" />
+              <View
+                className="h-14 w-14 items-center justify-center rounded-full border"
+                style={{
+                  borderColor: colors.error + '4D',
+                  backgroundColor: colors.error + '1A',
+                }}
+              >
+                <AlertTriangle size={28} color={colors.error} />
               </View>
             </View>
 
             {/* Text */}
             <View className="mb-7 items-center gap-2">
-              <Text className="text-lg font-bold text-white">Start Over?</Text>
-              <Text className="text-center text-sm leading-relaxed text-slate-400">
+              <Text
+                className="text-lg font-bold"
+                style={{ color: colors.text }}
+              >
+                Start Over?
+              </Text>
+              <Text
+                className="text-center text-sm leading-relaxed"
+                style={{ color: colors.textMuted }}
+              >
                 This will permanently delete all progress for this child,
                 including personality results, growth area answers, and goal
                 plans.
               </Text>
-              <Text className="text-xs font-medium text-red-400">
+              <Text
+                className="text-xs font-medium"
+                style={{ color: colors.error }}
+              >
                 This cannot be undone.
               </Text>
             </View>
@@ -71,17 +98,27 @@ function ConfirmModal({
               <Button
                 onPress={onConfirm}
                 disabled={isStartingOver}
-                className="h-11 flex-1 rounded-xl bg-red-600"
+                className="h-11 flex-1 rounded-xl"
+                style={{ backgroundColor: colors.error }}
               >
                 {isStartingOver ? (
                   <View className="flex-row items-center gap-2">
-                    <ActivityIndicator size="small" color="white" />
-                    <Text className="text-sm font-medium text-white">
+                    <ActivityIndicator
+                      size="small"
+                      color={colors.primaryForeground}
+                    />
+                    <Text
+                      className="text-sm font-medium"
+                      style={{ color: colors.primaryForeground }}
+                    >
                       Deleting…
                     </Text>
                   </View>
                 ) : (
-                  <Text className="text-sm font-medium text-white">
+                  <Text
+                    className="text-sm font-medium"
+                    style={{ color: colors.primaryForeground }}
+                  >
                     Yes, delete
                   </Text>
                 )}
@@ -103,6 +140,7 @@ export default function StartOverButton({
   childId,
   className = '',
 }: StartOverButtonProps) {
+  const { colors } = useTheme();
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirming, setConfirming] = useState(false);
 
@@ -116,14 +154,18 @@ export default function StartOverButton({
   return (
     <>
       <Button
+        size="xl"
         variant="outline"
         onPress={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`h-12 rounded-2xl px-6 ${className}`}
+        className={`rounded-2xl ${className}`}
       >
         <View className="flex-row items-center gap-1">
-          <RotateCcw size={14} color="#e2e8f0" />
-          <Text className="text-sm font-medium text-foreground">
+          <RotateCcw size={14} color={colors.textMuted} />
+          <Text
+            className="text-base font-medium"
+            style={{ color: colors.text }}
+          >
             {isStartingOver ? 'Resetting…' : 'Start Over'}
           </Text>
         </View>
