@@ -799,7 +799,7 @@ export default function LifePathwayScreen() {
                   const areaId = area.area_id as string | undefined;
                   const areaBg =
                     (areaId ? AREA_LINE_COLORS[areaId] : undefined) ??
-                    '#10b981';
+                    colors.success;
                   return (
                     <View
                       key={(area.area_id ?? area.area_name) as string}
@@ -1222,7 +1222,7 @@ export default function LifePathwayScreen() {
               {completedAreas.map((area, idx) => {
                 const areaId = area.area_id as string | undefined;
                 const areaBg =
-                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ?? '#10b981';
+                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ?? colors.success;
                 const recs: unknown[] =
                   Array.isArray(area.ai_three_month_recommendations) &&
                   (area.ai_three_month_recommendations as unknown[]).length > 0
