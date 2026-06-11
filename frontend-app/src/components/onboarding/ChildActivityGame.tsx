@@ -574,7 +574,7 @@ export default function ChildActivityGame({
                 >
                   <Text
                     className="text-sm font-semibold flex-1 mr-1"
-                    style={{ color: '#ffffff' }}
+                    style={{ color: colors.primaryForeground }}
                     numberOfLines={1}
                   >
                     {option.label}
@@ -586,7 +586,7 @@ export default function ChildActivityGame({
                       fill={colors.success}
                     />
                   ) : (
-                    <Circle size={22} color="rgba(255,255,255,0.7)" />
+                    <Circle size={22} color={colors.primaryForeground + 'B3'} />
                   )}
                 </View>
               </Pressable>
