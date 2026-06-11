@@ -1222,7 +1222,8 @@ export default function LifePathwayScreen() {
               {completedAreas.map((area, idx) => {
                 const areaId = area.area_id as string | undefined;
                 const areaBg =
-                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ?? colors.success;
+                  (areaId ? AREA_LINE_COLORS[areaId] : undefined) ??
+                  colors.success;
                 const recs: unknown[] =
                   Array.isArray(area.ai_three_month_recommendations) &&
                   (area.ai_three_month_recommendations as unknown[]).length > 0
