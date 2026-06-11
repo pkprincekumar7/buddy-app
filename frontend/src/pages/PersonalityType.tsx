@@ -30,7 +30,7 @@ export default function PersonalityType() {
   const [childName, setChildName] = useState('');
   const [mbtiResult, setMbtiResult] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState('loading'); // loading | analysing | ready | error
-  const [showSplash, startTimer] = useStageSplash();
+  const [showSplash, startTimer] = useStageSplash(0);
   const [ttsEnabled, setTtsEnabled] = useState(true);
 
   useEffect(() => {

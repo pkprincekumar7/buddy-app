@@ -215,7 +215,7 @@ export default function HomeScreen() {
                   color: colors.primaryForeground,
                 }}
               >
-                ✨ Continue Onboarding →
+                ✨ Continue Journey →
               </Text>
             </Button>
             {/* Mirror the web: offer Start Over alongside Continue */}

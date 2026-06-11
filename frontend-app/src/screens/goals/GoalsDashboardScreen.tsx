@@ -38,8 +38,6 @@ import type { Dispatch, SetStateAction } from 'react';
 import ActivityModal from '@/components/goals/ActivityModal';
 import ProgressInsightsModal from '@/components/goals/ProgressInsightsModal';
 import StartOverButton from '@/components/shared/StartOverButton';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import PageActions from '@/components/shared/PageActions';
 import {
   GradientIconBox,
@@ -613,8 +611,6 @@ export default function GoalsDashboardScreen() {
     [goalPlan],
   );
 
-  const [showSplash, startTimer] = useStageSplash();
-
   const scrollRef = useRef<ScrollView>(null);
   useFocusEffect(
     useCallback(() => {
@@ -622,7 +618,7 @@ export default function GoalsDashboardScreen() {
     }, []),
   );
 
-  const contentStyle = useFocusEntranceAnim(!isLoading && !showSplash);
+  const contentStyle = useFocusEntranceAnim(!isLoading);
   const spinnerStyle = useSpinner();
 
   const contextValue = useMemo(
@@ -826,8 +822,6 @@ export default function GoalsDashboardScreen() {
           ) : null}
         </ModalErrorBoundary>
       </View>
-
-      {showSplash && <StageSplash stage={7} onReady={startTimer} />}
     </View>
   );
 }

@@ -183,7 +183,7 @@ export default function GrowthAreas() {
       </motion.div>
 
       <AnimatePresence>
-        {showSplash && <StageSplash stage={5} onReady={startTimer} />}
+        {showSplash && <StageSplash stage={7} onReady={startTimer} />}
       </AnimatePresence>
     </>
   );

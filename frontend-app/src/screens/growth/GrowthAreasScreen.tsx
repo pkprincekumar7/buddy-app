@@ -300,7 +300,7 @@ export default function GrowthAreasScreen() {
         </ScrollView>
       </Animated.View>
 
-      {showSplash && <StageSplash stage={5} onReady={startTimer} />}
+      {showSplash && <StageSplash stage={7} onReady={startTimer} />}
     </View>
   );
 }

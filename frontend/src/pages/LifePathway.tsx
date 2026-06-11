@@ -116,7 +116,7 @@ export default function LifePathway() {
   const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
     useLifePathwayData(childId);
   const childName = (childData?.['name'] as string | undefined) ?? '';
-  const [showSplash, startTimer] = useStageSplash();
+  const [showSplash, startTimer] = useStageSplash(0);
 
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');

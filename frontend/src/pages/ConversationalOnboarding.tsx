@@ -4,8 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import StartOverButton from '@/components/shared/StartOverButton';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
@@ -22,7 +20,6 @@ export default function ConversationalOnboarding() {
   const [hydrated, setHydrated] = useState(false);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
   const bootKey = 0;
-  const [showSplash, startTimer] = useStageSplash();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -89,7 +86,7 @@ export default function ConversationalOnboarding() {
       {/* Page content — hidden while splash is showing, then fades in smoothly */}
       <motion.div
         initial={{ opacity: 0 }}
-        animate={{ opacity: showSplash ? 0 : 1 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
         {isLoadingAuth || !hydrated ? (
@@ -137,7 +134,7 @@ export default function ConversationalOnboarding() {
                 key={bootKey}
                 user={user}
                 activeChildId={childId}
-                resumeHydrationReady={hydrated && !showSplash}
+                resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
                 onContinueToPersonality={() => {
                   void handleComplete({});
@@ -165,9 +162,7 @@ export default function ConversationalOnboarding() {
         )}
       </motion.div>
 
-      <AnimatePresence>
-        {showSplash && <StageSplash stage={2} onReady={startTimer} />}
-      </AnimatePresence>
+      <AnimatePresence></AnimatePresence>
     </>
   );
 }

@@ -5,8 +5,6 @@ import { ChevronLeft } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
-  Easing,
 } from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -22,8 +20,6 @@ import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 
 type ConversationalOnboardingNavigationProp = StackNavigationProp<
   OnboardingStackParamList,
@@ -48,20 +44,8 @@ export default function ConversationalOnboardingScreen() {
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
   const bootKey = 0;
 
-  // ── Splash + page fade-in (mirrors web's StageSplash + motion.div opacity) ──
-  const [showSplash, startTimer] = useStageSplash();
-  const pageOpacity = useSharedValue(showSplash ? 0 : 1);
+  const pageOpacity = useSharedValue(1);
   const pageStyle = useAnimatedStyle(() => ({ opacity: pageOpacity.value }));
-  useEffect(() => {
-    if (!showSplash) {
-      pageOpacity.value = withTiming(1, {
-        duration: 800,
-        easing: Easing.out(Easing.ease),
-      });
-    }
-    // pageOpacity is a stable ref — safe to omit from deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSplash]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -147,7 +131,7 @@ export default function ConversationalOnboardingScreen() {
     // Outer wrapper holds both the page and the absolute-positioned splash overlay
     <View style={{ flex: 1 }}>
       {/* Page content — opacity 0 while splash shows, fades to 1 when splash is done.
-          Mirrors web: <motion.div initial={{ opacity:0 }} animate={{ opacity: showSplash ? 0 : 1 }}> */}
+          Page content wrapper */}
       <Animated.View style={[{ flex: 1 }, pageStyle]}>
         {isLoading || !hydrated ? (
           <View
@@ -222,7 +206,7 @@ export default function ConversationalOnboardingScreen() {
                 key={bootKey}
                 user={user}
                 activeChildId={childId}
-                resumeHydrationReady={hydrated && !showSplash}
+                resumeHydrationReady={hydrated}
                 onComplete={handleComplete}
                 onContinueToPersonality={() => {
                   void handleComplete({});
@@ -273,10 +257,6 @@ export default function ConversationalOnboardingScreen() {
           </View>
         )}
       </Animated.View>
-
-      {/* Stage splash overlay — absolute, covers everything, fades out after 3 s.
-          Mirrors web: <AnimatePresence>{showSplash && <StageSplash stage={2} … />}</AnimatePresence> */}
-      {showSplash && <StageSplash stage={2} onReady={startTimer} />}
     </View>
   );
 }
