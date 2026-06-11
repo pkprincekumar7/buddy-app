@@ -327,9 +327,8 @@ jobs:
         # yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless
         # of --level. Check the exit code manually: fail only on high(8) or critical(16).
         run: |
-          yarn audit --level high
-          code=$?
-          [ $(( code & 24 )) -eq 0 ]
+          yarn audit --level high || code=$?
+          [ $(( ${code:-0} & 24 )) -eq 0 ]
         working-directory: frontend-app
 
       - name: Restore retire.js database cache
