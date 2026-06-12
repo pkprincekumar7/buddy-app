@@ -13,26 +13,29 @@ import Animated, {
 } from 'react-native-reanimated';
 
 /**
- * Full-screen stage splash — image for most stages, video for stages 2 and 4.
+ * Full-screen stage splash — image for most stages, video for stages 1, 2, and 4.
  *
  * Image lifecycle:
  *   1. Dark background shown immediately.
  *   2. Image fades IN + scales down over 1 000 ms on load.
- *   3. Hold for 3 000 ms, then container fades OUT over 600 ms.
+ *   3. Hold for 3 000 ms, then container fades OUT over 400 ms.
  *   4. onReady() is called after fade-out.
  *
- * Video lifecycle (stages 2 and 4):
- *   1. Dark background shown immediately.
- *   2. Video plays once from the CDN url (no hold timer — duration drives timing).
- *   3. On playback finish the container fades OUT over 600 ms.
- *   4. onReady() is called after fade-out.
+ * Video lifecycle (stages 1, 2, 4):
+ *   1. Container fades IN over 300 ms (smooth entry from page).
+ *   2. VideoView fades IN over 400 ms when video starts playing (masks buffering pause).
+ *   3. Video plays once unmuted — duration drives timing.
+ *   4. On playback finish the container fades OUT over 400 ms.
+ *   5. onReady() is called after fade-out.
  */
 
 const IMAGE_FADE_IN_MS = 1000;
 const HOLD_MS = 3000;
-const CONTAINER_FADE_MS = 600;
+const CONTAINER_FADE_MS = 500;
+const VIDEO_FADE_IN_MS = 400;
+const CONTAINER_ENTRY_MS = 500;
 
-const VIDEO_STAGES = new Set([2, 4]);
+const VIDEO_STAGES = new Set([1, 2, 4]);
 
 interface StageSplashProps {
   stage: number;
@@ -51,6 +54,8 @@ function VideoSplash({
   onReady?: () => void;
 }) {
   const firedRef = useRef(false);
+  const videoOpacity = useSharedValue(0);
+  const videoStyle = useAnimatedStyle(() => ({ opacity: videoOpacity.value }));
 
   const fadeOutAndNotify = useCallback(() => {
     if (firedRef.current) return;
@@ -72,16 +77,28 @@ function VideoSplash({
     p.play();
   });
 
+  // Fade in the video when it starts playing — masks buffering pause
+  player.addListener('playingChange', ({ isPlaying }) => {
+    if (isPlaying) {
+      videoOpacity.value = withTiming(1, {
+        duration: VIDEO_FADE_IN_MS,
+        easing: Easing.out(Easing.ease),
+      });
+    }
+  });
+
   // Fire fade-out when playback reaches the end
   player.addListener('playToEnd', fadeOutAndNotify);
 
   return (
-    <VideoView
-      player={player}
-      style={StyleSheet.absoluteFill}
-      contentFit="contain"
-      nativeControls={false}
-    />
+    <Animated.View style={[StyleSheet.absoluteFill, videoStyle]}>
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="contain"
+        nativeControls={false}
+      />
+    </Animated.View>
   );
 }
 
@@ -149,10 +166,19 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
     isDark ? 'dark' : 'light'
   }.${ext}`;
 
-  const containerOpacity = useSharedValue(1);
+  // Video stages fade the container in to mask buffering pause.
+  // Image stages start at full opacity — the image element handles its own fade-in.
+  const containerOpacity = useSharedValue(isVideo ? 0 : 1);
   const containerStyle = useAnimatedStyle(() => ({
     opacity: containerOpacity.value,
   }));
+
+  if (isVideo) {
+    containerOpacity.value = withTiming(1, {
+      duration: CONTAINER_ENTRY_MS,
+      easing: Easing.out(Easing.ease),
+    });
+  }
 
   return (
     <Animated.View

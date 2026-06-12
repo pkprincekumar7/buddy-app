@@ -3,23 +3,19 @@ import { motion } from 'framer-motion';
 import { readStoredDarkMode } from '@/lib/theme';
 
 /**
- * Full-screen stage splash — image for most stages, video for stages 2 and 4.
+ * Full-screen stage splash — image for most stages, video for stages 1, 2, and 4.
  *
  * Image lifecycle:
  *   Fades in on load, then onReady() fires so the parent starts its hold timer.
  *   Fade-out is driven by AnimatePresence in the parent.
  *
- * Video lifecycle (stages 2 and 4):
- *   Plays the .mp4 once (no loop, unmuted). onReady() fires when playback ends
- *   so the parent can dismiss immediately (pass delay=0 to useStageSplash).
- *   Fade-out is still driven by AnimatePresence in the parent.
- *
- * Use with:
- *   const [showSplash, startTimer] = useStageSplash(isVideoStage ? 0 : 3000);
- *   <AnimatePresence>{showSplash && <StageSplash stage={N} onReady={startTimer} />}</AnimatePresence>
+ * Video lifecycle (stages 1, 2, 4):
+ *   Splash fades in (0.3s). Video element fades in when buffered (onCanPlay).
+ *   Plays once unmuted. onReady() fires on end so parent can dismiss immediately
+ *   (pass delay=0 to useStageSplash). Splash fades out over 0.5s.
  */
 
-const VIDEO_STAGES = new Set([2, 4]);
+const VIDEO_STAGES = new Set([1, 2, 4]);
 
 interface StageSplashProps {
   stage: number;
@@ -43,9 +39,10 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 1 }}
+      initial={{ opacity: isVideo ? 0 : 1 }}
+      animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 1.0, ease: 'easeInOut' }}
+      transition={{ duration: 0.5, ease: 'easeInOut' }}
       className="fixed inset-0 z-[100] bg-background"
     >
       {isVideo ? (
@@ -65,6 +62,7 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
 function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
   const firedRef = useRef(false);
+  const [videoReady, setVideoReady] = useState(false);
 
   const handleEnded = useCallback(() => {
     if (firedRef.current) return;
@@ -76,11 +74,16 @@ function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
     <video
       src={src}
       autoPlay
+      preload="auto"
       muted={false}
       playsInline
+      onCanPlay={() => setVideoReady(true)}
       onEnded={handleEnded}
-      // Fallback: if video fails to load, dismiss immediately so the user isn't stuck
       onError={handleEnded}
+      style={{
+        opacity: videoReady ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+      }}
       className="h-full w-full object-contain"
     />
   );
