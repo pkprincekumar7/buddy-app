@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import { Sparkles, Star, Compass, Zap, Clock, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -24,7 +22,6 @@ export default function PersonalityJourney() {
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
   const [status, setStatus] = useState('loading'); // loading | generating | ready | error
-  const [showSplash, startTimer] = useStageSplash();
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -128,7 +125,7 @@ export default function PersonalityJourney() {
     <>
       <motion.div
         initial={{ opacity: 0 }}
-        animate={{ opacity: showSplash ? 0 : 1 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
         {isLoadingAuth || status === 'loading' ? (
@@ -159,7 +156,7 @@ export default function PersonalityJourney() {
             </Button>
           </div>
         ) : (
-          <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
+          <div className="min-h-screen bg-background">
             {/* Progress indicator */}
             <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
               <div className="mx-auto max-w-4xl px-4 py-3">
@@ -305,9 +302,7 @@ export default function PersonalityJourney() {
         )}
       </motion.div>
 
-      <AnimatePresence>
-        {showSplash && <StageSplash stage={4} onReady={startTimer} />}
-      </AnimatePresence>
+      <AnimatePresence></AnimatePresence>
     </>
   );
 }

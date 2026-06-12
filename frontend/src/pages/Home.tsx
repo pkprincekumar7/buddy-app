@@ -172,7 +172,7 @@ export default function Home() {
                     className="btn-primary rounded-2xl transition-all duration-200"
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Continue Onboarding
+                    Continue Journey
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                   <StartOverButton

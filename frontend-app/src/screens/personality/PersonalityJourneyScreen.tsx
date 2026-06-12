@@ -35,8 +35,6 @@ import { mergeChildDraft, determinePhase } from '@/lib/onboardingHelpers';
 import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import {
   GradientIconBox,
   GradientButton,
@@ -195,8 +193,6 @@ export default function PersonalityJourneyScreen() {
     'loading' | 'generating' | 'ready' | 'error'
   >('loading');
 
-  const [showSplash, startTimer] = useStageSplash();
-
   const scrollRef = useRef<ScrollView>(null);
   // Reset scroll to top every time the screen gains focus (covers back navigation).
   useFocusEffect(
@@ -207,7 +203,7 @@ export default function PersonalityJourneyScreen() {
 
   // Section animations match web delays: header 100ms, profile 800ms, growth 1800ms.
   // useFocusEntranceAnim re-plays on back navigation for polish.
-  const ready = status === 'ready' && !showSplash;
+  const ready = status === 'ready';
   const contentStyle = useFocusEntranceAnim(ready, 0, 1000);
   const headerAnim = useFocusEntranceAnim(ready, 100, 1000);
   const profileAnim = useFocusEntranceAnim(ready, 800, 1000);
@@ -616,8 +612,6 @@ export default function PersonalityJourneyScreen() {
           />
         </ScrollView>
       </Animated.View>
-
-      {showSplash && <StageSplash stage={4} onReady={startTimer} />}
     </View>
   );
 }

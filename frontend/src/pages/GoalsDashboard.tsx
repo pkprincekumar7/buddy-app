@@ -9,8 +9,6 @@ import {
   Component,
 } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import { cn } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -367,7 +365,6 @@ const monthColors = [
 export default function GoalsDashboard() {
   const navigate = useNavigate();
   const { childId } = useParams();
-  const [showSplash, startTimer] = useStageSplash();
   const {
     childData,
     concern,
@@ -418,10 +415,10 @@ export default function GoalsDashboard() {
     <>
       <motion.div
         initial={{ opacity: 0 }}
-        animate={{ opacity: showSplash ? 0 : 1 }}
+        animate={{ opacity: 1 }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
-        <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
+        <div className="min-h-screen bg-background">
           <div className="mx-auto max-w-4xl px-4 py-10">
             <motion.div {...slideUp(0.1)} className="mb-8 text-center">
               <div className="glow-teal-sm mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark">
@@ -546,9 +543,7 @@ export default function GoalsDashboard() {
         </div>
       </motion.div>
 
-      <AnimatePresence>
-        {showSplash && <StageSplash stage={7} onReady={startTimer} />}
-      </AnimatePresence>
+      <AnimatePresence></AnimatePresence>
     </>
   );
 }

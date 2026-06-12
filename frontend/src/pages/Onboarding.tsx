@@ -16,7 +16,7 @@ export default function Onboarding() {
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
-  const [showSplash, startTimer] = useStageSplash();
+  const [showSplash, startTimer] = useStageSplash(0);
 
   // Preload any existing in-progress child so Continue reuses it instead of creating a new one.
   // No auto-redirects — the user always navigates step by step.
