@@ -3,19 +3,19 @@ import { motion } from 'framer-motion';
 import { readStoredDarkMode } from '@/lib/theme';
 
 /**
- * Full-screen stage splash — image for most stages, video for stages 1, 2, and 4.
+ * Full-screen stage splash — image for most stages, video for stages 1, 2, 4, and 7.
  *
  * Image lifecycle:
  *   Fades in on load, then onReady() fires so the parent starts its hold timer.
  *   Fade-out is driven by AnimatePresence in the parent.
  *
- * Video lifecycle (stages 1, 2, 4):
+ * Video lifecycle (stages 1, 2, 4, 7):
  *   Splash fades in (0.3s). Video element fades in when buffered (onCanPlay).
  *   Plays once unmuted. onReady() fires on end so parent can dismiss immediately
  *   (pass delay=0 to useStageSplash). Splash fades out over 0.5s.
  */
 
-const VIDEO_STAGES = new Set([1, 2, 4]);
+const VIDEO_STAGES = new Set([1, 2, 4, 7]);
 
 interface StageSplashProps {
   stage: number;

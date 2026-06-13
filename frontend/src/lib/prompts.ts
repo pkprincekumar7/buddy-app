@@ -349,6 +349,7 @@ Rules:
 - Tailor language complexity to the child's age (${childAge ? String(childAge) : 'unknown age'}) — simpler for younger children, more nuanced for older ones.
 - Questions must directly relate to the activity content and objective, not be generic.
 - Only populate "options" for type "choice". Only populate "labels" for type "scale". Leave both as [] otherwise.
+- Do not generate questions that require the child to look at, describe, or react to an image or picture. All questions must be answerable without any visual stimulus.
 - Do not repeat the child's name in every question — use it at most once.`;
 }
 

@@ -1,6 +1,6 @@
 # Live Infrastructure — Current State
 
-This guide covers the three Terraform modules and seven GitHub Actions workflows (six component workflows plus one orchestrating workflow) that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
+This guide covers the three Terraform modules and nine GitHub Actions workflows (eight component workflows plus one orchestrating workflow) that provision and deploy the **current** infrastructure for buddy360. For planned improvements, see [README_LIVE_PROPOSED.md](README_LIVE_PROPOSED.md).
 
 ---
 
@@ -76,6 +76,8 @@ Browser ──HTTPS──▶ CloudFront ──HTTPS──▶ ALB (443) ──HTT
 | Backend deploy | — | `deploy-live-backend.yml` | Build + push Docker image; rolling ECS update |
 | Backend restart | — | `restart-live-backend.yml` | Force-restart ECS tasks without a new build (picks up secret rotations, env changes) |
 | Frontend deploy | — | `deploy-live-frontend.yml` | Build React app; sync to S3; CloudFront invalidation |
+| Backend promote | — | `promote-live-backend.yml` | Promote a backend image from one environment to another |
+| Frontend promote | — | `promote-live-frontend.yml` | Rebuild frontend using the source environment's git SHA and the target environment's `VITE_API_URL`; sync to target S3; invalidate target CloudFront cache; record deployed SHA to SSM |
 | **Full stack** | — | **`terraform-live-all.yml`** | **Orchestrates the five component workflows in sequence (single trigger)** |
 
 ---
@@ -98,6 +100,9 @@ Written by infra-live-edge:
   /{APP_NAME}/{env}/edge/cloudfront_arn                       — CF ARN (S3 bucket policy)
   /{APP_NAME}/{env}/edge/s3_bucket_name                       — frontend bucket (deploy workflow)
   /{APP_NAME}/{env}/edge/app_url                              — public HTTPS URL
+
+Written by promote-live-frontend:
+  /{APP_NAME}/{env}/edge/deployed_git_sha                     — git SHA of the frontend build currently deployed to this environment
 ```
 
 ### Read dependencies
@@ -112,6 +117,10 @@ deploy-live-backend  reads: /backend/ap-south-1/ecr_repository_url
                             /backend/ap-south-1/ecs_service_name
 deploy-live-frontend reads: /edge/s3_bucket_name
                             /edge/cloudfront_distribution_id
+promote-live-frontend reads: /edge/s3_bucket_name              (source env — to read deployed_git_sha)
+                             /edge/cloudfront_distribution_id   (target env — to invalidate cache)
+                             /edge/s3_bucket_name               (target env — to sync assets)
+                      writes: /edge/deployed_git_sha            (target env — records promoted SHA)
 ```
 
 ---
@@ -158,8 +167,8 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | `ANTHROPIC_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
 | `GEMINI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
 | `OPENAI_MODEL` | `terraform-live-backend` | OpenAI model identifier passed as ECS env var (required; all envs default to `gpt-5.4-mini` in tfvars) |
-| `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (optional — falls back to `claude-sonnet-4-6` in tfvars) |
-| `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (optional — falls back to `gemini-1.5-pro` in tfvars) |
+| `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (required; no default in `variables.tf` — must be set as a GitHub secret) |
+| `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (required; no default in `variables.tf` — must be set as a GitHub secret; all envs use `gemini-3-flash`) |
 | `BACKEND_BUCKET_NAME` | `terraform-live-backend` | Pre-existing S3 bucket name for backend app use (`us-east-1`) |
 | `FRONTEND_BUCKET_NAME` | `terraform-live-edge`, `terraform-live-frontend` | Pre-existing S3 bucket name for frontend assets (`us-east-1`) |
 | `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager (required) |
@@ -238,8 +247,8 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **CloudFront Origin Access Control (OAC)**: SigV4 signing (`always`) for S3 origin; S3 bucket policy in `infra-live-frontend` uses the distribution ARN written to SSM here to restrict access to this specific distribution only
 - **CloudFront distribution**: IPv6 enabled; `default_root_object = index.html`; minimum TLS 1.2 (`TLSv1.2_2021`); ACM cert in `us-east-1` required
   - *S3 frontend origin (default behaviour)*: cache policy `CachingOptimized`; CORS S3 origin request policy; **security response headers policy** applied (HSTS, CSP, X-Frame-Options, Permissions-Policy etc.); GET/HEAD/OPTIONS only; compress enabled
-  - */app-assets/\* origin (ordered behaviour)*: S3 backend-assets origin with dedicated OAC (SigV4); cache policy `CachingOptimized`; CORS S3 origin request policy; minimal response headers policy (nosniff only — HSTS/CSP are document-level controls, ignored on image responses); GET/HEAD/OPTIONS only; compress enabled; covers all asset subfolders (e.g. `child_activity_game/`) — any new subfolder under `app-assets/` is served automatically without a config change
-  - */api/\* origin (ordered behaviour)*: single ALB origin pointing to `ap-south-1` ALB; cache policy `CachingDisabled`; `AllViewerExceptHostHeader` origin request policy; all HTTP methods; compress disabled
+  - */app-assets/\* origin (ordered behaviour)*: S3 backend-assets origin with dedicated OAC (SigV4); cache policy `CachingOptimized`; CORS S3 origin request policy; minimal response headers policy (nosniff + HSTS — CSP/X-Frame-Options/Permissions-Policy are omitted as they are document-level controls and have no effect on image responses); GET/HEAD/OPTIONS only; compress enabled; covers all asset subfolders (e.g. `child_activity_game/`) — any new subfolder under `app-assets/` is served automatically without a config change
+  - */api/\* origin (ordered behaviour)*: single ALB origin pointing to `ap-south-1` ALB; `origin_read_timeout = 60s` (raised from the CloudFront default of 30s to avoid 504s on slow LLM responses); cache policy `CachingDisabled`; `AllViewerExceptHostHeader` origin request policy; all HTTP methods; compress disabled
   - *SPA fallback*: CloudFront 403 and 404 responses mapped to `index.html` with HTTP 200 and `error_caching_min_ttl = 0` — supports React client-side routing
 - **CloudFront price class**: `PriceClass_100` (US/EU edge locations) for `dev` and `stg`; `PriceClass_200` (US/EU/Asia/ME/Africa) for `prod`; set via `cloudfront_price_class` in tfvars
 - **Route 53 A record**: `{SUBDOMAIN}-{env}.{DOMAIN_NAME}` → CloudFront (prod omits the `-{env}` suffix)

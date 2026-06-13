@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 /**
- * Full-screen stage splash — image for most stages, video for stages 1, 2, and 4.
+ * Full-screen stage splash — image for most stages, video for stages 1, 2, 4, and 7.
  *
  * Image lifecycle:
  *   1. Dark background shown immediately.
@@ -21,7 +21,7 @@ import Animated, {
  *   3. Hold for 3 000 ms, then container fades OUT over 400 ms.
  *   4. onReady() is called after fade-out.
  *
- * Video lifecycle (stages 1, 2, 4):
+ * Video lifecycle (stages 1, 2, 4, 7):
  *   1. Container fades IN over 300 ms (smooth entry from page).
  *   2. VideoView fades IN over 400 ms when video starts playing (masks buffering pause).
  *   3. Video plays once unmuted — duration drives timing.
@@ -35,7 +35,7 @@ const CONTAINER_FADE_MS = 500;
 const VIDEO_FADE_IN_MS = 400;
 const CONTAINER_ENTRY_MS = 500;
 
-const VIDEO_STAGES = new Set([1, 2, 4]);
+const VIDEO_STAGES = new Set([1, 2, 4, 7]);
 
 interface StageSplashProps {
   stage: number;
