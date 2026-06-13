@@ -75,7 +75,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
     )
     openai_model: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-5.4-mini",
         validation_alias=AliasChoices("OPENAI_MODEL", "openai_model"),
     )
     anthropic_api_key: str = Field(
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"),
     )
     gemini_model: str = Field(
-        default="gemini-1.5-flash",
+        default="gemini-3-flash",
         validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"),
     )
 

@@ -18,7 +18,7 @@ export default function GrowthAreas() {
   const { isAuthenticated, isLoadingAuth } = useAuth();
   const [completedAreaIds, setCompletedAreaIds] = useState<Set<string | undefined>>(new Set());
   const [hydrated, setHydrated] = useState(false);
-  const [showSplash, startTimer] = useStageSplash();
+  const [showSplash, startTimer] = useStageSplash(0);
 
   useEffect(() => {
     if (isLoadingAuth) return;
