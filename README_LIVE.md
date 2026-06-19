@@ -132,8 +132,8 @@ promote-live-frontend reads: /edge/s3_bucket_name              (source env — t
 | Resource | Convention | Region | Notes |
 |---|---|---|---|
 | S3 state bucket | any name | `us-east-1` | Holds all Terraform state; set as `STATE_BUCKET` secret |
-| Frontend assets bucket | any name | `us-east-1` | One per environment; name set via `FRONTEND_BUCKET_NAME` environment secret |
-| Backend app bucket | any name | `us-east-1` | One per environment; name set via `BACKEND_BUCKET_NAME` environment secret |
+| Frontend assets bucket | any name | `us-east-1` | One per environment; name set via `SPA_BUCKET_NAME` environment secret |
+| Backend app bucket | any name | `us-east-1` | One per environment; name set via `ASSETS_BUCKET_NAME` environment secret |
 | IAM role (OIDC) | any name | global | Trusted by GitHub Actions; ARN set as `ROLE_ARN` secret |
 | ACM certificate | covers public subdomain | `us-east-1` | For CloudFront; set as `ACM_CERTIFICATE_ARN_US_EAST_1` |
 | ACM certificate | covers internal subdomain | `ap-south-1` | For ALB HTTPS; set as `ACM_CERTIFICATE_ARN_AP_SOUTH_1` |
@@ -169,8 +169,8 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | `OPENAI_MODEL` | `terraform-live-backend` | OpenAI model identifier passed as ECS env var (required; all envs default to `gpt-5.4-mini` in tfvars) |
 | `ANTHROPIC_MODEL` | `terraform-live-backend` | Anthropic model identifier passed as ECS env var (required; no default in `variables.tf` — must be set as a GitHub secret) |
 | `GEMINI_MODEL` | `terraform-live-backend` | Gemini model identifier passed as ECS env var (required; no default in `variables.tf` — must be set as a GitHub secret; all envs use `gemini-3-flash`) |
-| `BACKEND_BUCKET_NAME` | `terraform-live-backend` | Pre-existing S3 bucket name for backend app use (`us-east-1`) |
-| `FRONTEND_BUCKET_NAME` | `terraform-live-edge`, `terraform-live-frontend` | Pre-existing S3 bucket name for frontend assets (`us-east-1`) |
+| `ASSETS_BUCKET_NAME` | `terraform-live-backend` | Pre-existing S3 bucket name for backend app use (`us-east-1`) |
+| `SPA_BUCKET_NAME` | `terraform-live-edge`, `terraform-live-frontend` | Pre-existing S3 bucket name for frontend assets (`us-east-1`) |
 | `MONGODB_URI` | `terraform-live-backend` | MongoDB Atlas connection string; injected into Secrets Manager (required) |
 
 ---
@@ -237,7 +237,7 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient (acceptable for ephemeral rate-limit counters; revisit if persistent or sensitive data is ever cached); used for LLM rate-limit counters only (ephemeral, no persistence needed)
 - **CloudWatch Logs**: log group `/ecs/{APP_NAME}/backend/{env}`, 30-day retention; Container Insights metrics also collected
 - **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
-- **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `BACKEND_BUCKET_NAME` env var; static activity-game images are stored under the `app-assets/` prefix and served via CloudFront; separate from the frontend assets bucket
+- **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `ASSETS_BUCKET_NAME` env var; static activity-game images are stored under the `app-assets/` prefix and served via CloudFront; separate from the frontend assets bucket
 - **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` and `secretsmanager:DescribeSecret`; task role — inline S3 policy on backend bucket + four specific `ssmmessages:` actions for ECS Exec (see ECS Exec bullet above)
 - **Route 53 A record**: `{SUBDOMAIN}-internal-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
 - Writes `alb_internal_fqdn`, `ecr_repository_url`, `ecs_cluster_name`, `ecs_service_name` to SSM under `/{APP_NAME}/{env}/backend/ap-south-1/`
@@ -256,7 +256,7 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 
 **Step 3 — infra-live-frontend**
 - S3 bucket policy: grants CloudFront OAC (`cloudfront.amazonaws.com`) `s3:GetObject` scoped to the specific distribution ARN read from SSM; direct public access remains blocked
-- Precondition guard: apply fails fast if `frontend_bucket_name` in tfvars does not match the value written to SSM by `infra-live-edge` — prevents silently applying the wrong bucket policy
+- Precondition guard: apply fails fast if `spa_bucket_name` in tfvars does not match the value written to SSM by `infra-live-edge` — prevents silently applying the wrong bucket policy
 
 ---
 
@@ -269,7 +269,7 @@ Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore
 | Category | Fields |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `BACKEND_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
 | Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
 | Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
 | Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |

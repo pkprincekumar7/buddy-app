@@ -6,11 +6,11 @@
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 
 # Networking
-vpc_cidr              = "10.12.0.0/16"
-public_subnet_1_cidr  = "10.12.1.0/24"
-public_subnet_2_cidr  = "10.12.2.0/24"
-private_subnet_1_cidr = "10.12.3.0/24"
-private_subnet_2_cidr = "10.12.4.0/24"
+vpc_cidr              = "10.32.0.0/16"
+public_subnet_1_cidr  = "10.32.1.0/24"
+public_subnet_2_cidr  = "10.32.2.0/24"
+private_subnet_1_cidr = "10.32.3.0/24"
+private_subnet_2_cidr = "10.32.4.0/24"
 
 # ElastiCache
 elasticache_node_type = "cache.t3.small"
@@ -22,10 +22,8 @@ desired_count = 1
 
 # Application
 llm_timeout_seconds = 60
-llm_hourly_limit    = 100
+llm_hourly_limit    = 50
 default_region      = "us"
 
-# ECS Exec — intentionally enabled in staging for live container debugging.
-# Staging does not use production data, so shell access to running tasks is
-# an acceptable trade-off. Disabled in prod via prod.tfvars.
+# ECS Exec
 enable_execute_command = true

@@ -37,7 +37,7 @@ resource "aws_ssm_parameter" "s3_bucket_name" {
   #checkov:skip=CKV2_AWS_34:Non-sensitive configuration value (S3 bucket name); KMS encryption on plain String params adds cost without security benefit
 
   name  = "/${var.app_name}/${var.environment}/edge/s3_bucket_name"
-  value = var.frontend_bucket_name
+  value = var.spa_bucket_name
   type  = "String"
 
   tags = { Name = "${var.app_name}-edge-s3-bucket-${var.environment}" }

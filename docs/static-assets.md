@@ -6,8 +6,8 @@ Activity-game images (used in `ChildActivityGame`) are stored in S3 and served d
 
 | Environment | Bucket | Path | How it works |
 |---|---|---|---|
-| **Local dev** | dedicated local bucket (set via `BACKEND_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy | `vite.config.js` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
-| **Deployed (dev/stg/prod)** | per-environment bucket (set via `BACKEND_BUCKET_NAME` GitHub secret) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
+| **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy | `vite.config.js` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
+| **Deployed (dev/stg/prod)** | per-environment bucket (set via `ASSETS_BUCKET_NAME` GitHub secret) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
 In all environments the frontend resolves a theme-aware path at runtime — `astronaut.jpg` stored in S3 becomes `/app-assets/child_activity_game/life_ambition/astronaut_vg_dark.png` or `…_vg_light.png` depending on the active theme. Avatar stage images follow the same pattern: `stage-01-dark.png` / `stage-01-light.png`. No environment-specific URL logic lives in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
 
@@ -78,7 +78,7 @@ This is a **dedicated bucket used only for local development**. It is never refe
 ### 1a. Create the bucket
 
 1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click **Create bucket**
-2. Set **Bucket name** to your chosen local bucket name — note it down, you will set this as `BACKEND_BUCKET_NAME` in `.env`
+2. Set **Bucket name** to your chosen local bucket name — note it down, you will set this as `ASSETS_BUCKET_NAME` in `.env`
 3. Set **AWS Region** to `us-east-1`
 4. Leave all other settings at their defaults and click **Create bucket**
 
@@ -149,9 +149,9 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Vite dev server (`npm run dev`):**
 
-1. Ensure `frontend/.env` has `BACKEND_BUCKET_NAME` set to your local bucket name:
+1. Ensure `frontend/.env` has `ASSETS_BUCKET_NAME` set to your local bucket name:
    ```env
-   BACKEND_BUCKET_NAME=<your-local-bucket-name>
+   ASSETS_BUCKET_NAME=<your-local-bucket-name>
    ```
 2. Run:
    ```bash
@@ -160,11 +160,11 @@ Open each subfolder in the S3 console, click **Upload** → **Add files**, and u
 
 **Docker Compose:**
 
-Ensure `BACKEND_BUCKET_NAME` is set to your local bucket name in the root `.env`, then:
+Ensure `ASSETS_BUCKET_NAME` is set to your local bucket name in the root `.env`, then:
 ```bash
 docker compose up --build
 ```
 
 nginx proxies `/app-assets/*` requests directly to S3.
 
-If `BACKEND_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
+If `ASSETS_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.

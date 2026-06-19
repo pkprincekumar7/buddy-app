@@ -38,7 +38,7 @@ Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images)
 - Frontend:
   ```bash
   cd frontend
-  cp .env.example .env   # set BACKEND_BUCKET_NAME to your local assets bucket to load activity-game images via Vite proxy
+  cp .env.example .env   # set ASSETS_BUCKET_NAME to your local assets bucket to load activity-game images via Vite proxy
   npm install && npm run dev
   ```
 

@@ -71,12 +71,12 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
       {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = ["arn:aws:s3:::${var.backend_bucket_name}"]
+        Resource = ["arn:aws:s3:::${var.assets_bucket_name}"]
       },
       {
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-        Resource = ["arn:aws:s3:::${var.backend_bucket_name}/*"]
+        Resource = ["arn:aws:s3:::${var.assets_bucket_name}/*"]
       }
     ]
   })

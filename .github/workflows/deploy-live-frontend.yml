@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
           - prod
   workflow_call:

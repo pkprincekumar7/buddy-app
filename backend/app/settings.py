@@ -156,14 +156,14 @@ class Settings(BaseSettings):
 
     # S3 bucket that holds static assets and mobile app builds.
     # The GitHub Actions build-android-apk workflow writes APKs to:
-    #   s3://{backend_bucket_name}/app-assets/applications/android/app-release-{timestamp}.apk
+    #   s3://{assets_bucket_name}/app-assets/applications/android/app-release-{timestamp}.apk
     # The /downloads/apk endpoint reads this bucket to generate pre-signed URLs.
     # The bucket always lives in us-east-1, regardless of which region the backend
     # is deployed to — a single global bucket is intentional to avoid multi-region
     # S3 complexity while the app scales to new regions.
-    backend_bucket_name: str = Field(
+    assets_bucket_name: str = Field(
         default="",
-        validation_alias=AliasChoices("BACKEND_BUCKET_NAME", "backend_bucket_name"),
+        validation_alias=AliasChoices("ASSETS_BUCKET_NAME", "assets_bucket_name"),
     )
 
     cookie_secure: bool = Field(

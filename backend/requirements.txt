@@ -2,9 +2,9 @@ fastapi==0.136.1
 uvicorn[standard]==0.34.0
 motor==3.7.0
 pymongo==4.10.1
-PyJWT==2.12.1
+PyJWT==2.13.0
 bcrypt==4.2.1
-python-multipart==0.0.27
+python-multipart==0.0.31
 openai==1.68.2
 anthropic==0.49.0
 google-generativeai==0.8.3
@@ -17,9 +17,10 @@ boto3==1.35.49
 
 # ---- transitive CVE floor pins ------------------------------------------------
 # starlette: GHSA-7f5h-v6xp-fcq8 (Range header DoS) + GHSA-2c2j-9gv5-cj73 (upload
-# event-loop block) + PYSEC-2026-161. fastapi<0.133.0 capped starlette<0.51.0 so
-# the fix (starlette>=1.0.1) required upgrading fastapi to >=0.133.0; using 0.136.1.
-starlette>=1.0.1
+# event-loop block) + PYSEC-2026-161 + CVE-2026-54283 (form limits ignored for
+# application/x-www-form-urlencoded, DoS). fastapi<0.133.0 capped starlette<0.51.0
+# so the fix required upgrading fastapi to >=0.133.0; using 0.136.1.
+starlette>=1.3.1
 
 # urllib3: GHSA-qccp-gfcp-xxvc + GHSA-mf9v-mfxr-j63j (redirect header leak +
 # Brotli decompression bomb). Pulled in by openai / anthropic / google-auth SDKs.

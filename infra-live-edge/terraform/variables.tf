@@ -4,12 +4,12 @@ variable "app_name" {
 }
 
 variable "environment" {
-  description = "Deployment environment (dev, stg, prod)"
+  description = "Deployment environment (dev, sbx, stg, prod)"
   type        = string
 
   validation {
-    condition     = contains(["dev", "stg", "prod"], var.environment)
-    error_message = "environment must be one of: dev, stg, prod."
+    condition     = contains(["dev", "sbx", "stg", "prod"], var.environment)
+    error_message = "environment must be one of: dev, sbx, stg, prod."
   }
 }
 
@@ -53,12 +53,12 @@ variable "backend_region" {
 }
 
 # -- S3 -----------------------------------------------------------------------
-variable "frontend_bucket_name" {
+variable "spa_bucket_name" {
   description = "Pre-existing S3 frontend assets bucket name (us-east-1)"
   type        = string
 }
 
-variable "backend_bucket_name" {
+variable "assets_bucket_name" {
   description = "Pre-existing S3 backend bucket name (us-east-1) — holds static assets under app-assets/"
   type        = string
 }

@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
           - prod
 
@@ -47,7 +48,7 @@ jobs:
           GOOGLE_CLIENT_ID:                ${{ secrets.GOOGLE_CLIENT_ID }}
           IOS_CLIENT_ID:                   ${{ secrets.IOS_CLIENT_ID }}
           ROLE_ARN:                        ${{ secrets.ROLE_ARN }}
-          BACKEND_BUCKET_NAME:             ${{ secrets.BACKEND_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME:             ${{ secrets.ASSETS_BUCKET_NAME }}
           IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
@@ -59,7 +60,7 @@ jobs:
           [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID")
           [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN")
-          [[ -z "$BACKEND_BUCKET_NAME"             ]] && missing+=("BACKEND_BUCKET_NAME")
+          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
           [[ -z "$IOS_CERTIFICATE_PASSWORD"        ]] && missing+=("IOS_CERTIFICATE_PASSWORD")
           [[ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]] && missing+=("IOS_PROVISIONING_PROFILE_BASE64")
@@ -334,7 +335,7 @@ jobs:
 
       - name: Push IPA to S3
         env:
-          BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME: ${{ secrets.ASSETS_BUCKET_NAME }}
         run: |
           # Discover the IPA dynamically — xcodebuild names it after the scheme,
           # which may differ from "BuddyApp.ipa" depending on Xcode version / settings.
@@ -346,5 +347,5 @@ jobs:
           fi
           TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
           S3_KEY="app-assets/applications/ios/BuddyApp-${TIMESTAMP}.ipa"
-          aws s3 cp "$IPA_FILE" "s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
-          echo "Uploaded to s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
+          aws s3 cp "$IPA_FILE" "s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"
+          echo "Uploaded to s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"

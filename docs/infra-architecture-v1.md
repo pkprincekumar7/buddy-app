@@ -11,25 +11,28 @@ All figures in USD/month, ap-south-1 on-demand rates (June 2026).
 ```mermaid
 flowchart TD
     Browser([Browser / React SPA])
+    REJECT([401 Unauthorized])
 
-    subgraph EDGE["EDGE — us-east-1"]
+    subgraph EDGE["EDGE — managed from us-east-1 · served from all CloudFront edge locations"]
         R53[Route 53\nDNS / A alias]
         CF[CloudFront\nCDN + SPA routing]
+        CFF["CloudFront Function\nJWT validation · RS256\nglobally replicated by CloudFront"]
         WAF[WAF WebACL\n4 rules]
-        S3FE[S3 Frontend\nOAC-only · us-east-1]
-        S3BA[S3 Backend Assets\nOAC via CloudFront · us-east-1]
+        S3FE[S3 SPA Assets\nOAC via CloudFront · us-east-1]
+        S3BA[S3 App Assets\nOAC via CloudFront · us-east-1]
     end
 
     subgraph VPC["VPC — ap-south-1  ·  3 AZs  ·  private subnets  ·  NAT GW × 3  ·  Interface Endpoints × 5 AWS + 1 Atlas PrivateLink  ·  S3 Gateway Endpoint × 1"]
         ALB[ALB\nHTTPS 443]
+        ECR[ECR\nContainer registry\nimmutable tags · scan on push]
 
         subgraph COMPUTE["ECS Fargate"]
             API["API service\nFastAPI · 5–50 tasks\nADOT sidecar · auto-scale"]
-            WORKER["Worker service\n2–N tasks · polls MongoDB\nauto-scale on CPU"]
+            WORKER["Worker service\n2–N tasks · polls MongoDB\nauto-scale on CPU + PendingJobCount"]
         end
 
-        SM[Secrets Manager\nMongoDB URI · Redis token · API keys]
-        REDIS[(ElastiCache Redis\n1 primary + 1 replica\nm7g.large · TLS · auth)]
+        SM[Secrets Manager\nMongoDB URI · Redis token · API keys\nJWT private key · ap-south-1]
+        REDIS[(ElastiCache Redis\n1 primary + 1 replica\nm7g.large · TLS · auth · multi-AZ)]
     end
 
     subgraph ATLAS["MongoDB Atlas — external · ap-south-1 · PrivateLink"]
@@ -42,21 +45,25 @@ flowchart TD
 
     subgraph OBS["Observability & Security"]
         CW[CloudWatch\nalarms · dashboard · logs]
-        SNS[SNS\nalerts → email]
+        SNS_AP[SNS\nap-south-1 · backend alarms]
+        SNS_UE[SNS\nus-east-1 · edge alarms]
         GD[GuardDuty\nap-south-1 + us-east-1]
         CT[CloudTrail\nap-south-1 + us-east-1]
         S3LOG[S3 Logging\nregional ap-south-1 + global us-east-1]
-        XRAY[X-Ray\nADOT traces]
+        XRAY[X-Ray\nADOT traces · ap-south-1]
     end
 
     Browser -->|DNS| R53
     R53 --> CF
     WAF -. protects .-> CF
     CF -->|SPA assets| S3FE
-    CF -->|backend assets| S3BA
-    CF -->|/api/ requests| ALB
-    Browser -->|poll GET /api/jobs/id| CF
+    CF -->|app assets| S3BA
+    CF -->|all /api/ requests| CFF
+    CFF -->|valid JWT| ALB
+    CFF -->|invalid JWT| REJECT
     ALB --> API
+    ECR -.->|image pull| API
+    ECR -.->|image pull| WORKER
     SM -.->|inject secrets| API
     SM -.->|inject secrets| WORKER
     API -->|insert pending job\nvia PrivateLink| MDB
@@ -68,7 +75,8 @@ flowchart TD
     Browser -->|direct upload| S3UP
     API -.->|traces| XRAY
     WORKER -.->|traces| XRAY
-    CW --> SNS
+    CW --> SNS_AP
+    CW --> SNS_UE
     WAF -->|Firehose logs| S3LOG
     ALB -->|access logs| S3LOG
     CT -->|write logs| S3LOG
@@ -135,7 +143,8 @@ flowchart TD
 |---|---|---|
 | GuardDuty + ECS Runtime Monitoring (ap-south-1 + us-east-1, two detectors) | $55 | $160 |
 | CloudTrail (ap-south-1 + us-east-1, two trails) | $4 | $6 |
-| **Subtotal** | **$59** | **$166** |
+| CloudFront Function — JWT validation ($0.10 per 1M invocations; assumes ~10 API calls/user/day) | $3 | $30 |
+| **Subtotal** | **$62** | **$196** |
 
 ---
 
@@ -155,8 +164,8 @@ flowchart TD
 
 | Service | 1M users/mo | 10M users/mo |
 |---|---|---|
-| S3 — frontend assets (OAC-restricted, CloudFront reads only; in us-east-1) | $3 | $5 |
-| S3 — backend assets (static files served via CloudFront; OAC-restricted; in us-east-1) | $2 | $5 |
+| S3 — SPA assets (OAC-restricted, CloudFront reads only; in us-east-1) | $3 | $5 |
+| S3 — app assets (static files served via CloudFront; OAC-restricted; in us-east-1) | $2 | $5 |
 | S3 — user uploads (write access from ECS tasks via pre-signed URLs; in ap-south-1) | $7 | $45 |
 | S3 — regional logging bucket (ALB logs, CloudTrail ap-south-1) | $5 | $15 |
 | S3 — global logging bucket (CloudFront logs, WAF logs, CloudTrail us-east-1; must be us-east-1) | $5 | $15 |
@@ -172,10 +181,10 @@ flowchart TD
 | Database (Atlas) | $749 | $749 |
 | Cache (Redis) | $245 | $726 |
 | Networking | $279 | $417 |
-| Security | $59 | $166 |
+| Security | $62 | $196 |
 | Observability | $47 | $147 |
 | Storage | $22 | $85 |
-| **Total** | **~$1,827** | **~$4,065** |
+| **Total** | **~$1,830** | **~$4,095** |
 
 ---
 
@@ -355,20 +364,21 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 ### `infra-live-edge` (us-east-1)
 
-> **`variables.tf` additions required in `infra-live-edge`:** add `variable "global_logging_bucket_name" {}` (set from Phase 0 step 0.8 — the global us-east-1 logging bucket), `variable "enable_waf" { default = true }`, `variable "enable_waf_logging" { default = false }`, `variable "enable_guardduty" { default = true }`, `variable "enable_cloudtrail" { default = true }`. Also confirm `variable "frontend_bucket_name" {}` and `variable "backend_bucket_name" {}` exist — both are already referenced by existing resources. The workflow sets `TF_VAR_global_logging_bucket_name` from the `GLOBAL_LOGGING_BUCKET_NAME` GitHub secret.
+> **`variables.tf` additions required in `infra-live-edge`:** add `variable "global_logging_bucket_name" {}` (set from Phase 0 step 0.8 — the global us-east-1 logging bucket), `variable "enable_waf" { default = true }`, `variable "enable_waf_logging" { default = false }`, `variable "enable_guardduty" { default = true }`, `variable "enable_cloudtrail" { default = true }`. Also confirm `variable "spa_bucket_name" {}` and `variable "assets_bucket_name" {}` exist — both are already referenced by existing resources. The workflow sets `TF_VAR_global_logging_bucket_name` from the `GLOBAL_LOGGING_BUCKET_NAME` GitHub secret.
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudfront_distribution` | exists | 3 origins (S3 frontend, S3 backend assets, ALB); SPA error handling |
+| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the CloudFront Function on the `/api/*` cache behavior (viewer request event) — see `aws_cloudfront_function` row below. |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
+| `aws_cloudfront_function` (JWT validator) | **missing** | Validates RS256 JWT on every `/api/*` viewer request before forwarding to ALB. Rejects invalid or missing tokens at the edge with 401 — request never reaches ALB or ECS. **Key points:** (1) Runtime is `cloudfront-js-2.0` (supports Web Crypto API for RS256 verification). (2) The RS256 public key is embedded directly in the function code — the public key is not sensitive and cannot be used to forge tokens. (3) Token is read from the `access_token` HttpOnly cookie. (4) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation — embed all currently valid public keys in a `PUBLIC_KEYS` map keyed by `kid`. (5) Returns `{"message": "Unauthorized"}` with status 401 on validation failure. (6) Does not run on S3 origins (SPA/app assets) — only on the ALB origin behavior. **Deployment:** function code lives in `infra-live-edge/functions/jwt-validator.js`; Terraform reads it with `file()`. Set `publish = true` — CloudFront requires a published version to associate with a distribution. |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
 | `aws_wafv2_web_acl_logging_configuration` | **missing** | WAF full logs → Kinesis Firehose → global S3 logging bucket; stream name must start with `aws-waf-logs-` |
 | `aws_kinesis_firehose_delivery_stream` | **missing** | Must be in us-east-1; `name = "aws-waf-logs-${var.app_name}-${var.environment}"` (name must start with `aws-waf-logs-` — AWS enforces this prefix for WAF logging). `s3_configuration`: `bucket_arn = "arn:aws:s3:::${var.global_logging_bucket_name}"`; `prefix = "waf-logs/"`; `error_output_prefix = "waf-logs-errors/"`; `buffering_interval = 300` (5 min); `buffering_size = 5` (MB); `compression_format = "GZIP"`. |
 | `aws_iam_role` (Kinesis Firehose) | **missing** | IAM role assumed by the Firehose stream; required for Firehose to write to the global logging S3 bucket |
 | `aws_iam_role_policy` (Firehose S3 write) | **missing** | Inline policy on the Firehose IAM role; grants `s3:PutObject` + `s3:AbortMultipartUpload` + `s3:GetBucketLocation` on the global logging bucket |
 | `aws_s3_bucket_policy` (global logging) | **missing** | Bucket is created manually (`BucketOwnerPreferred` ownership set at creation; lifecycle rules and public access block set manually). Terraform manages policy only via `var.global_logging_bucket_name`. Required for two principals: (1) CloudTrail us-east-1 — grants `s3:GetBucketAcl` + `s3:PutObject` to `cloudtrail.amazonaws.com`; (2) CloudFront access logs — grants `s3:PutObject` via a canonical user ACL grant (not an IAM principal) to the CloudFront log delivery account canonical user ID `c4c1ede66af53448b93c283ce9448c4ba468c9432aa1ab4c7ad7a475d1db4b02`; `BucketOwnerPreferred` ownership is required for the canonical user grant to work. Firehose access is handled via the Firehose IAM role, not a bucket policy. Without the canonical user grant, CloudFront access logs silently fail to deliver. |
-| `aws_s3_bucket_policy` (backend assets OAC) | exists | Scoped to CloudFront distribution ARN; references bucket via `var.backend_bucket_name` — bucket is created manually, no `aws_s3_bucket` resource in Terraform |
+| `aws_s3_bucket_policy` (app assets OAC) | exists | Scoped to CloudFront distribution ARN; references bucket via `var.assets_bucket_name` — bucket is created manually, no `aws_s3_bucket` resource in Terraform |
 | `aws_route53_record` | exists | A alias to CloudFront |
 | `aws_guardduty_detector` (us-east-1) | **missing** | Separate detector required in us-east-1 to cover CloudFront and WAF management events; ECS Runtime Monitoring not required here (no ECS workloads in us-east-1) |
 | `aws_cloudtrail` (us-east-1) | **missing** | Covers CloudFront + WAF management events; destination: global S3 logging bucket. Set `include_global_service_events = true` — the us-east-1 trail is the only one that captures IAM, STS, and other global-service events. The ap-south-1 trail uses `include_global_service_events = false` to avoid duplicate records. |
@@ -376,11 +386,177 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 ---
 
+### CloudFront Function — JWT validation (RS256)
+
+All `/api/*` requests are validated at the CloudFront edge before reaching the ALB. Invalid or missing tokens are rejected with 401 at the nearest edge location worldwide — the request never consumes ALB or ECS capacity.
+
+#### Why RS256 over HS256
+
+| | HS256 (shared secret) | RS256 (asymmetric) |
+|---|---|---|
+| Embedded in CloudFront Function | The secret — can forge tokens if read | Public key — cannot forge tokens |
+| Risk if function code is read | Critical | None |
+| Rotation pressure | High | Low — only rotate on compromise or schedule |
+
+The private key (used to sign JWTs in FastAPI) never leaves Secrets Manager. The public key (used to verify at the edge) is embedded in the function code and is safe to expose.
+
+#### JWT signing change required in FastAPI
+
+Switch from HS256 + `JWT_SECRET` to RS256 + asymmetric key pair:
+
+- Generate a 2048-bit RSA key pair (or EC P-256 for smaller tokens)
+- Store the private key PEM in Secrets Manager under a new key `JWT_PRIVATE_KEY`
+- The existing `JWT_SECRET` can be retired once all sessions using HS256 tokens have expired
+- FastAPI signs tokens with the private key; CloudFront Function verifies with the embedded public key
+
+#### Key rotation (zero-downtime)
+
+Tokens carry a `kid` (key ID) claim in the JWT header. The function embeds all currently valid public keys:
+
+```javascript
+const PUBLIC_KEYS = {
+  "key-v1": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+  "key-v2": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+}
+```
+
+Rotation process:
+1. Generate new RSA key pair
+2. Add new public key to `PUBLIC_KEYS` in the function → deploy (both keys now active)
+3. Update FastAPI to sign new tokens with new private key + new `kid`
+4. Wait for old tokens to expire (access token TTL)
+5. Remove old public key from `PUBLIC_KEYS` → deploy
+
+**Never generate a new private key without updating the corresponding public key in the function — they are a mathematically linked pair.**
+
+#### `infra-live-edge/functions/jwt-validator.js`
+
+```javascript
+var PUBLIC_KEYS = {
+  "key-v1": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq...\n-----END PUBLIC KEY-----"
+}
+
+var COOKIE_NAME = "access_token"
+
+function parseCookies(cookieHeader) {
+  var cookies = {}
+  if (!cookieHeader) return cookies
+  cookieHeader.split(";").forEach(function(c) {
+    var parts = c.trim().split("=")
+    cookies[parts[0].trim()] = parts.slice(1).join("=").trim()
+  })
+  return cookies
+}
+
+function base64urlDecode(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/")
+  while (str.length % 4) str += "="
+  return str
+}
+
+async function verifyJwt(token) {
+  var parts = token.split(".")
+  if (parts.length !== 3) throw new Error("malformed")
+
+  var header = JSON.parse(atob(base64urlDecode(parts[0])))
+  var kid = header.kid || "key-v1"
+
+  var publicKeyPem = PUBLIC_KEYS[kid]
+  if (!publicKeyPem) throw new Error("unknown kid: " + kid)
+
+  var pemBody = publicKeyPem
+    .replace("-----BEGIN PUBLIC KEY-----", "")
+    .replace("-----END PUBLIC KEY-----", "")
+    .replace(/\n/g, "")
+
+  var keyData = Uint8Array.from(atob(pemBody), function(c) { return c.charCodeAt(0) })
+
+  var cryptoKey = await crypto.subtle.importKey(
+    "spki",
+    keyData.buffer,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  )
+
+  var signingInput = parts[0] + "." + parts[1]
+  var signature = Uint8Array.from(atob(base64urlDecode(parts[2])), function(c) { return c.charCodeAt(0) })
+  var data = new TextEncoder().encode(signingInput)
+
+  var valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, signature.buffer, data)
+  if (!valid) throw new Error("invalid signature")
+
+  var payload = JSON.parse(atob(base64urlDecode(parts[1])))
+  if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) throw new Error("expired")
+
+  return payload
+}
+
+async function handler(event) {
+  var request = event.request
+  var cookies = parseCookies((request.cookies[COOKIE_NAME] || {}).value || "")
+  var token = (request.cookies[COOKIE_NAME] || {}).value
+
+  if (!token) {
+    return {
+      statusCode: 401,
+      body: JSON.stringify({ message: "Unauthorized" })
+    }
+  }
+
+  try {
+    await verifyJwt(token)
+    return request
+  } catch (e) {
+    return {
+      statusCode: 401,
+      body: JSON.stringify({ message: "Unauthorized" })
+    }
+  }
+}
+```
+
+#### Terraform resource
+
+```hcl
+resource "aws_cloudfront_function" "jwt_validator" {
+  name    = "${var.app_name}-${var.environment}-jwt-validator"
+  runtime = "cloudfront-js-2.0"
+  publish = true  # must be true to associate with a distribution
+  code    = file("${path.module}/functions/jwt-validator.js")
+}
+```
+
+Associate on the `/api/*` cache behavior in `aws_cloudfront_distribution`:
+
+```hcl
+ordered_cache_behavior {
+  path_pattern = "/api/*"
+  ...
+  function_association {
+    event_type   = "viewer-request"
+    function_arn = aws_cloudfront_function.jwt_validator.arn
+  }
+}
+```
+
+#### GitHub secrets additions
+
+| Secret | Value | Used by |
+|---|---|---|
+| `JWT_PRIVATE_KEY` | RSA private key PEM (replaces `JWT_SECRET` for RS256 signing) | terraform-live-backend (seeds Secrets Manager) |
+
+#### `variables.tf` addition in `infra-live-edge`
+
+No new variable needed — the public key is embedded directly in `jwt-validator.js`. When rotating keys, update the JS file and re-run `terraform-live-edge apply`.
+
+---
+
 ### `infra-live-frontend` (us-east-1)
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_s3_bucket_policy` (frontend OAC) | exists | Restricts frontend bucket access to specific CloudFront distribution ARN |
+| `aws_s3_bucket_policy` (SPA assets OAC) | exists | Restricts SPA assets bucket access to specific CloudFront distribution ARN |
 
 ---
 
@@ -402,10 +578,10 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | Module | Exists | Needs change | Missing |
 |---|---|---|---|
 | `infra-live-backend` | 12 | 12 | 49 |
-| `infra-live-edge` | 7 | 0 | 7 |
+| `infra-live-edge` | 7 | 1 | 8 |
 | `infra-live-frontend` | 1 | 0 | 0 |
 | MongoDB Atlas module | 0 | 0 | 6 |
-| **Total** | **20** | **12** | **62** |
+| **Total** | **20** | **13** | **63** |
 
 ---
 
@@ -511,8 +687,8 @@ The resource inventory above is written at prod scale. This section documents ev
 | Route 53 hosted zone (shared) | ✓ | ✓ | ✓ |
 | ACM cert (us-east-1) | ✓ | ✓ | ✓ |
 | ACM cert (ap-south-1) | ✓ | ✓ | ✓ |
-| Frontend S3 bucket | ✓ | ✓ | ✓ |
-| Backend assets S3 bucket | ✓ | ✓ | ✓ |
+| SPA assets S3 bucket | ✓ | ✓ | ✓ |
+| App assets S3 bucket | ✓ | ✓ | ✓ |
 | Uploads S3 bucket | ✓ | ✓ | ✓ |
 | Terraform state S3 bucket | ✓ (can share one bucket, use different key prefix per env) | ✓ | ✓ |
 | Regional logging S3 bucket (ap-south-1) | ✗ | ✓ | ✓ |
@@ -731,8 +907,8 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 | 0.1 | Create Route 53 hosted zone for `buddy360.com` | Not managed by Terraform — only the A record is. Note the hosted zone ID. |
 | 0.2 | Request ACM certificate in **us-east-1** for `buddy360.com` + `*.buddy360.com` | Required by CloudFront (CloudFront only accepts certs in us-east-1). Validate via DNS CNAME in Route 53. Note the ARN. |
 | 0.3 | Request ACM certificate in **ap-south-1** for `buddy360.com` | Required by the ALB HTTPS listener. Validate via DNS. Note the ARN. |
-| 0.4 | Create **S3 frontend assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
-| 0.5 | Create **S3 backend assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
+| 0.4 | Create **S3 SPA assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
+| 0.5 | Create **S3 app assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
 | 0.6 | Create **S3 user uploads bucket** (ap-south-1) | Block all public access. Note the bucket name. |
 | 0.7 | Create **S3 regional logging bucket** (ap-south-1) | Block all public access; set lifecycle: transition to S3 Glacier Instant Retrieval after 30 days, expire after 365 days. Note the bucket name. |
 | 0.8 | Create **S3 global logging bucket** (us-east-1) | Set Object Ownership to `BucketOwnerPreferred` (required for CloudFront canonical user ACL grant); block all public access. Set lifecycle rules: transition to Glacier Instant Retrieval after 30 days, expire after 365 days. Note the bucket name. |
@@ -751,8 +927,8 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 | `SUBDOMAIN` | Subdomain prefix (e.g. `app`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN in ap-south-1 (from step 0.3) | terraform-live-backend |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN in us-east-1 (from step 0.2) | terraform-live-edge |
-| `FRONTEND_BUCKET_NAME` | Frontend assets S3 bucket name (from step 0.4) | terraform-live-edge, terraform-live-frontend |
-| `BACKEND_BUCKET_NAME` | Backend assets S3 bucket name (from step 0.5) | terraform-live-backend, terraform-live-edge |
+| `SPA_BUCKET_NAME` | SPA assets S3 bucket name (from step 0.4) | terraform-live-edge, terraform-live-frontend |
+| `ASSETS_BUCKET_NAME` | App assets S3 bucket name (from step 0.5) | terraform-live-backend, terraform-live-edge |
 | `MONGODB_URI` | Atlas public SRV connection string. Used to seed Secrets Manager on the **first apply only** — `terraform-live-backend` checks whether `MONGODB_URI` already exists in Secrets Manager before writing; if the key is already present it is left untouched. After Phase 5, `terraform-atlas` updates the Secrets Manager value to the private endpoint URI directly. This GitHub secret is never changed after initial setup. | terraform-live-backend |
 | `JWT_SECRET` | JWT signing secret | terraform-live-backend |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | terraform-live-backend |
@@ -861,7 +1037,7 @@ SSM parameters written by this workflow:
 ```
 /<APP_NAME>/<ENV>/edge/cloudfront_arn             →  <cf-arn>
 /<APP_NAME>/<ENV>/edge/cloudfront_distribution_id →  <cf-dist-id>
-/<APP_NAME>/<ENV>/edge/s3_bucket_name             →  <frontend-bucket-name>
+/<APP_NAME>/<ENV>/edge/s3_bucket_name             →  <spa-bucket-name>
 ```
 
 `terraform-live-frontend` (Phase 4) reads `cloudfront_arn` and `s3_bucket_name`.
@@ -872,7 +1048,7 @@ SSM parameters written by this workflow:
 
 **Workflow (4a):** `terraform-live-frontend` → `action: apply`, `environment: prod`
 
-Reads `cloudfront_arn` and `s3_bucket_name` from SSM (written by Phase 3). Applies the S3 frontend bucket OAC policy (CloudFront-only access).
+Reads `cloudfront_arn` and `s3_bucket_name` from SSM (written by Phase 3). Applies the S3 SPA assets bucket OAC policy (CloudFront-only access).
 
 **Workflow (4b):** `deploy-live-backend` → `environment: prod`, `aws_region: ap-south-1`
 

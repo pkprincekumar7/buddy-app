@@ -12,9 +12,9 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  if (env.BACKEND_BUCKET_NAME) {
+  if (env.ASSETS_BUCKET_NAME) {
     proxy['/app-assets'] = {
-      target: `https://${env.BACKEND_BUCKET_NAME}.s3.us-east-1.amazonaws.com`,
+      target: `https://${env.ASSETS_BUCKET_NAME}.s3.us-east-1.amazonaws.com`,
       changeOrigin: true,
     };
   }

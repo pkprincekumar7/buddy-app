@@ -25,7 +25,7 @@ cp .env.example .env.local
 | `VITE_GOOGLE_CLIENT_ID` | Yes      | Google OAuth client ID for Sign-In                                                            |
 | `VITE_API_URL`          | No       | Backend API base URL — leave empty to use the Vite dev-server proxy (`/api → localhost:8000`) |
 
-> `BACKEND_BUCKET_NAME` is a Docker build arg only — it is never exposed to the client and should **not** go in `.env.local`.
+> `ASSETS_BUCKET_NAME` is a Docker build arg only — it is never exposed to the client and should **not** go in `.env.local`.
 
 ## Development
 
