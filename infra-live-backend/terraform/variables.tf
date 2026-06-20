@@ -25,12 +25,12 @@ variable "app_name" {
 }
 
 variable "environment" {
-  description = "Deployment environment (dev, stg, prod)"
+  description = "Deployment environment (dev, sbx, stg, prod)"
   type        = string
 
   validation {
-    condition     = contains(["dev", "stg", "prod"], var.environment)
-    error_message = "environment must be one of: dev, stg, prod."
+    condition     = contains(["dev", "sbx", "stg", "prod"], var.environment)
+    error_message = "environment must be one of: dev, sbx, stg, prod."
   }
 }
 
@@ -85,7 +85,7 @@ variable "acm_certificate_arn" {
 
 # -- S3 -----------------------------------------------------------------------
 
-variable "backend_bucket_name" {
+variable "assets_bucket_name" {
   description = "Pre-existing S3 bucket name for backend application use (us-east-1, shared across regions)"
   type        = string
 }

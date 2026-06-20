@@ -88,7 +88,7 @@ All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so g
 | Gitleaks | gitleaks v8.30.1 (CLI) | Full git history — accidentally committed secrets, API keys, private keys, tokens |
 | Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
 | Bandit | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
-| Semgrep | semgrep 1.163.0 (`p/security-audit`) | `backend/app/`, `backend/tools/`, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
+| Semgrep | semgrep 1.167.0 (`p/security-audit`) | `backend/app/`, `backend/tools/`, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
 | pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 and PYSEC-2026-175/177/178/179 suppressed (PyJWT CVEs with no available fix version at time of writing) |
 | Checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
 | npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
@@ -166,14 +166,14 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ROLE_ARN` | ARN of the IAM OIDC role |
 | `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `buddy360` |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
-| `BACKEND_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
+| `ASSETS_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
 | `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app` |
 | `SUBDOMAIN_INTERNAL` | Backend/internal subdomain prefix, e.g. `api` |
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID |
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers backend ALB) |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN for `us-east-1` (covers CloudFront) |
-| `FRONTEND_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
+| `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
 
 ### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
 
@@ -188,7 +188,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ANTHROPIC_MODEL` | e.g. `claude-sonnet-4-6` (default) |
 | `GEMINI_API_KEY` | Google Gemini key (optional) |
 | `GEMINI_MODEL` | e.g. `gemini-3-flash` (default) |
-| `BACKEND_BUCKET_NAME` | S3 bucket name injected into the ECS task environment; available to the backend for any S3 operations (e.g. future direct uploads). Also declared as an infrastructure secret above — a single GitHub secret drives both Terraform and the ECS environment. |
+| `ASSETS_BUCKET_NAME` | S3 bucket name injected into the ECS task environment; available to the backend for any S3 operations (e.g. future direct uploads). Also declared as an infrastructure secret above — a single GitHub secret drives both Terraform and the ECS environment. |
 
 ### Frontend build secrets (baked into the bundle by `deploy-live-frontend.yml`)
 

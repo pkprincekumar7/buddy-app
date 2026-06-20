@@ -7,12 +7,12 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket_policy" "frontend" {
-  bucket = var.frontend_bucket_name
+  bucket = var.spa_bucket_name
 
   lifecycle {
     precondition {
-      condition     = data.aws_ssm_parameter.s3_bucket_name.value == var.frontend_bucket_name
-      error_message = "frontend_bucket_name in tfvars (\"${var.frontend_bucket_name}\") does not match the bucket name written to SSM by infra-live-edge. Update the tfvars value to match the SSM parameter."
+      condition     = data.aws_ssm_parameter.s3_bucket_name.value == var.spa_bucket_name
+      error_message = "spa_bucket_name in tfvars (\"${var.spa_bucket_name}\") does not match the bucket name written to SSM by infra-live-edge. Update the tfvars value to match the SSM parameter."
     }
   }
 
@@ -26,7 +26,7 @@ resource "aws_s3_bucket_policy" "frontend" {
           Service = "cloudfront.amazonaws.com"
         }
         Action   = "s3:GetObject"
-        Resource = "arn:aws:s3:::${var.frontend_bucket_name}/*"
+        Resource = "arn:aws:s3:::${var.spa_bucket_name}/*"
         Condition = {
           StringEquals = {
             "AWS:SourceArn" = data.aws_ssm_parameter.cloudfront_arn.value

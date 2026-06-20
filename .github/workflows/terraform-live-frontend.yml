@@ -21,6 +21,7 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
           - prod
   workflow_call:
@@ -58,7 +59,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       TF_VAR_app_name:             ${{ secrets.APP_NAME }}
-      TF_VAR_frontend_bucket_name: ${{ secrets.FRONTEND_BUCKET_NAME }}
+      TF_VAR_spa_bucket_name: ${{ secrets.SPA_BUCKET_NAME }}
 
     steps:
       - name: Checkout
@@ -69,13 +70,13 @@ jobs:
           ROLE_ARN:             ${{ secrets.ROLE_ARN }}
           APP_NAME:             ${{ secrets.APP_NAME }}
           STATE_BUCKET:         ${{ secrets.STATE_BUCKET }}
-          FRONTEND_BUCKET_NAME: ${{ secrets.FRONTEND_BUCKET_NAME }}
+          SPA_BUCKET_NAME: ${{ secrets.SPA_BUCKET_NAME }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"             ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"             ]] && missing+=("APP_NAME")
           [[ -z "$STATE_BUCKET"         ]] && missing+=("STATE_BUCKET")
-          [[ -z "$FRONTEND_BUCKET_NAME" ]] && missing+=("FRONTEND_BUCKET_NAME")
+          [[ -z "$SPA_BUCKET_NAME" ]] && missing+=("SPA_BUCKET_NAME")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."

@@ -21,6 +21,7 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
           - prod
       aws_region:
@@ -74,7 +75,7 @@ jobs:
       TF_VAR_mongodb_db_name:     ${{ secrets.APP_NAME }}-${{ inputs.environment }}
       TF_VAR_domain_name:         ${{ secrets.DOMAIN_NAME }}
       TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
-      TF_VAR_backend_bucket_name: ${{ secrets.BACKEND_BUCKET_NAME }}
+      TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
       # TF_VAR_acm_certificate_arn is resolved per-region in the
       # "Resolve ACM certificate ARN" step below and exported to GITHUB_ENV.
       # TF_VAR_subdomain_internal, TF_VAR_cookie_domain, and TF_VAR_cors_origins
@@ -102,7 +103,7 @@ jobs:
           SUBDOMAIN:                      ${{ secrets.SUBDOMAIN }}
           DOMAIN_NAME:                    ${{ secrets.DOMAIN_NAME }}
           HOSTED_ZONE_ID:                 ${{ secrets.HOSTED_ZONE_ID }}
-          BACKEND_BUCKET_NAME:            ${{ secrets.BACKEND_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME:            ${{ secrets.ASSETS_BUCKET_NAME }}
           JWT_SECRET:                     ${{ secrets.JWT_SECRET }}
           GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
           MONGODB_URI:                    ${{ secrets.MONGODB_URI }}
@@ -119,7 +120,7 @@ jobs:
           [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
-          [[ -z "$BACKEND_BUCKET_NAME"            ]] && missing+=("BACKEND_BUCKET_NAME")
+          [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ -z "$JWT_SECRET"                     ]] && missing+=("JWT_SECRET")
           [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")

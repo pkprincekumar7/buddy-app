@@ -11,13 +11,17 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
+          - prod
       target_env:
         description: "Target environment (image will be deployed here)"
         required: true
         default: "stg"
         type: choice
         options:
+          - dev
+          - sbx
           - stg
           - prod
       aws_region:
@@ -60,12 +64,18 @@ jobs:
           if [ "$SOURCE" = "$TARGET" ]; then
             echo "::error::Source and target environments must differ."
             exit 1
+          elif [ "$SOURCE" = "dev" ] && [ "$TARGET" = "sbx" ]; then
+            echo "Promotion path: dev → sbx — OK"
+          elif [ "$SOURCE" = "sbx" ] && [ "$TARGET" = "dev" ]; then
+            echo "Promotion path: sbx → dev — OK"
           elif [ "$SOURCE" = "dev" ] && [ "$TARGET" = "stg" ]; then
             echo "Promotion path: dev → stg — OK"
+          elif [ "$SOURCE" = "sbx" ] && [ "$TARGET" = "stg" ]; then
+            echo "Promotion path: sbx → stg — OK"
           elif [ "$SOURCE" = "stg" ] && [ "$TARGET" = "prod" ]; then
             echo "Promotion path: stg → prod — OK"
           else
-            echo "::error::Promotion from '$SOURCE' to '$TARGET' is not a permitted path. Allowed: dev→stg, stg→prod."
+            echo "::error::Promotion from '$SOURCE' to '$TARGET' is not a permitted path. Allowed: dev↔sbx, dev→stg, sbx→stg, stg→prod."
             exit 1
           fi
 

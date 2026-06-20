@@ -11,6 +11,7 @@ on:
         type: choice
         options:
           - dev
+          - sbx
           - stg
           - prod
 
@@ -45,14 +46,14 @@ jobs:
           DOMAIN_NAME:         ${{ secrets.DOMAIN_NAME }}
           GOOGLE_CLIENT_ID:    ${{ secrets.GOOGLE_CLIENT_ID }}
           ROLE_ARN:            ${{ secrets.ROLE_ARN }}
-          BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME: ${{ secrets.ASSETS_BUCKET_NAME }}
         run: |
           missing=()
           [[ -z "$SUBDOMAIN"           ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"         ]] && missing+=("DOMAIN_NAME")
           [[ -z "$GOOGLE_CLIENT_ID"    ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$ROLE_ARN"            ]] && missing+=("ROLE_ARN")
-          [[ -z "$BACKEND_BUCKET_NAME" ]] && missing+=("BACKEND_BUCKET_NAME")
+          [[ -z "$ASSETS_BUCKET_NAME" ]] && missing+=("ASSETS_BUCKET_NAME")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
@@ -171,7 +172,7 @@ jobs:
 
       - name: Push APK to S3
         env:
-          BACKEND_BUCKET_NAME: ${{ secrets.BACKEND_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME: ${{ secrets.ASSETS_BUCKET_NAME }}
         run: |
           # Discover the APK dynamically — mirrors the iOS IPA discovery pattern.
           APK_FILE=$(find "frontend-app/android/app/build/outputs/apk/release" -name "*.apk" | head -1)
@@ -182,5 +183,5 @@ jobs:
           fi
           TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
           S3_KEY="app-assets/applications/android/app-release-${TIMESTAMP}.apk"
-          aws s3 cp "$APK_FILE" "s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
-          echo "Uploaded to s3://${BACKEND_BUCKET_NAME}/${S3_KEY}"
+          aws s3 cp "$APK_FILE" "s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"
+          echo "Uploaded to s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"

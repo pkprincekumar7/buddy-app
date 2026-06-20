@@ -115,12 +115,12 @@ async def get_apk_download_url(
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> ApkDownloadResponse:
-    if not settings.backend_bucket_name:
+    if not settings.assets_bucket_name:
         raise HTTPException(status_code=503, detail="APK downloads are not configured.")
 
     # Run the blocking boto3 calls in a thread pool to keep the async event loop free.
     try:
-        result = await asyncio.to_thread(_resolve_apk_download, settings.backend_bucket_name)
+        result = await asyncio.to_thread(_resolve_apk_download, settings.assets_bucket_name)
     except _ApkError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 
