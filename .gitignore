@@ -28,3 +28,6 @@ frontend/retire-jsrepo.json
 
 # Generated OpenAPI spec — produced by check.sh / export-openapi.py, not committed
 openapi.json
+
+# Local RSA key pair — never commit private keys
+*.pem

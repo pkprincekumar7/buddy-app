@@ -75,6 +75,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
         { name = "DEFAULT_REGION", value = var.default_region },
         { name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name },
+        { name = "JWT_KEY_ID", value = var.jwt_key_id },
         { name = "CORS_ORIGINS", value = var.cors_origins },
         { name = "COOKIE_DOMAIN", value = var.cookie_domain },
       ]
@@ -83,7 +84,7 @@ resource "aws_ecs_task_definition" "backend" {
       # Format: "<secret_arn>:<json_key>::"
       secrets = [
         { name = "MONGODB_URI", valueFrom = "${aws_secretsmanager_secret.app.arn}:MONGODB_URI::" },
-        { name = "JWT_SECRET", valueFrom = "${aws_secretsmanager_secret.app.arn}:JWT_SECRET::" },
+        { name = "JWT_PRIVATE_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:JWT_PRIVATE_KEY::" },
         { name = "GOOGLE_CLIENT_ID", valueFrom = "${aws_secretsmanager_secret.app.arn}:GOOGLE_CLIENT_ID::" },
         { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
         { name = "ANTHROPIC_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:ANTHROPIC_API_KEY::" },

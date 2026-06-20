@@ -111,6 +111,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     # are NOT in this policy — FastAPI's CORSMiddleware is the sole source for those
     # and they pass through unchanged, so no duplication occurs.
     response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.jwt_validator.arn
+    }
   }
 
   # -- SPA fallback: S3 returns 403 for missing objects -----------------------

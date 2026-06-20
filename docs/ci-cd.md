@@ -62,7 +62,7 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 
 ### `backend-test` (Python 3.12, needs: backend-lint)
 
-Runs after `backend-lint` passes. Spins up MongoDB and Redis as Docker service containers so the FastAPI app can connect to real dependencies — identical to the dev environment. `JWT_SECRET` is set from the GitHub secret with a hard-coded 64-character fallback so the job never fails due to a missing secret configuration.
+Runs after `backend-lint` passes. Spins up MongoDB and Redis as Docker service containers so the FastAPI app can connect to real dependencies — identical to the dev environment. A fresh RSA key pair is generated on the fly with `openssl genrsa 2048` and written to `$GITHUB_ENV` so the job never fails due to a missing secret configuration.
 
 | Step | Tool | What it checks |
 |---|---|---|
@@ -174,12 +174,14 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers backend ALB) |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN for `us-east-1` (covers CloudFront) |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the CloudFront Function by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
 
 ### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
 
 | Secret | Value |
 |---|---|
-| `JWT_SECRET` | Long random string (min 32 chars; min 64 in production) — `python -c "import secrets; print(secrets.token_hex(32))"` produces 64 hex chars (32 bytes × 2), satisfying both thresholds |
+| `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions |
+| `JWT_KEY_ID` | Key ID label matching the `kid` header in signed tokens, e.g. `key-v1` |
 | `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In) |
 | `MONGODB_URI` | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
 | `OPENAI_API_KEY` | OpenAI key (optional) |

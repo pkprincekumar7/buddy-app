@@ -30,7 +30,8 @@ services:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
       DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - see .env.example for how to generate it}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
+      JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
       JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

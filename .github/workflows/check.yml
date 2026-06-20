@@ -85,6 +85,14 @@ jobs:
       - name: Install dependencies + test tools
         run: pip install -r requirements.txt -r requirements-test.txt
 
+      - name: Generate test RSA key pair
+        run: |
+          {
+            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
+            openssl genrsa 2048 2>/dev/null
+            echo 'JWTKEYEOF'
+          } >> "$GITHUB_ENV"
+
       - name: pytest + coverage
         run: |
           set +e
@@ -98,7 +106,8 @@ jobs:
           exit "$RC"
         env:
           MONGODB_URI: mongodb://localhost:27017
-          JWT_SECRET: ${{ secrets.JWT_SECRET || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
+          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
+          JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
           APP_ENV: dev
 
@@ -587,6 +596,14 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Generate test RSA key pair
+        run: |
+          {
+            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
+            openssl genrsa 2048 2>/dev/null
+            echo 'JWTKEYEOF'
+          } >> "$GITHUB_ENV"
+
       - name: Start backend
         run: |
           cd backend
@@ -594,7 +611,8 @@ jobs:
           echo $! > /tmp/backend.pid
         env:
           MONGODB_URI: mongodb://localhost:27017
-          JWT_SECRET: ${{ secrets.JWT_SECRET || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
+          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
+          JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
           APP_ENV: dev
 

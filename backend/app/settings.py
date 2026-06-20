@@ -1,6 +1,11 @@
 import logging
 import re
 
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+    load_pem_private_key,
+)
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,19 +51,29 @@ class Settings(BaseSettings):
             )
         return v
 
-    jwt_secret: str = Field(
-        validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
+    jwt_private_key: str = Field(
+        validation_alias=AliasChoices("JWT_PRIVATE_KEY", "jwt_private_key"),
     )
 
-    @field_validator("jwt_secret")
+    @field_validator("jwt_private_key")
     @classmethod
-    def validate_jwt_secret(cls, v: str) -> str:
-        if len(v) < 32:
+    def validate_jwt_private_key(cls, v: str) -> str:
+        # Docker Compose .env files don't support multiline values.
+        # The key may be stored as a single line with literal \n escape sequences.
+        v = v.replace("\\n", "\n")
+        try:
+            load_pem_private_key(v.encode(), password=None)
+        except Exception as exc:
             raise ValueError(
-                f"JWT_SECRET must be at least 32 characters long (got {len(v)}). "
-                "Set the JWT_SECRET environment variable to a long random string."
-            )
+                "JWT_PRIVATE_KEY must be a valid RSA private key in PEM format. "
+                "Generate one with: openssl genrsa -out jwt_private.pem 2048"
+            ) from exc
         return v
+
+    jwt_key_id: str = Field(
+        default="key-v1",
+        validation_alias=AliasChoices("JWT_KEY_ID", "jwt_key_id"),
+    )
 
     jwt_access_expire_minutes: int = Field(
         default=30,
@@ -68,7 +83,15 @@ class Settings(BaseSettings):
         default=24,
         validation_alias=AliasChoices("JWT_REFRESH_EXPIRE_HOURS", "jwt_refresh_expire_hours"),
     )
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: str = "RS256"
+    jwt_public_key: str = ""
+
+    @model_validator(mode="after")
+    def derive_jwt_public_key(self) -> "Settings":
+        private_key = load_pem_private_key(self.jwt_private_key.encode(), password=None)
+        public_pem = private_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+        object.__setattr__(self, "jwt_public_key", public_pem)
+        return self
 
     openai_api_key: str = Field(
         default="",
@@ -195,17 +218,6 @@ class Settings(BaseSettings):
             raise ValueError(
                 "COOKIE_SAMESITE=none requires COOKIE_SECURE=true. "
                 "Browsers silently drop cookies with SameSite=None without the Secure flag."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def warn_production_jwt_secret(self):
-        if self.app_env.lower() == "prod" and len(self.jwt_secret) < 64:
-            log.warning(
-                "JWT_SECRET is only %d characters. In production, use a randomly "
-                "generated secret of at least 64 characters "
-                '(e.g. python -c "import secrets; print(secrets.token_hex(32))").',
-                len(self.jwt_secret),
             )
         return self
 

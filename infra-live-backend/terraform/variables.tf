@@ -158,6 +158,12 @@ variable "cors_origins" {
   type        = string
 }
 
+variable "jwt_key_id" {
+  description = "JWT key ID (kid header claim) — must match the key label in the CloudFront Function PUBLIC_KEYS map. Update during key rotation."
+  type        = string
+  default     = "key-v1"
+}
+
 variable "cookie_domain" {
   description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
   type        = string

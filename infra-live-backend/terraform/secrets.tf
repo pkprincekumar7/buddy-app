@@ -14,7 +14,7 @@
 #     --secret-id "<secret_arn output>" \
 #     --region {backend-region} \
 #     --secret-string '{
-#       "JWT_SECRET":         "<64-char hex>",
+#       "JWT_PRIVATE_KEY":    "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
 #       "GOOGLE_CLIENT_ID":   "<oauth-client-id>.apps.googleusercontent.com",
 #       "OPENAI_API_KEY":     "sk-...",
 #       "ANTHROPIC_API_KEY":  "sk-ant-...",
@@ -49,7 +49,7 @@ resource "aws_secretsmanager_secret_version" "app_placeholder" {
   secret_id = aws_secretsmanager_secret.app.id
 
   secret_string = jsonencode({
-    JWT_SECRET        = "REPLACE_ME"
+    JWT_PRIVATE_KEY   = "REPLACE_ME"
     GOOGLE_CLIENT_ID  = "REPLACE_ME"
     OPENAI_API_KEY    = "REPLACE_ME"
     ANTHROPIC_API_KEY = "REPLACE_ME"

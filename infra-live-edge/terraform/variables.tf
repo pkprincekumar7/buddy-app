@@ -64,6 +64,18 @@ variable "assets_bucket_name" {
 }
 
 # -- CloudFront ---------------------------------------------------------------
+# -- JWT ----------------------------------------------------------------------
+variable "jwt_public_keys" {
+  description = "Map of JWT key ID → RSA public key PEM (SubjectPublicKeyInfo / PKCS#8). Normally one entry. During key rotation, include both the outgoing and incoming key so CloudFront accepts tokens signed by either. See docs/jwt-keys.md."
+  type        = map(string)
+}
+
+variable "jwt_key_id" {
+  description = "JWT key ID (kid) that the backend currently uses for signing. Must be present as a key in jwt_public_keys. Update during key rotation after the new key is live."
+  type        = string
+  default     = "key-v1"
+}
+
 variable "cloudfront_price_class" {
   description = "CloudFront price class controlling which edge locations serve traffic. PriceClass_100 = US/EU only; PriceClass_200 = US/EU/Asia/ME/Africa; PriceClass_All = all edge locations."
   type        = string
