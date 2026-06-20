@@ -8,7 +8,7 @@
 
 var PUBLIC_KEYS = {
 %{ for kid, pem in jwt_public_keys ~}
-  "${kid}": "${pem}",
+  "${kid}": "${replace(pem, "\n", "\\n")}",
 %{ endfor ~}
 }
 
