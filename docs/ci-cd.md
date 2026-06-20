@@ -174,7 +174,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers backend ALB) |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN for `us-east-1` (covers CloudFront) |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the CloudFront Function by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
 
 ### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
 

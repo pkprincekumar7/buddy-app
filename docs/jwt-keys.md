@@ -1,6 +1,6 @@
 # JWT Key Management
 
-The backend signs JWTs with a 2048-bit RSA private key (RS256). The corresponding public key is embedded in a CloudFront Function that validates every `/api/*` request at the edge before it reaches the ALB.
+The backend signs JWTs with a 2048-bit RSA private key (RS256). The corresponding public key is embedded in a Lambda@Edge function that validates every `/api/*` request at the edge before it reaches the ALB.
 
 ## GitHub Actions secrets inventory
 
@@ -10,7 +10,7 @@ Three secrets are required per GitHub environment (`dev`, `sbx`, `stg`, `prod`):
 |---|---|---|
 | `JWT_PRIVATE_KEY` | Single-line PEM (`\n` escaped) | Backend workflow → ECS / Secrets Manager |
 | `JWT_KEY_ID` | Plain string, e.g. `key-v1` | Backend workflow → ECS env var |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → single-line public key PEM | Edge workflow → Terraform → CloudFront Function |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → single-line public key PEM | Edge workflow → Terraform → Lambda@Edge |
 
 ---
 
@@ -86,7 +86,9 @@ Update `JWT_PUBLIC_KEYS` to include **both** keys:
 ```
 
 Run the **edge workflow** (`terraform-live-edge.yml`, action: `apply`).
-CloudFront now accepts tokens signed by either key — existing sessions are unaffected.
+Lambda@Edge now accepts tokens signed by either key — existing sessions are unaffected.
+
+> **Note:** Lambda@Edge propagation takes 5–15 minutes (CloudFront distribution update). Wait for the workflow to fully complete before proceeding to Step 3.
 
 ### Step 3 — Switch the backend to the new key
 
@@ -124,5 +126,5 @@ rm jwt_private.pem jwt_public.pem jwt_private_v2.pem jwt_public_v2.pem
 ## How it works
 
 - The backend (`FastAPI` on ECS) **signs** tokens with `JWT_PRIVATE_KEY`. The private key never leaves Secrets Manager.
-- The CloudFront Function **verifies** tokens at the edge using the public keys embedded in `JWT_PUBLIC_KEYS` at Terraform deploy time. Invalid or missing tokens are rejected with `401` before the request reaches the ALB.
+- The Lambda@Edge function **verifies** tokens at the edge using the public keys embedded in `JWT_PUBLIC_KEYS` at Terraform deploy time. Invalid or missing tokens are rejected with `401` before the request reaches the ALB.
 - The `JWT_KEY_ID` / `kid` header ties signing to verification: the function looks up the key by `kid` from the token header, so multiple keys can coexist during the rotation overlap window.

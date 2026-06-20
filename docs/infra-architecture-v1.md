@@ -16,7 +16,7 @@ flowchart TD
     subgraph EDGE["EDGE — managed from us-east-1 · served from all CloudFront edge locations"]
         R53[Route 53\nDNS / A alias]
         CF[CloudFront\nCDN + SPA routing]
-        CFF["CloudFront Function\nJWT validation · RS256\nglobally replicated by CloudFront"]
+        CFF["Lambda@Edge\nJWT validation · RS256\nviewer-request · us-east-1"]
         WAF[WAF WebACL\n4 rules]
         S3FE[S3 SPA Assets\nOAC via CloudFront · us-east-1]
         S3BA[S3 App Assets\nOAC via CloudFront · us-east-1]
@@ -143,8 +143,8 @@ flowchart TD
 |---|---|---|
 | GuardDuty + ECS Runtime Monitoring (ap-south-1 + us-east-1, two detectors) | $55 | $160 |
 | CloudTrail (ap-south-1 + us-east-1, two trails) | $4 | $6 |
-| CloudFront Function — JWT validation ($0.10 per 1M invocations; assumes ~10 API calls/user/day) | $3 | $30 |
-| **Subtotal** | **$62** | **$196** |
+| Lambda@Edge — JWT validation ($0.60 per 1M invocations + ~$0.02/1M duration at 128MB/3ms; assumes ~10 API calls/user/day) | $18 | $180 |
+| **Subtotal** | **$77** | **$346** |
 
 ---
 
@@ -368,10 +368,11 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the CloudFront Function on the `/api/*` cache behavior (viewer request event) — see `aws_cloudfront_function` row below. |
+| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the Lambda@Edge function on the `/api/*` cache behavior (viewer-request event) — see `aws_lambda_function` row below. |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
-| `aws_cloudfront_function` (JWT validator) | exists | Validates RS256 JWT on every `/api/*` viewer request before forwarding to ALB. Rejects invalid or missing tokens at the edge with 401 — request never reaches ALB or ECS. **Key points:** (1) Runtime is `cloudfront-js-2.0` (supports Web Crypto API for RS256 verification). (2) Public keys are injected at Terraform deploy time via `templatefile()` from the `jwt_public_keys` map variable — no code edits needed during key rotation. (3) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (4) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation — add both keys to `JWT_PUBLIC_KEYS` GitHub secret during the rotation overlap window. (5) Public paths (`/api/v1/auth/login`, `/register`, `/google`, `/refresh`, `/logout`, `/api/health`) bypass validation. (6) Returns `{"message": "Unauthorized"}` with `Content-Type: application/json` and status 401 on validation failure. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator.js.tpl`; rendered by `templatefile()` in `cloudfront_function.tf`. Set `publish = true` — CloudFront requires a published version to associate with a distribution. |
+| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge viewer-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/cloudfront_function.tf` (filename retained from the previous CloudFront Function implementation). |
+| `aws_iam_role` (Lambda@Edge execution) | exists | Assumed by both `lambda.amazonaws.com` and `edgelambda.amazonaws.com`; attached `AWSLambdaBasicExecutionRole` |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
 | `aws_wafv2_web_acl_logging_configuration` | **missing** | WAF full logs → Kinesis Firehose → global S3 logging bucket; stream name must start with `aws-waf-logs-` |
 | `aws_kinesis_firehose_delivery_stream` | **missing** | Must be in us-east-1; `name = "aws-waf-logs-${var.app_name}-${var.environment}"` (name must start with `aws-waf-logs-` — AWS enforces this prefix for WAF logging). `s3_configuration`: `bucket_arn = "arn:aws:s3:::${var.global_logging_bucket_name}"`; `prefix = "waf-logs/"`; `error_output_prefix = "waf-logs-errors/"`; `buffering_interval = 300` (5 min); `buffering_size = 5` (MB); `compression_format = "GZIP"`. |
@@ -386,7 +387,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 ---
 
-### CloudFront Function — JWT validation (RS256)
+### Lambda@Edge — JWT validation (RS256)
 
 All `/api/*` requests are validated at the CloudFront edge before reaching the ALB. Invalid or missing tokens are rejected with 401 at the nearest edge location worldwide — the request never consumes ALB or ECS capacity.
 
@@ -394,43 +395,55 @@ All `/api/*` requests are validated at the CloudFront edge before reaching the A
 
 | | HS256 (shared secret) | RS256 (asymmetric) |
 |---|---|---|
-| Embedded in CloudFront Function | The secret — can forge tokens if read | Public key — cannot forge tokens |
+| Embedded in Lambda@Edge | The secret — can forge tokens if read | Public key — cannot forge tokens |
 | Risk if function code is read | Critical | None |
 | Rotation pressure | High | Low — only rotate on compromise or schedule |
 
-The private key (used to sign JWTs in FastAPI) never leaves Secrets Manager. The public key (used to verify at the edge) is embedded in the function code and is safe to expose.
+The private key (used to sign JWTs in FastAPI) never leaves Secrets Manager. The public key (used to verify at the edge) is embedded in the Lambda function and is safe to expose.
 
 #### JWT signing in FastAPI
 
 The backend uses RS256 with an asymmetric key pair:
 
 - The RSA private key PEM is stored in Secrets Manager under `JWT_PRIVATE_KEY` and injected into the ECS task at runtime
-- FastAPI signs tokens with the private key; the CloudFront Function verifies them with the corresponding public key embedded at deploy time
+- FastAPI signs tokens with the private key; the Lambda@Edge function verifies them with the corresponding public key embedded at deploy time
 - See [docs/jwt-keys.md](jwt-keys.md) for key generation and rotation instructions
 
 #### Key rotation (zero-downtime)
 
-Tokens carry a `kid` (key ID) claim in the JWT header. The `JWT_PUBLIC_KEYS` GitHub secret holds a JSON map of all currently valid public keys. During rotation, both the old and new key are present in the map so CloudFront accepts tokens signed by either. See [docs/jwt-keys.md](jwt-keys.md) for the step-by-step procedure.
+Tokens carry a `kid` (key ID) claim in the JWT header. The `JWT_PUBLIC_KEYS` GitHub secret holds a JSON map of all currently valid public keys. During rotation, both the old and new key are present in the map so Lambda@Edge accepts tokens signed by either. See [docs/jwt-keys.md](jwt-keys.md) for the step-by-step procedure.
 
 **Never generate a new private key without updating the corresponding public key in `JWT_PUBLIC_KEYS` — they are a mathematically linked pair.**
 
 #### Template and Terraform resource
 
-The function code lives in `infra-live-edge/functions/jwt-validator.js.tpl`. Terraform renders it at apply time via `templatefile()`, injecting the `jwt_public_keys` map and `jwt_key_id`:
+The function code lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`. Terraform renders it at apply time via `templatefile()` inside an `archive_file` data source, injecting the `jwt_public_keys` map and `jwt_key_id`:
 
 ```hcl
-resource "aws_cloudfront_function" "jwt_validator" {
-  name    = "${var.app_name}-${var.environment}-jwt-validator"
-  runtime = "cloudfront-js-2.0"
-  publish = true
-  code    = templatefile("${path.module}/../functions/jwt-validator.js.tpl", {
-    jwt_public_keys = var.jwt_public_keys
-    jwt_key_id      = var.jwt_key_id
-  })
+data "archive_file" "jwt_validator_lambda" {
+  type        = "zip"
+  output_path = "${path.module}/jwt-validator-lambda.zip"
+  source {
+    content  = templatefile("${path.module}/../functions/jwt-validator-lambda.js.tpl", {
+      jwt_public_keys = var.jwt_public_keys
+      jwt_key_id      = var.jwt_key_id
+    })
+    filename = "index.js"
+  }
+}
+
+resource "aws_lambda_function" "jwt_validator" {
+  filename         = data.archive_file.jwt_validator_lambda.output_path
+  function_name    = "${var.app_name}-${var.environment}-jwt-validator"
+  role             = aws_iam_role.jwt_validator_lambda.arn
+  handler          = "index.handler"
+  runtime          = "nodejs20.x"
+  publish          = true
+  source_code_hash = data.archive_file.jwt_validator_lambda.output_base64sha256
 }
 ```
 
-Associated on the `/api/*` cache behavior as a `viewer-request` function.
+Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function_association` using `qualified_arn`.
 
 #### GitHub secrets additions
 
@@ -438,7 +451,7 @@ Associated on the `/api/*` cache behavior as a `viewer-request` function.
 |---|---|---|
 | `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) | terraform-live-backend (seeds Secrets Manager → ECS) |
 | `JWT_KEY_ID` | Key ID label, e.g. `key-v1` | terraform-live-backend (ECS env var) |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → public key PEM | terraform-live-edge (embedded in CloudFront Function) |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → public key PEM | terraform-live-edge (embedded in Lambda@Edge function) |
 
 ---
 

@@ -112,9 +112,10 @@ resource "aws_cloudfront_distribution" "frontend" {
     # and they pass through unchanged, so no duplication occurs.
     response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
 
-    function_association {
+    lambda_function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.jwt_validator.arn
+      lambda_arn   = aws_lambda_function.jwt_validator.qualified_arn
+      include_body = false
     }
   }
 
