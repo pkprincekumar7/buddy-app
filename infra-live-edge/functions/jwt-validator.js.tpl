@@ -3,8 +3,8 @@
 // Invalid or missing tokens are rejected with 401 at the edge.
 //
 // Template variables (injected by Terraform templatefile()):
-//   ${jwt_public_key_pem} — RSA public key in PEM format (TF_VAR_jwt_public_key_pem)
-//   ${jwt_key_id}         — key ID label matching the JWT kid header claim
+//   jwt_public_keys — map of kid => RSA public key PEM
+//   jwt_key_id      — key ID label matching the JWT kid header claim
 
 var PUBLIC_KEYS = {
 %{ for kid, pem in jwt_public_keys ~}
