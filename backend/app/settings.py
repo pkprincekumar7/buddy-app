@@ -89,7 +89,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def derive_jwt_public_key(self) -> "Settings":
         private_key = load_pem_private_key(self.jwt_private_key.encode(), password=None)
-        public_pem = private_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+        public_pem = (
+            private_key.public_key()
+            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+            .decode()
+        )
         object.__setattr__(self, "jwt_public_key", public_pem)
         return self
 
