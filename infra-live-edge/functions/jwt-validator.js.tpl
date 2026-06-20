@@ -80,7 +80,7 @@ async function handler(event) {
   // React Native clients send it as Authorization: Bearer (no cookie jar in RN fetch).
   var token = (request.cookies[COOKIE_NAME] || {}).value
   if (!token) {
-    var authHeader = ((request.headers["authorization"] || [])[0] || {}).value || ""
+    var authHeader = (request.headers["authorization"] || { value: "" }).value || ""
     if (authHeader.startsWith("Bearer ")) {
       token = authHeader.slice(7)
     }
@@ -89,8 +89,8 @@ async function handler(event) {
   if (!token) {
     return {
       statusCode: 401,
-      headers: { "content-type": [{ value: "application/json" }] },
-      body: JSON.stringify({ message: "Unauthorized" })
+      headers: { "content-type": { value: "application/json" } },
+      body: { encoding: "text", data: JSON.stringify({ message: "Unauthorized" }) }
     }
   }
 
@@ -100,8 +100,8 @@ async function handler(event) {
   } catch (e) {
     return {
       statusCode: 401,
-      headers: { "content-type": [{ value: "application/json" }] },
-      body: JSON.stringify({ message: "Unauthorized" })
+      headers: { "content-type": { value: "application/json" } },
+      body: { encoding: "text", data: JSON.stringify({ message: "Unauthorized" }) }
     }
   }
 }
