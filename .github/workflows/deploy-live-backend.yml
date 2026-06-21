@@ -131,12 +131,12 @@ jobs:
           echo "branch=$(git rev-parse --abbrev-ref HEAD)"                           >> "$GITHUB_OUTPUT"
           echo "committed_at=$(git log -1 --format=%cI)"                             >> "$GITHUB_OUTPUT"
           echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"         >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         id: build
-        env:
-          IMAGE_SHA: ${{ steps.tf_outputs.outputs.ecr_url }}:${{ github.sha }}
         run: |
+          IMAGE_SHA="${{ steps.tf_outputs.outputs.ecr_url }}:${{ steps.git_meta.outputs.image_tag }}"
           docker build \
             --platform linux/amd64 \
             --build-arg GIT_SHA="${{ steps.git_meta.outputs.sha }}" \
@@ -151,7 +151,7 @@ jobs:
           # (e.g., re-running a failed workflow) would error. If the tag already
           # exists the image is identical, so skip the push and proceed.
           REPO="${{ steps.tf_outputs.outputs.ecr_url }}"
-          TAG="${{ github.sha }}"
+          TAG="${{ steps.git_meta.outputs.image_tag }}"
           REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
           if aws ecr describe-images \
                --repository-name "$REPO_NAME" \
