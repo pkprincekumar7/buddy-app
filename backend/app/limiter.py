@@ -37,7 +37,7 @@ def _get_user_id(request: Request) -> str:
         try:
             payload = jwt.decode(
                 token,
-                settings.jwt_secret,
+                settings.jwt_public_key,
                 algorithms=[settings.jwt_algorithm],
                 options={"verify_exp": False},
             )

@@ -104,7 +104,7 @@ jobs:
           DOMAIN_NAME:                    ${{ secrets.DOMAIN_NAME }}
           HOSTED_ZONE_ID:                 ${{ secrets.HOSTED_ZONE_ID }}
           ASSETS_BUCKET_NAME:            ${{ secrets.ASSETS_BUCKET_NAME }}
-          JWT_SECRET:                     ${{ secrets.JWT_SECRET }}
+          JWT_PRIVATE_KEY:                ${{ secrets.JWT_PRIVATE_KEY }}
           GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
           MONGODB_URI:                    ${{ secrets.MONGODB_URI }}
           OPENAI_API_KEY:                 ${{ secrets.OPENAI_API_KEY }}
@@ -121,7 +121,7 @@ jobs:
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
           [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
-          [[ -z "$JWT_SECRET"                     ]] && missing+=("JWT_SECRET")
+          [[ -z "$JWT_PRIVATE_KEY"                ]] && missing+=("JWT_PRIVATE_KEY")
           [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
           [[ -z "$OPENAI_API_KEY"                 ]] && missing+=("OPENAI_API_KEY")
@@ -253,7 +253,7 @@ jobs:
       - name: Initialise app secrets (first apply only)
         if: inputs.action == 'apply'
         env:
-          JWT_SECRET:        ${{ secrets.JWT_SECRET }}
+          JWT_PRIVATE_KEY:   ${{ secrets.JWT_PRIVATE_KEY }}
           GOOGLE_CLIENT_ID:  ${{ secrets.GOOGLE_CLIENT_ID }}
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -266,10 +266,10 @@ jobs:
           CURRENT=$(aws secretsmanager get-secret-value \
             --secret-id "$SECRET_ARN" \
             --query SecretString \
-            --output text 2>/dev/null || echo '{"JWT_SECRET":"REPLACE_ME"}')
+            --output text 2>/dev/null || echo '{"JWT_PRIVATE_KEY":"REPLACE_ME"}')
 
           NEEDS_INIT=$(echo "$CURRENT" | jq -r '
-            if (.JWT_SECRET == "REPLACE_ME") or
+            if (.JWT_PRIVATE_KEY == "REPLACE_ME") or
                (.GOOGLE_CLIENT_ID == "REPLACE_ME") or
                (.OPENAI_API_KEY == "REPLACE_ME") or
                (.MONGODB_URI == "REPLACE_ME")
@@ -281,13 +281,13 @@ jobs:
             aws secretsmanager put-secret-value \
               --secret-id "$SECRET_ARN" \
               --secret-string "$(jq -n \
-                --arg jwt    "$JWT_SECRET" \
+                --arg jwt    "$JWT_PRIVATE_KEY" \
                 --arg gid    "$GOOGLE_CLIENT_ID" \
                 --arg openai "$OPENAI_API_KEY" \
                 --arg anthro "${ANTHROPIC_API_KEY:-REPLACE_ME}" \
                 --arg gemini "${GEMINI_API_KEY:-REPLACE_ME}" \
                 --arg mongo  "$MONGODB_URI" \
-                '{JWT_SECRET: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo}')"
+                '{JWT_PRIVATE_KEY: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo}')"
             echo "App secrets initialised in Secrets Manager."
           else
             echo "Secrets Manager already contains real values — skipping automatic update. Rotate manually if needed."

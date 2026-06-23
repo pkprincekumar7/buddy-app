@@ -12,7 +12,7 @@ Run the suite:
 
 ```bash
 cd backend && . .venv/bin/activate && \
-  MONGODB_URI=mongodb://localhost:27017 JWT_SECRET=<secret> REDIS_URL=redis://localhost:6379 APP_ENV=dev \
+  MONGODB_URI=mongodb://localhost:27017 JWT_PRIVATE_KEY=<RSA private key PEM> REDIS_URL=redis://localhost:6379 APP_ENV=dev \
   pytest --cov=app --cov-report=term-missing --cov-fail-under=0 -q
 ```
 

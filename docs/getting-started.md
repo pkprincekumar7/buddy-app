@@ -4,7 +4,7 @@
 
 ```bash
 cp .env.example .env
-# Edit `.env`: set JWT_SECRET, at least one LLM key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY),
+# Edit `.env`: set JWT_PRIVATE_KEY (see docs/jwt-keys.md), at least one LLM key (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY),
 # and Google IDs if you use Sign in with Google.
 
 docker compose up --build
@@ -32,7 +32,7 @@ Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images)
   cd backend
   python -m venv .venv && source .venv/bin/activate
   pip install -r requirements.txt
-  cp .env.example .env   # fill in MONGODB_URI and JWT_SECRET
+  cp .env.example .env   # fill in MONGODB_URI and JWT_PRIVATE_KEY (see docs/jwt-keys.md)
   uvicorn app.main:app --reload
   ```
 - Frontend:

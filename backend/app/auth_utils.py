@@ -30,7 +30,12 @@ async def async_verify_password(plain: str, hashed: str) -> bool:
 
 
 def _encode(payload: dict[str, Any]) -> str:
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload,
+        settings.jwt_private_key,
+        algorithm=settings.jwt_algorithm,
+        headers={"kid": settings.jwt_key_id},
+    )
 
 
 def create_access_token(
@@ -67,7 +72,7 @@ def create_refresh_token(sub: str, location: str = settings.default_location) ->
 
 def decode_token(token: str) -> dict[str, Any] | None:
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        return jwt.decode(token, settings.jwt_public_key, algorithms=[settings.jwt_algorithm])
     except PyJWTError:
         return None
 
@@ -85,7 +90,7 @@ def decode_access_token_ignore_exp(token: str) -> dict[str, Any] | None:
     try:
         payload = jwt.decode(
             token,
-            settings.jwt_secret,
+            settings.jwt_public_key,
             algorithms=[settings.jwt_algorithm],
             options={"verify_exp": False},
         )

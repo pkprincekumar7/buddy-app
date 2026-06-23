@@ -3,6 +3,7 @@ uvicorn[standard]==0.34.0
 motor==3.7.0
 pymongo==4.10.1
 PyJWT==2.13.0
+cryptography==48.0.1
 bcrypt==4.2.1
 python-multipart==0.0.31
 openai==1.68.2
@@ -38,6 +39,6 @@ python-dotenv>=1.2.2
 # ---- disputed / no-fix CVE suppressions --------------------------------------
 # PyJWT PYSEC-2025-183: "weak encryption" advisory — DISPUTED by PyJWT maintainers.
 # The finding is that callers may supply short HMAC keys; the library does not enforce
-# a minimum key length.  Not applicable here: Settings.validate_jwt_secret enforces
-# ≥32 chars (dev) and ≥64 chars (prod) at startup, raising ValueError on violation.
+# a minimum key length.  Not applicable here: the backend uses RS256 with a 2048-bit
+# RSA key pair, so short HMAC key length is irrelevant.
 # No fixed version exists; the advisory is suppressed via --ignore-vuln in pip-audit.

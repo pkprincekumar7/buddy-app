@@ -29,8 +29,8 @@ resource "aws_ecr_repository" "backend" {
   }
 }
 
-# Lifecycle policy — keep the last 10 tagged images; remove untagged images
-# older than 1 day to prevent unbounded storage growth.
+# Lifecycle policy — keep the last 30 tagged images; remove untagged images
+# older than 7 days to prevent unbounded storage growth.
 resource "aws_ecr_lifecycle_policy" "backend" {
   repository = aws_ecr_repository.backend.name
 
@@ -38,23 +38,23 @@ resource "aws_ecr_lifecycle_policy" "backend" {
     rules = [
       {
         rulePriority = 1
-        description  = "Remove untagged images after 1 day"
+        description  = "Remove untagged images after 7 days"
         selection = {
           tagStatus   = "untagged"
           countType   = "sinceImagePushed"
           countUnit   = "days"
-          countNumber = 1
+          countNumber = 7
         }
         action = { type = "expire" }
       },
       {
         rulePriority = 2
-        description  = "Keep only the last 10 tagged images"
+        description  = "Keep only the last 30 tagged images"
         selection = {
           tagStatus      = "tagged"
           tagPatternList = ["*"]
           countType      = "imageCountMoreThan"
-          countNumber    = 10
+          countNumber    = 30
         }
         action = { type = "expire" }
       }

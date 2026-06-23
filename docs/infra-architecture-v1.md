@@ -16,7 +16,7 @@ flowchart TD
     subgraph EDGE["EDGE — managed from us-east-1 · served from all CloudFront edge locations"]
         R53[Route 53\nDNS / A alias]
         CF[CloudFront\nCDN + SPA routing]
-        CFF["CloudFront Function\nJWT validation · RS256\nglobally replicated by CloudFront"]
+        CFF["Lambda@Edge\nJWT validation · RS256\nviewer-request · us-east-1"]
         WAF[WAF WebACL\n4 rules]
         S3FE[S3 SPA Assets\nOAC via CloudFront · us-east-1]
         S3BA[S3 App Assets\nOAC via CloudFront · us-east-1]
@@ -143,8 +143,8 @@ flowchart TD
 |---|---|---|
 | GuardDuty + ECS Runtime Monitoring (ap-south-1 + us-east-1, two detectors) | $55 | $160 |
 | CloudTrail (ap-south-1 + us-east-1, two trails) | $4 | $6 |
-| CloudFront Function — JWT validation ($0.10 per 1M invocations; assumes ~10 API calls/user/day) | $3 | $30 |
-| **Subtotal** | **$62** | **$196** |
+| Lambda@Edge — JWT validation ($0.60 per 1M invocations + ~$0.02/1M duration at 128MB/3ms; assumes ~10 API calls/user/day) | $18 | $180 |
+| **Subtotal** | **$77** | **$346** |
 
 ---
 
@@ -368,10 +368,11 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the CloudFront Function on the `/api/*` cache behavior (viewer request event) — see `aws_cloudfront_function` row below. |
+| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the Lambda@Edge function on the `/api/*` cache behavior (viewer-request event) — see `aws_lambda_function` row below. |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
-| `aws_cloudfront_function` (JWT validator) | **missing** | Validates RS256 JWT on every `/api/*` viewer request before forwarding to ALB. Rejects invalid or missing tokens at the edge with 401 — request never reaches ALB or ECS. **Key points:** (1) Runtime is `cloudfront-js-2.0` (supports Web Crypto API for RS256 verification). (2) The RS256 public key is embedded directly in the function code — the public key is not sensitive and cannot be used to forge tokens. (3) Token is read from the `access_token` HttpOnly cookie. (4) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation — embed all currently valid public keys in a `PUBLIC_KEYS` map keyed by `kid`. (5) Returns `{"message": "Unauthorized"}` with status 401 on validation failure. (6) Does not run on S3 origins (SPA/app assets) — only on the ALB origin behavior. **Deployment:** function code lives in `infra-live-edge/functions/jwt-validator.js`; Terraform reads it with `file()`. Set `publish = true` — CloudFront requires a published version to associate with a distribution. |
+| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge viewer-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
+| `aws_iam_role` (Lambda@Edge execution) | exists | Assumed by both `lambda.amazonaws.com` and `edgelambda.amazonaws.com`; attached `AWSLambdaBasicExecutionRole` |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
 | `aws_wafv2_web_acl_logging_configuration` | **missing** | WAF full logs → Kinesis Firehose → global S3 logging bucket; stream name must start with `aws-waf-logs-` |
 | `aws_kinesis_firehose_delivery_stream` | **missing** | Must be in us-east-1; `name = "aws-waf-logs-${var.app_name}-${var.environment}"` (name must start with `aws-waf-logs-` — AWS enforces this prefix for WAF logging). `s3_configuration`: `bucket_arn = "arn:aws:s3:::${var.global_logging_bucket_name}"`; `prefix = "waf-logs/"`; `error_output_prefix = "waf-logs-errors/"`; `buffering_interval = 300` (5 min); `buffering_size = 5` (MB); `compression_format = "GZIP"`. |
@@ -386,7 +387,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 ---
 
-### CloudFront Function — JWT validation (RS256)
+### Lambda@Edge — JWT validation (RS256)
 
 All `/api/*` requests are validated at the CloudFront edge before reaching the ALB. Invalid or missing tokens are rejected with 401 at the nearest edge location worldwide — the request never consumes ALB or ECS capacity.
 
@@ -394,161 +395,63 @@ All `/api/*` requests are validated at the CloudFront edge before reaching the A
 
 | | HS256 (shared secret) | RS256 (asymmetric) |
 |---|---|---|
-| Embedded in CloudFront Function | The secret — can forge tokens if read | Public key — cannot forge tokens |
+| Embedded in Lambda@Edge | The secret — can forge tokens if read | Public key — cannot forge tokens |
 | Risk if function code is read | Critical | None |
 | Rotation pressure | High | Low — only rotate on compromise or schedule |
 
-The private key (used to sign JWTs in FastAPI) never leaves Secrets Manager. The public key (used to verify at the edge) is embedded in the function code and is safe to expose.
+The private key (used to sign JWTs in FastAPI) never leaves Secrets Manager. The public key (used to verify at the edge) is embedded in the Lambda function and is safe to expose.
 
-#### JWT signing change required in FastAPI
+#### JWT signing in FastAPI
 
-Switch from HS256 + `JWT_SECRET` to RS256 + asymmetric key pair:
+The backend uses RS256 with an asymmetric key pair:
 
-- Generate a 2048-bit RSA key pair (or EC P-256 for smaller tokens)
-- Store the private key PEM in Secrets Manager under a new key `JWT_PRIVATE_KEY`
-- The existing `JWT_SECRET` can be retired once all sessions using HS256 tokens have expired
-- FastAPI signs tokens with the private key; CloudFront Function verifies with the embedded public key
+- The RSA private key PEM is stored in Secrets Manager under `JWT_PRIVATE_KEY` and injected into the ECS task at runtime
+- FastAPI signs tokens with the private key; the Lambda@Edge function verifies them with the corresponding public key embedded at deploy time
+- See [docs/jwt-keys.md](jwt-keys.md) for key generation and rotation instructions
 
 #### Key rotation (zero-downtime)
 
-Tokens carry a `kid` (key ID) claim in the JWT header. The function embeds all currently valid public keys:
+Tokens carry a `kid` (key ID) claim in the JWT header. The `JWT_PUBLIC_KEYS` GitHub secret holds a JSON map of all currently valid public keys. During rotation, both the old and new key are present in the map so Lambda@Edge accepts tokens signed by either. See [docs/jwt-keys.md](jwt-keys.md) for the step-by-step procedure.
 
-```javascript
-const PUBLIC_KEYS = {
-  "key-v1": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
-  "key-v2": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
-}
-```
+**Never generate a new private key without updating the corresponding public key in `JWT_PUBLIC_KEYS` — they are a mathematically linked pair.**
 
-Rotation process:
-1. Generate new RSA key pair
-2. Add new public key to `PUBLIC_KEYS` in the function → deploy (both keys now active)
-3. Update FastAPI to sign new tokens with new private key + new `kid`
-4. Wait for old tokens to expire (access token TTL)
-5. Remove old public key from `PUBLIC_KEYS` → deploy
+#### Template and Terraform resource
 
-**Never generate a new private key without updating the corresponding public key in the function — they are a mathematically linked pair.**
-
-#### `infra-live-edge/functions/jwt-validator.js`
-
-```javascript
-var PUBLIC_KEYS = {
-  "key-v1": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkq...\n-----END PUBLIC KEY-----"
-}
-
-var COOKIE_NAME = "access_token"
-
-function parseCookies(cookieHeader) {
-  var cookies = {}
-  if (!cookieHeader) return cookies
-  cookieHeader.split(";").forEach(function(c) {
-    var parts = c.trim().split("=")
-    cookies[parts[0].trim()] = parts.slice(1).join("=").trim()
-  })
-  return cookies
-}
-
-function base64urlDecode(str) {
-  str = str.replace(/-/g, "+").replace(/_/g, "/")
-  while (str.length % 4) str += "="
-  return str
-}
-
-async function verifyJwt(token) {
-  var parts = token.split(".")
-  if (parts.length !== 3) throw new Error("malformed")
-
-  var header = JSON.parse(atob(base64urlDecode(parts[0])))
-  var kid = header.kid || "key-v1"
-
-  var publicKeyPem = PUBLIC_KEYS[kid]
-  if (!publicKeyPem) throw new Error("unknown kid: " + kid)
-
-  var pemBody = publicKeyPem
-    .replace("-----BEGIN PUBLIC KEY-----", "")
-    .replace("-----END PUBLIC KEY-----", "")
-    .replace(/\n/g, "")
-
-  var keyData = Uint8Array.from(atob(pemBody), function(c) { return c.charCodeAt(0) })
-
-  var cryptoKey = await crypto.subtle.importKey(
-    "spki",
-    keyData.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["verify"]
-  )
-
-  var signingInput = parts[0] + "." + parts[1]
-  var signature = Uint8Array.from(atob(base64urlDecode(parts[2])), function(c) { return c.charCodeAt(0) })
-  var data = new TextEncoder().encode(signingInput)
-
-  var valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", cryptoKey, signature.buffer, data)
-  if (!valid) throw new Error("invalid signature")
-
-  var payload = JSON.parse(atob(base64urlDecode(parts[1])))
-  if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) throw new Error("expired")
-
-  return payload
-}
-
-async function handler(event) {
-  var request = event.request
-  var cookies = parseCookies((request.cookies[COOKIE_NAME] || {}).value || "")
-  var token = (request.cookies[COOKIE_NAME] || {}).value
-
-  if (!token) {
-    return {
-      statusCode: 401,
-      body: JSON.stringify({ message: "Unauthorized" })
-    }
-  }
-
-  try {
-    await verifyJwt(token)
-    return request
-  } catch (e) {
-    return {
-      statusCode: 401,
-      body: JSON.stringify({ message: "Unauthorized" })
-    }
-  }
-}
-```
-
-#### Terraform resource
+The function code lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`. Terraform renders it at apply time via `templatefile()` inside an `archive_file` data source, injecting the `jwt_public_keys` map and `jwt_key_id`:
 
 ```hcl
-resource "aws_cloudfront_function" "jwt_validator" {
-  name    = "${var.app_name}-${var.environment}-jwt-validator"
-  runtime = "cloudfront-js-2.0"
-  publish = true  # must be true to associate with a distribution
-  code    = file("${path.module}/functions/jwt-validator.js")
-}
-```
-
-Associate on the `/api/*` cache behavior in `aws_cloudfront_distribution`:
-
-```hcl
-ordered_cache_behavior {
-  path_pattern = "/api/*"
-  ...
-  function_association {
-    event_type   = "viewer-request"
-    function_arn = aws_cloudfront_function.jwt_validator.arn
+data "archive_file" "jwt_validator_lambda" {
+  type        = "zip"
+  output_path = "${path.module}/jwt-validator-lambda.zip"
+  source {
+    content  = templatefile("${path.module}/../functions/jwt-validator-lambda.js.tpl", {
+      jwt_public_keys = var.jwt_public_keys
+      jwt_key_id      = var.jwt_key_id
+    })
+    filename = "index.js"
   }
 }
+
+resource "aws_lambda_function" "jwt_validator" {
+  filename         = data.archive_file.jwt_validator_lambda.output_path
+  function_name    = "${var.app_name}-${var.environment}-jwt-validator"
+  role             = aws_iam_role.jwt_validator_lambda.arn
+  handler          = "index.handler"
+  runtime          = "nodejs20.x"
+  publish          = true
+  source_code_hash = data.archive_file.jwt_validator_lambda.output_base64sha256
+}
 ```
+
+Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function_association` using `qualified_arn`.
 
 #### GitHub secrets additions
 
 | Secret | Value | Used by |
 |---|---|---|
-| `JWT_PRIVATE_KEY` | RSA private key PEM (replaces `JWT_SECRET` for RS256 signing) | terraform-live-backend (seeds Secrets Manager) |
-
-#### `variables.tf` addition in `infra-live-edge`
-
-No new variable needed — the public key is embedded directly in `jwt-validator.js`. When rotating keys, update the JS file and re-run `terraform-live-edge apply`.
+| `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) | terraform-live-backend (seeds Secrets Manager → ECS) |
+| `JWT_KEY_ID` | Key ID label, e.g. `key-v1` | terraform-live-backend (ECS env var) |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → public key PEM | terraform-live-edge (embedded in Lambda@Edge function) |
 
 ---
 
@@ -930,7 +833,9 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 | `SPA_BUCKET_NAME` | SPA assets S3 bucket name (from step 0.4) | terraform-live-edge, terraform-live-frontend |
 | `ASSETS_BUCKET_NAME` | App assets S3 bucket name (from step 0.5) | terraform-live-backend, terraform-live-edge |
 | `MONGODB_URI` | Atlas public SRV connection string. Used to seed Secrets Manager on the **first apply only** — `terraform-live-backend` checks whether `MONGODB_URI` already exists in Secrets Manager before writing; if the key is already present it is left untouched. After Phase 5, `terraform-atlas` updates the Secrets Manager value to the private endpoint URI directly. This GitHub secret is never changed after initial setup. | terraform-live-backend |
-| `JWT_SECRET` | JWT signing secret | terraform-live-backend |
+| `JWT_PRIVATE_KEY` | RSA private key PEM — see [docs/jwt-keys.md](jwt-keys.md) | terraform-live-backend |
+| `JWT_KEY_ID` | Key ID label, e.g. `key-v1` | terraform-live-backend |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → public key PEM | terraform-live-edge |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | terraform-live-backend |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID for frontend build | deploy-live-frontend |
 | `OPENAI_API_KEY` | OpenAI API key | terraform-live-backend |
