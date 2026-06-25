@@ -88,9 +88,9 @@ flowchart TD
 
 | Scenario | Monthly | Annual |
 |---|---|---|
-| 1 million users (baseline, 5 API + 2 worker tasks) | ~$1,827 | ~$21,924 |
-| 1 million users (peak burst, 20 API + 10 worker tasks sustained all month) | ~$3,176 | — |
-| 10 million users (baseline, 20 API + 10 worker tasks avg) | ~$4,065 | ~$48,780 |
+| 1 million users (baseline, 5 API + 2 worker tasks) | ~$1,845 | ~$22,140 |
+| 1 million users (peak burst, 20 API + 10 worker tasks sustained all month) | ~$3,194 | — |
+| 10 million users (baseline, 20 API + 10 worker tasks avg) | ~$4,245 | ~$50,940 |
 
 ---
 
@@ -181,39 +181,126 @@ flowchart TD
 | Database (Atlas) | $749 | $749 |
 | Cache (Redis) | $245 | $726 |
 | Networking | $279 | $417 |
-| Security | $62 | $196 |
+| Security | $77 | $346 |
 | Observability | $47 | $147 |
 | Storage | $22 | $85 |
-| **Total** | **~$1,830** | **~$4,095** |
+| **Total** | **~$1,845** | **~$4,245** |
 
 ---
 
 ## Environment cost estimates
 
-Cost per environment at steady-state baseline (minimum task counts, no burst). All figures USD/month.
+Cost per environment at steady-state baseline (minimum task counts, no burst). All figures USD/month. **sbx** is sized identically to **dev** — a separate isolated sandbox for pre-production testing.
 
-| Category | dev | stg | prod (1M users) |
-|---|---|---|---|
-| Compute (ECS API + worker) | $18 | $90 | $426 |
-| Database (Atlas) | $66 | $153 | $749 |
-| Cache (Redis) | $12 | $98 | $245 |
-| Networking | $56 | $182 | $279 |
-| Security | $0 | $22 | $59 |
-| Observability | $8 | $14 | $47 |
-| Storage | $5 | $8 | $22 |
-| **Total** | **~$165** | **~$567** | **~$1,827** |
+| Category | dev | sbx | stg | prod (1M users) | prod (10M users) |
+|---|---|---|---|---|---|
+| Compute (ECS API + worker) | $18 | $18 | $89 | $426 | $1,775 |
+| Database (Atlas) | $65 | $65 | $151 | $749 | $749 |
+| Cache (Redis) | $12 | $12 | $98 | $245 | $726 |
+| Networking | $45 | $45 | $178 | $279 | $417 |
+| Security | $0 | $0 | $23 | $77 | $346 |
+| Observability | $4 | $4 | $14 | $47 | $147 |
+| Storage | $3 | $3 | $9 | $22 | $85 |
+| **Total** | **~$147** | **~$147** | **~$562** | **~$1,845** | **~$4,245** |
+
+---
+
+## Per-service cost breakdown — all environments
+
+Hourly figures are the steady-state running cost for that environment's configuration. Monthly = hourly × 720. `—` = service not provisioned in that environment. Usage-based services (CloudFront, Lambda@Edge, S3, GuardDuty, CloudTrail, CloudWatch, X-Ray, SNS, Kinesis Firehose) carry no fixed hourly rate — monthly estimates assume the request and data volumes implied by each environment's user scale.
+
+### Configuration per environment
+
+| Resource | dev | sbx | stg | prod (1M users) | prod (10M users) |
+|---|---|---|---|---|---|
+| ECS API tasks | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5 × 2 vCPU / 4 GB | 20 × 2 vCPU / 4 GB (avg) |
+| ECS Worker tasks | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2 × 1 vCPU / 2 GB | 10 × 1 vCPU / 2 GB |
+| MongoDB Atlas tier | M10 | M10 | M20 | M50 | M50 |
+| Redis node type × count | t4g.micro × 1 | t4g.micro × 1 | t4g.medium × 2 | m7g.large × 2 | m7g.large × 6 |
+| NAT Gateways | 1 | 1 | 2 | 3 | 3 |
+| VPC Interface Endpoints | ✗ | ✗ | 5 svc × 2 AZ | 5 svc × 3 AZ | 5 svc × 3 AZ |
+| Atlas PrivateLink endpoint | ✗ | ✗ | 2 AZ | 3 AZ | 3 AZ |
+| WAF | ✗ | ✗ | ✓ | ✓ | ✓ |
+| GuardDuty | ✗ | ✗ | both regions | both regions | both regions |
+| CloudTrail | ✗ | ✗ | both regions | both regions | both regions |
+| WAF logging (Kinesis Firehose) | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Global logging S3 bucket | ✗ | ✗ | ✗ | ✓ | ✓ |
+
+### Hourly running cost by service
+
+Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly figure shown is total across all units for that environment (e.g. 3 NAT GWs = 3 × $0.045 = $0.135/hr).
+
+| Category | Service | AWS unit rate | dev | sbx | stg | prod (1M) | prod (10M) |
+|---|---|---|---|---|---|---|---|
+| **Compute** | ECS API service | $0.04048/vCPU·hr + $0.004445/GB·hr | $0.012 | $0.012 | $0.099 | $0.494 | $1.975 |
+| | ECS Worker service | same Fargate rates | $0.012 | $0.012 | $0.025 | $0.099 | $0.494 |
+| **Database** | MongoDB Atlas | M10 $0.09 / M20 $0.21 / M50 $1.04 per hr | $0.090 | $0.090 | $0.210 | $1.040 | $1.040 |
+| **Cache** | ElastiCache Redis | t4g.micro $0.017 / t4g.med $0.068 / m7g.lg $0.168 per node/hr | $0.017 | $0.017 | $0.136 | $0.336 | $1.008 |
+| **Networking** | ALB | ~$0.008/hr base + LCU charges | $0.010 | $0.010 | $0.017 | $0.025 | $0.049 |
+| | NAT Gateway | $0.045/GW/hr | $0.045 | $0.045 | $0.090 | $0.135 | $0.135 |
+| | VPC Interface Endpoints | $0.01/endpoint/AZ/hr | — | — | $0.100 | $0.150 | $0.150 |
+| | Atlas PrivateLink endpoint | $0.01/AZ/hr | — | — | $0.020 | $0.030 | $0.030 |
+| | CloudFront + WAF | usage-based (requests + data transfer) | ~$0.007 | ~$0.007 | ~$0.021 | ~$0.042 | ~$0.167 |
+| **Security** | GuardDuty (2 regions) | usage-based (ECS task-hours + events) | — | — | ~$0.028 | ~$0.076 | ~$0.222 |
+| | CloudTrail (2 regions) | $0.10/100K management events | — | — | ~$0.003 | ~$0.006 | ~$0.008 |
+| | Lambda@Edge JWT validator | $0.60/1M req + $0.00001/128MB·s | ~$0 | ~$0 | ~$0.001 | ~$0.025 | ~$0.250 |
+| **Observability** | CloudWatch (logs + alarms + dashboards) | usage-based (ingestion + storage + API calls) | ~$0.003 | ~$0.003 | ~$0.014 | ~$0.042 | ~$0.125 |
+| | X-Ray + ADOT sidecar | $0.05/1M traces recorded | ~$0.001 | ~$0.001 | ~$0.004 | ~$0.014 | ~$0.056 |
+| | SNS (alerts topic) | $0.50/1M publishes | ~$0.001 | ~$0.001 | ~$0.001 | ~$0.003 | ~$0.003 |
+| | Kinesis Firehose (WAF logs) | $0.029/GB ingested | — | — | — | ~$0.007 | ~$0.021 |
+| **Storage** | S3 SPA assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.001 | ~$0.003 | ~$0.004 | ~$0.007 |
+| | S3 App assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.001 | ~$0.003 | ~$0.003 | ~$0.007 |
+| | S3 User uploads (ap-south-1) | $0.025/GB/mo + $0.005/1K PUT | ~$0.001 | ~$0.001 | ~$0.004 | ~$0.010 | ~$0.063 |
+| | S3 Regional logging (ap-south-1) | $0.025/GB/mo | — | — | ~$0.003 | ~$0.007 | ~$0.021 |
+| | S3 Global logging (us-east-1) | $0.023/GB/mo | — | — | — | ~$0.007 | ~$0.021 |
+
+### Monthly cost by service
+
+| Category | Service | dev | sbx | stg | prod (1M) | prod (10M) |
+|---|---|---|---|---|---|---|
+| **Compute** | ECS API service | $9 | $9 | $71 | $355 | $1,420 |
+| | ECS Worker service | $9 | $9 | $18 | $71 | $355 |
+| | **Subtotal** | **$18** | **$18** | **$89** | **$426** | **$1,775** |
+| **Database** | MongoDB Atlas | $65 | $65 | $151 | $749 | $749 |
+| | **Subtotal** | **$65** | **$65** | **$151** | **$749** | **$749** |
+| **Cache** | ElastiCache Redis | $12 | $12 | $98 | $245 | $726 |
+| | **Subtotal** | **$12** | **$12** | **$98** | **$245** | **$726** |
+| **Networking** | ALB | $7 | $7 | $12 | $18 | $35 |
+| | NAT Gateway | $33 | $33 | $65 | $99 | $130 |
+| | VPC Interface Endpoints | — | — | $72 | $110 | $110 |
+| | Atlas PrivateLink endpoint | — | — | $14 | $22 | $22 |
+| | CloudFront + WAF | $5 | $5 | $15 | $30 | $120 |
+| | **Subtotal** | **$45** | **$45** | **$178** | **$279** | **$417** |
+| **Security** | GuardDuty (2 regions) | — | — | $20 | $55 | $160 |
+| | CloudTrail (2 regions) | — | — | $2 | $4 | $6 |
+| | Lambda@Edge JWT validator | ~$0 | ~$0 | $1 | $18 | $180 |
+| | **Subtotal** | **$0** | **$0** | **$23** | **$77** | **$346** |
+| **Observability** | CloudWatch | $2 | $2 | $10 | $30 | $90 |
+| | X-Ray + ADOT | $1 | $1 | $3 | $10 | $40 |
+| | SNS | $1 | $1 | $1 | $2 | $2 |
+| | Kinesis Firehose | — | — | — | $5 | $15 |
+| | **Subtotal** | **$4** | **$4** | **$14** | **$47** | **$147** |
+| **Storage** | S3 SPA assets | $1 | $1 | $2 | $3 | $5 |
+| | S3 App assets | $1 | $1 | $2 | $2 | $5 |
+| | S3 User uploads | $1 | $1 | $3 | $7 | $45 |
+| | S3 Regional logging | — | — | $2 | $5 | $15 |
+| | S3 Global logging | — | — | — | $5 | $15 |
+| | **Subtotal** | **$3** | **$3** | **$9** | **$22** | **$85** |
+| | **Grand Total** | **~$147** | **~$147** | **~$562** | **~$1,845** | **~$4,245** |
+
+---
 
 **Key differences driving the cost gap:**
 
-| Service | dev | stg | prod |
+| Service | dev / sbx | stg | prod |
 |---|---|---|---|
 | Atlas tier | M10 (~$0.09/hr) | M20 (~$0.21/hr) | M50 (~$1.04/hr) |
 | Redis | t4g.micro × 1 node | t4g.medium × 2 nodes | m7g.large × 2 nodes |
 | ECS tasks (API) | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5 × 2 vCPU / 4 GB |
 | ECS tasks (worker) | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2 × 1 vCPU / 2 GB |
-| NAT Gateways | 1 ($33/mo) | 2 ($66/mo) | 3 ($99/mo) |
-| VPC Interface Endpoints | ✗ skip | 5 svc × 2 AZ ($73/mo) | 5 svc × 3 AZ ($110/mo) |
-| Atlas PrivateLink | ✗ skip | 2 AZ ($15/mo) | 3 AZ ($22/mo) |
+| NAT Gateways | 1 ($33/mo) | 2 ($65/mo) | 3 ($99/mo) |
+| VPC Interface Endpoints | ✗ skip | 5 svc × 2 AZ ($72/mo) | 5 svc × 3 AZ ($110/mo) |
+| Atlas PrivateLink | ✗ skip | 2 AZ ($14/mo) | 3 AZ ($22/mo) |
 | GuardDuty | ✗ skip | both regions (~$20/mo) | both regions (~$55/mo) |
 | CloudTrail | ✗ skip | both regions (~$2/mo) | both regions (~$4/mo) |
 | Kinesis Firehose (WAF logs) | ✗ skip | ✗ skip | ✓ ($5/mo) |
@@ -226,6 +313,22 @@ Cost per environment at steady-state baseline (minimum task counts, no burst). A
 
 Every Terraform resource needed to implement the launch-day architecture. Marked as **exists** (already in code), **change** (exists but needs modification), or **missing** (not in code at all).
 
+> **Implementation status (as of June 2026):** ~60% of this architecture is in place. Worker service, autoscaling, IAM, and CloudWatch for the worker are fully implemented. The main remaining workstreams are private networking (NAT/VPC endpoints), Redis hardening, MongoDB Atlas Terraform module, full observability (alarms, dashboard, X-Ray, GuardDuty, CloudTrail), and S3 policies. Items that are **missing** or require a **change** are **pending implementation**.
+
+### Pending workstreams — quick summary
+
+| # | Workstream | Key resources | Module |
+|---|---|---|---|
+| 1 | ~~**ECS worker service**~~ ✅ **Done** | `aws_ecs_service` (worker), `aws_ecs_task_definition` (worker), worker SG, worker IAM role, worker CloudWatch log group | `infra-live-backend` |
+| 2 | ~~**Auto-scaling**~~ ✅ **Done** | `aws_appautoscaling_target/policy` × 7 (API × 3 + worker CPU + worker scale-out + worker scale-in + 2 targets), `aws_sns_topic.alerts`, CloudWatch alarms: API CPU/memory sustained, worker CPU sustained, worker PendingJobCount scale-out/scale-in/high-ops, worker ProcessingJobCount stuck | `infra-live-backend` |
+| 3 | **Private networking** | 3 NAT GWs, 3 EIPs, 5 VPC Interface Endpoints, S3 Gateway Endpoint, Atlas PrivateLink VPC endpoint; move ECS tasks to private subnets; expand to 3 AZs | `infra-live-backend` |
+| 4 | **Redis hardening** | Replace `aws_elasticache_replication_group` with correct config: `auth_token`, `automatic_failover_enabled = true`, `multi_az_enabled = true` | `infra-live-backend` |
+| 5 | **MongoDB Atlas Terraform module** | Entire `infra-live-atlas/` directory does not exist yet; `mongodbatlas_*` resources × 5; `terraform-atlas.yml` workflow | new module |
+| 6 | **Observability** | CloudWatch alarms × 8, dashboard, X-Ray sampling rules × 2, SNS topics × 2, Kinesis Firehose + WAF logging | `infra-live-backend` + `infra-live-edge` |
+| 7 | **Security services** | GuardDuty × 2 regions, CloudTrail × 2 regions | `infra-live-backend` + `infra-live-edge` |
+| 8 | **S3 policies** | CORS + lifecycle on uploads bucket, bucket policies on regional + global logging buckets, S3 IAM policies on task roles | `infra-live-backend` |
+| 9 | **Edge WAF logging** | `aws_wafv2_web_acl_logging_configuration`, `aws_kinesis_firehose_delivery_stream`, Firehose IAM role, global S3 bucket policy | `infra-live-edge` |
+
 ### `infra-live-backend` (ap-south-1)
 
 #### Compute
@@ -234,23 +337,25 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 |---|---|---|
 | `aws_ecs_cluster` | exists | Container Insights enabled |
 | `aws_ecs_cluster_capacity_providers` | exists | FARGATE provider |
-| `aws_ecs_service` (API) | change | Update `network_configuration.subnets` from public to private subnet IDs; set `assign_public_ip = false` — both changes are required; setting the flag without updating the subnet list leaves tasks running in public subnets |
-| `aws_ecs_service` (worker) | **missing** | Second ECS service running the MongoDB queue worker; same image, different entrypoint (`worker.py`) |
+| `aws_ecs_service` (API) | change | **⚠️ Current state: tasks run in public subnets with `assign_public_ip = true`.** Update `network_configuration.subnets` from public to private subnet IDs; set `assign_public_ip = false` — both changes are required; setting the flag without updating the subnet list leaves tasks running in public subnets |
+| `aws_ecs_service` (worker) | exists | ECS service running the MongoDB queue worker; same image, different entrypoint (`worker.py`) |
 | `aws_ecs_task_definition` (API) | change | Add ADOT sidecar container for X-Ray tracing; add `REDIS_AUTH_TOKEN` secret; add `APP_ENV` environment variable set to `"production"` (must be any non-`"local"` value — used by the worker to gate CloudWatch metric emission; the API container reads this same env var if it has equivalent local-dev gating logic). **ADOT sidecar spec:** container name `aws-otel-collector`; image `public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0` (pin a specific tag — do not use `latest`); command `["--config=/etc/ecs/ecs-default-config.yaml"]` (uses the AWS-managed ECS default config which exports X-Ray traces and CloudWatch metrics); essential `false` (sidecar failure must not kill the app container); CPU 256 / memory 512; no inbound ports needed; add `logConfiguration` pointing at the API CloudWatch log group with stream prefix `adot`. The API application container must be named `backend` — this name is referenced by `deploy-live-backend.yml` when patching the image in the task definition (see the `jq` filter `.name == "backend"` in the deploy workflow). |
-| `aws_ecs_task_definition` (worker) | **missing** | Task definition for the MongoDB queue worker. Container name `worker`; same image as API; `command = ["python", "worker.py"]`; no `portMappings`; no ALB. (`desired_count` is set on `aws_ecs_service`, not the task definition — see appautoscaling targets below.) Include ADOT sidecar container with identical spec as the API task definition (same image, same command, same CPU/memory). Must set `APP_ENV` to any non-`"local"` value (e.g. `"production"`) as a container environment variable. Add `logConfiguration` pointing at a dedicated worker CloudWatch log group. |
-| `aws_appautoscaling_target` (API service) | **missing** | `min_capacity = 5`, `max_capacity = 50`; `scalable_dimension = "ecs:service:DesiredCount"`; `service_namespace = "ecs"` |
-| `aws_appautoscaling_policy` (API — CPU) | **missing** | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
-| `aws_appautoscaling_policy` (API — memory) | **missing** | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageMemoryUtilization"`; `target_value = 70` |
-| `aws_appautoscaling_policy` (API — ALB request count) | **missing** | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ALBRequestCountPerTarget"`; `target_value = 1000`; `resource_label` must be set to `"${aws_lb.main.arn_suffix}/${aws_lb_target_group.api.arn_suffix}"` — this is the required format for `ALBRequestCountPerTarget` and the most commonly missed field. **Dependency ordering:** all three `aws_appautoscaling_policy` resources for the API must depend on `aws_appautoscaling_target.api` — use implicit references (e.g. `resource_id = aws_appautoscaling_target.api.resource_id`) rather than `depends_on` to ensure correct ordering. |
-| `aws_appautoscaling_target` (worker service) | **missing** | `min_capacity = 2`, `max_capacity = 10`; same `scalable_dimension` and `service_namespace` as API |
-| `aws_appautoscaling_policy` (worker — CPU) | **missing** | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60`. For more precise scaling, add a second policy using the custom metric namespace `Buddy360/Worker` MetricName `PendingJobCount` (emitted by `emit_pending_job_count` in `worker.py`) with `policy_type = "StepScaling"` — scale out when pending count exceeds threshold (e.g. > 50 per worker task) |
-| `aws_ecr_repository` | change | `image_tag_mutability = "IMMUTABLE"`; `scan_on_push = true`; `force_delete = true`. Add a separate `aws_ecr_lifecycle_policy` resource with the following JSON policy: keep the last 30 tagged images (`countType = "imageCountMoreThan"`, `countNumber = 30`, `tagStatus = "tagged"`); expire untagged images after 7 days (`countType = "sinceImagePushed"`, `countNumber = 7`, `countUnit = "days"`, `tagStatus = "untagged"`). Do not add `lifecycle { prevent_destroy = true }` — intentional full deletion on destroy is the desired behaviour. **Image loss on destroy:** `force_delete = true` deletes all images when the repository is destroyed. ECR images are the only deployment artifacts — after `terraform destroy`, a fresh `docker build && docker push` (via `deploy-live-backend`) is required before ECS tasks can run again. No other data loss beyond the images; the application code is always in the git repository. |
+| `aws_ecs_task_definition` (worker) | exists | Task definition for the MongoDB queue worker. Container name `worker`; same image as API; `command = ["python", "worker.py"]`; no `portMappings`; no ALB. ADOT sidecar: **pending** (see API task definition note above). |
+| `aws_appautoscaling_target` (API service) | exists | `min_capacity` / `max_capacity` parameterised via `var.api_min_capacity` / `var.api_max_capacity`; `scalable_dimension = "ecs:service:DesiredCount"`; `service_namespace = "ecs"` |
+| `aws_appautoscaling_policy` (API — CPU) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
+| `aws_appautoscaling_policy` (API — memory) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageMemoryUtilization"`; `target_value = 70` |
+| `aws_appautoscaling_policy` (API — ALB request count) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ALBRequestCountPerTarget"`; `target_value = 1000`; `resource_label = "${aws_lb.backend.arn_suffix}/${aws_lb_target_group.backend.arn_suffix}"` — note: actual resource names in code are `.backend`, not `.main`/`.api`. All three API policies use implicit references on `aws_appautoscaling_target.api.resource_id` for correct dependency ordering. |
+| `aws_appautoscaling_target` (worker service) | exists | `min_capacity` / `max_capacity` parameterised via `var.worker_min_capacity` / `var.worker_max_capacity`; same `scalable_dimension` and `service_namespace` as API |
+| `aws_appautoscaling_policy` (worker — CPU) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
+| `aws_appautoscaling_policy` (worker — PendingJobCount step scaling) | exists | `policy_type = "StepScaling"`; custom metric `Buddy360/Worker / PendingJobCount`; alarm threshold is 50 (`worker_pending_jobs`); three step adjustments relative to that threshold: 50–100 pending → +2 tasks, 100–150 pending → +4 tasks, >150 pending → +6 tasks; driven by `aws_cloudwatch_metric_alarm.worker_pending_jobs` |
+| `aws_appautoscaling_policy` (worker — scale-in) | exists | `policy_type = "StepScaling"`; single step: PendingJobCount ≤ 10 → remove 1 task; cooldown 300 s between steps; `disable_scale_in = true` on the CPU target-tracking policy so both policies do not compete; driven by `aws_cloudwatch_metric_alarm.worker_pending_jobs_low` |
+| `aws_ecr_repository` | exists | `image_tag_mutability = "IMMUTABLE"`, `scan_on_push = true`, `force_delete = true`. **Image tag format:** `YYYYMMDD-<short-sha>` (e.g. `20260621-abc1234`) — set by `deploy-live-backend.yml` using `date -u +%Y%m%d` + `git rev-parse --short HEAD`. **Lifecycle policy** (`aws_ecr_lifecycle_policy`): keep last 30 tagged images; expire untagged images after 7 days. No `lifecycle { prevent_destroy = true }` — intentional full deletion on destroy is the desired behaviour. **Image loss on destroy:** `force_delete = true` deletes all images when the repository is destroyed; a fresh `docker build && docker push` via `deploy-live-backend` is required before ECS tasks can run again. |
 
 #### Cache
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_elasticache_replication_group` | **replacement** | `num_node_groups = 1`; `replicas_per_node_group = 1`; `automatic_failover_enabled = true`; `multi_az_enabled = true`; `node_type = "cache.m7g.large"`; `auth_token` from Secrets Manager; `transit_encryption_enabled = true` (required for auth_token — AWS enforces this); `at_rest_encryption_enabled = true`; `engine_version = "7.1"`. **Launch config: 1 primary + 1 replica (non-cluster mode) — sufficient for 1M users.** **Scale path to 10M users:** change to `num_node_groups = 3` — this is a destroy + create (~5–10 min outage), not an in-place change. AWS does not support enabling cluster mode on an existing non-cluster-mode replication group. Schedule a maintenance window; ensure the API degrades gracefully without Redis (return cache misses, do not 500) before applying. |
+| `aws_elasticache_replication_group` | **replacement** | **⚠️ Current state: missing `auth_token`, `automatic_failover_enabled = false`, `multi_az_enabled = false`.** Target config: `num_node_groups = 1`; `replicas_per_node_group = 1`; `automatic_failover_enabled = true`; `multi_az_enabled = true`; `node_type = "cache.m7g.large"`; `auth_token` from Secrets Manager; `transit_encryption_enabled = true` (required for auth_token — AWS enforces this); `at_rest_encryption_enabled = true`; `engine_version = "7.1"`. **Launch config: 1 primary + 1 replica (non-cluster mode) — sufficient for 1M users.** **Scale path to 10M users:** change to `num_node_groups = 3` — this is a destroy + create (~5–10 min outage), not an in-place change. AWS does not support enabling cluster mode on an existing non-cluster-mode replication group. Schedule a maintenance window; ensure the API degrades gracefully without Redis (return cache misses, do not 500) before applying. |
 | `aws_elasticache_subnet_group` | exists | Private subnets, no change needed |
 
 #### Networking
@@ -260,7 +365,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_vpc` | exists | No change |
-| `aws_subnet` × 4 (2 public, 2 private) | change | Add 3rd AZ: expand to × 6 (3 public, 3 private) |
+| `aws_subnet` × 4 (2 public, 2 private) | change | **⚠️ Current state: 2 AZs, 4 subnets total.** Add 3rd AZ: expand to × 6 (3 public, 3 private) |
 | `aws_internet_gateway` | exists | No change |
 | `aws_route_table` + `aws_route_table_association` | change | Add route tables for 3rd AZ subnets |
 | `aws_eip` × 3 | **missing** | One Elastic IP per NAT Gateway (one per AZ); must include `lifecycle { prevent_destroy = true }`. With PrivateLink active, ECS → Atlas traffic takes the PrivateLink path (not NAT), so EIP rotation no longer breaks the primary Atlas data path. However, NAT EIP addresses are still added to the Atlas project IP access list as a break-glass fallback — if the PrivateLink endpoint is ever misconfigured or deleted, ECS tasks can fall back through NAT. An EIP change would break that fallback, which is why `prevent_destroy = true` remains important. |
@@ -287,7 +392,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 |---|---|---|
 | `aws_security_group` (ALB) | exists | Inbound 443 from CloudFront prefix list only |
 | `aws_security_group` (ECS task — API) | change | Add outbound 443 to VPC Interface Endpoint SG; add outbound 27017 to Atlas PrivateLink endpoint SG |
-| `aws_security_group` (ECS task — worker) | **missing** | No inbound; outbound 27017 to Atlas PrivateLink endpoint SG (MongoDB traffic goes via PrivateLink, not NAT GW); outbound 443 to VPC Interface Endpoint SG (Secrets Manager, CloudWatch Logs, X-Ray); outbound 443 to `0.0.0.0/0` for LLM API calls (OpenAI, Anthropic, Gemini are public internet endpoints — traffic exits via NAT GW). No Redis egress — the worker does not use ElastiCache. |
+| `aws_security_group` (ECS task — worker) | exists | No inbound; unrestricted egress (outbound 0.0.0.0/0 on all ports — covers MongoDB via PrivateLink, Secrets Manager/CloudWatch/X-Ray via VPC endpoints, and LLM API calls via NAT). No Redis egress — the worker does not use ElastiCache. Egress can be tightened once PrivateLink and VPC endpoints are active. |
 | `aws_security_group` (ElastiCache) | exists | Inbound 6379 from API task SG only — the worker does not connect to Redis, so its SG must not be added here |
 | `aws_security_group` (VPC endpoints — AWS services) | **missing** | Allows inbound 443 from both ECS task SGs for all AWS Interface Endpoints (ECR, Secrets Manager, CloudWatch Logs, X-Ray) |
 | `aws_security_group` (Atlas PrivateLink endpoint) | **missing** | Allows inbound 27017 from both ECS task SGs (API and worker); attached to the Atlas PrivateLink VPC endpoint. Keep this SG separate from the AWS services endpoint SG — port and purpose are different. |
@@ -300,7 +405,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_secretsmanager_secret_version` | change | Add `REDIS_AUTH_TOKEN` placeholder |
 | `aws_iam_role` (execution role) | exists | No change |
 | `aws_iam_role` (task role — API) | change | Add `xray:PutTraceSegments` + `xray:PutTelemetryRecords` for ADOT sidecar |
-| `aws_iam_role` (task role — worker) | **missing** | Secrets Manager `GetSecretValue` for MongoDB URI and LLM API keys (no Redis auth token — the worker does not connect to ElastiCache); `xray:PutTraceSegments` + `xray:PutTelemetryRecords` for ADOT sidecar (same as API task role); `cloudwatch:PutMetricData` for publishing MongoDB pending job count — `cloudwatch:PutMetricData` does not support resource-level ARN scoping, so `Resource = "*"` is required; add a `Condition: StringEquals: cloudwatch:namespace: "Buddy360/Worker"` condition to limit the grant to only the custom namespace; no SQS or Step Functions permissions needed |
+| `aws_iam_role` (task role — worker) | exists | `cloudwatch:PutMetricData` scoped to namespace `Buddy360/Worker` via condition; `ssmmessages:*` for ECS Exec. Secrets Manager access is via the shared execution role (not the task role). X-Ray (`xray:PutTraceSegments`) is **pending** — add once ADOT sidecar is added to the worker task definition. |
 | `aws_iam_role_policy` (X-Ray — API task role) | change | Add a new inline policy to the existing API task role granting `xray:PutTraceSegments` + `xray:PutTelemetryRecords`; keep separate from the S3 uploads policy (listed under uploads bucket section) — do not merge them into one policy |
 | `aws_guardduty_detector` | **missing** | Threat detection in ap-south-1; must enable ECS Runtime Monitoring via a `features` block: `features { name = "ECS_RUNTIME_MONITORING" status = "ENABLED" }` — without this the cost table's "ECS Runtime Monitoring" line item provides no coverage and the Security cost estimate is overstated |
 | `aws_cloudtrail` | **missing** | `is_multi_region_trail = false` (regional trail for ap-south-1 only); `enable_log_file_validation = true`; `include_global_service_events = false`; `s3_bucket_name = var.regional_logging_bucket_name`; `s3_key_prefix = "cloudtrail"`; `event_selector { read_write_type = "All"; include_management_events = true }`. No `kms_key_id` — logs use default S3 SSE. |
@@ -310,8 +415,8 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_cloudwatch_log_group` (API) | change | Extend retention to 90 days for prod |
-| `aws_cloudwatch_log_group` (worker) | **missing** | Log group for worker ECS service |
-| `aws_sns_topic` | **missing** | One topic per environment for all alerts |
+| `aws_cloudwatch_log_group` (worker) | exists | `/ecs/{app_name}/worker/{env}`; retention parameterised via `var.log_retention_days` |
+| `aws_sns_topic` | exists | `aws_sns_topic.alerts` provisioned in `autoscaling.tf`; used by worker PendingJobCount and sustained-CPU alarms |
 | `aws_sns_topic_subscription` (email) | **missing** | Operator email on all environments |
 | `aws_cloudwatch_metric_alarm` (HealthyHostCount) | **missing** | Alert when healthy ALB targets < 1 |
 | `aws_cloudwatch_metric_alarm` (5XX errors) | **missing** | Alert on ALB HTTP 5XX spike |
@@ -320,7 +425,13 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_cloudwatch_metric_alarm` (worker ECS CPU) | **missing** | Alert when worker service ECS CPU > 85% |
 | `aws_cloudwatch_metric_alarm` (worker ECS memory) | **missing** | Alert when worker service ECS memory > 85% |
 | `aws_cloudwatch_metric_alarm` (Redis connections) | **missing** | Alert on unexpected Redis connection drop |
-| `aws_cloudwatch_metric_alarm` (worker ECS CPU sustained high) | **missing** | Alert when worker CPU stays > 85% for 3 consecutive 5-minute periods (`evaluation_periods = 3`, `period = 300`) — indicates job backlog exceeding worker capacity. Distinct from the per-datapoint worker CPU alarm above: that fires on a single spike; this fires only on sustained load, reducing alert fatigue. |
+| `aws_cloudwatch_metric_alarm` (worker ECS CPU sustained high) | exists | `aws_cloudwatch_metric_alarm.worker_cpu_sustained` — fires when worker CPU > 85% for 3 consecutive 5-minute periods (`evaluation_periods = 3`, `period = 300`). |
+| `aws_cloudwatch_metric_alarm` (worker PendingJobCount scale-out) | exists | `aws_cloudwatch_metric_alarm.worker_pending_jobs` — alarm threshold 50; drives the step scale-out policy; `treat_missing_data = "notBreaching"`. |
+| `aws_cloudwatch_metric_alarm` (worker PendingJobCount scale-in) | exists | `aws_cloudwatch_metric_alarm.worker_pending_jobs_low` — fires when PendingJobCount ≤ 10 for 5 consecutive minutes; `treat_missing_data = "breaching"` (empty queue = no metric emitted = still trigger scale-in); drives `aws_appautoscaling_policy.worker_scale_in`. |
+| `aws_cloudwatch_metric_alarm` (worker PendingJobCount high ops) | exists | `aws_cloudwatch_metric_alarm.worker_pending_jobs_high` — fires to ops SNS when PendingJobCount > 100 for 1 period (5 min); distinct from the scale-out alarm (threshold 50, scale policy target) — this is for operator alerting only. |
+| `aws_cloudwatch_metric_alarm` (worker ProcessingJobCount stuck) | exists | `aws_cloudwatch_metric_alarm.worker_processing_stuck` — fires when `ProcessingJobCount > 0` for 10 consecutive 1-minute periods (10 minutes); indicates a worker crash-loop or MongoDB connectivity problem; alerts to ops SNS. |
+| `aws_cloudwatch_metric_alarm` (API CPU sustained) | exists | `aws_cloudwatch_metric_alarm.api_cpu_sustained` — fires when API CPU > 85% for 3 consecutive 5-minute periods. |
+| `aws_cloudwatch_metric_alarm` (API memory sustained) | exists | `aws_cloudwatch_metric_alarm.api_memory_sustained` — fires when API memory > 85% for 3 consecutive 5-minute periods; same period/threshold/SNS action as `api_cpu_sustained`. |
 | `aws_cloudwatch_dashboard` | **missing** | ECS CPU/memory, ALB request count, 5XX rate, Redis connections, MongoDB pending job count. `dashboard_body` must be a JSON string — write it in a `templatefile()` call referencing `dashboard.json.tpl` in the module. Minimum widget set: (1) ECS API CPUUtilization, (2) ECS API MemoryUtilization, (3) ECS Worker CPUUtilization, (4) ALB RequestCount, (5) ALB HTTPCode_Target_5XX_Count, (6) ElastiCache CurrConnections, (7) ElastiCache NetworkBytesIn, (8) custom metric namespace `Buddy360/Worker` MetricName `PendingJobCount` (emitted by `emit_pending_job_count` in `worker.py`). Use `MetricWidget` type with `stat: "Average"` and `period: 300` for all. The `dashboard.json.tpl` file must live alongside `main.tf` in the module — commit a starter template and refine in-app once metrics are flowing. |
 | `aws_xray_sampling_rule` | **missing** | Two rules for prod. Rule 1 (baseline): `priority = 9999`, `fixed_rate = 0.01`, `reservoir_size = 1`, `host = "*"`, `http_method = "*"`, `url_path = "*"`, `service_name = "*"`, `service_type = "*"`, `resource_arn = "*"` — 1% of all requests. Rule 2 (errors): `priority = 1`, `fixed_rate = 1.0`, `reservoir_size = 5`, same wildcard filters — catches 100% of error traces (X-Ray evaluates lower priority number first). For dev/stg use a single rule: `fixed_rate = 0.05` (5%). |
 
@@ -359,6 +470,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_ssm_parameter` (ALB FQDN) | exists | Read by `infra-live-edge` |
+| `aws_ssm_parameter` (ECS worker service name) | exists | Written to `ecs_worker_service_name` path; read by `deploy-live-backend.yml` and `restart-live-backend` (Phase 6) |
 
 ---
 
@@ -478,13 +590,15 @@ Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function
 
 ### Summary — resource count
 
+> **Implementation progress:** 41 resources exist, 12 need changes, 43 are missing. The entire `infra-live-atlas/` module and `terraform-atlas.yml` workflow do not exist yet.
+
 | Module | Exists | Needs change | Missing |
 |---|---|---|---|
-| `infra-live-backend` | 12 | 12 | 49 |
+| `infra-live-backend` | 33 | 11 | 29 |
 | `infra-live-edge` | 7 | 1 | 8 |
 | `infra-live-frontend` | 1 | 0 | 0 |
-| MongoDB Atlas module | 0 | 0 | 6 |
-| **Total** | **20** | **13** | **63** |
+| MongoDB Atlas module (`infra-live-atlas/` — **entire module pending**) | 0 | 0 | 6 |
+| **Total** | **41** | **12** | **43** |
 
 ---
 
@@ -1044,7 +1158,7 @@ jobs:
           done
 ```
 
-> Add `ecs_worker_service_name` to the SSM outputs written by `terraform-live-backend` alongside `ecs_service_name` (API).
+> `ecs_worker_service_name` is written to SSM by `terraform-live-backend` alongside `ecs_service_name` (API) — both are read by this workflow.
 
 ---
 
