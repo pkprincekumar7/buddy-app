@@ -149,13 +149,13 @@ async def enqueue_job(
         log.warning(
             "job.active_jobs_update_failed job_id=%s child_id=%s — job will still be processed",
             job_id,
-    safe_child_id = str(body.child_id).replace("\r", "").replace("\n", "")
-    log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, body.type, safe_child_id)
+            body.child_id,
             exc_info=True,
         )
 
     safe_type = str(body.type).replace("\r", "").replace("\n", "")
-    log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, safe_type, body.child_id)
+    safe_child_id = str(body.child_id).replace("\r", "").replace("\n", "")
+    log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, safe_type, safe_child_id)
     return EnqueueJobResponse(job_id=job_id)
 
 
