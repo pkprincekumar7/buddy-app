@@ -8,6 +8,10 @@ from app.settings import settings
 log = logging.getLogger(__name__)
 
 
+def _sanitize_for_log(value: object) -> str:
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
+
+
 class LLMConfigError(Exception):
     """Raised when no LLM provider is configured or a requested provider is unavailable.
 
@@ -92,7 +96,7 @@ def resolve_provider(preferred: ProviderName | None) -> ProviderName:
         if not av[preferred]:
             init_err = _INIT_ERRORS.get(preferred)
             if init_err:
-                log.error("Provider %s init error: %s", preferred, init_err)
+                log.error("Provider %s init error: %s", _sanitize_for_log(preferred), init_err)
                 msg = f"{preferred.upper()} provider failed to initialise. Check server logs."
             else:
                 msg = f"{preferred.upper()}_API_KEY is not configured on this server."
