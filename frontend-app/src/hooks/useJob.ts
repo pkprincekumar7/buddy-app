@@ -10,7 +10,7 @@ export interface UseJobOptions {
   activeJobs: Record<string, string> | undefined;
   jobType: JobType;
   /** Called when the job reaches 'completed' so the caller can re-fetch domain data. */
-  onCompleted: () => void;
+  onCompleted: () => void | Promise<void>;
 }
 
 export interface UseJobResult {
@@ -31,10 +31,14 @@ export interface UseJobResult {
   retry: (payload: EnqueueJobPayload) => Promise<void>;
 }
 
-export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): UseJobResult {
-  const [jobId, setJobId] = useState<string | null>(
-    () => activeJobs?.[jobType] ?? null,
-  );
+const MAX_CONSECUTIVE_ERRORS = 3;
+
+export function useJob({
+  activeJobs,
+  jobType,
+  onCompleted,
+}: UseJobOptions): UseJobResult {
+  const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -42,7 +46,9 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
   // Stable ref so polling always calls the latest onCompleted even if the
   // caller passes an inline arrow function (new reference every render).
   const onCompletedRef = useRef(onCompleted);
-  useEffect(() => { onCompletedRef.current = onCompleted; }, [onCompleted]);
+  useEffect(() => {
+    onCompletedRef.current = onCompleted;
+  }, [onCompleted]);
 
   const startTimeRef = useRef<number | null>(null);
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -78,6 +84,7 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
 
     let cancelled = false;
     let sleepTimer: ReturnType<typeof setTimeout> | null = null;
+    let consecutiveErrors = 0;
 
     // Anchor start time before any async work so the timeout guard has a valid baseline.
     startTimeRef.current = Date.now();
@@ -91,7 +98,10 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
       if (cancelled) return;
 
       // 30-minute timeout guard
-      if (startTimeRef.current !== null && Date.now() - startTimeRef.current > MAX_POLL_MS) {
+      if (
+        startTimeRef.current !== null &&
+        Date.now() - startTimeRef.current > MAX_POLL_MS
+      ) {
         stopElapsedTimer();
         setStatus('failed');
         setError('Job timed out after 30 minutes');
@@ -102,17 +112,20 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
         const record = await api.jobs.poll(jobId);
         if (cancelled) return;
 
+        consecutiveErrors = 0;
         setStatus(record.status);
 
         if (record.status === 'completed') {
           stopElapsedTimer();
-          onCompletedRef.current();
+          void onCompletedRef.current();
         } else if (record.status === 'failed') {
           stopElapsedTimer();
           setError(record.error ?? 'Job failed');
         } else {
           // Non-terminal — schedule the next poll
-          sleepTimer = setTimeout(doPoll, POLL_INTERVAL_MS);
+          sleepTimer = setTimeout(() => {
+            void doPoll();
+          }, POLL_INTERVAL_MS);
         }
       } catch (e: unknown) {
         if (cancelled) return;
@@ -123,8 +136,18 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
           setJobId(null);
           setStatus(null);
         } else {
-          // Network flap — retry after interval
-          sleepTimer = setTimeout(doPoll, POLL_INTERVAL_MS);
+          consecutiveErrors += 1;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            stopElapsedTimer();
+            setStatus('failed');
+            setError(
+              'Lost connection to server. Please check your network and retry.',
+            );
+            return;
+          }
+          sleepTimer = setTimeout(() => {
+            void doPoll();
+          }, POLL_INTERVAL_MS);
         }
       }
     };
@@ -186,7 +209,10 @@ export function useJob({ activeJobs, jobType, onCompleted }: UseJobOptions): Use
 /**
  * Returns a human-readable progress message based on elapsed time and job type.
  */
-export function jobProgressMessage(elapsedMs: number, jobType: JobType): string {
+export function jobProgressMessage(
+  elapsedMs: number,
+  jobType: JobType,
+): string {
   const s = elapsedMs / 1000;
   if (s < 3) return '';
 

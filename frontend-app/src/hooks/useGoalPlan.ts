@@ -76,16 +76,22 @@ export function buildGoalPlanIndex(goalPlan: GoalPlan | null): {
 }
 
 export function useGoalPlan(childId: string | undefined) {
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState<GoalPlan | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>([]);
+  const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>(
+    [],
+  );
 
   // Snapshot of completed activities preserved across a regeneration — stored in a
   // ref so the onCompleted callback always reads the latest value without being
   // recreated on every render (which would re-trigger useJob's ref update effect).
-  const pendingSnapshotRef = useRef<Record<string, Record<string, unknown>>>({});
+  const pendingSnapshotRef = useRef<Record<string, Record<string, unknown>>>(
+    {},
+  );
 
   const refetchAndApplyGoals = useCallback(async () => {
     if (!childId) return;
@@ -110,7 +116,10 @@ export function useGoalPlan(childId: string | undefined) {
         setGoalPlan(plan);
       }
     } catch (err) {
-      console.error('[useGoalPlan] Failed to re-fetch goals after job completion:', err);
+      console.error(
+        '[useGoalPlan] Failed to re-fetch goals after job completion:',
+        err,
+      );
       toast.error('Plan is ready — refresh the page to see it.');
     }
   }, [childId]);
@@ -147,14 +156,20 @@ export function useGoalPlan(childId: string | undefined) {
         }
 
         const obRecord = ob;
-        const personality = obRecord?.personality as Record<string, unknown> | undefined;
+        const personality = obRecord?.personality as
+          | Record<string, unknown>
+          | undefined;
         const vm = personality?.view_model as
           | { type?: string; profile?: Record<string, unknown> }
           | undefined;
-        const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
+        const profile =
+          vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
         const safeAreas = areas ?? [];
         const areasContext = safeAreas
-          .map(a => `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`)
+          .map(
+            a =>
+              `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`,
+          )
           .join('\n');
 
         pendingSnapshotRef.current = completedSnapshot;
@@ -212,11 +227,15 @@ export function useGoalPlan(childId: string | undefined) {
         const allFetched = Array.isArray(completedRecord?.areas)
           ? (completedRecord.areas as Activity[])
           : [];
-        const areas = allFetched.filter(a => a.status === 'completed' || !a.status);
+        const areas = allFetched.filter(
+          a => a.status === 'completed' || !a.status,
+        );
         setSavedCompletedAreas(areas);
 
         const savedConcern =
-          typeof goalsRecord?.parent_concern === 'string' ? goalsRecord.parent_concern : '';
+          typeof goalsRecord?.parent_concern === 'string'
+            ? goalsRecord.parent_concern
+            : '';
         setConcern(savedConcern);
 
         if (goalsRecord?.plan) {
@@ -226,8 +245,9 @@ export function useGoalPlan(childId: string | undefined) {
         }
 
         // No saved plan — only enqueue if there is no active job already polling.
-        const activeJobId = (childRecord.active_jobs as Record<string, string> | undefined)
-          ?.generate_goals_plan;
+        const activeJobId = (
+          childRecord.active_jobs as Record<string, string> | undefined
+        )?.generate_goals_plan;
         if (!activeJobId) {
           await generateGoals(childRecord, savedConcern, areas);
         }
@@ -327,7 +347,12 @@ export function useGoalPlan(childId: string | undefined) {
         });
       });
     });
-    await generateGoals(childData, concern, savedCompletedAreas, completedSnapshot);
+    await generateGoals(
+      childData,
+      concern,
+      savedCompletedAreas,
+      completedSnapshot,
+    );
   }, [goalPlan, childData, concern, savedCompletedAreas, generateGoals]);
 
   return {

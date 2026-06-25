@@ -42,7 +42,9 @@ export default function PersonalityType() {
     try {
       const child = await api.entities.Child.get(childId);
       const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as
+        | Record<string, unknown>
+        | undefined;
       const merged = mergedDataRef.current;
 
       if (pendingVm && merged) {
@@ -103,9 +105,9 @@ export default function PersonalityType() {
         }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
-        mergedDataRef.current = merged as Record<string, unknown>;
+        mergedDataRef.current = merged;
         setChildName(merged.name || '');
-        setChildData(child as Record<string, unknown>);
+        setChildData(child);
 
         // Already analysed — show result immediately
         const personality = child.personality;
@@ -120,16 +122,20 @@ export default function PersonalityType() {
         }
 
         // pending_personality_vm means worker succeeded but client crashed before finalizing
-        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as
+          | Record<string, unknown>
+          | undefined;
         if (pendingVm) {
-          const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+          const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name);
           if (cancelled) return;
           setMbtiResult(sanitizeViewModelAvatars(vm));
           setIsInitializing(false);
           api.entities.Child.update(childId, {
             personality: { source: 'llm', view_model: stripViewModelImages(vm) },
             onboarding_phase: 2,
-          }).catch((err) => console.error('[PersonalityType] Failed to persist recovered personality:', err));
+          }).catch((err) =>
+            console.error('[PersonalityType] Failed to persist recovered personality:', err),
+          );
           return;
         }
 
@@ -139,8 +145,7 @@ export default function PersonalityType() {
         }
 
         // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
-          ?.generate_personality_analysis;
+        const activeJobId = child.active_jobs?.generate_personality_analysis;
         if (!activeJobId) {
           await job.enqueue({
             type: 'generate_personality_analysis',
@@ -165,7 +170,9 @@ export default function PersonalityType() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // job.enqueue intentionally excluded — stable ref, but adding it re-triggers the
     // effect after the enqueue updates job state causing a double-enqueue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -173,15 +180,16 @@ export default function PersonalityType() {
 
   const isAnalysing = !isInitializing && job.isLoading;
   const isError = initError || job.isFailed;
-  const status = isLoadingAuth || isInitializing
-    ? 'loading'
-    : isAnalysing
-      ? 'analysing'
-      : isError
-        ? 'error'
-        : mbtiResult
-          ? 'ready'
-          : 'analysing';
+  const status =
+    isLoadingAuth || isInitializing
+      ? 'loading'
+      : isAnalysing
+        ? 'analysing'
+        : isError
+          ? 'error'
+          : mbtiResult
+            ? 'ready'
+            : 'analysing';
 
   const handleContinue = async () => {
     if (childId) {

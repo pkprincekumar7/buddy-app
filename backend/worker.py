@@ -133,7 +133,9 @@ async def handle_llm_failure(job: dict, error: str) -> None:
     if new_attempt >= job["max_llm_attempts"]:
         log.warning(
             "job.failed job_id=%s reason=llm_exhausted attempts=%d error=%s",
-            job["job_id"], new_attempt, error,
+            job["job_id"],
+            new_attempt,
+            error,
         )
         await db[CHILDREN].update_one(
             {"_id": job["child_id"]},
@@ -141,32 +143,38 @@ async def handle_llm_failure(job: dict, error: str) -> None:
         )
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
-            {"$set": {
-                "status": "failed",
-                "error": error,
-                "llm_attempt": new_attempt,
-                "completed_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": error,
+                    "llm_attempt": new_attempt,
+                    "completed_at": now,
+                    "updated_at": now,
+                }
+            },
         )
     else:
         backoff = LLM_BACKOFF_SECONDS[min(new_attempt, len(LLM_BACKOFF_SECONDS) - 1)]
         retry_after = now + timedelta(seconds=backoff)
         log.info(
             "job.retry job_id=%s attempt=%d backoff=%ds",
-            job["job_id"], new_attempt, backoff,
+            job["job_id"],
+            new_attempt,
+            backoff,
         )
         # Store retry_after on the job document and return immediately — the slot
         # is free to claim the next job. claim_next_job filters retry_after <= now,
         # so this job won't be picked up again until the backoff elapses.
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
-            {"$set": {
-                "status": "pending",
-                "llm_attempt": new_attempt,
-                "retry_after": retry_after,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "pending",
+                    "llm_attempt": new_attempt,
+                    "retry_after": retry_after,
+                    "updated_at": now,
+                }
+            },
         )
 
 
@@ -177,7 +185,9 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
     if new_attempt >= job["max_domain_attempts"]:
         log.warning(
             "job.failed job_id=%s reason=domain_write_exhausted attempts=%d error=%s",
-            job["job_id"], new_attempt, error,
+            job["job_id"],
+            new_attempt,
+            error,
         )
         await db[CHILDREN].update_one(
             {"_id": job["child_id"]},
@@ -185,26 +195,31 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
         )
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
-            {"$set": {
-                "status": "failed",
-                "error": error,
-                "completed_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": error,
+                    "completed_at": now,
+                    "updated_at": now,
+                }
+            },
         )
     else:
         log.info(
             "job.domain_retry job_id=%s attempt=%d",
-            job["job_id"], new_attempt,
+            job["job_id"],
+            new_attempt,
         )
         # Leave as result_ready — will be picked up on next polling cycle
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
-            {"$set": {
-                "status": "result_ready",
-                "domain_write_attempt": new_attempt,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "result_ready",
+                    "domain_write_attempt": new_attempt,
+                    "updated_at": now,
+                }
+            },
         )
 
 
@@ -231,11 +246,13 @@ async def write_to_domain(job: dict) -> None:
     # (completed job_id → frontend stops polling that type naturally).
     await db[JOBS].update_one(
         {"job_id": job["job_id"]},
-        {"$set": {
-            "status": "completed",
-            "completed_at": now,
-            "updated_at": now,
-        }},
+        {
+            "$set": {
+                "status": "completed",
+                "completed_at": now,
+                "updated_at": now,
+            }
+        },
     )
 
     # Clear active_jobs after the job is marked completed. If this write fails,
@@ -265,7 +282,9 @@ async def handle_job(job: dict) -> None:
 
     log.info(
         "job.processing job_id=%s type=%s attempt=%d",
-        job["job_id"], job["type"], job["llm_attempt"],
+        job["job_id"],
+        job["type"],
+        job["llm_attempt"],
     )
 
     try:
@@ -280,7 +299,8 @@ async def handle_job(job: dict) -> None:
         # retry budget so the caller gets a clear error fast.
         log.error(
             "job.config_error job_id=%s — failing immediately, no retry: %s",
-            job["job_id"], e,
+            job["job_id"],
+            e,
         )
         now = datetime.now(UTC)
         await db[CHILDREN].update_one(
@@ -289,13 +309,15 @@ async def handle_job(job: dict) -> None:
         )
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
-            {"$set": {
-                "status": "failed",
-                "error": str(e),
-                "llm_attempt": job["llm_attempt"],
-                "completed_at": now,
-                "updated_at": now,
-            }},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": str(e),
+                    "llm_attempt": job["llm_attempt"],
+                    "completed_at": now,
+                    "updated_at": now,
+                }
+            },
         )
         return
     except Exception as e:
@@ -314,11 +336,13 @@ async def handle_job(job: dict) -> None:
     # the worker retries only the domain write using the stored result.
     await db[JOBS].update_one(
         {"job_id": job["job_id"]},
-        {"$set": {
-            "status": "result_ready",
-            "result": result,
-            "updated_at": datetime.now(UTC),
-        }},
+        {
+            "$set": {
+                "status": "result_ready",
+                "result": result,
+                "updated_at": datetime.now(UTC),
+            }
+        },
     )
 
     await write_to_domain({**job, "result": result})
@@ -348,10 +372,18 @@ async def emit_metrics() -> None:
                 Namespace="Buddy360/Worker",
                 MetricData=[
                     {"MetricName": "PendingJobCount", "Value": pending_count, "Unit": "Count"},
-                    {"MetricName": "ProcessingJobCount", "Value": processing_count, "Unit": "Count"},
+                    {
+                        "MetricName": "ProcessingJobCount",
+                        "Value": processing_count,
+                        "Unit": "Count",
+                    },
                 ],
             )
-            log.debug("metrics.emitted PendingJobCount=%d ProcessingJobCount=%d", pending_count, processing_count)
+            log.debug(
+                "metrics.emitted PendingJobCount=%d ProcessingJobCount=%d",
+                pending_count,
+                processing_count,
+            )
         except Exception as exc:
             # NoCredentialsError is expected in local dev where AWS creds are absent.
             # Log at DEBUG to avoid filling local logs; keep ERROR for other failures.
@@ -377,12 +409,14 @@ async def cleanup_expired_jobs() -> None:
                         "status": {"$in": ["pending", "processing", "result_ready"]},
                         "created_at": {"$lt": deadline},
                     },
-                    {"$set": {
-                        "status": "failed",
-                        "error": "job deadline exceeded (30 minutes)",
-                        "completed_at": now,
-                        "updated_at": now,
-                    }},
+                    {
+                        "$set": {
+                            "status": "failed",
+                            "error": "job deadline exceeded (30 minutes)",
+                            "completed_at": now,
+                            "updated_at": now,
+                        }
+                    },
                     return_document=True,
                 )
                 if job is None:
@@ -431,7 +465,9 @@ async def process_one_forever() -> None:
 async def main() -> None:
     log.info(
         "worker.start concurrency=%d poll_interval=%ds region=%s",
-        WORKER_CONCURRENCY, POLL_INTERVAL_SECONDS, _aws_region,
+        WORKER_CONCURRENCY,
+        POLL_INTERVAL_SECONDS,
+        _aws_region,
     )
 
     # Fail fast if MongoDB is unreachable — Motor defers connection errors to

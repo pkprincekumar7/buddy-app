@@ -175,7 +175,9 @@ export function buildInsightsPayload(
 ): { prompt: string | null; schema: Record<string, unknown> } {
   const monthData = buildMonthData(plan);
   const hasAnyCompleted = monthData.some(({ pairs }) =>
-    pairs.some(p => (p.original?.completed ?? false) || (p.followUp?.completed ?? false)),
+    pairs.some(
+      p => (p.original?.completed ?? false) || (p.followUp?.completed ?? false),
+    ),
   );
   if (!hasAnyCompleted) return { prompt: null, schema: _insightsSchema };
   return {

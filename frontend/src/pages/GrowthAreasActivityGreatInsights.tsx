@@ -72,6 +72,7 @@ export default function GrowthAreasActivityGreatInsights() {
     jobType: 'generate_recommendations',
     onCompleted: finalizeRecommendations,
   });
+  const { enqueue: jobEnqueue } = job;
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -101,7 +102,7 @@ export default function GrowthAreasActivityGreatInsights() {
         setChildName(child.name ?? '');
         setChildAge(child.age != null ? String(child.age) : '');
         setChildGender(typeof child.gender === 'string' ? child.gender : '');
-        setChildData(child as Record<string, unknown>);
+        setChildData(child);
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
@@ -172,9 +173,12 @@ export default function GrowthAreasActivityGreatInsights() {
         interactive_answers: interactiveAnswers,
       });
       // Store for finalization in onCompleted
-      pendingAreaDataRef.current = { answers: interactiveAnswers, interactive_answers: interactiveAnswers };
+      pendingAreaDataRef.current = {
+        answers: interactiveAnswers,
+        interactive_answers: interactiveAnswers,
+      };
 
-      await job.enqueue({
+      await jobEnqueue({
         type: 'generate_recommendations',
         child_id: childId,
         payload: {
@@ -191,17 +195,35 @@ export default function GrowthAreasActivityGreatInsights() {
           response_json_schema: {
             type: 'object',
             properties: {
-              recommendations: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5 },
+              recommendations: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 5,
+                maxItems: 5,
+              },
             },
           },
         },
-        write_back: { collection: 'growth_areas', filter: { area_id: area.id }, field: 'pending_recommendations' },
+        write_back: {
+          collection: 'growth_areas',
+          filter: { area_id: area.id },
+          field: 'pending_recommendations',
+        },
       });
     } catch (err) {
       console.error('[GrowthAreasActivityGreatInsights] Failed to enqueue recommendations:', err);
       toast.error('Could not generate recommendations. Please try again.');
     }
-  }, [area, childId, childName, childAge, childGender, interactiveAnswers, childGameResults, job.enqueue]);
+  }, [
+    area,
+    childId,
+    childName,
+    childAge,
+    childGender,
+    interactiveAnswers,
+    childGameResults,
+    jobEnqueue,
+  ]);
 
   const isGenerating = job.isLoading;
   const isError = status === 'error' || job.isFailed;

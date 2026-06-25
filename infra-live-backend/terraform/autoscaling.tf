@@ -4,6 +4,7 @@
 # via the AWS console or a separate Terraform data-source after first apply.
 # ---------------------------------------------------------------------------
 
+#trivy:ignore:AVD-AWS-0095
 resource "aws_sns_topic" "alerts" {
   #checkov:skip=CKV_AWS_26:SNS topic encryption deferred — no sensitive data in alarm payloads; CMK adds cost without meaningful security uplift at this scale
   name = "${var.app_name}-alerts-${var.environment}"
@@ -176,7 +177,7 @@ resource "aws_appautoscaling_policy" "worker_cpu" {
     scale_out_cooldown = 60
     # Scale-in is disabled here — owned by worker_scale_in step policy below.
     # Letting both policies manage scale-in simultaneously causes oscillation.
-    disable_scale_in   = true
+    disable_scale_in = true
   }
 }
 

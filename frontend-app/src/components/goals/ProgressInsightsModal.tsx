@@ -638,12 +638,17 @@ export default function ProgressInsightsModal({
     try {
       const goalsData = await api.goals.get(childId ?? '');
       const rawPlan = goalsData.plan as Record<string, unknown> | undefined;
-      const rawInsights = rawPlan?.insights as Record<string, unknown> | undefined;
+      const rawInsights = rawPlan?.insights as
+        | Record<string, unknown>
+        | undefined;
       const items = Array.isArray(rawInsights?.insight_items)
         ? (rawInsights.insight_items as unknown[])
         : [];
+      const finalInsights = {
+        schema_version: INSIGHTS_SCHEMA_VERSION,
+        insight_items: items,
+      };
       if (items.length > 0) {
-        const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
         const updatedPlan: GoalPlan = {
           ...plan,
           insights: finalInsights,
@@ -653,12 +658,20 @@ export default function ProgressInsightsModal({
           await api.goals.patch(childId ?? '', { plan: updatedPlan });
           onPlanUpdate?.(updatedPlan);
         } catch (err) {
-          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+          console.warn(
+            '[ProgressInsightsModal] Insight save failed (non-fatal):',
+            err,
+          );
         }
-        setInsightsData(finalInsights);
       }
+      // Always set insightsData (even when empty) so the effect guard treats
+      // this run as complete and does not re-enqueue.
+      setInsightsData(finalInsights);
     } catch (err) {
-      console.error('[ProgressInsightsModal] Failed to finalize insights:', err);
+      console.error(
+        '[ProgressInsightsModal] Failed to finalize insights:',
+        err,
+      );
       setInsightsError(true);
     }
     setInsightsLoading(false);
@@ -669,6 +682,7 @@ export default function ProgressInsightsModal({
     jobType: 'generate_journey_insights',
     onCompleted: finalizeInsights,
   });
+  const { enqueue: enqueueInsightsJob } = insightsJob;
 
   useEffect(() => {
     if (
@@ -700,20 +714,30 @@ export default function ProgressInsightsModal({
     const generate = async () => {
       const { prompt, schema } = buildInsightsPayload(name, plan, age, gender);
       if (!prompt) {
-        setInsightsData({ schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: [] });
+        setInsightsData({
+          schema_version: INSIGHTS_SCHEMA_VERSION,
+          insight_items: [],
+        });
         return;
       }
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        await insightsJob.enqueue({
+        await enqueueInsightsJob({
           type: 'generate_journey_insights',
           child_id: childId ?? '',
           payload: { prompt, response_json_schema: schema },
-          write_back: { collection: 'goals', filter: {}, field: 'goals_plan.insights' },
+          write_back: {
+            collection: 'goals',
+            filter: {},
+            field: 'goals_plan.insights',
+          },
         });
       } catch (err) {
-        console.error('[ProgressInsightsModal] Failed to enqueue insights job:', err);
+        console.error(
+          '[ProgressInsightsModal] Failed to enqueue insights job:',
+          err,
+        );
         setInsightsError(true);
         setInsightsLoading(false);
       }
@@ -725,7 +749,7 @@ export default function ProgressInsightsModal({
     insightsLoading,
     insightsError,
     childId,
-    insightsJob.enqueue,
+    enqueueInsightsJob,
   ]);
 
   return (

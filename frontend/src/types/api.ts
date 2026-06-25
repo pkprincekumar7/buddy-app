@@ -45,7 +45,8 @@ export type JobType =
   | 'generate_goals_plan'
   | 'generate_activity'
   | 'generate_personality_analysis'
-  | 'generate_journey_recommendations';
+  | 'generate_journey_recommendations'
+  | 'generate_journey_insights';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 

@@ -7,7 +7,9 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
-import ChildActivityGame, { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
+import ChildActivityGame, {
+  normalizeChildGameRecommendations,
+} from '@/components/onboarding/ChildActivityGame';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import { useJob } from '@/hooks/useJob';
@@ -25,6 +27,9 @@ export default function GrowthAreasActivityGame() {
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
   const pendingSelectionsRef = useRef<string[]>([]);
+  const handleGameCompleteRef = useRef<(result: Record<string, unknown>) => Promise<void>>(
+    async () => {},
+  );
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -52,7 +57,7 @@ export default function GrowthAreasActivityGame() {
         }
 
         setChildName(child.name ?? '');
-        setChildData(child as Record<string, unknown>);
+        setChildData(child);
 
         // Restore previously saved game selections
         const completedData = await api.completedGrowthAreas.list(child.id);
@@ -87,14 +92,15 @@ export default function GrowthAreasActivityGame() {
       const pendingResult = areaDoc?.pending_child_activity as Record<string, unknown> | undefined;
       if (pendingResult) {
         const recommendations = normalizeChildGameRecommendations(pendingResult);
-        await handleGameComplete({ selections: pendingSelectionsRef.current, recommendations });
+        await handleGameCompleteRef.current({
+          selections: pendingSelectionsRef.current,
+          recommendations,
+        });
       }
     } catch (err) {
       console.error('[GrowthAreasActivityGame] finalizeActivity failed:', err);
       toast.error('Could not finalise game results. Please try again.');
     }
-  // handleGameComplete is defined below — useCallback ref pattern keeps this stable
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [childId, area]);
 
   const job = useJob({
@@ -102,6 +108,7 @@ export default function GrowthAreasActivityGame() {
     jobType: 'generate_activity',
     onCompleted: finalizeActivity,
   });
+  const { enqueue: jobEnqueue } = job;
 
   const handleSubmitIds = useCallback(
     async (ids: string[], prompt: string, schema: Record<string, unknown>) => {
@@ -117,11 +124,15 @@ export default function GrowthAreasActivityGame() {
           step: 'activity_summary',
           child_activity_selections: ids,
         });
-        await job.enqueue({
+        await jobEnqueue({
           type: 'generate_activity',
           child_id: childId,
           payload: { prompt, response_json_schema: schema },
-          write_back: { collection: 'growth_areas', filter: { area_id: area.id }, field: 'pending_child_activity' },
+          write_back: {
+            collection: 'growth_areas',
+            filter: { area_id: area.id },
+            field: 'pending_child_activity',
+          },
         });
       } catch (err) {
         console.error('[GrowthAreasActivityGame] handleSubmitIds failed:', err);
@@ -129,7 +140,7 @@ export default function GrowthAreasActivityGame() {
         throw err;
       }
     },
-    [childId, area, savedAnswers, job.enqueue],
+    [childId, area, savedAnswers, jobEnqueue],
   );
 
   const handleGameComplete = useCallback(
@@ -158,6 +169,7 @@ export default function GrowthAreasActivityGame() {
     },
     [childId, area, activity, navigate, savedAnswers],
   );
+  handleGameCompleteRef.current = handleGameComplete;
 
   const handleSelectedIdsChange = useCallback(
     async (ids: string[]) => {

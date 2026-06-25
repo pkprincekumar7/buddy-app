@@ -188,7 +188,9 @@ export default function PersonalityJourneyScreen() {
   const routeChildId = (route.params as { childId?: string } | undefined)
     ?.childId;
   const childId = routeChildId ?? activeChildId;
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
@@ -206,8 +208,9 @@ export default function PersonalityJourneyScreen() {
     if (!childId) return;
     try {
       await api.entities.Child.update(childId, { onboarding_phase: 3 });
-    } catch { /* non-fatal */ }
-    setIsInitializing(false);
+    } catch {
+      /* non-fatal */
+    }
   }, [childId]);
 
   const job = useJob({
@@ -261,7 +264,9 @@ export default function PersonalityJourneyScreen() {
           return;
         }
 
-        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        const merged = mergeChildDraft(
+          normalizeOnboardingChildDataBlob(child) ?? {},
+        );
         setChildName(merged.name || '');
         setChildData(child as Record<string, unknown>);
 
@@ -290,8 +295,9 @@ export default function PersonalityJourneyScreen() {
         }
 
         // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
-          ?.generate_journey_recommendations;
+        const activeJobId = (
+          child.active_jobs as Record<string, string> | undefined
+        )?.generate_journey_recommendations;
         if (!activeJobId) {
           const age = parseInt(String(merged.age), 10) || 10;
           const lifePhase = determinePhase(age);
@@ -305,13 +311,19 @@ export default function PersonalityJourneyScreen() {
                 lifePhase,
                 personalityType:
                   gp?.personality_type ??
-                  `${viewModel?.type ?? 'Unknown'} (${(viewModel?.profile?.name as string) ?? ''})`,
+                  `${viewModel?.type ?? 'Unknown'} (${
+                    (viewModel?.profile?.name as string) ?? ''
+                  })`,
                 personalityNarrative: gp?.summary,
                 growthAreas: gp?.growth_areas as string[] | undefined,
               }),
               response_json_schema: recommendationsJourneySchema(),
             },
-            write_back: { collection: 'children', filter: {}, field: 'recommendations' },
+            write_back: {
+              collection: 'children',
+              filter: {},
+              field: 'recommendations',
+            },
           });
         }
         setIsInitializing(false);
@@ -324,7 +336,9 @@ export default function PersonalityJourneyScreen() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);

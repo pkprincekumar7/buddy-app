@@ -33,8 +33,9 @@ export default function PersonalityJourney() {
     if (!childId) return;
     try {
       await api.entities.Child.update(childId, { onboarding_phase: 3 });
-    } catch { /* non-fatal */ }
-    setIsInitializing(false); // ensures status flips to 'ready'
+    } catch {
+      /* non-fatal */
+    }
   }, [childId]);
 
   const job = useJob({
@@ -71,9 +72,9 @@ export default function PersonalityJourney() {
           return;
         }
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
-        mergedRef.current = merged as Record<string, unknown>;
+        mergedRef.current = merged;
         setChildName(merged.name || '');
-        setChildData(child as Record<string, unknown>);
+        setChildData(child);
 
         const gp = onboardingProfileFromViewModel(viewModel);
         setProfile(gp);
@@ -96,8 +97,7 @@ export default function PersonalityJourney() {
         }
 
         // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
-          ?.generate_journey_recommendations;
+        const activeJobId = child.active_jobs?.generate_journey_recommendations;
         if (!activeJobId) {
           const age = parseInt(String(merged.age), 10) || 10;
           const lifePhase = determinePhase(age);
@@ -130,20 +130,23 @@ export default function PersonalityJourney() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
   const isGenerating = !isInitializing && job.isLoading;
   const isError = initError || job.isFailed;
-  const status = isLoadingAuth || isInitializing
-    ? 'loading'
-    : isGenerating
-      ? 'generating'
-      : isError
-        ? 'error'
-        : 'ready';
+  const status =
+    isLoadingAuth || isInitializing
+      ? 'loading'
+      : isGenerating
+        ? 'generating'
+        : isError
+          ? 'error'
+          : 'ready';
 
   const sectionAnim = (delay: number) => ({
     initial: { opacity: 0, y: 24 },

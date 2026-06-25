@@ -426,7 +426,7 @@ export default function GoalsDashboard() {
               </div>
               <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">
                 3-Month Growth Plan for{' '}
-                {(childData?.['name'] as string | undefined) || 'Your Child'}
+                {(childData?.['name'] as string | undefined) ?? 'Your Child'}
               </h1>
               <p className="text-muted-foreground">Personalized goals powered by Buddy360</p>
 

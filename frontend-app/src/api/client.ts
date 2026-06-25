@@ -381,7 +381,10 @@ export const api = {
 
   jobs: {
     enqueue: (payload: EnqueueJobPayload): Promise<EnqueueJobResponse> =>
-      request('/jobs', { method: 'POST', body: payload as Record<string, unknown> }) as Promise<EnqueueJobResponse>,
+      request('/jobs', {
+        method: 'POST',
+        body: payload as unknown as Record<string, unknown>,
+      }) as Promise<EnqueueJobResponse>,
     poll: (jobId: string): Promise<JobStatusRecord> =>
       request(`/jobs/${encodeURIComponent(jobId)}`) as Promise<JobStatusRecord>,
   },

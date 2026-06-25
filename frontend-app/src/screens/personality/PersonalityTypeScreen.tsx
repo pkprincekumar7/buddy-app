@@ -120,7 +120,9 @@ export default function PersonalityTypeScreen() {
   const routeChildId = (route.params as { childId?: string } | undefined)
     ?.childId;
   const childId = routeChildId ?? activeChildId;
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [childName, setChildName] = useState('');
   const [mbtiResult, setMbtiResult] = useState<MbtiResult | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -136,11 +138,15 @@ export default function PersonalityTypeScreen() {
     try {
       const child = await api.entities.Child.get(childId);
       const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+      const pendingVm = (child?.pending_personality_vm ??
+        personality?.pending_view_model) as Record<string, unknown> | undefined;
       const merged = mergedDataRef.current;
 
       if (pendingVm && merged) {
-        const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+        const vm = adaptAiPersonalityToViewModel(
+          pendingVm,
+          merged.name as string,
+        );
         // Show result immediately — don't block on the save.
         setMbtiResult(sanitizeViewModelAvatars(vm) as unknown as MbtiResult);
         // Strip SVG data-URI images before saving — WAF blocks payloads containing
@@ -148,15 +154,31 @@ export default function PersonalityTypeScreen() {
         api.entities.Child.update(childId, {
           personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           onboarding_phase: 2,
-        }).catch((err) => console.error('[PersonalityTypeScreen] Failed to persist personality:', err));
-      } else if (personality?.view_model?.type && personality?.view_model?.profile) {
-        const clamped = maybeClampStoredPersonalityDescription(personality.view_model, {
-          analysisSource: personality?.source,
-        });
-        setMbtiResult(sanitizeViewModelAvatars(clamped) as unknown as MbtiResult);
+        }).catch(err =>
+          console.error(
+            '[PersonalityTypeScreen] Failed to persist personality:',
+            err,
+          ),
+        );
+      } else if (
+        personality?.view_model?.type &&
+        personality?.view_model?.profile
+      ) {
+        const clamped = maybeClampStoredPersonalityDescription(
+          personality.view_model,
+          {
+            analysisSource: personality?.source,
+          },
+        );
+        setMbtiResult(
+          sanitizeViewModelAvatars(clamped) as unknown as MbtiResult,
+        );
       }
     } catch (err) {
-      console.error('[PersonalityTypeScreen] Failed to finalize personality:', err);
+      console.error(
+        '[PersonalityTypeScreen] Failed to finalize personality:',
+        err,
+      );
     }
   }, [childId]);
 
@@ -168,7 +190,8 @@ export default function PersonalityTypeScreen() {
 
   const isAnalysing = !isInitializing && job.isLoading;
   const isError = initError || job.isFailed;
-  const isReady = !isInitializing && !isAnalysing && !isError && mbtiResult !== null;
+  const isReady =
+    !isInitializing && !isAnalysing && !isError && mbtiResult !== null;
   // Animate in only after data is ready AND stage-2 splash is gone — mirrors web PersonalityType.tsx.
   const contentStyle = useSlideUpWhenReady(isReady && !showSplash);
 
@@ -201,7 +224,9 @@ export default function PersonalityTypeScreen() {
           setTtsEnabled(prefs.tts_enabled);
         }
 
-        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        const merged = mergeChildDraft(
+          normalizeOnboardingChildDataBlob(child) ?? {},
+        );
         mergedDataRef.current = merged as Record<string, unknown>;
         setChildName(merged.name || '');
         setChildData(child as Record<string, unknown>);
@@ -213,22 +238,38 @@ export default function PersonalityTypeScreen() {
           const clamped = maybeClampStoredPersonalityDescription(viewModel, {
             analysisSource: personality?.source,
           });
-          setMbtiResult(sanitizeViewModelAvatars(clamped) as unknown as MbtiResult);
+          setMbtiResult(
+            sanitizeViewModelAvatars(clamped) as unknown as MbtiResult,
+          );
           setIsInitializing(false);
           return;
         }
 
         // pending_personality_vm means worker succeeded but client crashed before finalizing
-        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+        const pendingVm = (child.pending_personality_vm ??
+          personality?.pending_view_model) as
+          | Record<string, unknown>
+          | undefined;
         if (pendingVm) {
-          const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+          const vm = adaptAiPersonalityToViewModel(
+            pendingVm,
+            merged.name as string,
+          );
           if (cancelled) return;
           setMbtiResult(sanitizeViewModelAvatars(vm) as unknown as MbtiResult);
           setIsInitializing(false);
           api.entities.Child.update(childId, {
-            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+            personality: {
+              source: 'llm',
+              view_model: stripViewModelImages(vm),
+            },
             onboarding_phase: 2,
-          }).catch((err) => console.error('[PersonalityTypeScreen] Failed to persist recovered personality:', err));
+          }).catch(err =>
+            console.error(
+              '[PersonalityTypeScreen] Failed to persist recovered personality:',
+              err,
+            ),
+          );
           return;
         }
 
@@ -238,8 +279,9 @@ export default function PersonalityTypeScreen() {
         }
 
         // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
-          ?.generate_personality_analysis;
+        const activeJobId = (
+          child.active_jobs as Record<string, string> | undefined
+        )?.generate_personality_analysis;
         if (!activeJobId) {
           await job.enqueue({
             type: 'generate_personality_analysis',
@@ -251,7 +293,11 @@ export default function PersonalityTypeScreen() {
               }),
               response_json_schema: personalityLlmSchema(),
             },
-            write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
+            write_back: {
+              collection: 'children',
+              filter: {},
+              field: 'pending_personality_vm',
+            },
           });
         }
         setIsInitializing(false);
@@ -264,7 +310,9 @@ export default function PersonalityTypeScreen() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);

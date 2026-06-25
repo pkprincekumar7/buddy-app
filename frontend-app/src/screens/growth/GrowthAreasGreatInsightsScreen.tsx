@@ -217,23 +217,38 @@ export default function GrowthAreasGreatInsightsScreen() {
 
   const area = areaByUrlName(activityId ?? '');
 
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState<string | null>(null);
   const [childGender, setChildGender] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<string[] | null>(null);
-  const [interactiveAnswers, setInteractiveAnswers] = useState<Record<string, unknown>>({});
-  const [childGameResults, setChildGameResults] = useState<GameResults | null>(null);
+  const [interactiveAnswers, setInteractiveAnswers] = useState<
+    Record<string, unknown>
+  >({});
+  const [childGameResults, setChildGameResults] = useState<GameResults | null>(
+    null,
+  );
   // loading → initial DB fetch | idle → no cached recs, waiting for button
   // ready → recs available | error → load failed
   const [status, setStatus] = useState('loading');
   // Stores the area entry data pre-saved before enqueueing so the onCompleted callback can finalize it.
   const pendingAreaDataRef = useRef<Record<string, unknown> | null>(null);
-  // Snapshot the childId at enqueue time — activeChildId from auth context could change
-  // (user switches child) while the job is polling, which would corrupt the wrong child's data.
+  // Snapshot the childId at enqueue time so that if the user switches the active child
+  // while the job is polling, finalizeRecommendations still writes to the child the job
+  // was started for — not whoever happens to be active when the poll completes.
+  //
+  // This is RN-specific: the navigation stack keeps this screen mounted in memory even
+  // when the user navigates away, so activeChildId can drift. The web version
+  // (GrowthAreasActivityGreatInsights.tsx) omits this ref intentionally — React Router
+  // unmounts the page on navigation, which tears down the poll via useEffect cleanup,
+  // making the drift impossible. Do NOT remove this ref assuming it is dead code.
   const enqueueChildIdRef = useRef<string | null>(null);
 
-  const contentStyle = useSlideUpWhenReady(!isLoadingAuth && status !== 'loading');
+  const contentStyle = useSlideUpWhenReady(
+    !isLoadingAuth && status !== 'loading',
+  );
 
   const finalizeRecommendations = useCallback(async () => {
     const childId = enqueueChildIdRef.current ?? activeChildId;
@@ -242,12 +257,14 @@ export default function GrowthAreasGreatInsightsScreen() {
       const completedData = await api.completedGrowthAreas.list(childId);
       const allDocs = completedData.areas ?? [];
       const areaDoc = allDocs.find(a => a.area_id === area.id);
-      const pendingRaw = areaDoc?.pending_recommendations as Record<string, unknown> | undefined;
+      const pendingRaw = areaDoc?.pending_recommendations as
+        | Record<string, unknown>
+        | undefined;
       const pending = Array.isArray(pendingRaw)
         ? (pendingRaw as string[])
         : Array.isArray(pendingRaw?.recommendations)
-          ? (pendingRaw.recommendations as string[])
-          : undefined;
+        ? (pendingRaw.recommendations as string[])
+        : undefined;
       if (pending && pending.length > 0) {
         setRecommendations(pending);
         await api.completedGrowthAreas.append(childId, {
@@ -263,7 +280,10 @@ export default function GrowthAreasGreatInsightsScreen() {
       }
       setStatus('ready');
     } catch (err) {
-      console.error('[GrowthAreasGreatInsightsScreen] Failed to finalize recommendations:', err);
+      console.error(
+        '[GrowthAreasGreatInsightsScreen] Failed to finalize recommendations:',
+        err,
+      );
       toast.error('Recommendations are ready — refresh to see them.');
     }
   }, [activeChildId, area]);
@@ -273,6 +293,7 @@ export default function GrowthAreasGreatInsightsScreen() {
     jobType: 'generate_recommendations',
     onCompleted: finalizeRecommendations,
   });
+  const { enqueue: jobEnqueue } = job;
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -299,8 +320,9 @@ export default function GrowthAreasGreatInsightsScreen() {
         if (cancelled) return;
         const allDocs = completedData.areas ?? [];
         const areaDoc =
-          allDocs.find(a => a.area_id === area.id && a.status === 'in_progress') ??
-          allDocs.find(a => a.area_id === area.id);
+          allDocs.find(
+            a => a.area_id === area.id && a.status === 'in_progress',
+          ) ?? allDocs.find(a => a.area_id === area.id);
 
         const ia = areaDoc?.interactive_answers ?? {};
         setInteractiveAnswers(ia);
@@ -308,7 +330,9 @@ export default function GrowthAreasGreatInsightsScreen() {
         const childActivity = areaDoc?.child_activity;
         const rawGameResults = childActivity?.results;
         if (rawGameResults) {
-          setChildGameResults(normalizeChildGameRecommendations(rawGameResults) as GameResults);
+          setChildGameResults(
+            normalizeChildGameRecommendations(rawGameResults) as GameResults,
+          );
         }
 
         // DB hit: recommendations already exist — show immediately
@@ -336,8 +360,17 @@ export default function GrowthAreasGreatInsightsScreen() {
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [isLoadingAuth, isAuthenticated, activeChildId, activityId, area, navigation]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    activeChildId,
+    activityId,
+    area,
+    navigation,
+  ]);
 
   const isGenerating = job.isLoading;
   const isError = status === 'error' || job.isFailed;
@@ -348,7 +381,13 @@ export default function GrowthAreasGreatInsightsScreen() {
     const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
     const qaContext = questions
       .filter(q => interactiveAnswers[q.id])
-      .map(q => `Q: ${q.question.replace(/\{name\}/g, childName || 'the child')}\nA: ${String(interactiveAnswers[q.id])}`)
+      .map(
+        q =>
+          `Q: ${q.question.replace(
+            /\{name\}/g,
+            childName || 'the child',
+          )}\nA: ${String(interactiveAnswers[q.id])}`,
+      )
       .join('\n\n');
 
     try {
@@ -362,10 +401,13 @@ export default function GrowthAreasGreatInsightsScreen() {
         step: 'activity_summary',
         interactive_answers: interactiveAnswers,
       });
-      pendingAreaDataRef.current = { answers: interactiveAnswers, interactive_answers: interactiveAnswers };
+      pendingAreaDataRef.current = {
+        answers: interactiveAnswers,
+        interactive_answers: interactiveAnswers,
+      };
       enqueueChildIdRef.current = activeChildId;
 
-      await job.enqueue({
+      await jobEnqueue({
         type: 'generate_recommendations',
         child_id: activeChildId,
         payload: {
@@ -377,22 +419,44 @@ export default function GrowthAreasGreatInsightsScreen() {
             qaContext,
             childGameSummary: childGameResults?.summary ?? null,
             childGameStrengths: childGameResults?.strengths ?? null,
-            childGameSuggestedActivities: childGameResults?.suggested_activities ?? null,
+            childGameSuggestedActivities:
+              childGameResults?.suggested_activities ?? null,
           }),
           response_json_schema: {
             type: 'object',
             properties: {
-              recommendations: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5 },
+              recommendations: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 5,
+                maxItems: 5,
+              },
             },
           },
         },
-        write_back: { collection: 'growth_areas', filter: { area_id: area.id }, field: 'pending_recommendations' },
+        write_back: {
+          collection: 'growth_areas',
+          filter: { area_id: area.id },
+          field: 'pending_recommendations',
+        },
       });
     } catch (err) {
-      console.error('[GrowthAreasGreatInsightsScreen] Failed to enqueue recommendations:', err);
+      console.error(
+        '[GrowthAreasGreatInsightsScreen] Failed to enqueue recommendations:',
+        err,
+      );
       toast.error('Could not generate recommendations. Please try again.');
     }
-  }, [area, activeChildId, childName, childAge, childGender, interactiveAnswers, childGameResults, job.enqueue]);
+  }, [
+    area,
+    activeChildId,
+    childName,
+    childAge,
+    childGender,
+    interactiveAnswers,
+    childGameResults,
+    jobEnqueue,
+  ]);
 
   if (isLoadingAuth || status === 'loading') {
     return (
@@ -696,19 +760,18 @@ export default function GrowthAreasGreatInsightsScreen() {
             )}
 
             {/* Ready — staggered recommendation list */}
-            {Array.isArray(recommendations) &&
-              recommendations.length > 0 && (
-                <View className="gap-3">
-                  {recommendations.map((rec, i) => (
-                    <AnimatedRecItem
-                      key={i}
-                      rec={rec}
-                      index={i}
-                      areaColor={area.color}
-                    />
-                  ))}
-                </View>
-              )}
+            {Array.isArray(recommendations) && recommendations.length > 0 && (
+              <View className="gap-3">
+                {recommendations.map((rec, i) => (
+                  <AnimatedRecItem
+                    key={i}
+                    rec={rec}
+                    index={i}
+                    areaColor={area.color}
+                  />
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Navigation */}

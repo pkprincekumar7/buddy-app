@@ -108,23 +108,22 @@ async def enqueue_job(
     #       async with s.start_transaction():
     #           pass  # raises OperationFailure on M0/M2/M5, fails fast at boot
     try:
-        async with await db.client.start_session() as session:
-            async with session.start_transaction():
-                existing = await db[models.JOBS].count_documents(
-                    {
-                        "user_id": user_id,
-                        "child_id": body.child_id,
-                        "type": body.type,
-                        "status": {"$in": ["pending", "processing", "result_ready"]},
-                    },
-                    session=session,
+        async with await db.client.start_session() as session, session.start_transaction():
+            existing = await db[models.JOBS].count_documents(
+                {
+                    "user_id": user_id,
+                    "child_id": body.child_id,
+                    "type": body.type,
+                    "status": {"$in": ["pending", "processing", "result_ready"]},
+                },
+                session=session,
+            )
+            if existing >= _MAX_IN_FLIGHT_PER_TYPE:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
                 )
-                if existing >= _MAX_IN_FLIGHT_PER_TYPE:
-                    raise HTTPException(
-                        status_code=429,
-                        detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
-                    )
-                await db[models.JOBS].insert_one(doc, session=session)
+            await db[models.JOBS].insert_one(doc, session=session)
     except HTTPException:
         raise
     except Exception as e:
@@ -145,7 +144,9 @@ async def enqueue_job(
     except Exception:
         log.warning(
             "job.active_jobs_update_failed job_id=%s child_id=%s — job will still be processed",
-            job_id, body.child_id, exc_info=True,
+            job_id,
+            body.child_id,
+            exc_info=True,
         )
 
     log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, body.type, body.child_id)
@@ -167,9 +168,7 @@ async def get_job_status(
     user: dict = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    doc = await db[models.JOBS].find_one(
-        {"job_id": job_id, "user_id": user["_id"]}
-    )
+    doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"]})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")
 

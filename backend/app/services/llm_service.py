@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import re
 from typing import Any, Literal
 
 from app.settings import settings

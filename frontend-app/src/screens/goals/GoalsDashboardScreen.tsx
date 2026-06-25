@@ -816,7 +816,9 @@ export default function GoalsDashboardScreen() {
               childName={childData?.name as string | undefined}
               childAge={childData?.age as number | string | undefined}
               childGender={childData?.gender as string | undefined}
-              activeJobs={childData?.active_jobs as Record<string, string> | undefined}
+              activeJobs={
+                childData?.active_jobs as Record<string, string> | undefined
+              }
               onPlanUpdate={plan => setGoalPlan(plan)}
               onClose={() => setShowProgress(false)}
             />

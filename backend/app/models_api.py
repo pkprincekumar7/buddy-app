@@ -382,9 +382,18 @@ _SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
 # Validated in EnqueueJobRequest.validate_write_back_field (needs both
 # write_back.field and type, which are siblings — can't be done in WriteBackConfig).
 _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
-    "generate_recommendations": {"recommendations", "recommendations_plan", "pending_recommendations"},
+    "generate_recommendations": {
+        "recommendations",
+        "recommendations_plan",
+        "pending_recommendations",
+    },
     "generate_goals_plan": {"plan", "goals_plan", "plan.months"},
-    "generate_activity": {"activity", "activity_plan", "suggested_activity", "pending_child_activity"},
+    "generate_activity": {
+        "activity",
+        "activity_plan",
+        "suggested_activity",
+        "pending_child_activity",
+    },
     # personality analysis writes to a staging field; the client transforms the
     # raw LLM output via adaptAiPersonalityToViewModel before finalising the
     # canonical personality.view_model field.
@@ -431,9 +440,7 @@ class WriteBackConfig(BaseModel):
                             f"write_back.filter exceeds maximum key count ({_FILTER_MAX_KEYS})"
                         )
                     if key.startswith("$"):
-                        raise ValueError(
-                            f"write_back.filter key {path!r} must not start with '$'"
-                        )
+                        raise ValueError(f"write_back.filter key {path!r} must not start with '$'")
                     _check(val, f"{path}.{key}", depth + 1)
             elif isinstance(obj, list):
                 for item in obj:
@@ -482,7 +489,7 @@ class EnqueueJobRequest(BaseModel):
     write_back: WriteBackConfig
 
     @model_validator(mode="after")
-    def validate_write_back_field(self) -> "EnqueueJobRequest":
+    def validate_write_back_field(self) -> EnqueueJobRequest:
         allowed = _ALLOWED_WRITE_BACK_FIELDS.get(self.type, set())
         if self.write_back.field not in allowed:
             raise ValueError(

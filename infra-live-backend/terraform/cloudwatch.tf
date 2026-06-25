@@ -26,7 +26,7 @@ resource "aws_cloudwatch_log_group" "backend" {
 resource "aws_cloudwatch_metric_alarm" "worker_processing_stuck" {
   alarm_name          = "${var.app_name}-worker-processing-stuck-${var.environment}"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 10   # 10 × 60s = 10 minutes
+  evaluation_periods  = 10 # 10 × 60s = 10 minutes
   metric_name         = "ProcessingJobCount"
   namespace           = "Buddy360/Worker"
   period              = 60

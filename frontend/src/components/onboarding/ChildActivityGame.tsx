@@ -351,6 +351,15 @@ interface ChildActivityGameProps {
   isExternallyLoading?: boolean;
 }
 
+const ACTIVITY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    suggested_activities: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
+    strengths: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 3 },
+  },
+};
+
 export default function ChildActivityGame({
   childName,
   childAge,
@@ -402,15 +411,6 @@ export default function ChildActivityGame({
     [ids, game.maxSelections, onSelectedIdsChange],
   );
 
-  const _activitySchema = {
-    type: 'object',
-    properties: {
-      summary: { type: 'string' },
-      suggested_activities: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
-      strengths: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 3 },
-    },
-  };
-
   const handleSubmit = async () => {
     if (ids.length === 0) {
       toast.error('Please select at least 1 option');
@@ -454,7 +454,7 @@ export default function ChildActivityGame({
         await onSubmitIds(
           ids,
           game.promptContext(selectedLabels, childAge, childGender, childName),
-          _activitySchema,
+          ACTIVITY_SCHEMA,
         );
       } catch {
         // error already handled by the parent
@@ -467,7 +467,7 @@ export default function ChildActivityGame({
     try {
       const raw = await api.integrations.Core.InvokeLLM({
         prompt: game.promptContext(selectedLabels, childAge, childGender, childName),
-        response_json_schema: _activitySchema,
+        response_json_schema: ACTIVITY_SCHEMA,
       });
 
       const recommendations = normalizeChildGameRecommendations(raw);
@@ -543,7 +543,9 @@ export default function ChildActivityGame({
         disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
         className="h-12 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
       >
-        {isSubmitting || isExternallyLoading ? 'Generating Recommendations...' : 'Submit My Choices'}
+        {isSubmitting || isExternallyLoading
+          ? 'Generating Recommendations...'
+          : 'Submit My Choices'}
       </Button>
     </div>
   );

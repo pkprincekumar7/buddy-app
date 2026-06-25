@@ -360,9 +360,32 @@ interface ChildActivityGameProps {
     selections: string[];
     recommendations: Record<string, unknown>;
   }) => void | Promise<void>;
-  onSubmitIds?: (ids: string[], prompt: string, schema: Record<string, unknown>) => Promise<void>;
+  onSubmitIds?: (
+    ids: string[],
+    prompt: string,
+    schema: Record<string, unknown>,
+  ) => Promise<void>;
   isExternallyLoading?: boolean;
 }
+
+const ACTIVITY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    suggested_activities: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 3,
+      maxItems: 4,
+    },
+    strengths: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 2,
+      maxItems: 3,
+    },
+  },
+};
 
 export default function ChildActivityGame({
   childName,
@@ -415,15 +438,6 @@ export default function ChildActivityGame({
     [ids, game.maxSelections, onSelectedIdsChange],
   );
 
-  const _activitySchema = {
-    type: 'object',
-    properties: {
-      summary: { type: 'string' },
-      suggested_activities: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
-      strengths: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 3 },
-    },
-  };
-
   const handleSubmit = async () => {
     if (ids.length === 0) {
       toast.error('Please select at least 1 option');
@@ -450,10 +464,15 @@ export default function ChildActivityGame({
         const recommendations = normalizeChildGameRecommendations(
           existingChildActivity.results,
         );
-        const existingSelections = Array.isArray(existingChildActivity.selections)
+        const existingSelections = Array.isArray(
+          existingChildActivity.selections,
+        )
           ? (existingChildActivity.selections as string[])
           : ids;
-        const done = onComplete({ selections: existingSelections, recommendations });
+        const done = onComplete({
+          selections: existingSelections,
+          recommendations,
+        });
         if (done != null && typeof done.then === 'function') await done;
         setIsSubmitting(false);
         return;
@@ -474,7 +493,7 @@ export default function ChildActivityGame({
         await onSubmitIds(
           ids,
           game.promptContext(selectedLabels, childAge, childGender, childName),
-          _activitySchema,
+          ACTIVITY_SCHEMA,
         );
       } catch {
         // error already handled by the parent
@@ -486,15 +505,23 @@ export default function ChildActivityGame({
 
     try {
       const raw = await api.integrations.Core.InvokeLLM({
-        prompt: game.promptContext(selectedLabels, childAge, childGender, childName),
-        response_json_schema: _activitySchema,
+        prompt: game.promptContext(
+          selectedLabels,
+          childAge,
+          childGender,
+          childName,
+        ),
+        response_json_schema: ACTIVITY_SCHEMA,
       });
 
       const recommendations = normalizeChildGameRecommendations(raw);
       const done = onComplete({ selections: ids, recommendations });
       if (done != null && typeof done.then === 'function') await done;
     } catch (err) {
-      console.error('[ChildActivityGame] Recommendation generation failed:', err);
+      console.error(
+        '[ChildActivityGame] Recommendation generation failed:',
+        err,
+      );
       toast.error('Could not generate recommendations. Please try again.');
     } finally {
       setIsSubmitting(false);
