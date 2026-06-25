@@ -656,7 +656,7 @@ export default function GoalsDashboardScreen() {
               style={{ color: colors.text }}
             >
               3-Month Growth Plan for{' '}
-              {(childData?.name as string | undefined) || 'Your Child'}
+              {(childData?.name as string | undefined) ?? 'Your Child'}
             </Text>
             <Text className="text-center" style={{ color: colors.textMuted }}>
               Personalized goals powered by Buddy360
