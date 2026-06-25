@@ -17,6 +17,10 @@ log = logging.getLogger(__name__)
 _MAX_IN_FLIGHT_PER_TYPE = 2
 
 
+def _sanitize_for_log(value: object) -> str:
+    return str(value).replace("\r", "").replace("\n", "")
+
+
 @router.post(
     "",
     response_model=EnqueueJobResponse,
@@ -145,7 +149,7 @@ async def enqueue_job(
         log.warning(
             "job.active_jobs_update_failed job_id=%s child_id=%s — job will still be processed",
             job_id,
-            body.child_id,
+            _sanitize_for_log(body.child_id),
             exc_info=True,
         )
 
