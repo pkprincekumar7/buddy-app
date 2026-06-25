@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Star, Compass, Zap, Clock, ChevronLeft } from 'lucide-react';
@@ -12,6 +12,7 @@ import { mergeChildDraft, determinePhase } from '@/lib/onboardingHelpers';
 import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
+import { useJob } from '@/hooks/useJob';
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
@@ -19,9 +20,28 @@ export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
-  const [status, setStatus] = useState('loading'); // loading | generating | ready | error
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(false);
+  // Stores merged child data for building the prompt inside enqueue, so the useEffect
+  // only needs to run once and doesn't depend on re-render state.
+  const mergedRef = useRef<Record<string, unknown> | null>(null);
+
+  const onJourneyComplete = useCallback(async () => {
+    if (!childId) return;
+    try {
+      await api.entities.Child.update(childId, { onboarding_phase: 3 });
+    } catch { /* non-fatal */ }
+    setIsInitializing(false); // ensures status flips to 'ready'
+  }, [childId]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_journey_recommendations',
+    onCompleted: onJourneyComplete,
+  });
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -51,12 +71,14 @@ export default function PersonalityJourney() {
           return;
         }
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        mergedRef.current = merged as Record<string, unknown>;
         setChildName(merged.name || '');
+        setChildData(child as Record<string, unknown>);
 
         const gp = onboardingProfileFromViewModel(viewModel);
         setProfile(gp);
 
-        // DB hit: recommendations already generated — skip LLM
+        // Already generated — show immediately
         const recommendations = child.recommendations;
         if (
           recommendations &&
@@ -64,7 +86,7 @@ export default function PersonalityJourney() {
             (Array.isArray(recommendations['focus_areas']) &&
               (recommendations['focus_areas'] as unknown[]).length > 0))
         ) {
-          setStatus('ready');
+          setIsInitializing(false);
           return;
         }
 
@@ -73,47 +95,55 @@ export default function PersonalityJourney() {
           return;
         }
 
-        setStatus('generating');
-        const age = parseInt(String(merged.age), 10) || 10;
-        const lifePhase = determinePhase(age);
-
-        try {
-          const result = await api.integrations.Core.InvokeLLM({
-            prompt: buildJourneyRecommendationsPrompt({
-              childData: merged,
-              age,
-              lifePhase,
-              personalityType:
-                gp?.personality_type ??
-                `${viewModel?.type ?? 'Unknown'} (${(viewModel?.profile?.['name'] as string) ?? ''})`,
-              personalityNarrative: gp?.summary,
-              growthAreas: gp?.growth_areas as string[] | undefined,
-            }),
-            response_json_schema: recommendationsJourneySchema(),
+        // Only enqueue if no active job is already polling (useJob picks it up via childData)
+        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
+          ?.generate_journey_recommendations;
+        if (!activeJobId) {
+          const age = parseInt(String(merged.age), 10) || 10;
+          const lifePhase = determinePhase(age);
+          await job.enqueue({
+            type: 'generate_journey_recommendations',
+            child_id: childId,
+            payload: {
+              prompt: buildJourneyRecommendationsPrompt({
+                childData: merged,
+                age,
+                lifePhase,
+                personalityType:
+                  gp?.personality_type ??
+                  `${viewModel?.type ?? 'Unknown'} (${(viewModel?.profile?.['name'] as string) ?? ''})`,
+                personalityNarrative: gp?.summary,
+                growthAreas: gp?.growth_areas as string[] | undefined,
+              }),
+              response_json_schema: recommendationsJourneySchema(),
+            },
+            write_back: { collection: 'children', filter: {}, field: 'recommendations' },
           });
-          if (cancelled) return;
-
-          if (result) {
-            await api.entities.Child.update(childId, {
-              recommendations: result,
-              onboarding_phase: 3,
-            });
-          }
-        } catch (err) {
-          console.error('[PersonalityJourney] LLM failed:', err);
         }
-
-        if (!cancelled) setStatus('ready');
+        setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityJourney] Load failed:', err);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
+    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+
+  const isGenerating = !isInitializing && job.isLoading;
+  const isError = initError || job.isFailed;
+  const status = isLoadingAuth || isInitializing
+    ? 'loading'
+    : isGenerating
+      ? 'generating'
+      : isError
+        ? 'error'
+        : 'ready';
 
   const sectionAnim = (delay: number) => ({
     initial: { opacity: 0, y: 24 },

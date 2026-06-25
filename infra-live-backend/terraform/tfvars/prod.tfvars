@@ -27,3 +27,16 @@ default_region      = "us"
 
 # ECS Exec
 enable_execute_command = false
+
+# Worker ECS
+worker_task_cpu              = 1024
+worker_task_memory           = 2048
+worker_desired_count         = 2
+worker_concurrency           = 5
+worker_poll_interval_seconds = 2
+
+# Autoscaling
+api_min_capacity    = 5
+api_max_capacity    = 50
+worker_min_capacity = 2
+worker_max_capacity = 10

@@ -68,3 +68,31 @@ resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
   to_port                      = 8000
   referenced_security_group_id = aws_security_group.alb_sg.id
 }
+
+# ---------------------------------------------------------------------------
+# Worker security group
+# No inbound rules — worker initiates all connections (MongoDB, LLM APIs,
+# CloudWatch). Unrestricted egress is required for the same reasons as the
+# API task SG (ECR, Secrets Manager, MongoDB Atlas, LLM provider APIs).
+# ---------------------------------------------------------------------------
+
+#trivy:ignore:AVD-AWS-0104
+resource "aws_security_group" "worker_sg" {
+  #checkov:skip=CKV_AWS_382:Unrestricted egress required — worker needs outbound to ECR (image pulls), Secrets Manager, CloudWatch, MongoDB Atlas, and LLM APIs (OpenAI/Anthropic/Gemini)
+
+  name        = "${var.app_name}-worker-sg-${var.environment}"
+  description = "Worker: no inbound, unrestricted egress for LLM APIs and MongoDB"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-worker-sg-${var.environment}"
+  }
+}

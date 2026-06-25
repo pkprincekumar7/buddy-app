@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -25,6 +26,7 @@ from app.routers.audio import router as audio_router
 from app.routers.auth import router as auth_router
 from app.routers.children import router as children_router
 from app.routers.downloads import router as downloads_router
+from app.routers.jobs import router as jobs_router
 from app.routers.llm import router as llm_router
 from app.routers.users import router as users_router
 from app.settings import settings
@@ -145,6 +147,7 @@ _OPENAPI_TAGS = [
         "description": "User preferences and child-scoped data (goals, growth areas).",
     },
     {"name": "children", "description": "Child profiles linked to a parent account."},
+    {"name": "jobs", "description": "Async LLM job queue — enqueue and poll jobs."},
     {"name": "llm", "description": "Large-language-model invocation and provider availability."},
     {"name": "audio", "description": "Audio processing and speech-to-text transcription."},
     {"name": "downloads", "description": "Pre-signed S3 URLs for downloading mobile app builds."},
@@ -173,6 +176,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 # rate limiter and OPTIONS preflight requests are handled by CORS without
 # consuming any rate-limit quota.
 app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    log.warning("422 validation_error path=%s errors=%s", request.url.path, exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.exception_handler(HTTPException)
@@ -221,6 +230,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=API_V1_PREFIX)
 app.include_router(users_router, prefix=API_V1_PREFIX)
 app.include_router(children_router, prefix=API_V1_PREFIX)
+app.include_router(jobs_router, prefix=API_V1_PREFIX)
 app.include_router(llm_router, prefix=API_V1_PREFIX)
 app.include_router(audio_router, prefix=API_V1_PREFIX)
 app.include_router(downloads_router, prefix=API_V1_PREFIX)

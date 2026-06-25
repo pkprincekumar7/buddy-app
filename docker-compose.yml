@@ -69,6 +69,34 @@ services:
       retries: 10
       start_period: 25s
 
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
+      DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      APP_ENV: ${APP_ENV:-local}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-south-1}
+    networks:
+      - buddy360_net
+    depends_on:
+      backend:
+        condition: service_healthy
+
   frontend:
     networks:
       - buddy360_net

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import StageSplash from '@/components/shared/StageSplash';
@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import PersonalityAnalysis, {
-  calculateMBTI,
   adaptAiPersonalityToViewModel,
   PERSONALITY_TYPE_KEYS,
 } from '@/components/shared/PersonalityAnalysis';
@@ -22,16 +21,57 @@ import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
 import StartOverButton from '@/components/shared/StartOverButton';
+import { useJob } from '@/hooks/useJob';
 
 export default function PersonalityType() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [childName, setChildName] = useState('');
   const [mbtiResult, setMbtiResult] = useState<Record<string, unknown> | null>(null);
-  const [status, setStatus] = useState('loading'); // loading | analysing | ready | error
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(false);
   const [showSplash, startTimer] = useStageSplash(0);
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  // Stores merged child data for the onCompleted callback without re-render dependencies.
+  const mergedDataRef = useRef<Record<string, unknown> | null>(null);
+
+  const finalizePersonality = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const child = await api.entities.Child.get(childId);
+      const personality = child?.personality;
+      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+      const merged = mergedDataRef.current;
+
+      if (pendingVm && merged) {
+        const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+        // Show result immediately — don't block on the save.
+        setMbtiResult(sanitizeViewModelAvatars(vm));
+        // Strip SVG data-URI images before saving — WAF blocks payloads containing
+        // <svg>/<text> tags. sanitizeViewModelAvatars regenerates them on next load.
+        api.entities.Child.update(childId, {
+          personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+          onboarding_phase: 2,
+        }).catch((err) => console.error('[PersonalityType] Failed to persist personality:', err));
+      } else if (personality?.view_model?.type && personality?.view_model?.profile) {
+        // Another device already finalized — use that result
+        const clamped = maybeClampStoredPersonalityDescription(personality.view_model, {
+          analysisSource: personality?.source,
+        });
+        setMbtiResult(sanitizeViewModelAvatars(clamped));
+      }
+    } catch (err) {
+      console.error('[PersonalityType] Failed to finalize personality:', err);
+    }
+  }, [childId]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_personality_analysis',
+    onCompleted: finalizePersonality,
+  });
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -63,9 +103,11 @@ export default function PersonalityType() {
         }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        mergedDataRef.current = merged as Record<string, unknown>;
         setChildName(merged.name || '');
+        setChildData(child as Record<string, unknown>);
 
-        // DB hit: personality already analysed — skip LLM
+        // Already analysed — show result immediately
         const personality = child.personality;
         const viewModel = personality?.view_model;
         if (viewModel?.type && viewModel?.profile) {
@@ -73,7 +115,21 @@ export default function PersonalityType() {
             analysisSource: personality?.source,
           });
           setMbtiResult(sanitizeViewModelAvatars(clamped));
-          setStatus('ready');
+          setIsInitializing(false);
+          return;
+        }
+
+        // pending_personality_vm means worker succeeded but client crashed before finalizing
+        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+        if (pendingVm) {
+          const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+          if (cancelled) return;
+          setMbtiResult(sanitizeViewModelAvatars(vm));
+          setIsInitializing(false);
+          api.entities.Child.update(childId, {
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+            onboarding_phase: 2,
+          }).catch((err) => console.error('[PersonalityType] Failed to persist recovered personality:', err));
           return;
         }
 
@@ -82,57 +138,50 @@ export default function PersonalityType() {
           return;
         }
 
-        // Call LLM
-        setStatus('analysing');
-        const childId_ = child.id;
-        try {
-          const prompt = buildPersonalityAnalysisPrompt({
-            childData: merged,
-            personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+        // Only enqueue if no active job is already polling (useJob picks it up via childData)
+        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
+          ?.generate_personality_analysis;
+        if (!activeJobId) {
+          await job.enqueue({
+            type: 'generate_personality_analysis',
+            child_id: childId,
+            payload: {
+              prompt: buildPersonalityAnalysisPrompt({
+                childData: merged,
+                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+              }),
+              response_json_schema: personalityLlmSchema(),
+            },
+            write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
           });
-          const ai = await api.integrations.Core.InvokeLLM({
-            prompt,
-            response_json_schema: personalityLlmSchema(),
-          });
-          if (cancelled) return;
-
-          const vm = adaptAiPersonalityToViewModel(
-            (ai as Record<string, unknown>) || {},
-            merged.name,
-          );
-          // Strip SVG data-URI images before saving — WAF blocks payloads containing
-          // <svg>/<text> tags. sanitizeViewModelAvatars regenerates them on next load.
-          await api.entities.Child.update(childId_, {
-            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
-            onboarding_phase: 2,
-          });
-          if (cancelled) return;
-          setMbtiResult(vm);
-        } catch (err) {
-          console.warn('[PersonalityType] LLM failed, falling back to rule-based:', err);
-          const ruleVm = calculateMBTI(merged);
-          try {
-            await api.entities.Child.update(childId_, {
-              personality: { source: 'rule_fallback', view_model: stripViewModelImages(ruleVm) },
-              onboarding_phase: 2,
-            });
-          } catch {
-            /* non-fatal */
-          }
-          if (cancelled) return;
-          setMbtiResult(ruleVm);
         }
-        setStatus('ready');
+        setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityType] Load failed:', err);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
+    // job.enqueue intentionally excluded — stable ref, but adding it re-triggers the
+    // effect after the enqueue updates job state causing a double-enqueue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+
+  const isAnalysing = !isInitializing && job.isLoading;
+  const isError = initError || job.isFailed;
+  const status = isLoadingAuth || isInitializing
+    ? 'loading'
+    : isAnalysing
+      ? 'analysing'
+      : isError
+        ? 'error'
+        : mbtiResult
+          ? 'ready'
+          : 'analysing';
 
   const handleContinue = async () => {
     if (childId) {

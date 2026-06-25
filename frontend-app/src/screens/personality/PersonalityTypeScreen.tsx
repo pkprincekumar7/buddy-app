@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { EmojiText } from '@/components/ui/EmojiText';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -14,7 +14,6 @@ import { useSlideUpWhenReady } from '@/lib/animations';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import {
-  calculateMBTI,
   adaptAiPersonalityToViewModel,
   PERSONALITY_TYPE_KEYS,
   type MbtiResult,
@@ -32,6 +31,7 @@ import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import type { RootStackParamList } from '@/navigation';
+import { useJob } from '@/hooks/useJob';
 
 // The PersonalityType screen lives in the Personality stack which is inside the Main tab.
 // We use a generic navigation prop here so it can go to sibling screens and back to Main root.
@@ -120,16 +120,57 @@ export default function PersonalityTypeScreen() {
   const routeChildId = (route.params as { childId?: string } | undefined)
     ?.childId;
   const childId = routeChildId ?? activeChildId;
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [childName, setChildName] = useState('');
   const [mbtiResult, setMbtiResult] = useState<MbtiResult | null>(null);
-  const [status, setStatus] = useState<
-    'loading' | 'analysing' | 'ready' | 'error'
-  >('loading');
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  // Stores merged child data for the onCompleted callback without re-render dependencies.
+  const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
   const [showSplash, startTimer] = useStageSplash();
+
+  const finalizePersonality = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const child = await api.entities.Child.get(childId);
+      const personality = child?.personality;
+      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+      const merged = mergedDataRef.current;
+
+      if (pendingVm && merged) {
+        const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+        // Show result immediately — don't block on the save.
+        setMbtiResult(sanitizeViewModelAvatars(vm) as unknown as MbtiResult);
+        // Strip SVG data-URI images before saving — WAF blocks payloads containing
+        // <svg>/<text> tags. sanitizeViewModelAvatars regenerates them on next load.
+        api.entities.Child.update(childId, {
+          personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+          onboarding_phase: 2,
+        }).catch((err) => console.error('[PersonalityTypeScreen] Failed to persist personality:', err));
+      } else if (personality?.view_model?.type && personality?.view_model?.profile) {
+        const clamped = maybeClampStoredPersonalityDescription(personality.view_model, {
+          analysisSource: personality?.source,
+        });
+        setMbtiResult(sanitizeViewModelAvatars(clamped) as unknown as MbtiResult);
+      }
+    } catch (err) {
+      console.error('[PersonalityTypeScreen] Failed to finalize personality:', err);
+    }
+  }, [childId]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_personality_analysis',
+    onCompleted: finalizePersonality,
+  });
+
+  const isAnalysing = !isInitializing && job.isLoading;
+  const isError = initError || job.isFailed;
+  const isReady = !isInitializing && !isAnalysing && !isError && mbtiResult !== null;
   // Animate in only after data is ready AND stage-2 splash is gone — mirrors web PersonalityType.tsx.
-  const contentStyle = useSlideUpWhenReady(status === 'ready' && !showSplash);
+  const contentStyle = useSlideUpWhenReady(isReady && !showSplash);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -160,90 +201,71 @@ export default function PersonalityTypeScreen() {
           setTtsEnabled(prefs.tts_enabled);
         }
 
-        const merged = mergeChildDraft(
-          normalizeOnboardingChildDataBlob(child) ?? {},
-        );
+        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        mergedDataRef.current = merged as Record<string, unknown>;
         setChildName(merged.name || '');
+        setChildData(child as Record<string, unknown>);
 
-        // DB hit: personality already analysed — skip LLM
+        // Already analysed — show result immediately
         const personality = child.personality;
         const viewModel = personality?.view_model;
         if (viewModel?.type && viewModel?.profile) {
           const clamped = maybeClampStoredPersonalityDescription(viewModel, {
             analysisSource: personality?.source,
           });
-          setMbtiResult(
-            sanitizeViewModelAvatars(clamped) as unknown as MbtiResult,
-          );
-          setStatus('ready');
+          setMbtiResult(sanitizeViewModelAvatars(clamped) as unknown as MbtiResult);
+          setIsInitializing(false);
+          return;
+        }
+
+        // pending_personality_vm means worker succeeded but client crashed before finalizing
+        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+        if (pendingVm) {
+          const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+          if (cancelled) return;
+          setMbtiResult(sanitizeViewModelAvatars(vm) as unknown as MbtiResult);
+          setIsInitializing(false);
+          api.entities.Child.update(childId, {
+            personality: { source: 'llm', view_model: stripViewModelImages(vm) },
+            onboarding_phase: 2,
+          }).catch((err) => console.error('[PersonalityTypeScreen] Failed to persist recovered personality:', err));
           return;
         }
 
         if (!merged.name?.trim()) {
-          // No name — can't analyse; fall back to root
           navigation.navigate('Main');
           return;
         }
 
-        // Call LLM
-        setStatus('analysing');
-        const childId_ = child.id;
-        try {
-          const prompt = buildPersonalityAnalysisPrompt({
-            childData: merged,
-            personalityTypeKeys: PERSONALITY_TYPE_KEYS,
-          });
-          const ai = await api.integrations.Core.InvokeLLM({
-            prompt,
-            response_json_schema: personalityLlmSchema(),
-          });
-          if (cancelled) return;
-
-          const vm = adaptAiPersonalityToViewModel(
-            (ai as Record<string, unknown>) || {},
-            merged.name,
-          );
-          await api.entities.Child.update(childId_, {
-            personality: {
-              source: 'llm',
-              view_model: stripViewModelImages(vm),
+        // Only enqueue if no active job is already polling (useJob picks it up via childData)
+        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
+          ?.generate_personality_analysis;
+        if (!activeJobId) {
+          await job.enqueue({
+            type: 'generate_personality_analysis',
+            child_id: childId,
+            payload: {
+              prompt: buildPersonalityAnalysisPrompt({
+                childData: merged,
+                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+              }),
+              response_json_schema: personalityLlmSchema(),
             },
-            onboarding_phase: 2,
+            write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
           });
-          if (cancelled) return;
-          setMbtiResult(vm as unknown as MbtiResult);
-        } catch (err) {
-          console.warn(
-            '[PersonalityTypeScreen] LLM failed, falling back to rule-based:',
-            err,
-          );
-          const ruleVm = calculateMBTI(merged);
-          try {
-            await api.entities.Child.update(childId_, {
-              personality: {
-                source: 'rule_fallback',
-                view_model: stripViewModelImages(ruleVm),
-              },
-              onboarding_phase: 2,
-            });
-          } catch {
-            /* non-fatal */
-          }
-          if (cancelled) return;
-          setMbtiResult(ruleVm as unknown as MbtiResult);
         }
-        if (!cancelled) {
-          setStatus('ready');
-        }
+        setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityTypeScreen] Load failed:', err);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
+    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);
 
@@ -264,7 +286,7 @@ export default function PersonalityTypeScreen() {
   };
 
   // — Loading state
-  if (isLoadingAuth || status === 'loading') {
+  if (isLoadingAuth || isInitializing) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -276,7 +298,7 @@ export default function PersonalityTypeScreen() {
   }
 
   // — Analysing state
-  if (status === 'analysing') {
+  if (isAnalysing) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -294,7 +316,7 @@ export default function PersonalityTypeScreen() {
   }
 
   // — Error / no result state
-  if (status === 'error' || !mbtiResult) {
+  if (isError || !mbtiResult) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}

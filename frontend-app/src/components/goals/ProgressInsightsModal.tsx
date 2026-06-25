@@ -49,7 +49,8 @@ import {
   buildMonthData,
   completedCount,
 } from '@/lib/insightsUtils';
-import { generateInsights } from '@/lib/generateInsights';
+import { buildInsightsPayload } from '@/lib/generateInsights';
+import { useJob } from '@/hooks/useJob';
 import type { Observation } from '@/lib/insightsUtils';
 import type { GoalPlan } from '@/hooks/useGoalPlan';
 
@@ -70,6 +71,7 @@ interface ProgressInsightsModalProps {
   childName?: string;
   childAge?: number | string | null;
   childGender?: string | null;
+  activeJobs?: Record<string, string>;
   onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
@@ -548,6 +550,7 @@ export default function ProgressInsightsModal({
   childName,
   childAge,
   childGender,
+  activeJobs,
   onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
@@ -629,6 +632,44 @@ export default function ProgressInsightsModal({
     opacity: subTabOpacity.value,
   }));
 
+  const finalizeInsights = useCallback(async () => {
+    const plan = goalPlanRef.current;
+    const currentCount = completedCount(plan);
+    try {
+      const goalsData = await api.goals.get(childId ?? '');
+      const rawPlan = goalsData.plan as Record<string, unknown> | undefined;
+      const rawInsights = rawPlan?.insights as Record<string, unknown> | undefined;
+      const items = Array.isArray(rawInsights?.insight_items)
+        ? (rawInsights.insight_items as unknown[])
+        : [];
+      if (items.length > 0) {
+        const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
+        const updatedPlan: GoalPlan = {
+          ...plan,
+          insights: finalInsights,
+          insights_signature: currentCount,
+        };
+        try {
+          await api.goals.patch(childId ?? '', { plan: updatedPlan });
+          onPlanUpdate?.(updatedPlan);
+        } catch (err) {
+          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+        }
+        setInsightsData(finalInsights);
+      }
+    } catch (err) {
+      console.error('[ProgressInsightsModal] Failed to finalize insights:', err);
+      setInsightsError(true);
+    }
+    setInsightsLoading(false);
+  }, [childId, onPlanUpdate]);
+
+  const insightsJob = useJob({
+    activeJobs,
+    jobType: 'generate_journey_insights',
+    onCompleted: finalizeInsights,
+  });
+
   useEffect(() => {
     if (
       activeTab !== 'insights' ||
@@ -657,37 +698,25 @@ export default function ProgressInsightsModal({
     }
 
     const generate = async () => {
+      const { prompt, schema } = buildInsightsPayload(name, plan, age, gender);
+      if (!prompt) {
+        setInsightsData({ schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: [] });
+        return;
+      }
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const payload = await generateInsights(name, plan, age, gender);
-        // Only persist non-empty insights — if no activities are completed yet the
-        // guard returns [] and we don't want that to be cached permanently.
-        if (payload.insight_items.length > 0) {
-          const updatedPlan: GoalPlan = {
-            ...plan,
-            insights: { ...payload, schema_version: payload.schema_version },
-            insights_signature: currentCount,
-          };
-          try {
-            await api.goals.patch(childId ?? '', { plan: updatedPlan });
-            onPlanUpdate?.(updatedPlan);
-          } catch (err) {
-            console.warn(
-              '[ProgressInsightsModal] Insight save failed (non-fatal):',
-              err,
-            );
-          }
-        }
-        setInsightsData(payload);
+        await insightsJob.enqueue({
+          type: 'generate_journey_insights',
+          child_id: childId ?? '',
+          payload: { prompt, response_json_schema: schema },
+          write_back: { collection: 'goals', filter: {}, field: 'goals_plan.insights' },
+        });
       } catch (err) {
-        console.error(
-          '[ProgressInsightsModal] Failed to generate insights:',
-          err,
-        );
+        console.error('[ProgressInsightsModal] Failed to enqueue insights job:', err);
         setInsightsError(true);
+        setInsightsLoading(false);
       }
-      setInsightsLoading(false);
     };
     void generate();
   }, [
@@ -696,7 +725,7 @@ export default function ProgressInsightsModal({
     insightsLoading,
     insightsError,
     childId,
-    onPlanUpdate,
+    insightsJob.enqueue,
   ]);
 
   return (

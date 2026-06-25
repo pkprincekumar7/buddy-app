@@ -73,6 +73,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "REDIS_URL", value = "rediss://${aws_elasticache_replication_group.main.primary_endpoint_address}:6379" },
         { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
         { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
+        { name = "DEFAULT_LOCATION", value = var.default_location },
         { name = "DEFAULT_REGION", value = var.default_region },
         { name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name },
         { name = "JWT_KEY_ID", value = var.jwt_key_id },
@@ -160,5 +161,111 @@ resource "aws_ecs_service" "backend" {
 
   tags = {
     Name = "${var.app_name}-backend-service-${var.environment}"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Worker ECS task definition + service
+#
+# Uses the same ECR image as the API service. The `command` override runs
+# worker.py instead of uvicorn. No port mappings — the worker exposes no
+# endpoints. Managed by deploy-live-backend.yml (ignore_changes on
+# task_definition so Terraform does not overwrite workflow-pinned revisions).
+# ---------------------------------------------------------------------------
+
+resource "aws_ecs_task_definition" "worker" {
+  family                   = "${var.app_name}-worker-${var.environment}"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.worker_task_cpu
+  memory                   = var.worker_task_memory
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  task_role_arn            = aws_iam_role.worker_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "worker"
+      image     = "${aws_ecr_repository.backend.repository_url}:latest"
+      essential = true
+      command   = ["python", "worker.py"]
+
+      # No portMappings — worker has no HTTP endpoints
+
+      environment = [
+        { name = "MONGODB_DB_NAME", value = var.mongodb_db_name },
+        { name = "OPENAI_MODEL", value = var.openai_model },
+        { name = "ANTHROPIC_MODEL", value = var.anthropic_model },
+        { name = "GEMINI_MODEL", value = var.gemini_model },
+        { name = "APP_ENV", value = var.environment },
+        { name = "DEFAULT_LOCATION", value = var.default_location },
+        { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
+        { name = "AWS_DEFAULT_REGION", value = var.aws_region },
+        { name = "WORKER_CONCURRENCY", value = tostring(var.worker_concurrency) },
+        { name = "WORKER_POLL_INTERVAL_SECONDS", value = tostring(var.worker_poll_interval_seconds) },
+        # CORS_ORIGINS and COOKIE_* not needed — worker has no HTTP server
+        # REDIS_URL not needed — worker does not use Redis (rate limiting is API-side)
+      ]
+
+      secrets = [
+        { name = "MONGODB_URI", valueFrom = "${aws_secretsmanager_secret.app.arn}:MONGODB_URI::" },
+        { name = "JWT_PRIVATE_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:JWT_PRIVATE_KEY::" },
+        { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
+        { name = "ANTHROPIC_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:ANTHROPIC_API_KEY::" },
+        { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_API_KEY::" },
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "worker"
+        }
+      }
+    }
+  ])
+
+  tags = {
+    Name = "${var.app_name}-worker-task-${var.environment}"
+  }
+}
+
+resource "aws_ecs_service" "worker" {
+  #checkov:skip=CKV_AWS_333:Worker needs public IPs for ECR image pulls and LLM API egress — same trade-off as API service; ALB SG lockdown not applicable (worker has no load balancer)
+
+  name            = "${var.app_name}-worker-${var.environment}"
+  cluster         = aws_ecs_cluster.backend.id
+  task_definition = aws_ecs_task_definition.worker.arn
+  desired_count   = var.worker_desired_count
+  launch_type     = "FARGATE"
+
+  enable_execute_command = var.enable_execute_command
+
+  network_configuration {
+    subnets = [
+      aws_subnet.public_1.id,
+      aws_subnet.public_2.id,
+    ]
+    security_groups  = [aws_security_group.worker_sg.id]
+    assign_public_ip = true
+  }
+
+  # No load_balancer block — worker exposes no endpoints
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  deployment_controller {
+    type = "ECS"
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+  }
+
+  tags = {
+    Name = "${var.app_name}-worker-service-${var.environment}"
   }
 }

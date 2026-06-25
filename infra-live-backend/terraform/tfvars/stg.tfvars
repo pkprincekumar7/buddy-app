@@ -29,3 +29,16 @@ default_region      = "us"
 # Staging does not use production data, so shell access to running tasks is
 # an acceptable trade-off. Disabled in prod via prod.tfvars.
 enable_execute_command = true
+
+# Worker ECS
+worker_task_cpu              = 512
+worker_task_memory           = 1024
+worker_desired_count         = 1
+worker_concurrency           = 3
+worker_poll_interval_seconds = 3
+
+# Autoscaling
+api_min_capacity    = 2
+api_max_capacity    = 10
+worker_min_capacity = 1
+worker_max_capacity = 5

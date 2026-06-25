@@ -127,6 +127,46 @@ function buildInsightsPrompt(
   return lines.join('\n');
 }
 
+const _insightsSchema = {
+  type: 'object',
+  properties: {
+    insight_items: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          type: { type: 'string', enum: ['strength', 'anomaly'] },
+          details: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Returns the prompt and JSON schema for insights generation.
+ * Returns `prompt: null` if no activities have been completed yet (LLM call should be skipped).
+ */
+export function buildInsightsPayload(
+  childName: string | null | undefined,
+  plan: Record<string, unknown> | null | undefined,
+  childAge?: string | number | null,
+  childGender?: string | null,
+): { prompt: string | null; schema: Record<string, unknown> } {
+  const monthData = buildMonthData(plan);
+  const hasAnyCompleted = monthData.some(({ pairs }) =>
+    pairs.some((p) => (p.original?.completed ?? false) || (p.followUp?.completed ?? false)),
+  );
+  if (!hasAnyCompleted) return { prompt: null, schema: _insightsSchema };
+  return {
+    prompt: buildInsightsPrompt(childName, childAge, childGender, monthData),
+    schema: _insightsSchema,
+  };
+}
+
 export async function generateInsights(
   childName: string | null | undefined,
   plan: Record<string, unknown> | null | undefined,

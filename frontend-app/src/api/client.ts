@@ -6,6 +6,9 @@ import type {
   PreferencesRecord,
   GoalsRecord,
   CompletedGrowthAreasRecord,
+  EnqueueJobPayload,
+  EnqueueJobResponse,
+  JobStatusRecord,
 } from '@/types/api';
 import { env } from '@/lib/env';
 import { navigateTo } from '@/lib/navigationRef';
@@ -374,6 +377,13 @@ export const api = {
         method: 'PATCH',
         body,
       }) as Promise<GoalsRecord>,
+  },
+
+  jobs: {
+    enqueue: (payload: EnqueueJobPayload): Promise<EnqueueJobResponse> =>
+      request('/jobs', { method: 'POST', body: payload as Record<string, unknown> }) as Promise<EnqueueJobResponse>,
+    poll: (jobId: string): Promise<JobStatusRecord> =>
+      request(`/jobs/${encodeURIComponent(jobId)}`) as Promise<JobStatusRecord>,
   },
 
   entities: {

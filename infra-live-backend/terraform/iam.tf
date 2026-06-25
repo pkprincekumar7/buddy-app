@@ -82,6 +82,73 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
+# ---------------------------------------------------------------------------
+# Worker Task Role
+# Separate from the API task role — workers do not need S3 access (downloads)
+# but do need CloudWatch PutMetricData for PendingJobCount emission.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "worker_task_role" {
+  name = "${var.app_name}-worker-task-role-${var.environment}-${var.aws_region}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_task_cloudwatch" {
+  name = "${var.app_name}-worker-task-cloudwatch-${var.environment}-${var.aws_region}"
+  role = aws_iam_role.worker_task_role.id
+
+  # PutMetricData requires Resource = "*" (CloudWatch does not support
+  # resource-level ARNs for this action), but the Condition key
+  # "cloudwatch:namespace" IS enforced by the service for PutMetricData,
+  # effectively scoping this permission to the Buddy360/Worker namespace only.
+  # Do NOT remove the Condition block assuming it is ineffective — it is the
+  # only constraint preventing the worker from writing to arbitrary namespaces.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "Buddy360/Worker"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "worker_task_exec_command" {
+  name = "${var.app_name}-worker-task-exec-command-${var.environment}-${var.aws_region}"
+  role = aws_iam_role.worker_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # Required by ECS Exec (enable_execute_command). Scoped to the four
 # ssmmessages:* actions that ECS Exec actually uses — avoids the much broader
 # AmazonSSMManagedInstanceCore managed policy (which also grants SSM RunCommand,

@@ -153,6 +153,12 @@ variable "default_region" {
   type = string
 }
 
+variable "default_location" {
+  description = "Default MongoDB location shard for users without an explicit location in their JWT (e.g. \"us\", \"eu\")"
+  type        = string
+  default     = "us"
+}
+
 variable "cors_origins" {
   description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
   type        = string
@@ -167,5 +173,63 @@ variable "jwt_key_id" {
 variable "cookie_domain" {
   description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
   type        = string
+}
+
+# -- Worker ECS ---------------------------------------------------------------
+
+variable "worker_task_cpu" {
+  description = "Fargate task CPU units for the worker service"
+  type        = number
+  default     = 512
+}
+
+variable "worker_task_memory" {
+  description = "Fargate task memory in MiB for the worker service"
+  type        = number
+  default     = 1024
+}
+
+variable "worker_desired_count" {
+  description = "Initial desired count for the worker ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "worker_concurrency" {
+  description = "Number of parallel LLM job slots per worker task (WORKER_CONCURRENCY env var)"
+  type        = number
+  default     = 5
+}
+
+variable "worker_poll_interval_seconds" {
+  description = "Idle poll interval in seconds for the worker (WORKER_POLL_INTERVAL_SECONDS env var)"
+  type        = number
+  default     = 2
+}
+
+# -- Autoscaling ---------------------------------------------------------------
+
+variable "api_min_capacity" {
+  description = "Minimum ECS task count for the API service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "api_max_capacity" {
+  description = "Maximum ECS task count for the API service autoscaling target"
+  type        = number
+  default     = 10
+}
+
+variable "worker_min_capacity" {
+  description = "Minimum ECS task count for the worker service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "worker_max_capacity" {
+  description = "Maximum ECS task count for the worker service autoscaling target"
+  type        = number
+  default     = 5
 }
 

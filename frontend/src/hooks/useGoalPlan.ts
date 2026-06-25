@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { goalsMonthlyPlanSchema } from '@/lib/llmSchemas';
 import { buildGoalsMonthlyPlanPrompt } from '@/lib/prompts';
+import { useJob } from './useJob';
 
 interface Activity {
   completed?: boolean;
@@ -78,8 +79,47 @@ export function useGoalPlan(childId: string | undefined) {
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState<GoalPlan | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>([]);
+
+  // Snapshot of completed activities preserved across a regeneration — stored in a
+  // ref so the onCompleted callback always reads the latest value without being
+  // recreated on every render (which would re-trigger useJob's ref update effect).
+  const pendingSnapshotRef = useRef<Record<string, Record<string, unknown>>>({});
+
+  const refetchAndApplyGoals = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const goals = await api.goals.get(childId);
+      const goalsRecord = goals as Record<string, unknown>;
+      if (goalsRecord?.plan) {
+        const plan = goalsRecord.plan as GoalPlan;
+        const snap = pendingSnapshotRef.current;
+        if (Object.keys(snap).length > 0) {
+          plan.months?.forEach((month, mIdx) => {
+            month.periods?.forEach((period, pIdx) => {
+              period.activities?.forEach((act, aIdx) => {
+                const s = snap[`${mIdx}-${pIdx}-${aIdx}`];
+                if (s) Object.assign(act, s);
+              });
+            });
+          });
+          pendingSnapshotRef.current = {};
+          await api.goals.patch(childId, { plan });
+        }
+        setGoalPlan(plan);
+      }
+    } catch (err) {
+      console.error('[useGoalPlan] Failed to re-fetch goals after job completion:', err);
+      toast.error('Plan is ready — refresh the page to see it.');
+    }
+  }, [childId]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_goals_plan',
+    onCompleted: refetchAndApplyGoals,
+  });
 
   const generateGoals = useCallback(
     async (
@@ -88,12 +128,12 @@ export function useGoalPlan(childId: string | undefined) {
       completedAreas: Activity[] | null,
       completedSnapshot: Record<string, Record<string, unknown>> = {},
     ) => {
-      setIsLoading(true);
       const cId = child?.id as string | undefined;
+      if (!cId) return;
       try {
         let ob: Record<string, unknown> | null = child;
         let areas: Activity[] | null = completedAreas;
-        if (!areas && cId) {
+        if (!areas) {
           const [freshChild, freshCompleted] = await Promise.all([
             api.entities.Child.get(cId),
             api.completedGrowthAreas.list(cId),
@@ -117,42 +157,39 @@ export function useGoalPlan(childId: string | undefined) {
           .map((a) => `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`)
           .join('\n');
 
-        const plan = (await api.integrations.Core.InvokeLLM({
-          prompt: buildGoalsMonthlyPlanPrompt({
-            childName: obRecord?.name as string | undefined,
-            childAge: obRecord?.age as number | undefined,
-            childGender: obRecord?.gender as string | undefined,
-            parentConcern,
-            personalityType: profile?.personality_type,
-            areasContext,
-          }),
-          response_json_schema: goalsMonthlyPlanSchema(),
-        })) as GoalPlan;
+        pendingSnapshotRef.current = completedSnapshot;
 
-        if (Object.keys(completedSnapshot).length > 0) {
-          plan.months?.forEach((month, mIdx) => {
-            month.periods?.forEach((period, pIdx) => {
-              period.activities?.forEach((act, aIdx) => {
-                const snap = completedSnapshot[`${mIdx}-${pIdx}-${aIdx}`];
-                if (snap) Object.assign(act, snap);
-              });
-            });
-          });
-        }
-
-        if (cId) await api.goals.patch(cId, { plan });
-        setGoalPlan(plan);
+        await job.enqueue({
+          type: 'generate_goals_plan',
+          child_id: cId,
+          payload: {
+            prompt: buildGoalsMonthlyPlanPrompt({
+              childName: obRecord?.name as string | undefined,
+              childAge: obRecord?.age as number | undefined,
+              childGender: obRecord?.gender as string | undefined,
+              parentConcern,
+              personalityType: profile?.personality_type,
+              areasContext,
+            }),
+            response_json_schema: goalsMonthlyPlanSchema(),
+          },
+          write_back: { collection: 'goals', filter: {}, field: 'goals_plan' },
+        });
       } catch (err) {
-        console.error('[useGoalPlan] Failed to generate plan:', err);
+        console.error('[useGoalPlan] Failed to enqueue plan generation:', err);
         toast.error('Failed to generate plan. Please try again.');
       }
-      setIsLoading(false);
     },
-    [],
+    // job.enqueue is stable (useCallback with [] deps inside useJob)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [job.enqueue],
   );
 
   useEffect(() => {
-    if (!childId) return;
+    if (!childId) {
+      setIsInitializing(false);
+      return;
+    }
     const init = async () => {
       try {
         const child = await api.entities.Child.get(childId);
@@ -160,7 +197,7 @@ export function useGoalPlan(childId: string | undefined) {
         setChildData(childRecord);
 
         if (!childRecord?.id) {
-          setIsLoading(false);
+          setIsInitializing(false);
           return;
         }
 
@@ -185,18 +222,30 @@ export function useGoalPlan(childId: string | undefined) {
 
         if (goalsRecord?.plan) {
           setGoalPlan(goalsRecord.plan as GoalPlan);
-          setIsLoading(false);
+          setIsInitializing(false);
           return;
         }
 
-        await generateGoals(childRecord, savedConcern, areas);
+        // No saved plan — only enqueue if there is no active job already polling.
+        // If active_jobs already has a generate_goals_plan entry, useJob's sync
+        // effect will pick it up from childRecord.active_jobs and start polling.
+        const activeJobId = (childRecord.active_jobs as Record<string, string> | undefined)
+          ?.generate_goals_plan;
+        if (!activeJobId) {
+          await generateGoals(childRecord, savedConcern, areas);
+        }
+        setIsInitializing(false);
       } catch (err) {
         console.error('[useGoalPlan] Init failed:', err);
-        setIsLoading(false);
+        setIsInitializing(false);
       }
     };
     void init();
-  }, [childId, generateGoals]);
+    // generateGoals is intentionally excluded — it depends on job.enqueue which is
+    // stable, but including it here would cause an infinite loop because generateGoals
+    // itself triggers a state update (via job.enqueue → setJobId) that re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [childId]);
 
   // Saves completion data for a single activity by its position in the plan.
   const saveActivityCompletion = useCallback(
@@ -283,7 +332,10 @@ export function useGoalPlan(childId: string | undefined) {
     concern,
     goalPlan,
     setGoalPlan,
-    isLoading,
+    isLoading: isInitializing || job.isLoading,
+    isFailed: job.isFailed,
+    jobError: job.error,
+    elapsedMs: job.elapsedMs,
     saveActivityCompletion,
     handleActivityReset,
     handleRegenerate,

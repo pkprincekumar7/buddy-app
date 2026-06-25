@@ -47,3 +47,14 @@ resource "aws_ssm_parameter" "ecs_service_name" {
 
   tags = { Name = "${var.app_name}-backend-ecs-service-${var.environment}-${var.aws_region}" }
 }
+
+resource "aws_ssm_parameter" "ecs_worker_service_name" {
+  #checkov:skip=CKV2_AWS_34:Non-secret infrastructure config value (ECS worker service name) — encryption not required; SecureString adds cost and IAM complexity without security benefit
+  provider = aws.ssm
+
+  name  = "/${var.app_name}/${var.environment}/backend/${var.aws_region}/ecs_worker_service_name"
+  value = aws_ecs_service.worker.name
+  type  = "String"
+
+  tags = { Name = "${var.app_name}-backend-ecs-worker-service-${var.environment}-${var.aws_region}" }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
@@ -7,9 +7,10 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
-import ChildActivityGame from '@/components/onboarding/ChildActivityGame';
+import ChildActivityGame, { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
+import { useJob } from '@/hooks/useJob';
 
 export default function GrowthAreasActivityGame() {
   const navigate = useNavigate();
@@ -19,9 +20,11 @@ export default function GrowthAreasActivityGame() {
   const area = areaByUrlName(activity ?? '');
 
   const [childName, setChildName] = useState('');
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
+  const pendingSelectionsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -49,6 +52,7 @@ export default function GrowthAreasActivityGame() {
         }
 
         setChildName(child.name ?? '');
+        setChildData(child as Record<string, unknown>);
 
         // Restore previously saved game selections
         const completedData = await api.completedGrowthAreas.list(child.id);
@@ -74,6 +78,59 @@ export default function GrowthAreasActivityGame() {
       cancelled = true;
     };
   }, [isLoadingAuth, isAuthenticated, childId, activity, area, navigate]);
+
+  const finalizeActivity = useCallback(async () => {
+    if (!childId || !area) return;
+    try {
+      const completedData = await api.completedGrowthAreas.list(childId);
+      const areaDoc = (completedData.areas ?? []).find((a) => a.area_id === area.id);
+      const pendingResult = areaDoc?.pending_child_activity as Record<string, unknown> | undefined;
+      if (pendingResult) {
+        const recommendations = normalizeChildGameRecommendations(pendingResult);
+        await handleGameComplete({ selections: pendingSelectionsRef.current, recommendations });
+      }
+    } catch (err) {
+      console.error('[GrowthAreasActivityGame] finalizeActivity failed:', err);
+      toast.error('Could not finalise game results. Please try again.');
+    }
+  // handleGameComplete is defined below — useCallback ref pattern keeps this stable
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [childId, area]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_activity',
+    onCompleted: finalizeActivity,
+  });
+
+  const handleSubmitIds = useCallback(
+    async (ids: string[], prompt: string, schema: Record<string, unknown>) => {
+      if (!childId || !area) return;
+      pendingSelectionsRef.current = ids;
+      try {
+        await api.completedGrowthAreas.append(childId, {
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          answers: savedAnswers,
+          status: 'in_progress',
+          step: 'activity_summary',
+          child_activity_selections: ids,
+        });
+        await job.enqueue({
+          type: 'generate_activity',
+          child_id: childId,
+          payload: { prompt, response_json_schema: schema },
+          write_back: { collection: 'growth_areas', filter: { area_id: area.id }, field: 'pending_child_activity' },
+        });
+      } catch (err) {
+        console.error('[GrowthAreasActivityGame] handleSubmitIds failed:', err);
+        toast.error('Could not start recommendations. Please try again.');
+        throw err;
+      }
+    },
+    [childId, area, savedAnswers, job.enqueue],
+  );
 
   const handleGameComplete = useCallback(
     async (result: Record<string, unknown>) => {
@@ -164,6 +221,8 @@ export default function GrowthAreasActivityGame() {
             void handleSelectedIdsChange(ids);
           }}
           onComplete={handleGameComplete}
+          onSubmitIds={handleSubmitIds}
+          isExternallyLoading={job.isLoading}
         />
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button

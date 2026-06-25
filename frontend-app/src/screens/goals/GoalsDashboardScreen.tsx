@@ -656,7 +656,7 @@ export default function GoalsDashboardScreen() {
               style={{ color: colors.text }}
             >
               3-Month Growth Plan for{' '}
-              {(childData?.name as string | undefined) ?? 'Your Child'}
+              {(childData?.name as string | undefined) || 'Your Child'}
             </Text>
             <Text className="text-center" style={{ color: colors.textMuted }}>
               Personalized goals powered by Buddy360
@@ -816,6 +816,7 @@ export default function GoalsDashboardScreen() {
               childName={childData?.name as string | undefined}
               childAge={childData?.age as number | string | undefined}
               childGender={childData?.gender as string | undefined}
+              activeJobs={childData?.active_jobs as Record<string, string> | undefined}
               onPlanUpdate={plan => setGoalPlan(plan)}
               onClose={() => setShowProgress(false)}
             />
