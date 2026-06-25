@@ -153,7 +153,8 @@ async def enqueue_job(
             exc_info=True,
         )
 
-    log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, body.type, body.child_id)
+    safe_type = str(body.type).replace("\r", "").replace("\n", "")
+    log.info("job.enqueued job_id=%s type=%s child_id=%s", job_id, safe_type, body.child_id)
     return EnqueueJobResponse(job_id=job_id)
 
 
