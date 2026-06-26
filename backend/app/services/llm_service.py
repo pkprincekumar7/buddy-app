@@ -202,5 +202,5 @@ async def invoke(
     """Resolve provider, build system message, call the LLM, return parsed JSON dict."""
     resolved = resolve_provider(provider)  # type: ignore[arg-type]
     sys_msg = system_message(schema)
-    log.debug("llm_service.invoke provider=%s", resolved)
+    log.debug("llm_service.invoke provider=%s", _sanitize_for_log(resolved))
     return await _INVOKERS[resolved](prompt, sys_msg)
