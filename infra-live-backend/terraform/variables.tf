@@ -42,23 +42,64 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_1_cidr" {
-  description = "CIDR for public subnet AZ-1 (ALB and ECS tasks)"
+  description = "CIDR for public subnet AZ-1 (ALB, NAT Gateway)"
   type        = string
 }
 
 variable "public_subnet_2_cidr" {
-  description = "CIDR for public subnet AZ-2 (ALB and ECS tasks)"
+  description = "CIDR for public subnet AZ-2 (ALB, NAT Gateway)"
+  type        = string
+}
+
+variable "public_subnet_3_cidr" {
+  description = "CIDR for public subnet AZ-3 (ALB, NAT Gateway)"
   type        = string
 }
 
 variable "private_subnet_1_cidr" {
-  description = "CIDR for private subnet AZ-1 (ElastiCache)"
+  description = "CIDR for private subnet AZ-1 (ECS tasks, ElastiCache, VPC endpoints)"
   type        = string
 }
 
 variable "private_subnet_2_cidr" {
-  description = "CIDR for private subnet AZ-2 (ElastiCache)"
+  description = "CIDR for private subnet AZ-2 (ECS tasks, ElastiCache, VPC endpoints)"
   type        = string
+}
+
+variable "private_subnet_3_cidr" {
+  description = "CIDR for private subnet AZ-3 (ECS tasks, ElastiCache, VPC endpoints)"
+  type        = string
+}
+
+variable "nat_gateway_count" {
+  description = "Number of NAT Gateways to provision (1 for dev/sbx, 2 for stg, 3 for prod). Each NAT GW is placed in a distinct public subnet AZ. Private subnets without a dedicated NAT GW share the nearest one."
+  type        = number
+
+  validation {
+    condition     = contains([1, 2, 3], var.nat_gateway_count)
+    error_message = "nat_gateway_count must be 1, 2, or 3."
+  }
+}
+
+variable "redis_auth_token" {
+  description = "AUTH token for ElastiCache Redis. Must be 16–128 printable ASCII chars (no spaces, quotes, @, or /). Injected via TF_VAR_redis_auth_token from GitHub Environment Secrets."
+  type        = string
+  sensitive   = true
+}
+
+variable "elasticache_replica_count" {
+  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica). dev/sbx/stg: 0, prod: 1."
+  type        = number
+
+  validation {
+    condition     = contains([0, 1], var.elasticache_replica_count)
+    error_message = "elasticache_replica_count must be 0 or 1."
+  }
+}
+
+variable "elasticache_multi_az" {
+  description = "Enable automatic failover and multi-AZ. Must be false when elasticache_replica_count = 0. dev/sbx/stg: false, prod: true."
+  type        = bool
 }
 
 # -- DNS / TLS ----------------------------------------------------------------

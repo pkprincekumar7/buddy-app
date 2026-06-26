@@ -181,6 +181,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("REDIS_URL", "redis_url"),
     )
 
+    redis_auth_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("REDIS_AUTH_TOKEN", "redis_auth_token"),
+    )
+
     # S3 bucket that holds static assets and mobile app builds.
     # The GitHub Actions build-android-apk workflow writes APKs to:
     #   s3://{assets_bucket_name}/app-assets/applications/android/app-release-{timestamp}.apk

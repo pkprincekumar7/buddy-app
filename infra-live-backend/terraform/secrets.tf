@@ -19,8 +19,11 @@
 #       "OPENAI_API_KEY":     "sk-...",
 #       "ANTHROPIC_API_KEY":  "sk-ant-...",
 #       "GEMINI_API_KEY":     "AIza...",
-#       "MONGODB_URI":        "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/"
+#       "MONGODB_URI":        "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/",
+#       "REDIS_AUTH_TOKEN":   "<token>"
 #     }'
+# WARNING: put-secret-value replaces the entire JSON. Always include ALL keys
+# in the payload or omitted keys will be silently dropped from the secret.
 # Note: CORS_ORIGINS and COOKIE_DOMAIN are plain env vars in the task definition,
 # not secrets. Set them via the CORS_ORIGINS / COOKIE_DOMAIN GitHub environment secrets.
 # ---------------------------------------------------------------------------
@@ -55,6 +58,7 @@ resource "aws_secretsmanager_secret_version" "app_placeholder" {
     ANTHROPIC_API_KEY = "REPLACE_ME"
     GEMINI_API_KEY    = "REPLACE_ME"
     MONGODB_URI       = "REPLACE_ME"
+    REDIS_AUTH_TOKEN  = "REPLACE_ME"
   })
 
   # Prevent Terraform from overwriting values updated via CLI or Console.

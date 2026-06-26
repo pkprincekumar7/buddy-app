@@ -11,9 +11,14 @@ public_subnet_1_cidr  = "10.12.1.0/24"
 public_subnet_2_cidr  = "10.12.2.0/24"
 private_subnet_1_cidr = "10.12.3.0/24"
 private_subnet_2_cidr = "10.12.4.0/24"
+public_subnet_3_cidr  = "10.12.5.0/24"
+private_subnet_3_cidr = "10.12.6.0/24"
+nat_gateway_count     = 2
 
 # ElastiCache
-elasticache_node_type = "cache.t3.small"
+elasticache_node_type     = "cache.t4g.medium"
+elasticache_replica_count = 0
+elasticache_multi_az      = false
 
 # ECS
 task_cpu      = 512

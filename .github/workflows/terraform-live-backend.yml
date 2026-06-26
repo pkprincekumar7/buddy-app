@@ -111,6 +111,7 @@ jobs:
           OPENAI_MODEL:                   ${{ secrets.OPENAI_MODEL }}
           ANTHROPIC_MODEL:                ${{ secrets.ANTHROPIC_MODEL }}
           GEMINI_MODEL:                   ${{ secrets.GEMINI_MODEL }}
+          REDIS_AUTH_TOKEN:               ${{ secrets.REDIS_AUTH_TOKEN }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
@@ -128,6 +129,7 @@ jobs:
           [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
           [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL")
           [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
+          [[ -z "$REDIS_AUTH_TOKEN"               ]] && missing+=("REDIS_AUTH_TOKEN")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
@@ -198,6 +200,12 @@ jobs:
           echo "TF_VAR_anthropic_model=$ANTHROPIC_MODEL" >> "$GITHUB_ENV"
           echo "TF_VAR_gemini_model=$GEMINI_MODEL"       >> "$GITHUB_ENV"
 
+      - name: Resolve Redis auth token
+        env:
+          REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
+        run: |
+          echo "TF_VAR_redis_auth_token=$REDIS_AUTH_TOKEN" >> "$GITHUB_ENV"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
         with:
@@ -259,6 +267,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
           MONGODB_URI:       ${{ secrets.MONGODB_URI }}
+          REDIS_AUTH_TOKEN:  ${{ secrets.REDIS_AUTH_TOKEN }}
         run: |
           SECRET_ARN=$(terraform output -raw app_secret_arn)
 
@@ -272,7 +281,8 @@ jobs:
             if (.JWT_PRIVATE_KEY == "REPLACE_ME") or
                (.GOOGLE_CLIENT_ID == "REPLACE_ME") or
                (.OPENAI_API_KEY == "REPLACE_ME") or
-               (.MONGODB_URI == "REPLACE_ME")
+               (.MONGODB_URI == "REPLACE_ME") or
+               (.REDIS_AUTH_TOKEN == "REPLACE_ME")
             then "true" else "false" end
           ')
 
@@ -287,7 +297,8 @@ jobs:
                 --arg anthro "${ANTHROPIC_API_KEY:-REPLACE_ME}" \
                 --arg gemini "${GEMINI_API_KEY:-REPLACE_ME}" \
                 --arg mongo  "$MONGODB_URI" \
-                '{JWT_PRIVATE_KEY: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo}')"
+                --arg redis  "$REDIS_AUTH_TOKEN" \
+                '{JWT_PRIVATE_KEY: $jwt, GOOGLE_CLIENT_ID: $gid, OPENAI_API_KEY: $openai, ANTHROPIC_API_KEY: $anthro, GEMINI_API_KEY: $gemini, MONGODB_URI: $mongo, REDIS_AUTH_TOKEN: $redis}')"
             echo "App secrets initialised in Secrets Manager."
           else
             echo "Secrets Manager already contains real values — skipping automatic update. Rotate manually if needed."

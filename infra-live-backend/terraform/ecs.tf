@@ -1,14 +1,12 @@
 # ---------------------------------------------------------------------------
 # ECS — Fargate cluster, task definition, service
 #
-# Tasks run in PUBLIC subnets with assignPublicIp = ENABLED — outbound
-# internet access for ECR image pulls and LLM API calls without a NAT Gateway.
-# Inbound is locked to the ALB security group only.
-#
-# ⚠ Security trade-off: each task receives a public IP. If the ALB SG is ever
-# misconfigured, tasks become directly internet-reachable. Private subnets +
-# NAT Gateway would eliminate this risk at ~$32/month/region extra cost.
-# TODO: revisit when budget allows.
+# Tasks run in PRIVATE subnets with assign_public_ip = false. Outbound
+# internet access goes via NAT Gateway. In stg/prod, AWS service traffic
+# (ECR, Secrets Manager, CloudWatch Logs, X-Ray) routes via VPC Interface
+# Endpoints and never reaches NAT. In dev/sbx (no Interface Endpoints),
+# all outbound traffic including AWS service calls traverses NAT.
+# Tasks have no public IP and are not internet-reachable.
 #
 # Task definition uses :latest as the initial image. The deploy workflow
 # (deploy-live-backend.yml) manages image updates; Terraform is not involved
@@ -90,6 +88,7 @@ resource "aws_ecs_task_definition" "backend" {
         { name = "OPENAI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:OPENAI_API_KEY::" },
         { name = "ANTHROPIC_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:ANTHROPIC_API_KEY::" },
         { name = "GEMINI_API_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:GEMINI_API_KEY::" },
+        { name = "REDIS_AUTH_TOKEN", valueFrom = "${aws_secretsmanager_secret.app.arn}:REDIS_AUTH_TOKEN::" },
       ]
 
       logConfiguration = {
@@ -117,8 +116,6 @@ resource "aws_ecs_task_definition" "backend" {
 }
 
 resource "aws_ecs_service" "backend" {
-  #checkov:skip=CKV_AWS_333:Tasks need public IPs for ECR image pulls and LLM API egress — no NAT Gateway provisioned yet due to cost (~$32/month); ALB SG lockdown prevents direct inbound exposure
-
   name            = "${var.app_name}-backend-${var.environment}"
   cluster         = aws_ecs_cluster.backend.id
   task_definition = aws_ecs_task_definition.backend.arn
@@ -129,11 +126,12 @@ resource "aws_ecs_service" "backend" {
 
   network_configuration {
     subnets = [
-      aws_subnet.public_1.id,
-      aws_subnet.public_2.id,
+      aws_subnet.private_1.id,
+      aws_subnet.private_2.id,
+      aws_subnet.private_3.id,
     ]
     security_groups  = [aws_security_group.ecs_task_sg.id]
-    assign_public_ip = true
+    assign_public_ip = false
   }
 
   load_balancer {
@@ -231,8 +229,6 @@ resource "aws_ecs_task_definition" "worker" {
 }
 
 resource "aws_ecs_service" "worker" {
-  #checkov:skip=CKV_AWS_333:Worker needs public IPs for ECR image pulls and LLM API egress — same trade-off as API service; ALB SG lockdown not applicable (worker has no load balancer)
-
   name            = "${var.app_name}-worker-${var.environment}"
   cluster         = aws_ecs_cluster.backend.id
   task_definition = aws_ecs_task_definition.worker.arn
@@ -243,11 +239,12 @@ resource "aws_ecs_service" "worker" {
 
   network_configuration {
     subnets = [
-      aws_subnet.public_1.id,
-      aws_subnet.public_2.id,
+      aws_subnet.private_1.id,
+      aws_subnet.private_2.id,
+      aws_subnet.private_3.id,
     ]
     security_groups  = [aws_security_group.worker_sg.id]
-    assign_public_ip = true
+    assign_public_ip = false
   }
 
   # No load_balancer block — worker exposes no endpoints

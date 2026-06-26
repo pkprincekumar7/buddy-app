@@ -20,12 +20,12 @@ resource "aws_vpc" "main" {
 }
 
 # ---------------------------------------------------------------------------
-# Public subnets — ALB and ECS tasks (assign_public_ip = true)
+# Public subnets — ALB and NAT Gateways (3 AZs)
 # ---------------------------------------------------------------------------
 
 #trivy:ignore:AVD-AWS-0164
 resource "aws_subnet" "public_1" {
-  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets by design; ECS task public IPs are separately controlled via assign_public_ip in the ECS service
+  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
 
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_1_cidr
@@ -39,7 +39,7 @@ resource "aws_subnet" "public_1" {
 
 #trivy:ignore:AVD-AWS-0164
 resource "aws_subnet" "public_2" {
-  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets by design; ECS task public IPs are separately controlled via assign_public_ip in the ECS service
+  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
 
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_2_cidr
@@ -48,6 +48,20 @@ resource "aws_subnet" "public_2" {
 
   tags = {
     Name = "${var.app_name}-backend-public-2-${var.environment}"
+  }
+}
+
+#trivy:ignore:AVD-AWS-0164
+resource "aws_subnet" "public_3" {
+  #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_3_cidr
+  availability_zone       = data.aws_availability_zones.available.names[2]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.app_name}-backend-public-3-${var.environment}"
   }
 }
 
@@ -83,8 +97,37 @@ resource "aws_route_table_association" "public_2" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_route_table_association" "public_3" {
+  subnet_id      = aws_subnet.public_3.id
+  route_table_id = aws_route_table.public.id
+}
+
 # ---------------------------------------------------------------------------
-# Private subnets — ElastiCache (no internet access needed)
+# NAT Gateways — one per AZ for private subnet outbound internet access
+# (LLM API calls to OpenAI/Anthropic/Gemini traverse NAT; AWS service
+# traffic uses VPC endpoints and never hits NAT)
+# ---------------------------------------------------------------------------
+
+resource "aws_eip" "nat" {
+  count  = var.nat_gateway_count
+  domain = "vpc"
+  tags   = { Name = "${var.app_name}-nat-eip-${count.index + 1}-${var.environment}" }
+}
+
+resource "aws_nat_gateway" "nat" {
+  count         = var.nat_gateway_count
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = [aws_subnet.public_1.id, aws_subnet.public_2.id, aws_subnet.public_3.id][count.index]
+  tags          = { Name = "${var.app_name}-nat-${count.index + 1}-${var.environment}" }
+  depends_on    = [aws_internet_gateway.igw]
+}
+
+# ---------------------------------------------------------------------------
+# Private subnets — ECS tasks, ElastiCache, VPC endpoints (3 AZs)
+# Each private subnet has its own route table. In prod (3 NAT GWs) each AZ
+# routes to its local NAT, avoiding cross-AZ data charges. In stg (2 NAT GWs)
+# private_3 shares AZ2's NAT — minor cross-AZ charge accepted. In dev/sbx
+# (1 NAT GW) all three private subnets share the single NAT in AZ1.
 # ---------------------------------------------------------------------------
 
 resource "aws_subnet" "private_1" {
@@ -107,20 +150,60 @@ resource "aws_subnet" "private_2" {
   }
 }
 
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
+resource "aws_subnet" "private_3" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_3_cidr
+  availability_zone = data.aws_availability_zones.available.names[2]
 
   tags = {
-    Name = "${var.app_name}-backend-private-rt-${var.environment}"
+    Name = "${var.app_name}-backend-private-3-${var.environment}"
   }
+}
+
+resource "aws_route_table" "private_1" {
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "${var.app_name}-backend-private-rt-1-${var.environment}" }
+}
+
+resource "aws_route_table" "private_2" {
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "${var.app_name}-backend-private-rt-2-${var.environment}" }
+}
+
+resource "aws_route_table" "private_3" {
+  vpc_id = aws_vpc.main.id
+  tags   = { Name = "${var.app_name}-backend-private-rt-3-${var.environment}" }
+}
+
+resource "aws_route" "private_nat_1" {
+  route_table_id         = aws_route_table.private_1.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.nat[0].id
+}
+
+resource "aws_route" "private_nat_2" {
+  route_table_id         = aws_route_table.private_2.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.nat[min(1, var.nat_gateway_count - 1)].id
+}
+
+resource "aws_route" "private_nat_3" {
+  route_table_id         = aws_route_table.private_3.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.nat[min(2, var.nat_gateway_count - 1)].id
 }
 
 resource "aws_route_table_association" "private_1" {
   subnet_id      = aws_subnet.private_1.id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private_1.id
 }
 
 resource "aws_route_table_association" "private_2" {
   subnet_id      = aws_subnet.private_2.id
-  route_table_id = aws_route_table.private.id
+  route_table_id = aws_route_table.private_2.id
+}
+
+resource "aws_route_table_association" "private_3" {
+  subnet_id      = aws_subnet.private_3.id
+  route_table_id = aws_route_table.private_3.id
 }

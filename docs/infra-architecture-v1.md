@@ -1,6 +1,6 @@
 # Infrastructure cost estimate — production (ap-south-1)
 
-Launch-day services only. Single region, 1 million users at launch, scaling to 10 million users. Deferred services are listed at the end for reference.
+Launch-day services only. Single region, 1,000 to 10 million users. Deferred services are listed at the end for reference.
 
 All figures in USD/month, ap-south-1 on-demand rates (June 2026).
 
@@ -32,11 +32,11 @@ flowchart TD
         end
 
         SM[Secrets Manager\nMongoDB URI · Redis token · API keys\nJWT private key · ap-south-1]
-        REDIS[(ElastiCache Redis\n1 primary + 1 replica\nm7g.large · TLS · auth · multi-AZ)]
+        REDIS[(ElastiCache Redis\nt4g.medium up to 100K · m7g.large above 100K\nTLS · auth · primary+replica · multi-AZ)]
     end
 
     subgraph ATLAS["MongoDB Atlas — external · ap-south-1 · PrivateLink"]
-        MDB[(M50 primary\ncontinuous backup · 30-day retention)]
+        MDB[(M30–M50 primary\nscaled by tier · continuous backup · 30-day retention)]
     end
 
     subgraph STORAGE["S3 Storage — ap-south-1"]
@@ -88,205 +88,212 @@ flowchart TD
 
 | Scenario | Monthly | Annual |
 |---|---|---|
-| 1 million users (baseline, 5 API + 2 worker tasks) | ~$1,845 | ~$22,140 |
-| 1 million users (peak burst, 20 API + 10 worker tasks sustained all month) | ~$3,194 | — |
-| 10 million users (baseline, 20 API + 10 worker tasks avg) | ~$4,245 | ~$50,940 |
+| dev/sbx (steady-state baseline) | ~$157 | ~$1,884 |
+| stg (steady-state baseline) | ~$566 | ~$6,792 |
+| prod — 1,000 users (1 API + 1 worker task, M30, t4g.medium×2) | ~$986 | ~$11,832 |
+| prod — 10,000 users (1 API + 1 worker task, M30, t4g.medium×2) | ~$996 | ~$11,952 |
+| prod — 100,000 users (2 API + 1 worker tasks, M30, t4g.medium×2) | ~$1,120 | ~$13,440 |
+| prod — 1 million users (5 API + 2 worker tasks, M40, m7g.large×2) | ~$2,170 | ~$26,040 |
+| prod — 1 million users (peak burst, 20 API + 10 worker tasks sustained, M40) | ~$3,590 | — |
+| prod — 10 million users (20 API + 10 worker tasks avg, M50, m7g.large×6) | ~$7,110 | ~$85,320 |
 
 ---
 
 ## Compute — ECS Fargate
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| ECS Fargate — API service (5 baseline → 50 max hard limit, 2 vCPU / 4 GB each; cost estimate assumes 20 tasks avg at 10M users) | $355 | $1,420 |
-| ECS Fargate — worker service (2 baseline → 10 max, 1 vCPU / 2 GB each; polls MongoDB jobs collection) | $71 | $355 |
-| **Subtotal** | **$426** | **$1,775** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| ECS Fargate — API service (5 baseline → 50 max hard limit, 2 vCPU / 4 GB each; cost estimate assumes 20 tasks avg at 10M users) | $9 | $75 | $75 | $75 | $149 | $373 | $1,494 |
+| ECS Fargate — worker service (2 baseline → 10 max, 1 vCPU / 2 GB each; polls MongoDB jobs collection) | $9 | $19 | $37 | $37 | $37 | $75 | $374 |
+| **Subtotal** | **$18** | **$94** | **$112** | **$112** | **$186** | **$448** | **$1,868** |
 
 ---
 
 ## Database — MongoDB Atlas
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| Primary cluster M50 (32 GB RAM, ~3K connections; hard cap — architecture is capped at M50; M60 exists in Atlas but will not be used) | $749 | $749 |
-| **Subtotal** | **$749** | **$749** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| Primary cluster — M10 at dev/sbx ($0.08/hr); M20 at stg ($0.20/hr); M30 at 1K–100K users (8 GB RAM, ~700 connections, $0.54/hr); M40 at 1M users (16 GB RAM, ~3K connections, $1.04/hr); M50 at 10M users (32 GB RAM, ~3K connections, $2.00/hr, hard cap) | $58 | $144 | $389 | $389 | $389 | $749 | $1,440 |
+| **Subtotal** | **$58** | **$144** | **$389** | **$389** | **$389** | **$749** | **$1,440** |
 
-> 10M-user column: primary cluster stays M50. At sustained 10M-user load, connection pooling via the API service (max 5 connections per ECS task × 20 tasks = 100) plus the worker service (max 5 connections per task × 10 tasks = 50) gives ~150 active connections — well within the M50's ~3K connection limit. If RAM pressure is observed (Atlas metrics: `Normalized System CPU` or `Page Faults` rising), add a second M50 read replica before considering an upsize.
+> Atlas tier progression: M30 covers 1K–100K users comfortably (8 GB RAM, connection pool of ~50 API + ~10 worker tasks well within limits). Upgrade to M40 before 1M users to gain 16 GB RAM headroom ($1.04/hr, corrected rate). M50 (hard cap) is provisioned at 10M users at $2.00/hr (corrected rate) — architecture is capped here; M60 exists in Atlas but will not be used. At 10M-user load, connection pooling (~150 total connections) remains well within M50's ~3K limit.
 
 ---
 
 ## Caching — ElastiCache Redis
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| Redis 1 primary + 1 replica (m7g.large, non-cluster mode). Sufficient for session data, rate limiting, and LLM response caching at 1M users (m7g.large has 6.38 GB memory). Scale to 3 shards × 2 nodes before reaching 10M users — requires destroy + create, schedule a maintenance window. 10M cost assumes 3 shards × 2 nodes. | $245 | $726 |
-| **Subtotal** | **$245** | **$726** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| Redis tier progression: dev/sbx — t4g.micro × 1 (burstable, 0.5 GB, dev/sbx only); stg — t4g.medium × 1 (3.09 GB, no replica — stg downtime acceptable); prod(1K–100K) — t4g.medium × 2 (primary+replica, multi-AZ); prod(1M) — m7g.large × 2 (non-burstable, 6.38 GB/node); prod(10M) — m7g.large × 6 (3 shards × 2 nodes, cluster mode — requires destroy+create from non-cluster). Upgrade from t4g.medium to m7g.large before 1M users: monitor `FreeableMemory` (alert below 500 MB) and `EngineCPUUtilization` (alert above 80%) in CloudWatch. | $14 | $58 | $117 | $117 | $117 | $236 | $709 |
+| **Subtotal** | **$14** | **$58** | **$117** | **$117** | **$117** | **$236** | **$709** |
 
 ---
 
 ## Networking
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| ALB | $18 | $35 |
-| NAT Gateway — 3 AZs ($0.045/hr each) | $99 | $130 |
-| VPC Interface Endpoints — 5 AWS services × 3 AZs ($0.01/AZ/hr each; ECR API, ECR DKR, Secrets Manager, CloudWatch Logs, X-Ray) | $110 | $110 |
-| Atlas PrivateLink VPC endpoint — 3 AZs ($0.01/AZ/hr; MongoDB traffic never traverses NAT GW; saves NAT data-processing charges on all Atlas query/response bytes) | $22 | $22 |
-| CloudFront + WAF (scales with request volume) | $30 | $120 |
-| **Subtotal** | **$279** | **$417** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| ALB | $17 | $20 | $20 | $20 | $21 | $23 | $36 |
+| NAT Gateway — 3 AZs ($0.056/hr each) | $40 | $81 | $121 | $121 | $121 | $121 | $141 |
+| VPC Interface Endpoints — 5 AWS services × AZ count ($0.013/AZ/hr each; ECR API, ECR DKR, Secrets Manager, CloudWatch Logs, X-Ray; skipped in dev/sbx; 2 AZs in stg; 3 AZs in prod) | — | $94 | $140 | $140 | $140 | $140 | $140 |
+| Atlas PrivateLink VPC endpoint — 3 AZs ($0.013/AZ/hr; MongoDB traffic never traverses NAT GW; saves NAT data-processing charges on all Atlas query/response bytes) | — | $19 | $28 | $28 | $28 | $28 | $28 |
+| CloudFront + WAF (scales with request volume; WAF fixed = $5 WebACL + 4 rules×$1 = $9/mo for stg/prod; request charges at $0.60/million) | $3 | $10 | $9 | $12 | $27 | $99 | $459 |
+| **Subtotal** | **$60** | **$224** | **$318** | **$321** | **$337** | **$411** | **$804** |
 
 ---
 
 ## Security
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| GuardDuty + ECS Runtime Monitoring (ap-south-1 + us-east-1, two detectors) | $55 | $160 |
-| CloudTrail (ap-south-1 + us-east-1, two trails) | $4 | $6 |
-| Lambda@Edge — JWT validation ($0.60 per 1M invocations + ~$0.02/1M duration at 128MB/3ms; assumes ~10 API calls/user/day) | $18 | $180 |
-| **Subtotal** | **$77** | **$346** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| GuardDuty + ECS Runtime Monitoring (ap-south-1 + us-east-1, two detectors) | — | $20 | $20 | $22 | $25 | $55 | $160 |
+| CloudTrail (ap-south-1 + us-east-1, two trails) | — | $2 | $2 | $2 | $3 | $4 | $6 |
+| Lambda@Edge — JWT validation ($0.60 per 1M invocations + ~$0.02/1M duration at 128MB/3ms; assumes ~10 API calls/user/day; corrected from prior 10× underestimate at 100K+ users) | ~$0 | $1 | ~$0 | $2 | $19 | $186 | $1,860 |
+| **Subtotal** | **$0** | **$23** | **$22** | **$26** | **$47** | **$245** | **$2,026** |
 
 ---
 
 ## Observability
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| CloudWatch — logs, alarms, dashboards | $30 | $90 |
-| AWS X-Ray + ADOT sidecar | $10 | $40 |
-| SNS — alerts topic + email subscription | $2 | $2 |
-| Kinesis Firehose — WAF log delivery to S3 (us-east-1) | $5 | $15 |
-| **Subtotal** | **$47** | **$147** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| CloudWatch — logs, alarms, dashboards | $2 | $10 | $10 | $12 | $20 | $40 | $120 |
+| AWS X-Ray + ADOT sidecar | $1 | $3 | $2 | $3 | $5 | $10 | $40 |
+| SNS — alerts topic + email subscription | $1 | $1 | $1 | $1 | $1 | $2 | $2 |
+| Kinesis Firehose — WAF log delivery to S3 (us-east-1) | — | — | $2 | $2 | $2 | $5 | $15 |
+| **Subtotal** | **$4** | **$14** | **$15** | **$18** | **$28** | **$57** | **$177** |
 
 ---
 
 ## Storage — S3
 
-| Service | 1M users/mo | 10M users/mo |
-|---|---|---|
-| S3 — SPA assets (OAC-restricted, CloudFront reads only; in us-east-1) | $3 | $5 |
-| S3 — app assets (static files served via CloudFront; OAC-restricted; in us-east-1) | $2 | $5 |
-| S3 — user uploads (write access from ECS tasks via pre-signed URLs; in ap-south-1) | $7 | $45 |
-| S3 — regional logging bucket (ALB logs, CloudTrail ap-south-1) | $5 | $15 |
-| S3 — global logging bucket (CloudFront logs, WAF logs, CloudTrail us-east-1; must be us-east-1) | $5 | $15 |
-| **Subtotal** | **$22** | **$85** |
+| Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| S3 — SPA assets (OAC-restricted, CloudFront reads only; in us-east-1) | $1 | $2 | $3 | $3 | $3 | $3 | $5 |
+| S3 — app assets (static files served via CloudFront; OAC-restricted; in us-east-1) | $1 | $2 | $2 | $2 | $2 | $2 | $5 |
+| S3 — user uploads (write access from ECS tasks via pre-signed URLs; in ap-south-1) | $1 | $3 | $3 | $3 | $5 | $7 | $45 |
+| S3 — regional logging bucket (ALB logs, CloudTrail ap-south-1) | — | $2 | $3 | $3 | $3 | $5 | $15 |
+| S3 — global logging bucket (CloudFront logs, WAF logs, CloudTrail us-east-1; must be us-east-1) | — | — | $2 | $2 | $2 | $5 | $15 |
+| **Subtotal** | **$3** | **$9** | **$13** | **$13** | **$15** | **$22** | **$85** |
 
 ---
 
-## Grand total — prod
+## Grand total — all environments
 
-| Category | 1M users/mo | 10M users/mo |
-|---|---|---|
-| Compute (API + worker) | $426 | $1,775 |
-| Database (Atlas) | $749 | $749 |
-| Cache (Redis) | $245 | $726 |
-| Networking | $279 | $417 |
-| Security | $77 | $346 |
-| Observability | $47 | $147 |
-| Storage | $22 | $85 |
-| **Total** | **~$1,845** | **~$4,245** |
+| Category | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| Compute (API + worker) | $18 | $94 | $112 | $112 | $186 | $448 | $1,868 |
+| Database (Atlas) | $58 | $144 | $389 | $389 | $389 | $749 | $1,440 |
+| Cache (Redis) | $14 | $58 | $117 | $117 | $117 | $236 | $709 |
+| Networking | $60 | $224 | $318 | $321 | $337 | $411 | $804 |
+| Security | $0 | $23 | $22 | $26 | $47 | $245 | $2,026 |
+| Observability | $4 | $14 | $15 | $18 | $28 | $57 | $177 |
+| Storage | $3 | $9 | $13 | $13 | $15 | $22 | $85 |
+| **Total** | **~$157** | **~$566** | **~$986** | **~$996** | **~$1,120** | **~$2,170** | **~$7,110** |
 
 ---
 
 ## Environment cost estimates
 
-Cost per environment at steady-state baseline (minimum task counts, no burst). All figures USD/month. **dev/sbx** are sized identically — sbx is a separate isolated sandbox used for pre-production testing that shares the same Terraform configuration as dev.
+Cost per environment and user-scale tier at steady-state baseline (minimum task counts, no burst). All figures USD/month. **dev/sbx** are sized identically — sbx is a separate isolated sandbox that shares the same Terraform configuration as dev. Prod uses the same infrastructure configuration at all user scales; only autoscaled task count and traffic-driven costs change.
 
-| Category | dev/sbx | stg | prod (1M users) | prod (10M users) |
-|---|---|---|---|---|
-| Compute (ECS API + worker) | $18 | $89 | $426 | $1,775 |
-| Database (Atlas) | $65 | $151 | $749 | $749 |
-| Cache (Redis) | $12 | $98 | $245 | $726 |
-| Networking | $45 | $178 | $279 | $417 |
-| Security | $0 | $23 | $77 | $346 |
-| Observability | $4 | $14 | $47 | $147 |
-| Storage | $3 | $9 | $22 | $85 |
-| **Total** | **~$147** | **~$562** | **~$1,845** | **~$4,245** |
+| Category | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|
+| Compute (ECS API + worker) | $18 | $94 | $112 | $112 | $186 | $448 | $1,868 |
+| Database (Atlas) | $58 | $144 | $389 | $389 | $389 | $749 | $1,440 |
+| Cache (Redis) | $14 | $58 | $117 | $117 | $117 | $236 | $709 |
+| Networking | $60 | $224 | $318 | $321 | $337 | $411 | $804 |
+| Security | $0 | $23 | $22 | $26 | $47 | $245 | $2,026 |
+| Observability | $4 | $14 | $15 | $18 | $28 | $57 | $177 |
+| Storage | $3 | $9 | $13 | $13 | $15 | $22 | $85 |
+| **Total** | **~$157** | **~$566** | **~$986** | **~$996** | **~$1,120** | **~$2,170** | **~$7,110** |
 
 ---
 
 ## Per-service cost breakdown — all environments
 
-Hourly figures are the steady-state running cost for that environment's configuration. Monthly = hourly × 720. `—` = service not provisioned in that environment. Usage-based services (CloudFront, Lambda@Edge, S3, GuardDuty, CloudTrail, CloudWatch, X-Ray, SNS, Kinesis Firehose) carry no fixed hourly rate — monthly estimates assume the request and data volumes implied by each environment's user scale.
+Hourly figures are the steady-state running cost for each user-scale tier. Monthly = hourly × 720. `—` = service not provisioned at that scale. Usage-based services carry no fixed hourly rate — monthly estimates assume the request and data volumes implied by each scale tier.
 
 ### Configuration per environment
 
-| Resource | dev/sbx | stg | prod (1M users) | prod (10M users) |
-|---|---|---|---|---|
-| ECS API tasks | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5 × 2 vCPU / 4 GB | 20 × 2 vCPU / 4 GB (avg) |
-| ECS Worker tasks | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2 × 1 vCPU / 2 GB | 10 × 1 vCPU / 2 GB |
-| MongoDB Atlas tier | M10 | M20 | M50 | M50 |
-| Redis node type × count | t4g.micro × 1 | t4g.medium × 2 | m7g.large × 2 | m7g.large × 6 |
-| NAT Gateways | 1 | 2 | 3 | 3 |
-| VPC Interface Endpoints | ✗ | 5 svc × 2 AZ | 5 svc × 3 AZ | 5 svc × 3 AZ |
-| Atlas PrivateLink endpoint | ✗ | 2 AZ | 3 AZ | 3 AZ |
-| WAF | ✗ | ✓ | ✓ | ✓ |
-| GuardDuty | ✗ | both regions | both regions | both regions |
-| CloudTrail | ✗ | both regions | both regions | both regions |
-| WAF logging (Kinesis Firehose) | ✗ | ✗ | ✓ | ✓ |
-| Global logging S3 bucket | ✗ | ✗ | ✓ | ✓ |
+| Resource | dev/sbx | stg | prod |
+|---|---|---|---|
+| ECS API tasks | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5–50 × 2 vCPU / 4 GB (autoscaled) |
+| ECS Worker tasks | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2–10 × 1 vCPU / 2 GB (autoscaled) |
+| MongoDB Atlas tier | M10 | M20 | M30 (1K–100K) → M40 (1M) → M50 (10M, hard cap) |
+| Redis node type × count | t4g.micro × 1 | t4g.medium × 1 (no replica) | t4g.medium × 2 (≤100K) → m7g.large × 2 (1M) → m7g.large × 6 (10M) |
+| NAT Gateways | 1 | 2 | 3 |
+| VPC Interface Endpoints | ✗ | 5 svc × 2 AZ | 5 svc × 3 AZ |
+| Atlas PrivateLink endpoint | ✗ | 2 AZ | 3 AZ |
+| WAF | ✗ | ✓ | ✓ |
+| GuardDuty | ✗ | both regions | both regions |
+| CloudTrail | ✗ | both regions | both regions |
+| WAF logging (Kinesis Firehose) | ✗ | ✗ | ✓ |
+| Global logging S3 bucket | ✗ | ✗ | ✓ |
 
 ### Hourly running cost by service
 
-Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly figure shown is total across all units for that environment (e.g. 3 NAT GWs = 3 × $0.045 = $0.135/hr).
+Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly figure shown is total across all units for that environment (e.g. 3 NAT GWs = 3 × $0.056 = $0.168/hr).
 
-| Category | Service | AWS unit rate | dev/sbx | stg | prod (1M) | prod (10M) |
-|---|---|---|---|---|---|---|
-| **Compute** | ECS API service | $0.04048/vCPU·hr + $0.004445/GB·hr | $0.012 | $0.099 | $0.494 | $1.975 |
-| | ECS Worker service | same Fargate rates | $0.012 | $0.025 | $0.099 | $0.494 |
-| **Database** | MongoDB Atlas | M10 $0.09 / M20 $0.21 / M50 $1.04 per hr | $0.090 | $0.210 | $1.040 | $1.040 |
-| **Cache** | ElastiCache Redis | t4g.micro $0.017 / t4g.med $0.068 / m7g.lg $0.168 per node/hr | $0.017 | $0.136 | $0.336 | $1.008 |
-| **Networking** | ALB | ~$0.008/hr base + LCU charges | $0.010 | $0.017 | $0.025 | $0.049 |
-| | NAT Gateway | $0.045/GW/hr | $0.045 | $0.090 | $0.135 | $0.135 |
-| | VPC Interface Endpoints | $0.01/endpoint/AZ/hr | — | $0.100 | $0.150 | $0.150 |
-| | Atlas PrivateLink endpoint | $0.01/AZ/hr | — | $0.020 | $0.030 | $0.030 |
-| | CloudFront + WAF | usage-based (requests + data transfer) | ~$0.007 | ~$0.021 | ~$0.042 | ~$0.167 |
-| **Security** | GuardDuty (2 regions) | usage-based (ECS task-hours + events) | — | ~$0.028 | ~$0.076 | ~$0.222 |
-| | CloudTrail (2 regions) | $0.10/100K management events | — | ~$0.003 | ~$0.006 | ~$0.008 |
-| | Lambda@Edge JWT validator | $0.60/1M req + $0.00001/128MB·s | ~$0 | ~$0.001 | ~$0.025 | ~$0.250 |
-| **Observability** | CloudWatch (logs + alarms + dashboards) | usage-based (ingestion + storage + API calls) | ~$0.003 | ~$0.014 | ~$0.042 | ~$0.125 |
-| | X-Ray + ADOT sidecar | $0.05/1M traces recorded | ~$0.001 | ~$0.004 | ~$0.014 | ~$0.056 |
-| | SNS (alerts topic) | $0.50/1M publishes | ~$0.001 | ~$0.001 | ~$0.003 | ~$0.003 |
-| | Kinesis Firehose (WAF logs) | $0.029/GB ingested | — | — | ~$0.007 | ~$0.021 |
-| **Storage** | S3 SPA assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.003 | ~$0.004 | ~$0.007 |
-| | S3 App assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.003 | ~$0.003 | ~$0.007 |
-| | S3 User uploads (ap-south-1) | $0.025/GB/mo + $0.005/1K PUT | ~$0.001 | ~$0.004 | ~$0.010 | ~$0.063 |
-| | S3 Regional logging (ap-south-1) | $0.025/GB/mo | — | ~$0.003 | ~$0.007 | ~$0.021 |
-| | S3 Global logging (us-east-1) | $0.023/GB/mo | — | — | ~$0.007 | ~$0.021 |
+> Prod hourly rates shown at 1M-user steady state (5 API tasks, 2 worker tasks). At lower user counts fewer tasks run — see the monthly cost table for per-tier totals.
+
+| Category | Service | AWS unit rate | dev/sbx | stg | prod |
+|---|---|---|---|---|---|
+| **Compute** | ECS API service | $0.04256/vCPU·hr + $0.004655/GB·hr | $0.012 | $0.104 | $0.518 |
+| | ECS Worker service | same Fargate rates | $0.012 | $0.026 | $0.104 |
+| **Database** | MongoDB Atlas | M10 $0.08 / M20 $0.20 / M30 $0.54 / M40 $1.04 / M50 $2.00 per hr | $0.080 | $0.200 | $1.040 |
+| **Cache** | ElastiCache Redis | t4g.micro $0.020 / t4g.med $0.081 / m7g.lg $0.164 per node/hr | $0.020 | $0.081 | $0.328 |
+| **Networking** | ALB | $0.0239/hr base + LCU charges | $0.024 | $0.024 | $0.032 |
+| | NAT Gateway | $0.056/GW/hr | $0.056 | $0.112 | $0.168 |
+| | VPC Interface Endpoints | $0.013/endpoint/AZ/hr | — | $0.130 | $0.195 |
+| | Atlas PrivateLink endpoint | $0.013/AZ/hr | — | $0.026 | $0.039 |
+| | CloudFront + WAF | usage-based (requests + data transfer) | ~$0.004 | ~$0.014 | ~$0.042 |
+| **Security** | GuardDuty (2 regions) | usage-based (ECS task-hours + events) | — | ~$0.028 | ~$0.076 |
+| | CloudTrail (2 regions) | $0.10/100K management events | — | ~$0.003 | ~$0.006 |
+| | Lambda@Edge JWT validator | $0.60/1M req + $0.00001/128MB·s; ~10 API calls/user/day per user count; corrected from prior 10× underestimate | ~$0 | ~$0.001 | ~$0.258 |
+| **Observability** | CloudWatch (logs + alarms + dashboards) | usage-based (ingestion + storage + API calls) | ~$0.003 | ~$0.014 | ~$0.042 |
+| | X-Ray + ADOT sidecar | $0.05/1M traces recorded | ~$0 | ~$0.004 | ~$0.014 |
+| | SNS (alerts topic) | $0.50/1M publishes | ~$0.001 | ~$0.001 | ~$0.003 |
+| | Kinesis Firehose (WAF logs) | $0.029/GB ingested | — | — | ~$0.007 |
+| **Storage** | S3 SPA assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.003 | ~$0.004 |
+| | S3 App assets (us-east-1) | $0.023/GB/mo + $0.004/10K GET | ~$0.001 | ~$0.003 | ~$0.003 |
+| | S3 User uploads (ap-south-1) | $0.025/GB/mo + $0.005/1K PUT | ~$0.001 | ~$0.004 | ~$0.010 |
+| | S3 Regional logging (ap-south-1) | $0.025/GB/mo | — | ~$0.003 | ~$0.007 |
+| | S3 Global logging (us-east-1) | $0.023/GB/mo | — | — | ~$0.007 |
 
 ### Monthly cost by service
 
-| Category | Service | dev/sbx | stg | prod (1M) | prod (10M) |
-|---|---|---|---|---|---|
-| **Compute** | ECS API service | $9 | $71 | $355 | $1,420 |
-| | ECS Worker service | $9 | $18 | $71 | $355 |
-| | **Subtotal** | **$18** | **$89** | **$426** | **$1,775** |
-| **Database** | MongoDB Atlas | $65 | $151 | $749 | $749 |
-| | **Subtotal** | **$65** | **$151** | **$749** | **$749** |
-| **Cache** | ElastiCache Redis | $12 | $98 | $245 | $726 |
-| | **Subtotal** | **$12** | **$98** | **$245** | **$726** |
-| **Networking** | ALB | $7 | $12 | $18 | $35 |
-| | NAT Gateway | $33 | $65 | $99 | $130 |
-| | VPC Interface Endpoints | — | $72 | $110 | $110 |
-| | Atlas PrivateLink endpoint | — | $14 | $22 | $22 |
-| | CloudFront + WAF | $5 | $15 | $30 | $120 |
-| | **Subtotal** | **$45** | **$178** | **$279** | **$417** |
-| **Security** | GuardDuty (2 regions) | — | $20 | $55 | $160 |
-| | CloudTrail (2 regions) | — | $2 | $4 | $6 |
-| | Lambda@Edge JWT validator | ~$0 | $1 | $18 | $180 |
-| | **Subtotal** | **$0** | **$23** | **$77** | **$346** |
-| **Observability** | CloudWatch | $2 | $10 | $30 | $90 |
-| | X-Ray + ADOT | $1 | $3 | $10 | $40 |
-| | SNS | $1 | $1 | $2 | $2 |
-| | Kinesis Firehose | — | — | $5 | $15 |
-| | **Subtotal** | **$4** | **$14** | **$47** | **$147** |
-| **Storage** | S3 SPA assets | $1 | $2 | $3 | $5 |
-| | S3 App assets | $1 | $2 | $2 | $5 |
-| | S3 User uploads | $1 | $3 | $7 | $45 |
-| | S3 Regional logging | — | $2 | $5 | $15 |
-| | S3 Global logging | — | — | $5 | $15 |
-| | **Subtotal** | **$3** | **$9** | **$22** | **$85** |
-| | **Grand Total** | **~$147** | **~$562** | **~$1,845** | **~$4,245** |
+| Category | Service | dev/sbx | stg | prod(1K) | prod(10K) | prod(100K) | prod(1M) | prod(10M) |
+|---|---|---|---|---|---|---|---|---|
+| **Compute** | ECS API service | $9 | $75 | $75 | $75 | $149 | $373 | $1,494 |
+| | ECS Worker service | $9 | $19 | $37 | $37 | $37 | $75 | $374 |
+| | **Subtotal** | **$18** | **$94** | **$112** | **$112** | **$186** | **$448** | **$1,868** |
+| **Database** | MongoDB Atlas | $58 | $144 | $389 | $389 | $389 | $749 | $1,440 |
+| | **Subtotal** | **$58** | **$144** | **$389** | **$389** | **$389** | **$749** | **$1,440** |
+| **Cache** | ElastiCache Redis | $14 | $58 | $117 | $117 | $117 | $236 | $709 |
+| | **Subtotal** | **$14** | **$58** | **$117** | **$117** | **$117** | **$236** | **$709** |
+| **Networking** | ALB | $17 | $20 | $20 | $20 | $21 | $23 | $36 |
+| | NAT Gateway | $40 | $81 | $121 | $121 | $121 | $121 | $141 |
+| | VPC Interface Endpoints | — | $94 | $140 | $140 | $140 | $140 | $140 |
+| | Atlas PrivateLink endpoint | — | $19 | $28 | $28 | $28 | $28 | $28 |
+| | CloudFront + WAF | $3 | $10 | $9 | $12 | $27 | $99 | $459 |
+| | **Subtotal** | **$60** | **$224** | **$318** | **$321** | **$337** | **$411** | **$804** |
+| **Security** | GuardDuty (2 regions) | — | $20 | $20 | $22 | $25 | $55 | $160 |
+| | CloudTrail (2 regions) | — | $2 | $2 | $2 | $3 | $4 | $6 |
+| | Lambda@Edge JWT validator | ~$0 | $1 | ~$0 | $2 | $19 | $186 | $1,860 |
+| | **Subtotal** | **$0** | **$23** | **$22** | **$26** | **$47** | **$245** | **$2,026** |
+| **Observability** | CloudWatch | $2 | $10 | $10 | $12 | $20 | $40 | $120 |
+| | X-Ray + ADOT | $1 | $3 | $2 | $3 | $5 | $10 | $40 |
+| | SNS | $1 | $1 | $1 | $1 | $1 | $2 | $2 |
+| | Kinesis Firehose | — | — | $2 | $2 | $2 | $5 | $15 |
+| | **Subtotal** | **$4** | **$14** | **$15** | **$18** | **$28** | **$57** | **$177** |
+| **Storage** | S3 SPA assets | $1 | $2 | $3 | $3 | $3 | $3 | $5 |
+| | S3 App assets | $1 | $2 | $2 | $2 | $2 | $2 | $5 |
+| | S3 User uploads | $1 | $3 | $3 | $3 | $5 | $7 | $45 |
+| | S3 Regional logging | — | $2 | $3 | $3 | $3 | $5 | $15 |
+| | S3 Global logging | — | — | $2 | $2 | $2 | $5 | $15 |
+| | **Subtotal** | **$3** | **$9** | **$13** | **$13** | **$15** | **$22** | **$85** |
+| | **Grand Total** | **~$157** | **~$566** | **~$986** | **~$996** | **~$1,120** | **~$2,170** | **~$7,110** |
 
 ---
 
@@ -294,16 +301,16 @@ Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly 
 
 | Service | dev/sbx | stg | prod |
 |---|---|---|---|
-| Atlas tier | M10 (~$0.09/hr) | M20 (~$0.21/hr) | M50 (~$1.04/hr) |
-| Redis | t4g.micro × 1 node | t4g.medium × 2 nodes | m7g.large × 2 nodes |
-| ECS tasks (API) | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5 × 2 vCPU / 4 GB |
-| ECS tasks (worker) | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2 × 1 vCPU / 2 GB |
-| NAT Gateways | 1 ($33/mo) | 2 ($65/mo) | 3 ($99/mo) |
-| VPC Interface Endpoints | ✗ skip | 5 svc × 2 AZ ($72/mo) | 5 svc × 3 AZ ($110/mo) |
-| Atlas PrivateLink | ✗ skip | 2 AZ ($14/mo) | 3 AZ ($22/mo) |
-| GuardDuty | ✗ skip | both regions (~$20/mo) | both regions (~$55/mo) |
-| CloudTrail | ✗ skip | both regions (~$2/mo) | both regions (~$4/mo) |
-| Kinesis Firehose (WAF logs) | ✗ skip | ✗ skip | ✓ ($5/mo) |
+| Atlas tier | M10 (~$0.08/hr) | M20 (~$0.20/hr) | M30 (1K–100K, ~$0.54/hr) → M40 (1M, ~$1.04/hr) → M50 (10M, ~$2.00/hr) |
+| Redis | t4g.micro × 1 | t4g.medium × 1 (no replica) | t4g.medium × 2 (≤100K) → m7g.large × 2 (1M) → m7g.large × 6 (10M) |
+| ECS tasks (API) | 1 × 0.25 vCPU / 0.5 GB | 2 × 1 vCPU / 2 GB | 5–50 × 2 vCPU / 4 GB (autoscaled) |
+| ECS tasks (worker) | 1 × 0.25 vCPU / 0.5 GB | 1 × 0.5 vCPU / 1 GB | 2–10 × 1 vCPU / 2 GB (autoscaled) |
+| NAT Gateways | 1 ($40/mo) | 2 ($81/mo) | 3 ($121/mo) |
+| VPC Interface Endpoints | ✗ skip | 5 svc × 2 AZ ($94/mo) | 5 svc × 3 AZ ($140/mo) |
+| Atlas PrivateLink | ✗ skip | 2 AZ ($19/mo) | 3 AZ ($28/mo) |
+| GuardDuty | ✗ skip | both regions (~$20/mo) | both regions (~$55–160/mo, scales with traffic) |
+| CloudTrail | ✗ skip | both regions (~$2/mo) | both regions (~$4–6/mo) |
+| Kinesis Firehose (WAF logs) | ✗ skip | ✗ skip | ✓ (~$2–15/mo) |
 | Global logging S3 bucket | ✗ skip | ✗ skip | ✓ |
 | WAF | ✗ skip | ✓ | ✓ |
 
@@ -313,7 +320,7 @@ Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly 
 
 Every Terraform resource needed to implement the launch-day architecture. Marked as **exists** (already in code), **change** (exists but needs modification), or **missing** (not in code at all).
 
-> **Implementation status (as of June 2026):** ~75% of this architecture is in place. Fully implemented: all 12 GitHub Actions workflows (deploy, terraform, restart, promote, build); `infra-live-backend` (ECS API + worker, autoscaling × 7 policies, ECR, ALB, ElastiCache, VPC, security groups, IAM, Secrets Manager, CloudWatch log groups + worker alarms, SSM outputs); `infra-live-edge` (CloudFront, WAF WebACL × 4 rules, Lambda@Edge JWT validator, OAC × 2, response headers policies × 3, S3 backend bucket policy, DNS); `infra-live-frontend` (S3 SPA hosting); `backend/worker.py` (full async job processing). The main remaining workstreams are private networking (NAT/VPC endpoints), Redis hardening, MongoDB Atlas Terraform module, full observability (alarms, dashboard, X-Ray, GuardDuty, CloudTrail), and S3 policies. Items that are **missing** or require a **change** are **pending implementation**.
+> **Implementation status (as of June 2026):** ~90% of this architecture is in place. Fully implemented: all 12 GitHub Actions workflows (deploy, terraform, restart, promote, build); `infra-live-backend` (ECS API + worker in private subnets, 3 NAT Gateways × 3 AZs, 5 VPC Interface Endpoints + S3 Gateway Endpoint, VPC endpoint SG, autoscaling × 7 policies, ECR, ALB, ElastiCache with `auth_token` + per-env replica/multi-AZ config, VPC, security groups, IAM, Secrets Manager + `REDIS_AUTH_TOKEN`, CloudWatch log groups + worker alarms, SSM outputs); `infra-live-edge` (CloudFront, WAF WebACL × 4 rules, Lambda@Edge JWT validator, OAC × 2, response headers policies × 3, S3 backend bucket policy, DNS); `infra-live-frontend` (S3 SPA hosting); `backend/worker.py` (full async job processing); `backend/app/llm_rate_limiter.py` + `settings.py` (Redis AUTH token support). The main remaining workstreams are MongoDB Atlas Terraform module, full observability (alarms, dashboard, X-Ray, GuardDuty, CloudTrail), and S3 policies. Items that are **missing** or require a **change** are **pending implementation**.
 
 ### Pending workstreams — quick summary
 
@@ -321,8 +328,8 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 |---|---|---|---|
 | 1 | ~~**ECS worker service**~~ ✅ **Done** | `aws_ecs_service` (worker), `aws_ecs_task_definition` (worker), worker SG, worker IAM role, worker CloudWatch log group | `infra-live-backend` |
 | 2 | ~~**Auto-scaling**~~ ✅ **Done** | `aws_appautoscaling_target/policy` × 7 (API × 3 + worker CPU + worker scale-out + worker scale-in + 2 targets), `aws_sns_topic.alerts`, CloudWatch alarms: API CPU/memory sustained, worker CPU sustained, worker PendingJobCount scale-out/scale-in/high-ops, worker ProcessingJobCount stuck | `infra-live-backend` |
-| 3 | **Private networking** | 3 NAT GWs, 3 EIPs, 5 VPC Interface Endpoints, S3 Gateway Endpoint, Atlas PrivateLink VPC endpoint; move ECS tasks to private subnets; expand to 3 AZs | `infra-live-backend` |
-| 4 | **Redis hardening** | Replace `aws_elasticache_replication_group` with correct config: `auth_token`, `automatic_failover_enabled = true`, `multi_az_enabled = true` | `infra-live-backend` |
+| 3 | ~~**Private networking**~~ ✅ **Done** | 3 NAT GWs, 3 EIPs, 5 VPC Interface Endpoints, S3 Gateway Endpoint; ECS tasks moved to private subnets; expanded to 3 AZs. Atlas PrivateLink deferred (no Atlas module yet). | `infra-live-backend` |
+| 4 | ~~**Redis hardening**~~ ✅ **Done** | `auth_token` from GitHub secret (`TF_VAR_redis_auth_token`); `elasticache_replica_count` + `elasticache_multi_az` variables — dev/sbx/stg: 0 replicas, multi-AZ off; prod: 1 replica, multi-AZ on. `REDIS_AUTH_TOKEN` added to Secrets Manager and injected into API task. Backend `settings.py` + `llm_rate_limiter.py` updated to pass token as `password=` to Redis client. | `infra-live-backend` + `backend/` |
 | 5 | **MongoDB Atlas Terraform module** | Entire `infra-live-atlas/` directory does not exist yet; `mongodbatlas_*` resources × 5; `terraform-atlas.yml` workflow | new module |
 | 6 | **Observability** | CloudWatch alarms × 8, dashboard, X-Ray sampling rules × 2, SNS topics × 2, Kinesis Firehose + WAF logging | `infra-live-backend` + `infra-live-edge` |
 | 7 | **Security services** | GuardDuty × 2 regions, CloudTrail × 2 regions | `infra-live-backend` + `infra-live-edge` |
@@ -337,9 +344,9 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 |---|---|---|
 | `aws_ecs_cluster` | exists | Container Insights enabled |
 | `aws_ecs_cluster_capacity_providers` | exists | FARGATE provider |
-| `aws_ecs_service` (API) | change | **⚠️ Current state: tasks run in public subnets with `assign_public_ip = true`.** Update `network_configuration.subnets` from public to private subnet IDs; set `assign_public_ip = false` — both changes are required; setting the flag without updating the subnet list leaves tasks running in public subnets |
+| `aws_ecs_service` (API) | exists | Tasks run in private subnets (`private_1/2/3`); `assign_public_ip = false`. Outbound internet via NAT Gateway; AWS service traffic via VPC endpoints. |
 | `aws_ecs_service` (worker) | exists | ECS service running the MongoDB queue worker; same image, different entrypoint (`worker.py`). No `health_check_grace_period_seconds` (no ALB target group). Both API and worker services use `deployment_circuit_breaker { enable = true; rollback = true }` — automatic rollback on failed deployments. |
-| `aws_ecs_task_definition` (API) | change | Add ADOT sidecar container for X-Ray tracing; add `REDIS_AUTH_TOKEN` secret. (`APP_ENV` is already implemented — set to `var.environment` in `ecs.tf`; any non-`"local"` value correctly gates CloudWatch metric emission in the worker.) **ADOT sidecar spec:** container name `aws-otel-collector`; image `public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0` (pin a specific tag — do not use `latest`); command `["--config=/etc/ecs/ecs-default-config.yaml"]` (uses the AWS-managed ECS default config which exports X-Ray traces and CloudWatch metrics); essential `false` (sidecar failure must not kill the app container); CPU 256 / memory 512; no inbound ports needed; add `logConfiguration` pointing at the API CloudWatch log group with stream prefix `adot`. The API application container must be named `backend` — this name is referenced by `deploy-live-backend.yml` when patching the image in the task definition (see the `jq` filter `.name == "backend"` in the deploy workflow). |
+| `aws_ecs_task_definition` (API) | change | `REDIS_AUTH_TOKEN` secret injection ✅ done. Remaining: add ADOT sidecar container for X-Ray tracing. **ADOT sidecar spec:** container name `aws-otel-collector`; image `public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0` (pin a specific tag — do not use `latest`); command `["--config=/etc/ecs/ecs-default-config.yaml"]` (uses the AWS-managed ECS default config which exports X-Ray traces and CloudWatch metrics); essential `false` (sidecar failure must not kill the app container); CPU 256 / memory 512; no inbound ports needed; add `logConfiguration` pointing at the API CloudWatch log group with stream prefix `adot`. The API application container must be named `backend` — this name is referenced by `deploy-live-backend.yml` when patching the image in the task definition (see the `jq` filter `.name == "backend"` in the deploy workflow). |
 | `aws_ecs_task_definition` (worker) | exists | Task definition for the MongoDB queue worker. Container name `worker`; same image as API; `command = ["python", "worker.py"]`; no `portMappings`; no ALB. Worker-specific env vars (not present in the API task): `WORKER_CONCURRENCY` (number of concurrent jobs per task, controlled by `var.worker_concurrency`), `WORKER_POLL_INTERVAL_SECONDS` (polling frequency, controlled by `var.worker_poll_interval_seconds`), `AWS_DEFAULT_REGION` (needed for CloudWatch `PutMetricData` calls). **Secrets injected into worker:** same Secrets Manager ARN as the API, but `GOOGLE_CLIENT_ID` is **not** included in the worker secrets block — the worker never handles OAuth flows. ADOT sidecar: **pending** (see API task definition note above). |
 | `aws_appautoscaling_target` (API service) | exists | `min_capacity` / `max_capacity` parameterised via `var.api_min_capacity` / `var.api_max_capacity`; `scalable_dimension = "ecs:service:DesiredCount"`; `service_namespace = "ecs"` |
 | `aws_appautoscaling_policy` (API — CPU) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
@@ -355,7 +362,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_elasticache_replication_group` | **replacement** | **⚠️ Current state: missing `auth_token`, `automatic_failover_enabled = false`, `multi_az_enabled = false`.** Target config: `num_node_groups = 1`; `replicas_per_node_group = 1`; `automatic_failover_enabled = true`; `multi_az_enabled = true`; `node_type = "cache.m7g.large"`; `auth_token` from Secrets Manager; `transit_encryption_enabled = true` (required for auth_token — AWS enforces this); `at_rest_encryption_enabled = true`; `engine_version = "7.1"`. **Launch config: 1 primary + 1 replica (non-cluster mode) — sufficient for 1M users.** **Scale path to 10M users:** change to `num_node_groups = 3` — this is a destroy + create (~5–10 min outage), not an in-place change. AWS does not support enabling cluster mode on an existing non-cluster-mode replication group. Schedule a maintenance window; ensure the API degrades gracefully without Redis (return cache misses, do not 500) before applying. |
+| `aws_elasticache_replication_group` | exists | `auth_token = var.redis_auth_token` (injected via `TF_VAR_redis_auth_token` GitHub secret); `transit_encryption_enabled = true` + `transit_encryption_mode = "required"`; `at_rest_encryption_enabled = true`; `engine_version = "7.1"`. **Per-env config via variables:** `num_cache_clusters = var.elasticache_replica_count + 1`; `automatic_failover_enabled = var.elasticache_multi_az`; `multi_az_enabled = var.elasticache_multi_az`. dev/sbx: `cache.t4g.micro`, 1 node, no multi-AZ. stg: `cache.t4g.medium`, 1 node, no multi-AZ. prod: `cache.t4g.medium` (≤100K users) → `cache.m7g.large` (>100K users), 2 nodes, multi-AZ enabled — node type upgrade is in-place, no destroy required. **Scale path to 10M users:** change to `num_node_groups = 3` — this IS a destroy + create (~5–10 min outage); AWS does not support enabling cluster mode on an existing non-cluster-mode group. Schedule a maintenance window; ensure the API degrades gracefully without Redis (return cache misses, do not 500) before applying. |
 | `aws_elasticache_subnet_group` | exists | Private subnets, no change needed |
 
 #### Networking
@@ -365,17 +372,17 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_vpc` | exists | No change |
-| `aws_subnet` × 4 (2 public, 2 private) | change | **⚠️ Current state: 2 AZs, 4 subnets total.** Add 3rd AZ: expand to × 6 (3 public, 3 private) |
+| `aws_subnet` × 6 (3 public, 3 private) | exists | 3 AZs; public subnets host ALB and NAT Gateways; private subnets host ECS tasks, ElastiCache, VPC endpoints |
 | `aws_internet_gateway` | exists | No change |
-| `aws_route_table` + `aws_route_table_association` | change | Add route tables for 3rd AZ subnets |
-| `aws_eip` × 3 | **missing** | One Elastic IP per NAT Gateway (one per AZ); must include `lifecycle { prevent_destroy = true }`. With PrivateLink active, ECS → Atlas traffic takes the PrivateLink path (not NAT), so EIP rotation no longer breaks the primary Atlas data path. However, NAT EIP addresses are still added to the Atlas project IP access list as a break-glass fallback — if the PrivateLink endpoint is ever misconfigured or deleted, ECS tasks can fall back through NAT. An EIP change would break that fallback, which is why `prevent_destroy = true` remains important. |
-| `aws_nat_gateway` × 3 | **missing** | One per AZ; ECS tasks route outbound through NAT instead of using public IPs |
-| `aws_vpc_endpoint` (S3 — Gateway type) | **missing** | Free; routes S3 + ECR layer traffic over AWS backbone, eliminates NAT data charges for image pulls |
-| `aws_vpc_endpoint` (ECR API — Interface) | **missing** | Keeps ECR API calls off public internet |
-| `aws_vpc_endpoint` (ECR DKR — Interface) | **missing** | Keeps image layer pulls off public internet |
-| `aws_vpc_endpoint` (Secrets Manager — Interface) | **missing** | Keeps secret fetches off public internet |
-| `aws_vpc_endpoint` (CloudWatch Logs — Interface) | **missing** | Keeps log delivery off public internet |
-| `aws_vpc_endpoint` (X-Ray — Interface) | **missing** | Required for ADOT → X-Ray trace export without NAT |
+| `aws_route_table` × 3 (per-AZ private) + public | exists | Each private subnet has its own route table pointing to the local AZ's NAT Gateway — avoids cross-AZ data charges |
+| `aws_eip` × 3 | exists | One per AZ; no `prevent_destroy` (NAT EIPs are not in the Atlas IP access list — Atlas PrivateLink not yet provisioned) |
+| `aws_nat_gateway` × 3 | exists | One per AZ in the respective public subnet; ECS tasks route outbound internet traffic (LLM APIs, MongoDB Atlas) via NAT |
+| `aws_vpc_endpoint` (S3 — Gateway type) | exists | Free; routes S3 + ECR layer traffic over AWS backbone; attached to all 3 private route tables |
+| `aws_vpc_endpoint` (ECR API — Interface) | exists | Keeps ECR API calls off public internet; private DNS enabled |
+| `aws_vpc_endpoint` (ECR DKR — Interface) | exists | Keeps image layer pulls off public internet; private DNS enabled |
+| `aws_vpc_endpoint` (Secrets Manager — Interface) | exists | Keeps secret fetches off public internet; private DNS enabled |
+| `aws_vpc_endpoint` (CloudWatch Logs — Interface) | exists | Keeps log delivery off public internet; private DNS enabled |
+| `aws_vpc_endpoint` (X-Ray — Interface) | exists | Required for ADOT → X-Ray trace export without NAT; private DNS enabled |
 | `aws_vpc_endpoint` (Atlas PrivateLink — Interface) | **missing** | Private connectivity from ECS tasks to MongoDB Atlas M50; secret names in Secrets Manager are unchanged — only the connection string URI value changes. Atlas provides the endpoint service name from the Atlas console after PrivateLink is enabled on the cluster. Place in all 3 private subnets; attach the Atlas PrivateLink endpoint SG. After Terraform creates this endpoint, complete the handshake via `mongodbatlas_privatelink_endpoint_service` in the Atlas module (see Atlas module section). All MongoDB traffic (API + worker) then flows VPC → PrivateLink → Atlas backbone, bypassing NAT GW entirely. |
 
 #### Load Balancer
@@ -394,15 +401,15 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_security_group` (ECS task — API) | change | Add outbound 443 to VPC Interface Endpoint SG; add outbound 27017 to Atlas PrivateLink endpoint SG |
 | `aws_security_group` (ECS task — worker) | exists | No inbound; unrestricted egress (outbound 0.0.0.0/0 on all ports — covers MongoDB via PrivateLink, Secrets Manager/CloudWatch/X-Ray via VPC endpoints, and LLM API calls via NAT). No Redis egress — the worker does not use ElastiCache. Egress can be tightened once PrivateLink and VPC endpoints are active. |
 | `aws_security_group` (ElastiCache) | exists | Inbound 6379 from API task SG only — the worker does not connect to Redis, so its SG must not be added here |
-| `aws_security_group` (VPC endpoints — AWS services) | **missing** | Allows inbound 443 from both ECS task SGs for all AWS Interface Endpoints (ECR, Secrets Manager, CloudWatch Logs, X-Ray) |
+| `aws_security_group` (VPC endpoints — AWS services) | exists | Allows inbound 443 from both ECS task SGs (`ecs_task_sg` + `worker_sg`); no egress rule (endpoints do not initiate outbound connections). Shared by all 5 Interface Endpoints (ECR API, ECR DKR, Secrets Manager, CloudWatch Logs, X-Ray). Defined in `vpc_endpoints.tf`. |
 | `aws_security_group` (Atlas PrivateLink endpoint) | **missing** | Allows inbound 27017 from both ECS task SGs (API and worker); attached to the Atlas PrivateLink VPC endpoint. Keep this SG separate from the AWS services endpoint SG — port and purpose are different. |
 
 #### Security & Secrets
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_secretsmanager_secret` | change | Add `REDIS_AUTH_TOKEN` key alongside existing secrets |
-| `aws_secretsmanager_secret_version` | change | Add `REDIS_AUTH_TOKEN` placeholder |
+| `aws_secretsmanager_secret` | exists | No change needed |
+| `aws_secretsmanager_secret_version` | exists | Placeholder JSON includes `REDIS_AUTH_TOKEN = "REPLACE_ME"`. Real value seeded from `secrets.REDIS_AUTH_TOKEN` GitHub secret on first apply by the "Initialise app secrets" workflow step. |
 | `aws_iam_role` (execution role) | exists | No change |
 | `aws_iam_role` (task role — API) | change | Add `xray:PutTraceSegments` + `xray:PutTelemetryRecords` for ADOT sidecar |
 | `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. The **execution** role (`aws_iam_role.ecs_execution_role`) is **shared** between API and worker — it handles ECR image pulls and Secrets Manager secret injection at task startup. The worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Buddy360/Worker` via condition; `ssmmessages:*` for ECS Exec. X-Ray (`xray:PutTraceSegments`) is **pending** — add once ADOT sidecar is added to the worker task definition. |
@@ -1078,7 +1085,7 @@ Reads `cloudfront_arn` and `s3_bucket_name` from SSM (written by Phase 3). Appli
 
 Docker build → push to ECR (tagged by git SHA, immutable) → register new ECS task definition → rolling deploy → waits up to 15 min for steady state; circuit-breaker rolls back automatically on failure.
 
-ECS tasks are already running from before Phase 2 (existing image in ECR). This step builds the new image with all Phase 2 changes (ADOT sidecar, REDIS_AUTH_TOKEN secret, updated task definition) and triggers a rolling deploy. The new task definition is required for tasks to function correctly in the private-subnet configuration applied in Phase 2.
+ECS tasks are already running from before Phase 2 (existing image in ECR). This step builds the new image with all Phase 2 changes (ADOT sidecar, updated task definition) and triggers a rolling deploy. The new task definition is required for tasks to function correctly in the private-subnet configuration applied in Phase 2.
 
 **Workflow (4c):** `deploy-live-frontend` → `environment: prod`
 
@@ -1178,7 +1185,7 @@ Run destroy in reverse dependency order: `terraform-live-frontend` → `terrafor
 | | S3 bucket policies (buckets survive; policies wiped) |
 | | Route 53 A record (`buddy360.com` stops resolving) |
 
-> **EIP destroy caveat:** `aws_eip.nat` resources have `lifecycle { prevent_destroy = true }`. Running `terraform destroy` on `terraform-live-backend` will **error and refuse to proceed** until you manually remove the `prevent_destroy` lifecycle block from the EIP resources in `infra-live-backend/terraform`. This is intentional — it forces a conscious decision to release the IPs. Remove the block, re-run `terraform destroy`, then the EIPs are released. The NAT Gateway public IP addresses change on the next `terraform apply`, so update the Atlas IP access list break-glass entries after recreation.
+> **EIP note:** `aws_eip.nat` resources (count-indexed, one per `nat_gateway_count`) do **not** have `lifecycle { prevent_destroy = true }` — NAT EIPs are not registered in the Atlas project IP access list (Atlas PrivateLink is not yet provisioned). `terraform destroy` on `terraform-live-backend` will release the EIPs without issue. When Atlas PrivateLink is provisioned in the future, add `lifecycle { prevent_destroy = true }` to the EIP resources and register the NAT EIP addresses in the Atlas IP access list as a break-glass fallback.
 
 Recovery: re-run Phase 2 (`terraform-live-backend`) → Phase 3 (`terraform-live-edge`) → Phase 4 (`terraform-live-frontend` + `deploy-live-backend` + `deploy-live-frontend`) → Phase 5 (`terraform-atlas` run 2) → Phase 6 (`restart-live-backend`). Everything recreates from code. CloudWatch logs are the only permanent loss. The Atlas cluster and all data survive destroy untouched.
 
