@@ -1,9 +1,17 @@
 name: Restart Live Backend
-run-name: Restart Live Backend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Restart Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "ECS service to restart"
+        required: true
+        default: "backend"
+        type: choice
+        options:
+          - backend
+          - worker
       environment:
         description: "Deployment environment"
         required: true
@@ -27,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
@@ -63,30 +71,41 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Resolve ECS targets from SSM (written by terraform-live-backend).
+      # backend → ecs_service_name; worker → ecs_worker_service_name
       # -------------------------------------------------------------------------
       - name: Resolve deployment targets
         id: tf_outputs
+        env:
+          SERVICE_INPUT: ${{ inputs.service }}
         run: |
           get_ssm() {
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          CLUSTER=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
-          SERVICE=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+          SSM_BASE="/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}"
+          CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
+
+          if [ "$SERVICE_INPUT" = "worker" ]; then
+            SERVICE=$(get_ssm "$SSM_BASE/ecs_worker_service_name")
+            SSM_KEY="ecs_worker_service_name"
+          else
+            SERVICE=$(get_ssm "$SSM_BASE/ecs_service_name")
+            SSM_KEY="ecs_service_name"
+          fi
 
           if [ -z "$CLUSTER" ]; then
             echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
             exit 1
           fi
           if [ -z "$SERVICE" ]; then
-            echo "ERROR: ECS service name not found in SSM. Run terraform-live-backend workflow (apply) first."
+            echo "ERROR: $SSM_KEY not found in SSM. Run terraform-live-backend workflow (apply) first."
             exit 1
           fi
 
           echo "ecs_cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
           echo "ecs_service=$SERVICE" >> "$GITHUB_OUTPUT"
           echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
+          echo "Service ($SERVICE_INPUT): $SERVICE"
 
       # -------------------------------------------------------------------------
       # Force a new deployment without changing the task definition.
@@ -124,7 +143,7 @@ jobs:
               exit 1
             fi
 
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ]; then
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
               echo "Restart complete — service is stable ($RUNNING/$DESIRED tasks running)."
               break
             fi
