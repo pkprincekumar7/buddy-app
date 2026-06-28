@@ -27,7 +27,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   comment             = "${var.app_name} frontend (${var.environment})"
   default_root_object = "index.html"
   aliases             = [local.fqdn]
-  web_acl_id          = aws_wafv2_web_acl.frontend.arn
+  web_acl_id          = var.enable_waf ? aws_wafv2_web_acl.frontend[0].arn : null
 
   price_class = var.cloudfront_price_class
 

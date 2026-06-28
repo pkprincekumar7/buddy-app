@@ -83,7 +83,7 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
   count                   = var.enable_waf_logging ? 1 : 0
   provider                = aws.us_east_1
   log_destination_configs = [aws_kinesis_firehose_delivery_stream.waf_logs[0].arn]
-  resource_arn            = aws_wafv2_web_acl.frontend.arn
+  resource_arn            = aws_wafv2_web_acl.frontend[0].arn
 }
 
 # ---------------------------------------------------------------------------

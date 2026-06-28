@@ -100,12 +100,25 @@ variable "enable_cloudtrail" {
   default     = true
 }
 
+# -- WAF ----------------------------------------------------------------------
+
+variable "enable_waf" {
+  description = "Enable WAF WebACL on CloudFront. Skipped on dev/sbx to avoid ~$5/mo WebACL + per-request charges."
+  type        = bool
+  default     = true
+}
+
 # -- WAF logging --------------------------------------------------------------
 
 variable "enable_waf_logging" {
-  description = "Enable WAF full logs via Kinesis Firehose → global S3 bucket. Prod only."
+  description = "Enable WAF full logs via Kinesis Firehose → global S3 bucket. Prod only. Requires enable_waf = true."
   type        = bool
   default     = false
+
+  validation {
+    condition     = !var.enable_waf_logging || var.enable_waf
+    error_message = "enable_waf_logging requires enable_waf = true."
+  }
 }
 
 variable "global_logging_bucket_name" {

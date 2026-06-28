@@ -529,30 +529,6 @@ Tokens carry a `kid` (key ID) claim in the JWT header. The `JWT_PUBLIC_KEYS` Git
 
 The function code lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`. Terraform renders it at apply time via `templatefile()` inside an `archive_file` data source, injecting the `jwt_public_keys` map and `jwt_key_id`:
 
-```hcl
-data "archive_file" "jwt_validator_lambda" {
-  type        = "zip"
-  output_path = "${path.module}/jwt-validator-lambda.zip"
-  source {
-    content  = templatefile("${path.module}/../functions/jwt-validator-lambda.js.tpl", {
-      jwt_public_keys = var.jwt_public_keys
-      jwt_key_id      = var.jwt_key_id
-    })
-    filename = "index.js"
-  }
-}
-
-resource "aws_lambda_function" "jwt_validator" {
-  filename         = data.archive_file.jwt_validator_lambda.output_path
-  function_name    = "${var.app_name}-${var.environment}-jwt-validator"
-  role             = aws_iam_role.jwt_validator_lambda.arn
-  handler          = "index.handler"
-  runtime          = "nodejs20.x"
-  publish          = true
-  source_code_hash = data.archive_file.jwt_validator_lambda.output_base64sha256
-}
-```
-
 Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function_association` using `qualified_arn`.
 
 #### GitHub secrets additions
@@ -721,75 +697,6 @@ The resource inventory above is written at prod scale. This section documents ev
 
 These resources must be conditional — not always created. Add these patterns in the relevant modules:
 
-**In `infra-live-backend`:**
-
-```hcl
-# Skip Interface VPC Endpoints on dev/sbx
-variable "enable_vpc_endpoints" { default = true }
-resource "aws_vpc_endpoint" "ecr_api" {
-  count = var.enable_vpc_endpoints ? 1 : 0
-  ...
-}
-# (same count on ecr_dkr, secretsmanager, cloudwatch_logs, xray endpoints)
-
-# Skip Atlas PrivateLink VPC endpoint when service name not yet available
-# (set by terraform-atlas Phase 1 via SSM; empty on dev/sbx since enable_privatelink=false)
-variable "atlas_endpoint_service_name" { default = "" }
-resource "aws_vpc_endpoint" "atlas_privatelink" {
-  count = var.atlas_endpoint_service_name != "" ? 1 : 0
-  ...
-}
-
-# Skip GuardDuty (ap-south-1) on dev/sbx
-variable "enable_guardduty" { default = true }
-resource "aws_guardduty_detector" "main" {
-  count = var.enable_guardduty ? 1 : 0
-  ...
-}
-
-# Skip CloudTrail (ap-south-1) on dev/sbx
-variable "enable_cloudtrail" { default = true }
-resource "aws_cloudtrail" "main" {
-  count = var.enable_cloudtrail ? 1 : 0
-  ...
-}
-
-
-# CloudWatch metric alarms — basic set on stg, full set on prod, none on dev/sbx
-# Two variables drive this: enable_basic_alarms (HealthyHostCount + 5XX) and
-# enable_all_alarms (all 8 alarms). On stg set enable_basic_alarms=true,
-# enable_all_alarms=false. On prod set both to true.
-variable "enable_basic_alarms" { default = false }
-variable "enable_all_alarms"   { default = false }
-resource "aws_cloudwatch_metric_alarm" "healthy_host_count" {
-  count = var.enable_basic_alarms ? 1 : 0
-  ...
-}
-resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
-  count = var.enable_basic_alarms ? 1 : 0
-  ...
-}
-resource "aws_cloudwatch_metric_alarm" "api_cpu" {
-  count = var.enable_all_alarms ? 1 : 0
-  ...
-}
-# (same count on api_memory, worker_cpu, worker_memory, redis_connections, worker_cpu_sustained)
-
-# CloudWatch log retention — parameterised per environment
-variable "log_retention_days" { default = 90 }  # 7 (dev/sbx) / 30 (stg) / 90 (prod)
-resource "aws_cloudwatch_log_group" "api" {
-  retention_in_days = var.log_retention_days
-  ...
-}
-
-# X-Ray sampling rules — 1 rule on dev/stg, 2 rules on prod
-variable "enable_xray_error_rule" { default = false }  # true only on prod
-resource "aws_xray_sampling_rule" "errors" {
-  count = var.enable_xray_error_rule ? 1 : 0
-  ...
-}
-```
-
 **In `infra-live-atlas`:**
 
 ```hcl
@@ -845,46 +752,6 @@ resource "mongodbatlas_advanced_cluster" "main" {
 resource "mongodbatlas_cloud_backup_schedule" "main" {
   ...
   restore_window_days = var.restore_window_days  # was hardcoded 30
-}
-```
-
-**In `infra-live-edge`:**
-
-```hcl
-# Skip WAF WebACL + association on dev (CloudFront uses default_action = allow)
-variable "enable_waf" { default = true }
-resource "aws_wafv2_web_acl" "main" {
-  count = var.enable_waf ? 1 : 0
-  ...
-}
-resource "aws_wafv2_web_acl_association" "main" {
-  count = var.enable_waf ? 1 : 0
-  ...
-}
-
-# Skip WAF logging + Firehose on dev/stg
-variable "enable_waf_logging" { default = false }
-resource "aws_wafv2_web_acl_logging_configuration" "main" {
-  count = var.enable_waf_logging ? 1 : 0
-  ...
-}
-resource "aws_kinesis_firehose_delivery_stream" "waf" {
-  count = var.enable_waf_logging ? 1 : 0
-  ...
-}
-
-# Skip GuardDuty (us-east-1) on dev/sbx
-variable "enable_guardduty" { default = true }
-resource "aws_guardduty_detector" "us_east_1" {
-  count = var.enable_guardduty ? 1 : 0
-  ...
-}
-
-# Skip CloudTrail (us-east-1) on dev/sbx
-variable "enable_cloudtrail" { default = true }
-resource "aws_cloudtrail" "us_east_1" {
-  count = var.enable_cloudtrail ? 1 : 0
-  ...
 }
 ```
 
@@ -1919,141 +1786,9 @@ React frontend (polls GET /api/jobs/{job_id} every 3 seconds)
 
 ### New API endpoints (FastAPI)
 
-```python
-# POST /api/jobs — inserts job, returns immediately (implemented in backend/app/routers/jobs.py)
-POST /api/jobs
-Response: {"job_id": "abc123", "status": "pending"}   # 202 Accepted
-
-# GET /api/jobs/{job_id} — polled by frontend every 3 seconds
-GET /api/jobs/abc123
-Response (pending):    {"job_id": "abc123", "status": "pending"}
-Response (processing): {"job_id": "abc123", "status": "processing"}
-Response (completed):  {"job_id": "abc123", "status": "completed", "result": "..."}
-Response (failed):     {"job_id": "abc123", "status": "failed",    "error": "..."}
-```
-
 ### MongoDB queue worker (`worker.py`)
 
 Runs as a separate ECS service. Same Docker image as the API, different entrypoint. Three patterns implemented: atomic job claiming, stuck job recovery, and retry counting.
-
-```python
-import asyncio
-import os
-import boto3
-from datetime import datetime, timezone, timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
-
-MONGODB_URI = os.environ["MONGODB_URI"]
-# Default "buddy360" is for prod/stg ECS (APP_ENV != "local").
-# docker-compose sets MONGODB_DB_NAME=buddy360-local to avoid accidentally writing to prod data
-# when a developer has MONGODB_URI pointing at Atlas in their .env.
-MONGODB_DB_NAME = os.environ.get("MONGODB_DB_NAME", "buddy360")
-
-MAX_ATTEMPTS = 3
-STUCK_AFTER_MINUTES = 5
-POLL_INTERVAL_SECONDS = 2
-METRIC_EMIT_INTERVAL_SECONDS = 60  # publish pending job count to CloudWatch every 60s
-COMPLETED_TTL = timedelta(hours=1)  # must match producer; shrink expires_at once job is done
-
-async def emit_pending_job_count(db):
-    # Publishes MongoDB pending job count as a custom CloudWatch metric.
-    # Required so the CloudWatch dashboard widget and worker auto-scaling policy
-    # have real data — Atlas does not push metrics to CloudWatch natively.
-    # Client is created here, not at module level, so boto3 credential discovery
-    # only runs in prod (this function is never called in local dev).
-    cloudwatch = boto3.client("cloudwatch", region_name="ap-south-1")
-    while True:
-        try:
-            count = await db.jobs.count_documents({"status": "pending"})
-            await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: cloudwatch.put_metric_data(
-                    Namespace="Buddy360/Worker",
-                    MetricData=[{
-                        "MetricName": "PendingJobCount",
-                        "Value": count,
-                        "Unit": "Count",
-                    }],
-                ),
-            )
-        except Exception as e:
-            # Log and continue — a transient CloudWatch failure must not kill the task
-            print(f"[metric-emitter] CloudWatch put failed: {e}", flush=True)
-        await asyncio.sleep(METRIC_EMIT_INTERVAL_SECONDS)
-
-async def run():
-    client = AsyncIOMotorClient(MONGODB_URI)
-    db = client[MONGODB_DB_NAME]
-
-    # Skip metric emission in local dev — no ECS task role means no AWS credentials
-    if os.getenv("APP_ENV", "local") != "local":
-        asyncio.create_task(emit_pending_job_count(db))
-
-    while True:
-        # --- stuck job recovery ---
-        stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=STUCK_AFTER_MINUTES)
-
-        # Jobs still under the attempt limit: re-queue for another try
-        await db.jobs.update_many(
-            {
-                "status": "processing",
-                "started_at": {"$lt": stuck_cutoff},
-                "attempts": {"$lt": MAX_ATTEMPTS},
-            },
-            {"$set": {"status": "pending"}},
-        )
-
-        # Jobs that exhausted all attempts while stuck: mark failed directly
-        # (the $lt filter above won't touch these, so they'd stay "processing" forever without this)
-        await db.jobs.update_many(
-            {
-                "status": "processing",
-                "started_at": {"$lt": stuck_cutoff},
-                "attempts": {"$gte": MAX_ATTEMPTS},
-            },
-            {"$set": {"status": "failed", "error": "Max attempts exceeded while processing"}},
-        )
-
-        # --- atomically claim one pending job ---
-        job = await db.jobs.find_one_and_update(
-            {"status": "pending"},
-            {"$set": {"status": "processing", "started_at": datetime.now(timezone.utc)},
-             "$inc": {"attempts": 1}},
-            sort=[("created_at", 1)],
-            return_document=True,
-        )
-
-        if job is None:
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
-            continue
-
-        try:
-            result = await call_llm(job["payload"])
-            await db.jobs.update_one(
-                {"_id": job["_id"]},
-                {"$set": {
-                    "status": "completed",
-                    "result": result,
-                    "completed_at": datetime.now(timezone.utc),
-                    "expires_at": datetime.now(timezone.utc) + COMPLETED_TTL,  # shrink TTL now it's done
-                }},
-            )
-        except Exception as e:
-            # job["attempts"] has already been incremented by $inc in the claim query.
-            # With MAX_ATTEMPTS = 3: attempts=1 → pending, attempts=2 → pending, attempts=3 → failed.
-            # This gives exactly 3 total attempts before permanent failure.
-            new_status = "failed" if job["attempts"] >= MAX_ATTEMPTS else "pending"
-            # Intentionally do NOT update expires_at on failure. Failed jobs keep their original
-            # expires_at (FAILED_TTL = 7 days from creation), giving time to inspect and debug.
-            # Only completed jobs have their expires_at shortened to COMPLETED_TTL.
-            await db.jobs.update_one(
-                {"_id": job["_id"]},
-                {"$set": {"status": new_status, "error": str(e)}},
-            )
-
-if __name__ == "__main__":
-    asyncio.run(run())
-```
 
 
 ---
@@ -2074,27 +1809,6 @@ Runs the full async flow locally. No AWS services, no LocalStack — the MongoDB
 ### `docker-compose.yml` — one addition only
 
 The existing `docker-compose.yml` already contains `redis`, `backend`, and `frontend`. Add only the `worker` service. No LocalStack or queue infrastructure needed — the worker connects to MongoDB Atlas directly, same as the backend.
-
-```yaml
-  worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    networks:
-      - buddy360_net
-    environment:
-      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      APP_ENV: ${APP_ENV:-local}
-    command: python worker.py
-    depends_on:
-      backend:
-        condition: service_started
-```
 
 No changes to any existing service in `docker-compose.yml`.
 
