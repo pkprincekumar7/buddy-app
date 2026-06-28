@@ -19,6 +19,7 @@ resource "aws_lb" "backend" {
   subnets = [
     aws_subnet.public_1.id,
     aws_subnet.public_2.id,
+    aws_subnet.public_3.id,
   ]
   security_groups            = [aws_security_group.alb_sg.id]
   drop_invalid_header_fields = true

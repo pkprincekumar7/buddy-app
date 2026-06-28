@@ -2,11 +2,12 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
-import ExpoModulesCore
+internal import ExpoModulesCore
+internal import Expo
 
 @main
 class AppDelegate: ExpoAppDelegate {
-  // Note: window is already declared in ExpoAppDelegate — do not redeclare.
+  var window: UIWindow?
   var reactNativeDelegate: ReactNativeDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
@@ -24,7 +25,7 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
-    window = UIWindow(frame: UIScreen.main.bounds)
+    self.window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
       withModuleName: "BuddyApp",

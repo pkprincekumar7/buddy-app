@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -32,6 +32,7 @@ import {
   areaGrad,
 } from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
+import { useJob } from '@/hooks/useJob';
 
 type GrowthNavProp = StackNavigationProp<
   GrowthStackParamList,
@@ -216,6 +217,9 @@ export default function GrowthAreasGreatInsightsScreen() {
 
   const area = areaByUrlName(activityId ?? '');
 
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState<string | null>(null);
   const [childGender, setChildGender] = useState<string | null>(null);
@@ -227,12 +231,71 @@ export default function GrowthAreasGreatInsightsScreen() {
     null,
   );
   // loading → initial DB fetch | idle → no cached recs, waiting for button
-  // generating → LLM running | ready → recs available | error → load failed
+  // ready → recs available | error → load failed
   const [status, setStatus] = useState('loading');
+  // Stores the area entry data pre-saved before enqueueing so the onCompleted callback can finalize it.
+  const pendingAreaDataRef = useRef<Record<string, unknown> | null>(null);
+  // Snapshot the childId at enqueue time so that if the user switches the active child
+  // while the job is polling, finalizeRecommendations still writes to the child the job
+  // was started for — not whoever happens to be active when the poll completes.
+  //
+  // This is RN-specific: the navigation stack keeps this screen mounted in memory even
+  // when the user navigates away, so activeChildId can drift. The web version
+  // (GrowthAreasActivityGreatInsights.tsx) omits this ref intentionally — React Router
+  // unmounts the page on navigation, which tears down the poll via useEffect cleanup,
+  // making the drift impossible. Do NOT remove this ref assuming it is dead code.
+  const enqueueChildIdRef = useRef<string | null>(null);
 
   const contentStyle = useSlideUpWhenReady(
     !isLoadingAuth && status !== 'loading',
   );
+
+  const finalizeRecommendations = useCallback(async () => {
+    const childId = enqueueChildIdRef.current ?? activeChildId;
+    if (!childId || !area) return;
+    try {
+      const completedData = await api.completedGrowthAreas.list(childId);
+      const allDocs = completedData.areas ?? [];
+      const areaDoc = allDocs.find(a => a.area_id === area.id);
+      const pendingRaw = areaDoc?.pending_recommendations as
+        | Record<string, unknown>
+        | undefined;
+      const pending = Array.isArray(pendingRaw)
+        ? (pendingRaw as string[])
+        : Array.isArray(pendingRaw?.recommendations)
+        ? (pendingRaw.recommendations as string[])
+        : undefined;
+      if (pending && pending.length > 0) {
+        setRecommendations(pending);
+        setStatus('ready');
+        await api.completedGrowthAreas.append(childId, {
+          ...(pendingAreaDataRef.current ?? {}),
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          status: 'completed',
+          step: 'activity_summary',
+          ai_three_month_recommendations: pending,
+        });
+        pendingAreaDataRef.current = null;
+      } else {
+        setStatus('ready');
+      }
+    } catch (err) {
+      console.error(
+        '[GrowthAreasGreatInsightsScreen] Failed to finalize recommendations:',
+        err,
+      );
+      toast.error('Recommendations are ready — refresh to see them.');
+    }
+  }, [activeChildId, area]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_recommendations',
+    onCompleted: finalizeRecommendations,
+  });
+  const { enqueue: jobEnqueue } = job;
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -253,6 +316,7 @@ export default function GrowthAreasGreatInsightsScreen() {
         setChildName(child.name ?? '');
         if (child.age != null) setChildAge(String(child.age));
         if (typeof child.gender === 'string') setChildGender(child.gender);
+        setChildData(child as Record<string, unknown>);
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
@@ -294,8 +358,6 @@ export default function GrowthAreasGreatInsightsScreen() {
         console.warn('[GrowthAreasGreatInsightsScreen] Load failed:', err);
         if (!cancelled) setStatus('error');
       } finally {
-        // Ensure we always exit 'loading'; an early return inside try (e.g. !child)
-        // would otherwise leave the screen showing a spinner permanently.
         if (!cancelled) setStatus(prev => (prev === 'loading' ? 'idle' : prev));
       }
     })();
@@ -312,9 +374,11 @@ export default function GrowthAreasGreatInsightsScreen() {
     navigation,
   ]);
 
+  const isGenerating = job.isLoading || (job.isComplete && status !== 'ready');
+  const isError = status === 'error' || job.isFailed;
+
   const generateRecommendations = useCallback(async () => {
     if (!area || !activeChildId) return;
-    setStatus('generating');
 
     const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
     const qaContext = questions
@@ -329,53 +393,61 @@ export default function GrowthAreasGreatInsightsScreen() {
       .join('\n\n');
 
     try {
-      const result = await api.integrations.Core.InvokeLLM({
-        prompt: buildGrowthAreaRecommendationsPrompt({
-          childName: childName || 'the child',
-          childAge,
-          childGender,
-          areaName: area.name,
-          qaContext,
-          childGameSummary: childGameResults?.summary ?? null,
-          childGameStrengths: childGameResults?.strengths ?? null,
-          childGameSuggestedActivities:
-            childGameResults?.suggested_activities ?? null,
-        }),
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            recommendations: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 5,
-              maxItems: 5,
-            },
-          },
-        },
-      });
-
-      const resultRecord = result as Record<string, unknown> | null;
-      const list: string[] = Array.isArray(resultRecord?.recommendations)
-        ? (resultRecord.recommendations as string[])
-        : [];
-      setRecommendations(list);
-
+      // Pre-save area entry with answers so the worker's write_back has a doc to update.
       await api.completedGrowthAreas.append(activeChildId, {
         area_id: area.id,
         area_name: area.name,
         area_color: area.color,
         answers: interactiveAnswers,
-        status: 'completed',
+        status: 'in_progress',
         step: 'activity_summary',
-        ai_three_month_recommendations: list,
         interactive_answers: interactiveAnswers,
       });
+      pendingAreaDataRef.current = {
+        answers: interactiveAnswers,
+        interactive_answers: interactiveAnswers,
+      };
+      enqueueChildIdRef.current = activeChildId;
 
-      setStatus('ready');
+      await jobEnqueue({
+        type: 'generate_recommendations',
+        child_id: activeChildId,
+        payload: {
+          prompt: buildGrowthAreaRecommendationsPrompt({
+            childName: childName || 'the child',
+            childAge,
+            childGender,
+            areaName: area.name,
+            qaContext,
+            childGameSummary: childGameResults?.summary ?? null,
+            childGameStrengths: childGameResults?.strengths ?? null,
+            childGameSuggestedActivities:
+              childGameResults?.suggested_activities ?? null,
+          }),
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              recommendations: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 5,
+                maxItems: 5,
+              },
+            },
+          },
+        },
+        write_back: {
+          collection: 'growth_areas',
+          filter: { area_id: area.id },
+          field: 'pending_recommendations',
+        },
+      });
     } catch (err) {
-      console.error('[GrowthAreasGreatInsightsScreen] LLM failed:', err);
+      console.error(
+        '[GrowthAreasGreatInsightsScreen] Failed to enqueue recommendations:',
+        err,
+      );
       toast.error('Could not generate recommendations. Please try again.');
-      setStatus('idle');
     }
   }, [
     area,
@@ -385,6 +457,7 @@ export default function GrowthAreasGreatInsightsScreen() {
     childGender,
     interactiveAnswers,
     childGameResults,
+    jobEnqueue,
   ]);
 
   if (isLoadingAuth || status === 'loading') {
@@ -398,7 +471,7 @@ export default function GrowthAreasGreatInsightsScreen() {
     );
   }
 
-  if (status === 'error' || !area) {
+  if (isError || !area) {
     return (
       <View
         className="flex-1 items-center justify-center gap-4 px-4"
@@ -645,7 +718,7 @@ export default function GrowthAreasGreatInsightsScreen() {
             </View>
 
             {/* Idle — generate button */}
-            {status === 'idle' && (
+            {status === 'idle' && !isGenerating && (
               <GradientButton
                 from={colors.primary}
                 to={colors.primaryDark}
@@ -671,7 +744,7 @@ export default function GrowthAreasGreatInsightsScreen() {
             )}
 
             {/* Generating — double-ring spinner (mirrors web) */}
-            {status === 'generating' && (
+            {isGenerating && (
               <View className="items-center gap-5 py-10">
                 <DoubleRingSpinner />
                 <View className="items-center gap-1">
@@ -689,20 +762,18 @@ export default function GrowthAreasGreatInsightsScreen() {
             )}
 
             {/* Ready — staggered recommendation list */}
-            {status === 'ready' &&
-              Array.isArray(recommendations) &&
-              recommendations.length > 0 && (
-                <View className="gap-3">
-                  {recommendations.map((rec, i) => (
-                    <AnimatedRecItem
-                      key={i}
-                      rec={rec}
-                      index={i}
-                      areaColor={area.color}
-                    />
-                  ))}
-                </View>
-              )}
+            {Array.isArray(recommendations) && recommendations.length > 0 && (
+              <View className="gap-3">
+                {recommendations.map((rec, i) => (
+                  <AnimatedRecItem
+                    key={i}
+                    rec={rec}
+                    index={i}
+                    areaColor={area.color}
+                  />
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Navigation */}

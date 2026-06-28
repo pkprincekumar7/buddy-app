@@ -1,5 +1,11 @@
 # ---------------------------------------------------------------------------
-# ElastiCache — Redis 7, single-node, encrypted at rest
+# ElastiCache — Redis 7, encrypted at rest and in transit with AUTH token
+#
+# Node count and multi-AZ are controlled per environment via variables:
+#   dev/sbx  — 1 node, no replica, no multi-AZ (t4g.micro, burstable)
+#   stg      — 1 node, no replica, no multi-AZ (t4g.medium, downtime ok)
+#   prod     — 2 nodes (primary + replica), multi-AZ enabled (t4g.medium
+#              up to 100K users; m7g.large above 100K users)
 #
 # Lives in the backend VPC's private subnets. Destroying infra-live-backend
 # destroys Redis too — this is intentional since Redis only holds ephemeral
@@ -11,6 +17,7 @@ resource "aws_elasticache_subnet_group" "main" {
   subnet_ids = [
     aws_subnet.private_1.id,
     aws_subnet.private_2.id,
+    aws_subnet.private_3.id,
   ]
 
   tags = {
@@ -47,18 +54,16 @@ resource "aws_elasticache_parameter_group" "redis7" {
 }
 
 resource "aws_elasticache_replication_group" "main" {
-  #checkov:skip=CKV_AWS_31:No auth_token — Redis is VPC-internal only; TLS (transit_encryption_mode=required) provides transport security without a password, which is intentional for this private service
   #checkov:skip=CKV_AWS_191:AWS-managed AES-256 at-rest encryption is sufficient for ephemeral rate-limit counters; CMK not required at this scale
-  #checkov:skip=CKV2_AWS_50:Single-AZ is intentional — Redis holds only ephemeral rate-limit counters with no persistent data worth a Multi-AZ failover cost
 
   replication_group_id = "${var.app_name}-backend-redis-${var.environment}"
   description          = "Redis for ${var.app_name} LLM rate limiter (${var.environment})"
 
   node_type = var.elasticache_node_type
 
-  num_cache_clusters         = 1
-  automatic_failover_enabled = false
-  multi_az_enabled           = false
+  num_cache_clusters         = var.elasticache_replica_count + 1
+  automatic_failover_enabled = var.elasticache_multi_az
+  multi_az_enabled           = var.elasticache_multi_az
 
   engine_version       = "7.1"
   parameter_group_name = aws_elasticache_parameter_group.redis7.name
@@ -69,10 +74,15 @@ resource "aws_elasticache_replication_group" "main" {
 
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
-  # Require TLS for all connections (matches rediss:// in ECS task env).
-  # No auth_token — connections are VPC-internal only; TLS provides transport
-  # security without a password, which is intentional for this private service.
-  transit_encryption_mode = "required"
+  transit_encryption_mode    = "required"
+  auth_token                 = var.redis_auth_token
+
+  lifecycle {
+    precondition {
+      condition     = !(var.elasticache_multi_az && var.elasticache_replica_count == 0)
+      error_message = "elasticache_multi_az = true requires elasticache_replica_count >= 1."
+    }
+  }
 
   tags = {
     Name = "${var.app_name}-backend-redis-${var.environment}"

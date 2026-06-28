@@ -94,6 +94,8 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
         show_game=doc.get("show_game"),
         child_activity_selections=doc.get("child_activity_selections"),
         ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
+        pending_recommendations=doc.get("pending_recommendations"),
+        pending_child_activity=doc.get("pending_child_activity"),
     )
 
 

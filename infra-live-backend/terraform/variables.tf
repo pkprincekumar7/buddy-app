@@ -42,23 +42,64 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_1_cidr" {
-  description = "CIDR for public subnet AZ-1 (ALB and ECS tasks)"
+  description = "CIDR for public subnet AZ-1 (ALB, NAT Gateway)"
   type        = string
 }
 
 variable "public_subnet_2_cidr" {
-  description = "CIDR for public subnet AZ-2 (ALB and ECS tasks)"
+  description = "CIDR for public subnet AZ-2 (ALB, NAT Gateway)"
+  type        = string
+}
+
+variable "public_subnet_3_cidr" {
+  description = "CIDR for public subnet AZ-3 (ALB, NAT Gateway)"
   type        = string
 }
 
 variable "private_subnet_1_cidr" {
-  description = "CIDR for private subnet AZ-1 (ElastiCache)"
+  description = "CIDR for private subnet AZ-1 (ECS tasks, ElastiCache, VPC endpoints)"
   type        = string
 }
 
 variable "private_subnet_2_cidr" {
-  description = "CIDR for private subnet AZ-2 (ElastiCache)"
+  description = "CIDR for private subnet AZ-2 (ECS tasks, ElastiCache, VPC endpoints)"
   type        = string
+}
+
+variable "private_subnet_3_cidr" {
+  description = "CIDR for private subnet AZ-3 (ECS tasks, ElastiCache, VPC endpoints)"
+  type        = string
+}
+
+variable "nat_gateway_count" {
+  description = "Number of NAT Gateways to provision (1 for dev/sbx, 2 for stg, 3 for prod). Each NAT GW is placed in a distinct public subnet AZ. Private subnets without a dedicated NAT GW share the nearest one."
+  type        = number
+
+  validation {
+    condition     = contains([1, 2, 3], var.nat_gateway_count)
+    error_message = "nat_gateway_count must be 1, 2, or 3."
+  }
+}
+
+variable "redis_auth_token" {
+  description = "AUTH token for ElastiCache Redis. Must be 16–128 printable ASCII chars (no spaces, quotes, @, or /). Injected via TF_VAR_redis_auth_token from GitHub Environment Secrets."
+  type        = string
+  sensitive   = true
+}
+
+variable "elasticache_replica_count" {
+  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica). dev/sbx/stg: 0, prod: 1."
+  type        = number
+
+  validation {
+    condition     = contains([0, 1], var.elasticache_replica_count)
+    error_message = "elasticache_replica_count must be 0 or 1."
+  }
+}
+
+variable "elasticache_multi_az" {
+  description = "Enable automatic failover and multi-AZ. Must be false when elasticache_replica_count = 0. dev/sbx/stg: false, prod: true."
+  type        = bool
 }
 
 # -- DNS / TLS ----------------------------------------------------------------
@@ -153,6 +194,12 @@ variable "default_region" {
   type = string
 }
 
+variable "default_location" {
+  description = "Default MongoDB location shard for users without an explicit location in their JWT (e.g. \"us\", \"eu\")"
+  type        = string
+  default     = "us"
+}
+
 variable "cors_origins" {
   description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
   type        = string
@@ -167,5 +214,158 @@ variable "jwt_key_id" {
 variable "cookie_domain" {
   description = "Cookie domain for session cookies (public CloudFront FQDN, derived in workflow)"
   type        = string
+}
+
+# -- Worker ECS ---------------------------------------------------------------
+
+variable "worker_task_cpu" {
+  description = "Fargate task CPU units for the worker service"
+  type        = number
+  default     = 512
+}
+
+variable "worker_task_memory" {
+  description = "Fargate task memory in MiB for the worker service"
+  type        = number
+  default     = 1024
+}
+
+variable "worker_desired_count" {
+  description = "Initial desired count for the worker ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "worker_concurrency" {
+  description = "Number of parallel LLM job slots per worker task (WORKER_CONCURRENCY env var)"
+  type        = number
+  default     = 5
+}
+
+variable "worker_poll_interval_seconds" {
+  description = "Idle poll interval in seconds for the worker (WORKER_POLL_INTERVAL_SECONDS env var)"
+  type        = number
+  default     = 2
+}
+
+# -- Autoscaling ---------------------------------------------------------------
+
+variable "api_min_capacity" {
+  description = "Minimum ECS task count for the API service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "api_max_capacity" {
+  description = "Maximum ECS task count for the API service autoscaling target"
+  type        = number
+  default     = 10
+}
+
+variable "worker_min_capacity" {
+  description = "Minimum ECS task count for the worker service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "worker_max_capacity" {
+  description = "Maximum ECS task count for the worker service autoscaling target"
+  type        = number
+  default     = 5
+}
+
+# -- S3 (managed externally — Terraform configures, does not create) ----------
+
+variable "uploads_bucket_name" {
+  description = "Pre-existing S3 bucket for user uploads (ap-south-1); Terraform manages CORS, lifecycle, and IAM only"
+  type        = string
+}
+
+variable "regional_logging_bucket_name" {
+  description = "Pre-existing S3 logging bucket in ap-south-1 (ALB access logs, CloudTrail ap-south-1). Must be non-empty when enable_cloudtrail = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_cloudtrail || length(var.regional_logging_bucket_name) > 0
+    error_message = "regional_logging_bucket_name must be set when enable_cloudtrail = true."
+  }
+}
+
+# -- Observability -------------------------------------------------------------
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days. 7 = dev/sbx, 30 = stg, 90 = prod."
+  type        = number
+  default     = 90
+}
+
+variable "ops_email" {
+  description = "Operator email address for CloudWatch alarm SNS notifications. Must be non-empty when enable_ops_email = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_ops_email || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_ops_email = true."
+  }
+}
+
+variable "enable_ops_email" {
+  description = "Create an SNS email subscription for CloudWatch alarm notifications. Set per environment in tfvars."
+  type        = bool
+  default     = false
+}
+
+variable "enable_basic_alarms" {
+  description = "Create ALB HealthyHostCount and 5XX alerting alarms. true on stg and prod, false on dev/sbx."
+  type        = bool
+  default     = false
+}
+
+variable "enable_all_alarms" {
+  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true only on prod."
+  type        = bool
+  default     = false
+}
+
+variable "enable_dashboard" {
+  description = "Create CloudWatch dashboard. true on prod, optional on stg, false on dev/sbx."
+  type        = bool
+  default     = false
+}
+
+variable "enable_xray_error_rule" {
+  description = "Add a second X-Ray sampling rule that captures 100%% of error traces. true only on prod."
+  type        = bool
+  default     = false
+}
+
+variable "xray_default_sampling_rate" {
+  description = "Fixed sampling rate for the default X-Ray rule. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
+  type        = number
+  default     = 0.05
+}
+
+# -- Security ------------------------------------------------------------------
+
+variable "enable_guardduty" {
+  description = "Provision GuardDuty detector with ECS Runtime Monitoring in ap-south-1. false on dev/sbx, true on stg/prod."
+  type        = bool
+  default     = true
+}
+
+variable "enable_cloudtrail" {
+  description = "Provision CloudTrail regional trail in ap-south-1. false on dev/sbx, true on stg/prod."
+  type        = bool
+  default     = true
+}
+
+# -- ADOT sidecar --------------------------------------------------------------
+
+variable "enable_adot_sidecar" {
+  description = "Attach the ADOT collector sidecar to API and worker task definitions for X-Ray tracing. Optional on dev/sbx (omit to save cost), required on stg/prod."
+  type        = bool
+  default     = true
 }
 

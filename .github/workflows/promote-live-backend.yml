@@ -1,9 +1,18 @@
 name: Promote Live Backend
-run-name: Promote Live Backend (${{ inputs.source_env }} → ${{ inputs.target_env }}, ${{ inputs.aws_region }})
+run-name: Promote Live Backend (${{ inputs.service }}, ${{ inputs.source_env }} → ${{ inputs.target_env }}, ${{ inputs.aws_region }})
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "ECS service(s) to promote"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - backend
+          - worker
       source_env:
         description: "Source environment (image currently running here will be promoted)"
         required: true
@@ -38,10 +47,10 @@ permissions:
   id-token: write
   contents: read
 
-# Use the same concurrency group as deploy-live-backend for the target environment
-# so a promotion and a direct deploy cannot run simultaneously against the same env.
+# Shares the same concurrency namespace as deploy-live-backend so a promotion
+# and a direct deploy cannot run simultaneously against the same env+service.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.target_env }}-${{ inputs.aws_region }}
+  group: deploy-live-backend-buddy360-${{ inputs.target_env }}-${{ inputs.aws_region }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
@@ -132,8 +141,10 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          SRC_CLUSTER=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
-          SRC_SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+          SRC_BASE="/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ inputs.aws_region }}"
+          SRC_CLUSTER=$(get_ssm "$SRC_BASE/ecs_cluster_name")
+          SRC_SERVICE=$(get_ssm "$SRC_BASE/ecs_service_name")
+          SRC_WORKER_SERVICE=$(get_ssm "$SRC_BASE/ecs_worker_service_name")
 
           if [ -z "$SRC_CLUSTER" ]; then
             echo "ERROR: Source ECS cluster not found in SSM for env=${{ inputs.source_env }}. Run terraform-live-backend workflow (apply) for that environment first."
@@ -144,10 +155,12 @@ jobs:
             exit 1
           fi
 
-          echo "ecs_cluster=$SRC_CLUSTER" >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$SRC_SERVICE"  >> "$GITHUB_OUTPUT"
-          echo "Source cluster: $SRC_CLUSTER"
-          echo "Source service: $SRC_SERVICE"
+          echo "ecs_cluster=$SRC_CLUSTER"               >> "$GITHUB_OUTPUT"
+          echo "ecs_service=$SRC_SERVICE"                >> "$GITHUB_OUTPUT"
+          echo "ecs_worker_service=$SRC_WORKER_SERVICE"  >> "$GITHUB_OUTPUT"
+          echo "Source cluster:        $SRC_CLUSTER"
+          echo "Source service:        $SRC_SERVICE"
+          echo "Source worker service: ${SRC_WORKER_SERVICE:-<not yet provisioned>}"
 
       - name: Resolve target deployment targets
         id: target
@@ -156,8 +169,10 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          TGT_CLUSTER=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
-          TGT_SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+          TGT_BASE="/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ inputs.aws_region }}"
+          TGT_CLUSTER=$(get_ssm "$TGT_BASE/ecs_cluster_name")
+          TGT_SERVICE=$(get_ssm "$TGT_BASE/ecs_service_name")
+          TGT_WORKER_SERVICE=$(get_ssm "$TGT_BASE/ecs_worker_service_name")
 
           if [ -z "$TGT_CLUSTER" ]; then
             echo "ERROR: Target ECS cluster not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
@@ -168,10 +183,12 @@ jobs:
             exit 1
           fi
 
-          echo "ecs_cluster=$TGT_CLUSTER" >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$TGT_SERVICE"  >> "$GITHUB_OUTPUT"
-          echo "Target cluster: $TGT_CLUSTER"
-          echo "Target service: $TGT_SERVICE"
+          echo "ecs_cluster=$TGT_CLUSTER"               >> "$GITHUB_OUTPUT"
+          echo "ecs_service=$TGT_SERVICE"                >> "$GITHUB_OUTPUT"
+          echo "ecs_worker_service=$TGT_WORKER_SERVICE"  >> "$GITHUB_OUTPUT"
+          echo "Target cluster:        $TGT_CLUSTER"
+          echo "Target service:        $TGT_SERVICE"
+          echo "Target worker service: ${TGT_WORKER_SERVICE:-<not yet provisioned>}"
 
       # -------------------------------------------------------------------------
       # Read the image that is currently PRIMARY (live) in the source ECS service.
@@ -179,37 +196,72 @@ jobs:
       # promote exactly what is running, not a tag that was built but never reached
       # steady state in source.
       # -------------------------------------------------------------------------
-      - name: Read source image
+      - name: Read source images
         id: source_image
         env:
-          SRC_CLUSTER: ${{ steps.source.outputs.ecs_cluster }}
-          SRC_SERVICE:  ${{ steps.source.outputs.ecs_service }}
+          SRC_CLUSTER:        ${{ steps.source.outputs.ecs_cluster }}
+          SRC_SERVICE:        ${{ steps.source.outputs.ecs_service }}
+          SRC_WORKER_SERVICE: ${{ steps.source.outputs.ecs_worker_service }}
+          SERVICE_INPUT:      ${{ inputs.service }}
         run: |
-          # The JMESPath query returns a list — take the first line only to guard
-          # against the unlikely edge case of multiple PRIMARY deployments returning
-          # multiple ARNs separated by a tab/newline from --output text.
-          TASK_DEF_ARN=$(aws ecs describe-services \
-            --cluster "$SRC_CLUSTER" --services "$SRC_SERVICE" \
-            --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
-            --output text | head -n1)
+          IMAGE=""
+          WORKER_IMAGE=""
 
-          if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" = "None" ]; then
-            echo "ERROR: Could not determine the active task definition from the source ECS service."
-            exit 1
+          # API image — read unless promoting worker only
+          if [ "$SERVICE_INPUT" != "worker" ]; then
+            # The JMESPath query returns a list — take the first line only to guard
+            # against the unlikely edge case of multiple PRIMARY deployments returning
+            # multiple ARNs separated by a tab/newline from --output text.
+            TASK_DEF_ARN=$(aws ecs describe-services \
+              --cluster "$SRC_CLUSTER" --services "$SRC_SERVICE" \
+              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
+              --output text | head -n1)
+
+            if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" = "None" ]; then
+              echo "ERROR: Could not determine the active task definition from the source API ECS service."
+              exit 1
+            fi
+
+            IMAGE=$(aws ecs describe-task-definition \
+              --task-definition "$TASK_DEF_ARN" \
+              --query 'taskDefinition.containerDefinitions[?name==`backend`].image' \
+              --output text)
+
+            if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
+              echo "ERROR: Could not extract image from API task definition $TASK_DEF_ARN."
+              exit 1
+            fi
+
+            echo "Promoting API image: $IMAGE"
+          else
+            echo "service=worker — skipping API image read."
           fi
 
-          IMAGE=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_DEF_ARN" \
-            --query 'taskDefinition.containerDefinitions[?name==`backend`].image' \
-            --output text)
+          # Worker image — read unless promoting backend only
+          if [ "$SERVICE_INPUT" != "backend" ] && [ -n "$SRC_WORKER_SERVICE" ]; then
+            WORKER_TD_ARN=$(aws ecs describe-services \
+              --cluster "$SRC_CLUSTER" --services "$SRC_WORKER_SERVICE" \
+              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
+              --output text | head -n1)
 
-          if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
-            echo "ERROR: Could not extract image from task definition $TASK_DEF_ARN."
-            exit 1
+            if [ -n "$WORKER_TD_ARN" ] && [ "$WORKER_TD_ARN" != "None" ]; then
+              WORKER_IMAGE=$(aws ecs describe-task-definition \
+                --task-definition "$WORKER_TD_ARN" \
+                --query 'taskDefinition.containerDefinitions[?name==`worker`].image' \
+                --output text)
+            fi
+
+            if [ -n "$WORKER_IMAGE" ]; then
+              echo "Promoting worker image: $WORKER_IMAGE"
+            else
+              echo "Worker service not yet provisioned in source — skipping worker promotion."
+            fi
+          elif [ "$SERVICE_INPUT" = "backend" ]; then
+            echo "service=backend — skipping worker image read."
           fi
 
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "Promoting image: $IMAGE"
+          echo "image=$IMAGE"               >> "$GITHUB_OUTPUT"
+          echo "worker_image=$WORKER_IMAGE" >> "$GITHUB_OUTPUT"
 
       # -------------------------------------------------------------------------
       # Register a new task definition for the target environment.
@@ -221,6 +273,7 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Register new task definition for target
         id: register_td
+        if: inputs.service == 'both' || inputs.service == 'backend'
         env:
           IMAGE: ${{ steps.source_image.outputs.image }}
         run: |
@@ -255,6 +308,7 @@ jobs:
       # services-stable has a hard 10-minute ceiling).
       # -------------------------------------------------------------------------
       - name: Deploy to target ECS service
+        if: inputs.service == 'both' || inputs.service == 'backend'
         env:
           CLUSTER:    ${{ steps.target.outputs.ecs_cluster }}
           SERVICE:    ${{ steps.target.outputs.ecs_service }}
@@ -284,7 +338,7 @@ jobs:
               exit 1
             fi
 
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ]; then
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
               echo "Promotion complete — service is stable ($RUNNING/$DESIRED tasks running)."
               break
             fi
@@ -295,5 +349,88 @@ jobs:
             fi
 
             echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
+            sleep 15
+          done
+
+      # -------------------------------------------------------------------------
+      # Worker promotion — uses the same image read from the source worker service.
+      # Skipped if the worker service is not yet provisioned in source or target.
+      # -------------------------------------------------------------------------
+      - name: Register new worker task definition for target
+        id: register_worker_td
+        if: (inputs.service == 'both' || inputs.service == 'worker') && steps.source_image.outputs.worker_image != ''
+        env:
+          WORKER_IMAGE: ${{ steps.source_image.outputs.worker_image }}
+        run: |
+          TASK_FAMILY="${{ secrets.APP_NAME }}-worker-${{ inputs.target_env }}"
+
+          if ! aws ecs describe-task-definition --task-definition "$TASK_FAMILY" &>/dev/null; then
+            echo "WARNING: Worker task definition '$TASK_FAMILY' not found in target. Apply terraform-live-backend for ${{ inputs.target_env }} first."
+            echo "Skipping worker promotion."
+            echo "new_worker_td_arn=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_TD=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' --output json)
+
+          NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
+            --arg img "$WORKER_IMAGE" \
+            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                 .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+             | .containerDefinitions =
+                 [.containerDefinitions[]
+                  | if .name == "worker" then .image = $img else . end]')
+
+          NEW_WORKER_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD_JSON" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          echo "new_worker_td_arn=$NEW_WORKER_TD_ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered worker TD: $NEW_WORKER_TD_ARN"
+
+      - name: Deploy worker to target ECS service
+        if: steps.register_worker_td.outputs.new_worker_td_arn != ''
+        env:
+          CLUSTER:        ${{ steps.target.outputs.ecs_cluster }}
+          WORKER_SERVICE: ${{ steps.target.outputs.ecs_worker_service }}
+          NEW_TD_ARN:     ${{ steps.register_worker_td.outputs.new_worker_td_arn }}
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$WORKER_SERVICE" \
+            --task-definition "$NEW_TD_ARN" \
+            --output json \
+            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
+            | cat
+
+          echo "Waiting for worker service to reach steady state (up to 15 minutes)..."
+          for i in $(seq 1 60); do
+            SERVICE_INFO=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$WORKER_SERVICE" \
+              --query 'services[0]' --output json)
+            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
+            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
+            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
+            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
+            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
+
+            if [ "$ROLLOUT" = "FAILED" ]; then
+              echo "ERROR: Worker promotion failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
+              exit 1
+            fi
+
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
+              echo "Worker promotion complete — service is stable ($RUNNING/$DESIRED tasks running)."
+              break
+            fi
+
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: Worker service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
+              exit 1
+            fi
+
+            echo "[$i/60] Worker deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
             sleep 15
           done

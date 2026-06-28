@@ -36,7 +36,50 @@ export interface ChildRecord {
   };
   recommendations?: Record<string, unknown>;
   visited_tabs?: string[];
+  /** job_type → job_id for any LLM jobs currently in flight for this child */
+  active_jobs?: Record<string, string>;
   [key: string]: unknown;
+}
+
+export type JobType =
+  | 'generate_recommendations'
+  | 'generate_goals_plan'
+  | 'generate_activity'
+  | 'generate_personality_analysis'
+  | 'generate_journey_recommendations'
+  | 'generate_journey_insights';
+
+export type JobStatus =
+  | 'pending'
+  | 'processing'
+  | 'result_ready'
+  | 'completed'
+  | 'failed';
+
+export interface JobStatusRecord {
+  job_id: string;
+  status: JobStatus;
+  error?: string;
+  created_at: string;
+}
+
+export interface EnqueueJobPayload {
+  type: JobType;
+  child_id: string;
+  payload: {
+    prompt: string;
+    response_json_schema?: Record<string, unknown>;
+    provider?: string;
+  };
+  write_back: {
+    collection: 'growth_areas' | 'children' | 'goals';
+    filter: Record<string, unknown>;
+    field: string;
+  };
+}
+
+export interface EnqueueJobResponse {
+  job_id: string;
 }
 
 export interface PreferencesRecord {

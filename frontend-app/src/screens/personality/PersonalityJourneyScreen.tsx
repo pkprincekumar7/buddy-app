@@ -41,6 +41,7 @@ import {
 } from '@/components/shared/GradientView';
 import { PERSONALITY_JOURNEY_GRADIENT } from '@/lib/gradientColors';
 import type { RootStackParamList } from '@/navigation';
+import { useJob } from '@/hooks/useJob';
 
 type PersonalityJourneyNavProp = StackNavigationProp<RootStackParamList>;
 type PersonalityJourneyRouteProp = RouteProp<
@@ -187,11 +188,13 @@ export default function PersonalityJourneyScreen() {
   const routeChildId = (route.params as { childId?: string } | undefined)
     ?.childId;
   const childId = routeChildId ?? activeChildId;
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
-  const [status, setStatus] = useState<
-    'loading' | 'generating' | 'ready' | 'error'
-  >('loading');
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   // Reset scroll to top every time the screen gains focus (covers back navigation).
@@ -201,9 +204,27 @@ export default function PersonalityJourneyScreen() {
     }, []),
   );
 
+  const onJourneyComplete = useCallback(async () => {
+    if (!childId) return;
+    try {
+      await api.entities.Child.update(childId, { onboarding_phase: 3 });
+    } catch {
+      /* non-fatal */
+    }
+  }, [childId]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_journey_recommendations',
+    onCompleted: onJourneyComplete,
+  });
+
+  const isGenerating = !isInitializing && job.isLoading;
+  const isError = initError || job.isFailed;
+  const ready = !isInitializing && !isGenerating && !isError;
+
   // Section animations match web delays: header 100ms, profile 800ms, growth 1800ms.
   // useFocusEntranceAnim re-plays on back navigation for polish.
-  const ready = status === 'ready';
   const contentStyle = useFocusEntranceAnim(ready, 0, 1000);
   const headerAnim = useFocusEntranceAnim(ready, 100, 1000);
   const profileAnim = useFocusEntranceAnim(ready, 800, 1000);
@@ -247,11 +268,12 @@ export default function PersonalityJourneyScreen() {
           normalizeOnboardingChildDataBlob(child) ?? {},
         );
         setChildName(merged.name || '');
+        setChildData(child as Record<string, unknown>);
 
         const gp = onboardingProfileFromViewModel(viewModel);
         setProfile(gp);
 
-        // DB hit: recommendations already generated — skip LLM
+        // Already generated — show immediately
         const recommendations = child.recommendations;
         if (
           recommendations &&
@@ -259,7 +281,7 @@ export default function PersonalityJourneyScreen() {
             (Array.isArray(recommendations.focus_areas) &&
               (recommendations.focus_areas as unknown[]).length > 0))
         ) {
-          setStatus('ready');
+          setIsInitializing(false);
           return;
         }
 
@@ -272,55 +294,57 @@ export default function PersonalityJourneyScreen() {
           return;
         }
 
-        setStatus('generating');
-        const age = parseInt(String(merged.age), 10) || 10;
-        const lifePhase = determinePhase(age);
-
-        try {
-          const result = await api.integrations.Core.InvokeLLM({
-            prompt: buildJourneyRecommendationsPrompt({
-              childData: merged,
-              age,
-              lifePhase,
-              personalityType:
-                gp?.personality_type ??
-                `${viewModel?.type ?? 'Unknown'} (${
-                  (viewModel?.profile?.name as string) ?? ''
-                })`,
-              personalityNarrative: gp?.summary,
-              growthAreas: gp?.growth_areas as string[] | undefined,
-            }),
-            response_json_schema: recommendationsJourneySchema(),
+        // Only enqueue if no active job is already polling (useJob picks it up via childData)
+        const activeJobId = (
+          child.active_jobs as Record<string, string> | undefined
+        )?.generate_journey_recommendations;
+        if (!activeJobId) {
+          const age = parseInt(String(merged.age), 10) || 10;
+          const lifePhase = determinePhase(age);
+          await job.enqueue({
+            type: 'generate_journey_recommendations',
+            child_id: childId,
+            payload: {
+              prompt: buildJourneyRecommendationsPrompt({
+                childData: merged,
+                age,
+                lifePhase,
+                personalityType:
+                  gp?.personality_type ??
+                  `${viewModel?.type ?? 'Unknown'} (${
+                    (viewModel?.profile?.name as string) ?? ''
+                  })`,
+                personalityNarrative: gp?.summary,
+                growthAreas: gp?.growth_areas as string[] | undefined,
+              }),
+              response_json_schema: recommendationsJourneySchema(),
+            },
+            write_back: {
+              collection: 'children',
+              filter: {},
+              field: 'recommendations',
+            },
           });
-          if (cancelled) return;
-
-          if (result) {
-            await api.entities.Child.update(childId, {
-              recommendations: result,
-              onboarding_phase: 3,
-            });
-          }
-        } catch (err) {
-          console.error('[PersonalityJourneyScreen] LLM failed:', err);
         }
-
-        if (!cancelled) {
-          setStatus('ready');
-        }
+        setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityJourneyScreen] Load failed:', err);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
+    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);
 
   // — Loading state
-  if (isLoadingAuth || status === 'loading') {
+  if (isLoadingAuth || isInitializing) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -332,7 +356,7 @@ export default function PersonalityJourneyScreen() {
   }
 
   // — Generating state
-  if (status === 'generating') {
+  if (isGenerating) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -350,7 +374,7 @@ export default function PersonalityJourneyScreen() {
   }
 
   // — Error state
-  if (status === 'error') {
+  if (isError) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}

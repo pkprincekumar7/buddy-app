@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, ChevronLeft, ChevronRight, Target } from 'lucide-react';
@@ -13,6 +13,7 @@ import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
+import { useJob } from '@/hooks/useJob';
 
 export default function GrowthAreasActivityGreatInsights() {
   const navigate = useNavigate();
@@ -22,14 +23,58 @@ export default function GrowthAreasActivityGreatInsights() {
   const area = areaByUrlName(activity ?? '');
 
   type GameResults = { summary?: string; strengths?: string[]; suggested_activities?: string[] };
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [childName, setChildName] = useState('');
   const [childAge, setChildAge] = useState('');
   const [childGender, setChildGender] = useState('');
   const [recommendations, setRecommendations] = useState<string[] | null>(null);
   const [interactiveAnswers, setInteractiveAnswers] = useState<Record<string, unknown>>({});
   const [childGameResults, setChildGameResults] = useState<GameResults | null>(null);
-  // loading → initial DB fetch | idle → no cached recs, waiting for button | generating → LLM running | ready → recs available | error → load failed
+  // loading → initial DB fetch | idle → no cached recs, waiting for button | ready → recs available | error → load failed
   const [status, setStatus] = useState('loading');
+  // Stores the area entry data pre-saved before enqueueing so the onCompleted callback can finalize it.
+  const pendingAreaDataRef = useRef<Record<string, unknown> | null>(null);
+
+  const finalizeRecommendations = useCallback(async () => {
+    if (!childId || !area) return;
+    try {
+      const completedData = await api.completedGrowthAreas.list(childId);
+      const allDocs = completedData.areas ?? [];
+      const areaDoc = allDocs.find((a) => a.area_id === area.id);
+      const pendingRaw = areaDoc?.pending_recommendations as Record<string, unknown> | undefined;
+      const pending = Array.isArray(pendingRaw)
+        ? (pendingRaw as string[])
+        : Array.isArray(pendingRaw?.recommendations)
+          ? (pendingRaw.recommendations as string[])
+          : undefined;
+      if (pending && pending.length > 0) {
+        setRecommendations(pending);
+        setStatus('ready');
+        await api.completedGrowthAreas.append(childId, {
+          ...(pendingAreaDataRef.current ?? {}),
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          status: 'completed',
+          step: 'activity_summary',
+          ai_three_month_recommendations: pending,
+        });
+        pendingAreaDataRef.current = null;
+      } else {
+        setStatus('ready');
+      }
+    } catch (err) {
+      console.error('[GrowthAreasActivityGreatInsights] Failed to finalize recommendations:', err);
+      toast.error('Recommendations are ready — refresh to see them.');
+    }
+  }, [childId, area]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_recommendations',
+    onCompleted: finalizeRecommendations,
+  });
+  const { enqueue: jobEnqueue } = job;
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -59,6 +104,7 @@ export default function GrowthAreasActivityGreatInsights() {
         setChildName(child.name ?? '');
         setChildAge(child.age != null ? String(child.age) : '');
         setChildGender(typeof child.gender === 'string' ? child.gender : '');
+        setChildData(child);
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
@@ -107,7 +153,6 @@ export default function GrowthAreasActivityGreatInsights() {
 
   const generateRecommendations = useCallback(async () => {
     if (!area || !childId) return;
-    setStatus('generating');
 
     const questions: Question[] = AREA_QUESTIONS[area.id] ?? [];
     const qaContext = questions
@@ -119,49 +164,74 @@ export default function GrowthAreasActivityGreatInsights() {
       .join('\n\n');
 
     try {
-      const result = await api.integrations.Core.InvokeLLM({
-        prompt: buildGrowthAreaRecommendationsPrompt({
-          childName: childName || 'the child',
-          childAge: childAge || null,
-          childGender: childGender || null,
-          areaName: area.name,
-          qaContext,
-          childGameSummary: childGameResults?.summary ?? null,
-          childGameStrengths: childGameResults?.strengths ?? null,
-          childGameSuggestedActivities: childGameResults?.suggested_activities ?? null,
-        }),
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            recommendations: { type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 5 },
-          },
-        },
-      });
-
-      const resultRecord = result as Record<string, unknown> | null;
-      const list: string[] = Array.isArray(resultRecord?.['recommendations'])
-        ? (resultRecord['recommendations'] as string[])
-        : [];
-      setRecommendations(list);
-
+      // Pre-save area entry with answers so the worker's write_back has a doc to update.
       await api.completedGrowthAreas.append(childId, {
         area_id: area.id,
         area_name: area.name,
         area_color: area.color,
         answers: interactiveAnswers,
-        status: 'completed',
+        status: 'in_progress',
         step: 'activity_summary',
-        ai_three_month_recommendations: list,
         interactive_answers: interactiveAnswers,
       });
+      // Store for finalization in onCompleted
+      pendingAreaDataRef.current = {
+        answers: interactiveAnswers,
+        interactive_answers: interactiveAnswers,
+      };
 
-      setStatus('ready');
+      await jobEnqueue({
+        type: 'generate_recommendations',
+        child_id: childId,
+        payload: {
+          prompt: buildGrowthAreaRecommendationsPrompt({
+            childName: childName || 'the child',
+            childAge: childAge || null,
+            childGender: childGender || null,
+            areaName: area.name,
+            qaContext,
+            childGameSummary: childGameResults?.summary ?? null,
+            childGameStrengths: childGameResults?.strengths ?? null,
+            childGameSuggestedActivities: childGameResults?.suggested_activities ?? null,
+          }),
+          response_json_schema: {
+            type: 'object',
+            properties: {
+              recommendations: {
+                type: 'array',
+                items: { type: 'string' },
+                minItems: 5,
+                maxItems: 5,
+              },
+            },
+          },
+        },
+        write_back: {
+          collection: 'growth_areas',
+          filter: { area_id: area.id },
+          field: 'pending_recommendations',
+        },
+      });
     } catch (err) {
-      console.error('[GrowthAreasActivityGreatInsights] LLM failed:', err);
+      console.error('[GrowthAreasActivityGreatInsights] Failed to enqueue recommendations:', err);
       toast.error('Could not generate recommendations. Please try again.');
-      setStatus('idle');
     }
-  }, [area, childId, childName, childAge, childGender, interactiveAnswers, childGameResults]);
+  }, [
+    area,
+    childId,
+    childName,
+    childAge,
+    childGender,
+    interactiveAnswers,
+    childGameResults,
+    jobEnqueue,
+  ]);
+
+  // Keep the spinner up through the finalizeRecommendations async gap — job.isComplete
+  // fires before the page status moves from 'idle' to 'ready', which would briefly
+  // re-show the button between job completion and the finalize API call finishing.
+  const isGenerating = job.isLoading || (job.isComplete && status !== 'ready');
+  const isError = status === 'error' || job.isFailed;
 
   if (isLoadingAuth || status === 'loading') {
     return (
@@ -174,7 +244,7 @@ export default function GrowthAreasActivityGreatInsights() {
     );
   }
 
-  if (status === 'error' || !area) {
+  if (isError || !area) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Could not load insights. Please try again.</p>
@@ -331,7 +401,7 @@ export default function GrowthAreasActivityGreatInsights() {
           </div>
 
           {/* Button state */}
-          {status === 'idle' && (
+          {status === 'idle' && !isGenerating && (
             <Button
               onClick={() => {
                 void generateRecommendations();
@@ -344,7 +414,7 @@ export default function GrowthAreasActivityGreatInsights() {
           )}
 
           {/* Generating spinner */}
-          {status === 'generating' && (
+          {isGenerating && (
             <div className="flex flex-col items-center justify-center gap-5 py-10">
               <div className="relative h-16 w-16">
                 <div className="absolute inset-0 rounded-full border-4 border-success/20" />
@@ -364,7 +434,7 @@ export default function GrowthAreasActivityGreatInsights() {
           )}
 
           {/* Ready — show list */}
-          {status === 'ready' && Array.isArray(recommendations) && recommendations.length > 0 && (
+          {Array.isArray(recommendations) && recommendations.length > 0 && (
             <div className="space-y-3">
               {recommendations.map((rec, i) => (
                 <motion.div

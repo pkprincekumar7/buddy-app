@@ -360,7 +360,32 @@ interface ChildActivityGameProps {
     selections: string[];
     recommendations: Record<string, unknown>;
   }) => void | Promise<void>;
+  onSubmitIds?: (
+    ids: string[],
+    prompt: string,
+    schema: Record<string, unknown>,
+  ) => Promise<void>;
+  isExternallyLoading?: boolean;
 }
+
+const ACTIVITY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    suggested_activities: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 3,
+      maxItems: 4,
+    },
+    strengths: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 2,
+      maxItems: 3,
+    },
+  },
+};
 
 export default function ChildActivityGame({
   childName,
@@ -371,6 +396,8 @@ export default function ChildActivityGame({
   selectedIds = [],
   onSelectedIdsChange,
   onComplete,
+  onSubmitIds,
+  isExternallyLoading = false,
 }: ChildActivityGameProps) {
   const { colors, isDark } = useTheme();
   const game = areaGames[areaId] ?? areaGames.life_ambition!;
@@ -420,7 +447,7 @@ export default function ChildActivityGame({
     setIsSubmitting(true);
 
     try {
-      // Check DB first — skip LLM if results already saved for this area
+      // Check DB first — skip LLM/job if results already saved for this area
       const completedData = (await api.completedGrowthAreas.list(
         activeChildId ?? '',
       )) as Record<string, unknown>;
@@ -461,6 +488,21 @@ export default function ChildActivityGame({
       id => game.options.find(o => o.id === id)?.label ?? id,
     );
 
+    if (onSubmitIds) {
+      try {
+        await onSubmitIds(
+          ids,
+          game.promptContext(selectedLabels, childAge, childGender, childName),
+          ACTIVITY_SCHEMA,
+        );
+      } catch {
+        // error already handled by the parent
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const raw = await api.integrations.Core.InvokeLLM({
         prompt: game.promptContext(
@@ -469,24 +511,7 @@ export default function ChildActivityGame({
           childGender,
           childName,
         ),
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            summary: { type: 'string' },
-            suggested_activities: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 3,
-              maxItems: 4,
-            },
-            strengths: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 2,
-              maxItems: 3,
-            },
-          },
-        },
+        response_json_schema: ACTIVITY_SCHEMA,
       });
 
       const recommendations = normalizeChildGameRecommendations(raw);
@@ -599,7 +624,7 @@ export default function ChildActivityGame({
           onPress={() => {
             void handleSubmit();
           }}
-          disabled={ids.length === 0 || isSubmitting}
+          disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
           className="w-full rounded-2xl items-center justify-center"
           style={{ backgroundColor: colors.success }}
         >
@@ -607,7 +632,7 @@ export default function ChildActivityGame({
             className="font-semibold"
             style={{ color: colors.primaryForeground }}
           >
-            {isSubmitting
+            {isSubmitting || isExternallyLoading
               ? 'Generating Recommendations...'
               : 'Submit My Choices'}
           </Text>

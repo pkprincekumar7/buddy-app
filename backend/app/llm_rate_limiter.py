@@ -97,6 +97,7 @@ def _get_redis() -> "_redis_type.Redis | None":
 
             client = redis.Redis.from_url(
                 settings.redis_url,
+                password=settings.redis_auth_token or None,
                 decode_responses=True,
                 socket_connect_timeout=2,
                 socket_timeout=2,

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.deps import get_current_user
 from app.limiter import user_limiter
-from app.routers.llm import _openai_client, _openai_init_error
+from app.services.llm_service import _openai_client, _openai_init_error
 from app.settings import settings
 
 log = logging.getLogger(__name__)

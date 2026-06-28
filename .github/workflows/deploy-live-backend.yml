@@ -1,9 +1,18 @@
 name: Deploy Live Backend
-run-name: Deploy Live Backend (${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Deploy Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
 
 on:
   workflow_dispatch:
     inputs:
+      service:
+        description: "ECS service(s) to deploy"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - backend
+          - worker
       environment:
         description: "Deployment environment"
         required: true
@@ -25,6 +34,10 @@ on:
           - ap-south-1
   workflow_call:
     inputs:
+      service:
+        type: string
+        required: false
+        default: "both"
       environment:
         type: string
         required: true
@@ -37,7 +50,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
@@ -90,6 +103,7 @@ jobs:
           ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecr_repository_url")
           CLUSTER=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
           SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_service_name")
+          WORKER_SERVICE=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_worker_service_name")
 
           if [ -z "$ECR_URL" ]; then
             echo "ERROR: ECR repository URL not found in SSM. Run terraform-live-backend workflow (apply) first."
@@ -104,12 +118,14 @@ jobs:
             exit 1
           fi
 
-          echo "ecr_url=$ECR_URL"       >> "$GITHUB_OUTPUT"
-          echo "ecs_cluster=$CLUSTER"   >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$SERVICE"   >> "$GITHUB_OUTPUT"
-          echo "ECR:     $ECR_URL"
-          echo "Cluster: $CLUSTER"
-          echo "Service: $SERVICE"
+          echo "ecr_url=$ECR_URL"               >> "$GITHUB_OUTPUT"
+          echo "ecs_cluster=$CLUSTER"            >> "$GITHUB_OUTPUT"
+          echo "ecs_service=$SERVICE"            >> "$GITHUB_OUTPUT"
+          echo "ecs_worker_service=$WORKER_SERVICE" >> "$GITHUB_OUTPUT"
+          echo "ECR:            $ECR_URL"
+          echo "Cluster:        $CLUSTER"
+          echo "Service:        $SERVICE"
+          echo "Worker service: ${WORKER_SERVICE:-<not yet provisioned>}"
 
       # -------------------------------------------------------------------------
       # Build and push to ECR.
@@ -165,14 +181,15 @@ jobs:
           echo "image=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
 
       # -------------------------------------------------------------------------
-      # Register a new task definition that pins the image to the git SHA.
-      # This makes rollbacks deterministic: ECS's circuit-breaker can revert
-      # to the previous task definition revision automatically on failure, and
-      # a manual rollback is just re-deploying an older revision — no re-push
-      # of :latest required.
+      # Register new task definitions — one for the API service, one for the
+      # worker service. Both use the same Docker image; the worker's command
+      # override (python worker.py) differentiates the entry point.
+      # Rollbacks are deterministic: ECS circuit-breaker reverts to the prior
+      # revision automatically on failure.
       # -------------------------------------------------------------------------
-      - name: Register new task definition
+      - name: Register API task definition
         id: register_td
+        if: inputs.service == 'both' || inputs.service == 'backend'
         env:
           IMAGE_SHA: ${{ steps.build.outputs.image }}
         run: |
@@ -183,9 +200,7 @@ jobs:
             --query 'taskDefinition' --output json)
 
           # Strip read-only fields that AWS rejects on register-task-definition,
-          # then patch the image for the backend container. All other fields
-          # (runtimePlatform, volumes, ephemeralStorage, tags, etc.) are
-          # preserved exactly as they are in the current revision.
+          # then patch the image for the backend container.
           NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
             --arg img "$IMAGE_SHA" \
             'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
@@ -199,16 +214,17 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
 
           echo "new_td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
-          echo "Registered: $NEW_TD_ARN"
+          echo "Registered API TD: $NEW_TD_ARN"
 
       # -------------------------------------------------------------------------
-      # Update the ECS service to the new task definition revision.
+      # Update the API ECS service to the new task definition revision.
       # ECS performs a rolling replacement; the circuit-breaker rolls back
       # automatically if the new revision fails to reach steady state.
       # Waits up to 15 minutes using a manual polling loop (aws ecs wait
       # services-stable has a hard 10-minute ceiling).
       # -------------------------------------------------------------------------
       - name: Deploy new task definition to ECS
+        if: inputs.service == 'both' || inputs.service == 'backend'
         env:
           CLUSTER:    ${{ steps.tf_outputs.outputs.ecs_cluster }}
           SERVICE:    ${{ steps.tf_outputs.outputs.ecs_service }}
@@ -238,7 +254,7 @@ jobs:
               exit 1
             fi
 
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ]; then
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
               echo "Deployment complete — service is stable ($RUNNING/$DESIRED tasks running)."
               break
             fi
@@ -249,5 +265,92 @@ jobs:
             fi
 
             echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
+            sleep 15
+          done
+
+      # -------------------------------------------------------------------------
+      # Deploy the worker service after the API is stable. Worker uses the same
+      # image; deploying it second ensures the API is healthy before the worker
+      # starts processing jobs against it.
+      # -------------------------------------------------------------------------
+      - name: Register Worker task definition
+        id: register_worker_td
+        if: inputs.service == 'both' || inputs.service == 'worker'
+        env:
+          IMAGE_SHA: ${{ steps.build.outputs.image }}
+        run: |
+          TASK_FAMILY="${{ secrets.APP_NAME }}-worker-${{ inputs.environment }}"
+
+          # Guard: the worker task family only exists after Terraform has been applied.
+          # Skip worker deploy gracefully on first run so the API deploy is not blocked.
+          if ! aws ecs describe-task-definition --task-definition "$TASK_FAMILY" &>/dev/null; then
+            echo "WARNING: Worker task definition '$TASK_FAMILY' not found in ECS."
+            echo "Apply the Terraform workflow first to create the worker ECS service."
+            echo "Skipping worker deploy — API deploy will continue."
+            echo "new_worker_td_arn=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CURRENT_TD=$(aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' --output json)
+
+          NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
+            --arg img "$IMAGE_SHA" \
+            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                 .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+             | .containerDefinitions =
+                 [.containerDefinitions[]
+                  | if .name == "worker" then .image = $img else . end]')
+
+          NEW_WORKER_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD_JSON" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          echo "new_worker_td_arn=$NEW_WORKER_TD_ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered Worker TD: $NEW_WORKER_TD_ARN"
+
+      - name: Deploy Worker task definition to ECS
+        if: steps.register_worker_td.outputs.new_worker_td_arn != ''
+        env:
+          CLUSTER:        ${{ steps.tf_outputs.outputs.ecs_cluster }}
+          WORKER_SERVICE: ${{ steps.tf_outputs.outputs.ecs_worker_service }}
+          NEW_TD_ARN:     ${{ steps.register_worker_td.outputs.new_worker_td_arn }}
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$WORKER_SERVICE" \
+            --task-definition "$NEW_TD_ARN" \
+            --output json \
+            --query "{serviceName: service.serviceName, status: service.status}" \
+            | cat
+
+          echo "Waiting for worker service to reach steady state (up to 15 minutes)..."
+          for i in $(seq 1 60); do
+            SERVICE_INFO=$(aws ecs describe-services \
+              --cluster "$CLUSTER" --services "$WORKER_SERVICE" \
+              --query 'services[0]' --output json)
+            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
+            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
+            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
+            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
+            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
+
+            if [ "$ROLLOUT" = "FAILED" ]; then
+              echo "ERROR: Worker deployment failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
+              exit 1
+            fi
+
+            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
+              echo "Worker deployment complete — service is stable ($RUNNING/$DESIRED tasks running)."
+              break
+            fi
+
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: Worker service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
+              exit 1
+            fi
+
+            echo "[$i/60] Worker deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
             sleep 15
           done

@@ -11,9 +11,14 @@ public_subnet_1_cidr  = "10.12.1.0/24"
 public_subnet_2_cidr  = "10.12.2.0/24"
 private_subnet_1_cidr = "10.12.3.0/24"
 private_subnet_2_cidr = "10.12.4.0/24"
+public_subnet_3_cidr  = "10.12.5.0/24"
+private_subnet_3_cidr = "10.12.6.0/24"
+nat_gateway_count     = 2
 
 # ElastiCache
-elasticache_node_type = "cache.t3.small"
+elasticache_node_type     = "cache.t4g.medium"
+elasticache_replica_count = 0
+elasticache_multi_az      = false
 
 # ECS
 task_cpu      = 512
@@ -29,3 +34,34 @@ default_region      = "us"
 # Staging does not use production data, so shell access to running tasks is
 # an acceptable trade-off. Disabled in prod via prod.tfvars.
 enable_execute_command = true
+
+# Worker ECS
+worker_task_cpu              = 512
+worker_task_memory           = 1024
+worker_desired_count         = 1
+worker_concurrency           = 3
+worker_poll_interval_seconds = 3
+
+# Autoscaling
+api_min_capacity    = 2
+api_max_capacity    = 10
+worker_min_capacity = 1
+worker_max_capacity = 5
+
+# Observability — stg: 30-day retention, ALB alarms only, no dashboard, no email alerts
+log_retention_days         = 30
+enable_basic_alarms        = true
+enable_all_alarms          = false
+enable_dashboard           = false
+enable_xray_error_rule     = false
+xray_default_sampling_rate = 0.05
+enable_ops_email           = false
+
+# Security — GuardDuty and CloudTrail enabled on stg
+# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
+# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+enable_guardduty  = true
+enable_cloudtrail = true
+
+# ADOT sidecar enabled on stg
+enable_adot_sidecar = true

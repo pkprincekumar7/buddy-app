@@ -69,4 +69,34 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
         [("location", ASCENDING), ("user_id", ASCENDING), ("name", ASCENDING)]
     )
 
+    # jobs: worker polling — find pending jobs whose backoff has elapsed (retry_after <= now),
+    # then sort FIFO by created_at.  retry_after is included so the index covers the claim
+    # query without a collection scan.
+    # Note: this index omits the shard key (location) because the worker processes jobs
+    # across all locations. On a sharded Atlas cluster this causes scatter-gather per claim —
+    # acceptable at current scale; add location to the index if claim latency becomes a concern.
+    await db["jobs"].create_index(
+        [("status", ASCENDING), ("retry_after", ASCENDING), ("created_at", ASCENDING)]
+    )
+    # jobs: client polling — fetch by job_id scoped to user (auth guard)
+    await db["jobs"].create_index([("job_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+    # jobs: stale claim recovery — find jobs stuck in processing
+    await db["jobs"].create_index([("status", ASCENDING), ("claimed_at", ASCENDING)])
+    # jobs: result_ready domain-write retry — the claim query for result_ready jobs filters
+    # on domain_write_attempt which cannot use the (status, retry_after, created_at) index
+    # because $expr bypasses index selection.  This partial index lets MongoDB satisfy
+    # the result_ready branch without a collection scan.
+    await db["jobs"].create_index(
+        [("status", ASCENDING), ("domain_write_attempt", ASCENDING)],
+        partialFilterExpression={"status": "result_ready"},
+    )
+    # jobs: TTL — auto-delete completed/failed jobs after 24h
+    # partialFilterExpression restricts TTL to terminal states only;
+    # pending/processing jobs must never be deleted by TTL.
+    await db["jobs"].create_index(
+        "completed_at",
+        expireAfterSeconds=86400,
+        partialFilterExpression={"status": {"$in": ["completed", "failed"]}},
+    )
+
     log.info("database: MongoDB indexes ensured")

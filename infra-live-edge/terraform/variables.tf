@@ -85,3 +85,49 @@ variable "cloudfront_price_class" {
     error_message = "cloudfront_price_class must be one of: PriceClass_100, PriceClass_200, PriceClass_All."
   }
 }
+
+# -- Security -----------------------------------------------------------------
+
+variable "enable_guardduty" {
+  description = "Enable GuardDuty in us-east-1. Skipped on dev/sbx to avoid ~$22/mo cost."
+  type        = bool
+  default     = true
+}
+
+variable "enable_cloudtrail" {
+  description = "Enable CloudTrail in us-east-1 (global service events). Requires global_logging_bucket_name to be set."
+  type        = bool
+  default     = true
+}
+
+# -- WAF ----------------------------------------------------------------------
+
+variable "enable_waf" {
+  description = "Enable WAF WebACL on CloudFront. Skipped on dev/sbx to avoid ~$5/mo WebACL + per-request charges."
+  type        = bool
+  default     = true
+}
+
+# -- WAF logging --------------------------------------------------------------
+
+variable "enable_waf_logging" {
+  description = "Enable WAF full logs via Kinesis Firehose → global S3 bucket. Prod only. Requires enable_waf = true."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.enable_waf_logging || var.enable_waf
+    error_message = "enable_waf_logging requires enable_waf = true."
+  }
+}
+
+variable "global_logging_bucket_name" {
+  description = "Pre-existing S3 bucket in us-east-1 for CloudTrail and WAF logs. Set from GLOBAL_LOGGING_BUCKET_NAME GitHub secret. Must be non-empty when enable_cloudtrail = true or enable_waf_logging = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = (!var.enable_cloudtrail && !var.enable_waf_logging) || length(var.global_logging_bucket_name) > 0
+    error_message = "global_logging_bucket_name must be set when enable_cloudtrail = true or enable_waf_logging = true."
+  }
+}

@@ -9,7 +9,13 @@
  * react-native-draggable-flatlist). All state, API, and callback logic is
  * preserved identically.
  */
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   View,
   Text,
@@ -37,6 +43,8 @@ import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
 import { areaByUrlName } from '@/lib/growthAreaData';
+import { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
+import { useJob } from '@/hooks/useJob';
 import {
   GradientIconBox,
   GradientButton,
@@ -371,18 +379,6 @@ const areaGames: Record<string, AreaGame> = {
   },
 };
 
-function normalizeChildGameRecommendations(
-  raw: unknown,
-): Record<string, unknown> {
-  if (!raw || typeof raw !== 'object') return raw as Record<string, unknown>;
-  const rawObj = raw as Record<string, unknown>;
-  const suggested = Array.isArray(rawObj.suggested_activities)
-    ? [...(rawObj.suggested_activities as unknown[])]
-    : [];
-  const { activities: _a, suggested_activities: _s, ...rest } = rawObj;
-  return { ...rest, suggested_activities: suggested };
-}
-
 // ---------------------------------------------------------------------------
 // Screen component
 // ---------------------------------------------------------------------------
@@ -401,10 +397,17 @@ export default function GrowthAreasActivityGameScreen() {
   const area = areaByUrlName(activityId ?? '');
 
   const [childName, setChildName] = useState('');
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const pendingSelectionsRef = useRef<string[]>([]);
+  const handleGameCompleteRef = useRef<
+    (result: Record<string, unknown>) => Promise<void>
+  >(async () => {});
 
   const game = useMemo(
     () =>
@@ -433,6 +436,7 @@ export default function GrowthAreasActivityGameScreen() {
         if (!child) return;
 
         setChildName(child.name ?? '');
+        setChildData(child as Record<string, unknown>);
 
         const completedData = await api.completedGrowthAreas.list(child.id);
         if (cancelled) return;
@@ -503,6 +507,77 @@ export default function GrowthAreasActivityGameScreen() {
     [activeChildId, area, savedAnswers],
   );
 
+  const finalizeActivity = useCallback(async () => {
+    if (!activeChildId || !area) return;
+    setIsFinalizing(true);
+    try {
+      const completedData = await api.completedGrowthAreas.list(activeChildId);
+      const areaDoc = (completedData.areas ?? []).find(
+        a => a.area_id === area.id,
+      );
+      const pendingResult = areaDoc?.pending_child_activity as
+        | Record<string, unknown>
+        | undefined;
+      if (pendingResult) {
+        const recommendations =
+          normalizeChildGameRecommendations(pendingResult);
+        await handleGameCompleteRef.current({
+          selections: pendingSelectionsRef.current,
+          recommendations,
+        });
+      }
+    } catch (err) {
+      console.error(
+        '[GrowthAreasActivityGameScreen] finalizeActivity failed:',
+        err,
+      );
+      toast.error('Could not finalise game results. Please try again.');
+    }
+  }, [activeChildId, area]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_activity',
+    onCompleted: finalizeActivity,
+  });
+  const { enqueue: jobEnqueue } = job;
+
+  const handleSubmitIds = useCallback(
+    async (ids: string[], prompt: string, schema: Record<string, unknown>) => {
+      if (!activeChildId || !area) return;
+      pendingSelectionsRef.current = ids;
+      try {
+        await api.completedGrowthAreas.append(activeChildId, {
+          area_id: area.id,
+          area_name: area.name,
+          area_color: area.color,
+          answers: savedAnswers,
+          status: 'in_progress',
+          step: 'activity_summary',
+          child_activity_selections: ids,
+        });
+        await jobEnqueue({
+          type: 'generate_activity',
+          child_id: activeChildId,
+          payload: { prompt, response_json_schema: schema },
+          write_back: {
+            collection: 'growth_areas',
+            filter: { area_id: area.id },
+            field: 'pending_child_activity',
+          },
+        });
+      } catch (err) {
+        console.error(
+          '[GrowthAreasActivityGameScreen] handleSubmitIds failed:',
+          err,
+        );
+        toast.error('Could not start recommendations. Please try again.');
+        throw err;
+      }
+    },
+    [activeChildId, area, savedAnswers, jobEnqueue],
+  );
+
   const handleGameComplete = useCallback(
     async (result: Record<string, unknown>) => {
       if (!activeChildId || !area) return;
@@ -531,6 +606,7 @@ export default function GrowthAreasActivityGameScreen() {
     },
     [activeChildId, area, activityId, navigation, savedAnswers],
   );
+  handleGameCompleteRef.current = handleGameComplete;
 
   const handleSubmit = useCallback(async () => {
     if (selectedIds.length === 0) {
@@ -538,10 +614,8 @@ export default function GrowthAreasActivityGameScreen() {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      // Check DB first — skip LLM if results already saved
+      // Check DB first — skip job if results already saved
       const completedData = (await api.completedGrowthAreas.list(
         activeChildId ?? '',
       )) as Record<string, unknown>;
@@ -567,12 +641,11 @@ export default function GrowthAreasActivityGameScreen() {
           selections: existingSelections,
           recommendations,
         });
-        setIsSubmitting(false);
         return;
       }
     } catch (err) {
       console.warn(
-        '[GrowthAreasActivityGameScreen] Cached result fetch failed, falling through to LLM:',
+        '[GrowthAreasActivityGameScreen] Cached result fetch failed, falling through to job:',
         err,
       );
     }
@@ -581,33 +654,32 @@ export default function GrowthAreasActivityGameScreen() {
       id => game.options.find(o => o.id === id)?.label ?? id,
     );
 
-    try {
-      const raw = await api.integrations.Core.InvokeLLM({
-        prompt: `A child named ${childName} has made the following selections.\n\n${game.promptContext(
-          selectedLabels,
-        )}`,
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            summary: { type: 'string' },
-            suggested_activities: { type: 'array', items: { type: 'string' } },
-            strengths: { type: 'array', items: { type: 'string' } },
-          },
+    await handleSubmitIds(selectedIds, game.promptContext(selectedLabels), {
+      type: 'object',
+      properties: {
+        summary: { type: 'string' },
+        suggested_activities: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 3,
+          maxItems: 4,
         },
-      });
-
-      const recommendations = normalizeChildGameRecommendations(raw);
-      await handleGameComplete({ selections: selectedIds, recommendations });
-    } catch (err) {
-      console.error(
-        '[GrowthAreasActivityGameScreen] Recommendation generation failed:',
-        err,
-      );
-      toast.error('Could not generate recommendations. Please try again.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [selectedIds, activeChildId, area, childName, game, handleGameComplete]);
+        strengths: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 3,
+        },
+      },
+    });
+  }, [
+    selectedIds,
+    activeChildId,
+    area,
+    game,
+    handleGameComplete,
+    handleSubmitIds,
+  ]);
 
   if (isLoadingAuth || !hydrated) {
     return (
@@ -742,8 +814,10 @@ export default function GrowthAreasActivityGameScreen() {
               to={colors.primaryDark}
               height={48}
               borderRadius={16}
-              disabled={selectedIds.length === 0 || isSubmitting}
-              loading={isSubmitting}
+              disabled={
+                selectedIds.length === 0 || job.isLoading || isFinalizing
+              }
+              loading={job.isLoading || isFinalizing}
               onPress={() => {
                 void handleSubmit();
               }}
@@ -752,7 +826,7 @@ export default function GrowthAreasActivityGameScreen() {
               <Text
                 style={{ fontWeight: '600', color: colors.primaryForeground }}
               >
-                {isSubmitting
+                {job.isLoading || isFinalizing
                   ? 'Generating Recommendations...'
                   : 'Submit My Choices'}
               </Text>

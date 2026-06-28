@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -32,7 +32,8 @@ import {
   buildMonthData,
   completedCount,
 } from '@/lib/insightsUtils';
-import { generateInsights } from '@/lib/generateInsights';
+import { buildInsightsPayload } from '@/lib/generateInsights';
+import { useJob } from '@/hooks/useJob';
 import type { Observation } from '@/lib/insightsUtils';
 import type { GoalPlan } from '@/hooks/useGoalPlan';
 import { CHART_BAND_COLORS } from '@/lib/gradientColors';
@@ -65,6 +66,7 @@ interface ProgressInsightsModalProps {
   childName?: string;
   childAge?: string | number | null;
   childGender?: string | null;
+  activeJobs?: Record<string, string>;
   onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
@@ -235,6 +237,7 @@ export default function ProgressInsightsModal({
   childName,
   childAge,
   childGender,
+  activeJobs,
   onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
@@ -282,11 +285,50 @@ export default function ProgressInsightsModal({
   const CustomTick = useMemo(() => buildCustomTick(chartData), [chartData]);
   const CustomTooltip = useMemo(() => buildCustomTooltip(chartData), [chartData]);
 
+  const finalizeInsights = useCallback(async () => {
+    const plan = goalPlanRef.current;
+    const currentCount = completedCount(plan);
+    try {
+      const goalsData = await api.goals.get(childId ?? '');
+      const rawPlan = goalsData.plan;
+      const rawInsights = rawPlan?.insights as Record<string, unknown> | undefined;
+      const items = Array.isArray(rawInsights?.insight_items)
+        ? (rawInsights.insight_items as unknown[])
+        : [];
+      const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
+      if (items.length > 0) {
+        const updatedPlan: GoalPlan = {
+          ...plan,
+          insights: finalInsights,
+          insights_signature: currentCount,
+        };
+        try {
+          await api.goals.patch(childId ?? '', { plan: updatedPlan });
+          onPlanUpdate?.(updatedPlan);
+        } catch (err) {
+          console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
+        }
+      }
+      // Always set insightsData (even when empty) so the effect guard treats
+      // this run as complete and does not re-enqueue.
+      setInsightsData(finalInsights);
+    } catch (err) {
+      console.error('[ProgressInsightsModal] Failed to finalize insights:', err);
+      setInsightsError(true);
+    }
+    setInsightsLoading(false);
+  }, [childId, onPlanUpdate]);
+
+  const insightsJob = useJob({
+    activeJobs,
+    jobType: 'generate_journey_insights',
+    onCompleted: finalizeInsights,
+  });
+  const { enqueue: enqueueInsightsJob } = insightsJob;
+
   useEffect(() => {
     if (activeTab !== 'insights' || insightsData || insightsLoading || insightsError) return;
 
-    // Read always-current values via refs so this effect is not re-triggered on every prop change.
-    // Re-generation is intentionally driven only by insightsData being reset (e.g. on retry).
     const plan = goalPlanRef.current;
     const name = childNameRef.current;
     const age = childAgeRef.current;
@@ -305,36 +347,31 @@ export default function ProgressInsightsModal({
       return;
     }
 
-    // Stale or missing — generate via LLM, then persist.
+    // Stale or missing — enqueue via jobs queue, finalize in finalizeInsights.
     const generate = async () => {
+      const { prompt, schema } = buildInsightsPayload(name, plan, age, gender);
+      if (!prompt) {
+        // No completed activities yet — nothing to generate.
+        setInsightsData({ schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: [] });
+        return;
+      }
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const payload = await generateInsights(name, plan, age, gender);
-        // Only persist non-empty insights — if no activities are completed yet the
-        // guard returns [] and we don't want that to be cached permanently.
-        if (payload.insight_items.length > 0) {
-          const updatedPlan: GoalPlan = {
-            ...plan,
-            insights: { ...payload, schema_version: payload.schema_version },
-            insights_signature: currentCount,
-          };
-          try {
-            await api.goals.patch(childId ?? '', { plan: updatedPlan });
-            onPlanUpdate?.(updatedPlan);
-          } catch (err) {
-            console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
-          }
-        }
-        setInsightsData(payload);
+        await enqueueInsightsJob({
+          type: 'generate_journey_insights',
+          child_id: childId ?? '',
+          payload: { prompt, response_json_schema: schema },
+          write_back: { collection: 'goals', filter: {}, field: 'goals_plan.insights' },
+        });
       } catch (err) {
-        console.error('[ProgressInsightsModal] Failed to generate insights:', err);
+        console.error('[ProgressInsightsModal] Failed to enqueue insights job:', err);
         setInsightsError(true);
+        setInsightsLoading(false);
       }
-      setInsightsLoading(false);
     };
     void generate();
-  }, [activeTab, insightsData, insightsLoading, insightsError, childId, onPlanUpdate]);
+  }, [activeTab, insightsData, insightsLoading, insightsError, childId, enqueueInsightsJob]);
 
   return (
     <motion.div

@@ -343,7 +343,22 @@ interface ChildActivityGameProps {
     selections: string[];
     recommendations: Record<string, unknown>;
   }) => void | Promise<void>;
+  // When provided, the component delegates the LLM call to the parent via the
+  // jobs queue instead of calling InvokeLLM directly. The parent receives the
+  // built prompt + schema and is responsible for enqueueing and polling.
+  onSubmitIds?: (ids: string[], prompt: string, schema: Record<string, unknown>) => Promise<void>;
+  // Set true while the parent's job is in flight so the button stays disabled.
+  isExternallyLoading?: boolean;
 }
+
+const ACTIVITY_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    suggested_activities: { type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 4 },
+    strengths: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 3 },
+  },
+};
 
 export default function ChildActivityGame({
   childName,
@@ -354,6 +369,8 @@ export default function ChildActivityGame({
   selectedIds = [],
   onSelectedIdsChange,
   onComplete,
+  onSubmitIds,
+  isExternallyLoading = false,
 }: ChildActivityGameProps) {
   const game = areaGames[areaId] ?? areaGames['life_ambition']!;
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -403,7 +420,7 @@ export default function ChildActivityGame({
     setIsSubmitting(true);
 
     try {
-      // Check DB first — skip LLM if results already saved for this area
+      // Check DB first — skip LLM/job if results already saved for this area
       const completedData = (await api.completedGrowthAreas.list(activeChildId ?? '')) as Record<
         string,
         unknown
@@ -418,10 +435,7 @@ export default function ChildActivityGame({
         const existingSelections = Array.isArray(existingChildActivity.selections)
           ? (existingChildActivity.selections as string[])
           : ids;
-        const done = onComplete({
-          selections: existingSelections,
-          recommendations,
-        });
+        const done = onComplete({ selections: existingSelections, recommendations });
         if (done != null && typeof done.then === 'function') await done;
         setIsSubmitting(false);
         return;
@@ -432,27 +446,28 @@ export default function ChildActivityGame({
 
     const selectedLabels = ids.map((id) => game.options.find((o) => o.id === id)?.label ?? id);
 
+    // If the parent provides onSubmitIds, delegate to the jobs queue instead of
+    // calling InvokeLLM directly. The parent enqueues the job, polls, and calls
+    // its own onCompleted callback — onComplete is NOT called from here.
+    if (onSubmitIds) {
+      try {
+        await onSubmitIds(
+          ids,
+          game.promptContext(selectedLabels, childAge, childGender, childName),
+          ACTIVITY_SCHEMA,
+        );
+      } catch {
+        // error already handled by the parent
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     try {
       const raw = await api.integrations.Core.InvokeLLM({
         prompt: game.promptContext(selectedLabels, childAge, childGender, childName),
-        response_json_schema: {
-          type: 'object',
-          properties: {
-            summary: { type: 'string' },
-            suggested_activities: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 3,
-              maxItems: 4,
-            },
-            strengths: {
-              type: 'array',
-              items: { type: 'string' },
-              minItems: 2,
-              maxItems: 3,
-            },
-          },
-        },
+        response_json_schema: ACTIVITY_SCHEMA,
       });
 
       const recommendations = normalizeChildGameRecommendations(raw);
@@ -525,10 +540,12 @@ export default function ChildActivityGame({
         onClick={() => {
           void handleSubmit();
         }}
-        disabled={ids.length === 0 || isSubmitting}
+        disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
         className="h-12 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
       >
-        {isSubmitting ? 'Generating Recommendations...' : 'Submit My Choices'}
+        {isSubmitting || isExternallyLoading
+          ? 'Generating Recommendations...'
+          : 'Submit My Choices'}
       </Button>
     </div>
   );
