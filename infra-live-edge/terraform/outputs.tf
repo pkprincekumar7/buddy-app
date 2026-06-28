@@ -19,6 +19,6 @@ output "cloudfront_arn" {
 }
 
 output "waf_web_acl_arn" {
-  description = "WAF WebACL ARN (us-east-1)"
-  value       = aws_wafv2_web_acl.frontend.arn
+  description = "WAF WebACL ARN (us-east-1) — empty string when WAF is disabled"
+  value       = var.enable_waf ? aws_wafv2_web_acl.frontend[0].arn : ""
 }
