@@ -98,6 +98,7 @@ resource "aws_appautoscaling_policy" "api_alb_requests" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_metric_alarm" "api_cpu_sustained" {
+  count               = var.enable_all_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-api-cpu-sustained-${var.environment}"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/ECS"
@@ -121,6 +122,7 @@ resource "aws_cloudwatch_metric_alarm" "api_cpu_sustained" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_memory_sustained" {
+  count               = var.enable_all_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-api-memory-sustained-${var.environment}"
   metric_name         = "MemoryUtilization"
   namespace           = "AWS/ECS"
@@ -234,8 +236,11 @@ resource "aws_appautoscaling_policy" "worker_pending_jobs" {
 
 # Fires when PendingJobCount stays at or below 10 for 5 consecutive minutes,
 # meaning the queue is drained and idle workers can be removed.
-# treat_missing_data = "breaching" so a fully empty queue (no metric emitted)
-# also triggers scale-in rather than keeping tasks alive unnecessarily.
+# treat_missing_data = "notBreaching": during the ~60s worker startup window no
+# metric has been emitted yet; treating missing data as breaching would fire
+# scale-in before the worker processes a single job, causing a restart loop.
+# A genuinely empty queue (workers running, queue empty) emits PendingJobCount=0
+# which satisfies the threshold without needing "breaching" as a shortcut.
 resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_low" {
   alarm_name          = "${var.app_name}-worker-pending-jobs-low-${var.environment}"
   metric_name         = "PendingJobCount"
@@ -245,7 +250,7 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_low" {
   evaluation_periods  = 5 # 5 consecutive minutes below threshold before scaling in
   threshold           = 10
   comparison_operator = "LessThanOrEqualToThreshold"
-  treat_missing_data  = "breaching" # no data = empty queue = scale in
+  treat_missing_data  = "notBreaching" # see comment above — avoid restart loop on startup
 
   alarm_actions = [aws_appautoscaling_policy.worker_scale_in.arn]
 
@@ -278,6 +283,7 @@ resource "aws_appautoscaling_policy" "worker_scale_in" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "worker_cpu_sustained" {
+  count               = var.enable_all_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-worker-cpu-sustained-${var.environment}"
   metric_name         = "CPUUtilization"
   namespace           = "AWS/ECS"

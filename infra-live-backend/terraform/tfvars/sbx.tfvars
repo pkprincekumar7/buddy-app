@@ -45,3 +45,19 @@ api_min_capacity    = 1
 api_max_capacity    = 3
 worker_min_capacity = 1
 worker_max_capacity = 2
+
+# Observability — sbx: same as dev (minimal retention, no alarms, no dashboard, no email alerts)
+log_retention_days         = 7
+enable_basic_alarms        = false
+enable_all_alarms          = false
+enable_dashboard           = false
+enable_xray_error_rule     = false
+xray_default_sampling_rate = 0.05
+enable_ops_email           = false
+
+# Security — skip GuardDuty and CloudTrail on sbx to avoid ~$22/mo cost
+enable_guardduty  = false
+enable_cloudtrail = false
+
+# ADOT sidecar — optional on sbx to save cost
+enable_adot_sidecar = false

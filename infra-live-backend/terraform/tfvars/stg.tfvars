@@ -47,3 +47,21 @@ api_min_capacity    = 2
 api_max_capacity    = 10
 worker_min_capacity = 1
 worker_max_capacity = 5
+
+# Observability — stg: 30-day retention, ALB alarms only, no dashboard, no email alerts
+log_retention_days         = 30
+enable_basic_alarms        = true
+enable_all_alarms          = false
+enable_dashboard           = false
+enable_xray_error_rule     = false
+xray_default_sampling_rate = 0.05
+enable_ops_email           = false
+
+# Security — GuardDuty and CloudTrail enabled on stg
+# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
+# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+enable_guardduty  = true
+enable_cloudtrail = true
+
+# ADOT sidecar enabled on stg
+enable_adot_sidecar = true

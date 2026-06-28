@@ -128,9 +128,14 @@ resource "aws_iam_role_policy" "worker_task_cloudwatch" {
   })
 }
 
+# Required by ECS Exec (enable_execute_command). Gated on var.enable_execute_command to
+# match intent — the API-side ecs_task_exec_command policy omits this gate and relies on
+# the service-level flag, but defense-in-depth means we shouldn't attach the policy at all
+# when exec is not needed.
 resource "aws_iam_role_policy" "worker_task_exec_command" {
-  name = "${var.app_name}-worker-task-exec-command-${var.environment}-${var.aws_region}"
-  role = aws_iam_role.worker_task_role.id
+  count = var.enable_execute_command ? 1 : 0
+  name  = "${var.app_name}-worker-task-exec-command-${var.environment}-${var.aws_region}"
+  role  = aws_iam_role.worker_task_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -149,14 +154,13 @@ resource "aws_iam_role_policy" "worker_task_exec_command" {
   })
 }
 
-# Required by ECS Exec (enable_execute_command). Scoped to the four
-# ssmmessages:* actions that ECS Exec actually uses — avoids the much broader
-# AmazonSSMManagedInstanceCore managed policy (which also grants SSM RunCommand,
-# ec2messages:*, compliance checks, etc.). Safe to leave attached in prod since
-# the feature is disabled at the service level via var.enable_execute_command.
+# Required by ECS Exec (enable_execute_command). Gated on var.enable_execute_command
+# so the policy is not attached at all when exec is not needed — mirrors the
+# worker_task_exec_command gate added in the same change.
 resource "aws_iam_role_policy" "ecs_task_exec_command" {
-  name = "${var.app_name}-ecs-task-exec-command-${var.environment}-${var.aws_region}"
-  role = aws_iam_role.ecs_task_role.id
+  count = var.enable_execute_command ? 1 : 0
+  name  = "${var.app_name}-ecs-task-exec-command-${var.environment}-${var.aws_region}"
+  role  = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -170,6 +174,82 @@ resource "aws_iam_role_policy" "ecs_task_exec_command" {
           "ssmmessages:OpenDataChannel"
         ]
         Resource = "*"
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# X-Ray — API task role
+# Required by the ADOT sidecar to export traces to X-Ray. Kept separate from
+# the S3 uploads policy so each policy has a single purpose.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "ecs_task_xray" {
+  count = var.enable_adot_sidecar ? 1 : 0
+  name  = "${var.app_name}-ecs-task-xray-${var.environment}-${var.aws_region}"
+  role  = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# X-Ray — worker task role
+# Same actions as the API role; added here once ADOT sidecar is attached to
+# the worker task definition via var.enable_adot_sidecar.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "worker_task_xray" {
+  count = var.enable_adot_sidecar ? 1 : 0
+  name  = "${var.app_name}-worker-task-xray-${var.environment}-${var.aws_region}"
+  role  = aws_iam_role.worker_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# S3 uploads — API task role
+# Grants the API task permission to generate pre-signed PUT URLs for the
+# uploads bucket. Kept separate from ecs_task_s3 (which targets the assets
+# bucket) so each policy remains single-purpose.
+# s3:GetBucketLocation is required by some AWS SDK versions when signing
+# pre-signed URLs to resolve the bucket's endpoint correctly.
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "ecs_task_s3_uploads" {
+  name = "${var.app_name}-ecs-task-s3-uploads-${var.environment}-${var.aws_region}"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetBucketLocation"]
+        Resource = "arn:aws:s3:::${var.uploads_bucket_name}"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "arn:aws:s3:::${var.uploads_bucket_name}/*"
       }
     ]
   })

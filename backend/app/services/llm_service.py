@@ -128,7 +128,9 @@ def system_message(schema: dict[str, Any] | None) -> str:
 
 
 def _parse_json(raw: str | None, provider: str) -> dict:
-    text = raw or "{}"
+    if raw is None:
+        raise ValueError(f"LLM ({provider}) returned empty content (None response)")
+    text = raw
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:

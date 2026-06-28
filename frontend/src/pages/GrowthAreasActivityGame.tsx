@@ -26,6 +26,7 @@ export default function GrowthAreasActivityGame() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const pendingSelectionsRef = useRef<string[]>([]);
   const handleGameCompleteRef = useRef<(result: Record<string, unknown>) => Promise<void>>(
     async () => {},
@@ -86,6 +87,7 @@ export default function GrowthAreasActivityGame() {
 
   const finalizeActivity = useCallback(async () => {
     if (!childId || !area) return;
+    setIsFinalizing(true);
     try {
       const completedData = await api.completedGrowthAreas.list(childId);
       const areaDoc = (completedData.areas ?? []).find((a) => a.area_id === area.id);
@@ -234,7 +236,7 @@ export default function GrowthAreasActivityGame() {
           }}
           onComplete={handleGameComplete}
           onSubmitIds={handleSubmitIds}
-          isExternallyLoading={job.isLoading}
+          isExternallyLoading={job.isLoading || isFinalizing}
         />
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button

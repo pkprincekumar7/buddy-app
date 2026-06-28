@@ -274,3 +274,98 @@ variable "worker_max_capacity" {
   default     = 5
 }
 
+# -- S3 (managed externally — Terraform configures, does not create) ----------
+
+variable "uploads_bucket_name" {
+  description = "Pre-existing S3 bucket for user uploads (ap-south-1); Terraform manages CORS, lifecycle, and IAM only"
+  type        = string
+}
+
+variable "regional_logging_bucket_name" {
+  description = "Pre-existing S3 logging bucket in ap-south-1 (ALB access logs, CloudTrail ap-south-1). Must be non-empty when enable_cloudtrail = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_cloudtrail || length(var.regional_logging_bucket_name) > 0
+    error_message = "regional_logging_bucket_name must be set when enable_cloudtrail = true."
+  }
+}
+
+# -- Observability -------------------------------------------------------------
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days. 7 = dev/sbx, 30 = stg, 90 = prod."
+  type        = number
+  default     = 90
+}
+
+variable "ops_email" {
+  description = "Operator email address for CloudWatch alarm SNS notifications. Must be non-empty when enable_ops_email = true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_ops_email || length(var.ops_email) > 0
+    error_message = "ops_email must be set when enable_ops_email = true."
+  }
+}
+
+variable "enable_ops_email" {
+  description = "Create an SNS email subscription for CloudWatch alarm notifications. Set per environment in tfvars."
+  type        = bool
+  default     = false
+}
+
+variable "enable_basic_alarms" {
+  description = "Create ALB HealthyHostCount and 5XX alerting alarms. true on stg and prod, false on dev/sbx."
+  type        = bool
+  default     = false
+}
+
+variable "enable_all_alarms" {
+  description = "Create full set of ECS, Redis, and ALB alerting alarms (superset of enable_basic_alarms). true only on prod."
+  type        = bool
+  default     = false
+}
+
+variable "enable_dashboard" {
+  description = "Create CloudWatch dashboard. true on prod, optional on stg, false on dev/sbx."
+  type        = bool
+  default     = false
+}
+
+variable "enable_xray_error_rule" {
+  description = "Add a second X-Ray sampling rule that captures 100%% of error traces. true only on prod."
+  type        = bool
+  default     = false
+}
+
+variable "xray_default_sampling_rate" {
+  description = "Fixed sampling rate for the default X-Ray rule. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
+  type        = number
+  default     = 0.05
+}
+
+# -- Security ------------------------------------------------------------------
+
+variable "enable_guardduty" {
+  description = "Provision GuardDuty detector with ECS Runtime Monitoring in ap-south-1. false on dev/sbx, true on stg/prod."
+  type        = bool
+  default     = true
+}
+
+variable "enable_cloudtrail" {
+  description = "Provision CloudTrail regional trail in ap-south-1. false on dev/sbx, true on stg/prod."
+  type        = bool
+  default     = true
+}
+
+# -- ADOT sidecar --------------------------------------------------------------
+
+variable "enable_adot_sidecar" {
+  description = "Attach the ADOT collector sidecar to API and worker task definitions for X-Ray tracing. Optional on dev/sbx (omit to save cost), required on stg/prod."
+  type        = bool
+  default     = true
+}
+

@@ -82,6 +82,7 @@ export function useGoalPlan(childId: string | undefined) {
   const [concern, setConcern] = useState('');
   const [goalPlan, setGoalPlan] = useState<GoalPlan | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isApplying, setIsApplying] = useState(false);
   const [savedCompletedAreas, setSavedCompletedAreas] = useState<Activity[]>(
     [],
   );
@@ -95,6 +96,7 @@ export function useGoalPlan(childId: string | undefined) {
 
   const refetchAndApplyGoals = useCallback(async () => {
     if (!childId) return;
+    setIsApplying(true);
     try {
       const goals = await api.goals.get(childId);
       const goalsRecord = goals as Record<string, unknown>;
@@ -121,6 +123,8 @@ export function useGoalPlan(childId: string | undefined) {
         err,
       );
       toast.error('Plan is ready — refresh the page to see it.');
+    } finally {
+      setIsApplying(false);
     }
   }, [childId]);
 
@@ -360,7 +364,7 @@ export function useGoalPlan(childId: string | undefined) {
     concern,
     goalPlan,
     setGoalPlan,
-    isLoading: isInitializing || job.isLoading,
+    isLoading: isInitializing || job.isLoading || isApplying,
     isFailed: job.isFailed,
     jobError: job.error,
     elapsedMs: job.elapsedMs,

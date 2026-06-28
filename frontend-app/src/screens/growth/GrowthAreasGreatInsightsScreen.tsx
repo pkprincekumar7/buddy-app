@@ -267,6 +267,7 @@ export default function GrowthAreasGreatInsightsScreen() {
         : undefined;
       if (pending && pending.length > 0) {
         setRecommendations(pending);
+        setStatus('ready');
         await api.completedGrowthAreas.append(childId, {
           ...(pendingAreaDataRef.current ?? {}),
           area_id: area.id,
@@ -277,8 +278,9 @@ export default function GrowthAreasGreatInsightsScreen() {
           ai_three_month_recommendations: pending,
         });
         pendingAreaDataRef.current = null;
+      } else {
+        setStatus('ready');
       }
-      setStatus('ready');
     } catch (err) {
       console.error(
         '[GrowthAreasGreatInsightsScreen] Failed to finalize recommendations:',
@@ -372,7 +374,7 @@ export default function GrowthAreasGreatInsightsScreen() {
     navigation,
   ]);
 
-  const isGenerating = job.isLoading;
+  const isGenerating = job.isLoading || (job.isComplete && status !== 'ready');
   const isError = status === 'error' || job.isFailed;
 
   const generateRecommendations = useCallback(async () => {

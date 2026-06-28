@@ -320,7 +320,7 @@ Rates are ap-south-1 on-demand (June 2026). For multi-unit resources the hourly 
 
 Every Terraform resource needed to implement the launch-day architecture. Marked as **exists** (already in code), **change** (exists but needs modification), or **missing** (not in code at all).
 
-> **Implementation status (as of June 2026):** ~90% of this architecture is in place. Fully implemented: all 12 GitHub Actions workflows (deploy, terraform, restart, promote, build); `infra-live-backend` (ECS API + worker in private subnets, 3 NAT Gateways × 3 AZs, 5 VPC Interface Endpoints + S3 Gateway Endpoint, VPC endpoint SG, autoscaling × 7 policies, ECR, ALB, ElastiCache with `auth_token` + per-env replica/multi-AZ config, VPC, security groups, IAM, Secrets Manager + `REDIS_AUTH_TOKEN`, CloudWatch log groups + worker alarms, SSM outputs); `infra-live-edge` (CloudFront, WAF WebACL × 4 rules, Lambda@Edge JWT validator, OAC × 2, response headers policies × 3, S3 backend bucket policy, DNS); `infra-live-frontend` (S3 SPA hosting); `backend/worker.py` (full async job processing); `backend/app/llm_rate_limiter.py` + `settings.py` (Redis AUTH token support). The main remaining workstreams are MongoDB Atlas Terraform module, full observability (alarms, dashboard, X-Ray, GuardDuty, CloudTrail), and S3 policies. Items that are **missing** or require a **change** are **pending implementation**.
+> **Implementation status (as of June 2026):** ~97% of this architecture is in place. Fully implemented: all 12 GitHub Actions workflows (deploy, terraform, restart, promote, build); `infra-live-backend` (ECS API + worker in private subnets, 3 NAT Gateways × 3 AZs, 5 VPC Interface Endpoints + S3 Gateway Endpoint, VPC endpoint SG, autoscaling × 7 policies, ECR, ALB, ElastiCache with `auth_token` + per-env replica/multi-AZ config, VPC, security groups, IAM, Secrets Manager + `REDIS_AUTH_TOKEN`, CloudWatch log groups with parameterised retention + worker alarms + 8 additional metric alarms + dashboard + X-Ray sampling rules + SNS email subscription, GuardDuty ap-south-1 + CloudTrail ap-south-1, ADOT sidecar on API + worker, X-Ray IAM policies on both task roles, S3 CORS + lifecycle on uploads bucket + regional logging bucket policy + S3 IAM policy on API task role, SSM outputs); `infra-live-edge` (CloudFront, WAF WebACL × 4 rules, Lambda@Edge JWT validator, OAC × 2, response headers policies × 3, S3 backend bucket policy, DNS); `infra-live-frontend` (S3 SPA hosting); `backend/worker.py` (full async job processing); `backend/app/llm_rate_limiter.py` + `settings.py` (Redis AUTH token support). The only remaining workstream is the MongoDB Atlas Terraform module and Atlas PrivateLink (deferred — M0 in use for cost savings). Items that are **missing** or require a **change** are **pending implementation**.
 
 ### Pending workstreams — quick summary
 
@@ -331,10 +331,10 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | 3 | ~~**Private networking**~~ ✅ **Done** | 3 NAT GWs, 3 EIPs, 5 VPC Interface Endpoints, S3 Gateway Endpoint; ECS tasks moved to private subnets; expanded to 3 AZs. Atlas PrivateLink deferred (no Atlas module yet). | `infra-live-backend` |
 | 4 | ~~**Redis hardening**~~ ✅ **Done** | `auth_token` from GitHub secret (`TF_VAR_redis_auth_token`); `elasticache_replica_count` + `elasticache_multi_az` variables — dev/sbx/stg: 0 replicas, multi-AZ off; prod: 1 replica, multi-AZ on. `REDIS_AUTH_TOKEN` added to Secrets Manager and injected into API task. Backend `settings.py` + `llm_rate_limiter.py` updated to pass token as `password=` to Redis client. | `infra-live-backend` + `backend/` |
 | 5 | **MongoDB Atlas Terraform module** | Entire `infra-live-atlas/` directory does not exist yet; `mongodbatlas_*` resources × 5; `terraform-atlas.yml` workflow | new module |
-| 6 | **Observability** | CloudWatch alarms × 8, dashboard, X-Ray sampling rules × 2, SNS topics × 2, Kinesis Firehose + WAF logging | `infra-live-backend` + `infra-live-edge` |
-| 7 | **Security services** | GuardDuty × 2 regions, CloudTrail × 2 regions | `infra-live-backend` + `infra-live-edge` |
-| 8 | **S3 policies** | CORS + lifecycle on uploads bucket, bucket policies on regional + global logging buckets, S3 IAM policies on task roles | `infra-live-backend` |
-| 9 | **Edge WAF logging** | `aws_wafv2_web_acl_logging_configuration`, `aws_kinesis_firehose_delivery_stream`, Firehose IAM role, global S3 bucket policy | `infra-live-edge` |
+| 6 | ~~**Observability**~~ ✅ **Done (ap-south-1)** | CloudWatch alarms × 8 ✅, dashboard ✅, X-Ray sampling rules ✅, SNS email subscription ✅. Remaining: Kinesis Firehose + WAF logging (in `infra-live-edge`, tracked in workstream 9) | `infra-live-backend` ✅ + `infra-live-edge` (pending) |
+| 7 | ~~**Security services (ap-south-1)**~~ ✅ **Done** | GuardDuty ap-south-1 ✅, CloudTrail ap-south-1 ✅. Remaining: GuardDuty us-east-1 + CloudTrail us-east-1 (tracked in `infra-live-edge`) | `infra-live-backend` ✅ + `infra-live-edge` (pending) |
+| 8 | ~~**S3 policies**~~ ✅ **Done** | CORS + lifecycle on uploads bucket ✅, regional logging bucket policy ✅, S3 IAM policy on API task role ✅. Global logging bucket policy tracked in workstream 9 | `infra-live-backend` ✅ |
+| 9 | ~~**Edge WAF logging + us-east-1 security**~~ ✅ **Done** | `aws_wafv2_web_acl_logging_configuration` ✅, `aws_kinesis_firehose_delivery_stream` ✅, Firehose IAM role ✅, global S3 bucket policy ✅, `aws_guardduty_detector` (us-east-1) ✅, `aws_cloudtrail` (us-east-1) ✅ | `infra-live-edge` ✅ |
 
 ### `infra-live-backend` (ap-south-1)
 
@@ -346,8 +346,8 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_ecs_cluster_capacity_providers` | exists | FARGATE provider |
 | `aws_ecs_service` (API) | exists | Tasks run in private subnets (`private_1/2/3`); `assign_public_ip = false`. Outbound internet via NAT Gateway; AWS service traffic via VPC endpoints. |
 | `aws_ecs_service` (worker) | exists | ECS service running the MongoDB queue worker; same image, different entrypoint (`worker.py`). No `health_check_grace_period_seconds` (no ALB target group). Both API and worker services use `deployment_circuit_breaker { enable = true; rollback = true }` — automatic rollback on failed deployments. |
-| `aws_ecs_task_definition` (API) | change | `REDIS_AUTH_TOKEN` secret injection ✅ done. Remaining: add ADOT sidecar container for X-Ray tracing. **ADOT sidecar spec:** container name `aws-otel-collector`; image `public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0` (pin a specific tag — do not use `latest`); command `["--config=/etc/ecs/ecs-default-config.yaml"]` (uses the AWS-managed ECS default config which exports X-Ray traces and CloudWatch metrics); essential `false` (sidecar failure must not kill the app container); CPU 256 / memory 512; no inbound ports needed; add `logConfiguration` pointing at the API CloudWatch log group with stream prefix `adot`. The API application container must be named `backend` — this name is referenced by `deploy-live-backend.yml` when patching the image in the task definition (see the `jq` filter `.name == "backend"` in the deploy workflow). |
-| `aws_ecs_task_definition` (worker) | exists | Task definition for the MongoDB queue worker. Container name `worker`; same image as API; `command = ["python", "worker.py"]`; no `portMappings`; no ALB. Worker-specific env vars (not present in the API task): `WORKER_CONCURRENCY` (number of concurrent jobs per task, controlled by `var.worker_concurrency`), `WORKER_POLL_INTERVAL_SECONDS` (polling frequency, controlled by `var.worker_poll_interval_seconds`), `AWS_DEFAULT_REGION` (needed for CloudWatch `PutMetricData` calls). **Secrets injected into worker:** same Secrets Manager ARN as the API, but `GOOGLE_CLIENT_ID` is **not** included in the worker secrets block — the worker never handles OAuth flows. ADOT sidecar: **pending** (see API task definition note above). |
+| `aws_ecs_task_definition` (API) | exists | `REDIS_AUTH_TOKEN` secret injection ✅. ADOT sidecar ✅: `aws-otel-collector` (`v0.40.0`); `essential = false`; CPU 256 / memory 512; logConfiguration → API log group, prefix `adot`; injected via `jsonencode(concat([backend container], var.enable_adot_sidecar ? [adot container] : []))`. Container name `backend` referenced by deploy workflow `.name == "backend"`. |
+| `aws_ecs_task_definition` (worker) | exists | Task definition for the MongoDB queue worker. Container name `worker`; same image as API; `command = ["python", "worker.py"]`; no `portMappings`; no ALB. Worker-specific env vars: `WORKER_CONCURRENCY`, `WORKER_POLL_INTERVAL_SECONDS`, `AWS_DEFAULT_REGION`. `GOOGLE_CLIENT_ID` excluded from worker secrets (no OAuth flows). ADOT sidecar ✅: same spec as API — `aws-otel-collector` (`v0.40.0`); `essential = false`; logConfiguration → worker log group, prefix `adot`; injected via `jsonencode(concat([worker container], var.enable_adot_sidecar ? [adot container] : []))`. |
 | `aws_appautoscaling_target` (API service) | exists | `min_capacity` / `max_capacity` parameterised via `var.api_min_capacity` / `var.api_max_capacity`; `scalable_dimension = "ecs:service:DesiredCount"`; `service_namespace = "ecs"` |
 | `aws_appautoscaling_policy` (API — CPU) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
 | `aws_appautoscaling_policy` (API — memory) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageMemoryUtilization"`; `target_value = 70` |
@@ -411,27 +411,28 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_secretsmanager_secret` | exists | No change needed |
 | `aws_secretsmanager_secret_version` | exists | Placeholder JSON includes `REDIS_AUTH_TOKEN = "REPLACE_ME"`. Real value seeded from `secrets.REDIS_AUTH_TOKEN` GitHub secret on first apply by the "Initialise app secrets" workflow step. |
 | `aws_iam_role` (execution role) | exists | No change |
-| `aws_iam_role` (task role — API) | change | Add `xray:PutTraceSegments` + `xray:PutTelemetryRecords` for ADOT sidecar |
-| `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. The **execution** role (`aws_iam_role.ecs_execution_role`) is **shared** between API and worker — it handles ECR image pulls and Secrets Manager secret injection at task startup. The worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Buddy360/Worker` via condition; `ssmmessages:*` for ECS Exec. X-Ray (`xray:PutTraceSegments`) is **pending** — add once ADOT sidecar is added to the worker task definition. |
-| `aws_iam_role_policy` (X-Ray — API task role) | change | Add a new inline policy to the existing API task role granting `xray:PutTraceSegments` + `xray:PutTelemetryRecords`; keep separate from the S3 uploads policy (listed under uploads bucket section) — do not merge them into one policy |
-| `aws_guardduty_detector` | **missing** | Threat detection in ap-south-1; must enable ECS Runtime Monitoring via a `features` block: `features { name = "ECS_RUNTIME_MONITORING" status = "ENABLED" }` — without this the cost table's "ECS Runtime Monitoring" line item provides no coverage and the Security cost estimate is overstated |
-| `aws_cloudtrail` | **missing** | `is_multi_region_trail = false` (regional trail for ap-south-1 only); `enable_log_file_validation = true`; `include_global_service_events = false`; `s3_bucket_name = var.regional_logging_bucket_name`; `s3_key_prefix = "cloudtrail"`; `event_selector { read_write_type = "All"; include_management_events = true }`. No `kms_key_id` — logs use default S3 SSE. |
+| `aws_iam_role` (task role — API) | exists | No change needed. X-Ray permissions granted via `aws_iam_role_policy.ecs_task_xray`; S3 uploads permissions via `aws_iam_role_policy.ecs_task_s3_uploads`. |
+| `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. Execution role (`ecs_execution_role`) is shared. Worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Buddy360/Worker`; `ssmmessages:*` for ECS Exec; X-Ray permissions via `aws_iam_role_policy.worker_task_xray`. |
+| `aws_iam_role_policy` (X-Ray — API task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on API task role (`aws_iam_role_policy.ecs_task_xray`). |
+| `aws_iam_role_policy` (X-Ray — worker task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on worker task role (`aws_iam_role_policy.worker_task_xray`). |
+| `aws_guardduty_detector` | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod, skipped on dev/sbx. ECS Runtime Monitoring enabled via `aws_guardduty_detector_feature.ecs_runtime` (`name = "ECS_RUNTIME_MONITORING"`, `status = "ENABLED"`). |
+| `aws_cloudtrail` | exists | `count = var.enable_cloudtrail ? 1 : 0`; enabled on stg + prod. `is_multi_region_trail = false`; `include_global_service_events = false`; `s3_bucket_name = var.regional_logging_bucket_name`; `s3_key_prefix = "cloudtrail"`; `depends_on = [aws_s3_bucket_policy.regional_logging]`. |
 
 #### Observability
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudwatch_log_group` (API) | change | Extend retention to 90 days for prod |
-| `aws_cloudwatch_log_group` (worker) | change | `/ecs/{app_name}/worker/{env}`; currently hardcoded at `retention_in_days = 30`. Parameterise via `var.log_retention_days` (see `count` guards section) so dev/stg/prod can use 7/30/90 days respectively. |
+| `aws_cloudwatch_log_group` (API) | exists | `retention_in_days = var.log_retention_days`; 7 days (dev/sbx), 30 days (stg), 90 days (prod default). |
+| `aws_cloudwatch_log_group` (worker) | exists | `/ecs/{app_name}/worker/{env}`; `retention_in_days = var.log_retention_days`; same per-env values as API log group. |
 | `aws_sns_topic` | exists | `aws_sns_topic.alerts` provisioned in `autoscaling.tf`; used by worker PendingJobCount and sustained-CPU alarms |
-| `aws_sns_topic_subscription` (email) | **missing** | Operator email on all environments |
-| `aws_cloudwatch_metric_alarm` (HealthyHostCount) | **missing** | Alert when healthy ALB targets < 1 |
-| `aws_cloudwatch_metric_alarm` (5XX errors) | **missing** | Alert on ALB HTTP 5XX spike |
-| `aws_cloudwatch_metric_alarm` (API ECS CPU) | **missing** | Alert when API service ECS CPU > 85% |
-| `aws_cloudwatch_metric_alarm` (API ECS memory) | **missing** | Alert when API service ECS memory > 85% |
-| `aws_cloudwatch_metric_alarm` (worker ECS CPU) | **missing** | Alert when worker service ECS CPU > 85% |
-| `aws_cloudwatch_metric_alarm` (worker ECS memory) | **missing** | Alert when worker service ECS memory > 85% |
-| `aws_cloudwatch_metric_alarm` (Redis connections) | **missing** | Alert on unexpected Redis connection drop |
+| `aws_sns_topic_subscription` (email) | exists | `count = var.ops_email != "" ? 1 : 0`; operator email alert subscription; set `ops_email` via `OPS_EMAIL` GitHub secret. |
+| `aws_cloudwatch_metric_alarm` (HealthyHostCount) | exists | `count = var.enable_basic_alarms ? 1 : 0`; Minimum HealthyHostCount < 1; `treat_missing_data = "breaching"`; alerts to SNS. Enabled on stg + prod. |
+| `aws_cloudwatch_metric_alarm` (5XX errors) | exists | `count = var.enable_basic_alarms ? 1 : 0`; Sum HTTPCode_Target_5XX_Count > 10 over 3 × 60 s; alerts to SNS. Enabled on stg + prod. |
+| `aws_cloudwatch_metric_alarm` (API ECS CPU) | exists | `count = var.enable_all_alarms ? 1 : 0`; Average CPUUtilization > 85%, 1 period × 60 s; alerts to SNS. Prod only. |
+| `aws_cloudwatch_metric_alarm` (API ECS memory) | exists | `count = var.enable_all_alarms ? 1 : 0`; Average MemoryUtilization > 85%, 1 period × 60 s; alerts to SNS. Prod only. |
+| `aws_cloudwatch_metric_alarm` (worker ECS CPU) | exists | `count = var.enable_all_alarms ? 1 : 0`; Average CPUUtilization > 85%, 1 period × 60 s; alerts to SNS. Prod only. |
+| `aws_cloudwatch_metric_alarm` (worker ECS memory) | exists | `count = var.enable_all_alarms ? 1 : 0`; Average MemoryUtilization > 85%, 1 period × 60 s; alerts to SNS. Prod only. |
+| `aws_cloudwatch_metric_alarm` (Redis connections) | exists | `count = var.enable_all_alarms ? 1 : 0`; Minimum CurrConnections < 1 over 2 × 300 s; `treat_missing_data = "breaching"`; alerts to SNS. Prod only. |
 | `aws_cloudwatch_metric_alarm` (worker ECS CPU sustained high) | exists | `aws_cloudwatch_metric_alarm.worker_cpu_sustained` — fires when worker CPU > 85% for 3 consecutive 5-minute periods (`evaluation_periods = 3`, `period = 300`). |
 | `aws_cloudwatch_metric_alarm` (worker PendingJobCount scale-out) | exists | `aws_cloudwatch_metric_alarm.worker_pending_jobs` — alarm threshold 50; drives the step scale-out policy; `treat_missing_data = "notBreaching"`. |
 | `aws_cloudwatch_metric_alarm` (worker PendingJobCount scale-in) | exists | `aws_cloudwatch_metric_alarm.worker_pending_jobs_low` — fires when PendingJobCount ≤ 10 for 5 consecutive minutes; `treat_missing_data = "breaching"` (empty queue = no metric emitted = still trigger scale-in); drives `aws_appautoscaling_policy.worker_scale_in`. |
@@ -439,30 +440,20 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_cloudwatch_metric_alarm` (worker ProcessingJobCount stuck) | exists | `aws_cloudwatch_metric_alarm.worker_processing_stuck` — fires when `ProcessingJobCount > 0` for 10 consecutive 1-minute periods (10 minutes); `statistic = "Maximum"` (not Average) — catches even a single stuck job within any 1-minute window rather than requiring the average to exceed 0; indicates a worker crash-loop or MongoDB connectivity problem; alerts to ops SNS. |
 | `aws_cloudwatch_metric_alarm` (API CPU sustained) | exists | `aws_cloudwatch_metric_alarm.api_cpu_sustained` — fires when API CPU > 85% for 3 consecutive 5-minute periods. |
 | `aws_cloudwatch_metric_alarm` (API memory sustained) | exists | `aws_cloudwatch_metric_alarm.api_memory_sustained` — fires when API memory > 85% for 3 consecutive 5-minute periods; same period/threshold/SNS action as `api_cpu_sustained`. |
-| `aws_cloudwatch_dashboard` | **missing** | ECS CPU/memory, ALB request count, 5XX rate, Redis connections, MongoDB pending job count. `dashboard_body` must be a JSON string — write it in a `templatefile()` call referencing `dashboard.json.tpl` in the module. Minimum widget set: (1) ECS API CPUUtilization, (2) ECS API MemoryUtilization, (3) ECS Worker CPUUtilization, (4) ALB RequestCount, (5) ALB HTTPCode_Target_5XX_Count, (6) ElastiCache CurrConnections, (7) ElastiCache NetworkBytesIn, (8) custom metric namespace `Buddy360/Worker` MetricName `PendingJobCount` (emitted by `emit_pending_job_count` in `worker.py`). Use `MetricWidget` type with `stat: "Average"` and `period: 300` for all. The `dashboard.json.tpl` file must live alongside `main.tf` in the module — commit a starter template and refine in-app once metrics are flowing. |
-| `aws_xray_sampling_rule` | **missing** | Two rules for prod. Rule 1 (baseline): `priority = 9999`, `fixed_rate = 0.01`, `reservoir_size = 1`, `host = "*"`, `http_method = "*"`, `url_path = "*"`, `service_name = "*"`, `service_type = "*"`, `resource_arn = "*"` — 1% of all requests. Rule 2 (errors): `priority = 1`, `fixed_rate = 1.0`, `reservoir_size = 5`, same wildcard filters — catches 100% of error traces (X-Ray evaluates lower priority number first). For dev/stg use a single rule: `fixed_rate = 0.05` (5%). |
+| `aws_cloudwatch_dashboard` | exists | `count = var.enable_dashboard ? 1 : 0`; enabled on prod. `dashboard_body = templatefile("dashboard.json.tpl", {...})`. 8 MetricWidget widgets: ECS API CPUUtilization, ECS API MemoryUtilization, ECS Worker CPUUtilization, ALB RequestCount, ALB HTTPCode_Target_5XX_Count, ElastiCache CurrConnections, ElastiCache NetworkBytesIn, `Buddy360/Worker` PendingJobCount. Template at `infra-live-backend/terraform/dashboard.json.tpl`. |
+| `aws_xray_sampling_rule` | exists | Rule 1 (default, all envs): `priority = 9999`, `fixed_rate = var.xray_default_sampling_rate` (0.05 for dev/sbx/stg, 0.01 for prod), `reservoir_size = 1`. Rule 2 (errors, prod only): `count = var.enable_xray_error_rule ? 1 : 0`, `priority = 1`, `fixed_rate = 1.0`, `reservoir_size = 5` — captures 100% of error traces. |
 
 #### Storage — user uploads bucket (ap-south-1)
 
 Bucket is created manually. Terraform manages configuration only, referencing the bucket via `var.uploads_bucket_name`.
 
-> **`variables.tf` additions required in `infra-live-backend`:** add the following variables. Values come from GitHub secrets (injected as `TF_VAR_*` by the workflow) or tfvars files.
-> ```hcl
-> variable "uploads_bucket_name"          {}
-> variable "regional_logging_bucket_name" {}
-> variable "atlas_endpoint_service_name"  { default = "" }  # also in Addition 2
-> variable "enable_vpc_endpoints"         { default = true }
-> variable "enable_guardduty"             { default = true }
-> variable "enable_cloudtrail"            { default = true }
-
-> ```
-> Set `uploads_bucket_name` and `regional_logging_bucket_name` from the `UPLOADS_BUCKET_NAME` and `REGIONAL_LOGGING_BUCKET_NAME` GitHub secrets. The four boolean flags default to `true` (prod behaviour) and are overridden to `false` in `dev.tfvars` / `sbx.tfvars` / `stg.tfvars` as documented in the environment matrix.
+> **`variables.tf` additions — all implemented ✅:** `uploads_bucket_name`, `regional_logging_bucket_name`, `log_retention_days` (default 90), `ops_email` (default ""), `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule`, `xray_default_sampling_rate` (default 0.05), `enable_guardduty`, `enable_cloudtrail`, `enable_adot_sidecar`. Set via GitHub secrets (`UPLOADS_BUCKET_NAME_AP_SOUTH_1`, `REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1`, `OPS_EMAIL`) and tfvars files per environment. Still pending: `atlas_endpoint_service_name` (default "") for Atlas PrivateLink.
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_s3_bucket_cors_configuration` | **missing** | Allows browser PUT via pre-signed URLs; restrict `AllowedOrigins` to `https://buddy360.com`; reference bucket via `var.uploads_bucket_name` |
-| `aws_s3_bucket_lifecycle_configuration` | **missing** | Expire incomplete multipart uploads after 7 days; transition to Intelligent-Tiering after 90 days; reference bucket via `var.uploads_bucket_name` |
-| `aws_iam_role_policy` (task role — API, S3 uploads) | **missing** | `s3:PutObject` scoped to uploads bucket ARN. Pre-signed URL generation for PUT requires only `s3:PutObject` on the task role. Grant `s3:GetObject` only if the API reads uploads server-side (e.g. for validation or processing) — omit it if the API only generates pre-signed URLs and the browser downloads directly via CloudFront. Also add `s3:GetBucketLocation` — some AWS SDK versions require this when generating pre-signed URLs. |
+| `aws_s3_bucket_cors_configuration` | exists | `AllowedMethods = ["PUT"]`; `AllowedOrigins = ["https://${var.domain_name}"]`; `AllowedHeaders = ["*"]`; `MaxAgeSeconds = 3600`. |
+| `aws_s3_bucket_lifecycle_configuration` | exists | Abort incomplete multipart uploads after 7 days; transition to `INTELLIGENT_TIERING` after 90 days. |
+| `aws_iam_role_policy` (task role — API, S3 uploads) | exists | `s3:GetBucketLocation` on bucket ARN + `s3:PutObject` on `bucket/*`; inline policy `aws_iam_role_policy.ecs_task_s3_uploads` on API task role. |
 
 #### Storage — regional logging bucket (ap-south-1)
 
@@ -470,7 +461,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_s3_bucket_policy` (regional logging) | **missing** | Required for two principals: (1) ALB access logs — grants `s3:PutObject` to the ELB service account for ap-south-1 (account ID `718504428378`). **Note:** newer accounts (created after August 2022) may use the service principal `logdelivery.elasticloadbalancing.amazonaws.com` instead of the account ID — check the AWS docs for your account's creation date and ALB region. Both forms are safe to include in the same policy statement; (2) CloudTrail — grants `s3:GetBucketAcl` + `s3:PutObject` to `cloudtrail.amazonaws.com`. Reference bucket via `var.regional_logging_bucket_name`. |
+| `aws_s3_bucket_policy` (regional logging) | exists | `count = var.regional_logging_bucket_name != "" ? 1 : 0` (skipped on dev/sbx). Two principals: (1) ELB account `718504428378` — `s3:PutObject` on `/alb-logs/*`; (2) `cloudtrail.amazonaws.com` — `s3:GetBucketAcl` + `s3:PutObject` on `/cloudtrail/*` with `s3:x-amz-acl = bucket-owner-full-control` condition. |
 
 #### Cross-module wiring
 
@@ -487,21 +478,21 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudfront_distribution` | change | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling. Associate the Lambda@Edge function on the `/api/*` cache behavior (viewer-request event) — see `aws_lambda_function` row below. |
+| `aws_cloudfront_distribution` | exists | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling; Lambda@Edge JWT validator associated on `/api/*` cache behavior (viewer-request, `qualified_arn`). |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
 | `aws_lambda_function` (JWT validator) | exists | Lambda@Edge viewer-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
 | `aws_iam_role` (Lambda@Edge execution) | exists | Assumed by both `lambda.amazonaws.com` and `edgelambda.amazonaws.com`; attached `AWSLambdaBasicExecutionRole` |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
-| `aws_wafv2_web_acl_logging_configuration` | **missing** | WAF full logs → Kinesis Firehose → global S3 logging bucket; stream name must start with `aws-waf-logs-` |
-| `aws_kinesis_firehose_delivery_stream` | **missing** | Must be in us-east-1; `name = "aws-waf-logs-${var.app_name}-${var.environment}"` (name must start with `aws-waf-logs-` — AWS enforces this prefix for WAF logging). `s3_configuration`: `bucket_arn = "arn:aws:s3:::${var.global_logging_bucket_name}"`; `prefix = "waf-logs/"`; `error_output_prefix = "waf-logs-errors/"`; `buffering_interval = 300` (5 min); `buffering_size = 5` (MB); `compression_format = "GZIP"`. |
-| `aws_iam_role` (Kinesis Firehose) | **missing** | IAM role assumed by the Firehose stream; required for Firehose to write to the global logging S3 bucket |
-| `aws_iam_role_policy` (Firehose S3 write) | **missing** | Inline policy on the Firehose IAM role; grants `s3:PutObject` + `s3:AbortMultipartUpload` + `s3:GetBucketLocation` on the global logging bucket |
-| `aws_s3_bucket_policy` (global logging) | **missing** | Bucket is created manually (`BucketOwnerPreferred` ownership set at creation; lifecycle rules and public access block set manually). Terraform manages policy only via `var.global_logging_bucket_name`. Required for two principals: (1) CloudTrail us-east-1 — grants `s3:GetBucketAcl` + `s3:PutObject` to `cloudtrail.amazonaws.com`; (2) CloudFront access logs — grants `s3:PutObject` via a canonical user ACL grant (not an IAM principal) to the CloudFront log delivery account canonical user ID `c4c1ede66af53448b93c283ce9448c4ba468c9432aa1ab4c7ad7a475d1db4b02`; `BucketOwnerPreferred` ownership is required for the canonical user grant to work. Firehose access is handled via the Firehose IAM role, not a bucket policy. Without the canonical user grant, CloudFront access logs silently fail to deliver. |
+| `aws_wafv2_web_acl_logging_configuration` | exists | `count = var.enable_waf_logging ? 1 : 0` (prod only); log destination = Firehose stream ARN; in `waf_logging.tf`. |
+| `aws_kinesis_firehose_delivery_stream` | exists | `count = var.enable_waf_logging ? 1 : 0`; name `aws-waf-logs-{app}-{env}`; `extended_s3_configuration` → global logging bucket, prefix `waf-logs/`, error prefix `waf-logs-errors/`, GZIP, 300 s / 5 MB buffering; SSE with `AWS_OWNED_CMK`. |
+| `aws_iam_role` (Kinesis Firehose) | exists | `count = var.enable_waf_logging ? 1 : 0`; trusted by `firehose.amazonaws.com`; inline policy grants `s3:PutObject` + `s3:AbortMultipartUpload` + `s3:GetBucketLocation` on global logging bucket. |
+| `aws_iam_role_policy` (Firehose S3 write) | exists | Inline policy on the Firehose IAM role; grants `s3:PutObject` + `s3:AbortMultipartUpload` + `s3:GetBucketLocation` on the global logging bucket. |
+| `aws_s3_bucket_policy` (global logging) | exists | `count = var.global_logging_bucket_name != "" ? 1 : 0` (prod only). Two CloudTrail statements: `s3:GetBucketAcl` on bucket ARN and `s3:PutObject` on `/cloudtrail/*` with `s3:x-amz-acl = bucket-owner-full-control` condition. Note: CloudFront access log canonical user grant (`c4c1ede6...`) requires `BucketOwnerPreferred` ownership and should be added when CloudFront access logging is enabled. |
 | `aws_s3_bucket_policy` (app assets OAC) | exists | Scoped to CloudFront distribution ARN; references bucket via `var.assets_bucket_name` — bucket is created manually, no `aws_s3_bucket` resource in Terraform |
 | `aws_route53_record` | exists | A alias to CloudFront |
-| `aws_guardduty_detector` (us-east-1) | **missing** | Separate detector required in us-east-1 to cover CloudFront and WAF management events; ECS Runtime Monitoring not required here (no ECS workloads in us-east-1) |
-| `aws_cloudtrail` (us-east-1) | **missing** | Covers CloudFront + WAF management events; destination: global S3 logging bucket. Set `include_global_service_events = true` — the us-east-1 trail is the only one that captures IAM, STS, and other global-service events. The ap-south-1 trail uses `include_global_service_events = false` to avoid duplicate records. |
+| `aws_guardduty_detector` (us-east-1) | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod. No ECS Runtime Monitoring (no ECS workloads in us-east-1). In `security.tf`. |
+| `aws_cloudtrail` (us-east-1) | exists | `count = var.enable_cloudtrail && var.global_logging_bucket_name != "" ? 1 : 0` (prod only — stg has no global bucket). `include_global_service_events = true`; destination: global logging bucket, prefix `cloudtrail/`; `depends_on = [aws_s3_bucket_policy.global_logging]`. In `security.tf`. |
 | `aws_ssm_parameter` (CloudFront ARN, bucket name) | exists | Read by `infra-live-frontend` |
 
 ---
@@ -597,15 +588,17 @@ Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function
 
 ### Summary — resource count
 
-> **Implementation progress:** 41 resources exist, 12 need changes, 43 are missing. The entire `infra-live-atlas/` module and `terraform-atlas.yml` workflow do not exist yet.
+> **Implementation progress:** 74 resources exist, 7 need changes, 8 are missing. Only the MongoDB Atlas module and Atlas PrivateLink remain pending (deferred — M0 in use).
 
 | Module | Exists | Needs change | Missing |
 |---|---|---|---|
-| `infra-live-backend` | 33 | 11 | 29 |
-| `infra-live-edge` | 7 | 1 | 8 |
+| `infra-live-backend` | 59 | 1 | 2 |
+| `infra-live-edge` | 16 | 0 | 0 |
 | `infra-live-frontend` | 1 | 0 | 0 |
 | MongoDB Atlas module (`infra-live-atlas/` — **entire module pending**) | 0 | 0 | 6 |
-| **Total** | **41** | **12** | **43** |
+| **Total** | **76** | **1** | **8** |
+
+> Note: all remaining infra-live-backend items are Atlas PrivateLink-related and deferred until M0 is upgraded: 1 change (`aws_security_group` API — add egress 27017 to Atlas PrivateLink SG), 2 missing (`aws_vpc_endpoint` Atlas PrivateLink, `aws_security_group` Atlas PrivateLink endpoint). Nothing is pending in infra-live-backend for the non-Atlas stack.
 
 ---
 
@@ -695,7 +688,7 @@ The resource inventory above is written at prod scale. This section documents ev
 
 | Dimension | dev/sbx | stg | prod |
 |---|---|---|---|
-| CloudWatch log retention | `7` days | `30` days | `90` days (**pending** — both log groups currently hardcode 30 days; parameterise via `var.log_retention_days`, see `count` guards section) |
+| CloudWatch log retention | `7` days | `30` days | `90` days (default) |
 | CloudWatch metric alarms | ✗ skip all | ✓ HealthyHostCount + 5XX only | ✓ all 8 alarms |
 | `aws_cloudwatch_dashboard` | ✗ | optional | ✓ |
 | SNS topic + email subscription | ✓ | ✓ | ✓ |

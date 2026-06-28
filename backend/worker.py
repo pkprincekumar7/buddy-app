@@ -13,6 +13,7 @@ Environment variables:
 """
 
 import asyncio
+import json
 import logging
 import os
 from datetime import UTC, datetime, timedelta
@@ -49,6 +50,11 @@ POLL_INTERVAL_SECONDS = _parse_int_env("WORKER_POLL_INTERVAL_SECONDS", 2)
 JOB_DEADLINE_MINUTES = 30
 METRICS_INTERVAL_SECONDS = 60
 CLEANUP_INTERVAL_SECONDS = 300
+
+# LLM responses are structured JSON, so legitimate payloads are small (< 20 KB).
+# 512 KB gives generous headroom while protecting against a misbehaving provider
+# returning a multi-MB body that could bloat domain documents toward MongoDB's 16 MB limit.
+_MAX_LLM_RESULT_BYTES = 512 * 1024
 
 # Backoff delays per LLM attempt number (0-based index into list).
 # Stored as retry_after timestamp on the job document so the sleeping
@@ -322,6 +328,15 @@ async def handle_job(job: dict) -> None:
         return
     except Exception as e:
         await handle_llm_failure(job, str(e))
+        return
+
+    serialized_result = json.dumps(result)
+    if len(serialized_result) > _MAX_LLM_RESULT_BYTES:
+        await handle_llm_failure(
+            job,
+            f"LLM response exceeds size limit: {len(serialized_result):,} bytes"
+            f" > {_MAX_LLM_RESULT_BYTES:,}",
+        )
         return
 
     # llm_attempt is intentionally NOT incremented on success — it is only

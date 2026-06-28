@@ -49,6 +49,7 @@ export default function GrowthAreasActivityGreatInsights() {
           : undefined;
       if (pending && pending.length > 0) {
         setRecommendations(pending);
+        setStatus('ready');
         await api.completedGrowthAreas.append(childId, {
           ...(pendingAreaDataRef.current ?? {}),
           area_id: area.id,
@@ -59,8 +60,9 @@ export default function GrowthAreasActivityGreatInsights() {
           ai_three_month_recommendations: pending,
         });
         pendingAreaDataRef.current = null;
+      } else {
+        setStatus('ready');
       }
-      setStatus('ready');
     } catch (err) {
       console.error('[GrowthAreasActivityGreatInsights] Failed to finalize recommendations:', err);
       toast.error('Recommendations are ready — refresh to see them.');
@@ -225,7 +227,10 @@ export default function GrowthAreasActivityGreatInsights() {
     jobEnqueue,
   ]);
 
-  const isGenerating = job.isLoading;
+  // Keep the spinner up through the finalizeRecommendations async gap — job.isComplete
+  // fires before the page status moves from 'idle' to 'ready', which would briefly
+  // re-show the button between job completion and the finalize API call finishing.
+  const isGenerating = job.isLoading || (job.isComplete && status !== 'ready');
   const isError = status === 'error' || job.isFailed;
 
   if (isLoadingAuth || status === 'loading') {

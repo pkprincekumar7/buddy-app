@@ -403,6 +403,7 @@ export default function GrowthAreasActivityGameScreen() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [savedAnswers, setSavedAnswers] = useState<Record<string, unknown>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const pendingSelectionsRef = useRef<string[]>([]);
   const handleGameCompleteRef = useRef<
     (result: Record<string, unknown>) => Promise<void>
@@ -508,6 +509,7 @@ export default function GrowthAreasActivityGameScreen() {
 
   const finalizeActivity = useCallback(async () => {
     if (!activeChildId || !area) return;
+    setIsFinalizing(true);
     try {
       const completedData = await api.completedGrowthAreas.list(activeChildId);
       const areaDoc = (completedData.areas ?? []).find(
@@ -812,8 +814,10 @@ export default function GrowthAreasActivityGameScreen() {
               to={colors.primaryDark}
               height={48}
               borderRadius={16}
-              disabled={selectedIds.length === 0 || job.isLoading}
-              loading={job.isLoading}
+              disabled={
+                selectedIds.length === 0 || job.isLoading || isFinalizing
+              }
+              loading={job.isLoading || isFinalizing}
               onPress={() => {
                 void handleSubmit();
               }}
@@ -822,7 +826,7 @@ export default function GrowthAreasActivityGameScreen() {
               <Text
                 style={{ fontWeight: '600', color: colors.primaryForeground }}
               >
-                {job.isLoading
+                {job.isLoading || isFinalizing
                   ? 'Generating Recommendations...'
                   : 'Submit My Choices'}
               </Text>

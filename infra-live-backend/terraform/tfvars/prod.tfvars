@@ -45,3 +45,21 @@ api_min_capacity    = 5
 api_max_capacity    = 50
 worker_min_capacity = 2
 worker_max_capacity = 10
+
+# Observability — prod: 90-day retention (default), all alarms, dashboard enabled, email alerts on
+# log_retention_days = 90  (matches variable default — no override needed)
+enable_basic_alarms        = true
+enable_all_alarms          = true
+enable_dashboard           = true
+enable_xray_error_rule     = true
+xray_default_sampling_rate = 0.01
+enable_ops_email           = true
+
+# Security — GuardDuty and CloudTrail always enabled on prod
+# regional_logging_bucket_name is set via TF_VAR_regional_logging_bucket_name
+# GitHub secret (REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1) — do not set here
+enable_guardduty  = true
+enable_cloudtrail = true
+
+# ADOT sidecar enabled on prod
+enable_adot_sidecar = true

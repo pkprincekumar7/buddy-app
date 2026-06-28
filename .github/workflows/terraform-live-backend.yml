@@ -96,32 +96,37 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Validate required secrets
         env:
-          ROLE_ARN:                       ${{ secrets.ROLE_ARN }}
-          APP_NAME:                       ${{ secrets.APP_NAME }}
-          STATE_BUCKET:                   ${{ secrets.STATE_BUCKET }}
-          ACM_CERTIFICATE_ARN_AP_SOUTH_1: ${{ secrets.ACM_CERTIFICATE_ARN_AP_SOUTH_1 }}
-          SUBDOMAIN:                      ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME:                    ${{ secrets.DOMAIN_NAME }}
-          HOSTED_ZONE_ID:                 ${{ secrets.HOSTED_ZONE_ID }}
-          ASSETS_BUCKET_NAME:            ${{ secrets.ASSETS_BUCKET_NAME }}
-          JWT_PRIVATE_KEY:                ${{ secrets.JWT_PRIVATE_KEY }}
-          GOOGLE_CLIENT_ID:               ${{ secrets.GOOGLE_CLIENT_ID }}
-          MONGODB_URI:                    ${{ secrets.MONGODB_URI }}
-          OPENAI_API_KEY:                 ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL:                   ${{ secrets.OPENAI_MODEL }}
-          ANTHROPIC_MODEL:                ${{ secrets.ANTHROPIC_MODEL }}
-          GEMINI_MODEL:                   ${{ secrets.GEMINI_MODEL }}
-          REDIS_AUTH_TOKEN:               ${{ secrets.REDIS_AUTH_TOKEN }}
+          ROLE_ARN:                            ${{ secrets.ROLE_ARN }}
+          APP_NAME:                            ${{ secrets.APP_NAME }}
+          STATE_BUCKET:                        ${{ secrets.STATE_BUCKET }}
+          ACM_CERTIFICATE_ARN_AP_SOUTH_1:      ${{ secrets.ACM_CERTIFICATE_ARN_AP_SOUTH_1 }}
+          SUBDOMAIN:                           ${{ secrets.SUBDOMAIN }}
+          DOMAIN_NAME:                         ${{ secrets.DOMAIN_NAME }}
+          HOSTED_ZONE_ID:                      ${{ secrets.HOSTED_ZONE_ID }}
+          ASSETS_BUCKET_NAME:                  ${{ secrets.ASSETS_BUCKET_NAME }}
+          UPLOADS_BUCKET_NAME_AP_SOUTH_1:      ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
+          REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1 }}
+          JWT_PRIVATE_KEY:                     ${{ secrets.JWT_PRIVATE_KEY }}
+          GOOGLE_CLIENT_ID:                    ${{ secrets.GOOGLE_CLIENT_ID }}
+          MONGODB_URI:                         ${{ secrets.MONGODB_URI }}
+          OPENAI_API_KEY:                      ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL:                        ${{ secrets.OPENAI_MODEL }}
+          ANTHROPIC_MODEL:                     ${{ secrets.ANTHROPIC_MODEL }}
+          GEMINI_MODEL:                        ${{ secrets.GEMINI_MODEL }}
+          REDIS_AUTH_TOKEN:                    ${{ secrets.REDIS_AUTH_TOKEN }}
+          OPS_EMAIL:                           ${{ secrets.OPS_EMAIL }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME")
           [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET")
-          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1" ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
+          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
+          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
+          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1")
           [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
-          [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
+          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ -z "$JWT_PRIVATE_KEY"                ]] && missing+=("JWT_PRIVATE_KEY")
           [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
@@ -130,6 +135,7 @@ jobs:
           [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL")
           [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
           [[ -z "$REDIS_AUTH_TOKEN"               ]] && missing+=("REDIS_AUTH_TOKEN")
+          [[ -z "$OPS_EMAIL"                      ]] && missing+=("OPS_EMAIL")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
@@ -156,6 +162,31 @@ jobs:
           case "${{ inputs.aws_region }}" in
             ap-south-1) echo "TF_VAR_acm_certificate_arn=$ACM_ARN_AP_SOUTH_1" >> "$GITHUB_ENV" ;;
             *) echo "ERROR: No ACM certificate configured for region '${{ inputs.aws_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
+          esac
+
+      # -------------------------------------------------------------------------
+      # Region-specific S3 bucket names follow the same pattern as ACM certs:
+      # secrets are suffixed with the region (e.g. _AP_SOUTH_1) and resolved
+      # here into plain TF_VAR_* names that Terraform consumes.
+      # Add a new case entry for each variable when expanding to new regions.
+      # REGIONAL_LOGGING_BUCKET_NAME is only required for stg/prod — dev/sbx
+      # leave it empty so the Terraform count guard skips the bucket policy and
+      # CloudTrail resources.
+      # -------------------------------------------------------------------------
+      - name: Resolve region-specific S3 bucket names
+        env:
+          UPLOADS_BUCKET_NAME_AP_SOUTH_1:          ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
+          REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1 }}
+        run: |
+          case "${{ inputs.aws_region }}" in
+            ap-south-1)
+              echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_AP_SOUTH_1"                   >> "$GITHUB_ENV"
+              echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1:-}" >> "$GITHUB_ENV"
+              ;;
+            *)
+              echo "ERROR: No S3 bucket names configured for region '${{ inputs.aws_region }}'. Add secrets and case entries to this workflow."
+              exit 1
+              ;;
           esac
 
       # -------------------------------------------------------------------------
@@ -205,6 +236,17 @@ jobs:
           REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
         run: |
           echo "TF_VAR_redis_auth_token=$REDIS_AUTH_TOKEN" >> "$GITHUB_ENV"
+
+      # -------------------------------------------------------------------------
+      # OPS_EMAIL is optional — if absent, no SNS email subscription is created
+      # and alarm notifications go to the topic only (e.g. PagerDuty/Slack).
+      # Set the secret per environment to receive alarm emails directly.
+      # -------------------------------------------------------------------------
+      - name: Resolve ops email
+        env:
+          OPS_EMAIL: ${{ secrets.OPS_EMAIL }}
+        run: |
+          echo "TF_VAR_ops_email=${OPS_EMAIL:-}" >> "$GITHUB_ENV"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1
