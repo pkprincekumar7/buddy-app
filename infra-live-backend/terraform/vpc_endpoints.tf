@@ -26,12 +26,14 @@ locals {
 
 # ---------------------------------------------------------------------------
 # Security group — shared by all AWS Interface Endpoints
-# Always created (no cost); only attached to endpoints when they exist.
+# Conditional on create_interface_endpoints; not needed in dev/sbx where
+# no interface endpoints are provisioned.
 # ---------------------------------------------------------------------------
 
 #trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "vpc_endpoints_sg" {
   #checkov:skip=CKV_AWS_382:Interface endpoints do not initiate outbound connections — no egress rule required; inbound 443 from ECS task SGs is sufficient
+  count = local.create_interface_endpoints ? 1 : 0
 
   name        = "${var.app_name}-vpc-endpoints-sg-${var.environment}"
   description = "Allow HTTPS from ECS task SGs to AWS Interface Endpoints"
@@ -43,8 +45,10 @@ resource "aws_security_group" "vpc_endpoints_sg" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "endpoints_from_api_task" {
+  count = local.create_interface_endpoints ? 1 : 0
+
   description                  = "HTTPS from API task SG"
-  security_group_id            = aws_security_group.vpc_endpoints_sg.id
+  security_group_id            = aws_security_group.vpc_endpoints_sg[0].id
   ip_protocol                  = "tcp"
   from_port                    = 443
   to_port                      = 443
@@ -52,8 +56,10 @@ resource "aws_vpc_security_group_ingress_rule" "endpoints_from_api_task" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "endpoints_from_worker_task" {
+  count = local.create_interface_endpoints ? 1 : 0
+
   description                  = "HTTPS from worker task SG"
-  security_group_id            = aws_security_group.vpc_endpoints_sg.id
+  security_group_id            = aws_security_group.vpc_endpoints_sg[0].id
   ip_protocol                  = "tcp"
   from_port                    = 443
   to_port                      = 443
@@ -96,7 +102,7 @@ resource "aws_vpc_endpoint" "ecr_api" {
   private_dns_enabled = true
 
   subnet_ids         = local.endpoint_subnet_ids
-  security_group_ids = [aws_security_group.vpc_endpoints_sg.id]
+  security_group_ids = [aws_security_group.vpc_endpoints_sg[0].id]
 
   tags = {
     Name = "${var.app_name}-ecr-api-endpoint-${var.environment}"
@@ -113,7 +119,7 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
   private_dns_enabled = true
 
   subnet_ids         = local.endpoint_subnet_ids
-  security_group_ids = [aws_security_group.vpc_endpoints_sg.id]
+  security_group_ids = [aws_security_group.vpc_endpoints_sg[0].id]
 
   tags = {
     Name = "${var.app_name}-ecr-dkr-endpoint-${var.environment}"
@@ -130,7 +136,7 @@ resource "aws_vpc_endpoint" "secretsmanager" {
   private_dns_enabled = true
 
   subnet_ids         = local.endpoint_subnet_ids
-  security_group_ids = [aws_security_group.vpc_endpoints_sg.id]
+  security_group_ids = [aws_security_group.vpc_endpoints_sg[0].id]
 
   tags = {
     Name = "${var.app_name}-secretsmanager-endpoint-${var.environment}"
@@ -147,7 +153,7 @@ resource "aws_vpc_endpoint" "cloudwatch_logs" {
   private_dns_enabled = true
 
   subnet_ids         = local.endpoint_subnet_ids
-  security_group_ids = [aws_security_group.vpc_endpoints_sg.id]
+  security_group_ids = [aws_security_group.vpc_endpoints_sg[0].id]
 
   tags = {
     Name = "${var.app_name}-cloudwatch-logs-endpoint-${var.environment}"
@@ -164,7 +170,7 @@ resource "aws_vpc_endpoint" "xray" {
   private_dns_enabled = true
 
   subnet_ids         = local.endpoint_subnet_ids
-  security_group_ids = [aws_security_group.vpc_endpoints_sg.id]
+  security_group_ids = [aws_security_group.vpc_endpoints_sg[0].id]
 
   tags = {
     Name = "${var.app_name}-xray-endpoint-${var.environment}"
