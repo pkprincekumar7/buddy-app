@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # GuardDuty — ap-south-1
 # Skipped on dev/sbx (var.enable_guardduty = false) to avoid ~$20/mo cost.
-# ECS Runtime Monitoring is enabled so GuardDuty inspects running container
-# behaviour — without this the ECS-related cost line item provides no coverage.
+# RUNTIME_MONITORING is enabled so GuardDuty inspects running container
+# behaviour (covers ECS, EKS, EC2) — without this the ECS-related cost line item provides no coverage.
 # ---------------------------------------------------------------------------
 
 resource "aws_guardduty_detector" "main" {
@@ -18,7 +18,7 @@ resource "aws_guardduty_detector" "main" {
 resource "aws_guardduty_detector_feature" "ecs_runtime" {
   count       = var.enable_guardduty ? 1 : 0
   detector_id = aws_guardduty_detector.main[0].id
-  name        = "ECS_RUNTIME_MONITORING"
+  name        = "RUNTIME_MONITORING"
   status      = "ENABLED"
 }
 
