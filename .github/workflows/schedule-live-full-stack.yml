@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Scheduled full-stack create / destroy — dev environment
+#
+# Times are in IST (UTC+5:30):
+#   Start  : 04:45 PM IST  →  11:15 UTC  — full apply + deploy
+#   Stop   : 11:00 PM IST  →  17:30 UTC  — full destroy
+#
+# Both schedules target the dev environment (ap-south-1).
+# To change the environment or region, update the `with:` block in each job.
+# ---------------------------------------------------------------------------
+
+name: Schedule — Full Stack Start/Stop
+
+on:
+  schedule:
+    # 04:45 PM IST = 11:15 UTC — create infra + deploy
+    - cron: "15 11 * * *"
+    # 11:00 PM IST = 17:30 UTC — destroy infra
+    - cron: "30 17 * * *"
+
+# OIDC token + repo read required by called workflows.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  start:
+    name: "Start — apply + deploy"
+    # Runs only on the 11:15 UTC trigger and when scheduling is enabled.
+    # Toggle: set repo variable SCHEDULED_INFRA_ENABLED_DEV to 'true' or 'false'
+    # in Settings → Secrets and variables → Actions → Variables.
+    if: github.event.schedule == '15 11 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    uses: ./.github/workflows/terraform-live-all.yml
+    with:
+      action:      apply
+      environment: dev
+      aws_region:  ap-south-1
+      deploy:      true
+    secrets: inherit
+
+  stop:
+    name: "Stop — destroy"
+    # Runs only on the 17:30 UTC trigger and when scheduling is enabled.
+    if: github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    uses: ./.github/workflows/terraform-live-all.yml
+    with:
+      action:      destroy
+      environment: dev
+      aws_region:  ap-south-1
+      deploy:      false
+    secrets: inherit
