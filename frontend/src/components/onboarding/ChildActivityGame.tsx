@@ -48,7 +48,7 @@ type AreaGamesMap = Record<string, AreaGame>;
 
 const areaGames: AreaGamesMap = {
   life_ambition: {
-    question: 'What do you want to become in life?',
+    question: 'What does [child name] want to become when they grow up?',
     subtitle: 'Choose up to 3 options that excite you!',
     maxSelections: 3,
     options: [
@@ -93,7 +93,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has selected these career aspirations: ${labels.join(', ')}. These selections will be used to generate a personalised development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these career choices reveal about this child's interests and motivations, taking into account their age and gender.\n- "suggested_activities": an array of 3–4 concrete, age-appropriate activities or experiences the parent can provide to nurture these aspirations. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 specific strengths these choices suggest the child has or is developing.`,
   },
   self_care: {
-    question: 'Which activities make you feel calm and happy?',
+    question: 'Which activities make [child name] feel calm and happy?',
     subtitle: 'Pick up to 3 things you enjoy!',
     maxSelections: 3,
     options: [
@@ -183,7 +183,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these thinking challenges as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised critical thinking development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these choices reveal about this child's thinking style and cognitive preferences, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate activities to sharpen these critical thinking skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 cognitive strengths these choices suggest the child has or is developing.`,
   },
   creativity: {
-    question: 'Which creative activities do you love?',
+    question: 'Which creative activities does [child name] love?',
     subtitle: 'Pick up to 3 that spark your imagination!',
     maxSelections: 3,
     options: [
@@ -228,7 +228,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these creative activities as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised creativity development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these creative choices reveal about this child's expressive personality and creative instincts, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can encourage and develop these creative skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 creative strengths these choices suggest the child has or is developing.`,
   },
   physical_wellness: {
-    question: 'Which physical activities do you enjoy?',
+    question: 'Which physical activities does [child name] enjoy?',
     subtitle: 'Choose up to 3 that get you moving!',
     maxSelections: 3,
     options: [
@@ -273,7 +273,7 @@ const areaGames: AreaGamesMap = {
       `${childName ?? 'A child'} (${childAge ?? 'school-age'}-year-old ${childGender ?? 'child'}) has chosen these physical activities as their favourites: ${labels.join(', ')}. These selections will be used to generate a personalised physical wellness plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these physical choices reveal about this child's energy, movement preferences, and physical personality, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and grow these physical habits. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 physical strengths these choices suggest the child has or is developing.`,
   },
   social_skills: {
-    question: 'Which situations feel most natural to you?',
+    question: 'Which situations feel most natural to [child name]?',
     subtitle: 'Choose up to 3 that sound like you!',
     maxSelections: 3,
     options: [
@@ -536,17 +536,19 @@ export default function ChildActivityGame({
         ))}
       </div>
 
-      <Button
-        onClick={() => {
-          void handleSubmit();
-        }}
-        disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
-        className="h-12 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
-      >
-        {isSubmitting || isExternallyLoading
-          ? 'Generating Recommendations...'
-          : 'Submit My Choices'}
-      </Button>
+      <div className="flex justify-center">
+        <Button
+          onClick={() => {
+            void handleSubmit();
+          }}
+          disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
+          className="h-12 rounded-2xl bg-gradient-to-r from-success to-primary-dark px-8 text-base"
+        >
+          {isSubmitting || isExternallyLoading
+            ? 'Generating Recommendations...'
+            : 'Submit My Choices'}
+        </Button>
+      </div>
     </div>
   );
 }

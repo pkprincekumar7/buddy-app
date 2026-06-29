@@ -443,7 +443,9 @@ export default function PersonalityJourneyScreen() {
               style={{ color: colors.text }}
               className="text-xl font-bold text-center mb-2 mt-5"
             >
-              Your Personalized Journey
+              {childName
+                ? `${childName}'s Personalized Journey`
+                : 'Personalized Journey'}
             </Text>
             <Text
               style={{ color: colors.textMuted }}

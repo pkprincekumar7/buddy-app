@@ -724,10 +724,10 @@ export default function GrowthAreasGreatInsightsScreen() {
                 to={colors.primaryDark}
                 height={44}
                 borderRadius={16}
+                style={{ width: '100%' }}
                 onPress={() => {
                   void generateRecommendations();
                 }}
-                style={{ width: '100%' }}
               >
                 <View className="flex-row items-center gap-2">
                   <Sparkles size={16} color={colors.primaryForeground} />

@@ -53,22 +53,15 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
         <div className="mb-7 space-y-2 text-center">
           <h3 className="text-lg font-bold text-foreground">Start Over?</h3>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            This will permanently delete all progress for this child, including personality results,
-            growth area answers, and goal plans.
+            All progress for this child will be permanently deleted — personality results, growth
+            area answers, and goal plans. You will need to restart the onboarding from the
+            beginning.
           </p>
           <p className="text-xs font-medium text-error">This cannot be undone.</p>
         </div>
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            disabled={isStartingOver}
-            className="btn-secondary h-11 flex-1 rounded-xl text-base"
-          >
-            Cancel
-          </Button>
           <Button
             onClick={onConfirm}
             disabled={isStartingOver}
@@ -82,6 +75,14 @@ function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps
             ) : (
               'Yes, delete'
             )}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            disabled={isStartingOver}
+            className="btn-secondary h-11 flex-1 rounded-xl text-base"
+          >
+            Cancel
           </Button>
         </div>
       </motion.div>

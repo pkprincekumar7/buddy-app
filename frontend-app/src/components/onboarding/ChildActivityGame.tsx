@@ -1,20 +1,34 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { View, Text, Pressable, ScrollView, Image } from 'react-native';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { View, Text, FlatList, Pressable, Image } from 'react-native';
 import { CheckCircle, Circle } from 'lucide-react-native';
-import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
 import { toast } from '@/lib/toast';
 import { env } from '@/lib/env';
 import { useTheme } from '@/lib/ThemeContext';
-import { TILE_BG_HEX_COLORS } from '@/lib/gradientColors';
+import Svg, {
+  LinearGradient as SvgLinearGradient,
+  Rect,
+  Stop,
+  Defs,
+} from 'react-native-svg';
+import { GradientButton, tileGrad } from '@/components/shared/GradientView';
 
-// Module-level cache of asset paths that have previously failed to load.
+// Session-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts and app-level rerenders.
 const _failedAssetPaths = new Set<string>();
 
 function themedImagePath(path: string, isDark: boolean): string {
   return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
 }
+
+const TILE_COLORS = [
+  'from-purple-400 to-indigo-500',
+  'from-rose-400 to-pink-500',
+  'from-amber-400 to-orange-500',
+  'from-emerald-400 to-teal-500',
+  'from-blue-400 to-cyan-500',
+  'from-violet-400 to-purple-500',
+];
 
 interface AreaGameOption {
   id: string;
@@ -40,7 +54,7 @@ type AreaGamesMap = Record<string, AreaGame>;
 
 const areaGames: AreaGamesMap = {
   life_ambition: {
-    question: 'What do you want to become in life?',
+    question: 'What does [child name] want to become when they grow up?',
     subtitle: 'Choose up to 3 options that excite you!',
     maxSelections: 3,
     options: [
@@ -89,7 +103,7 @@ const areaGames: AreaGamesMap = {
       )}. These selections will be used to generate a personalised development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these career choices reveal about this child's interests and motivations, taking into account their age and gender.\n- "suggested_activities": an array of 3–4 concrete, age-appropriate activities or experiences the parent can provide to nurture these aspirations. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 specific strengths these choices suggest the child has or is developing.`,
   },
   self_care: {
-    question: 'Which activities make you feel calm and happy?',
+    question: 'Which activities make [child name] feel calm and happy?',
     subtitle: 'Pick up to 3 things you enjoy!',
     maxSelections: 3,
     options: [
@@ -138,7 +152,7 @@ const areaGames: AreaGamesMap = {
       )}. These selections will be used to generate a personalised self-care development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these self-care choices reveal about this child's emotional needs and coping style, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and strengthen these self-care habits at home. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 emotional or wellbeing strengths these choices suggest the child has or is developing.`,
   },
   critical_thinking: {
-    question: 'Which challenges do you enjoy most?',
+    question: 'Which activity does [child name] enjoy the most?',
     subtitle: 'Choose up to 3 that sound fun!',
     maxSelections: 3,
     options: [
@@ -187,7 +201,7 @@ const areaGames: AreaGamesMap = {
       )}. These selections will be used to generate a personalised critical thinking development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these choices reveal about this child's thinking style and cognitive preferences, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate activities to sharpen these critical thinking skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 cognitive strengths these choices suggest the child has or is developing.`,
   },
   creativity: {
-    question: 'Which creative activities do you love?',
+    question: 'Which creative activities does [child name] love?',
     subtitle: 'Pick up to 3 that spark your imagination!',
     maxSelections: 3,
     options: [
@@ -236,7 +250,7 @@ const areaGames: AreaGamesMap = {
       )}. These selections will be used to generate a personalised creativity development plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these creative choices reveal about this child's expressive personality and creative instincts, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can encourage and develop these creative skills. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 creative strengths these choices suggest the child has or is developing.`,
   },
   physical_wellness: {
-    question: 'Which physical activities do you enjoy?',
+    question: 'Which physical activities does [child name] enjoy?',
     subtitle: 'Choose up to 3 that get you moving!',
     maxSelections: 3,
     options: [
@@ -285,7 +299,7 @@ const areaGames: AreaGamesMap = {
       )}. These selections will be used to generate a personalised physical wellness plan for the parent.\n\nReturn ONLY a valid JSON object with exactly these three fields (use these exact key names):\n- "summary": one sentence describing what these physical choices reveal about this child's energy, movement preferences, and physical personality, considering their age and gender.\n- "suggested_activities": an array of 3–4 specific, age-appropriate ways the parent can support and grow these physical habits. IMPORTANT: the key must be "suggested_activities" exactly.\n- "strengths": an array of 2–3 physical strengths these choices suggest the child has or is developing.`,
   },
   social_skills: {
-    question: 'Which situations feel most natural to you?',
+    question: 'Which situations feel most natural to [child name]?',
     subtitle: 'Choose up to 3 that sound like you!',
     maxSelections: 3,
     options: [
@@ -366,6 +380,8 @@ interface ChildActivityGameProps {
     schema: Record<string, unknown>,
   ) => Promise<void>;
   isExternallyLoading?: boolean;
+  /** Optional extra content rendered below the submit button (e.g. a Back button). */
+  footerExtra?: React.ReactNode;
 }
 
 const ACTIVITY_SCHEMA = {
@@ -398,6 +414,7 @@ export default function ChildActivityGame({
   onComplete,
   onSubmitIds,
   isExternallyLoading = false,
+  footerExtra,
 }: ChildActivityGameProps) {
   const { colors, isDark } = useTheme();
   const game = areaGames[areaId] ?? areaGames.life_ambition!;
@@ -529,115 +546,193 @@ export default function ChildActivityGame({
   };
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="pb-6">
-      <View className="space-y-6">
-        <View className="items-center">
+    <FlatList
+      className="flex-1"
+      contentContainerClassName="px-4 py-8"
+      showsVerticalScrollIndicator={false}
+      data={game.options}
+      keyExtractor={item => item.id}
+      numColumns={2}
+      columnWrapperClassName="gap-4 mb-4"
+      ListHeaderComponent={
+        <View className="mb-6 items-center">
           <Text
             className="mb-2 text-center text-2xl font-bold"
             style={{ color: colors.text }}
           >
-            {game.question}
+            {game.question.replace(
+              '[child name]',
+              childName?.trim() || 'your child',
+            )}
           </Text>
-          <Text className="text-center" style={{ color: colors.iconColor }}>
-            {game.subtitle}
-          </Text>
+          <Text style={{ color: colors.iconColor }}>{game.subtitle}</Text>
           <Text className="mt-2 text-sm" style={{ color: colors.success }}>
             Selected: {ids.length}/{game.maxSelections}
           </Text>
         </View>
-
-        {/* Tap-to-select grid (replaces drag-drop) */}
-        <View className="flex-row flex-wrap gap-4 justify-between">
-          {game.options.map((option, index) => {
-            const isSelected = ids.includes(option.id);
-            const hasFailed = failedImages.has(option.id);
-            return (
-              <Pressable
-                key={option.id}
-                onPress={() => toggleSelection(option.id)}
-                className="overflow-hidden rounded-2xl border-4"
-                style={{
-                  width: '47%',
-                  borderColor: isSelected ? colors.success : colors.border,
-                }}
-                android_ripple={{ color: colors.ripple }}
-              >
-                {/* Image or fallback emoji tile */}
-                {!hasFailed ? (
-                  <Image
-                    source={{
-                      uri: `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
-                        option.image,
-                        isDark,
-                      )}`,
-                    }}
-                    className="w-full"
-                    style={{ aspectRatio: 4 / 3 }}
-                    resizeMode="cover"
-                    onError={() => {
-                      _failedAssetPaths.add(option.image);
-                      setFailedImages(prev => new Set([...prev, option.id]));
-                    }}
-                  />
-                ) : (
-                  <View
-                    className="w-full items-center justify-center"
-                    style={{
-                      aspectRatio: 4 / 3,
-                      backgroundColor:
-                        TILE_BG_HEX_COLORS[index % TILE_BG_HEX_COLORS.length],
-                    }}
-                  >
-                    <Text style={{ fontSize: 48 }}>{option.emoji}</Text>
-                  </View>
-                )}
-
-                {/* Label bar — bottom only, preserves image visibility */}
-                <View
-                  className="absolute bottom-0 left-0 right-0 flex-row items-center justify-between px-3 py-2"
-                  style={{ backgroundColor: colors.imageScrimColor }}
-                >
-                  <Text
-                    className="text-sm font-semibold flex-1 mr-1"
-                    style={{ color: colors.primaryForeground }}
-                    numberOfLines={1}
-                  >
-                    {option.label}
-                  </Text>
-                  {isSelected ? (
-                    <CheckCircle
-                      size={22}
-                      color={colors.primaryForeground}
-                      fill={colors.success}
-                    />
-                  ) : (
-                    <Circle size={22} color={colors.primaryForeground + 'B3'} />
-                  )}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <Button
-          size="xl"
-          onPress={() => {
-            void handleSubmit();
-          }}
-          disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
-          className="w-full rounded-2xl items-center justify-center"
-          style={{ backgroundColor: colors.success }}
-        >
-          <Text
-            className="font-semibold"
-            style={{ color: colors.primaryForeground }}
+      }
+      renderItem={({ item: option, index }) => {
+        const isSelected = ids.includes(option.id);
+        const hasFailed = failedImages.has(option.id);
+        const tileColor =
+          TILE_COLORS[index % TILE_COLORS.length] ?? TILE_COLORS[0]!;
+        const { from: tFrom, to: tTo } = tileGrad(tileColor);
+        const imageUrl = !hasFailed
+          ? `${env.CDN_BASE_URL}/app-assets/${themedImagePath(
+              option.image,
+              isDark,
+            )}`
+          : undefined;
+        return (
+          <Pressable
+            onPress={() => toggleSelection(option.id)}
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              borderRadius: 16,
+              borderWidth: 4,
+              borderColor: isSelected ? colors.success : colors.border,
+            }}
+            android_ripple={{ color: colors.ripple }}
           >
-            {isSubmitting || isExternallyLoading
-              ? 'Generating Recommendations...'
-              : 'Submit My Choices'}
-          </Text>
-        </Button>
-      </View>
-    </ScrollView>
+            <GradientTile
+              from={tFrom}
+              to={tTo}
+              imageUrl={imageUrl}
+              emoji={option.emoji}
+              onImageError={() => {
+                _failedAssetPaths.add(option.image);
+                setFailedImages(prev => new Set([...prev, option.id]));
+              }}
+            />
+            <View
+              className="flex-row items-center justify-between px-3 py-2"
+              style={{ backgroundColor: colors.imageScrimColor }}
+            >
+              <Text
+                className="text-sm font-semibold flex-1 mr-1"
+                style={{ color: colors.primaryForeground }}
+                numberOfLines={1}
+              >
+                {option.label}
+              </Text>
+              {isSelected ? (
+                <CheckCircle
+                  size={22}
+                  color={colors.primaryForeground}
+                  fill={colors.success}
+                />
+              ) : (
+                <Circle size={22} color={colors.textMuted} />
+              )}
+            </View>
+          </Pressable>
+        );
+      }}
+      ListFooterComponent={
+        <View className="mt-6 gap-3">
+          <GradientButton
+            from={colors.primary}
+            to={colors.primaryDark}
+            height={48}
+            borderRadius={16}
+            disabled={ids.length === 0 || isSubmitting || isExternallyLoading}
+            loading={isSubmitting || isExternallyLoading}
+            onPress={() => {
+              void handleSubmit();
+            }}
+          >
+            <Text
+              style={{ fontWeight: '600', color: colors.primaryForeground }}
+            >
+              {isSubmitting || isExternallyLoading
+                ? 'Generating Recommendations...'
+                : 'Submit My Choices'}
+            </Text>
+          </GradientButton>
+          {footerExtra}
+        </View>
+      }
+    />
+  );
+}
+
+// ── GradientTile ──────────────────────────────────────────────────────────────
+// Aspect-ratio 4:3 tile that renders an S3 image when available.
+// Falls back to an SVG diagonal gradient + large emoji if the image is absent
+// or fails to load — mirrors web ChildActivityGame.tsx's _failedAssetPaths pattern.
+
+export function GradientTile({
+  from,
+  to,
+  imageUrl,
+  emoji,
+  onImageError,
+}: {
+  from: string;
+  to: string;
+  imageUrl?: string;
+  emoji: string;
+  onImageError?: () => void;
+}) {
+  const [dims, setDims] = useState({ w: 0, h: 0 });
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const showImage = !!imageUrl && !imgFailed && dims.w > 0 && dims.h > 0;
+
+  return (
+    <View
+      style={{
+        aspectRatio: 4 / 3,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+      onLayout={e =>
+        setDims({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
+      }
+    >
+      {/* Gradient background — always rendered; visible when no image or image fails */}
+      {dims.w > 0 && dims.h > 0 && (
+        <Svg
+          width={dims.w}
+          height={dims.h}
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        >
+          <Defs>
+            <SvgLinearGradient id="tileGrad" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor={from} />
+              <Stop offset="100%" stopColor={to} />
+            </SvgLinearGradient>
+          </Defs>
+          <Rect width={dims.w} height={dims.h} fill="url(#tileGrad)" />
+        </Svg>
+      )}
+
+      {/* S3 image — covers gradient when loaded successfully */}
+      {imageUrl && dims.w > 0 && dims.h > 0 && !imgFailed && (
+        <Image
+          source={{ uri: imageUrl }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: dims.w,
+            height: dims.h,
+          }}
+          resizeMode="cover"
+          onError={() => {
+            setImgFailed(true);
+            onImageError?.();
+          }}
+        />
+      )}
+
+      {/* Emoji fallback — shown when no image or image fails */}
+      {!showImage && <Text style={{ fontSize: 40 }}>{emoji}</Text>}
+    </View>
   );
 }

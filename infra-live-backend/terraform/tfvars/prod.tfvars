@@ -16,13 +16,13 @@ private_subnet_3_cidr = "10.22.6.0/24"
 nat_gateway_count     = 3
 
 # ElastiCache
-elasticache_node_type     = "cache.t4g.medium"
-elasticache_replica_count = 1
+elasticache_node_type     = "cache.r6g.4xlarge"
+elasticache_replica_count = 2
 elasticache_multi_az      = true
 
 # ECS
-task_cpu      = 1024
-task_memory   = 2048
+task_cpu      = 4096
+task_memory   = 8192
 desired_count = 2
 
 # Application
@@ -34,17 +34,17 @@ default_region      = "us"
 enable_execute_command = false
 
 # Worker ECS
-worker_task_cpu              = 1024
-worker_task_memory           = 2048
+worker_task_cpu              = 4096
+worker_task_memory           = 8192
 worker_desired_count         = 2
 worker_concurrency           = 5
 worker_poll_interval_seconds = 2
 
 # Autoscaling
-api_min_capacity    = 5
-api_max_capacity    = 50
-worker_min_capacity = 2
-worker_max_capacity = 10
+api_min_capacity    = 15
+api_max_capacity    = 200
+worker_min_capacity = 5
+worker_max_capacity = 50
 
 # Observability — prod: 90-day retention (default), all alarms, dashboard enabled, email alerts on
 # log_retention_days = 90  (matches variable default — no override needed)

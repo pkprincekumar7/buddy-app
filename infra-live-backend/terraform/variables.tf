@@ -88,12 +88,12 @@ variable "redis_auth_token" {
 }
 
 variable "elasticache_replica_count" {
-  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica). dev/sbx/stg: 0, prod: 1."
+  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica; 2 = primary + 2 replicas). dev/sbx/stg: 0, prod: 2."
   type        = number
 
   validation {
-    condition     = contains([0, 1], var.elasticache_replica_count)
-    error_message = "elasticache_replica_count must be 0 or 1."
+    condition     = contains([0, 1, 2], var.elasticache_replica_count)
+    error_message = "elasticache_replica_count must be 0, 1, or 2."
   }
 }
 

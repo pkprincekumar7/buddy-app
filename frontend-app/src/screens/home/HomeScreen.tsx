@@ -168,10 +168,6 @@ export default function HomeScreen() {
             backgroundColor: colors.primary + '1A',
           }}
         >
-          <View
-            className="h-2 w-2 rounded-full"
-            style={{ backgroundColor: colors.primaryLight }}
-          />
           <Text
             className="text-xs font-medium"
             style={{ color: colors.primaryLight }}
