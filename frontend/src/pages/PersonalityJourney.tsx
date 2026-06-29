@@ -231,7 +231,7 @@ export default function PersonalityJourney() {
                   <Sparkles className="h-12 w-12 text-white" />
                 </div>
                 <h2 className="mb-2 text-2xl font-bold text-foreground">
-                  Your Personalized Journey
+                  {childName ? `${childName}'s Personalized Journey` : 'Personalized Journey'}
                 </h2>
                 <p className="text-muted-foreground">
                   Here's what we've discovered about {childName}

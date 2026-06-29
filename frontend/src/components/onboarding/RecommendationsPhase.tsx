@@ -2417,15 +2417,17 @@ export default function RecommendationsPhase({
               </h3>
 
               {!aiRecommendations && !loadingRecommendations && (
-                <Button
-                  onClick={() => {
-                    void generateAiRecommendations(childGameResults);
-                  }}
-                  className="h-11 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base"
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Recommendations
-                </Button>
+                <div className="flex justify-center">
+                  <Button
+                    onClick={() => {
+                      void generateAiRecommendations(childGameResults);
+                    }}
+                    className="h-11 rounded-2xl bg-gradient-to-r from-success to-primary-dark px-8 text-base"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate Recommendations
+                  </Button>
+                </div>
               )}
 
               {loadingRecommendations && (

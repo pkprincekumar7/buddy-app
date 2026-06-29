@@ -73,9 +73,9 @@ function ConfirmModal({
                 className="text-center text-sm leading-relaxed"
                 style={{ color: colors.textMuted }}
               >
-                This will permanently delete all progress for this child,
-                including personality results, growth area answers, and goal
-                plans.
+                All progress for this child will be permanently deleted —
+                personality results, growth area answers, and goal plans. You
+                will need to restart the onboarding from the beginning.
               </Text>
               <Text
                 className="text-xs font-medium"
@@ -87,14 +87,6 @@ function ConfirmModal({
 
             {/* Actions */}
             <View className="flex-row gap-3">
-              <Button
-                variant="outline"
-                onPress={onCancel}
-                disabled={isStartingOver}
-                className="h-11 flex-1 rounded-xl"
-              >
-                Cancel
-              </Button>
               <Button
                 onPress={onConfirm}
                 disabled={isStartingOver}
@@ -122,6 +114,14 @@ function ConfirmModal({
                     Yes, delete
                   </Text>
                 )}
+              </Button>
+              <Button
+                variant="outline"
+                onPress={onCancel}
+                disabled={isStartingOver}
+                className="h-11 flex-1 rounded-xl"
+              >
+                Cancel
               </Button>
             </View>
           </Pressable>

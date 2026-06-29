@@ -402,15 +402,17 @@ export default function GrowthAreasActivityGreatInsights() {
 
           {/* Button state */}
           {status === 'idle' && !isGenerating && (
-            <Button
-              onClick={() => {
-                void generateRecommendations();
-              }}
-              className="h-11 w-full rounded-2xl bg-gradient-to-r from-success to-primary-dark text-base text-white"
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              Generate Recommendations
-            </Button>
+            <div className="flex justify-center">
+              <Button
+                onClick={() => {
+                  void generateRecommendations();
+                }}
+                className="h-11 rounded-2xl bg-gradient-to-r from-success to-primary-dark px-8 text-base text-white"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Generate Recommendations
+              </Button>
+            </div>
           )}
 
           {/* Generating spinner */}
