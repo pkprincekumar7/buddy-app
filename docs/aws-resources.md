@@ -85,7 +85,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 |----------|----------|:---:|:---:|:---:|:----:|
 | Subnet Group | `aws_elasticache_subnet_group` | ✅ | ✅ | ✅ | ✅ |
 | Parameter Group | `aws_elasticache_parameter_group` | ✅ | ✅ | ✅ | ✅ |
-| Replication Group | `aws_elasticache_replication_group` | ✅ ×0 replicas | ✅ ×0 replicas | ✅ ×0 replicas | ✅ ×1 replica |
+| Replication Group (cache.r6g.4xlarge) | `aws_elasticache_replication_group` | ✅ ×0 replicas | ✅ ×0 replicas | ✅ ×0 replicas | ✅ ×2 replicas |
 | ElastiCache Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
 | ElastiCache SG Ingress: from ECS Tasks | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
 
