@@ -40,9 +40,32 @@ jobs:
     secrets: inherit
 
   stop:
-    name: "Stop — destroy"
+    name: "Stop — destroy (attempt 1)"
     # Runs only on the 17:30 UTC trigger and when scheduling is enabled.
     if: github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    uses: ./.github/workflows/terraform-live-all.yml
+    with:
+      action:      destroy
+      environment: dev
+      aws_region:  ap-south-1
+      deploy:      false
+    secrets: inherit
+
+  stop_wait:
+    name: "Stop — wait 10 min for Lambda@Edge replica cleanup"
+    needs: stop
+    # always() is required — without it GitHub skips this job when `stop` fails.
+    # The retry only proceeds if attempt 1 actually failed.
+    if: always() && github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true' && needs.stop.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait 10 minutes
+        run: sleep 600
+
+  stop_retry:
+    name: "Stop — destroy (attempt 2)"
+    needs: stop_wait
+    if: always() && github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true' && needs.stop_wait.result == 'success'
     uses: ./.github/workflows/terraform-live-all.yml
     with:
       action:      destroy
