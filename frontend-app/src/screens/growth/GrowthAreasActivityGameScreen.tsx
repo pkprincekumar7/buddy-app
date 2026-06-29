@@ -5,11 +5,7 @@ import React, {
   useMemo,
   useRef,
 } from 'react';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -26,10 +22,7 @@ import ChildActivityGame, {
   normalizeChildGameRecommendations,
 } from '@/components/onboarding/ChildActivityGame';
 import { useJob } from '@/hooks/useJob';
-import {
-  GradientIconBox,
-  areaGrad,
-} from '@/components/shared/GradientView';
+import { GradientIconBox, areaGrad } from '@/components/shared/GradientView';
 import type { GrowthStackParamList } from '@/navigation';
 
 type GrowthNavProp = StackNavigationProp<
@@ -303,7 +296,7 @@ export default function GrowthAreasActivityGameScreen() {
         childAge={childAge}
         childGender={childGender}
         selectedIds={selectedIds}
-        onSelectedIdsChange={(newIds) => {
+        onSelectedIdsChange={newIds => {
           setSelectedIds(newIds);
           void handleSelectedIdsChange(newIds);
         }}
