@@ -61,7 +61,7 @@ resource "aws_iam_role_policy_attachment" "jwt_validator_lambda_basic" {
 # The wait only applies during destroy — it is a no-op on apply.
 # ---------------------------------------------------------------------------
 resource "time_sleep" "wait_for_lambda_edge_replica_cleanup" {
-  depends_on       = [aws_cloudfront_distribution.frontend]
+  depends_on       = [aws_lambda_function.jwt_validator]
   destroy_duration = "600s"
 }
 
@@ -75,6 +75,4 @@ resource "aws_lambda_function" "jwt_validator" {
   source_code_hash = data.archive_file.jwt_validator_lambda.output_base64sha256
   memory_size      = 128
   timeout          = 5
-
-  depends_on = [time_sleep.wait_for_lambda_edge_replica_cleanup]
 }
