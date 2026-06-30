@@ -2,12 +2,13 @@
 
 ## GitHub Actions workflows
 
-Twelve workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
+Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Deployment and infrastructure workflows authenticate to AWS via **OIDC** — no long-lived access keys are stored anywhere in GitHub.
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `check.yml` | Push / PR to `main`; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
-| `terraform-live-all.yml` | Manual | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
+| `terraform-live-all.yml` | Manual / called | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
+| `schedule-live-full-stack.yml` | Scheduled (cron) / Manual | Starts the full stack daily at 04:45 PM IST (apply + deploy) and destroys it at 11:00 PM IST; retries destroy once on failure; toggled by repo variable `SCHEDULED_INFRA_ENABLED_DEV` |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution + ACM cert (always `us-east-1`) |
