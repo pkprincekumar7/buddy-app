@@ -54,8 +54,9 @@ jobs:
     # Runs only on the 17:30 UTC trigger and when scheduling is enabled.
     # Terraform waits 10 min internally (time_sleep) after CloudFront is destroyed
     # before deleting Lambda@Edge — covers replica cleanup in most cases.
+    # Note: continue-on-error is NOT supported on reusable workflow call jobs.
+    # stop_retry uses if: always() && needs.stop.result == 'failure' instead.
     if: (github.event.schedule == '30 17 * * *' || inputs.action == 'stop') && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
-    continue-on-error: true
     uses: ./.github/workflows/terraform-live-all.yml
     with:
       action:      destroy
