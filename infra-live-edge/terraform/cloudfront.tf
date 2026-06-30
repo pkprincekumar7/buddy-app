@@ -150,4 +150,10 @@ resource "aws_cloudfront_distribution" "frontend" {
   tags = {
     Name = "${var.app_name}-frontend-cf-${var.environment}"
   }
+
+  # Ensures CloudFront is destroyed before time_sleep fires, which in turn waits
+  # 10 min before Lambda@Edge is deleted — gives AWS time to remove edge replicas.
+  # Apply order: Lambda → time_sleep (no-op) → CloudFront
+  # Destroy order: CloudFront → time_sleep (600s wait) → Lambda
+  depends_on = [time_sleep.wait_for_lambda_edge_replica_cleanup]
 }
