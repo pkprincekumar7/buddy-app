@@ -56,6 +56,21 @@ on:
         required: false
         default: "true"
         type: boolean
+  workflow_call:
+    inputs:
+      action:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      deploy:
+        required: false
+        type: boolean
+        default: true
 
 # OIDC token + repo read required by every called workflow.
 permissions:

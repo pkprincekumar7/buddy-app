@@ -17,6 +17,16 @@ on:
     - cron: "15 11 * * *"
     # 11:00 PM IST = 17:30 UTC — destroy infra
     - cron: "30 17 * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run manually (start = apply+deploy, stop = destroy)"
+        required: true
+        default: "start"
+        type: choice
+        options:
+          - start
+          - stop
 
 # OIDC token + repo read required by called workflows.
 permissions:
@@ -30,7 +40,7 @@ jobs:
     # Runs only on the 11:15 UTC trigger and when scheduling is enabled.
     # Toggle: set repo variable SCHEDULED_INFRA_ENABLED_DEV to 'true' or 'false'
     # in Settings → Secrets and variables → Actions → Variables.
-    if: github.event.schedule == '15 11 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    if: (github.event.schedule == '15 11 * * *' || inputs.action == 'start') && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
     uses: ./.github/workflows/terraform-live-all.yml
     with:
       action:      apply
@@ -42,7 +52,10 @@ jobs:
   stop:
     name: "Stop — destroy (attempt 1)"
     # Runs only on the 17:30 UTC trigger and when scheduling is enabled.
-    if: github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    # Terraform waits 10 min internally (time_sleep) after CloudFront is destroyed
+    # before deleting Lambda@Edge — covers replica cleanup in most cases.
+    if: (github.event.schedule == '30 17 * * *' || inputs.action == 'stop') && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true'
+    continue-on-error: true
     uses: ./.github/workflows/terraform-live-all.yml
     with:
       action:      destroy
@@ -51,21 +64,12 @@ jobs:
       deploy:      false
     secrets: inherit
 
-  stop_wait:
-    name: "Stop — wait 10 min for Lambda@Edge replica cleanup"
-    needs: stop
-    # always() is required — without it GitHub skips this job when `stop` fails.
-    # The retry only proceeds if attempt 1 actually failed.
-    if: always() && github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true' && needs.stop.result == 'failure'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait 10 minutes
-        run: sleep 600
-
   stop_retry:
     name: "Stop — destroy (attempt 2)"
-    needs: stop_wait
-    if: always() && github.event.schedule == '30 17 * * *' && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true' && needs.stop_wait.result == 'success'
+    needs: stop
+    # No extra wait — CloudFront was destroyed in attempt 1 and Terraform already
+    # waited 10 min, so replicas will have had 10+ min to clear by the time this runs.
+    if: always() && (github.event.schedule == '30 17 * * *' || inputs.action == 'stop') && vars.SCHEDULED_INFRA_ENABLED_DEV == 'true' && needs.stop.result == 'failure'
     uses: ./.github/workflows/terraform-live-all.yml
     with:
       action:      destroy
