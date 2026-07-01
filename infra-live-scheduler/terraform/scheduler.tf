@@ -28,6 +28,21 @@ resource "aws_cloudwatch_event_connection" "github" {
       key   = "Authorization"
       value = "Bearer ${var.github_pat}"
     }
+
+    invocation_http_parameters {
+      header {
+        key   = "Accept"
+        value = "application/vnd.github+json"
+      }
+      header {
+        key   = "Content-Type"
+        value = "application/json"
+      }
+      header {
+        key   = "X-GitHub-Api-Version"
+        value = "2022-11-28"
+      }
+    }
   }
 }
 
@@ -82,17 +97,6 @@ resource "aws_scheduler_schedule_group" "main" {
 }
 
 # ---------------------------------------------------------------------------
-# HTTP headers added to every GitHub API request
-# ---------------------------------------------------------------------------
-locals {
-  github_headers = {
-    "Accept"               = "application/vnd.github+json"
-    "Content-Type"         = "application/json"
-    "X-GitHub-Api-Version" = "2022-11-28"
-  }
-}
-
-# ---------------------------------------------------------------------------
 # Start schedules — full apply + deploy (02:00 PM IST daily by default)
 # One schedule per region in var.target_aws_regions.
 # ---------------------------------------------------------------------------
@@ -122,10 +126,6 @@ resource "aws_scheduler_schedule" "start" {
         deploy      = "true"
       }
     })
-
-    http_parameters {
-      header_parameters = local.github_headers
-    }
   }
 }
 
@@ -159,9 +159,5 @@ resource "aws_scheduler_schedule" "stop" {
         deploy      = "false"
       }
     })
-
-    http_parameters {
-      header_parameters = local.github_headers
-    }
   }
 }
