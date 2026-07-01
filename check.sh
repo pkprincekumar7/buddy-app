@@ -225,6 +225,7 @@ run "checkov (Terraform IaC)" \
       -d '$ROOT/infra-live-backend/terraform' \
       -d '$ROOT/infra-live-edge/terraform' \
       -d '$ROOT/infra-live-frontend/terraform' \
+      -d '$ROOT/infra-live-scheduler/terraform' \
       --framework terraform --quiet --compact --skip-download"
 
 if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
@@ -258,6 +259,8 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' config '$ROOT/infra-live-edge/terraform' --exit-code 1 --severity HIGH,CRITICAL"
   run "trivy config (infra-live-frontend)" \
       bash -c "'$TRIVY' config '$ROOT/infra-live-frontend/terraform' --exit-code 1 --severity HIGH,CRITICAL"
+  run "trivy config (infra-live-scheduler)" \
+      bash -c "'$TRIVY' config '$ROOT/infra-live-scheduler/terraform' --exit-code 1 --severity HIGH,CRITICAL"
 
   if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
     DOCKLE=""; _SCAN_IMAGE="buddy-backend:check-scan"; _IMAGE_OK=0
@@ -346,6 +349,8 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-edge/terraform'"
   run "tflint (infra-live-frontend)" \
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-frontend/terraform'"
+  run "tflint (infra-live-scheduler)" \
+      bash -c "'$TFLINT' --chdir='$ROOT/infra-live-scheduler/terraform'"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────
