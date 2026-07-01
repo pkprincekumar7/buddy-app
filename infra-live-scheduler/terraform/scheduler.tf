@@ -84,7 +84,7 @@ resource "aws_iam_role_policy" "scheduler_invoke" {
     Statement = [{
       Effect   = "Allow"
       Action   = "events:InvokeApiDestination"
-      Resource = aws_cloudwatch_event_api_destination.github_dispatch.arn
+      Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:api-destination/${aws_cloudwatch_event_api_destination.github_dispatch.name}"
     }]
   })
 }
@@ -114,7 +114,7 @@ resource "aws_scheduler_schedule" "start" {
   schedule_expression_timezone = var.schedule_timezone
 
   target {
-    arn      = aws_cloudwatch_event_api_destination.github_dispatch.arn
+    arn      = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:api-destination/${aws_cloudwatch_event_api_destination.github_dispatch.name}"
     role_arn = aws_iam_role.scheduler.arn
 
     input = jsonencode({
@@ -147,7 +147,7 @@ resource "aws_scheduler_schedule" "stop" {
   schedule_expression_timezone = var.schedule_timezone
 
   target {
-    arn      = aws_cloudwatch_event_api_destination.github_dispatch.arn
+    arn      = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:api-destination/${aws_cloudwatch_event_api_destination.github_dispatch.name}"
     role_arn = aws_iam_role.scheduler.arn
 
     input = jsonencode({
