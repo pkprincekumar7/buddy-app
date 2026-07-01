@@ -3,9 +3,14 @@ output "github_pat_secret_arn" {
   value       = aws_secretsmanager_secret.github_pat.arn
 }
 
-output "api_destination_arn" {
-  description = "ARN of the EventBridge API destination pointing to GitHub"
-  value       = aws_cloudwatch_event_api_destination.github_dispatch.arn
+output "lambda_function_arn" {
+  description = "ARN of the Lambda dispatcher function"
+  value       = aws_lambda_function.dispatcher.arn
+}
+
+output "lambda_function_name" {
+  description = "Name of the Lambda dispatcher function"
+  value       = aws_lambda_function.dispatcher.function_name
 }
 
 output "schedule_group_name" {
