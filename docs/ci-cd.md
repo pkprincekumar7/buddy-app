@@ -8,7 +8,7 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 |---|---|---|
 | `check.yml` | Push / PR to `main`; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
 | `terraform-live-all.yml` | Manual / called | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
-| `schedule-live-full-stack.yml` | Scheduled (cron) / Manual | Starts the full stack daily at 04:45 PM IST (apply + deploy) and destroys it at 11:00 PM IST; retries destroy once on failure; toggled by repo variable `SCHEDULED_INFRA_ENABLED_DEV` |
+| `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg/prod; `schedule_enabled` input enables or disables the schedules; EventBridge calls `terraform-live-all.yml` via `workflow_dispatch` directly at exact IST times; GitHub PAT sourced from `GIT_ACTIONS_PAT` environment secret |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution + ACM cert (always `us-east-1`) |
@@ -56,10 +56,11 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `terraform fmt -check -recursive` | Terraform 1.13.0 | Formatting across all three infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`) — fails if any `.tf` file is unformatted |
+| `terraform fmt -check -recursive` | Terraform 1.13.0 | Formatting across all four infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`) — fails if any `.tf` file is unformatted |
 | `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
 | `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
 | `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
+| `tflint (infra-live-scheduler)` | tflint 0.62.1 | Same for scheduler infra (EventBridge Scheduler) |
 
 ### `backend-test` (Python 3.12, needs: backend-lint)
 
@@ -102,6 +103,7 @@ All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so g
 | Trivy config (infra-live-backend) | trivy (CLI) | `infra-live-backend/terraform/` — IaC security misconfigurations using Trivy's built-in Terraform rule set (tfsec successor); complements Checkov with a second rule database; `trivy config` accepts one directory at a time |
 | Trivy config (infra-live-edge) | trivy (CLI) | `infra-live-edge/terraform/` — same |
 | Trivy config (infra-live-frontend) | trivy (CLI) | `infra-live-frontend/terraform/` — same |
+| Trivy config (infra-live-scheduler) | trivy (CLI) | `infra-live-scheduler/terraform/` — same |
 | Docker build (image scan) | docker | Builds `buddy-backend` image once; shared by the three image-level checks below |
 | Trivy (backend image) | trivy-action 0.36.0 | Built `buddy-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
 | Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `buddy-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
@@ -176,6 +178,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN for `us-east-1` (covers CloudFront) |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
 | `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
+| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by EventBridge Scheduler to trigger `workflow_dispatch` events; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
 
 ### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
 

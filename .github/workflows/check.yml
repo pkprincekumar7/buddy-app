@@ -216,6 +216,9 @@ jobs:
       - name: TFLint (infra-live-frontend)
         run: tflint --chdir=infra-live-frontend/terraform
 
+      - name: TFLint (infra-live-scheduler)
+        run: tflint --chdir=infra-live-scheduler/terraform
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -297,6 +300,7 @@ jobs:
             -d infra-live-backend/terraform \
             -d infra-live-edge/terraform \
             -d infra-live-frontend/terraform \
+            -d infra-live-scheduler/terraform \
             --framework terraform --quiet --compact --skip-download
 
       # ── Node.js security tools ───────────────────────────────────────────────
@@ -454,6 +458,11 @@ jobs:
         continue-on-error: true
         run: trivy config infra-live-frontend/terraform --exit-code 1 --severity HIGH,CRITICAL
 
+      - name: Trivy config (infra-live-scheduler)
+        id: trivy_config_scheduler
+        continue-on-error: true
+        run: trivy config infra-live-scheduler/terraform --exit-code 1 --severity HIGH,CRITICAL
+
       # ── Docker image scan (OS-level CVEs inside the built image) ────────────
       - name: Build backend Docker image
         run: docker build -t buddy-backend:scan -f backend/Dockerfile .
@@ -556,10 +565,11 @@ jobs:
           [[ "${{ steps.trivy_backend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-backend-license)
           [[ "${{ steps.trivy_frontend_license.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-license)
           [[ "${{ steps.trivy_frontend_app_license.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-frontend-app-license)
-          [[ "${{ steps.trivy_config_backend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
-          [[ "${{ steps.trivy_config_edge.outcome }}"     == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
-          [[ "${{ steps.trivy_config_frontend.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
-          [[ "${{ steps.trivy_image.outcome }}"           == "failure" ]] && FAILED_CHECKS+=(trivy-image)
+          [[ "${{ steps.trivy_config_backend.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-backend)
+          [[ "${{ steps.trivy_config_edge.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
+          [[ "${{ steps.trivy_config_frontend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
+          [[ "${{ steps.trivy_config_scheduler.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
+          [[ "${{ steps.trivy_image.outcome }}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
           [[ "${{ steps.dockle.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed security checks: ${FAILED_CHECKS[*]}"

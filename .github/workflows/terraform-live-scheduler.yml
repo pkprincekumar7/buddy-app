@@ -1,0 +1,184 @@
+# ---------------------------------------------------------------------------
+# Terraform — EventBridge Scheduler (per-environment)
+#
+# Manages the AWS EventBridge Scheduler resources that trigger GitHub Actions
+# workflows at exact IST times (no GitHub Actions queue delay).
+#
+# This workflow is per-environment — select the target environment via the
+# `environment` input. Each environment gets its own Terraform state and its
+# own EventBridge resources (connection, destination, schedules).
+#
+# The GitHub PAT is read from the GIT_ACTIONS_PAT environment secret and
+# stored in Secrets Manager on every apply. GitHub environment secret is the
+# source of truth — no manual AWS CLI updates needed.
+#
+# Required PAT permissions:
+#   Classic token : repo + workflow scopes
+#   Fine-grained  : Actions — Read and Write
+# ---------------------------------------------------------------------------
+
+name: Terraform Live — Scheduler
+run-name: "Terraform Scheduler (${{ inputs.environment }}, ${{ inputs.action }}, schedule=${{ inputs.schedule_enabled }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - sbx
+          - stg
+          - prod
+      action:
+        description: "Terraform action"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - plan-destroy
+          - destroy
+      schedule_enabled:
+        description: "Enable or disable the EventBridge schedules for this environment"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: terraform-live-scheduler-${{ inputs.environment }}-buddy360
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_VERSION: "1.13.0"
+  TF_VAR_aws_region: "us-east-1"
+
+jobs:
+  terraform:
+    name: "Terraform Scheduler — ${{ inputs.environment }} / ${{ inputs.action }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        working-directory: infra-live-scheduler/terraform
+    env:
+      TF_IN_AUTOMATION: "1"
+      TF_VAR_app_name:        ${{ secrets.APP_NAME }}
+      TF_VAR_environment:     ${{ inputs.environment }}
+      TF_VAR_github_pat:      ${{ secrets.GIT_ACTIONS_PAT }}
+      TF_VAR_schedule_enabled: ${{ inputs.schedule_enabled }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Validate required secrets
+        env:
+          ROLE_ARN:        ${{ secrets.ROLE_ARN }}
+          APP_NAME:        ${{ secrets.APP_NAME }}
+          STATE_BUCKET:    ${{ secrets.STATE_BUCKET }}
+          GIT_ACTIONS_PAT: ${{ secrets.GIT_ACTIONS_PAT }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN"        ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME"        ]] && missing+=("APP_NAME")
+          [[ -z "$STATE_BUCKET"    ]] && missing+=("STATE_BUCKET")
+          [[ -z "$GIT_ACTIONS_PAT" ]] && missing+=("GIT_ACTIONS_PAT")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required secrets are not set: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: terraform-live-scheduler-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      # Derive GitHub repo owner and name from runtime context — no hardcoding.
+      - name: Resolve Terraform variables
+        run: |
+          echo "TF_VAR_github_repo_owner=${{ github.repository_owner }}"     >> "$GITHUB_ENV"
+          echo "TF_VAR_github_repo_name=${{ github.event.repository.name }}" >> "$GITHUB_ENV"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Show plan summary
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        run: |
+          {
+            echo "### Terraform Plan — scheduler (${{ inputs.environment }})"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artefact
+        if: inputs.action == 'plan' || inputs.action == 'apply'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tfplan-scheduler-${{ inputs.environment }}
+          path: infra-live-scheduler/terraform/tfplan.bin
+          retention-days: 7
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan.bin
+
+      - name: Terraform Plan (destroy)
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
+
+      - name: Show destroy plan summary
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        run: |
+          {
+            echo "### Terraform Destroy Plan — scheduler (${{ inputs.environment }})"
+            echo '```'
+            terraform show -no-color tfplan.bin
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload destroy plan artefact
+        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tfplan-scheduler-${{ inputs.environment }}-destroy
+          path: infra-live-scheduler/terraform/tfplan.bin
+          retention-days: 7
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        run: terraform apply -auto-approve tfplan.bin
