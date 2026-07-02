@@ -32,5 +32,6 @@ openapi.json
 # Local RSA key pair — never commit private keys
 *.pem
 
-# Terraform-generated Lambda zip — rebuilt on every plan/apply
+# Terraform-generated Lambda zips — rebuilt on every plan/apply
 infra-live-edge/terraform/*.zip
+infra-live-scheduler/lambda/*.zip

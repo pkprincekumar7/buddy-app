@@ -60,6 +60,7 @@ variable "github_pat" {
 variable "schedule_enabled" {
   description = "Enable or disable the EventBridge schedules; controlled via workflow input schedule_enabled, not tfvars."
   type        = bool
+  ephemeral   = true
   default     = false
 }
 
