@@ -132,11 +132,11 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: inputs.action == 'plan'
         run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
 
       - name: Show plan summary
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: inputs.action == 'plan'
         run: |
           {
             echo "### Terraform Plan — scheduler (${{ inputs.environment }})"
@@ -146,7 +146,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload plan artefact
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: inputs.action == 'plan'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-scheduler-${{ inputs.environment }}
@@ -155,14 +155,14 @@ jobs:
 
       - name: Terraform Apply
         if: inputs.action == 'apply'
-        run: terraform apply -auto-approve tfplan.bin
+        run: terraform apply -auto-approve -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
 
       - name: Terraform Plan (destroy)
-        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        if: inputs.action == 'plan-destroy'
         run: terraform plan -destroy -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
 
       - name: Show destroy plan summary
-        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        if: inputs.action == 'plan-destroy'
         run: |
           {
             echo "### Terraform Destroy Plan — scheduler (${{ inputs.environment }})"
@@ -172,7 +172,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload destroy plan artefact
-        if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+        if: inputs.action == 'plan-destroy'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-scheduler-${{ inputs.environment }}-destroy
@@ -181,4 +181,4 @@ jobs:
 
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
-        run: terraform apply -auto-approve tfplan.bin
+        run: terraform apply -destroy -auto-approve -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
