@@ -44,7 +44,9 @@ class LLMInvokeBody(BaseModel):
     description="Send a prompt to the configured LLM provider and return the structured response.",
 )
 @user_limiter.limit("30/minute")
-async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_parent)):
+async def invoke_llm(
+    request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_parent)
+):
     await asyncio.to_thread(_enforce_user_rate_limit, user["_id"])
     try:
         return await llm_service.invoke(

@@ -13,7 +13,11 @@ export default function AdminScreen() {
     <ScrollView
       className="flex-1"
       style={{ backgroundColor: colors.background }}
-      contentContainerStyle={{ flexGrow: 1, padding: 24, justifyContent: 'center' }}
+      contentContainerStyle={{
+        flexGrow: 1,
+        padding: 24,
+        justifyContent: 'center',
+      }}
     >
       {/* Icon + title */}
       <View className="items-center mb-8">

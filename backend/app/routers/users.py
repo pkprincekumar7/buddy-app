@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user, get_current_parent
+from app.deps import get_current_parent, get_current_user
 from app.limiter import user_limiter
 from app.models_api import (
     AppendGrowthAreaRequest,

@@ -51,10 +51,12 @@ async def list_allowed_emails(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     pipeline = [
-        {"$facet": {
-            "items": [{"$skip": skip}, {"$limit": limit}],
-            "total": [{"$count": "n"}],
-        }}
+        {
+            "$facet": {
+                "items": [{"$skip": skip}, {"$limit": limit}],
+                "total": [{"$count": "n"}],
+            }
+        }
     ]
     result = await db[models.ALLOWED_EMAILS].aggregate(pipeline).to_list(1)
     facet = result[0] if result else {"items": [], "total": []}
@@ -102,7 +104,10 @@ async def add_allowed_email(
         await db[models.ALLOWED_EMAILS].insert_one({"_id": body.email, "added_at": now})
     except DuplicateKeyError:
         raise HTTPException(status_code=409, detail="Email already in allowlist") from None
-    log.info("admin.allowed_emails.add email_hash=%s", hashlib.sha256(body.email.encode()).hexdigest()[:16])
+    log.info(
+        "admin.allowed_emails.add email_hash=%s",
+        hashlib.sha256(body.email.encode()).hexdigest()[:16],
+    )
     return {"email": body.email, "added_at": now}
 
 
@@ -122,4 +127,7 @@ async def remove_allowed_email(
     result = await db[models.ALLOWED_EMAILS].delete_one({"_id": normalized})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Email not found in allowlist")
-    log.info("admin.allowed_emails.remove email_hash=%s", hashlib.sha256(normalized.encode()).hexdigest()[:16])
+    log.info(
+        "admin.allowed_emails.remove email_hash=%s",
+        hashlib.sha256(normalized.encode()).hexdigest()[:16],
+    )

@@ -58,7 +58,12 @@ export default function AdminAllowedEmails() {
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? String(err.detail) : 'Failed to add email';
+      const msg =
+        err instanceof ApiError
+          ? typeof err.detail === 'string'
+            ? err.detail
+            : JSON.stringify(err.detail)
+          : 'Failed to add email';
       toast.error(msg);
     },
   });
@@ -68,10 +73,16 @@ export default function AdminAllowedEmails() {
     onSuccess: () => {
       toast.success('Email removed from allowlist');
       setDeleteTarget(null);
+      setPage(0);
       void qc.invalidateQueries({ queryKey: ['admin', 'allowed-emails'] });
     },
     onError: (err) => {
-      const msg = err instanceof ApiError ? String(err.detail) : 'Failed to remove email';
+      const msg =
+        err instanceof ApiError
+          ? typeof err.detail === 'string'
+            ? err.detail
+            : JSON.stringify(err.detail)
+          : 'Failed to remove email';
       toast.error(msg);
     },
   });
@@ -88,7 +99,12 @@ export default function AdminAllowedEmails() {
       if (err instanceof ApiError && err.status === 404) {
         setSearchResult('not_found');
       } else {
-        const msg = err instanceof ApiError ? String(err.detail) : 'Search failed';
+        const msg =
+          err instanceof ApiError
+            ? typeof err.detail === 'string'
+              ? err.detail
+              : JSON.stringify(err.detail)
+            : 'Search failed';
         toast.error(msg);
       }
     } finally {
@@ -166,7 +182,7 @@ export default function AdminAllowedEmails() {
             <p className="mt-2 text-sm text-muted-foreground">Not found in allowlist.</p>
           )}
           {searchResult && searchResult !== 'not_found' && (
-            <div className="mt-3 flex items-center justify-between rounded-lg border border-edge bg-ghost px-3 py-2">
+            <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
               <div className="flex items-center gap-2">
                 <Mail className="h-4 w-4 text-primary" />
                 <span className="text-sm text-foreground">{searchResult.email}</span>
@@ -208,17 +224,17 @@ export default function AdminAllowedEmails() {
               No emails in allowlist yet.
             </p>
           ) : (
-            <ul className="divide-y divide-edge">
+            <ul className="divide-edge divide-y">
               {data.items.map((item) => (
                 <li
                   key={item.email}
-                  className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-ghost"
+                  className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Mail className="h-4 w-4 shrink-0 text-primary" />
                     <span className="truncate text-sm text-foreground">{item.email}</span>
                   </div>
-                  <div className="ml-4 flex items-center gap-3 shrink-0">
+                  <div className="ml-4 flex shrink-0 items-center gap-3">
                     <span className="hidden text-xs text-muted-foreground sm:block">
                       {formatDate(item.added_at)}
                     </span>
@@ -239,7 +255,7 @@ export default function AdminAllowedEmails() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-edge px-5 py-3">
+            <div className="border-edge flex items-center justify-between border-t px-5 py-3">
               <Button
                 variant="ghost"
                 size="sm"
