@@ -7,7 +7,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.deps import get_current_user
+from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.settings import settings
 
@@ -113,7 +113,7 @@ def _resolve_apk_download(bucket: str) -> ApkDownloadResult:
 @user_limiter.limit("10/minute")
 async def get_apk_download_url(
     request: Request,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
 ) -> ApkDownloadResponse:
     if not settings.assets_bucket_name:
         raise HTTPException(status_code=503, detail="APK downloads are not configured.")

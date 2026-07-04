@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from app.deps import get_current_user
+from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.services.llm_service import _openai_client, _openai_init_error
 from app.settings import settings
@@ -38,7 +38,7 @@ class TranscribeResponse(BaseModel):
 async def transcribe_audio(
     request: Request,
     audio: UploadFile = File(...),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
 ):
     if _openai_client is None:
         if not settings.openai_api_key:

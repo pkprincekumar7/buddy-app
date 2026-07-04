@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
-from app.deps import get_current_user
+from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.llm_rate_limiter import enforce as _enforce_user_rate_limit
 from app.services import llm_service
@@ -44,7 +44,7 @@ class LLMInvokeBody(BaseModel):
     description="Send a prompt to the configured LLM provider and return the structured response.",
 )
 @user_limiter.limit("30/minute")
-async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_user)):
+async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_parent)):
     await asyncio.to_thread(_enforce_user_rate_limit, user["_id"])
     try:
         return await llm_service.invoke(
@@ -71,7 +71,7 @@ async def invoke_llm(request: Request, body: LLMInvokeBody, user: dict = Depends
 
 @router.get("/providers")
 @user_limiter.limit("60/minute")
-async def list_providers(request: Request, user: dict = Depends(get_current_user)):
+async def list_providers(request: Request, user: dict = Depends(get_current_parent)):
     """Return which providers have a key configured and which would be auto-selected."""
     av = llm_service.available()
     default = next((p for p in llm_service.PRIORITY if av[p]), None)

@@ -1,5 +1,6 @@
 USERS = "users"
 EMAIL_INDEX = "email_index"
+ALLOWED_EMAILS = "allowed_emails"
 SESSIONS = "sessions"
 GOALS = "goals"
 GROWTH_AREAS = "growth_areas"

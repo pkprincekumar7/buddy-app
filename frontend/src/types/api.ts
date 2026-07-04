@@ -3,6 +3,18 @@ export interface ErrorResponse {
   status_code?: number;
 }
 
+export interface AllowedEmailRecord {
+  email: string;
+  added_at: string | null;
+}
+
+export interface AllowedEmailsPage {
+  items: AllowedEmailRecord[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
 export interface UserRecord {
   role?: string;
   full_name?: string;

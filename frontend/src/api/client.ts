@@ -8,6 +8,8 @@ import type {
   EnqueueJobPayload,
   EnqueueJobResponse,
   JobStatusRecord,
+  AllowedEmailRecord,
+  AllowedEmailsPage,
 } from '@/types/api';
 
 function joinApi(path: string): string {
@@ -232,6 +234,30 @@ export const api = {
       }) as Promise<EnqueueJobResponse>,
     poll: (jobId: string): Promise<JobStatusRecord> =>
       request(`/jobs/${encodeURIComponent(jobId)}`) as Promise<JobStatusRecord>,
+  },
+
+  admin: {
+    listAllowedEmails(skip = 0, limit = 20): Promise<AllowedEmailsPage> {
+      return request(
+        `/admin/allowed-emails?skip=${skip}&limit=${limit}`,
+      ) as Promise<AllowedEmailsPage>;
+    },
+    getAllowedEmail(email: string): Promise<AllowedEmailRecord> {
+      return request(
+        `/admin/allowed-emails/${encodeURIComponent(email)}`,
+      ) as Promise<AllowedEmailRecord>;
+    },
+    addAllowedEmail(email: string): Promise<AllowedEmailRecord> {
+      return request('/admin/allowed-emails', {
+        method: 'POST',
+        body: { email },
+      }) as Promise<AllowedEmailRecord>;
+    },
+    removeAllowedEmail(email: string): Promise<void> {
+      return request(`/admin/allowed-emails/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+      }) as Promise<void>;
+    },
   },
 
   downloads: {

@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, get_current_parent
 from app.limiter import user_limiter
 from app.models_api import (
     AppendGrowthAreaRequest,
@@ -162,7 +162,7 @@ async def list_completed_growth_areas(
     child_id: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
@@ -186,7 +186,7 @@ async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
@@ -243,7 +243,7 @@ async def append_completed_growth_area(
 async def clear_completed_growth_areas(
     request: Request,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
@@ -266,7 +266,7 @@ async def clear_completed_growth_areas(
 async def get_goals(
     request: Request,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
@@ -289,7 +289,7 @@ async def patch_goals(
     request: Request,
     body: UserGoalsPatch,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)

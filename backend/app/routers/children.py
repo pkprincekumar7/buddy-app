@@ -9,7 +9,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.models_api import (
     ChildCreate,
@@ -68,7 +68,7 @@ async def list_children(
         default="-created_date"
     ),
     limit: int = Query(default=50, ge=1, le=200),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     _sort = sort or "-created_date"
@@ -96,7 +96,7 @@ async def list_children(
 async def create_child(
     request: Request,
     payload: ChildCreate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     count = await db[models.CHILDREN].count_documents(
@@ -134,7 +134,7 @@ async def create_child(
 async def get_child(
     request: Request,
     child_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     doc = await db[models.CHILDREN].find_one(
@@ -155,7 +155,7 @@ async def update_child(
     request: Request,
     child_id: str = Path(..., min_length=1, max_length=100),
     patch: ChildPatch = Body(...),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     updates = patch.model_dump(exclude_unset=True)
@@ -198,7 +198,7 @@ async def update_child(
 async def delete_child(
     request: Request,
     child_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     existing = await db[models.CHILDREN].find_one(

@@ -256,6 +256,9 @@ async def register(
     #   Compensating action — if Step 2 fails, release the Step 1 reservation so the
     #   address can be retried. This is the manual equivalent of a transaction rollback.
 
+    if not await db[models.ALLOWED_EMAILS].find_one({"_id": body.email.lower()}):
+        raise HTTPException(status_code=403, detail="Registration is not open.")
+
     location = resolve_region(body.country_code or "")
     now = datetime.now(UTC)
     new_user_id = str(uuid.uuid4())
@@ -588,6 +591,9 @@ async def google_auth(
         location = existing.get("location", settings.default_location)
         tokens = await _set_auth_cookies(response, existing["_id"], location, db)
     else:
+        if not await db[models.ALLOWED_EMAILS].find_one({"_id": email.lower()}):
+            raise HTTPException(status_code=403, detail="Registration is not open.")
+
         if not body.country_code:
             raise HTTPException(
                 status_code=422,

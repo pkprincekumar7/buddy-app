@@ -67,7 +67,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const currentUser = await api.auth.me();
       const [children, prefs] = await Promise.all([
-        api.entities.Child.list('-created_date'),
+        currentUser.role === 'admin'
+          ? Promise.resolve([])
+          : api.entities.Child.list('-created_date'),
         api.preferences.get(),
       ]);
       setUser(currentUser);
@@ -202,6 +204,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const publicPaths = ['/Login', '/Register'];
     if (!publicPaths.includes(location.pathname)) return;
     if (isAuthenticated) {
+      if (user?.role === 'admin') {
+        navigate('/Admin', { replace: true });
+        return;
+      }
       const destination =
         lastVisitedPath &&
         lastVisitedPath.startsWith('/') &&

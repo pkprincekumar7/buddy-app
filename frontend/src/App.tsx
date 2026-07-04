@@ -20,6 +20,7 @@ const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGa
 const GrowthAreasActivityGreatInsights = lazy(
   () => import('./pages/GrowthAreasActivityGreatInsights'),
 );
+const AdminAllowedEmails = lazy(() => import('./pages/AdminAllowedEmails'));
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -220,9 +221,23 @@ function ScrollToTop() {
   return null;
 }
 
+const AdminRoutes = () => (
+  <Routes>
+    <Route
+      path="/Admin"
+      element={
+        <LayoutWrapper currentPageName="Admin">
+          <AdminAllowedEmails />
+        </LayoutWrapper>
+      }
+    />
+    <Route path="*" element={<Navigate to="/Admin" replace />} />
+  </Routes>
+);
+
 function AppShell() {
   const location = useLocation();
-  const { isLoadingAuth, authError, isAuthenticated, checkAppState } = useAuth();
+  const { isLoadingAuth, authError, isAuthenticated, checkAppState, user } = useAuth();
 
   if (isLoadingAuth) {
     return (
@@ -267,6 +282,10 @@ function AppShell() {
 
   if (!isAuthenticated) {
     return <Navigate to="/Login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (user?.role === 'admin') {
+    return <AdminRoutes />;
   }
 
   return <ProtectedRoutes />;

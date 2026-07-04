@@ -18,6 +18,7 @@ import { Home, Target, TrendingUp, Brain, Map } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api/client';
 
+import AdminScreen from '../screens/admin/AdminScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
@@ -68,6 +69,7 @@ export type RootStackParamList = {
   Auth: undefined;
   Onboarding: undefined;
   Main: undefined;
+  Admin: undefined;
 };
 
 const RootStack = createStackNavigator<RootStackParamList>();
@@ -468,6 +470,7 @@ function RootNavigator() {
     authError,
     checkAppState,
     logout,
+    user,
   } = useAuth();
   const { colors } = useTheme();
 
@@ -534,6 +537,13 @@ function RootNavigator() {
       {!isAuthenticated ? (
         /* Unauthenticated — show login/register only */
         <RootStack.Screen name="Auth" component={AuthNavigator} />
+      ) : user?.role === 'admin' ? (
+        /* Admin — dedicated screen, no parent flows */
+        <RootStack.Screen
+          name="Admin"
+          component={AdminScreen}
+          options={{ headerShown: true, title: 'Admin' }}
+        />
       ) : (
         /*
          * Authenticated — always render Main first so it sits at the bottom of the
