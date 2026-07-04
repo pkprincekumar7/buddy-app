@@ -8,7 +8,7 @@ Frontend UI library: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), 
 
 | Topic | File |
 |---|---|
-| Quick start, local dev, MongoDB, Google Sign-In | [docs/getting-started.md](docs/getting-started.md) |
+| Quick start, local dev, MongoDB, Google Sign-In, admin setup | [docs/getting-started.md](docs/getting-started.md) |
 | S3 static assets — setup, upload, local dev config | [docs/static-assets.md](docs/static-assets.md) |
 | Pre-commit hooks, check.sh, ruff/mypy config | [docs/code-quality.md](docs/code-quality.md) |
 | API routes reference | [docs/api.md](docs/api.md) |

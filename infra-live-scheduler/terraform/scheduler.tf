@@ -3,9 +3,9 @@
 #
 # Flow:
 #   EventBridge Scheduler (exact IST time)
-#     → API Destination (POST …/actions/workflows/terraform-live-all.yml/dispatches)
-#     → GitHub workflow_dispatch event on terraform-live-all.yml
-#     → Full-stack apply or destroy runs immediately (no queue delay)
+#     → Lambda (github-dispatcher)
+#     → GitHub workflow_dispatch API
+#     → terraform-live-all.yml runs immediately (no queue delay)
 #
 # schedule_expression_timezone is set via var.schedule_timezone (tfvars) — cron times
 # are written in that timezone directly; no UTC conversion needed.
@@ -15,37 +15,7 @@
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# EventBridge Connection — stores GitHub PAT for API auth
-# Injected as Authorization: Bearer <token> on every HTTP request.
-# Value is sourced from var.github_pat (GitHub environment secret).
-# ---------------------------------------------------------------------------
-resource "aws_cloudwatch_event_connection" "github" {
-  name               = "${var.app_name}-${var.environment}-github-api"
-  authorization_type = "API_KEY"
-
-  auth_parameters {
-    api_key {
-      key   = "Authorization"
-      value = "Bearer ${var.github_pat}"
-    }
-  }
-}
-
-# ---------------------------------------------------------------------------
-# API Destination — GitHub workflow_dispatch endpoint for terraform-live-all
-# Triggers terraform-live-all.yml directly; no intermediate schedule wrapper.
-# Rate limited to 1 req/sec (GitHub API limit is 5000/hr — this is conservative).
-# ---------------------------------------------------------------------------
-resource "aws_cloudwatch_event_api_destination" "github_dispatch" {
-  name                             = "${var.app_name}-${var.environment}-github-dispatch"
-  connection_arn                   = aws_cloudwatch_event_connection.github.arn
-  invocation_endpoint              = "https://api.github.com/repos/${var.github_repo_owner}/${var.github_repo_name}/actions/workflows/${var.github_workflow_file}/dispatches"
-  http_method                      = "POST"
-  invocation_rate_limit_per_second = 1
-}
-
-# ---------------------------------------------------------------------------
-# IAM role — allows EventBridge Scheduler to invoke the API destination
+# IAM role — allows EventBridge Scheduler to invoke the Lambda dispatcher
 # ---------------------------------------------------------------------------
 resource "aws_iam_role" "scheduler" {
   name = "${var.app_name}-${var.environment}-scheduler-role"
@@ -68,8 +38,8 @@ resource "aws_iam_role_policy" "scheduler_invoke" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = "events:InvokeApiDestination"
-      Resource = aws_cloudwatch_event_api_destination.github_dispatch.arn
+      Action   = "lambda:InvokeFunction"
+      Resource = aws_lambda_function.dispatcher.arn
     }]
   })
 }
@@ -79,17 +49,6 @@ resource "aws_iam_role_policy" "scheduler_invoke" {
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule_group" "main" {
   name = "${var.app_name}-${var.environment}-github-actions"
-}
-
-# ---------------------------------------------------------------------------
-# HTTP headers added to every GitHub API request
-# ---------------------------------------------------------------------------
-locals {
-  github_headers = {
-    "Accept"               = "application/vnd.github+json"
-    "Content-Type"         = "application/json"
-    "X-GitHub-Api-Version" = "2022-11-28"
-  }
 }
 
 # ---------------------------------------------------------------------------
@@ -110,7 +69,7 @@ resource "aws_scheduler_schedule" "start" {
   schedule_expression_timezone = var.schedule_timezone
 
   target {
-    arn      = aws_cloudwatch_event_api_destination.github_dispatch.arn
+    arn      = aws_lambda_function.dispatcher.arn
     role_arn = aws_iam_role.scheduler.arn
 
     input = jsonencode({
@@ -123,8 +82,9 @@ resource "aws_scheduler_schedule" "start" {
       }
     })
 
-    http_parameters {
-      header_parameters = local.github_headers
+    retry_policy {
+      maximum_event_age_in_seconds = 300
+      maximum_retry_attempts       = 2
     }
   }
 }
@@ -147,7 +107,7 @@ resource "aws_scheduler_schedule" "stop" {
   schedule_expression_timezone = var.schedule_timezone
 
   target {
-    arn      = aws_cloudwatch_event_api_destination.github_dispatch.arn
+    arn      = aws_lambda_function.dispatcher.arn
     role_arn = aws_iam_role.scheduler.arn
 
     input = jsonencode({
@@ -160,8 +120,9 @@ resource "aws_scheduler_schedule" "stop" {
       }
     })
 
-    http_parameters {
-      header_parameters = local.github_headers
+    retry_policy {
+      maximum_event_age_in_seconds = 300
+      maximum_retry_attempts       = 2
     }
   }
 }

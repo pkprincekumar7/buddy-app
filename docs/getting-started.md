@@ -67,6 +67,7 @@ GUI tools (MongoDB Compass, Studio 3T) work too — paste the URI directly.
 | `users` | User accounts (`_id`, `email`, `full_name`, `role`, `location`) |
 | `sessions` | Refresh token sessions (`user_id`, `expires_at`, `location`) |
 | `email_index` | Global email → user_id lookup (unsharded uniqueness guard) |
+| `allowed_emails` | Allowlist — only emails in this collection can register |
 | `goals` | Parent concern and AI-generated goals plan |
 | `growth_areas` | Completed growth areas with activity results |
 | `children` | Children profiles |
@@ -91,6 +92,89 @@ db.children.find({ user_id: "<user_id>" }).sort({ created_at: -1 })
 // Completed growth areas for a user
 db.growth_areas.find({ user_id: "<user_id>" }).sort({ created_at: -1 })
 ```
+
+## Admin setup
+
+Registration is gated by an allowlist. Only emails present in the `allowed_emails` collection can create an account. There is no public sign-up without an entry in this collection.
+
+### Creating the first admin account
+
+This is a one-time manual process done directly in the database. There is no API endpoint to promote a user to admin — that must be done via mongosh or Compass.
+
+**Step 1 — add the email to the allowlist**
+
+In mongosh:
+
+```js
+use buddy360-local   // or your MONGODB_DB_NAME value
+
+db.allowed_emails.insertOne({
+  _id: "admin@example.com",
+  added_at: new Date()
+})
+```
+
+In MongoDB Compass, insert a document into the `allowed_emails` collection:
+
+```json
+{
+  "_id": "admin@example.com",
+  "added_at": { "$date": "2026-01-01T00:00:00.000Z" }
+}
+```
+
+> The `_id` is the email address itself, stored fully lowercase. The `added_at` field is optional but recommended for audit purposes.
+
+**Step 2 — register via the web app**
+
+Open the app and register normally using `admin@example.com`. The backend will find the allowlist entry and create the account with `role: "parent"` by default.
+
+**Step 3 — promote to admin**
+
+After registration, update the `role` field in the `users` collection:
+
+```js
+db.users.updateOne(
+  { email: "admin@example.com" },
+  { $set: { role: "admin" } }
+)
+```
+
+> On a sharded Atlas cluster, querying by `email` alone triggers a scatter-gather across all shards — this is fine for a one-time admin setup operation. If you know the user's `location` value (visible in `email_index`), you can target the shard directly: `{ email: "admin@example.com", location: "in" }`.
+
+Verify the update:
+
+```js
+db.users.findOne({ email: "admin@example.com" }, { email: 1, role: 1, location: 1 })
+```
+
+**Step 4 — log in**
+
+Log in with the same credentials. The app detects `role: "admin"` on the `/auth/me` response and redirects to the admin panel instead of the normal parent app.
+
+### What admin accounts can do
+
+- Access the **Allowed Emails** management page (web only) to add or remove emails from the registration allowlist.
+- Admin accounts are **blocked** from all parent-facing endpoints (`/children`, `/jobs`, `/llm/invoke`, etc.) — they are strictly for allowlist management.
+- On mobile (`frontend-app`), admin users see a minimal screen directing them to use the web app.
+
+### `allowed_emails` document structure
+
+| Field | Type | Description |
+|---|---|---|
+| `_id` | string | Email address (fully lowercase, normalized). Primary key. |
+| `added_at` | Date (UTC) | When the entry was created. Optional but recommended. |
+
+Example:
+```json
+{ "_id": "user@example.com", "added_at": { "$date": "2026-01-01T00:00:00.000Z" } }
+```
+
+### Adding more allowed emails
+
+Once you have an admin account, use the **Allowed Emails** page in the web app — no more manual DB edits needed. The admin panel supports adding, searching, and removing emails with full pagination.
+
+---
 
 ## Google Sign-In (optional)
 

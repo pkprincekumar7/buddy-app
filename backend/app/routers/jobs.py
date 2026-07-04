@@ -7,7 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.models_api import EnqueueJobRequest, EnqueueJobResponse, JobStatusResponse
 
@@ -34,7 +34,7 @@ def _sanitize_for_log(value: object) -> str:
 async def enqueue_job(
     request: Request,
     body: EnqueueJobRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     user_id = user["_id"]
@@ -171,7 +171,7 @@ async def enqueue_job(
 async def get_job_status(
     request: Request,
     job_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"]})

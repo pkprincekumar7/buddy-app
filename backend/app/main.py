@@ -22,6 +22,7 @@ from app.constants import API_V1_PREFIX
 from app.database import init_indexes
 from app.limiter import limiter, user_limiter
 from app.llm_rate_limiter import get_redis_client
+from app.routers.admin import router as admin_router
 from app.routers.audio import router as audio_router
 from app.routers.auth import router as auth_router
 from app.routers.children import router as children_router
@@ -228,6 +229,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(admin_router, prefix=API_V1_PREFIX)
 app.include_router(users_router, prefix=API_V1_PREFIX)
 app.include_router(children_router, prefix=API_V1_PREFIX)
 app.include_router(jobs_router, prefix=API_V1_PREFIX)

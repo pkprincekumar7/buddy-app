@@ -52,3 +52,19 @@ async def get_current_user(
             raise HTTPException(status_code=401, detail="Session revoked")
 
     return user
+
+
+async def get_current_admin(
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+async def get_current_parent(
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if user.get("role") == "admin":
+        raise HTTPException(status_code=403, detail="Not available for admin accounts")
+    return user

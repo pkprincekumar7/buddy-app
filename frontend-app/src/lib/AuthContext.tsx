@@ -101,8 +101,11 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     setAuthError(null);
     setIsLoading(true);
     try {
-      await refetchUser();
-      await refetchChildren();
+      const u = await api.auth.me();
+      setUser(u);
+      if (u.role !== 'admin') {
+        await refetchChildren();
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         // 401 → unauthenticated; no error to show, just redirect to login
@@ -116,7 +119,7 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [refetchUser, refetchChildren]);
+  }, [refetchChildren]);
 
   // Bootstrap on mount
   useEffect(() => {
