@@ -20,13 +20,30 @@ resource "aws_s3_bucket_policy" "frontend" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowCloudFrontOAC"
+        Sid    = "AllowCloudFrontOACGetObject"
         Effect = "Allow"
         Principal = {
           Service = "cloudfront.amazonaws.com"
         }
         Action   = "s3:GetObject"
         Resource = "arn:aws:s3:::${var.spa_bucket_name}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = data.aws_ssm_parameter.cloudfront_arn.value
+          }
+        }
+      },
+      {
+        # Allows CloudFront to receive 404 (instead of 403) for missing objects.
+        # Without this, S3 returns 403 for missing keys because OAC lacks ListBucket,
+        # and CloudFront's custom_error_response for 403 would intercept API errors.
+        Sid    = "AllowCloudFrontOACListBucket"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:ListBucket"
+        Resource = "arn:aws:s3:::${var.spa_bucket_name}"
         Condition = {
           StringEquals = {
             "AWS:SourceArn" = data.aws_ssm_parameter.cloudfront_arn.value
