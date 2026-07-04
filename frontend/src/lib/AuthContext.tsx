@@ -216,7 +216,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           : mainPath;
       navigate(destination, { replace: true });
     }
-  }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath, lastVisitedPath]);
+  }, [
+    isLoadingAuth,
+    isAuthenticated,
+    user?.role,
+    location.pathname,
+    navigate,
+    mainPath,
+    lastVisitedPath,
+  ]);
 
   const contextValue = useMemo(
     () => ({
