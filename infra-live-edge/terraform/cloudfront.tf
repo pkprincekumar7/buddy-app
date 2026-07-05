@@ -119,14 +119,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  # -- SPA fallback: S3 returns 403 for missing objects -----------------------
-
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
+  # -- SPA fallback: S3 returns 404 for missing objects -----------------------
+  # s3:ListBucket is granted to CloudFront OAC (see infra-live-frontend s3_policy.tf)
+  # so S3 returns 404 (not 403) for missing objects. Only 404 is caught here,
+  # which means API 403 responses (e.g. "Registration is not open.") pass
+  # through CloudFront untouched and reach the client correctly.
 
   custom_error_response {
     error_code            = 404
