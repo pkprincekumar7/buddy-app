@@ -133,7 +133,9 @@ export default function Home() {
         <div className="pointer-events-none absolute left-10 top-40 h-72 w-72 rounded-full bg-primary/[0.05] blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-personality/[0.04] blur-3xl" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-24 md:py-36">
+        <div
+          className={`relative mx-auto max-w-6xl px-4 ${children.length > 0 ? 'py-8 md:py-12' : 'py-24 md:py-36'}`}
+        >
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -372,37 +374,39 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-20 md:py-28">
-        <div className="mx-auto max-w-4xl px-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.97 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="border-edge-faint relative overflow-hidden rounded-3xl bg-section-dark p-10 text-center md:p-16"
-          >
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-medium/[0.04] via-transparent to-personality/[0.04]" />
-            <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-96 -translate-x-1/2 rounded-full bg-primary/[0.06] blur-3xl" />
-            <div className="relative">
-              <h2 className="mb-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-                Begin Your Child's Journey Today
-              </h2>
-              <p className="mx-auto mb-8 max-w-2xl leading-relaxed text-muted-foreground">
-                No pressure. No comparisons. Just guided, consistent growth towards becoming their
-                best self.
-              </p>
-              <Button
-                size="xl"
-                onClick={handleStartJourney}
-                className="btn-primary rounded-2xl transition-all duration-200"
-              >
-                Get Started Free
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      </section>
+      {/* CTA — only shown to first-time visitors with no children yet */}
+      {children.length === 0 && (
+        <section className="py-20 md:py-28">
+          <div className="mx-auto max-w-4xl px-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              className="border-edge-faint relative overflow-hidden rounded-3xl bg-section-dark p-10 text-center md:p-16"
+            >
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-medium/[0.04] via-transparent to-personality/[0.04]" />
+              <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-96 -translate-x-1/2 rounded-full bg-primary/[0.06] blur-3xl" />
+              <div className="relative">
+                <h2 className="mb-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+                  Begin Your Child's Journey Today
+                </h2>
+                <p className="mx-auto mb-8 max-w-2xl leading-relaxed text-muted-foreground">
+                  No pressure. No comparisons. Just guided, consistent growth towards becoming their
+                  best self.
+                </p>
+                <Button
+                  size="xl"
+                  onClick={handleStartJourney}
+                  className="btn-primary rounded-2xl transition-all duration-200"
+                >
+                  Get Started Free
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="border-t-edge-faint py-8">

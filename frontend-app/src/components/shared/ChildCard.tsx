@@ -155,7 +155,9 @@ export default function ChildCard({ child }: ChildCardProps) {
   const { doStartOver, isStartingOver } = useStartOver(child.id);
 
   const displayName = child.name ?? 'Unnamed child';
-  const completed = !!child.onboarding_completed;
+  // Treat as completed if either flag is set OR recommendations exist —
+  // old records may have onboarding_completed: null even though the flow finished.
+  const completed = !!child.onboarding_completed || !!child.recommendations;
 
   const handleView = useCallback(() => {
     setActiveChildId(child.id);
@@ -230,7 +232,7 @@ export default function ChildCard({ child }: ChildCardProps) {
                 className="text-[10px] font-medium"
                 style={{ color: completed ? colors.success : colors.warning }}
               >
-                {completed ? 'Done' : 'Active'}
+                {completed ? 'Completed' : 'In Progress'}
               </Text>
             </View>
 

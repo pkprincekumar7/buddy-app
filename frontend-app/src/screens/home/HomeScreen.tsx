@@ -168,7 +168,12 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
     >
       {/* Hero */}
-      <Animated.View style={heroAnim} className="px-5 pt-16 pb-10 items-center">
+      <Animated.View
+        style={heroAnim}
+        className={`px-5 items-center ${
+          children.length > 0 ? 'pt-8 pb-4' : 'pt-16 pb-10'
+        }`}
+      >
         {/* Badge */}
         <View
           className="flex-row items-center gap-2 rounded-full border px-4 py-2 mb-8"
@@ -345,45 +350,47 @@ export default function HomeScreen() {
         </View>
       </Animated.View>
 
-      {/* CTA */}
-      <Animated.View style={ctaAnim} className="px-5 py-10">
-        <View
-          className="rounded-3xl border p-8 items-center"
-          style={{
-            backgroundColor: colors.background,
-            borderColor: colors.border,
-          }}
-        >
-          <Text
-            className="text-2xl font-bold tracking-tight text-center mb-3"
-            style={{ color: colors.text }}
-          >
-            Begin Your Child's Journey Today
-          </Text>
-          <Text
-            className="text-sm leading-relaxed text-center mb-6 max-w-xs"
-            style={{ color: colors.textMuted }}
-          >
-            No pressure. No comparisons. Just guided, consistent growth towards
-            becoming their best self.
-          </Text>
-          <Button
-            size="xl"
-            onPress={handleStartJourney}
-            className="rounded-2xl"
+      {/* CTA — only shown to first-time visitors with no children yet */}
+      {children.length === 0 && (
+        <Animated.View style={ctaAnim} className="px-5 py-10">
+          <View
+            className="rounded-3xl border p-8 items-center"
+            style={{
+              backgroundColor: colors.background,
+              borderColor: colors.border,
+            }}
           >
             <Text
-              style={{
-                fontSize: 16,
-                fontWeight: '600',
-                color: colors.primaryForeground,
-              }}
+              className="text-2xl font-bold tracking-tight text-center mb-3"
+              style={{ color: colors.text }}
             >
-              Get Started Free →
+              Begin Your Child's Journey Today
             </Text>
-          </Button>
-        </View>
-      </Animated.View>
+            <Text
+              className="text-sm leading-relaxed text-center mb-6 max-w-xs"
+              style={{ color: colors.textMuted }}
+            >
+              No pressure. No comparisons. Just guided, consistent growth
+              towards becoming their best self.
+            </Text>
+            <Button
+              size="xl"
+              onPress={handleStartJourney}
+              className="rounded-2xl"
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: '600',
+                  color: colors.primaryForeground,
+                }}
+              >
+                Get Started Free →
+              </Text>
+            </Button>
+          </View>
+        </Animated.View>
+      )}
 
       {/* Footer */}
       <View
