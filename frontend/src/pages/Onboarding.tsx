@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
+import { ApiError } from '@/api/errors';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,16 +15,20 @@ import { slideUp } from '@/lib/animations';
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // When navigated with { state: { forceNew: true } }, skip preloading an in-progress child
+  // so the user starts a brand-new onboarding rather than resuming an existing one.
+  const forceNew = (location.state as { forceNew?: boolean } | null)?.forceNew ?? false;
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
   const [showSplash, startTimer] = useStageSplash(0);
 
   // Preload any existing in-progress child so Continue reuses it instead of creating a new one.
-  // No auto-redirects — the user always navigates step by step.
+  // Skipped when forceNew=true (e.g. "Add Child" from the home screen child list).
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) {
+    if (!isAuthenticated || forceNew) {
       setChecking(false);
       return;
     }
@@ -47,7 +53,7 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated]);
+  }, [isLoadingAuth, isAuthenticated, forceNew]);
 
   const handleContinue = useCallback(async () => {
     if (!isAuthenticated) {
@@ -67,7 +73,12 @@ export default function Onboarding() {
           targetId = createdId;
         }
       } catch (err) {
-        console.warn('[Onboarding] Could not create child stub:', err);
+        if (err instanceof ApiError && err.status === 422) {
+          toast.error(`You've reached the maximum of 10 children. Delete one to add another.`);
+        } else {
+          console.warn('[Onboarding] Could not create child stub:', err);
+        }
+        return;
       }
     }
     if (targetId) navigate(`/ConversationalOnboarding/${targetId}`);

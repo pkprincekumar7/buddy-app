@@ -6,7 +6,11 @@ import {
   DefaultTheme,
   getStateFromPath as defaultGetStateFromPath,
 } from '@react-navigation/native';
-import type { LinkingOptions, Theme } from '@react-navigation/native';
+import type {
+  LinkingOptions,
+  NavigatorScreenParams,
+  Theme,
+} from '@react-navigation/native';
 import { ThemeProvider, useTheme } from '../lib/ThemeContext';
 import { darkColors, lightColors } from '../lib/themeColors';
 import { navigationRef } from '../lib/navigationRef';
@@ -67,7 +71,7 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
-  Onboarding: undefined;
+  Onboarding: NavigatorScreenParams<OnboardingStackParamList> | undefined;
   Main: undefined;
   Admin: undefined;
 };

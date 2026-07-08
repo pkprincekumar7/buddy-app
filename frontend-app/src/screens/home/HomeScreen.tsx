@@ -1,5 +1,12 @@
-import React from 'react';
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useCallback } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  ActivityIndicator,
+  Pressable,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -8,9 +15,9 @@ import { api } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { EmojiText } from '@/components/ui/EmojiText';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import { useTheme } from '@/lib/ThemeContext';
 import { PILLAR_BG_COLORS } from '@/lib/gradientColors';
+import ChildCard from '@/components/shared/ChildCard';
 import type { RootStackParamList } from '@/navigation';
 
 type HomeNavProp = StackNavigationProp<RootStackParamList>;
@@ -120,6 +127,12 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
   const { colors } = useTheme();
+  const handleAddChild = useCallback(async () => {
+    await AsyncStorage.setItem('buddy360:forceNewOnboarding', '1').catch(
+      () => {},
+    );
+    navigation.navigate('Onboarding');
+  }, [navigation]);
 
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
@@ -127,15 +140,11 @@ export default function HomeScreen() {
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
-  const onboardingInProgress = children.some(c => !c.onboarding_completed);
-  // Mirrors web: derive active child from the same React Query source, not a separate AuthContext read.
-  const activeChild =
-    children.find(c => !c.onboarding_completed) ?? children[0];
-
   const heroAnim = useSlideUp(0.0, 1000);
-  const pillarsAnim = useSlideUp(0.2, 900);
-  const howAnim = useSlideUp(0.35, 900);
-  const ctaAnim = useSlideUp(0.5, 900);
+  const childrenAnim = useSlideUp(0.15, 900);
+  const pillarsAnim = useSlideUp(0.3, 900);
+  const howAnim = useSlideUp(0.45, 900);
+  const ctaAnim = useSlideUp(0.6, 900);
 
   const handleStartJourney = () => {
     navigation.navigate('Onboarding');
@@ -197,29 +206,7 @@ export default function HomeScreen() {
           a thoughtful, capable individual.
         </Text>
 
-        {onboardingInProgress ? (
-          <View className="w-full gap-3">
-            <Button
-              size="xl"
-              onPress={() => navigation.navigate('Onboarding')}
-              className="rounded-2xl"
-            >
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: '600',
-                  color: colors.primaryForeground,
-                }}
-              >
-                ✨ Continue Journey →
-              </Text>
-            </Button>
-            {/* Mirror the web: offer Start Over alongside Continue */}
-            {activeChild?.id ? (
-              <StartOverButton childId={activeChild.id} className="w-full" />
-            ) : null}
-          </View>
-        ) : (
+        {children.length === 0 && (
           <Button
             size="xl"
             onPress={handleStartJourney}
@@ -235,6 +222,60 @@ export default function HomeScreen() {
               ✨ Start Your Journey →
             </Text>
           </Button>
+        )}
+      </Animated.View>
+
+      {/* Children management */}
+      <Animated.View style={childrenAnim} className="px-5 pb-6">
+        <View className="flex-row items-center justify-between mb-3">
+          <Text
+            className="text-base font-semibold"
+            style={{ color: colors.text }}
+          >
+            Your Children
+          </Text>
+          <View className="items-end gap-1">
+            <Pressable
+              onPress={() => void handleAddChild()}
+              disabled={children.length >= 10}
+              className="flex-row items-center gap-1 rounded-xl border px-3 py-1.5"
+              style={{
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceElevated,
+                opacity: children.length >= 10 ? 0.45 : 1,
+              }}
+            >
+              <Text
+                className="text-xs font-medium"
+                style={{ color: colors.text }}
+              >
+                + Add Child
+              </Text>
+            </Pressable>
+            {children.length >= 10 && (
+              <Text className="text-[10px]" style={{ color: colors.textMuted }}>
+                Maximum of 10 children reached.
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {children.length === 0 ? (
+          <Pressable
+            onPress={() => void handleAddChild()}
+            className="rounded-2xl border border-dashed py-6 items-center"
+            style={{ borderColor: colors.border }}
+          >
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
+              No children yet. Tap to add your first child.
+            </Text>
+          </Pressable>
+        ) : (
+          <View className="gap-3">
+            {children.map(child => (
+              <ChildCard key={child.id} child={child} />
+            ))}
+          </View>
         )}
       </Animated.View>
 

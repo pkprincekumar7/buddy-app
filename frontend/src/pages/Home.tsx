@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
-import StartOverButton from '@/components/shared/StartOverButton';
+import ChildCard from '@/components/shared/ChildCard';
 import {
   Sparkles,
   ArrowRight,
@@ -18,6 +18,7 @@ import {
   Users,
   Smartphone,
   Loader2,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -107,11 +108,6 @@ export default function Home() {
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
-  // Onboarding is in progress if there's a child that hasn't completed it yet.
-  const onboardingInProgress = children.some((c) => !c.onboarding_completed);
-  // The child currently being onboarded (or the most recent one) for Start Over targeting.
-  const activeChild = children.find((c) => !c.onboarding_completed) ?? children[0];
-
   const handleStartJourney = () => {
     navigate('/Onboarding');
   };
@@ -162,24 +158,8 @@ export default function Home() {
               capable individual.
             </p>
 
-            <div className="flex flex-col justify-center gap-4 sm:flex-row">
-              {onboardingInProgress ? (
-                <>
-                  <Button
-                    size="xl"
-                    onClick={() => navigate('/Onboarding')}
-                    className="btn-primary rounded-2xl transition-all duration-200"
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Continue Journey
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                  <StartOverButton
-                    childId={activeChild?.id}
-                    className="h-btn-lg rounded-2xl px-8 text-base transition-all duration-200"
-                  />
-                </>
-              ) : (
+            {children.length === 0 && (
+              <div className="flex flex-col justify-center gap-4 sm:flex-row">
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
@@ -189,8 +169,8 @@ export default function Home() {
                   Start Your Journey
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
           </motion.div>
         </div>
       </section>
@@ -243,6 +223,55 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* Children management */}
+      <section className="py-10">
+        <div className="mx-auto max-w-6xl px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Your Children</h2>
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                  disabled={children.length >= 10}
+                  className="rounded-xl"
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Add Child
+                </Button>
+                {children.length >= 10 && (
+                  <p className="text-xs text-muted-foreground">Maximum of 10 children reached.</p>
+                )}
+              </div>
+            </div>
+
+            {children.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                No children yet.{' '}
+                <button
+                  className="text-primary underline underline-offset-2"
+                  onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                >
+                  Add your first child
+                </button>{' '}
+                to begin their journey.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {children.map((child) => (
+                  <ChildCard key={child.id} child={child} />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        </div>
+      </section>
 
       {/* 6 Pillars */}
       <section className="py-20 md:py-28">

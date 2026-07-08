@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import Animated from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSlideUpWhenReady } from '@/lib/animations';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { OnboardingStackParamList } from '@/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
+import { ApiError } from '@/api/errors';
+import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/Button';
 import { navigateTo } from '@/lib/navigationRef';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
@@ -36,7 +39,7 @@ export default function OnboardingScreen() {
   const [checking, setChecking] = useState(true);
 
   // Preload any existing in-progress child so Continue reuses it instead of creating a new one.
-  // No auto-redirects — the user always navigates step by step.
+  // Skipped when the 'buddy360:forceNewOnboarding' AsyncStorage flag is set (e.g. "Add Child").
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated) {
@@ -47,6 +50,16 @@ export default function OnboardingScreen() {
 
     void (async () => {
       try {
+        const forceNew = await AsyncStorage.getItem(
+          'buddy360:forceNewOnboarding',
+        ).catch(() => null);
+        if (forceNew) {
+          await AsyncStorage.removeItem('buddy360:forceNewOnboarding').catch(
+            () => {},
+          );
+          if (!cancelled) setChecking(false);
+          return;
+        }
         const list = await api.entities.Child.list('-created_date', 1);
         if (cancelled) return;
         const listArr = Array.isArray(list) ? list : [];
@@ -94,7 +107,14 @@ export default function OnboardingScreen() {
           await refetchChildren();
         }
       } catch (err) {
-        console.warn('[Onboarding] Could not create child stub:', err);
+        if (err instanceof ApiError && err.status === 422) {
+          toast.error(
+            `You've reached the maximum of 10 children. Delete one to add another.`,
+          );
+        } else {
+          console.warn('[Onboarding] Could not create child stub:', err);
+        }
+        return;
       }
     }
     if (targetId) {
