@@ -8,6 +8,78 @@ required. When implementing, refer only to this file.
 
 ## Background & Decision Trail
 
+### Why not API Gateway with a Lambda Authorizer?
+
+#### Architecture difference
+
+The current plan: `CloudFront → [L@E: JWT + geo-route] → regional ALB → ECS`
+
+API GW alternative: `CloudFront → [L@E: geo-route only] → regional API GW → [Lambda Authorizer: JWT] → ECS`
+
+API GW does not eliminate Lambda@Edge. Something at the CloudFront layer still needs to
+select the right regional API GW endpoint. The result is two auth-adjacent functions
+instead of one.
+
+#### Pricing
+
+| Item | Lambda@Edge | API Gateway + Lambda Authorizer |
+|---|---|---|
+| Request cost | $0.60/M | HTTP API: $1.00/M (first 300M), $0.90/M thereafter **per region**; REST API: $3.50/M (first tier), $2.80/M, $2.38/M at higher volumes **per region** |
+| Authorizer invocations | n/a | +$0.20/M (standard Lambda invocation price — billed through Lambda, not API GW) |
+| Duration cost | $0.00000625125/128MB-sec | Same Lambda pricing, but 3 separate functions across 3 regions |
+| Geo-routing | Included (same function) | Still needs a separate L@E — additional cost |
+| Regions | 1 function, AWS replicates to all edges | 3 separate deployments (ap-south-1, eu-west-1, us-east-1) |
+
+API GW adds at minimum $1.00/M (HTTP API) or $3.50/M (REST API) per region on top of
+CloudFront which is already paid for. Even at the highest-volume REST API tier ($2.38/M),
+adding 3 regional deployments plus Lambda Authorizer invocations still exceeds L@E at
+$0.60/M. API GW is additive — CloudFront is not replaced, API GW is stacked on top of it.
+
+#### Performance
+
+| Dimension | Lambda@Edge | API Gateway + Lambda Authorizer |
+|---|---|---|
+| Where validation runs | Nearest CloudFront PoP to the user (100+ globally) | Regional endpoint (3 fixed locations) |
+| Added latency | ~2–10 ms at edge | ~5–15 ms at regional API GW + authorizer invocation |
+| Cold start | ~1–5 ms (Node.js, small) | ~50–100 ms (500 ms+ if authorizer uses VPC) |
+| Result caching | None — every request is validated | Configurable TTL — reduces Lambda invocations but delays token revocation |
+
+Edge validation is always closer to the user than a regional API GW. The caching
+argument cuts both ways: it reduces Lambda invocations but means a revoked token stays
+valid until TTL expires.
+
+#### Complexity
+
+| Dimension | Lambda@Edge | API Gateway + Lambda Authorizer |
+|---|---|---|
+| Infrastructure added | 1 Lambda + CloudFront association | 3 API GWs + 3 Lambda Authorizers + IAM per region + separate L@E for geo-routing |
+| Terraform | ~50 lines | ~200+ lines across 3 regions + new modules |
+| Log aggregation | CloudWatch in whichever region processed the request (can be any of ~20 regions) | Predictable: 3 fixed regions |
+| Code changes | One file to update | 3 authorizer functions to keep in sync |
+
+#### Security
+
+| Dimension | Lambda@Edge | API Gateway + Lambda Authorizer |
+|---|---|---|
+| Where bad requests are blocked | At the nearest edge PoP — never reaches the VPC | At regional API GW — after CloudFront but still reaches the AWS network boundary |
+| Token revocation | Immediate (no cache) | Delayed if authorizer caching TTL > 0 |
+| Attack traffic | Absorbed at CloudFront + WAF — ALB and ECS never see invalid-JWT traffic | Absorbed at API GW — still consumes API GW and Lambda capacity |
+
+#### When API Gateway Lambda Authorizer would be the right choice
+
+- Already using API GW for other features (request transformation, usage plans, developer
+  portal, SDK generation) — authorizer becomes an add-on to an existing investment.
+- Need to update authorizer config at runtime without a Terraform apply and CloudFront
+  propagation wait.
+- Tokens are short-lived (< 5 min) and result caching is acceptable — very high-traffic
+  apps where the same token repeats across many requests.
+
+None of these apply to this project. API GW + Lambda Authorizer would cost more, add
+latency, double the infrastructure, and still require Lambda@Edge for geo-routing. The
+current plan — one combined origin-request L@E function — is the minimal correct solution.
+
+---
+
 ### Why not CloudFront Functions for JWT auth?
 
 CloudFront Functions run in a sandboxed ES5.1 runtime. RS256 JWT verification requires
@@ -454,8 +526,8 @@ CloudFront distribution. The existing `alb-backend` origin block (pointing to ap
 is sufficient as the declared origin; the Lambda function dynamically overrides the
 hostname at request time.
 
-Two changes are needed — the origin `domain_name` reference and the lambda association
-event type:
+Three changes are needed — the origin `domain_name` reference, the lambda association
+event type, and the checkov skip comment:
 
 **Change a:** In the `alb-backend` origin block, update `domain_name` from the old
 (now deleted) SSM data source to the ap-south-1 one:
