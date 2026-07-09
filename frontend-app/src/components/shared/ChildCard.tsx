@@ -210,32 +210,32 @@ export default function ChildCard({ child }: ChildCardProps) {
                   .filter(Boolean)
                   .join(' · ') || 'No details yet'}
               </Text>
+              {/* Status badge below name/details row */}
+              <View
+                className="mt-1 self-start flex-row items-center gap-1 rounded-full px-2 py-0.5"
+                style={{
+                  backgroundColor: completed
+                    ? colors.success + '1A'
+                    : colors.warning + '1A',
+                }}
+              >
+                {completed ? (
+                  <CheckCircle size={10} color={colors.success} />
+                ) : (
+                  <Clock size={10} color={colors.warning} />
+                )}
+                <Text
+                  className="text-[10px] font-medium"
+                  style={{ color: completed ? colors.success : colors.warning }}
+                >
+                  {completed ? 'Completed' : 'In Progress'}
+                </Text>
+              </View>
             </View>
           </View>
 
-          {/* Status + actions */}
+          {/* Actions */}
           <View className="flex-row items-center gap-1">
-            <View
-              className="flex-row items-center gap-1 rounded-full px-2 py-0.5 mr-1"
-              style={{
-                backgroundColor: completed
-                  ? colors.success + '1A'
-                  : colors.warning + '1A',
-              }}
-            >
-              {completed ? (
-                <CheckCircle size={10} color={colors.success} />
-              ) : (
-                <Clock size={10} color={colors.warning} />
-              )}
-              <Text
-                className="text-[10px] font-medium"
-                style={{ color: completed ? colors.success : colors.warning }}
-              >
-                {completed ? 'Completed' : 'In Progress'}
-              </Text>
-            </View>
-
             {/* View */}
             <Pressable
               onPress={handleView}
