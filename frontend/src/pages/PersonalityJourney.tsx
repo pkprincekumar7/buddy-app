@@ -32,7 +32,10 @@ export default function PersonalityJourney() {
   const onJourneyComplete = useCallback(async () => {
     if (!childId) return;
     try {
-      await api.entities.Child.update(childId, { onboarding_phase: 3 });
+      await api.entities.Child.update(childId, {
+        onboarding_phase: 3,
+        onboarding_completed: true,
+      });
     } catch {
       /* non-fatal */
     }

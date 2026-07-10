@@ -27,6 +27,9 @@ export default function ChildCard({ child }: ChildCardProps) {
   // Treat as completed if either flag is set OR recommendations exist —
   // old records may have onboarding_completed: null even though the flow finished.
   const completed = !!child.onboarding_completed || !!child.recommendations;
+  // Personality is done but journey recommendations haven't been generated yet —
+  // send the parent to PersonalityType so they can continue without redoing the chat.
+  const hasPersonality = !!child.personality?.view_model?.type;
 
   return (
     <>
@@ -92,7 +95,7 @@ export default function ChildCard({ child }: ChildCardProps) {
               size="icon"
               onClick={() =>
                 navigate(
-                  completed
+                  completed || hasPersonality
                     ? `/PersonalityType/${child.id}`
                     : `/ConversationalOnboarding/${child.id}`,
                 )

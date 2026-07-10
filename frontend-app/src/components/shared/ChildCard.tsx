@@ -158,11 +158,14 @@ export default function ChildCard({ child }: ChildCardProps) {
   // Treat as completed if either flag is set OR recommendations exist —
   // old records may have onboarding_completed: null even though the flow finished.
   const completed = !!child.onboarding_completed || !!child.recommendations;
+  // Personality is done but journey recommendations haven't been generated yet —
+  // send the parent to PersonalityType so they can continue without redoing the chat.
+  const hasPersonality = !!child.personality?.view_model?.type;
 
   const handleView = useCallback(() => {
     setActiveChildId(child.id);
-    if (completed) {
-      // Onboarding is done — go straight to the personality results tab.
+    if (completed || hasPersonality) {
+      // Onboarding is done (or personality exists) — go straight to the personality results tab.
       navigateTo('Main', {
         screen: 'Personality',
         params: { screen: 'PersonalityType', params: { childId: child.id } },
@@ -170,7 +173,7 @@ export default function ChildCard({ child }: ChildCardProps) {
     } else {
       navigation.navigate('Onboarding', { screen: 'ConversationalOnboarding' });
     }
-  }, [child.id, completed, setActiveChildId, navigation]);
+  }, [child.id, completed, hasPersonality, setActiveChildId, navigation]);
 
   const handleConfirmDelete = useCallback(() => {
     setConfirming(false);

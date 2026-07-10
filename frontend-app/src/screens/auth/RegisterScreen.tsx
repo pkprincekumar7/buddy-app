@@ -75,7 +75,10 @@ export default function RegisterScreen() {
       setError(
         httpErrorMessage(e as Error | undefined, {
           fallback: 'Registration failed.',
-          statusMessages: { 409: 'That email is already registered.' },
+          statusMessages: {
+            409: 'This email is already registered.',
+            403: 'This email address is not authorized to register. Please contact support.',
+          },
         }),
       );
     } finally {
