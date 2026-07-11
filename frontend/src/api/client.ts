@@ -268,15 +268,17 @@ export const api = {
     listUsers(skip = 0, limit = 20): Promise<AdminUsersPage> {
       return request(`/admin/users?skip=${skip}&limit=${limit}`) as Promise<AdminUsersPage>;
     },
-    lockUser(userId: string): Promise<AdminUserRecord> {
-      return request(`/admin/users/${encodeURIComponent(userId)}/lock`, {
-        method: 'PATCH',
-      }) as Promise<AdminUserRecord>;
+    lockUser(userId: string, location: string): Promise<AdminUserRecord> {
+      return request(
+        `/admin/users/${encodeURIComponent(userId)}/lock?location=${encodeURIComponent(location)}`,
+        { method: 'PATCH' },
+      ) as Promise<AdminUserRecord>;
     },
-    unlockUser(userId: string): Promise<AdminUserRecord> {
-      return request(`/admin/users/${encodeURIComponent(userId)}/unlock`, {
-        method: 'PATCH',
-      }) as Promise<AdminUserRecord>;
+    unlockUser(userId: string, location: string): Promise<AdminUserRecord> {
+      return request(
+        `/admin/users/${encodeURIComponent(userId)}/unlock?location=${encodeURIComponent(location)}`,
+        { method: 'PATCH' },
+      ) as Promise<AdminUserRecord>;
     },
   },
 

@@ -115,7 +115,9 @@ export default function AdminAllowedEmails() {
 
   const lockMutation = useMutation({
     mutationFn: (user: AdminUserRecord) =>
-      user.locked ? api.admin.unlockUser(user.id) : api.admin.lockUser(user.id),
+      user.locked
+        ? api.admin.unlockUser(user.id, user.location ?? '')
+        : api.admin.lockUser(user.id, user.location ?? ''),
     onSuccess: (result) => {
       toast.success(result.locked ? 'User locked' : 'User unlocked');
       setLockTarget(null);

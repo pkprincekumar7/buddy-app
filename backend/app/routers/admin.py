@@ -14,7 +14,6 @@ from app.database import get_db
 from app.deps import get_current_admin
 from app.limiter import user_limiter
 
-
 router = APIRouter(tags=["admin"])
 log = logging.getLogger(__name__)
 
@@ -153,6 +152,7 @@ async def list_users(
         {
             "$facet": {
                 "items": [
+                    {"$sort": {"created_at": -1}},
                     {"$skip": skip},
                     {"$limit": limit},
                     {
@@ -163,7 +163,6 @@ async def list_users(
                             "location": 1,
                             "created_at": 1,
                             "is_being_deleted": 1,
-                            "tokens_revoked_at": 1,
                         }
                     },
                 ],
@@ -231,17 +230,18 @@ async def get_user_by_email(
 async def lock_user(
     request: Request,
     user_id: str,
+    location: str = Query(..., description="User's location shard (returned by /admin/users)"),
     _user: dict = Depends(get_current_admin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
-        {"_id": user_id},
+        {"_id": user_id, "location": location},
         {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
-    log.info("admin.users.lock user_id=%s", user_id)
+    log.info("admin.users.lock user_id=%s location=%s", user_id, location)
     return {"id": user_id, "locked": True}
 
 
@@ -253,15 +253,16 @@ async def lock_user(
 async def unlock_user(
     request: Request,
     user_id: str,
+    location: str = Query(..., description="User's location shard (returned by /admin/users)"),
     _user: dict = Depends(get_current_admin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
-        {"_id": user_id},
+        {"_id": user_id, "location": location},
         {"$set": {"tokens_revoked_at": None, "is_being_deleted": False, "updated_at": now}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
-    log.info("admin.users.unlock user_id=%s", user_id)
+    log.info("admin.users.unlock user_id=%s location=%s", user_id, location)
     return {"id": user_id, "locked": False}
