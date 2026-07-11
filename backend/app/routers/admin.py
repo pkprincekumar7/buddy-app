@@ -243,7 +243,9 @@ async def lock_user(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
-    log.info("admin.users.lock user_id=%s location=%s", user_id, location)
+    safe_user_id = user_id.replace("\r", "").replace("\n", "")
+    safe_location = location.replace("\r", "").replace("\n", "")
+    log.info("admin.users.lock user_id=%s location=%s", safe_user_id, safe_location)
     return {"id": user_id, "locked": True}
 
 
