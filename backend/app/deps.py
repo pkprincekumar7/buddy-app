@@ -40,6 +40,11 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    if user.get("is_locked"):
+        raise HTTPException(
+            status_code=403, detail="Your account has been locked. Please contact support."
+        )
+
     if user.get("tokens_revoked_at") is not None:
         iat = payload.get("iat")
         if iat is None:
