@@ -18,6 +18,10 @@ router = APIRouter(tags=["admin"])
 log = logging.getLogger(__name__)
 
 
+def _sanitize_for_log(value: str) -> str:
+    return value.replace("\r", "").replace("\n", "")
+
+
 class AllowedEmailBody(BaseModel):
     email: str = Field(max_length=255)
 
@@ -268,5 +272,7 @@ async def unlock_user(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
-    log.info("admin.users.unlock user_id=%s location=%s", user_id, location)
+    safe_user_id = _sanitize_for_log(user_id)
+    safe_location = _sanitize_for_log(location)
+    log.info("admin.users.unlock user_id=%s location=%s", safe_user_id, safe_location)
     return {"id": user_id, "locked": False}
