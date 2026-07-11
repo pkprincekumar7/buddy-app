@@ -10,6 +10,8 @@ import type {
   JobStatusRecord,
   AllowedEmailRecord,
   AllowedEmailsPage,
+  AdminUserRecord,
+  AdminUsersPage,
 } from '@/types/api';
 
 function joinApi(path: string): string {
@@ -257,6 +259,24 @@ export const api = {
       return request(`/admin/allowed-emails/${encodeURIComponent(email)}`, {
         method: 'DELETE',
       }) as Promise<void>;
+    },
+    getUserByEmail(email: string): Promise<AdminUserRecord> {
+      return request(
+        `/admin/users/by-email/${encodeURIComponent(email)}`,
+      ) as Promise<AdminUserRecord>;
+    },
+    listUsers(skip = 0, limit = 20): Promise<AdminUsersPage> {
+      return request(`/admin/users?skip=${skip}&limit=${limit}`) as Promise<AdminUsersPage>;
+    },
+    lockUser(userId: string): Promise<AdminUserRecord> {
+      return request(`/admin/users/${encodeURIComponent(userId)}/lock`, {
+        method: 'PATCH',
+      }) as Promise<AdminUserRecord>;
+    },
+    unlockUser(userId: string): Promise<AdminUserRecord> {
+      return request(`/admin/users/${encodeURIComponent(userId)}/unlock`, {
+        method: 'PATCH',
+      }) as Promise<AdminUserRecord>;
     },
   },
 

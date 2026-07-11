@@ -14,6 +14,7 @@ from app.database import get_db
 from app.deps import get_current_admin
 from app.limiter import user_limiter
 
+
 router = APIRouter(tags=["admin"])
 log = logging.getLogger(__name__)
 
@@ -131,3 +132,136 @@ async def remove_allowed_email(
         "admin.allowed_emails.remove email_hash=%s",
         hashlib.sha256(normalized.encode()).hexdigest()[:16],
     )
+
+
+# ── Registered users ──────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/admin/users",
+    description="List registered users with pagination. Admin only.",
+)
+@user_limiter.limit("60/minute")
+async def list_users(
+    request: Request,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    _user: dict = Depends(get_current_admin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    pipeline = [
+        {
+            "$facet": {
+                "items": [
+                    {"$skip": skip},
+                    {"$limit": limit},
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "email": 1,
+                            "full_name": 1,
+                            "location": 1,
+                            "created_at": 1,
+                            "is_being_deleted": 1,
+                            "tokens_revoked_at": 1,
+                        }
+                    },
+                ],
+                "total": [{"$count": "n"}],
+            }
+        }
+    ]
+    result = await db[models.USERS].aggregate(pipeline).to_list(1)
+    facet = result[0] if result else {"items": [], "total": []}
+    total = facet["total"][0]["n"] if facet["total"] else 0
+    return {
+        "items": [
+            {
+                "id": str(d["_id"]),
+                "email": d.get("email"),
+                "full_name": d.get("full_name"),
+                "location": d.get("location"),
+                "created_at": d.get("created_at"),
+                "locked": bool(d.get("is_being_deleted")),
+            }
+            for d in facet["items"]
+        ],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+@router.get(
+    "/admin/users/by-email/{email:path}",
+    description="Look up a registered user by email address. Admin only.",
+)
+@user_limiter.limit("60/minute")
+async def get_user_by_email(
+    request: Request,
+    email: str,
+    _user: dict = Depends(get_current_admin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    normalized = _normalize_email_param(email)
+    email_doc = await db[models.EMAIL_INDEX].find_one({"_id": normalized})
+    if not email_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = await db[models.USERS].find_one(
+        {"_id": email_doc["user_id"], "location": email_doc["location"]},
+        {"_id": 1, "email": 1, "full_name": 1, "location": 1, "created_at": 1, "is_being_deleted": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": str(user["_id"]),
+        "email": user.get("email"),
+        "full_name": user.get("full_name"),
+        "location": user.get("location"),
+        "created_at": user.get("created_at"),
+        "locked": bool(user.get("is_being_deleted")),
+    }
+
+
+@router.patch(
+    "/admin/users/{user_id}/lock",
+    description="Lock a user account — revokes all tokens and blocks login. Admin only.",
+)
+@user_limiter.limit("60/minute")
+async def lock_user(
+    request: Request,
+    user_id: str,
+    _user: dict = Depends(get_current_admin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    now = datetime.now(UTC)
+    result = await db[models.USERS].update_one(
+        {"_id": user_id},
+        {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    log.info("admin.users.lock user_id=%s", user_id)
+    return {"id": user_id, "locked": True}
+
+
+@router.patch(
+    "/admin/users/{user_id}/unlock",
+    description="Unlock a previously locked user account. Admin only.",
+)
+@user_limiter.limit("60/minute")
+async def unlock_user(
+    request: Request,
+    user_id: str,
+    _user: dict = Depends(get_current_admin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    now = datetime.now(UTC)
+    result = await db[models.USERS].update_one(
+        {"_id": user_id},
+        {"$set": {"tokens_revoked_at": None, "is_being_deleted": False, "updated_at": now}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    log.info("admin.users.unlock user_id=%s", user_id)
+    return {"id": user_id, "locked": False}
