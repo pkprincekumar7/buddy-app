@@ -386,6 +386,13 @@ async def login(
         await async_verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
+    if user and user.get("is_locked"):
+        await async_verify_password(body.password, _DUMMY_HASH)
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been locked. Please contact support.",
+        )
+
     # Explicit None-check: an empty string password_hash (malformed record) must not
     # fall through to _DUMMY_HASH via truthiness, as that would alter error semantics.
     pw_hash = user.get("password_hash") if user else None
@@ -588,6 +595,11 @@ async def google_auth(
                 status_code=409,
                 detail="This account is temporarily unavailable. Please try again shortly.",
             )
+        if existing.get("is_locked"):
+            raise HTTPException(
+                status_code=403,
+                detail="Your account has been locked. Please contact support.",
+            )
         location = existing.get("location", settings.default_location)
         tokens = await _set_auth_cookies(response, existing["_id"], location, db)
     else:
@@ -680,6 +692,11 @@ async def google_auth(
                     raise HTTPException(
                         status_code=409,
                         detail="This account is temporarily unavailable. Please try again shortly.",
+                    ) from None
+                if race_user.get("is_locked"):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Your account has been locked. Please contact support.",
                     ) from None
                 tokens = await _set_auth_cookies(
                     response,

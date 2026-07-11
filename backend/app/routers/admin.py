@@ -162,7 +162,7 @@ async def list_users(
                             "full_name": 1,
                             "location": 1,
                             "created_at": 1,
-                            "is_being_deleted": 1,
+                            "is_locked": 1,
                         }
                     },
                 ],
@@ -181,7 +181,7 @@ async def list_users(
                 "full_name": d.get("full_name"),
                 "location": d.get("location"),
                 "created_at": d.get("created_at"),
-                "locked": bool(d.get("is_being_deleted")),
+                "locked": bool(d.get("is_locked")),
             }
             for d in facet["items"]
         ],
@@ -208,7 +208,7 @@ async def get_user_by_email(
         raise HTTPException(status_code=404, detail="User not found")
     user = await db[models.USERS].find_one(
         {"_id": email_doc["user_id"], "location": email_doc["location"]},
-        {"_id": 1, "email": 1, "full_name": 1, "location": 1, "created_at": 1, "is_being_deleted": 1},
+        {"_id": 1, "email": 1, "full_name": 1, "location": 1, "created_at": 1, "is_locked": 1},
     )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -218,7 +218,7 @@ async def get_user_by_email(
         "full_name": user.get("full_name"),
         "location": user.get("location"),
         "created_at": user.get("created_at"),
-        "locked": bool(user.get("is_being_deleted")),
+        "locked": bool(user.get("is_locked")),
     }
 
 
@@ -234,10 +234,12 @@ async def lock_user(
     _user: dict = Depends(get_current_admin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    if user_id == str(_user["_id"]):
+        raise HTTPException(status_code=400, detail="Cannot lock your own account")
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
         {"_id": user_id, "location": location},
-        {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
+        {"$set": {"is_locked": True, "tokens_revoked_at": now, "updated_at": now}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
@@ -260,7 +262,7 @@ async def unlock_user(
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
         {"_id": user_id, "location": location},
-        {"$set": {"tokens_revoked_at": None, "is_being_deleted": False, "updated_at": now}},
+        {"$set": {"is_locked": False, "updated_at": now}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")

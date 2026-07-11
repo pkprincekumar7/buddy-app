@@ -123,9 +123,11 @@ export default function AdminAllowedEmails() {
       setLockTarget(null);
       // refresh the paginated list
       void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
-      // update the search result in-place if it matches the acted-on user
+      // patch only the locked field so the search card keeps its full record
       setUserSearchResult((prev) =>
-        prev && prev !== 'not_found' && prev.id === result.id ? result : prev,
+        prev && prev !== 'not_found' && prev.id === result.id
+          ? { ...prev, locked: result.locked }
+          : prev,
       );
     },
     onError: (err) => {
