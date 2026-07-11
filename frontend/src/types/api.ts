@@ -15,6 +15,22 @@ export interface AllowedEmailsPage {
   limit: number;
 }
 
+export interface AdminUserRecord {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  location: string | null;
+  created_at: string | null;
+  locked: boolean;
+}
+
+export interface AdminUsersPage {
+  items: AdminUserRecord[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
 export interface UserRecord {
   role?: string;
   full_name?: string;
