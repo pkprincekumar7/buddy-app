@@ -16,7 +16,7 @@ private_subnet_3_cidr = "10.12.6.0/24"
 nat_gateway_count     = 2
 
 # ElastiCache
-elasticache_node_type     = "cache.t4g.medium"
+elasticache_node_type     = "cache.t3.medium"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
