@@ -28,7 +28,7 @@ export function useLifePathwayData(childId: string | undefined) {
         ]);
 
         const vm = child.personality?.view_model;
-        if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
+        if (vm?.profile?.name) setProfile(onboardingProfileFromViewModel(vm));
 
         // Filter to finalised areas — matches the same 3-way OR used in GrowthAreas.tsx for green ticks.
         // status may have been reset to 'in_progress' if the user re-entered the area after completing it,

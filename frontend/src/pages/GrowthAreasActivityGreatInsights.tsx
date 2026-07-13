@@ -54,7 +54,6 @@ export default function GrowthAreasActivityGreatInsights() {
           ...(pendingAreaDataRef.current ?? {}),
           area_id: area.id,
           area_name: area.name,
-          area_color: area.color,
           status: 'completed',
           step: 'activity_summary',
           ai_three_month_recommendations: pending,

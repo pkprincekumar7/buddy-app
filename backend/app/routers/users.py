@@ -77,7 +77,7 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
     return CompletedGrowthArea(
         area_id=doc["area_id"],
         area_name=doc["area_name"],
-        area_color=doc["area_color"],
+        area_color=doc.get("area_color"),
         answers=doc.get("answers") or {},
         recommendations=doc.get("recommendations"),
         child_activity=child_activity,
@@ -191,10 +191,9 @@ async def append_completed_growth_area(
 ):
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
-    # Always write the required fields (area_name, area_color, answers).
+    # Always write the required fields (area_name, answers).
     set_fields: dict = {
         "area_name": body.area_name,
-        "area_color": body.area_color,
         "answers": body.answers,
         "updated_at": now,
     }
@@ -208,6 +207,29 @@ async def append_completed_growth_area(
         set_fields["child_activity"] = body.child_activity.model_dump()
     # user_id, child_id, area_id, location are equality conditions in the filter.
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
+
+    # When the area is finalised, remove all transient wizard and staging fields.
+    # pending_* are written by job workers and committed into their canonical
+    # counterparts (ai_three_month_recommendations, child_activity) by the client
+    # before sending status=completed. interactive_* and step track in-progress
+    # wizard state that has no meaning once the area is done. child_activity_selections
+    # duplicates child_activity.selections and is no longer needed.
+    unset_fields: dict = {}
+    if body.status == "completed":
+        unset_fields = {
+            "pending_child_activity": "",
+            "pending_recommendations": "",
+            "child_activity_selections": "",
+            "interactive_step": "",
+            "interactive_answers": "",
+            "interactive_draft": "",
+            "step": "",
+        }
+
+    update_doc: dict = {"$set": set_fields, "$setOnInsert": set_on_insert}
+    if unset_fields:
+        update_doc["$unset"] = unset_fields
+
     await db[models.GROWTH_AREAS].update_one(
         {
             "user_id": user["_id"],
@@ -215,7 +237,7 @@ async def append_completed_growth_area(
             "area_id": body.area_id,
             "location": user["location"],
         },
-        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        update_doc,
         upsert=True,
     )
     docs = await (
@@ -270,6 +292,8 @@ async def get_goals(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
+    # goals uses child_id as _id — one document per child, enforced by upsert key.
+    # The DB field is named "goals_plan"; the API model exposes it as "plan".
     doc = await db[models.GOALS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )

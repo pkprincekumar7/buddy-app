@@ -70,7 +70,7 @@ export default function PersonalityJourney() {
         }
         const personality = child.personality;
         const viewModel = personality?.view_model;
-        if (!viewModel?.type) {
+        if (!viewModel?.profile?.name) {
           navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }

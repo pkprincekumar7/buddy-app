@@ -133,7 +133,6 @@ export default function GrowthAreasActivity() {
         await api.completedGrowthAreas.append(childId, {
           area_id: area.id,
           area_name: area.name,
-          area_color: area.color,
           answers: updatedAnswers,
           status: 'in_progress',
           step: nextStep,

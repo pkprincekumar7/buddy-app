@@ -155,7 +155,7 @@ export function useGoalPlan(childId: string | undefined) {
         const vm = personality?.view_model as
           | { type?: string; profile?: Record<string, unknown> }
           | undefined;
-        const profile = vm?.type && vm?.profile ? onboardingProfileFromViewModel(vm) : null;
+        const profile = vm?.profile?.name ? onboardingProfileFromViewModel(vm) : null;
         const safeAreas = areas ?? [];
         const areasContext = safeAreas
           .map((a) => `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`)

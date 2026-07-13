@@ -1065,7 +1065,6 @@ export default function RecommendationsPhase({
     const payload = {
       area_id: area.id,
       area_name: area.name,
-      area_color: area.color,
       answers,
       recommendations: recs,
       status: 'completed',
@@ -2293,7 +2292,6 @@ export default function RecommendationsPhase({
                     await api.completedGrowthAreas.append(activeChildId ?? '', {
                       area_id: area.id,
                       area_name: area.name,
-                      area_color: area.color,
                       answers: interactiveAnswers,
                       recommendations: aiRecommendations ?? null,
                       child_activity,

@@ -500,7 +500,6 @@ export function adaptAiPersonalityToViewModel(
   };
 
   return {
-    type: dominant,
     scores: scoresBase,
     profile,
   };
@@ -519,7 +518,7 @@ const ANIM_STRENGTH_BASE = 3.5;
 const ANIM_STRENGTH_STEP = 0.15;
 
 export interface MbtiResult {
-  type: string;
+  type?: string;
   scores: Record<string, number>;
   profile: {
     name?: string;

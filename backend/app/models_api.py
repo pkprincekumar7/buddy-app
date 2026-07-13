@@ -98,7 +98,7 @@ _GROWTH_AREA_MAX_BYTES = 65_536  # 64 KB cap on the total serialised dict payloa
 class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
-    area_color: str = Field(max_length=100)
+    area_color: str | None = Field(None, max_length=100)
     answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(
         default_factory=dict, max_length=100
     )
@@ -240,11 +240,12 @@ class ChildResponse(BaseModel):
     id: str
     created_date: str
     name: str = ""
-    age: str | int | None = None
+    age: int | None = None
     gender: str | None = None
     school: str | None = None
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
+    current_phase: str | None = None
     personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
@@ -272,10 +273,11 @@ class ChildCreate(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str | None = Field(None, max_length=255)
-    age: str | int | None = Field(None, max_length=20)
+    age: int | None = None
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
+    current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
@@ -286,6 +288,16 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age_to_int(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            raise ValueError("age must be a number")
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildCreate:
@@ -314,11 +326,11 @@ class ChildPatch(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str | None = Field(None, max_length=255)
-    # Promoted columns — declared explicitly so max_length validation applies on the patch path.
-    age: str | int | None = Field(None, max_length=20)
+    age: int | None = None
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int | None = None
     onboarding_completed: bool | None = None
+    current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
     recommendations: dict | None = None
     strengths: list | None = None
@@ -329,6 +341,16 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age_to_int(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            raise ValueError("age must be a number")
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:

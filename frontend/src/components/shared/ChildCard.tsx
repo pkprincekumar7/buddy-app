@@ -29,7 +29,7 @@ export default function ChildCard({ child }: ChildCardProps) {
   const completed = !!child.onboarding_completed || !!child.recommendations;
   // Personality is done but journey recommendations haven't been generated yet —
   // send the parent to PersonalityType so they can continue without redoing the chat.
-  const hasPersonality = !!child.personality?.view_model?.type;
+  const hasPersonality = !!child.personality?.view_model?.profile?.name;
 
   return (
     <>

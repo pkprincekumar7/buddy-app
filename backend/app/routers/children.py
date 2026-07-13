@@ -77,9 +77,24 @@ async def list_children(
     else:
         sort_spec = [("created_at", DESCENDING if _sort.startswith("-") else ASCENDING)]
 
+    # Only fetch the fields actually consumed by the child-card list view.
+    # Heavy sub-documents (personality scores/traits, full recommendations blob)
+    # are excluded here and fetched in full by GET /children/{child_id} when a
+    # specific child's page loads.
+    # recommendations.pathway_overview is projected (not the full blob) so the
+    # truthy completion check (!!child.recommendations) still works correctly.
+    _LIST_PROJECTION = {
+        "name": 1,
+        "age": 1,
+        "school": 1,
+        "onboarding_completed": 1,
+        "recommendations.pathway_overview": 1,
+        "personality.view_model.profile.name": 1,
+        "created_at": 1,
+    }
     docs = await (
         db[models.CHILDREN]
-        .find({"user_id": user["_id"], "location": user["location"]})
+        .find({"user_id": user["_id"], "location": user["location"]}, _LIST_PROJECTION)
         .sort(sort_spec)
         .to_list(limit)
     )
@@ -178,6 +193,10 @@ async def update_child(
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
         update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
+    # When the client commits the final personality, clear the staging field to
+    # avoid keeping ~2 KB of duplicate LLM output permanently on the document.
+    if "personality" in set_fields:
+        update_op["$unset"] = {"pending_personality_vm": ""}
 
     doc = await db[models.CHILDREN].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
