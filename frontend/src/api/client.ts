@@ -4,6 +4,8 @@ import type {
   ChildRecord,
   PreferencesRecord,
   GoalsRecord,
+  GoalMonthsRecord,
+  GoalInsightsRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
   EnqueueJobResponse,
@@ -226,6 +228,39 @@ export const api = {
         method: 'PATCH',
         body,
       }) as Promise<GoalsRecord>,
+  },
+
+  goalMonths: {
+    get: (childId: string): Promise<GoalMonthsRecord> =>
+      request(
+        `/user/goal-months?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<GoalMonthsRecord>,
+    patchOne: (
+      childId: string,
+      monthNumber: number,
+      body: Record<string, unknown>,
+    ): Promise<void> =>
+      request(`/user/goal-months/${monthNumber}?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<void>,
+    patchAll: (childId: string, body: Record<string, unknown>): Promise<void> =>
+      request(`/user/goal-months?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<void>,
+  },
+
+  goalInsights: {
+    get: (childId: string): Promise<GoalInsightsRecord> =>
+      request(
+        `/user/goal-insights?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<GoalInsightsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<GoalInsightsRecord> =>
+      request(`/user/goal-insights?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<GoalInsightsRecord>,
   },
 
   jobs: {

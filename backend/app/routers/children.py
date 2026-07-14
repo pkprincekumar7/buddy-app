@@ -230,7 +230,11 @@ async def delete_child(
     # and can be included in a single transaction — identical pattern to account deletion.
     async with await db.client.start_session() as session, session.start_transaction():
         await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
+        await db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc}, session=session)
         await db[models.GROWTH_AREAS].delete_many(
+            {"child_id": child_id, "location": loc}, session=session
+        )
+        await db[models.GOAL_MONTHS].delete_many(
             {"child_id": child_id, "location": loc}, session=session
         )
         await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)

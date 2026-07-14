@@ -113,7 +113,19 @@ export interface PreferencesRecord {
 
 export interface GoalsRecord {
   parent_concern?: string;
-  plan?: Record<string, unknown>;
+  goals_plan?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface GoalMonthsRecord {
+  months: Record<string, unknown>[];
+  [key: string]: unknown;
+}
+
+export interface GoalInsightsRecord {
+  schema_version?: number | null;
+  insight_items?: unknown[];
+  insights_signature?: number | null;
   [key: string]: unknown;
 }
 

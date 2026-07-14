@@ -201,32 +201,66 @@ class GoalsPlan(BaseModel):
 
 _GOALS_PLAN_MAX_BYTES = 262_144  # 256 KB cap on the total serialised goals plan
 
+# ---------------------------------------------------------------------------
+# goals — base document (parent_concern only)
+# ---------------------------------------------------------------------------
+
 
 class UserGoals(BaseModel):
     parent_concern: str | None = None
-    plan: GoalsPlan | None = None
+    # Staging field written by the generate_goals_plan worker.
+    # The client reads this, splits it into goal_months docs, then clears it.
+    goals_plan: dict | None = None
 
 
 class UserGoalsPatch(BaseModel):
     parent_concern: str | None = Field(None, max_length=2000)
-    plan: GoalsPlan | None = None
-    clear_plan: bool = False
     clear_concern: bool = False
+    clear_goals_plan: bool = False  # set True after client splits goals_plan into goal_months
+
+
+# ---------------------------------------------------------------------------
+# goal_months — one document per month per child
+# ---------------------------------------------------------------------------
+
+
+class GoalMonthsResponse(BaseModel):
+    months: list[GoalsMonth]
+
+
+class GoalMonthsPatch(BaseModel):
+    months: list[GoalsMonth] = Field(max_length=12)
 
     @model_validator(mode="after")
-    def limit_goals_plan_size(self) -> UserGoalsPatch:
-        if self.plan is not None:
-            try:
-                size = len(json.dumps(self.plan.model_dump()))
-            except (RecursionError, ValueError, TypeError):
-                raise ValueError(
-                    "Goals plan contains an invalid or too-deeply nested structure"
-                ) from None
-            if size > _GOALS_PLAN_MAX_BYTES:
-                raise ValueError(
-                    f"Goals plan exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
-                )
+    def limit_months_size(self) -> GoalMonthsPatch:
+        try:
+            size = len(json.dumps([m.model_dump() for m in self.months]))
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError(
+                "Goal months payload contains an invalid or too-deeply nested structure"
+            ) from None
+        if size > _GOALS_PLAN_MAX_BYTES:
+            raise ValueError(
+                f"Goal months payload exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+            )
         return self
+
+
+# ---------------------------------------------------------------------------
+# goal_insights — one document per child
+# ---------------------------------------------------------------------------
+
+
+class GoalInsightsResponse(BaseModel):
+    schema_version: int | None = None
+    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
+    insights_signature: int | None = None
+
+
+class GoalInsightsPatch(BaseModel):
+    schema_version: int | None = None
+    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
+    insights_signature: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +422,7 @@ JobType = Literal[
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
-_ALLOWED_WRITE_BACK_COLLECTIONS = {"growth_areas", "goals", "children"}
+_ALLOWED_WRITE_BACK_COLLECTIONS = {"growth_areas", "goals", "goal_months", "goal_insights", "children"}
 
 _SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
 # Dots in a field path are interpreted by MongoDB $set as nested sub-field
@@ -422,8 +456,8 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     "generate_personality_analysis": {"pending_personality_vm"},
     # journey recommendations are written directly — no client-side transform required.
     "generate_journey_recommendations": {"recommendations"},
-    # insights written to the nested insights sub-document inside goals_plan.
-    "generate_journey_insights": {"goals_plan.insights"},
+    # insights written to the goal_insights collection document.
+    "generate_journey_insights": {"goals_plan.insights", "insight_items"},
 }
 
 _FILTER_MAX_KEYS = 20

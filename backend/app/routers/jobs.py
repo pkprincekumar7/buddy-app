@@ -50,12 +50,13 @@ async def enqueue_job(
     job_id = str(uuid.uuid4())
 
     # Scope the domain write to the exact child being operated on.
-    # `children` and `goals` use child_id as _id, so inject _id directly.
-    # `growth_areas` uses a UUID _id and a separate child_id field — inject
-    # child_id as a field instead so update_one matches the right document.
+    # Collections that use child_id as _id (children, goals, goal_insights):
+    #   inject _id = child_id so the filter hits the primary key index.
+    # Collections that use a UUID _id with a separate child_id field
+    #   (growth_areas, goal_months): inject child_id as a field filter.
     wb_dict = body.write_back.model_dump()
     collection = wb_dict["collection"]
-    if collection == "growth_areas":
+    if collection in ("growth_areas", "goal_months"):
         child_scope = {"child_id": body.child_id}
     else:
         child_scope = {"_id": body.child_id}
@@ -174,7 +175,7 @@ async def get_job_status(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"]})
+    doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"], "location": user["location"]})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")
 

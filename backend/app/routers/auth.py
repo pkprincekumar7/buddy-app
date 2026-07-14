@@ -800,7 +800,13 @@ async def delete_account(
         await db[models.GOALS].delete_many(
             {"user_id": user_id, "location": location}, session=mongo_session
         )
+        await db[models.GOAL_INSIGHTS].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
         await db[models.GROWTH_AREAS].delete_many(
+            {"user_id": user_id, "location": location}, session=mongo_session
+        )
+        await db[models.GOAL_MONTHS].delete_many(
             {"user_id": user_id, "location": location}, session=mongo_session
         )
 

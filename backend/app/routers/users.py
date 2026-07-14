@@ -14,7 +14,11 @@ from app.models_api import (
     ChildActivity,
     CompletedGrowthArea,
     CompletedGrowthAreasResponse,
-    GoalsPlan,
+    GoalInsightsPatch,
+    GoalInsightsResponse,
+    GoalMonthsPatch,
+    GoalMonthsResponse,
+    GoalsMonth,
     UserGoals,
     UserGoalsPatch,
     UserPreferences,
@@ -275,14 +279,14 @@ async def clear_completed_growth_areas(
 
 
 # ---------------------------------------------------------------------------
-# Goals
+# Goals — base document (parent_concern only)
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/user/goals",
     response_model=UserGoals,
-    description="Retrieve the goals plan for a given child.",
+    description="Retrieve the parent concern for a given child.",
 )
 @user_limiter.limit("60/minute")
 async def get_goals(
@@ -292,21 +296,22 @@ async def get_goals(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
-    # goals uses child_id as _id — one document per child, enforced by upsert key.
-    # The DB field is named "goals_plan"; the API model exposes it as "plan".
+    # goals uses child_id as _id — one document per child.
     doc = await db[models.GOALS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )
     if not doc:
         return UserGoals()
-    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc.get("goals_plan") else None
-    return UserGoals(parent_concern=doc.get("parent_concern"), plan=plan)
+    return UserGoals(
+        parent_concern=doc.get("parent_concern"),
+        goals_plan=doc.get("goals_plan"),
+    )
 
 
 @router.patch(
     "/user/goals",
     response_model=UserGoals,
-    description="Update the parent concern or goals plan for a given child.",
+    description="Update the parent concern for a given child.",
 )
 @user_limiter.limit("20/minute")
 async def patch_goals(
@@ -326,10 +331,8 @@ async def patch_goals(
     elif body.parent_concern is not None:
         set_fields["parent_concern"] = body.parent_concern
 
-    if body.clear_plan:
+    if body.clear_goals_plan:
         set_fields["goals_plan"] = None
-    elif body.plan is not None:
-        set_fields["goals_plan"] = body.plan.model_dump()
 
     doc = await db[models.GOALS].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
@@ -337,5 +340,195 @@ async def patch_goals(
         upsert=True,
         return_document=True,
     )
-    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc and doc.get("goals_plan") else None
-    return UserGoals(parent_concern=doc.get("parent_concern") if doc else None, plan=plan)
+    return UserGoals(
+        parent_concern=doc.get("parent_concern") if doc else None,
+        goals_plan=doc.get("goals_plan") if doc else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Goal months — one document per month per child
+# ---------------------------------------------------------------------------
+
+
+def _month_doc_to_api(doc: dict) -> GoalsMonth:
+    return GoalsMonth.model_validate({
+        "month": doc["month"],
+        "goal": doc.get("goal", ""),
+        "objective": doc.get("objective", ""),
+        "periods": doc.get("periods", []),
+    })
+
+
+@router.get(
+    "/user/goal-months",
+    response_model=GoalMonthsResponse,
+    description="Retrieve all month plan documents for a given child.",
+)
+@user_limiter.limit("60/minute")
+async def get_goal_months(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    docs = await (
+        db[models.GOAL_MONTHS]
+        .find({"child_id": child_id, "user_id": user["_id"], "location": user["location"]})
+        .sort("month", 1)
+        .to_list(12)
+    )
+    return GoalMonthsResponse(months=[_month_doc_to_api(d) for d in docs])
+
+
+@router.patch(
+    "/user/goal-months/{month_number}",
+    status_code=204,
+    description="Upsert a single month plan document for a given child.",
+)
+@user_limiter.limit("30/minute")
+async def patch_goal_month_single(
+    request: Request,
+    month_number: int,
+    body: GoalsMonth,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields = {
+        "goal": body.goal,
+        "objective": body.objective,
+        "periods": [p.model_dump() for p in body.periods],
+        "updated_at": now,
+    }
+    await db[models.GOAL_MONTHS].update_one(
+        {
+            "child_id": child_id,
+            "user_id": user["_id"],
+            "month": month_number,
+            "location": user["location"],
+        },
+        {
+            "$set": set_fields,
+            "$setOnInsert": {
+                "_id": str(uuid.uuid4()),
+                "created_at": now,
+                "user_id": user["_id"],
+                "child_id": child_id,
+                "location": user["location"],
+            },
+        },
+        upsert=True,
+    )
+
+
+@router.patch(
+    "/user/goal-months",
+    status_code=204,
+    description="Replace all month plan documents for a given child in one operation.",
+)
+@user_limiter.limit("20/minute")
+async def patch_goal_months(
+    request: Request,
+    body: GoalMonthsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    filter_key = {"child_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    # Delete all existing month docs for this child then bulk-insert the new set.
+    # Two DB ops regardless of how many months exist.
+    # TODO: Wrap in a transaction once Atlas M10+ is available — currently if insert_many
+    #       fails after delete_many succeeds, the child's goal months are lost.
+    await db[models.GOAL_MONTHS].delete_many(filter_key)
+    if body.months:
+        await db[models.GOAL_MONTHS].insert_many([
+            {
+                "_id": str(uuid.uuid4()),
+                "child_id": child_id,
+                "user_id": user["_id"],
+                "location": user["location"],
+                "month": month.month,
+                "goal": month.goal,
+                "objective": month.objective,
+                "periods": [p.model_dump() for p in month.periods],
+                "created_at": now,
+                "updated_at": now,
+            }
+            for month in body.months
+        ])
+
+
+# ---------------------------------------------------------------------------
+# Goal insights — one document per child
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/user/goal-insights",
+    response_model=GoalInsightsResponse,
+    description="Retrieve the insights document for a given child.",
+)
+@user_limiter.limit("60/minute")
+async def get_goal_insights(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    # goal_insights uses child_id as _id — one document per child.
+    doc = await db[models.GOAL_INSIGHTS].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
+    if not doc:
+        return GoalInsightsResponse()
+    return GoalInsightsResponse(
+        schema_version=doc.get("schema_version"),
+        insight_items=doc.get("insight_items", []),
+        insights_signature=doc.get("insights_signature"),
+    )
+
+
+@router.patch(
+    "/user/goal-insights",
+    response_model=GoalInsightsResponse,
+    description="Update the insights document for a given child.",
+)
+@user_limiter.limit("20/minute")
+async def patch_goal_insights(
+    request: Request,
+    body: GoalInsightsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields: dict = {"updated_at": now}
+    if body.schema_version is not None:
+        set_fields["schema_version"] = body.schema_version
+    if body.insight_items is not None:
+        set_fields["insight_items"] = [item.model_dump() for item in body.insight_items]
+    if body.insights_signature is not None:
+        set_fields["insights_signature"] = body.insights_signature
+
+    doc = await db[models.GOAL_INSIGHTS].find_one_and_update(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        {
+            "$set": set_fields,
+            "$setOnInsert": {"created_at": now, "user_id": user["_id"]},
+        },
+        upsert=True,
+        return_document=True,
+    )
+    return GoalInsightsResponse(
+        schema_version=doc.get("schema_version") if doc else None,
+        insight_items=doc.get("insight_items", []) if doc else [],
+        insights_signature=doc.get("insights_signature") if doc else None,
+    )

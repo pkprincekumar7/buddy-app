@@ -92,10 +92,13 @@ export function useGoalPlan(childId: string | undefined) {
     if (!childId) return;
     setIsApplying(true);
     try {
-      const goals = await api.goals.get(childId);
-      const goalsRecord = goals as Record<string, unknown>;
-      if (goalsRecord?.plan) {
-        const plan = goalsRecord.plan as GoalPlan;
+      // Worker wrote the full plan into goals.goals_plan (staging field).
+      // Split it into per-month docs, restore any completed-activity snapshots,
+      // persist to goal_months, then clear the staging field.
+      const goalsDoc = await api.goals.get(childId);
+      const months = (goalsDoc?.goals_plan as { months?: Month[] } | null)?.months;
+      if (months?.length) {
+        const plan: GoalPlan = { months };
         const snap = pendingSnapshotRef.current;
         if (Object.keys(snap).length > 0) {
           plan.months?.forEach((month, mIdx) => {
@@ -107,8 +110,9 @@ export function useGoalPlan(childId: string | undefined) {
             });
           });
           pendingSnapshotRef.current = {};
-          await api.goals.patch(childId, { plan });
         }
+        await api.goalMonths.patchAll(childId, { months: plan.months });
+        await api.goals.patch(childId, { clear_goals_plan: true });
         setGoalPlan(plan);
       }
     } catch (err) {
@@ -205,8 +209,9 @@ export function useGoalPlan(childId: string | undefined) {
           return;
         }
 
-        const [goals, completedData] = await Promise.all([
+        const [goals, goalMonths, completedData] = await Promise.all([
           api.goals.get(childId),
+          api.goalMonths.get(childId),
           api.completedGrowthAreas.list(childId),
         ]);
 
@@ -224,13 +229,14 @@ export function useGoalPlan(childId: string | undefined) {
           typeof goalsRecord?.parent_concern === 'string' ? goalsRecord.parent_concern : '';
         setConcern(savedConcern);
 
-        if (goalsRecord?.plan) {
-          setGoalPlan(goalsRecord.plan as GoalPlan);
+        const months = goalMonths?.months as Month[] | undefined;
+        if (months?.length) {
+          setGoalPlan({ months });
           setIsInitializing(false);
           return;
         }
 
-        // No saved plan — only enqueue if there is no active job already polling.
+        // No saved months — only enqueue if there is no active job already polling.
         // If active_jobs already has a generate_goals_plan entry, useJob's sync
         // effect will pick it up from childRecord.active_jobs and start polling.
         const activeJobId = (childRecord.active_jobs as Record<string, string> | undefined)
@@ -267,7 +273,10 @@ export function useGoalPlan(childId: string | undefined) {
       }
       try {
         const childId = childData?.id as string | undefined;
-        if (childId) await api.goals.patch(childId, { plan: updatedPlan });
+        const changedMonth = updatedPlan.months[monthIdx];
+        if (childId && changedMonth) {
+          await api.goalMonths.patchOne(childId, monthIdx + 1, changedMonth);
+        }
         setGoalPlan(updatedPlan);
       } catch (err) {
         console.error('[useGoalPlan] Failed to save activity:', err);
@@ -309,7 +318,8 @@ export function useGoalPlan(childId: string | undefined) {
 
       try {
         const cId = childData?.id as string | undefined;
-        if (cId) await api.goals.patch(cId, { plan: updatedPlan });
+        // Delete-and-reinsert all months in one backend call (2 DB ops total).
+        if (cId) await api.goalMonths.patchAll(cId, { months: updatedPlan.months });
         setGoalPlan(updatedPlan);
       } catch (err) {
         console.error('[useGoalPlan] Failed to reset activity:', err);
