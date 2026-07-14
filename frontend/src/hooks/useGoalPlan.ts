@@ -239,7 +239,9 @@ export function useGoalPlan(childId: string | undefined) {
           typeof goalsRecord?.parent_concern === 'string' ? goalsRecord.parent_concern : '';
         setConcern(savedConcern);
 
-        const months = goalMonths?.months as Month[] | undefined;
+        const months = Array.isArray(goalMonths?.months)
+          ? (goalMonths.months as Month[])
+          : undefined;
         if (months?.length) {
           setGoalPlan({ months });
           setIsInitializing(false);

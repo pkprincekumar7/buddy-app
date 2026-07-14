@@ -801,8 +801,9 @@ async def delete_account(
     # Step 3 — delete the user document
     await db[models.USERS].delete_one({"_id": user_id, "location": location})
 
-    # Step 4 — release the email (outside the transaction: email_index is
-    # unsharded and must not be included in a single-zone shard transaction).
+    # Step 4 — release the email slot.
+    # email_index is unsharded (primary shard) and must stay outside any future
+    # M10+ transaction: including it would make this a cross-shard transaction.
     # If this delete fails, the orphaned entry is reclaimed on the next
     # registration attempt for the same address (see /auth/register).
     try:
