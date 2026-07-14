@@ -522,7 +522,7 @@ async def patch_goal_insights(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
         {
             "$set": set_fields,
-            "$setOnInsert": {"created_at": now, "user_id": user["_id"]},
+            "$setOnInsert": {"created_at": now, "user_id": user["_id"], "location": user["location"]},
         },
         upsert=True,
         return_document=True,

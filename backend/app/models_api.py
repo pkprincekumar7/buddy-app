@@ -323,16 +323,6 @@ class ChildCreate(BaseModel):
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
 
-    @field_validator("age", mode="before")
-    @classmethod
-    def coerce_age_to_int(cls, v: Any) -> int | None:
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except (ValueError, TypeError):
-            raise ValueError("age must be a number")
-
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildCreate:
         if self.__pydantic_extra__:
@@ -375,16 +365,6 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
-
-    @field_validator("age", mode="before")
-    @classmethod
-    def coerce_age_to_int(cls, v: Any) -> int | None:
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except (ValueError, TypeError):
-            raise ValueError("age must be a number")
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:
@@ -457,7 +437,7 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # journey recommendations are written directly — no client-side transform required.
     "generate_journey_recommendations": {"recommendations"},
     # insights written to the goal_insights collection document.
-    "generate_journey_insights": {"goals_plan.insights", "insight_items"},
+    "generate_journey_insights": {"insight_items"},
 }
 
 _FILTER_MAX_KEYS = 20
