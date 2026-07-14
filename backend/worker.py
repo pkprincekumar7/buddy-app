@@ -237,10 +237,20 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
 async def write_to_domain(job: dict) -> None:
     wb = job["write_back"]
     now = datetime.now(UTC)
+    # Defensive guard: location must always be present in the write-back filter.
+    # enqueue_job injects it at enqueue time, but an upsert without location would
+    # create a document that has no shard key — invalid on a sharded cluster (M10+)
+    # and silently creates an unscoped document on M0.
+    if "location" not in wb["filter"]:
+        await handle_domain_write_failure(
+            job, "write_back.filter is missing required 'location' field"
+        )
+        return
     try:
         await db[wb["collection"]].update_one(
             wb["filter"],
             {"$set": {wb["field"]: job["result"]}},
+            upsert=True,
         )
     except Exception as e:
         await handle_domain_write_failure(job, str(e))

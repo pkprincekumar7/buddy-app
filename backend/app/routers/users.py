@@ -2,7 +2,8 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from pydantic import ValidationError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
@@ -213,11 +214,6 @@ async def append_completed_growth_area(
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
 
     # When the area is finalised, remove all transient wizard and staging fields.
-    # pending_* are written by job workers and committed into their canonical
-    # counterparts (ai_three_month_recommendations, child_activity) by the client
-    # before sending status=completed. interactive_* and step track in-progress
-    # wizard state that has no meaning once the area is done. child_activity_selections
-    # duplicates child_activity.selections and is no longer needed.
     unset_fields: dict = {}
     if body.status == "completed":
         unset_fields = {
@@ -279,7 +275,7 @@ async def clear_completed_growth_areas(
 
 
 # ---------------------------------------------------------------------------
-# Goals — base document (parent_concern only)
+# Goals
 # ---------------------------------------------------------------------------
 
 
@@ -351,13 +347,22 @@ async def patch_goals(
 # ---------------------------------------------------------------------------
 
 
-def _month_doc_to_api(doc: dict) -> GoalsMonth:
-    return GoalsMonth.model_validate({
-        "month": doc["month"],
-        "goal": doc.get("goal", ""),
-        "objective": doc.get("objective", ""),
-        "periods": doc.get("periods", []),
-    })
+def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
+    try:
+        return GoalsMonth.model_validate({
+            "month": doc.get("month"),
+            "goal": doc.get("goal", ""),
+            "objective": doc.get("objective", ""),
+            "periods": doc.get("periods", []),
+        })
+    except (ValidationError, KeyError, TypeError):
+        log.warning(
+            "_month_doc_to_api: skipping invalid month doc _id=%s month=%s",
+            doc.get("_id"),
+            doc.get("month"),
+            exc_info=True,
+        )
+        return None
 
 
 @router.get(
@@ -379,7 +384,8 @@ async def get_goal_months(
         .sort("month", 1)
         .to_list(12)
     )
-    return GoalMonthsResponse(months=[_month_doc_to_api(d) for d in docs])
+    months = [m for m in (_month_doc_to_api(d) for d in docs) if m is not None]
+    return GoalMonthsResponse(months=months)
 
 
 @router.patch(
@@ -390,12 +396,17 @@ async def get_goal_months(
 @user_limiter.limit("30/minute")
 async def patch_goal_month_single(
     request: Request,
-    month_number: int,
-    body: GoalsMonth,
+    month_number: int = Path(..., ge=1, le=12),
+    body: GoalsMonth = ...,
     child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
+    if body.month != month_number:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Path month_number ({month_number}) does not match body month ({body.month})",
+        )
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
     set_fields = {
@@ -441,13 +452,20 @@ async def patch_goal_months(
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
     filter_key = {"child_id": child_id, "user_id": user["_id"], "location": user["location"]}
-    # Delete all existing month docs for this child then bulk-insert the new set.
-    # Two DB ops regardless of how many months exist.
-    # TODO: Wrap in a transaction once Atlas M10+ is available — currently if insert_many
-    #       fails after delete_many succeeds, the child's goal months are lost.
-    await db[models.GOAL_MONTHS].delete_many(filter_key)
+
+    # TODO(M10+): Replace insert+delete below with an atomic transaction once the
+    # cluster is upgraded to Atlas M10 or higher. On M0/M2/M5, multi-document
+    # transactions are not supported. To minimise data-loss risk on a crash we
+    # insert the new documents first and only then delete the old ones:
+    #   - Crash after insert_many but before delete_many → duplicate month docs
+    #     exist; the next successful call will clean them up (no data loss).
+    #   - Crash after delete_many but before insert_many (old delete-first order)
+    #     → child loses all month data permanently (unacceptable).
+    # On M10+ both ops should be wrapped in a session transaction to make the
+    # replace fully atomic and remove the duplicate-doc window.
+    new_ids: list[str] = []
     if body.months:
-        await db[models.GOAL_MONTHS].insert_many([
+        new_docs = [
             {
                 "_id": str(uuid.uuid4()),
                 "child_id": child_id,
@@ -461,7 +479,12 @@ async def patch_goal_months(
                 "updated_at": now,
             }
             for month in body.months
-        ])
+        ]
+        result = await db[models.GOAL_MONTHS].insert_many(new_docs)
+        new_ids = [str(i) for i in result.inserted_ids]
+
+    # Delete all old docs except the ones we just inserted.
+    await db[models.GOAL_MONTHS].delete_many({**filter_key, "_id": {"$nin": new_ids}})
 
 
 # ---------------------------------------------------------------------------

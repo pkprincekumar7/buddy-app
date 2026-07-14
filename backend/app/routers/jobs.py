@@ -65,6 +65,7 @@ async def enqueue_job(
         "filter": {
             **wb_dict["filter"],
             **child_scope,
+            "user_id": user_id,        # always scope writes to the authenticated user
             "location": user["location"],  # overwrite any client-supplied location
         },
     }
@@ -97,46 +98,43 @@ async def enqueue_job(
         "completed_at": None,
     }
 
-    # Use a transaction to atomically check the in-flight cap and insert the job.
-    # Without a transaction, two concurrent requests from the same user can both
-    # read count < _MAX_IN_FLIGHT_PER_TYPE and both insert, exceeding the cap.
+    # TODO(M10+): Replace the sequential count+insert below with a single atomic
+    # transaction once the cluster is upgraded to Atlas M10 or higher. On M0/M2/M5
+    # shared tiers, multi-document transactions are not supported and will raise
+    # OperationFailure at runtime. The sequential approach has a small TOCTOU
+    # window: two concurrent requests from the same user can both read
+    # count < _MAX_IN_FLIGHT_PER_TYPE and both succeed, momentarily exceeding the
+    # cap by one. This is acceptable for now (the cap is a soft guard, not a hard
+    # billing limit) and will be closed when the transaction is added on M10+.
     #
-    # IMPORTANT: Multi-document transactions require a MongoDB replica set or
-    # sharded cluster (Atlas M10+). They are not available on Atlas M0/M2/M5
-    # shared tiers. If this service is deployed on a shared tier, the transaction
-    # will raise OperationFailure and enqueue_job will return 503.
-    #
-    # To catch this early rather than at request time, add a startup check in
-    # main.py (similar to the worker's MongoDB ping) that tests transaction
-    # support:
+    # On M10+, also add a startup probe in main.py to fail fast if transactions
+    # are unavailable:
     #   async with await db.client.start_session() as s:
     #       async with s.start_transaction():
-    #           pass  # raises OperationFailure on M0/M2/M5, fails fast at boot
+    #           pass
     try:
-        async with await db.client.start_session() as session, session.start_transaction():
-            existing = await db[models.JOBS].count_documents(
-                {
-                    "location": user["location"],
-                    "user_id": user_id,
-                    "child_id": body.child_id,
-                    "type": body.type,
-                    "status": {"$in": ["pending", "processing", "result_ready"]},
-                },
-                session=session,
+        existing = await db[models.JOBS].count_documents(
+            {
+                "location": user["location"],
+                "user_id": user_id,
+                "child_id": body.child_id,
+                "type": body.type,
+                "status": {"$in": ["pending", "processing", "result_ready"]},
+            }
+        )
+        if existing >= _MAX_IN_FLIGHT_PER_TYPE:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
             )
-            if existing >= _MAX_IN_FLIGHT_PER_TYPE:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
-                )
-            await db[models.JOBS].insert_one(doc, session=session)
+        await db[models.JOBS].insert_one(doc)
     except HTTPException:
         raise
     except Exception as e:
         log.error("job.enqueue_failed job_id=%s error=%s", job_id, e, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Job queue is temporarily unavailable. Ensure the database supports transactions (Atlas M10+).",
+            detail="Job queue is temporarily unavailable.",
         ) from e
 
     # Record job_id in children.active_jobs so every device can resume polling.
@@ -176,7 +174,9 @@ async def get_job_status(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"], "location": user["location"]})
+    # Field order matches the index (location, job_id, user_id) so the query
+    # hits the index prefix and avoids a scatter-gather on a sharded cluster.
+    doc = await db[models.JOBS].find_one({"location": user["location"], "job_id": job_id, "user_id": user["_id"]})
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")
 

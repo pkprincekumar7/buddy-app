@@ -96,7 +96,13 @@ export function useGoalPlan(childId: string | undefined) {
       // Split it into per-month docs, restore any completed-activity snapshots,
       // persist to goal_months, then clear the staging field.
       const goalsDoc = await api.goals.get(childId);
-      const months = (goalsDoc?.goals_plan as { months?: Month[] } | null)?.months;
+      const rawPlan = goalsDoc?.goals_plan;
+      const months =
+        rawPlan !== null &&
+        typeof rawPlan === 'object' &&
+        Array.isArray((rawPlan as Record<string, unknown>).months)
+          ? ((rawPlan as Record<string, unknown>).months as Month[])
+          : undefined;
       if (months?.length) {
         const plan: GoalPlan = { months };
         const snap = pendingSnapshotRef.current;
@@ -109,10 +115,14 @@ export function useGoalPlan(childId: string | undefined) {
               });
             });
           });
-          pendingSnapshotRef.current = {};
         }
+        // Persist months first — only clear snapshot and staging field on success.
         await api.goalMonths.patchAll(childId, { months: plan.months });
-        await api.goals.patch(childId, { clear_goals_plan: true });
+        pendingSnapshotRef.current = {};
+        // Non-fatal: staging field will be re-cleared on the next successful patchAll.
+        await api.goals.patch(childId, { clear_goals_plan: true }).catch((err) => {
+          console.warn('[useGoalPlan] Failed to clear goals_plan staging field (non-fatal):', err);
+        });
         setGoalPlan(plan);
       }
     } catch (err) {
@@ -274,8 +284,8 @@ export function useGoalPlan(childId: string | undefined) {
       try {
         const childId = childData?.id as string | undefined;
         const changedMonth = updatedPlan.months[monthIdx];
-        if (childId && changedMonth) {
-          await api.goalMonths.patchOne(childId, monthIdx + 1, changedMonth);
+        if (childId && changedMonth && changedMonth.month != null) {
+          await api.goalMonths.patchOne(childId, changedMonth.month, changedMonth as unknown as Record<string, unknown>);
         }
         setGoalPlan(updatedPlan);
       } catch (err) {
@@ -319,7 +329,7 @@ export function useGoalPlan(childId: string | undefined) {
       try {
         const cId = childData?.id as string | undefined;
         // Delete-and-reinsert all months in one backend call (2 DB ops total).
-        if (cId) await api.goalMonths.patchAll(cId, { months: updatedPlan.months });
+        if (cId) await api.goalMonths.patchAll(cId, { months: updatedPlan.months as unknown as Record<string, unknown>[] });
         setGoalPlan(updatedPlan);
       } catch (err) {
         console.error('[useGoalPlan] Failed to reset activity:', err);

@@ -94,7 +94,7 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'goals';
+    collection: 'growth_areas' | 'children' | 'goals' | 'goal_months' | 'goal_insights';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -117,14 +117,48 @@ export interface GoalsRecord {
   [key: string]: unknown;
 }
 
+export interface GoalsActivity {
+  title: string;
+  objective: string;
+  scorable?: boolean;
+  completed?: boolean | null;
+  score?: number | null;
+  note?: string | null;
+  progress_observation?: string | null;
+  ai_feedback?: string | null;
+  parent_feedback?: string | null;
+  what_changed?: string | null;
+  what_learned?: string | null;
+  recommendation?: string | null;
+  answers_text?: string | null;
+}
+
+export interface GoalsPeriod {
+  label: string;
+  activities: GoalsActivity[];
+}
+
+export interface GoalsMonth {
+  month: number;
+  goal: string;
+  objective: string;
+  periods: GoalsPeriod[];
+}
+
 export interface GoalMonthsRecord {
-  months: Record<string, unknown>[];
+  months: GoalsMonth[];
   [key: string]: unknown;
+}
+
+export interface InsightItem {
+  text: string;
+  type: string;
+  details: string;
 }
 
 export interface GoalInsightsRecord {
   schema_version?: number | null;
-  insight_items?: unknown[];
+  insight_items?: InsightItem[];
   insights_signature?: number | null;
   [key: string]: unknown;
 }

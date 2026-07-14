@@ -167,7 +167,6 @@ export default function GrowthAreasActivityGreatInsights() {
       await api.completedGrowthAreas.append(childId, {
         area_id: area.id,
         area_name: area.name,
-        area_color: area.color,
         answers: interactiveAnswers,
         status: 'in_progress',
         step: 'activity_summary',

@@ -81,8 +81,6 @@ async def list_children(
     # Heavy sub-documents (personality scores/traits, full recommendations blob)
     # are excluded here and fetched in full by GET /children/{child_id} when a
     # specific child's page loads.
-    # recommendations.pathway_overview is projected (not the full blob) so the
-    # truthy completion check (!!child.recommendations) still works correctly.
     _LIST_PROJECTION = {
         "name": 1,
         "age": 1,
@@ -91,6 +89,9 @@ async def list_children(
         "recommendations.pathway_overview": 1,
         "personality.view_model.profile.name": 1,
         "created_at": 1,
+        # current_phase is intentionally excluded: the child-card list view does
+        # not render it.  It is returned in full by GET /children/{child_id} when
+        # the detail page loads.  Add it here only if a list-view consumer needs it.
     }
     docs = await (
         db[models.CHILDREN]
@@ -226,15 +227,14 @@ async def delete_child(
     if not existing:
         raise HTTPException(status_code=404, detail="Child not found")
     loc = existing["location"]
-    # All three collections are sharded by location, so they land on the same shard
-    # and can be included in a single transaction — identical pattern to account deletion.
-    async with await db.client.start_session() as session, session.start_transaction():
-        await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
-        await db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc}, session=session)
-        await db[models.GROWTH_AREAS].delete_many(
-            {"child_id": child_id, "location": loc}, session=session
-        )
-        await db[models.GOAL_MONTHS].delete_many(
-            {"child_id": child_id, "location": loc}, session=session
-        )
-        await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)
+    # TODO(M10+): Wrap all deletes below in a single multi-document transaction once
+    # the cluster is upgraded to Atlas M10 or higher. Atlas M0/M2/M5 shared tiers
+    # do not support multi-document transactions, so we use sequential operations
+    # for now. A crash mid-sequence may leave orphaned goal/growth-area documents
+    # for the child; they are inert (no child record to link them) but should be
+    # cleaned up by a periodic orphan-sweep job before the M10+ migration.
+    await db[models.GOALS].delete_one({"_id": child_id, "location": loc})
+    await db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc})
+    await db[models.GOAL_MONTHS].delete_many({"child_id": child_id, "location": loc})
+    await db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc})
+    await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc})

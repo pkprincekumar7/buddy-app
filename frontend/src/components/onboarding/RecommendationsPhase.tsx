@@ -538,7 +538,6 @@ function buildAreaProgressPayload({
   return {
     area_id: area.id,
     area_name: area.name,
-    area_color: area.color,
     answers: interactiveAnswers || {},
     recommendations: null,
     status: 'in_progress',

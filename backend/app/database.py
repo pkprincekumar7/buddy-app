@@ -47,12 +47,17 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["goal_months"].create_index(
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
     )
+    # Uniqueness guard for the (child, month) pair, also the primary lookup index
+    # for GET /user/goal-months (filters on location + child_id + user_id).
+    # location MUST be the leading key: Atlas Global Clusters require that every
+    # unique index on a sharded collection has the shard key as its prefix.
+    # The shard key for goal_months is {location: 1}, so this index satisfies that
+    # requirement. Changing the field order will break sharding on M10+.
+    # Prefix (location, child_id, user_id) is covered by this unique index,
+    # so no separate non-unique index is needed for list queries.
     await db["goal_months"].create_index(
         [("location", ASCENDING), ("child_id", ASCENDING), ("user_id", ASCENDING), ("month", ASCENDING)],
         unique=True,
-    )
-    await db["goal_months"].create_index(
-        [("location", ASCENDING), ("child_id", ASCENDING), ("user_id", ASCENDING)]
     )
 
     # growth_areas: unique per (user, child, area) — child_id added to the compound key.

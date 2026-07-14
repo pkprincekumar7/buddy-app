@@ -60,7 +60,7 @@ class ChildActivity(BaseModel):
 class CompletedGrowthArea(BaseModel):
     area_id: str
     area_name: str
-    area_color: str
+    area_color: str | None = None
     answers: dict[str, str] = Field(default_factory=dict)
     recommendations: list[str] | None = None
     child_activity: ChildActivity | None = None
@@ -232,7 +232,10 @@ class GoalMonthsPatch(BaseModel):
     months: list[GoalsMonth] = Field(max_length=12)
 
     @model_validator(mode="after")
-    def limit_months_size(self) -> GoalMonthsPatch:
+    def validate_months(self) -> GoalMonthsPatch:
+        month_numbers = [m.month for m in self.months]
+        if len(month_numbers) != len(set(month_numbers)):
+            raise ValueError("months list contains duplicate month numbers")
         try:
             size = len(json.dumps([m.model_dump() for m in self.months]))
         except (RecursionError, ValueError, TypeError):
@@ -259,7 +262,9 @@ class GoalInsightsResponse(BaseModel):
 
 class GoalInsightsPatch(BaseModel):
     schema_version: int | None = None
-    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
+    # None means "no update" — use explicit None rather than default_factory=list
+    # so that `is not None` guards in the route handler work correctly.
+    insight_items: list[InsightItem] | None = Field(None, max_length=50)
     insights_signature: int | None = None
 
 
@@ -423,7 +428,7 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
         "recommendations_plan",
         "pending_recommendations",
     },
-    "generate_goals_plan": {"plan", "goals_plan", "plan.months"},
+    "generate_goals_plan": {"goals_plan"},
     "generate_activity": {
         "activity",
         "activity_plan",
