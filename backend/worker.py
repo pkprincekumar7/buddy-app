@@ -143,10 +143,9 @@ async def handle_llm_failure(job: dict, error: str) -> None:
             new_attempt,
             error,
         )
-        await db[CHILDREN].update_one(
-            {"_id": job["child_id"]},
-            {"$unset": {f"active_jobs.{job['type']}": ""}},
-        )
+        # Mark job failed FIRST — same reasoning as write_to_domain's "Mark job completed FIRST"
+        # comment. If active_jobs were cleared first, the frontend stops polling before it
+        # can read status=failed, and the parent never sees the failure.
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
             {
@@ -158,6 +157,10 @@ async def handle_llm_failure(job: dict, error: str) -> None:
                     "updated_at": now,
                 }
             },
+        )
+        await db[CHILDREN].update_one(
+            {"_id": job["child_id"]},
+            {"$unset": {f"active_jobs.{job['type']}": ""}},
         )
     else:
         backoff = LLM_BACKOFF_SECONDS[min(new_attempt, len(LLM_BACKOFF_SECONDS) - 1)]
@@ -195,10 +198,9 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
             new_attempt,
             error,
         )
-        await db[CHILDREN].update_one(
-            {"_id": job["child_id"]},
-            {"$unset": {f"active_jobs.{job['type']}": ""}},
-        )
+        # Mark job failed FIRST — same reasoning as write_to_domain's "Mark job completed FIRST"
+        # comment. Clearing active_jobs first would cause the frontend to stop polling before
+        # it can read status=failed.
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
             {
@@ -209,6 +211,10 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
                     "updated_at": now,
                 }
             },
+        )
+        await db[CHILDREN].update_one(
+            {"_id": job["child_id"]},
+            {"$unset": {f"active_jobs.{job['type']}": ""}},
         )
     else:
         log.info(

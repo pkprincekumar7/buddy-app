@@ -170,7 +170,9 @@ async def list_completed_growth_areas(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    # Read-only: query is already scoped by user_id + location so an unknown
+    # child_id returns an empty list rather than leaking data. Skip _require_child
+    # to save one round-trip on M0's shared-cluster I/O.
     docs = await (
         db[models.GROWTH_AREAS]
         .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
@@ -183,8 +185,8 @@ async def list_completed_growth_areas(
 
 @router.post(
     "/user/completed-growth-areas",
-    response_model=CompletedGrowthAreasResponse,
-    description="Record a growth area as completed for a given child.",
+    status_code=204,
+    description="Upsert a growth area document for a given child.",
 )
 @user_limiter.limit("60/minute")
 async def append_completed_growth_area(
@@ -240,20 +242,6 @@ async def append_completed_growth_area(
         update_doc,
         upsert=True,
     )
-    docs = await (
-        db[models.GROWTH_AREAS]
-        .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
-        .sort("created_at", 1)
-        .to_list(_GROWTH_AREAS_MAX)
-    )
-    if len(docs) == _GROWTH_AREAS_MAX:
-        log.warning(
-            "append_completed_growth_area: hit _GROWTH_AREAS_MAX cap (%d) for user=%s child=%s",
-            _GROWTH_AREAS_MAX,
-            user["_id"],
-            child_id,
-        )
-    return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
 @router.delete(
@@ -291,8 +279,7 @@ async def get_goals(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
-    # goals uses child_id as _id — one document per child.
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.GOALS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )
@@ -377,7 +364,7 @@ async def get_goal_months(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     docs = await (
         db[models.GOAL_MONTHS]
         .find({"child_id": child_id, "user_id": user["_id"], "location": user["location"]})
@@ -504,8 +491,7 @@ async def get_goal_insights(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
-    # goal_insights uses child_id as _id — one document per child.
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.GOAL_INSIGHTS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )

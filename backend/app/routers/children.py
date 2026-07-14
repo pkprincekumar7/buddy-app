@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -233,8 +234,12 @@ async def delete_child(
     # for now. A crash mid-sequence may leave orphaned goal/growth-area documents
     # for the child; they are inert (no child record to link them) but should be
     # cleaned up by a periodic orphan-sweep job before the M10+ migration.
-    await db[models.GOALS].delete_one({"_id": child_id, "location": loc})
-    await db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc})
-    await db[models.GOAL_MONTHS].delete_many({"child_id": child_id, "location": loc})
-    await db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc})
+    # Child-data collections are independent — delete them in parallel to reduce
+    # wall-clock time on M0's shared-cluster I/O.
+    await asyncio.gather(
+        db[models.GOALS].delete_one({"_id": child_id, "location": loc}),
+        db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc}),
+        db[models.GOAL_MONTHS].delete_many({"child_id": child_id, "location": loc}),
+        db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}),
+    )
     await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc})

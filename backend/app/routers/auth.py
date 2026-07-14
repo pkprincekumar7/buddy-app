@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import re
@@ -789,14 +790,16 @@ async def delete_account(
     )
     await db[models.SESSIONS].delete_many({"user_id": user_id, "location": location})
 
-    # Step 2 — delete all other owned collections
-    await db[models.CHILDREN].delete_many({"user_id": user_id, "location": location})
-    # goals/growth_areas are child-scoped and store user_id,
+    # Step 2 — delete all other owned collections in parallel (independent, no ordering constraint).
+    # goals/growth_areas/goal_months/goal_insights are all child-scoped and store user_id,
     # so delete_many by user_id covers every document in one pass.
-    await db[models.GOALS].delete_many({"user_id": user_id, "location": location})
-    await db[models.GOAL_INSIGHTS].delete_many({"user_id": user_id, "location": location})
-    await db[models.GOAL_MONTHS].delete_many({"user_id": user_id, "location": location})
-    await db[models.GROWTH_AREAS].delete_many({"user_id": user_id, "location": location})
+    await asyncio.gather(
+        db[models.CHILDREN].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOALS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOAL_INSIGHTS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOAL_MONTHS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GROWTH_AREAS].delete_many({"user_id": user_id, "location": location}),
+    )
 
     # Step 3 — delete the user document
     await db[models.USERS].delete_one({"_id": user_id, "location": location})

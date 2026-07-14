@@ -209,11 +209,11 @@ export const api = {
       request(
         `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
       ) as Promise<CompletedGrowthAreasRecord>,
-    append: (childId: string, body: Record<string, unknown>): Promise<CompletedGrowthAreasRecord> =>
+    append: (childId: string, body: Record<string, unknown>): Promise<void> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'POST',
         body,
-      }) as Promise<CompletedGrowthAreasRecord>,
+      }) as Promise<void>,
     clear: (childId: string): Promise<void> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'DELETE',
