@@ -116,6 +116,7 @@ async def enqueue_job(
         async with await db.client.start_session() as session, session.start_transaction():
             existing = await db[models.JOBS].count_documents(
                 {
+                    "location": user["location"],
                     "user_id": user_id,
                     "child_id": body.child_id,
                     "type": body.type,

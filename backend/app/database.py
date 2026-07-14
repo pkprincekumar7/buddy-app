@@ -94,8 +94,22 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["jobs"].create_index(
         [("status", ASCENDING), ("retry_after", ASCENDING), ("created_at", ASCENDING)]
     )
-    # jobs: client polling — fetch by job_id scoped to user (auth guard)
-    await db["jobs"].create_index([("job_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+    # jobs: client polling — fetch by job_id scoped to user and location (auth + shard guard).
+    # location is first so the query lands on the correct shard without scatter-gather.
+    await db["jobs"].create_index(
+        [("location", ASCENDING), ("job_id", ASCENDING), ("user_id", ASCENDING)], unique=True
+    )
+    # jobs: in-flight cap check — count pending/processing/result_ready jobs per user+child+type.
+    # location is first to scope the count to a single shard (avoids scatter-gather on enqueue).
+    await db["jobs"].create_index(
+        [
+            ("location", ASCENDING),
+            ("user_id", ASCENDING),
+            ("child_id", ASCENDING),
+            ("type", ASCENDING),
+            ("status", ASCENDING),
+        ]
+    )
     # jobs: stale claim recovery — find jobs stuck in processing
     await db["jobs"].create_index([("status", ASCENDING), ("claimed_at", ASCENDING)])
     # jobs: result_ready domain-write retry — the claim query for result_ready jobs filters

@@ -324,7 +324,7 @@ async def patch_goals(
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
-    set_on_insert: dict = {"created_at": now, "user_id": user["_id"]}
+    set_on_insert: dict = {"created_at": now, "user_id": user["_id"], "location": user["location"]}
 
     if body.clear_concern:
         set_fields["parent_concern"] = None
