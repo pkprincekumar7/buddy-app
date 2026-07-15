@@ -100,8 +100,8 @@ export function useGoalPlan(childId: string | undefined) {
       const months =
         rawPlan !== null &&
         typeof rawPlan === 'object' &&
-        Array.isArray((rawPlan as Record<string, unknown>).months)
-          ? ((rawPlan as Record<string, unknown>).months as Month[])
+        Array.isArray(rawPlan.months)
+          ? (rawPlan.months as Month[])
           : undefined;
       if (months?.length) {
         const plan: GoalPlan = { months };
@@ -244,7 +244,7 @@ export function useGoalPlan(childId: string | undefined) {
         setConcern(savedConcern);
 
         const months = Array.isArray(goalMonths?.months)
-          ? (goalMonths.months as Month[])
+          ? (goalMonths.months as unknown as Month[])
           : undefined;
         if (months?.length) {
           setGoalPlan({ months });
@@ -290,8 +290,8 @@ export function useGoalPlan(childId: string | undefined) {
       try {
         const childId = childData?.id as string | undefined;
         const changedMonth = updatedPlan.months[monthIdx];
-        if (childId && changedMonth && changedMonth.month != null) {
-          await api.goalMonths.patchOne(childId, changedMonth.month, changedMonth as unknown as Record<string, unknown>);
+        if (childId && changedMonth?.month != null) {
+          await api.goalMonths.patchOne(childId, changedMonth.month, changedMonth);
         }
         setGoalPlan(updatedPlan);
       } catch (err) {
@@ -335,7 +335,7 @@ export function useGoalPlan(childId: string | undefined) {
       try {
         const cId = childData?.id as string | undefined;
         // Delete-and-reinsert all months in one backend call (2 DB ops total).
-        if (cId) await api.goalMonths.patchAll(cId, { months: updatedPlan.months as unknown as Record<string, unknown>[] });
+        if (cId) await api.goalMonths.patchAll(cId, { months: updatedPlan.months });
         setGoalPlan(updatedPlan);
       } catch (err) {
         console.error('[useGoalPlan] Failed to reset activity:', err);

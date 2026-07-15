@@ -419,7 +419,13 @@ JobType = Literal[
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
-_ALLOWED_WRITE_BACK_COLLECTIONS = {"growth_areas", "goals", "goal_months", "goal_insights", "children"}
+_ALLOWED_WRITE_BACK_COLLECTIONS = {
+    "growth_areas",
+    "goals",
+    "goal_months",
+    "goal_insights",
+    "children",
+}
 
 _SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
 # Dots in a field path are interpreted by MongoDB $set as nested sub-field

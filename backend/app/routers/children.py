@@ -18,6 +18,20 @@ from app.models_api import (
     ChildResponse,
 )
 
+# Fields returned by the child-card list view. Heavy sub-documents
+# (personality scores/traits, full recommendations blob) are excluded and
+# fetched in full by GET /children/{child_id} when a specific child loads.
+# current_phase is intentionally excluded from the list view.
+_LIST_PROJECTION = {
+    "name": 1,
+    "age": 1,
+    "school": 1,
+    "onboarding_completed": 1,
+    "recommendations.pathway_overview": 1,
+    "personality.view_model.profile.name": 1,
+    "created_at": 1,
+}
+
 router = APIRouter(tags=["children"])
 log = logging.getLogger(__name__)
 
@@ -78,22 +92,6 @@ async def list_children(
     else:
         sort_spec = [("created_at", DESCENDING if _sort.startswith("-") else ASCENDING)]
 
-    # Only fetch the fields actually consumed by the child-card list view.
-    # Heavy sub-documents (personality scores/traits, full recommendations blob)
-    # are excluded here and fetched in full by GET /children/{child_id} when a
-    # specific child's page loads.
-    _LIST_PROJECTION = {
-        "name": 1,
-        "age": 1,
-        "school": 1,
-        "onboarding_completed": 1,
-        "recommendations.pathway_overview": 1,
-        "personality.view_model.profile.name": 1,
-        "created_at": 1,
-        # current_phase is intentionally excluded: the child-card list view does
-        # not render it.  It is returned in full by GET /children/{child_id} when
-        # the detail page loads.  Add it here only if a list-view consumer needs it.
-    }
     docs = await (
         db[models.CHILDREN]
         .find({"user_id": user["_id"], "location": user["location"]}, _LIST_PROJECTION)

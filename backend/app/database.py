@@ -44,9 +44,7 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     )
     await db["goal_insights"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
-    await db["goal_months"].create_index(
-        [("location", ASCENDING), ("_id", ASCENDING)], unique=True
-    )
+    await db["goal_months"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     # Uniqueness guard for the (child, month) pair, also the primary lookup index
     # for GET /user/goal-months (filters on location + child_id + user_id).
     # location MUST be the leading key: Atlas Global Clusters require that every
@@ -56,7 +54,12 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     # Prefix (location, child_id, user_id) is covered by this unique index,
     # so no separate non-unique index is needed for list queries.
     await db["goal_months"].create_index(
-        [("location", ASCENDING), ("child_id", ASCENDING), ("user_id", ASCENDING), ("month", ASCENDING)],
+        [
+            ("location", ASCENDING),
+            ("child_id", ASCENDING),
+            ("user_id", ASCENDING),
+            ("month", ASCENDING),
+        ],
         unique=True,
     )
 

@@ -3,8 +3,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
-from pydantic import ValidationError
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import ValidationError
 
 from app import models
 from app.database import get_db
@@ -340,12 +340,14 @@ def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
         # missing required fields (goal, objective). Pre-filling "" would silently
         # hide schema drift — e.g. a worker writing "title" instead of "goal".
         # periods defaults to [] because an empty periods list is valid.
-        return GoalsMonth.model_validate({
-            "month": doc.get("month"),
-            "goal": doc.get("goal"),
-            "objective": doc.get("objective"),
-            "periods": doc.get("periods", []),
-        })
+        return GoalsMonth.model_validate(
+            {
+                "month": doc.get("month"),
+                "goal": doc.get("goal"),
+                "objective": doc.get("objective"),
+                "periods": doc.get("periods", []),
+            }
+        )
     except (ValidationError, KeyError, TypeError):
         log.warning(
             "_month_doc_to_api: skipping invalid month doc _id=%s month=%s",
@@ -557,7 +559,11 @@ async def patch_goal_insights(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
         {
             "$set": set_fields,
-            "$setOnInsert": {"created_at": now, "user_id": user["_id"], "location": user["location"]},
+            "$setOnInsert": {
+                "created_at": now,
+                "user_id": user["_id"],
+                "location": user["location"],
+            },
         },
         upsert=True,
         return_document=True,

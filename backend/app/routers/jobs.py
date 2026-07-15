@@ -95,7 +95,7 @@ async def enqueue_job(
         "filter": {
             **wb_dict["filter"],
             **child_scope,
-            "user_id": user_id,        # always scope writes to the authenticated user
+            "user_id": user_id,  # always scope writes to the authenticated user
             "location": user["location"],  # overwrite any client-supplied location
         },
     }
@@ -204,7 +204,9 @@ async def get_job_status(
 ):
     # Field order matches the index (location, job_id, user_id) so the query
     # hits the index prefix and avoids a scatter-gather on a sharded cluster.
-    doc = await db[models.JOBS].find_one({"location": user["location"], "job_id": job_id, "user_id": user["_id"]})
+    doc = await db[models.JOBS].find_one(
+        {"location": user["location"], "job_id": job_id, "user_id": user["_id"]}
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")
 
