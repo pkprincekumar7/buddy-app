@@ -2,8 +2,6 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from typing import Annotated
-
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -390,7 +388,7 @@ async def get_goal_months(
 async def patch_goal_month_single(
     request: Request,
     month_number: int = Path(..., ge=1, le=12),
-    body: Annotated[GoalsMonth, Body(...)],
+    body: GoalsMonth = Body(...),
     child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
