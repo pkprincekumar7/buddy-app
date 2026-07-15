@@ -98,9 +98,7 @@ export function useGoalPlan(childId: string | undefined) {
       const goalsDoc = await api.goals.get(childId);
       const rawPlan = goalsDoc?.goals_plan;
       const months =
-        rawPlan !== null &&
-        typeof rawPlan === 'object' &&
-        Array.isArray(rawPlan.months)
+        rawPlan !== null && typeof rawPlan === 'object' && Array.isArray(rawPlan.months)
           ? (rawPlan.months as Month[])
           : undefined;
       if (months?.length) {
