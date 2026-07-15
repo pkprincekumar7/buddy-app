@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import uuid
+from collections import OrderedDict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
@@ -15,6 +17,34 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 log = logging.getLogger(__name__)
 
 _MAX_IN_FLIGHT_PER_TYPE = 2
+
+# In-process lock per (user_id, child_id, job_type) to close the TOCTOU window
+# between count_documents and insert_one on M0/M2/M5 (no transaction support).
+# This prevents two concurrent requests from the same user+child+type from both
+# reading count < _MAX_IN_FLIGHT_PER_TYPE and both inserting, exceeding the cap.
+# The lock is purely in-process — it does not guard against concurrent requests
+# landing on different API server instances. That remaining cross-instance race
+# is closed on M10+ by wrapping count+insert in a MongoDB transaction.
+# TODO(M10+): Remove _enqueue_locks once the transaction is in place.
+#
+# LRU cap: bounded at _ENQUEUE_LOCKS_MAX entries to prevent unbounded memory
+# growth over the server lifetime. When the cap is reached, the oldest entry
+# (least recently used key) is evicted. Evicting a lock only matters if a
+# request is holding it at eviction time — extremely unlikely given the lock is
+# held only for two fast DB ops, but acceptable given the cap is a soft guard.
+_ENQUEUE_LOCKS_MAX = 10_000
+_enqueue_locks: OrderedDict[tuple, asyncio.Lock] = OrderedDict()
+
+
+def _get_enqueue_lock(key: tuple) -> asyncio.Lock:
+    if key in _enqueue_locks:
+        _enqueue_locks.move_to_end(key)
+        return _enqueue_locks[key]
+    lock = asyncio.Lock()
+    _enqueue_locks[key] = lock
+    if len(_enqueue_locks) > _ENQUEUE_LOCKS_MAX:
+        _enqueue_locks.popitem(last=False)  # evict least recently used
+    return lock
 
 
 def _sanitize_for_log(value: object) -> str:
@@ -98,36 +128,34 @@ async def enqueue_job(
         "completed_at": None,
     }
 
-    # TODO(M10+): Replace the sequential count+insert below with a single atomic
-    # transaction once the cluster is upgraded to Atlas M10 or higher. On M0/M2/M5
-    # shared tiers, multi-document transactions are not supported and will raise
-    # OperationFailure at runtime. The sequential approach has a small TOCTOU
-    # window: two concurrent requests from the same user can both read
-    # count < _MAX_IN_FLIGHT_PER_TYPE and both succeed, momentarily exceeding the
-    # cap by one. This is acceptable for now (the cap is a soft guard, not a hard
-    # billing limit) and will be closed when the transaction is added on M10+.
-    #
-    # On M10+, also add a startup probe in main.py to fail fast if transactions
-    # are unavailable:
+    # TODO(M10+): Replace the lock+count+insert below with a single atomic MongoDB
+    # transaction once the cluster is upgraded to Atlas M10 or higher, and remove
+    # _enqueue_locks. On M10+ also add a startup probe in main.py:
     #   async with await db.client.start_session() as s:
     #       async with s.start_transaction():
     #           pass
     try:
-        existing = await db[models.JOBS].count_documents(
-            {
-                "location": user["location"],
-                "user_id": user_id,
-                "child_id": body.child_id,
-                "type": body.type,
-                "status": {"$in": ["pending", "processing", "result_ready"]},
-            }
-        )
-        if existing >= _MAX_IN_FLIGHT_PER_TYPE:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
+        # Acquire the per-(user, child, type) lock before counting to prevent the
+        # TOCTOU race between count_documents and insert_one on M0/M2/M5. Without
+        # the lock, two concurrent requests can both read count < cap and both
+        # insert, exceeding the in-flight cap. The lock is in-process only — it
+        # does not guard cross-instance races (closed on M10+ via transaction).
+        async with _get_enqueue_lock((user_id, body.child_id, body.type)):
+            existing = await db[models.JOBS].count_documents(
+                {
+                    "location": user["location"],
+                    "user_id": user_id,
+                    "child_id": body.child_id,
+                    "type": body.type,
+                    "status": {"$in": ["pending", "processing", "result_ready"]},
+                }
             )
-        await db[models.JOBS].insert_one(doc)
+            if existing >= _MAX_IN_FLIGHT_PER_TYPE:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
+                )
+            await db[models.JOBS].insert_one(doc)
     except HTTPException:
         raise
     except Exception as e:

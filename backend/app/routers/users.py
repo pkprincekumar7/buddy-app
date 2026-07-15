@@ -2,7 +2,9 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from pydantic import ValidationError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -336,10 +338,14 @@ async def patch_goals(
 
 def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
     try:
+        # Pass raw values without defaults so Pydantic raises ValidationError on
+        # missing required fields (goal, objective). Pre-filling "" would silently
+        # hide schema drift — e.g. a worker writing "title" instead of "goal".
+        # periods defaults to [] because an empty periods list is valid.
         return GoalsMonth.model_validate({
             "month": doc.get("month"),
-            "goal": doc.get("goal", ""),
-            "objective": doc.get("objective", ""),
+            "goal": doc.get("goal"),
+            "objective": doc.get("objective"),
             "periods": doc.get("periods", []),
         })
     except (ValidationError, KeyError, TypeError):
@@ -384,7 +390,7 @@ async def get_goal_months(
 async def patch_goal_month_single(
     request: Request,
     month_number: int = Path(..., ge=1, le=12),
-    body: GoalsMonth = ...,
+    body: Annotated[GoalsMonth, Body(...)],
     child_id: str = Query(..., min_length=1, max_length=100),
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
@@ -440,38 +446,55 @@ async def patch_goal_months(
     now = datetime.now(UTC)
     filter_key = {"child_id": child_id, "user_id": user["_id"], "location": user["location"]}
 
-    # TODO(M10+): Replace insert+delete below with an atomic transaction once the
-    # cluster is upgraded to Atlas M10 or higher. On M0/M2/M5, multi-document
-    # transactions are not supported. To minimise data-loss risk on a crash we
-    # insert the new documents first and only then delete the old ones:
-    #   - Crash after insert_many but before delete_many → duplicate month docs
-    #     exist; the next successful call will clean them up (no data loss).
-    #   - Crash after delete_many but before insert_many (old delete-first order)
-    #     → child loses all month data permanently (unacceptable).
-    # On M10+ both ops should be wrapped in a session transaction to make the
-    # replace fully atomic and remove the duplicate-doc window.
-    new_ids: list[str] = []
-    if body.months:
-        new_docs = [
+    # TODO(M10+): Replace upsert-then-delete below with an atomic transaction once the
+    # cluster is upgraded to Atlas M10 or higher.
+    #
+    # Why upsert-per-month instead of insert_many + delete_many:
+    # goal_months has a unique index on (location, child_id, user_id, month). This
+    # index is intentionally kept — it enforces data integrity (no duplicate month
+    # docs per child) and satisfies the Atlas sharding requirement that every unique
+    # index must have the shard key (location) as its leading field (required on M10+).
+    # insert_many would fail with DuplicateKeyError on every call after the first
+    # because old docs still hold the index entries at insert time. Upserting each
+    # month individually is compatible with the unique index: update_one matches the
+    # existing doc by (filter_key + month) and overwrites it in-place, or inserts a
+    # new doc if none exists — no duplicate key violation in either case.
+    #
+    # Crash safety with this approach:
+    #   - Crash mid-upsert loop → partial update; each upsert is idempotent so a
+    #     retry converges to the correct state (no data loss).
+    #   - Crash after upserts but before delete_many → stale month docs for months
+    #     that were removed from the plan remain; the next successful call will
+    #     clean them up (no data loss).
+    # On M10+ wrap both the upsert loop and the delete in a session transaction to
+    # make the replace fully atomic.
+    submitted_months: list[int] = []
+    for month in body.months:
+        submitted_months.append(month.month)
+        await db[models.GOAL_MONTHS].update_one(
+            {**filter_key, "month": month.month},
             {
-                "_id": str(uuid.uuid4()),
-                "child_id": child_id,
-                "user_id": user["_id"],
-                "location": user["location"],
-                "month": month.month,
-                "goal": month.goal,
-                "objective": month.objective,
-                "periods": [p.model_dump() for p in month.periods],
-                "created_at": now,
-                "updated_at": now,
-            }
-            for month in body.months
-        ]
-        result = await db[models.GOAL_MONTHS].insert_many(new_docs)
-        new_ids = [str(i) for i in result.inserted_ids]
+                "$set": {
+                    "goal": month.goal,
+                    "objective": month.objective,
+                    "periods": [p.model_dump() for p in month.periods],
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "_id": str(uuid.uuid4()),
+                    "created_at": now,
+                    "user_id": user["_id"],
+                    "child_id": child_id,
+                    "location": user["location"],
+                },
+            },
+            upsert=True,
+        )
 
-    # Delete all old docs except the ones we just inserted.
-    await db[models.GOAL_MONTHS].delete_many({**filter_key, "_id": {"$nin": new_ids}})
+    # Delete any month docs whose month number was not included in this submission
+    # (i.e. months that were removed from the plan). $nin: [] means "delete all",
+    # which is the correct behaviour when body.months is empty (clearing the plan).
+    await db[models.GOAL_MONTHS].delete_many({**filter_key, "month": {"$nin": submitted_months}})
 
 
 # ---------------------------------------------------------------------------
@@ -520,11 +543,16 @@ async def patch_goal_insights(
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
-    if body.schema_version is not None:
+    # clear_* takes precedence over the value field — mirrors UserGoalsPatch pattern.
+    if body.clear_schema_version:
+        set_fields["schema_version"] = None
+    elif body.schema_version is not None:
         set_fields["schema_version"] = body.schema_version
     if body.insight_items is not None:
         set_fields["insight_items"] = [item.model_dump() for item in body.insight_items]
-    if body.insights_signature is not None:
+    if body.clear_insights_signature:
+        set_fields["insights_signature"] = None
+    elif body.insights_signature is not None:
         set_fields["insights_signature"] = body.insights_signature
 
     doc = await db[models.GOAL_INSIGHTS].find_one_and_update(

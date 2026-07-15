@@ -118,11 +118,15 @@ export function useGoalPlan(childId: string | undefined) {
         }
         // Persist months first — only clear snapshot and staging field on success.
         await api.goalMonths.patchAll(childId, { months: plan.months });
-        pendingSnapshotRef.current = {};
-        // Non-fatal: staging field will be re-cleared on the next successful patchAll.
+        // Clear the staging field before resetting the snapshot. If clear_goals_plan
+        // fails, the staging field persists and the hook will re-apply it on next
+        // mount — but the snapshot must still be intact at that point so completed-
+        // activity overrides are not lost. Reset the snapshot only after both writes
+        // have been attempted, so a re-apply always has the snapshot available.
         await api.goals.patch(childId, { clear_goals_plan: true }).catch((err) => {
           console.warn('[useGoalPlan] Failed to clear goals_plan staging field (non-fatal):', err);
         });
+        pendingSnapshotRef.current = {};
         setGoalPlan(plan);
       }
     } catch (err) {

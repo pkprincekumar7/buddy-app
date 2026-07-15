@@ -229,7 +229,11 @@ class GoalMonthsResponse(BaseModel):
 
 
 class GoalMonthsPatch(BaseModel):
-    months: list[GoalsMonth] = Field(max_length=12)
+    # min_length=1 prevents an accidental empty submission from silently deleting
+    # all month documents for the child (the route handler's delete_many with
+    # $nin: [] would wipe every doc). Submitting zero months is not a valid plan
+    # update — use a dedicated clear endpoint if that behaviour is ever needed.
+    months: list[GoalsMonth] = Field(min_length=1, max_length=12)
 
     @model_validator(mode="after")
     def validate_months(self) -> GoalMonthsPatch:
@@ -237,6 +241,9 @@ class GoalMonthsPatch(BaseModel):
         if len(month_numbers) != len(set(month_numbers)):
             raise ValueError("months list contains duplicate month numbers")
         try:
+            # _GOALS_PLAN_MAX_BYTES is reused here as a cap on the total batch
+            # payload size (up to 12 months × 10 periods × 20 activities), not
+            # on a single stored document — each month is persisted as its own doc.
             size = len(json.dumps([m.model_dump() for m in self.months]))
         except (RecursionError, ValueError, TypeError):
             raise ValueError(
@@ -261,11 +268,16 @@ class GoalInsightsResponse(BaseModel):
 
 
 class GoalInsightsPatch(BaseModel):
+    # For int fields, None means "no update" (leave the stored value unchanged).
+    # To explicitly reset a field to null, set the corresponding clear_* flag to True.
+    # This mirrors the clear_concern / clear_goals_plan pattern used in UserGoalsPatch.
     schema_version: int | None = None
+    clear_schema_version: bool = False
     # None means "no update" — use explicit None rather than default_factory=list
     # so that `is not None` guards in the route handler work correctly.
     insight_items: list[InsightItem] | None = Field(None, max_length=50)
     insights_signature: int | None = None
+    clear_insights_signature: bool = False
 
 
 # ---------------------------------------------------------------------------
