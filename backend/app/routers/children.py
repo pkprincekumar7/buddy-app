@@ -203,7 +203,12 @@ async def update_child(
         update_op["$unset"] = {"pending_personality_vm": ""}
 
     doc = await db[models.CHILDREN].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False},
+        {
+            "_id": child_id,
+            "user_id": user["_id"],
+            "location": user["location"],
+            "is_deleted": False,
+        },
         update_op,
         return_document=True,
     )
@@ -231,7 +236,12 @@ async def delete_child(
 ):
     now = datetime.now(UTC)
     result = await db[models.CHILDREN].update_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False},
+        {
+            "_id": child_id,
+            "user_id": user["_id"],
+            "location": user["location"],
+            "is_deleted": False,
+        },
         {"$set": {"is_deleted": True, "deleted_at": now, "updated_at": now}},
     )
     if result.matched_count == 0:
