@@ -217,6 +217,8 @@ async def append_completed_growth_area(
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
 
     # When the area is finalised, remove all transient wizard and staging fields.
+    # These fields must also be removed from set_fields: MongoDB raises a conflict
+    # error if the same path appears in both $set and $unset.
     unset_fields: dict = {}
     if body.status == "completed":
         unset_fields = {
@@ -228,6 +230,8 @@ async def append_completed_growth_area(
             "interactive_draft": "",
             "step": "",
         }
+        for transient in unset_fields:
+            set_fields.pop(transient, None)
 
     update_doc: dict = {"$set": set_fields, "$setOnInsert": set_on_insert}
     if unset_fields:
@@ -526,10 +530,19 @@ async def get_goal_insights(
     )
     if not doc:
         return GoalInsightsResponse()
+    raw_items = doc.get("insight_items", [])
+    # Resilience: before the pending_insights staging-field pattern was introduced,
+    # the worker wrote the full LLM response dict to insight_items directly.
+    # Extract the inner list so old documents don't cause a 500 on GET.
+    if isinstance(raw_items, dict):
+        raw_items = raw_items.get("insight_items", [])
+    if not isinstance(raw_items, list):
+        raw_items = []
     return GoalInsightsResponse(
         schema_version=doc.get("schema_version"),
-        insight_items=doc.get("insight_items", []),
+        insight_items=raw_items,
         insights_signature=doc.get("insights_signature"),
+        pending_insights=doc.get("pending_insights"),
     )
 
 
@@ -554,23 +567,30 @@ async def patch_goal_insights(
         set_fields["schema_version"] = None
     elif body.schema_version is not None:
         set_fields["schema_version"] = body.schema_version
+    unset_fields: dict = {}
     if body.insight_items is not None:
         set_fields["insight_items"] = [item.model_dump() for item in body.insight_items]
+        # Committing insight_items means the staging field has been promoted — clear it.
+        unset_fields["pending_insights"] = ""
     if body.clear_insights_signature:
         set_fields["insights_signature"] = None
     elif body.insights_signature is not None:
         set_fields["insights_signature"] = body.insights_signature
 
+    update_op: dict = {
+        "$set": set_fields,
+        "$setOnInsert": {
+            "created_at": now,
+            "user_id": user["_id"],
+            "location": user["location"],
+        },
+    }
+    if unset_fields:
+        update_op["$unset"] = unset_fields
+
     doc = await db[models.GOAL_INSIGHTS].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
-        {
-            "$set": set_fields,
-            "$setOnInsert": {
-                "created_at": now,
-                "user_id": user["_id"],
-                "location": user["location"],
-            },
-        },
+        update_op,
         upsert=True,
         return_document=True,
     )

@@ -500,6 +500,7 @@ export function adaptAiPersonalityToViewModel(
   };
 
   return {
+    type: dominant,
     scores: scoresBase,
     profile,
   };

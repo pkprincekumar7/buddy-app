@@ -289,7 +289,14 @@ export default function ProgressInsightsModal({
     const currentCount = completedCount(plan);
     try {
       const insightsDoc = await api.goalInsights.get(childId);
-      const items = Array.isArray(insightsDoc?.insight_items) ? insightsDoc.insight_items : [];
+      // pending_insights is the staging field written by the worker (full LLM response dict).
+      // Prefer it over insight_items when present — it means the job just completed.
+      const pendingRaw = insightsDoc?.pending_insights;
+      const items = Array.isArray(pendingRaw?.insight_items)
+        ? (pendingRaw.insight_items as typeof insightsDoc.insight_items)
+        : Array.isArray(insightsDoc?.insight_items)
+          ? insightsDoc.insight_items
+          : [];
       const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
       if (items.length > 0) {
         try {
@@ -357,7 +364,7 @@ export default function ProgressInsightsModal({
           type: 'generate_journey_insights',
           child_id: childId,
           payload: { prompt, response_json_schema: schema },
-          write_back: { collection: 'goal_insights', filter: {}, field: 'insight_items' },
+          write_back: { collection: 'goal_insights', filter: {}, field: 'pending_insights' },
         });
       } catch (err) {
         console.error('[ProgressInsightsModal] Failed to enqueue insights job:', err);

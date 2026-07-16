@@ -265,6 +265,9 @@ class GoalInsightsResponse(BaseModel):
     schema_version: int | None = None
     insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
     insights_signature: int | None = None
+    # Staging field: worker writes the full LLM response here; frontend promotes
+    # insight_items via PATCH then the staging field is cleared.
+    pending_insights: dict | None = None
 
 
 class GoalInsightsPatch(BaseModel):
@@ -337,6 +340,16 @@ class ChildResponse(BaseModel):
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
 
 
+def _parse_age(v: int | str | None) -> int | None:
+    """Accept an integer or a string like '12', '12 years', '18 months'."""
+    if v is None or isinstance(v, int):
+        return v
+    m = re.match(r"^\s*(\d+)", str(v))
+    if not m:
+        raise ValueError("age must be a number or start with a number (e.g. '12' or '12 years')")
+    return int(m.group(1))
+
+
 class ChildCreate(BaseModel):
     # extra="allow" is intentional: unknown fields pass through to the JSON payload blob,
     # letting the frontend evolve fields without a backend migration. System fields
@@ -345,6 +358,12 @@ class ChildCreate(BaseModel):
 
     name: str | None = Field(None, max_length=255)
     age: int | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age(cls, v: object) -> int | None:
+        return _parse_age(v)  # type: ignore[arg-type]
+
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
@@ -388,6 +407,12 @@ class ChildPatch(BaseModel):
 
     name: str | None = Field(None, max_length=255)
     age: int | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age(cls, v: object) -> int | None:
+        return _parse_age(v)  # type: ignore[arg-type]
+
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int | None = None
     onboarding_completed: bool | None = None
@@ -479,8 +504,9 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     "generate_personality_analysis": {"pending_personality_vm"},
     # journey recommendations are written directly — no client-side transform required.
     "generate_journey_recommendations": {"recommendations"},
-    # insights written to the goal_insights collection document.
-    "generate_journey_insights": {"insight_items"},
+    # insights written to the goal_insights staging field; finalizeInsights promotes
+    # it to insight_items via PATCH after the job completes.
+    "generate_journey_insights": {"pending_insights"},
 }
 
 _FILTER_MAX_KEYS = 20

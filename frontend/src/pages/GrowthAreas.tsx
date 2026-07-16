@@ -40,7 +40,7 @@ export default function GrowthAreas() {
           navigate('/Home', { replace: true });
           return;
         }
-        if (!child.personality?.view_model?.type) {
+        if (!child.personality?.view_model?.type && !child.personality?.view_model?.profile?.name) {
           navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }

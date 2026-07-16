@@ -46,6 +46,8 @@ _CHILD_SYSTEM_FIELDS = {
     "location",  # DB identity / shard key
     "created_at",
     "updated_at",  # server-managed timestamps
+    "is_deleted",
+    "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
 }
 
 

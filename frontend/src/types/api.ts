@@ -162,6 +162,8 @@ export interface GoalInsightsRecord {
   schema_version?: number | null;
   insight_items?: InsightItem[];
   insights_signature?: number | null;
+  /** Staging field: full LLM response written by worker; promoted to insight_items by finalizeInsights. */
+  pending_insights?: { insight_items?: InsightItem[]; [key: string]: unknown } | null;
   [key: string]: unknown;
 }
 
