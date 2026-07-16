@@ -284,15 +284,16 @@ export default function ProgressInsightsModal({
   const CustomTooltip = useMemo(() => buildCustomTooltip(chartData), [chartData]);
 
   const finalizeInsights = useCallback(async () => {
+    if (!childId) return;
     const plan = goalPlanRef.current;
     const currentCount = completedCount(plan);
     try {
-      const insightsDoc = await api.goalInsights.get(childId ?? '');
+      const insightsDoc = await api.goalInsights.get(childId);
       const items = Array.isArray(insightsDoc?.insight_items) ? insightsDoc.insight_items : [];
       const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
       if (items.length > 0) {
         try {
-          await api.goalInsights.patch(childId ?? '', {
+          await api.goalInsights.patch(childId, {
             schema_version: INSIGHTS_SCHEMA_VERSION,
             insight_items: items,
             insights_signature: currentCount,
@@ -331,6 +332,7 @@ export default function ProgressInsightsModal({
     // If cached (same schema_version + insights_signature === completedCount), serve directly.
     // Otherwise enqueue the LLM job.
     const generate = async () => {
+      if (!childId) return;
       const { prompt, schema } = buildInsightsPayload(name, plan, age, gender);
       if (!prompt) {
         // No completed activities yet — nothing to generate.
@@ -340,7 +342,7 @@ export default function ProgressInsightsModal({
       setInsightsLoading(true);
       setInsightsError(false);
       try {
-        const stored = await api.goalInsights.get(childId ?? '');
+        const stored = await api.goalInsights.get(childId);
         const items = Array.isArray(stored?.insight_items) ? stored.insight_items : [];
         const isCached =
           stored?.schema_version === INSIGHTS_SCHEMA_VERSION &&
@@ -353,7 +355,7 @@ export default function ProgressInsightsModal({
         }
         await enqueueInsightsJob({
           type: 'generate_journey_insights',
-          child_id: childId ?? '',
+          child_id: childId,
           payload: { prompt, response_json_schema: schema },
           write_back: { collection: 'goal_insights', filter: {}, field: 'insight_items' },
         });

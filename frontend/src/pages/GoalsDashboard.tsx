@@ -369,7 +369,6 @@ export default function GoalsDashboard() {
     childData,
     concern,
     goalPlan,
-    setGoalPlan,
     isLoading,
     saveActivityCompletion,
     handleActivityReset,

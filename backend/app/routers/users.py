@@ -57,7 +57,7 @@ _GROWTH_AREA_OPTIONAL_FIELDS = (
 async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> None:
     """Raise 404 if child_id does not belong to the authenticated user."""
     child = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")

@@ -74,7 +74,7 @@ async def enqueue_job(
 
     # Auth guard — child must belong to this user
     child = await db[models.CHILDREN].find_one(
-        {"_id": body.child_id, "user_id": user_id, "location": user["location"]}
+        {"_id": body.child_id, "user_id": user_id, "location": user["location"], "is_deleted": False}
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")

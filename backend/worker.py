@@ -260,13 +260,26 @@ async def write_to_domain(job: dict) -> None:
             {
                 "$set": {wb["field"]: job["result"], "updated_at": now},
                 # $setOnInsert runs only when upsert creates a new document.
-                # It ensures every worker-created doc has created_at and _id set,
-                # even when the route handler hasn't pre-created the document yet.
-                # _id uses a UUID string to match the convention used by route
-                # handler upserts; collections that use child_id as their _id
-                # (goals, goal_insights) will ignore this because _id is already
-                # part of the filter and MongoDB won't overwrite it via $setOnInsert.
-                "$setOnInsert": {"created_at": now, "_id": str(uuid.uuid4())},
+                # _id handling differs by collection type:
+                #
+                # Collections where child_id IS the document _id
+                #   (goals, goal_insights) — _id is an equality condition in the
+                #   filter, so MongoDB uses the filter value for the new doc.
+                #   We must NOT include _id in $setOnInsert here: if the filter
+                #   and $setOnInsert both specify _id with different values MongoDB
+                #   raises "Updating the path '_id' would create a conflict at '_id'".
+                #
+                # Collections where _id is a generated UUID
+                #   (goal_months, growth_areas) — _id is not in the filter, so
+                #   we provide a UUID string here to match the convention used by
+                #   route handler upserts (str(uuid.uuid4()) rather than ObjectId).
+                #   This also satisfies M10+ sharding: the shard key (location) is
+                #   always present in the filter, so every new doc lands on the
+                #   correct shard regardless of what _id value is chosen.
+                "$setOnInsert": {
+                    "created_at": now,
+                    **({} if "_id" in wb["filter"] else {"_id": str(uuid.uuid4())}),
+                },
             },
             upsert=True,
         )

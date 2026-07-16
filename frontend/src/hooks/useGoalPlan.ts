@@ -102,10 +102,12 @@ export function useGoalPlan(childId: string | undefined) {
           ? (rawPlan.months as Month[])
           : undefined;
       if (months?.length) {
-        const plan: GoalPlan = { months };
         const snap = pendingSnapshotRef.current;
+        // Deep-clone months from the API response before mutating so we never
+        // modify the raw response object (avoids bleeding into cached references).
+        const clonedMonths: Month[] = structuredClone(months);
         if (Object.keys(snap).length > 0) {
-          plan.months?.forEach((month, mIdx) => {
+          clonedMonths.forEach((month, mIdx) => {
             month.periods?.forEach((period, pIdx) => {
               period.activities?.forEach((act, aIdx) => {
                 const s = snap[`${mIdx}-${pIdx}-${aIdx}`];
@@ -114,17 +116,28 @@ export function useGoalPlan(childId: string | undefined) {
             });
           });
         }
+        const plan: GoalPlan = { months: clonedMonths };
         // Persist months first — only clear snapshot and staging field on success.
         await api.goalMonths.patchAll(childId, { months: plan.months });
-        // Clear the staging field before resetting the snapshot. If clear_goals_plan
-        // fails, the staging field persists and the hook will re-apply it on next
-        // mount — but the snapshot must still be intact at that point so completed-
-        // activity overrides are not lost. Reset the snapshot only after both writes
-        // have been attempted, so a re-apply always has the snapshot available.
-        await api.goals.patch(childId, { clear_goals_plan: true }).catch((err) => {
-          console.warn('[useGoalPlan] Failed to clear goals_plan staging field (non-fatal):', err);
-        });
-        pendingSnapshotRef.current = {};
+        // Clear the staging field, then clear the snapshot only if it succeeded.
+        // If clear_goals_plan fails, the staging field persists so the hook can
+        // re-apply it on next mount — and the snapshot must still be intact at
+        // that point so completed-activity overrides are not lost.
+        let stagingCleared = false;
+        await api.goals
+          .patch(childId, { clear_goals_plan: true })
+          .then(() => {
+            stagingCleared = true;
+          })
+          .catch((err) => {
+            console.warn(
+              '[useGoalPlan] Failed to clear goals_plan staging field (non-fatal):',
+              err,
+            );
+          });
+        if (stagingCleared) {
+          pendingSnapshotRef.current = {};
+        }
         setGoalPlan(plan);
       }
     } catch (err) {

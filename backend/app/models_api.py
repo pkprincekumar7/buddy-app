@@ -279,6 +279,22 @@ class GoalInsightsPatch(BaseModel):
     insights_signature: int | None = None
     clear_insights_signature: bool = False
 
+    @model_validator(mode="after")
+    def limit_insights_size(self) -> GoalInsightsPatch:
+        if self.insight_items is None:
+            return self
+        try:
+            size = len(json.dumps([i.model_dump() for i in self.insight_items]))
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError(
+                "Goal insights payload contains an invalid or too-deeply nested structure"
+            ) from None
+        if size > _GOALS_PLAN_MAX_BYTES:
+            raise ValueError(
+                f"Goal insights payload exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+            )
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Children
@@ -312,6 +328,10 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Soft-delete fields — present on all documents; False by default.
+    # deleted_at is set when is_deleted is set to True.
+    is_deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields

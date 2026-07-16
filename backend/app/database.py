@@ -36,13 +36,16 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["sessions"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
     # goals: single-document-per-child, keyed by child_id.
+    # No (location, user_id) index: every lookup is by _id (child_id), which is
+    # covered by the (location, _id) unique index. The only user_id-scoped op is
+    # delete_many in delete_account, which is rare and acceptable without an index.
     await db["goals"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
-    await db["goals"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
+    # goal_insights: single-document-per-child, keyed by child_id.
+    # No (location, user_id) index for the same reason as goals above.
     await db["goal_insights"].create_index(
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
     )
-    await db["goal_insights"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
     await db["goal_months"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     # Uniqueness guard for the (child, month) pair, also the primary lookup index
@@ -76,21 +79,34 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
         ],
         unique=True,
     )
-    await db["growth_areas"].create_index(
-        [
-            ("location", ASCENDING),
-            ("user_id", ASCENDING),
-            ("child_id", ASCENDING),
-            ("created_at", ASCENDING),
-        ]
-    )
+    # No (location, user_id, child_id, created_at) index on growth_areas:
+    # GET /user/completed-growth-areas filters on (location, user_id, child_id) and
+    # sorts by created_at. The (location, user_id, child_id, area_id) unique index
+    # covers the filter prefix; the result set per child is small enough that the
+    # in-memory sort on created_at is negligible. Fewer indexes = faster writes on
+    # M0's shared IOPS cap.
 
     await db["children"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
+    # Partial indexes on active (non-deleted) children only — soft-deleted children
+    # are excluded so list/sort queries never surface them, and the index stays
+    # smaller than a full-collection index. The partialFilterExpression must exactly
+    # match the {is_deleted: False} equality used in query filters so MongoDB can
+    # use these indexes (partial indexes are skipped when the query predicate is not
+    # a superset of the filter expression).
     await db["children"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("created_at", DESCENDING)]
+        [("location", ASCENDING), ("user_id", ASCENDING), ("created_at", DESCENDING)],
+        partialFilterExpression={"is_deleted": False},
     )
     await db["children"].create_index(
-        [("location", ASCENDING), ("user_id", ASCENDING), ("name", ASCENDING)]
+        [("location", ASCENDING), ("user_id", ASCENDING), ("name", ASCENDING)],
+        partialFilterExpression={"is_deleted": False},
+    )
+    # Soft-delete purge sweep: find children past their 30-day retention window.
+    # Partial filter restricts the index to soft-deleted docs only, keeping it tiny.
+    # location is the leading key for shard-scoped purge queries (one shard at a time).
+    await db["children"].create_index(
+        [("location", ASCENDING), ("deleted_at", ASCENDING)],
+        partialFilterExpression={"is_deleted": True},
     )
 
     # jobs: worker polling — find pending jobs whose backoff has elapsed (retry_after <= now),

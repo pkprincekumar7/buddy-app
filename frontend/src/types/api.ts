@@ -65,6 +65,8 @@ export interface ChildRecord {
   recommendations?: Record<string, unknown>;
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
   [key: string]: unknown;
 }
 

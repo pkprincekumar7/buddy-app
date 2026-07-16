@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -94,7 +93,10 @@ async def list_children(
 
     docs = await (
         db[models.CHILDREN]
-        .find({"user_id": user["_id"], "location": user["location"]}, _LIST_PROJECTION)
+        .find(
+            {"user_id": user["_id"], "location": user["location"], "is_deleted": False},
+            _LIST_PROJECTION,
+        )
         .sort(sort_spec)
         .to_list(limit)
     )
@@ -115,7 +117,7 @@ async def create_child(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     count = await db[models.CHILDREN].count_documents(
-        {"user_id": user["_id"], "location": user["location"]}
+        {"user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if count >= 10:
         raise HTTPException(status_code=422, detail="Maximum of 10 children allowed per account")
@@ -132,6 +134,8 @@ async def create_child(
         "_id": child_id,
         "user_id": user["_id"],
         "location": user["location"],
+        "is_deleted": False,
+        "deleted_at": None,
         "created_at": now,
         "updated_at": now,
         **data,
@@ -153,7 +157,7 @@ async def get_child(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     doc = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
@@ -199,7 +203,7 @@ async def update_child(
         update_op["$unset"] = {"pending_personality_vm": ""}
 
     doc = await db[models.CHILDREN].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False},
         update_op,
         return_document=True,
     )
@@ -211,7 +215,12 @@ async def update_child(
 @router.delete(
     "/children/{child_id}",
     status_code=204,
-    description="Remove a child profile and all associated data.",
+    description=(
+        "Soft-delete a child profile. The profile is hidden immediately but retained "
+        "for 30 days so accidental deletions can be recovered. Associated data "
+        "(goals, growth areas, etc.) is preserved during the retention window and "
+        "purged by a scheduled hard-delete job after expiry."
+    ),
 )
 @user_limiter.limit("10/minute")
 async def delete_child(
@@ -220,30 +229,10 @@ async def delete_child(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    existing = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    now = datetime.now(UTC)
+    result = await db[models.CHILDREN].update_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False},
+        {"$set": {"is_deleted": True, "deleted_at": now, "updated_at": now}},
     )
-    if not existing:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Child not found")
-    loc = existing["location"]
-    # TODO(M10+): Wrap all deletes below in a single multi-document transaction once
-    # the cluster is upgraded to Atlas M10 or higher. Atlas M0/M2/M5 shared tiers
-    # do not support multi-document transactions, so we use sequential operations
-    # for now.
-    #
-    # Deletion order mirrors account deletion: remove the child record FIRST so it
-    # disappears from the parent's list immediately. A crash after this point leaves
-    # orphaned data documents (goals, growth_areas, etc.) that are fully inert — no
-    # child record links to them. An orphan-sweep job should clean these up before
-    # the M10+ migration. The reverse order (data first, child last) is worse: a
-    # crash there would leave a visible child card with no data, which is confusing UX.
-    await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc})
-
-    # Child-data collections are independent — delete them in parallel to reduce
-    # wall-clock time on M0's shared-cluster I/O.
-    await asyncio.gather(
-        db[models.GOALS].delete_one({"_id": child_id, "location": loc}),
-        db[models.GOAL_INSIGHTS].delete_one({"_id": child_id, "location": loc}),
-        db[models.GOAL_MONTHS].delete_many({"child_id": child_id, "location": loc}),
-        db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}),
-    )
