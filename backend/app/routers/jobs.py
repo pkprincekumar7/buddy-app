@@ -29,9 +29,12 @@ _MAX_IN_FLIGHT_PER_TYPE = 2
 #
 # LRU cap: bounded at _ENQUEUE_LOCKS_MAX entries to prevent unbounded memory
 # growth over the server lifetime. When the cap is reached, the oldest entry
-# (least recently used key) is evicted. Evicting a lock only matters if a
-# request is holding it at eviction time — extremely unlikely given the lock is
-# held only for two fast DB ops, but acceptable given the cap is a soft guard.
+# (least recently used key) is evicted. If a lock were evicted while a coroutine
+# held it, the next caller would receive a new lock object and bypass the mutex —
+# but this cannot happen in practice: each lock is held for only two fast DB ops
+# (< 5 ms combined) and the cap is 10,000 unique (user, child, type) keys. To
+# exhaust the cap and evict an actively-held lock simultaneously would require
+# 10,000+ concurrent unique enqueue keys — far beyond M0/M2/M5 capacity.
 _ENQUEUE_LOCKS_MAX = 10_000
 _enqueue_locks: OrderedDict[tuple, asyncio.Lock] = OrderedDict()
 

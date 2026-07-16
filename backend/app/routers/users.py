@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -159,7 +160,7 @@ async def patch_preferences(
 @router.get(
     "/user/completed-growth-areas",
     response_model=CompletedGrowthAreasResponse,
-    description="List completed growth areas for a given child, with pagination.",
+    description="List completed growth areas for a given child, with pagination. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
@@ -270,7 +271,7 @@ async def clear_completed_growth_areas(
 @router.get(
     "/user/goals",
     response_model=UserGoals,
-    description="Retrieve the parent concern for a given child.",
+    description="Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def get_goals(
@@ -361,7 +362,7 @@ def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
 @router.get(
     "/user/goal-months",
     response_model=GoalMonthsResponse,
-    description="Retrieve all month plan documents for a given child.",
+    description="Retrieve all month plan documents for a given child. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def get_goal_months(
@@ -468,9 +469,9 @@ async def patch_goal_months(
     #     clean them up (no data loss).
     # On M10+ wrap both the upsert loop and the delete in a session transaction to
     # make the replace fully atomic.
-    submitted_months: list[int] = []
-    for month in body.months:
-        submitted_months.append(month.month)
+    submitted_months: list[int] = [m.month for m in body.months]
+
+    async def _upsert_month(month: GoalsMonth) -> None:
         await db[models.GOAL_MONTHS].update_one(
             {**filter_key, "month": month.month},
             {
@@ -491,6 +492,11 @@ async def patch_goal_months(
             upsert=True,
         )
 
+    # Run all per-month upserts concurrently — each is independent and idempotent.
+    # asyncio.gather preserves crash-safety: a partial failure leaves some months
+    # updated and some not, but a retry converges to the correct state.
+    await asyncio.gather(*[_upsert_month(m) for m in body.months])
+
     # Delete any month docs whose month number was not included in this submission
     # (i.e. months that were removed from the plan). $nin: [] means "delete all",
     # which is the correct behaviour when body.months is empty (clearing the plan).
@@ -505,7 +511,7 @@ async def patch_goal_months(
 @router.get(
     "/user/goal-insights",
     response_model=GoalInsightsResponse,
-    description="Retrieve the insights document for a given child.",
+    description="Retrieve the insights document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def get_goal_insights(

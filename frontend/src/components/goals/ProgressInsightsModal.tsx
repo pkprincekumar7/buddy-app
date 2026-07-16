@@ -67,7 +67,6 @@ interface ProgressInsightsModalProps {
   childAge?: string | number | null;
   childGender?: string | null;
   activeJobs?: Record<string, string>;
-  onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
 
@@ -238,7 +237,6 @@ export default function ProgressInsightsModal({
   childAge,
   childGender,
   activeJobs,
-  onPlanUpdate: _onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
   const [activeTab, setActiveTab] = useState('progress');

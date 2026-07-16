@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import boto3
@@ -259,9 +260,13 @@ async def write_to_domain(job: dict) -> None:
             {
                 "$set": {wb["field"]: job["result"], "updated_at": now},
                 # $setOnInsert runs only when upsert creates a new document.
-                # It ensures every worker-created doc has created_at set, even
-                # when the route handler hasn't pre-created the document yet.
-                "$setOnInsert": {"created_at": now},
+                # It ensures every worker-created doc has created_at and _id set,
+                # even when the route handler hasn't pre-created the document yet.
+                # _id uses a UUID string to match the convention used by route
+                # handler upserts; collections that use child_id as their _id
+                # (goals, goal_insights) will ignore this because _id is already
+                # part of the filter and MongoDB won't overwrite it via $setOnInsert.
+                "$setOnInsert": {"created_at": now, "_id": str(uuid.uuid4())},
             },
             upsert=True,
         )

@@ -229,9 +229,16 @@ async def delete_child(
     # TODO(M10+): Wrap all deletes below in a single multi-document transaction once
     # the cluster is upgraded to Atlas M10 or higher. Atlas M0/M2/M5 shared tiers
     # do not support multi-document transactions, so we use sequential operations
-    # for now. A crash mid-sequence may leave orphaned goal/growth-area documents
-    # for the child; they are inert (no child record to link them) but should be
-    # cleaned up by a periodic orphan-sweep job before the M10+ migration.
+    # for now.
+    #
+    # Deletion order mirrors account deletion: remove the child record FIRST so it
+    # disappears from the parent's list immediately. A crash after this point leaves
+    # orphaned data documents (goals, growth_areas, etc.) that are fully inert — no
+    # child record links to them. An orphan-sweep job should clean these up before
+    # the M10+ migration. The reverse order (data first, child last) is worse: a
+    # crash there would leave a visible child card with no data, which is confusing UX.
+    await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc})
+
     # Child-data collections are independent — delete them in parallel to reduce
     # wall-clock time on M0's shared-cluster I/O.
     await asyncio.gather(
@@ -240,4 +247,3 @@ async def delete_child(
         db[models.GOAL_MONTHS].delete_many({"child_id": child_id, "location": loc}),
         db[models.GROWTH_AREAS].delete_many({"child_id": child_id, "location": loc}),
     )
-    await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc})
