@@ -292,10 +292,10 @@ export default function ProgressInsightsModal({
       // pending_insights is the staging field written by the worker (full LLM response dict).
       // Prefer it over insight_items when present — it means the job just completed.
       const pendingRaw = insightsDoc?.pending_insights;
-      const items = Array.isArray(pendingRaw?.insight_items)
-        ? (pendingRaw.insight_items as typeof insightsDoc.insight_items)
+      const items: InsightItem[] = Array.isArray(pendingRaw?.insight_items)
+        ? (pendingRaw.insight_items as InsightItem[])
         : Array.isArray(insightsDoc?.insight_items)
-          ? insightsDoc.insight_items
+          ? (insightsDoc.insight_items as InsightItem[])
           : [];
       const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
       if (items.length > 0) {
