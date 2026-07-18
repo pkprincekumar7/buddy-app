@@ -100,6 +100,16 @@ const ProtectedRoutes = () => (
       }
     />
     {/* Child-specific routes — must come before the generic /:pageName entries */}
+    {/* /Onboarding/:childId — resumes an existing child. The bare /Onboarding route
+        is still served by the generic /:pageName block below for new-child flow. */}
+    <Route
+      path="/Onboarding/:childId"
+      element={
+        <LayoutWrapper currentPageName="Onboarding">
+          <Pages.Onboarding />
+        </LayoutWrapper>
+      }
+    />
     <Route
       path="/ConversationalOnboarding/:childId"
       element={

@@ -67,7 +67,7 @@ export default function GrowthAreasActivity() {
           allDocs.find((a) => a.area_id === area.id && a.status === 'in_progress') ??
           allDocs.find((a) => a.area_id === area.id);
 
-        const savedAnswers = areaDoc?.interactive_answers ?? {};
+        const savedAnswers = areaDoc?.interactive_answers ?? areaDoc?.answers ?? {};
         setAnswers(savedAnswers);
 
         // If no explicit q param was in the URL, jump to the first unanswered question

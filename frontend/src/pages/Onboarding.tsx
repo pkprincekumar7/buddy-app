@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/errors';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,15 +19,34 @@ export default function Onboarding() {
   // When navigated with { state: { forceNew: true } }, skip preloading an in-progress child
   // so the user starts a brand-new onboarding rather than resuming an existing one.
   const forceNew = (location.state as { forceNew?: boolean } | null)?.forceNew ?? false;
-  const { user, isAuthenticated, isLoadingAuth } = useAuth();
+
+  // childIdParam: present when navigating to /Onboarding/:childId (resuming an existing
+  // child). When absent the page is at bare /Onboarding (new-child flow).
+  // TO ENABLE MULTIPLE CHILDREN: each child's entry point already passes its own id via
+  // the URL — no further changes needed here.
+  const { childId: childIdParam } = useParams<{ childId?: string }>();
+
+  const { user, isAuthenticated, isLoadingAuth, childProfiles } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
   const [checking, setChecking] = useState(true);
   const [showSplash, startTimer] = useStageSplash(0);
 
-  // Preload any existing in-progress child so Continue reuses it instead of creating a new one.
-  // Skipped when forceNew=true (e.g. "Add Child" from the home screen child list).
+  // Resolve which child this Onboarding session is for:
+  // 1. childIdParam in URL  → use it directly, no fetch needed
+  // 2. forceNew or not authenticated → no preload, handleContinue will create a new child
+  // 3. Otherwise → fetch the most recent in-progress child and reuse it
   useEffect(() => {
     if (isLoadingAuth) return;
+    if (childIdParam) {
+      const owned = childProfiles.some((c) => c.id === childIdParam);
+      if (owned) {
+        setChildId(childIdParam);
+      } else {
+        navigate('/Home', { replace: true });
+      }
+      setChecking(false);
+      return;
+    }
     if (!isAuthenticated || forceNew) {
       setChecking(false);
       return;
@@ -56,7 +75,7 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, forceNew]);
+  }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, childProfiles, navigate]);
 
   const handleContinue = useCallback(async () => {
     if (!isAuthenticated) {

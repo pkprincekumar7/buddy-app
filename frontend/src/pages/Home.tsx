@@ -112,6 +112,11 @@ export default function Home() {
     navigate('/Onboarding');
   };
 
+  // "Continue Your Journey" routes to /Onboarding/:childId so the child is identified
+  // in the URL and survives a page refresh on the Onboarding page.
+  // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
+  const firstChild = children[0]?.id ? children[0] : null;
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -134,7 +139,11 @@ export default function Home() {
         <div className="pointer-events-none absolute bottom-0 right-10 h-96 w-96 rounded-full bg-personality/[0.04] blur-3xl" />
 
         <div
-          className={`relative mx-auto max-w-6xl px-4 ${children.length > 0 ? 'py-8 md:py-12' : 'py-24 md:py-36'}`}
+          // Padding was previously shrunk when children existed (py-8) because the
+          // children management section below provided visual weight. Now that section
+          // is hidden, always use full hero padding. Restore the conditional
+          // `children.length > 0 ? 'py-8 md:py-12' : 'py-24 md:py-36'` when re-enabling.
+          className="relative mx-auto max-w-6xl px-4 py-24 md:py-36"
         >
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -160,8 +169,8 @@ export default function Home() {
               capable individual.
             </p>
 
-            {children.length === 0 && (
-              <div className="flex flex-col justify-center gap-4 sm:flex-row">
+            <div className="flex flex-col justify-center gap-4 sm:flex-row">
+              {children.length === 0 ? (
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
@@ -171,8 +180,23 @@ export default function Home() {
                   Start Your Journey
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              </div>
-            )}
+              ) : (
+                // "Continue Your Journey" is shown here because the children management
+                // section below is hidden. When that section is re-enabled, remove this
+                // else-branch so the hero goes back to showing no button when children exist.
+                <Button
+                  size="xl"
+                  onClick={() =>
+                    navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
+                  }
+                  className="btn-primary rounded-2xl transition-all duration-200"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Continue Your Journey
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </motion.div>
         </div>
       </section>
@@ -226,54 +250,59 @@ export default function Home() {
         </section>
       )}
 
-      {/* Children management */}
-      <section className="py-10">
-        <div className="mx-auto max-w-6xl px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">Your Children</h2>
-              <div className="flex flex-col items-end gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
-                  disabled={children.length >= 10}
-                  className="rounded-xl"
-                >
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Add Child
-                </Button>
-                {children.length >= 10 && (
-                  <p className="text-xs text-muted-foreground">Maximum of 10 children reached.</p>
-                )}
+      {/* FEATURE HIDDEN: Children management section (add child, child cards, delete child).
+          To re-enable: remove the `{false && ( ... )}` wrapper below, remove the `firstChild`
+          variable and the "Continue Your Journey" else-branch in the hero above, and restore
+          the hero padding conditional. The underlying API and hook (useStartOver) are untouched. */}
+      {false && (
+        <section className="py-10">
+          <div className="mx-auto max-w-6xl px-4">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Your Children</h2>
+                <div className="flex flex-col items-end gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                    disabled={children.length >= 10}
+                    className="rounded-xl"
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Add Child
+                  </Button>
+                  {children.length >= 10 && (
+                    <p className="text-xs text-muted-foreground">Maximum of 10 children reached.</p>
+                  )}
+                </div>
               </div>
-            </div>
 
-            {children.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-                No children yet.{' '}
-                <button
-                  className="text-primary underline underline-offset-2"
-                  onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
-                >
-                  Add your first child
-                </button>{' '}
-                to begin their journey.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {children.map((child) => (
-                  <ChildCard key={child.id} child={child} />
-                ))}
-              </div>
-            )}
-          </motion.div>
-        </div>
-      </section>
+              {children.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                  No children yet.{' '}
+                  <button
+                    className="text-primary underline underline-offset-2"
+                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                  >
+                    Add your first child
+                  </button>{' '}
+                  to begin their journey.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {children.map((child) => (
+                    <ChildCard key={child.id} child={child} />
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* 6 Pillars */}
       <section className="py-20 md:py-28">

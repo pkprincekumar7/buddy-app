@@ -293,9 +293,9 @@ export default function ProgressInsightsModal({
       // Prefer it over insight_items when present — it means the job just completed.
       const pendingRaw = insightsDoc?.pending_insights;
       const items: InsightItem[] = Array.isArray(pendingRaw?.insight_items)
-        ? (pendingRaw.insight_items as InsightItem[])
+        ? pendingRaw.insight_items
         : Array.isArray(insightsDoc?.insight_items)
-          ? (insightsDoc.insight_items as InsightItem[])
+          ? insightsDoc.insight_items
           : [];
       const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
       if (items.length > 0) {

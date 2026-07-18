@@ -196,12 +196,18 @@ async def update_child(
         else:
             set_fields[k] = v
 
+    # When the client commits the final personality, clear the staging field via
+    # $unset to avoid keeping ~2 KB of duplicate LLM output permanently on the
+    # document. Remove it from $set first — MongoDB raises ConflictingUpdateOperators
+    # (code 40) if the same path appears in both $set and $unset.
+    clear_pending_vm = "personality" in set_fields
+    if clear_pending_vm:
+        set_fields.pop("pending_personality_vm", None)
+
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
         update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
-    # When the client commits the final personality, clear the staging field to
-    # avoid keeping ~2 KB of duplicate LLM output permanently on the document.
-    if "personality" in set_fields:
+    if clear_pending_vm:
         update_op["$unset"] = {"pending_personality_vm": ""}
 
     doc = await db[models.CHILDREN].find_one_and_update(
