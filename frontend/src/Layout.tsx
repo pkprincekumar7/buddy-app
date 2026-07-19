@@ -140,17 +140,26 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
-      <nav className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
+      <nav className="sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
-              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
-                <span className="text-sm font-bold text-white">B</span>
+              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+                <svg viewBox="0 0 20 22" className="h-5 w-5">
+                  <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
+                  <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+                  <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+                </svg>
               </div>
-              <span className="hidden text-lg font-bold tracking-tight text-sidebar-foreground sm:block">
-                Buddy360
-              </span>
+              <div className="hidden flex-col sm:flex">
+                <span className="text-lg font-bold tracking-tight text-sidebar-foreground leading-tight">
+                  Buddy<span className="text-primary">360</span>
+                </span>
+                <span className="text-[9px] font-semibold tracking-[0.18em] uppercase text-muted-foreground/60 leading-tight">
+                  Children's Development
+                </span>
+              </div>
             </Link>
 
             {/* Right side controls */}

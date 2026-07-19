@@ -330,6 +330,9 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Avatar / profile photo — set during onboarding step 2.
+    avatar_id: str | None = None   # emoji avatar selection (e.g. "capper-boy")
+    avatar_url: str | None = None  # S3 URL of an uploaded profile photo
     # Soft-delete fields — present on all documents; False by default.
     # deleted_at is set when is_deleted is set to True.
     is_deleted: bool = False
@@ -364,6 +367,8 @@ class ChildCreate(BaseModel):
         return _parse_age(v)  # type: ignore[arg-type]
 
     school: str | None = Field(None, max_length=300)
+    avatar_id: str | None = Field(None, max_length=100)
+    avatar_url: str | None = Field(None, max_length=2048)
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
@@ -376,6 +381,19 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("avatar_url")
+    @classmethod
+    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("avatar_url must be an HTTPS URL")
+        return v
+
+    @model_validator(mode="after")
+    def avatar_fields_are_exclusive(self) -> ChildCreate:
+        if self.avatar_id is not None and self.avatar_url is not None:
+            raise ValueError("Provide either avatar_id or avatar_url, not both")
+        return self
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildCreate:
@@ -412,6 +430,8 @@ class ChildPatch(BaseModel):
         return _parse_age(v)  # type: ignore[arg-type]
 
     school: str | None = Field(None, max_length=300)
+    avatar_id: str | None = Field(None, max_length=100)
+    avatar_url: str | None = Field(None, max_length=2048)
     onboarding_phase: int | None = None
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
@@ -424,6 +444,19 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("avatar_url")
+    @classmethod
+    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("avatar_url must be an HTTPS URL")
+        return v
+
+    @model_validator(mode="after")
+    def avatar_fields_are_exclusive(self) -> ChildPatch:
+        if self.avatar_id is not None and self.avatar_url is not None:
+            raise ValueError("Provide either avatar_id or avatar_url, not both")
+        return self
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:

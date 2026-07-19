@@ -9,7 +9,7 @@ PendingJobCount / ProcessingJobCount metrics to CloudWatch.
 Environment variables:
   WORKER_CONCURRENCY            number of parallel job slots (default 5)
   WORKER_POLL_INTERVAL_SECONDS  idle poll interval in seconds (default 2)
-  AWS_DEFAULT_REGION            used for CloudWatch client (default ap-south-1)
+  AWS_REGION                    used for CloudWatch client
 """
 
 import asyncio
@@ -70,8 +70,10 @@ LLM_BACKOFF_SECONDS = [0, 30, 60]
 _mongo_client = motor.motor_asyncio.AsyncIOMotorClient(settings.mongodb_uri)
 db = _mongo_client[settings.mongodb_db_name]
 
-_aws_region = os.environ.get("AWS_DEFAULT_REGION", "ap-south-1")
-cloudwatch = boto3.client("cloudwatch", region_name=_aws_region)
+_aws_region = os.environ.get("AWS_REGION") or ""
+if not _aws_region:
+    log.warning("AWS_REGION not set — CloudWatch metrics will be disabled")
+cloudwatch = boto3.client("cloudwatch", region_name=_aws_region) if _aws_region else None
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +421,8 @@ async def emit_metrics() -> None:
     while True:
         await asyncio.sleep(METRICS_INTERVAL_SECONDS)
         try:
+            if cloudwatch is None:
+                continue
             pending_count, processing_count = await asyncio.gather(
                 db[JOBS].count_documents({"status": "pending"}),
                 db[JOBS].count_documents({"status": "processing"}),

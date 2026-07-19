@@ -198,6 +198,29 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("ASSETS_BUCKET_NAME", "assets_bucket_name"),
     )
 
+    # S3 bucket for user-generated uploads (child profile photos, etc.).
+    # In local dev, set to the manually-created local uploads bucket.
+    # In deployed environments, populated via ECS task environment / GitHub secret.
+    uploads_bucket_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("UPLOADS_BUCKET_NAME", "uploads_bucket_name"),
+    )
+    # AWS region the backend is deployed to — set by GitHub Actions / Terraform.
+    # Used for S3 clients that must target the deployment region (e.g. uploads bucket).
+    aws_region: str = Field(
+        default="",
+        validation_alias=AliasChoices("AWS_REGION", "aws_region"),
+    )
+    # CloudFront domain used to serve uploaded photos (e.g. buddy-dev.example.com).
+    # When set, avatar_url is constructed as https://{uploads_cdn_domain}/uploads/...
+    # so photos are served via CloudFront OAC with no public S3 access required.
+    # Leave blank in local dev — falls back to direct S3 URL (local bucket has
+    # public GetObject policy on uploads/*).
+    uploads_cdn_domain: str = Field(
+        default="",
+        validation_alias=AliasChoices("UPLOADS_CDN_DOMAIN", "uploads_cdn_domain"),
+    )
+
     cookie_secure: bool = Field(
         default=True,
         validation_alias=AliasChoices("COOKIE_SECURE", "cookie_secure"),

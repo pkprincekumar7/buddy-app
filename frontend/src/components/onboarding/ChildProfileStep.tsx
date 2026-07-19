@@ -1,0 +1,353 @@
+import { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Camera, Upload, Check } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+// ── Avatar definitions ────────────────────────────────────────────────────────
+
+const BOY_AVATARS = [
+  { id: 'capper-boy', label: 'Capper', bg: 'bg-teal-600', emoji: '🧢' },
+  { id: 'curly-boy', label: 'Curly', bg: 'bg-violet-600', emoji: '🦱' },
+  { id: 'specs-boy', label: 'Specs', bg: 'bg-amber-600', emoji: '🤓' },
+];
+
+const GIRL_AVATARS = [
+  { id: 'braid-girl', label: 'Braid', bg: 'bg-pink-600', emoji: '👧' },
+  { id: 'curls-girl', label: 'Curls', bg: 'bg-rose-600', emoji: '💁‍♀️' },
+  { id: 'bow-girl', label: 'Bow', bg: 'bg-fuchsia-600', emoji: '🎀' },
+];
+
+const ALL_AVATARS = [...BOY_AVATARS, ...GIRL_AVATARS];
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface ChildFormData {
+  name: string;
+  age: string;
+  gender: 'Male' | 'Female' | 'Other' | '';
+  school: string;
+  avatarId?: string;
+  avatarUrl?: string;
+}
+
+interface Props {
+  onContinue: (data: ChildFormData, photoFile?: File) => void | Promise<void>;
+  initialData?: Partial<ChildFormData>;
+  isLoading?: boolean;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export default function ChildProfileStep({ onContinue, initialData, isLoading }: Props) {
+  const [form, setForm] = useState<ChildFormData>({
+    name: initialData?.name ?? '',
+    age: initialData?.age ?? '',
+    gender: initialData?.gender ?? '',
+    school: initialData?.school ?? '',
+    avatarId: initialData?.avatarId ?? '',
+  });
+  const [avatarTab, setAvatarTab] = useState<'boy' | 'girl'>(
+    GIRL_AVATARS.some((a) => a.id === initialData?.avatarId) ? 'girl' : 'boy',
+  );
+  const [errors, setErrors] = useState<Partial<Record<keyof ChildFormData, string>>>({});
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(initialData?.avatarUrl ?? null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const prefillApplied = useRef(false);
+
+  // Sync initialData into form when it arrives after mount (async prefill)
+  useEffect(() => {
+    if (!initialData || Object.keys(initialData).length === 0) return;
+    if (prefillApplied.current) return;
+    prefillApplied.current = true;
+    setForm({
+      name: initialData.name ?? '',
+      age: initialData.age ?? '',
+      gender: initialData.gender ?? '',
+      school: initialData.school ?? '',
+      avatarId: initialData.avatarId ?? '',
+    });
+    if (initialData.avatarId) {
+      setAvatarTab(GIRL_AVATARS.some((a) => a.id === initialData.avatarId) ? 'girl' : 'boy');
+    }
+    if (initialData.avatarUrl) {
+      setPhotoPreview(initialData.avatarUrl);
+    }
+  }, [initialData]);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPhotoPreview((ev.target?.result as string) ?? null);
+    };
+    reader.readAsDataURL(file);
+    // Clear emoji avatar selection when a photo is chosen
+    setForm((f) => ({ ...f, avatarId: '' }));
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = '';
+  };
+
+  const avatars = avatarTab === 'boy' ? BOY_AVATARS : GIRL_AVATARS;
+  const selected = ALL_AVATARS.find((a) => a.id === form.avatarId);
+
+  const validate = (): boolean => {
+    const e: Partial<Record<keyof ChildFormData, string>> = {};
+    if (!form.name.trim()) e.name = 'Name is required';
+    const ageNum = Number(form.age);
+    if (!form.age.trim()) e.age = 'Age is required';
+    else if (isNaN(ageNum) || ageNum < 8 || ageNum > 30) e.age = 'Age must be between 8 and 30';
+    if (!form.gender) e.gender = 'Please select a gender';
+    if (!form.avatarId && !photoFile && !initialData?.avatarUrl) e.avatarId = 'Please upload a photo or pick an avatar';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleContinue = () => {
+    if (!validate()) return;
+    void onContinue(form, photoFile ?? undefined);
+  };
+
+  const setField = <K extends keyof ChildFormData>(key: K, val: ChildFormData[K]) => {
+    setForm((f) => ({ ...f, [key]: val }));
+    setErrors((e) => ({ ...e, [key]: undefined }));
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 48 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -48 }}
+      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      className="mx-auto max-w-lg"
+    >
+      <div className="rounded-2xl border border-white/[0.08] bg-card p-6 sm:p-8 space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-1">
+          <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-primary">
+            Let's start with the basics
+          </p>
+          <h2 className="text-2xl font-bold text-foreground">Tell us about your child</h2>
+          <p className="text-sm text-muted-foreground">
+            A photo or fun avatar makes the journey feel personal. Just a few quick fields.
+          </p>
+        </div>
+
+        {/* Avatar preview circle */}
+        <div className="flex flex-col items-center gap-3">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-primary/40 bg-surface-elevated overflow-hidden hover:border-primary/70 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {photoPreview ? (
+              <img src={photoPreview} alt="Profile photo" className="h-full w-full object-cover" />
+            ) : selected ? (
+              <div className={`flex h-full w-full items-center justify-center ${selected.bg} text-4xl select-none`}>
+                {selected.emoji}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-0.5 pointer-events-none">
+                <Camera className="h-6 w-6 text-primary" />
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mt-0.5">
+                  Add Photo
+                </span>
+                <span className="text-[8px] text-muted-foreground/50">or pick an avatar</span>
+              </div>
+            )}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            className="rounded-full border-white/[0.12] text-xs gap-1.5 px-4"
+          >
+            <Upload className="h-3 w-3" />
+            Upload photo
+          </Button>
+        </div>
+
+        {/* Avatar picker */}
+        <div className="rounded-xl border border-white/[0.07] bg-surface-elevated/40 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+              <span className="text-base">🎭</span> Or pick an avatar
+            </span>
+            <div className="flex rounded-lg overflow-hidden border border-white/[0.1]">
+              {(['boy', 'girl'] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setAvatarTab(g)}
+                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    avatarTab === g
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {avatars.map((av) => (
+              <motion.button
+                key={av.id}
+                type="button"
+                whileTap={{ scale: 0.94 }}
+                onClick={() => {
+                  setField('avatarId', av.id);
+                  if (photoPreview) URL.revokeObjectURL(photoPreview);
+                  setPhotoFile(null);
+                  setPhotoPreview(null);
+                }}
+                className={cn(
+                  'flex flex-col items-center gap-2 rounded-xl border p-3 transition-all focus:outline-none',
+                  form.avatarId === av.id
+                    ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
+                    : 'border-white/[0.07] bg-surface-elevated hover:border-primary/40',
+                )}
+              >
+                <div className={`relative flex h-14 w-14 items-center justify-center rounded-full ${av.bg} text-2xl select-none`}>
+                  {av.emoji}
+                  {form.avatarId === av.id && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary shadow-md"
+                    >
+                      <Check className="h-3 w-3 text-white" />
+                    </motion.div>
+                  )}
+                </div>
+                <span className="text-xs font-medium text-foreground">{av.label}</span>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
+        {errors.avatarId && (
+          <p className="text-xs text-destructive text-center -mt-2">{errors.avatarId}</p>
+        )}
+
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-white/[0.06]" />
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+            About your child
+          </span>
+          <div className="flex-1 h-px bg-white/[0.06]" />
+        </div>
+
+        {/* Form fields */}
+        <div className="space-y-4">
+          {/* Name + Age */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Child's Name <span className="text-primary">*</span>
+              </label>
+              <input
+                value={form.name}
+                onChange={(e) => setField('name', e.target.value)}
+                placeholder="Arjun"
+                className={cn(
+                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40',
+                  errors.name ? 'border-red-500/50' : 'border-white/[0.1]',
+                )}
+              />
+              {errors.name && <p className="text-[10px] text-red-400">{errors.name}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Age <span className="text-primary">*</span>
+              </label>
+              <input
+                value={form.age}
+                onChange={(e) => setField('age', e.target.value)}
+                placeholder="8"
+                type="number"
+                min={8}
+                max={30}
+                className={cn(
+                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40',
+                  errors.age ? 'border-red-500/50' : 'border-white/[0.1]',
+                )}
+              />
+              {errors.age && <p className="text-[10px] text-red-400">{errors.age}</p>}
+            </div>
+          </div>
+
+          {/* Gender */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Gender <span className="text-primary">*</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['Male', 'Female', 'Other'] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setField('gender', g)}
+                  className={cn(
+                    'py-2.5 rounded-xl border text-sm font-medium transition-all',
+                    form.gender === g
+                      ? 'border-primary bg-primary/15 text-primary'
+                      : 'border-white/[0.1] text-muted-foreground hover:border-primary/30 hover:text-foreground',
+                  )}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+            {errors.gender && <p className="text-[10px] text-red-400">{errors.gender}</p>}
+          </div>
+
+          {/* School */}
+          <div className="space-y-1.5">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              School{' '}
+              <span className="text-muted-foreground/40 normal-case tracking-normal font-normal">
+                (optional)
+              </span>
+            </label>
+            <input
+              value={form.school}
+              onChange={(e) => setField('school', e.target.value)}
+              placeholder="Greenfield International"
+              className="w-full rounded-xl border border-white/[0.1] bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-xs text-muted-foreground/40">* Required</p>
+          <Button
+            type="button"
+            onClick={handleContinue}
+            disabled={isLoading}
+            className="h-11 rounded-full bg-primary text-primary-foreground px-8 font-semibold hover:bg-primary/90 transition-all gap-2 shadow-[0_0_16px_rgba(45,212,191,0.2)]"
+          >
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Saving…
+              </span>
+            ) : (
+              'Continue →'
+            )}
+          </Button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
