@@ -28,6 +28,7 @@ export default function Onboarding() {
 
   const { user, isAuthenticated, isLoadingAuth, childProfiles } = useAuth();
   const [childId, setChildId] = useState<string | undefined>(undefined);
+  const [childComplete, setChildComplete] = useState(false);
   const [checking, setChecking] = useState(true);
   const [showSplash, startTimer] = useStageSplash(0);
 
@@ -59,9 +60,9 @@ export default function Onboarding() {
         if (cancelled) return;
         const listArr = Array.isArray(list) ? list : [];
         const child = listArr[0];
-        const alreadyComplete = !!child?.onboarding_completed;
-        if (child && !alreadyComplete) {
+        if (child) {
           setChildId(child.id);
+          setChildComplete(!!child.onboarding_completed);
         }
       } catch (err) {
         console.warn('[Onboarding] Preload failed:', err);
@@ -80,7 +81,7 @@ export default function Onboarding() {
       navigate('/Onboarding');
       return;
     }
-    let targetId = childId;
+    let targetId = childId && !childComplete ? childId : undefined;
     if (!targetId) {
       try {
         const created = await api.entities.Child.create({
@@ -102,7 +103,7 @@ export default function Onboarding() {
       }
     }
     if (targetId) navigate(`/ConversationalOnboarding/${targetId}`);
-  }, [isAuthenticated, childId, navigate]);
+  }, [isAuthenticated, childId, childComplete, navigate]);
 
   return (
     <>

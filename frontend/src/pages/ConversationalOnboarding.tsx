@@ -149,7 +149,7 @@ export default function ConversationalOnboarding() {
                 <Button
                   size="xl"
                   variant="outline"
-                  onClick={() => navigate('/Onboarding', { state: { fromBack: true } })}
+                  onClick={() => navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', { state: { fromBack: true } })}
                   className="btn-secondary w-full rounded-2xl sm:w-auto"
                 >
                   <ChevronLeft className="mr-1 h-4 w-4" />
