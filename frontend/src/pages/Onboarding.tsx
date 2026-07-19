@@ -11,12 +11,6 @@ import type { ChildFormData } from '@/components/onboarding/ChildProfileStep';
 import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
 import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 
-const PHASES: PhaseEntry[] = [
-  { num: 1, label: 'Getting to Know', status: 'active', progress: 8 },
-  { num: 2, label: 'Personality Analysis', status: 'upcoming' },
-  { num: 3, label: 'Your Journey', status: 'upcoming' },
-];
-
 export default function Onboarding() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -41,7 +35,8 @@ export default function Onboarding() {
     const applyChildData = (raw: Record<string, unknown>) => {
       const prefill: Partial<ChildFormData> = {};
       if (typeof raw.name === 'string' && raw.name) prefill.name = raw.name;
-      if (raw.age != null) prefill.age = String(raw.age);
+      if (typeof raw.age === 'string') prefill.age = raw.age;
+      else if (typeof raw.age === 'number') prefill.age = String(raw.age);
       if (typeof raw.gender === 'string' && raw.gender) {
         const g = raw.gender.charAt(0).toUpperCase() + raw.gender.slice(1).toLowerCase();
         if (g === 'Male' || g === 'Female' || g === 'Other') prefill.gender = g;
@@ -64,15 +59,17 @@ export default function Onboarding() {
         try {
           const child = await api.entities.Child.get(childIdParam);
           if (cancelled || !child) return;
-          setChildComplete(!!(child.onboarding_completed));
-          applyChildData(child as Record<string, unknown>);
+          setChildComplete(!!child.onboarding_completed);
+          applyChildData(child);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
         } finally {
           if (!cancelled) setChecking(false);
         }
       })();
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (!isAuthenticated || forceNew) {
@@ -87,9 +84,9 @@ export default function Onboarding() {
         const listArr = Array.isArray(list) ? list : [];
         const child = listArr[0];
         if (child) {
-          setChildId(child.id as string);
-          setChildComplete(!!(child.onboarding_completed));
-          applyChildData(child as Record<string, unknown>);
+          setChildId(child.id);
+          setChildComplete(!!child.onboarding_completed);
+          applyChildData(child);
         }
       } catch (err) {
         console.warn('[Onboarding] Preload failed:', err);
@@ -98,7 +95,9 @@ export default function Onboarding() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, childProfiles, navigate]);
 
   // Step 1 → Step 2 (just UI transition, no API call yet)
@@ -138,7 +137,10 @@ export default function Onboarding() {
               const result = await api.entities.Child.uploadAvatar(targetId, photoFile);
               avatarUrl = result.avatar_url;
             } catch (uploadErr) {
-              console.warn('[Onboarding] Photo upload failed, continuing without photo:', uploadErr);
+              console.warn(
+                '[Onboarding] Photo upload failed, continuing without photo:',
+                uploadErr,
+              );
               toast.error('Photo upload failed — profile saved without a photo.');
             }
           }
@@ -180,8 +182,8 @@ export default function Onboarding() {
 
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
         {/* Step label — left-aligned with card */}
-        <div className="mx-auto max-w-lg mb-4">
-          <p className="text-[10px] font-semibold tracking-[0.16em] uppercase text-muted-foreground/60">
+        <div className="mx-auto mb-4 max-w-lg">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
             {stepLabel}
           </p>
         </div>

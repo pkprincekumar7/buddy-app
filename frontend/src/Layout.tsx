@@ -147,16 +147,30 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
               <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-full bg-primary">
                 <svg viewBox="0 0 20 22" className="h-5 w-5">
-                  <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
-                  <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
-                  <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+                  <line
+                    x1="10"
+                    y1="21"
+                    x2="10"
+                    y2="14"
+                    stroke="#0d3d2e"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+                    fill="#0d3d2e"
+                  />
+                  <path
+                    d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+                    fill="#0d3d2e"
+                  />
                 </svg>
               </div>
               <div className="hidden flex-col sm:flex">
-                <span className="text-lg font-bold tracking-tight text-sidebar-foreground leading-tight">
+                <span className="text-lg font-bold leading-tight tracking-tight text-sidebar-foreground">
                   Buddy<span className="text-primary">360</span>
                 </span>
-                <span className="text-[9px] font-semibold tracking-[0.18em] uppercase text-muted-foreground/60 leading-tight">
+                <span className="text-[9px] font-semibold uppercase leading-tight tracking-[0.18em] text-muted-foreground/60">
                   Children's Development
                 </span>
               </div>

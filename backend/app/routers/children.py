@@ -352,8 +352,6 @@ async def presign_child_avatar(
 
     cdn = settings.uploads_cdn_domain
     avatar_url = (
-        f"https://{cdn}/{key}"
-        if cdn
-        else f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+        f"https://{cdn}/{key}" if cdn else f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
     )
     return AvatarPresignResponse(upload_url=upload_url, avatar_url=avatar_url)

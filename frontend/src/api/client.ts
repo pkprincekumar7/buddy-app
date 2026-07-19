@@ -346,10 +346,10 @@ export const api = {
         request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
       uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
         const contentType = photo.type || 'image/jpeg';
-        const { upload_url, avatar_url } = await request(
+        const { upload_url, avatar_url } = (await request(
           `/children/${encodeURIComponent(id)}/avatar/presign`,
           { method: 'POST', body: { content_type: contentType } },
-        ) as { upload_url: string; avatar_url: string };
+        )) as { upload_url: string; avatar_url: string };
         // Upload directly to S3 — must include the same Content-Type the presigned
         // URL was signed with, or S3 will reject the request (signature mismatch).
         const s3Res = await fetch(upload_url, {

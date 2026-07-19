@@ -6,9 +6,7 @@ import InputWithVoice from '@/components/shared/InputWithVoice';
 import { Button } from '@/components/ui/button';
 import {
   Send,
-  Brain,
   Sparkles,
-  Star,
   Eye,
   BarChart2,
   HelpCircle,
@@ -125,15 +123,10 @@ const PHASE_SPLASHES: Record<number, PhaseSplash> = {
   8: {
     icon: '⚡',
     iconColor: 'bg-teal-500/20 text-teal-300 ring-teal-400/20',
-    title: "Almost there — a few more about their nature ⚡",
+    title: 'Almost there — a few more about their nature ⚡',
     subtitle: 'Energy, social, emotional. One tap each. Promise.',
     displayStep: 8,
   },
-};
-
-// Display step mapping: flow index → display step shown in header
-const FLOW_TO_DISPLAY: Record<number, number> = {
-  4: 3, 5: 4, 6: 6, 7: 7, 8: 9, 9: 10, 10: 11, 11: 12,
 };
 
 // ── Helper functions ──────────────────────────────────────────────────────────
@@ -193,7 +186,11 @@ function findResumeStepIndex(flow: ConversationStep[], data: Record<string, unkn
 }
 
 const ANALYZING_INITIAL: AnalyzingState = {
-  show: false, progress: 0, name: '', showingDots: false, dotCount: 0,
+  show: false,
+  progress: 0,
+  name: '',
+  showingDots: false,
+  dotCount: 0,
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -205,14 +202,13 @@ export default function ConversationalOnboarding({
   resumeHydrationReady = true,
   onContinueToPersonality,
   onQuestionnairePersisted,
-  onQuestionnaireCleared,
+  onQuestionnaireCleared: _onQuestionnaireCleared,
 }: ConversationalOnboardingProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
   const [isTyping, setIsTyping] = useState(false);
-  const [voiceEnabledState] = useState(true);
   const voiceEnabledRef = useRef(true);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [analyzingState, setAnalyzingState] = useState<AnalyzingState>(ANALYZING_INITIAL);
@@ -240,7 +236,9 @@ export default function ConversationalOnboarding({
   const newMsgId = useCallback(() => `${Date.now()}-${++msgIdCounterRef.current}`, []);
   const splashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { collectedDataRef.current = collectedData; }, [collectedData]);
+  useEffect(() => {
+    collectedDataRef.current = collectedData;
+  }, [collectedData]);
 
   const persistQuestionnaireDraft = useCallback(
     (mergedCollected: Record<string, unknown>) => {
@@ -332,7 +330,14 @@ export default function ConversationalOnboarding({
           `Choose the kind of communication style that ${typeof data['name'] === 'string' ? data['name'] : ''} predominantly has:`,
         field: 'communication_style',
         type: 'choice',
-        options: ['Talkative', 'Deep Listener', 'Communicates through gestures', 'Silent', 'Observant', 'Not Sure'],
+        options: [
+          'Talkative',
+          'Deep Listener',
+          'Communicates through gestures',
+          'Silent',
+          'Observant',
+          'Not Sure',
+        ],
         phase: 1,
       },
       {
@@ -341,7 +346,12 @@ export default function ConversationalOnboarding({
           `How would you describe ${typeof data['name'] === 'string' ? data['name'] : ''}'s energy level?`,
         field: 'energy_level',
         type: 'choice',
-        options: ['High energy - always active', 'Moderate - balanced', 'Calm and composed', 'Variable - depends on interest'],
+        options: [
+          'High energy - always active',
+          'Moderate - balanced',
+          'Calm and composed',
+          'Variable - depends on interest',
+        ],
         phase: 1,
       },
       {
@@ -402,8 +412,18 @@ export default function ConversationalOnboarding({
     [speak, newMsgId],
   );
 
-  useEffect(() => () => { if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current); }, []);
-  useEffect(() => () => { if (splashTimerRef.current !== null) clearTimeout(splashTimerRef.current); }, []);
+  useEffect(
+    () => () => {
+      if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current);
+    },
+    [],
+  );
+  useEffect(
+    () => () => {
+      if (splashTimerRef.current !== null) clearTimeout(splashTimerRef.current);
+    },
+    [],
+  );
 
   // Resume hydration
   useEffect(() => {
@@ -480,14 +500,17 @@ export default function ConversationalOnboarding({
         }
 
         const accR = buildAccThrough(conversationFlow, slim, resumeIdx);
-        const nextBot = typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
+        const nextBot =
+          typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
         addBotMessage(nextBot);
       } catch (err) {
         console.warn('[ConversationalOnboarding] Resume hydration failed:', err);
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [resumeHydrationReady, conversationFlow, addBotMessage, newMsgId, activeChildId]);
 
   // Smooth scroll to bottom
@@ -524,7 +547,10 @@ export default function ConversationalOnboarding({
       return;
     }
     const raw = collectedData[stepData.field];
-    if (raw === undefined || raw === null) { setCurrentInput(''); return; }
+    if (raw === undefined || raw === null) {
+      setCurrentInput('');
+      return;
+    }
     const text = Array.isArray(raw)
       ? raw.join(', ')
       : typeof raw === 'string'
@@ -545,7 +571,9 @@ export default function ConversationalOnboarding({
         { id: newMsgId(), role: 'bot', content: "Just checking in 😊 — whenever you're ready!" },
       ]);
     }, 30000);
-    return () => { if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current); };
+    return () => {
+      if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current);
+    };
   }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered, newMsgId]);
 
   const processResponse = useCallback(
@@ -561,17 +589,26 @@ export default function ConversationalOnboarding({
         // eslint-disable-next-line security/detect-unsafe-regex
         const ageMatch = trimmed.match(/^(\d+)\s*(years?|months?|y|m)?/i);
         if (!ageMatch) {
-          setTimeout(() => { addBotMessage('Please enter age as a number in years (e.g., 10 or 10 years).'); setWaitingForResponse(true); }, 400);
+          setTimeout(() => {
+            addBotMessage('Please enter age as a number in years (e.g., 10 or 10 years).');
+            setWaitingForResponse(true);
+          }, 400);
           return;
         }
         const unit = ageMatch[2]?.toLowerCase();
         if (unit && !unit.startsWith('year')) {
-          setTimeout(() => { addBotMessage('Age must be in years only (e.g., 10 or 10 years). Please re-enter.'); setWaitingForResponse(true); }, 400);
+          setTimeout(() => {
+            addBotMessage('Age must be in years only (e.g., 10 or 10 years). Please re-enter.');
+            setWaitingForResponse(true);
+          }, 400);
           return;
         }
         const ageNum = parseInt(ageMatch[1]!, 10);
         if (ageNum < 8) {
-          setTimeout(() => { addBotMessage('Age must be at least 8 years. Please enter a valid age.'); setWaitingForResponse(true); }, 400);
+          setTimeout(() => {
+            addBotMessage('Age must be at least 8 years. Please enter a valid age.');
+            setWaitingForResponse(true);
+          }, 400);
           return;
         }
       }
@@ -579,7 +616,10 @@ export default function ConversationalOnboarding({
       if (step?.field === 'gender') {
         const lower = response.trim().toLowerCase();
         if (lower !== 'male' && lower !== 'female' && lower !== 'other') {
-          setTimeout(() => { addBotMessage('Please select Male, Female, or Other.'); setWaitingForResponse(true); }, 400);
+          setTimeout(() => {
+            addBotMessage('Please select Male, Female, or Other.');
+            setWaitingForResponse(true);
+          }, 400);
           return;
         }
       }
@@ -588,7 +628,10 @@ export default function ConversationalOnboarding({
       if (step?.field) {
         let value: unknown = response;
         if (step.type === 'multi_text') {
-          value = response.split(',').map((s) => s.trim()).filter(Boolean);
+          value = response
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
         }
         nextCollected = { ...collectedData, [step.field]: value };
         setCollectedData(nextCollected);
@@ -597,12 +640,21 @@ export default function ConversationalOnboarding({
 
       if (step?.id === 'complete') {
         const finalData = nextCollected;
-        setAnalyzingState({ show: true, progress: 0, name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child', showingDots: false, dotCount: 0 });
+        setAnalyzingState({
+          show: true,
+          progress: 0,
+          name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child',
+          showingDots: false,
+          dotCount: 0,
+        });
         let progress = 0;
         const interval = setInterval(() => {
           progress += 1;
           setAnalyzingState((s) => ({ ...s, progress }));
-          if (progress >= 100) { clearInterval(interval); Promise.resolve(onComplete(finalData)).catch(() => {}); }
+          if (progress >= 100) {
+            clearInterval(interval);
+            Promise.resolve(onComplete(finalData)).catch(() => {});
+          }
         }, 28);
         return;
       }
@@ -612,7 +664,8 @@ export default function ConversationalOnboarding({
         // Check if we need to show a phase splash before advancing
         const splash = PHASE_SPLASHES[nextStep];
         if (splash) {
-          const childName = typeof nextCollected['name'] === 'string' ? nextCollected['name'] : 'your child';
+          const childName =
+            typeof nextCollected['name'] === 'string' ? nextCollected['name'] : 'your child';
           const resolvedTitle = splash.title.replace('{name}', childName);
           setPhaseSplash({ ...splash, title: resolvedTitle });
           splashTimerRef.current = setTimeout(() => {
@@ -637,12 +690,22 @@ export default function ConversationalOnboarding({
           setTimeout(() => addBotMessage(nextMessage), 600);
 
           if (nextStepData?.type === 'final') {
-            setTimeout(() => { void onComplete(nextCollected); }, 2000);
+            setTimeout(() => {
+              void onComplete(nextCollected);
+            }, 2000);
           }
         }
       }
     },
-    [conversationFlow, currentStep, collectedData, addBotMessage, persistQuestionnaireDraft, onComplete, newMsgId],
+    [
+      conversationFlow,
+      currentStep,
+      collectedData,
+      addBotMessage,
+      persistQuestionnaireDraft,
+      onComplete,
+      newMsgId,
+    ],
   );
 
   const handleSubmit = useCallback(
@@ -665,42 +728,6 @@ export default function ConversationalOnboarding({
     [waitingForResponse, processResponse],
   );
 
-  const handleReset = useCallback(() => {
-    window.speechSynthesis.cancel();
-    if (splashTimerRef.current !== null) clearTimeout(splashTimerRef.current);
-    chatSessionStartedRef.current = false;
-    allowEmptySessionRecoveryRef.current = false;
-    userTurnCountRef.current = 0;
-    setMessages([]);
-    setCurrentStep(0);
-    setCollectedData({});
-    setCurrentInput('');
-    setIsTyping(false);
-    setWaitingForResponse(false);
-    setAnalyzingState(ANALYZING_INITIAL);
-    setAllAnswered(false);
-    setPhaseSplash(null);
-    void (async () => {
-      try {
-        if (activeChildId) {
-          const cleared: Record<string, null> = {};
-          for (const k of CHATBOT_CAPTURED_FIELDS) cleared[k] = null;
-          await api.entities.Child.update(activeChildId, cleared);
-        }
-        onQuestionnaireCleared?.();
-      } catch (err) {
-        console.warn('[ConversationalOnboarding] Questionnaire clear failed:', err);
-      }
-    })();
-    setTimeout(() => {
-      const firstStep = conversationFlow[0];
-      const firstMessage = firstStep
-        ? typeof firstStep.message === 'function' ? firstStep.message({}) : firstStep.message
-        : '';
-      addBotMessage(firstMessage);
-    }, 100);
-  }, [conversationFlow, addBotMessage, onQuestionnaireCleared, activeChildId]);
-
   const currentStepData = conversationFlow[currentStep];
 
   // Auto-proceed on 'auto' steps
@@ -715,7 +742,13 @@ export default function ConversationalOnboarding({
       if (count >= 12) {
         clearInterval(dotInterval);
         const finalData = { ...collectedDataRef.current };
-        setAnalyzingState({ show: true, progress: 0, name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child', showingDots: false, dotCount: 0 });
+        setAnalyzingState({
+          show: true,
+          progress: 0,
+          name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child',
+          showingDots: false,
+          dotCount: 0,
+        });
         let progress = 0;
         progressInterval = setInterval(() => {
           progress += 1;
@@ -746,15 +779,14 @@ export default function ConversationalOnboarding({
         <motion.div
           animate={{ scale: [1, 1.06, 1] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-500/15 ring-4 ring-violet-400/20 text-4xl"
+          className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-500/15 text-4xl ring-4 ring-violet-400/20"
         >
           🎉
         </motion.div>
         <div className="space-y-1.5">
           <h2 className="text-2xl font-bold text-foreground">
-            Perfect! Let's do{' '}
-            <span className="text-primary">{analyzingName || 'your child'}</span>'s personality
-            analysis ✨
+            Perfect! Let's do <span className="text-primary">{analyzingName || 'your child'}</span>
+            's personality analysis ✨
           </h2>
           <p className="text-sm text-muted-foreground">Getting things ready — almost there.</p>
         </div>
@@ -766,9 +798,9 @@ export default function ConversationalOnboarding({
               className="h-full rounded-full bg-gradient-to-r from-primary to-violet-400"
             />
           </div>
-          <p className="text-xs text-muted-foreground/50 text-right">{analyzeProgress}%</p>
+          <p className="text-right text-xs text-muted-foreground/50">{analyzeProgress}%</p>
         </div>
-        <p className="text-xs font-semibold tracking-wider uppercase text-primary animate-pulse">
+        <p className="animate-pulse text-xs font-semibold uppercase tracking-wider text-primary">
           One moment…
         </p>
       </motion.div>
@@ -777,24 +809,36 @@ export default function ConversationalOnboarding({
 
   // ── Phase splash interstitial ────────────────────────────────────────────────
 
-  const displayStep = FLOW_TO_DISPLAY[currentStep] ?? 3;
-
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-card overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-card">
       {/* Chat header */}
       <div className="flex items-center justify-between border-b border-white/[0.06] bg-surface-elevated px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary">
             <svg viewBox="0 0 20 22" className="h-5 w-5">
-              <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
-              <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
-              <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+              <line
+                x1="10"
+                y1="21"
+                x2="10"
+                y2="14"
+                stroke="#0d3d2e"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+                fill="#0d3d2e"
+              />
+              <path
+                d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+                fill="#0d3d2e"
+              />
             </svg>
           </div>
           <div>
             <h3 className="text-sm font-semibold text-foreground">Buddy360 Guide</h3>
             <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-success-bright inline-block" />
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success-bright" />
               Your growth companion
             </p>
           </div>
@@ -810,7 +854,7 @@ export default function ConversationalOnboarding({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.35 }}
-            className="flex flex-col items-center justify-center gap-5 py-16 text-center px-8"
+            className="flex flex-col items-center justify-center gap-5 px-8 py-16 text-center"
           >
             <motion.div
               initial={{ scale: 0.6, opacity: 0 }}
@@ -833,7 +877,7 @@ export default function ConversationalOnboarding({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="text-xs font-semibold tracking-wider uppercase text-primary animate-pulse"
+              className="animate-pulse text-xs font-semibold uppercase tracking-wider text-primary"
             >
               One moment…
             </motion.p>
@@ -845,7 +889,10 @@ export default function ConversationalOnboarding({
       {!phaseSplash && (
         <>
           {/* Messages */}
-          <div ref={scrollContainerRef} className="flex-1 h-64 min-h-[200px] max-h-[320px] overflow-y-auto space-y-3 p-5">
+          <div
+            ref={scrollContainerRef}
+            className="h-64 max-h-[320px] min-h-[200px] flex-1 space-y-3 overflow-y-auto p-5"
+          >
             <AnimatePresence initial={false}>
               {messages.slice(-6).map((msg) =>
                 msg.role === 'bot' ? (
@@ -853,14 +900,31 @@ export default function ConversationalOnboarding({
                     key={msg.id}
                     initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ opacity: { duration: 1.4, ease: [0, 0, 0.6, 1] }, y: { duration: 1.0, ease: 'easeOut' } }}
+                    transition={{
+                      opacity: { duration: 1.4, ease: [0, 0, 0.6, 1] },
+                      y: { duration: 1.0, ease: 'easeOut' },
+                    }}
                     className="flex items-start gap-2.5"
                   >
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary mt-0.5">
+                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
                       <svg viewBox="0 0 20 22" className="h-3.5 w-3.5">
-                        <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
-                        <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
-                        <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+                        <line
+                          x1="10"
+                          y1="21"
+                          x2="10"
+                          y2="14"
+                          stroke="#0d3d2e"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+                          fill="#0d3d2e"
+                        />
+                        <path
+                          d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+                          fill="#0d3d2e"
+                        />
                       </svg>
                     </div>
                     <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-white/[0.07] bg-surface-input px-4 py-2.5 text-sm text-foreground">
@@ -872,7 +936,10 @@ export default function ConversationalOnboarding({
                     key={msg.id}
                     initial={{ opacity: 0, x: 32 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ opacity: { duration: 1.2, ease: [0, 0, 0.6, 1] }, x: { duration: 1.0, ease: [0.22, 1, 0.36, 1] } }}
+                    transition={{
+                      opacity: { duration: 1.2, ease: [0, 0, 0.6, 1] },
+                      x: { duration: 1.0, ease: [0.22, 1, 0.36, 1] },
+                    }}
                     className="flex justify-end"
                   >
                     <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary-action px-4 py-2.5 text-sm text-white">
@@ -893,11 +960,25 @@ export default function ConversationalOnboarding({
                   exit={{ opacity: 0, y: -4, transition: { duration: 0.25 } }}
                   className="flex items-start gap-2.5"
                 >
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary mt-0.5">
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
                     <svg viewBox="0 0 20 22" className="h-3.5 w-3.5">
-                      <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
-                      <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
-                      <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+                      <line
+                        x1="10"
+                        y1="21"
+                        x2="10"
+                        y2="14"
+                        stroke="#0d3d2e"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+                        fill="#0d3d2e"
+                      />
+                      <path
+                        d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+                        fill="#0d3d2e"
+                      />
                     </svg>
                   </div>
                   <div className="rounded-2xl rounded-tl-sm border border-white/[0.07] bg-surface-input px-4 py-3">
@@ -931,7 +1012,7 @@ export default function ConversationalOnboarding({
                   <p className="text-sm font-semibold text-foreground">
                     Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
                   </p>
-                  <p className="text-xs text-primary mt-0.5">Getting things ready — almost there</p>
+                  <p className="mt-0.5 text-xs text-primary">Getting things ready — almost there</p>
                 </div>
               </motion.div>
             </div>
@@ -939,7 +1020,7 @@ export default function ConversationalOnboarding({
 
           {/* MCQ grid for choice steps */}
           {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-            <div className="border-t border-white/[0.06] px-5 pb-5 pt-4 space-y-3">
+            <div className="space-y-3 border-t border-white/[0.06] px-5 pb-5 pt-4">
               <MCQGrid
                 options={currentStepData.options ?? []}
                 selected={collectedData[currentStepData.field] as string | undefined}
@@ -949,13 +1030,13 @@ export default function ConversationalOnboarding({
               {/* Echo of last user answer */}
               <div className="flex justify-end">
                 <AnimatePresence>
-                  {collectedData[currentStepData.field] && (
+                  {!!collectedData[currentStepData.field] && (
                     <motion.div
                       key={String(collectedData[currentStepData.field])}
                       initial={{ opacity: 0, x: 20, scale: 0.9 }}
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       transition={{ type: 'spring', stiffness: 80 }}
-                      className="rounded-xl bg-primary-action px-4 py-2 text-sm text-white font-medium"
+                      className="rounded-xl bg-primary-action px-4 py-2 text-sm font-medium text-white"
                     >
                       {String(collectedData[currentStepData.field])}
                     </motion.div>
@@ -966,7 +1047,8 @@ export default function ConversationalOnboarding({
           )}
 
           {/* Text input */}
-          {waitingForResponse && !allAnswered &&
+          {waitingForResponse &&
+            !allAnswered &&
             (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
               <form onSubmit={handleSubmit} className="border-t border-white/[0.06] p-4">
                 {currentStepData.hint && (
@@ -981,11 +1063,11 @@ export default function ConversationalOnboarding({
                     value={currentInput}
                     onChange={(e) => setCurrentInput(e.target.value)}
                     placeholder={currentStepData.placeholder ?? 'Type your response…'}
-                    className="border-white/[0.1] flex-1 rounded-xl bg-surface-input text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 h-10"
+                    className="h-10 flex-1 rounded-xl border-white/[0.1] bg-surface-input text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40"
                   />
                   <Button
                     type="submit"
-                    className="h-10 w-10 rounded-xl bg-primary-action text-white hover:bg-primary-action/90 shrink-0 p-0 flex items-center justify-center"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-action p-0 text-white hover:bg-primary-action/90"
                     disabled={!currentInput.trim()}
                   >
                     <Send className="h-4 w-4" />
@@ -1043,19 +1125,24 @@ function MCQGrid({
             transition={{ delay: idx * 0.06, duration: 0.3, ease: 'easeOut' }}
             onClick={() => onSelect(option)}
             className={cn(
-              'flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium text-left transition-all focus:outline-none',
+              'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all focus:outline-none',
               isSelected
-                ? 'border-primary bg-primary/12 text-foreground ring-1 ring-primary/30'
-                : 'border-white/[0.08] bg-surface-elevated text-muted-foreground hover:border-primary/30 hover:text-foreground hover:bg-primary/[0.05]',
+                ? 'bg-primary/12 border-primary text-foreground ring-1 ring-primary/30'
+                : 'border-white/[0.08] bg-surface-elevated text-muted-foreground hover:border-primary/30 hover:bg-primary/[0.05] hover:text-foreground',
             )}
           >
-            <Icon className={cn('h-4 w-4 shrink-0', isSelected ? 'text-primary' : 'text-muted-foreground/60')} />
+            <Icon
+              className={cn(
+                'h-4 w-4 shrink-0',
+                isSelected ? 'text-primary' : 'text-muted-foreground/60',
+              )}
+            />
             <span className="leading-tight">{option}</span>
             {isSelected && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="ml-auto flex h-4 w-4 items-center justify-center rounded-full bg-primary shrink-0"
+                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary"
               >
                 <Check className="h-2.5 w-2.5 text-white" />
               </motion.div>

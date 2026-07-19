@@ -101,7 +101,8 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     if (!form.age.trim()) e.age = 'Age is required';
     else if (isNaN(ageNum) || ageNum < 8 || ageNum > 30) e.age = 'Age must be between 8 and 30';
     if (!form.gender) e.gender = 'Please select a gender';
-    if (!form.avatarId && !photoFile && !initialData?.avatarUrl) e.avatarId = 'Please upload a photo or pick an avatar';
+    if (!form.avatarId && !photoFile && !initialData?.avatarUrl)
+      e.avatarId = 'Please upload a photo or pick an avatar';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -124,10 +125,10 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="mx-auto max-w-lg"
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-card p-6 sm:p-8 space-y-6">
+      <div className="space-y-6 rounded-2xl border border-white/[0.08] bg-card p-6 sm:p-8">
         {/* Header */}
-        <div className="text-center space-y-1">
-          <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-primary">
+        <div className="space-y-1 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
             Let's start with the basics
           </p>
           <h2 className="text-2xl font-bold text-foreground">Tell us about your child</h2>
@@ -141,31 +142,39 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-primary/40 bg-surface-elevated overflow-hidden hover:border-primary/70 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-primary/40 bg-surface-elevated transition-colors hover:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
           >
             {photoPreview ? (
               <img src={photoPreview} alt="Profile photo" className="h-full w-full object-cover" />
             ) : selected ? (
-              <div className={`flex h-full w-full items-center justify-center ${selected.bg} text-4xl select-none`}>
+              <div
+                className={`flex h-full w-full items-center justify-center ${selected.bg} select-none text-4xl`}
+              >
                 {selected.emoji}
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-0.5 pointer-events-none">
+              <div className="pointer-events-none flex flex-col items-center gap-0.5">
                 <Camera className="h-6 w-6 text-primary" />
-                <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground mt-0.5">
+                <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Add Photo
                 </span>
                 <span className="text-[8px] text-muted-foreground/50">or pick an avatar</span>
               </div>
             )}
           </button>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoChange}
+          />
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => fileRef.current?.click()}
-            className="rounded-full border-white/[0.12] text-xs gap-1.5 px-4"
+            className="gap-1.5 rounded-full border-white/[0.12] px-4 text-xs"
           >
             <Upload className="h-3 w-3" />
             Upload photo
@@ -173,12 +182,12 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {/* Avatar picker */}
-        <div className="rounded-xl border border-white/[0.07] bg-surface-elevated/40 p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-white/[0.07] bg-surface-elevated/40 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               <span className="text-base">🎭</span> Or pick an avatar
             </span>
-            <div className="flex rounded-lg overflow-hidden border border-white/[0.1]">
+            <div className="flex overflow-hidden rounded-lg border border-white/[0.1]">
               {(['boy', 'girl'] as const).map((g) => (
                 <button
                   key={g}
@@ -215,13 +224,15 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                     : 'border-white/[0.07] bg-surface-elevated hover:border-primary/40',
                 )}
               >
-                <div className={`relative flex h-14 w-14 items-center justify-center rounded-full ${av.bg} text-2xl select-none`}>
+                <div
+                  className={`relative flex h-14 w-14 items-center justify-center rounded-full ${av.bg} select-none text-2xl`}
+                >
                   {av.emoji}
                   {form.avatarId === av.id && (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary shadow-md"
+                      className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary shadow-md"
                     >
                       <Check className="h-3 w-3 text-white" />
                     </motion.div>
@@ -234,16 +245,16 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {errors.avatarId && (
-          <p className="text-xs text-destructive text-center -mt-2">{errors.avatarId}</p>
+          <p className="-mt-2 text-center text-xs text-destructive">{errors.avatarId}</p>
         )}
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-white/[0.06]" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
             About your child
           </span>
-          <div className="flex-1 h-px bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-white/[0.06]" />
         </div>
 
         {/* Form fields */}
@@ -259,7 +270,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 onChange={(e) => setField('name', e.target.value)}
                 placeholder="Arjun"
                 className={cn(
-                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40',
+                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
                   errors.name ? 'border-red-500/50' : 'border-white/[0.1]',
                 )}
               />
@@ -278,7 +289,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 min={8}
                 max={30}
                 className={cn(
-                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40',
+                  'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
                   errors.age ? 'border-red-500/50' : 'border-white/[0.1]',
                 )}
               />
@@ -298,7 +309,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                   type="button"
                   onClick={() => setField('gender', g)}
                   className={cn(
-                    'py-2.5 rounded-xl border text-sm font-medium transition-all',
+                    'rounded-xl border py-2.5 text-sm font-medium transition-all',
                     form.gender === g
                       ? 'border-primary bg-primary/15 text-primary'
                       : 'border-white/[0.1] text-muted-foreground hover:border-primary/30 hover:text-foreground',
@@ -315,7 +326,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
           <div className="space-y-1.5">
             <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               School{' '}
-              <span className="text-muted-foreground/40 normal-case tracking-normal font-normal">
+              <span className="font-normal normal-case tracking-normal text-muted-foreground/40">
                 (optional)
               </span>
             </label>
@@ -323,7 +334,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
               value={form.school}
               onChange={(e) => setField('school', e.target.value)}
               placeholder="Greenfield International"
-              className="w-full rounded-xl border border-white/[0.1] bg-surface-input px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 outline-none transition-all focus:ring-1 ring-primary/40"
+              className="w-full rounded-xl border border-white/[0.1] bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1"
             />
           </div>
         </div>
@@ -335,11 +346,11 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             type="button"
             onClick={handleContinue}
             disabled={isLoading}
-            className="h-11 rounded-full bg-primary text-primary-foreground px-8 font-semibold hover:bg-primary/90 transition-all gap-2 shadow-[0_0_16px_rgba(45,212,191,0.2)]"
+            className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground shadow-[0_0_16px_rgba(45,212,191,0.2)] transition-all hover:bg-primary/90"
           >
             {isLoading ? (
               <span className="flex items-center gap-2">
-                <span className="h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 Saving…
               </span>
             ) : (

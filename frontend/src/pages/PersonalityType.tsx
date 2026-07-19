@@ -5,7 +5,10 @@ import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
-import { adaptAiPersonalityToViewModel, PERSONALITY_TYPE_KEYS } from '@/components/shared/PersonalityAnalysis';
+import {
+  adaptAiPersonalityToViewModel,
+  PERSONALITY_TYPE_KEYS,
+} from '@/components/shared/PersonalityAnalysis';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
 import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
@@ -49,7 +52,7 @@ function AnalysisLoadingScreen({
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 70, damping: 12 }}
-          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 ring-4 ring-primary/20 shadow-[0_0_28px_rgba(45,212,191,0.2)]"
+          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 shadow-[0_0_28px_rgba(45,212,191,0.2)] ring-4 ring-primary/20"
         >
           <motion.div
             animate={{ rotate: completedSteps >= ANALYSIS_STEPS.length ? 0 : 360 }}
@@ -63,8 +66,23 @@ function AnalysisLoadingScreen({
               <Check className="h-10 w-10 text-primary" />
             ) : (
               <svg viewBox="0 0 40 42" className="h-10 w-10" fill="none">
-                <line x1="20" y1="34" x2="20" y2="22" stroke="hsl(174 72% 56%)" strokeWidth="2.5" strokeLinecap="round" />
-                <path d="M20 28 C20 22 13 18 13 13 C13 8.5 16.2 6 20 6 C23.8 6 27 8.5 27 13 C27 18 20 22 20 28" stroke="hsl(174 72% 56%)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" fill="none" />
+                <line
+                  x1="20"
+                  y1="34"
+                  x2="20"
+                  y2="22"
+                  stroke="hsl(174 72% 56%)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M20 28 C20 22 13 18 13 13 C13 8.5 16.2 6 20 6 C23.8 6 27 8.5 27 13 C27 18 20 22 20 28"
+                  stroke="hsl(174 72% 56%)"
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  fill="none"
+                />
               </svg>
             )}
           </motion.div>
@@ -77,8 +95,7 @@ function AnalysisLoadingScreen({
             transition={{ delay: 0.3, duration: 0.5 }}
             className="text-xl font-bold text-foreground"
           >
-            Analysing{' '}
-            <span className="text-primary">{childName || 'your child'}</span>
+            Analysing <span className="text-primary">{childName || 'your child'}</span>
             's personality
           </motion.h2>
           <motion.p
@@ -120,7 +137,11 @@ function AnalysisLoadingScreen({
                   }`}
                 >
                   {isDone ? (
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 200 }}>
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 200 }}
+                    >
                       <Check className="h-3.5 w-3.5 text-primary-foreground" />
                     </motion.div>
                   ) : isActive ? (
@@ -133,7 +154,11 @@ function AnalysisLoadingScreen({
                 </div>
                 <span
                   className={`text-sm font-medium ${
-                    isDone ? 'text-primary' : isActive ? 'text-foreground' : 'text-muted-foreground/40'
+                    isDone
+                      ? 'text-primary'
+                      : isActive
+                        ? 'text-foreground'
+                        : 'text-muted-foreground/40'
                   }`}
                 >
                   {step.label}
@@ -176,7 +201,9 @@ export default function PersonalityType() {
     try {
       const child = await api.entities.Child.get(childId);
       const personality = child?.personality;
-      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as
+        | Record<string, unknown>
+        | undefined;
       const merged = mergedDataRef.current;
 
       if (pendingVm && merged) {
@@ -187,7 +214,9 @@ export default function PersonalityType() {
           onboarding_phase: 2,
         }).catch((err) => console.error('[PersonalityType] Failed to persist personality:', err));
       } else if (personality?.view_model?.profile?.name) {
-        const clamped = maybeClampStoredPersonalityDescription(personality.view_model, { analysisSource: personality?.source });
+        const clamped = maybeClampStoredPersonalityDescription(personality.view_model, {
+          analysisSource: personality?.source,
+        });
         setMbtiResult(sanitizeViewModelAvatars(clamped));
       }
     } catch (err) {
@@ -204,15 +233,10 @@ export default function PersonalityType() {
   // Advance checklist as job progresses
   useEffect(() => {
     if (!job.isLoading || mbtiResult) return;
-    const progress = typeof job.progress === 'number' ? job.progress : 0;
-    const steps =
-      progress < 25 ? 0
-      : progress < 50 ? 1
-      : progress < 75 ? 2
-      : progress < 95 ? 3
-      : 4;
+    const progress = Math.min((job.elapsedMs / 1000 / 30) * 100, 95);
+    const steps = progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 95 ? 3 : 4;
     setCompletedSteps(steps);
-  }, [job.isLoading, job.progress, mbtiResult]);
+  }, [job.isLoading, job.elapsedMs, mbtiResult]);
 
   // Animate all steps done → navigate to journey
   useEffect(() => {
@@ -227,15 +251,24 @@ export default function PersonalityType() {
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     void (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
         mergedDataRef.current = merged;
@@ -245,13 +278,17 @@ export default function PersonalityType() {
         const personality = child.personality;
         const viewModel = personality?.view_model;
         if (viewModel?.profile?.name) {
-          const clamped = maybeClampStoredPersonalityDescription(viewModel, { analysisSource: personality?.source });
+          const clamped = maybeClampStoredPersonalityDescription(viewModel, {
+            analysisSource: personality?.source,
+          });
           setMbtiResult(sanitizeViewModelAvatars(clamped));
           setIsInitializing(false);
           return;
         }
 
-        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as Record<string, unknown> | undefined;
+        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as
+          | Record<string, unknown>
+          | undefined;
         if (pendingVm) {
           const vm = adaptAiPersonalityToViewModel(pendingVm, merged.name);
           if (cancelled) return;
@@ -275,7 +312,10 @@ export default function PersonalityType() {
             type: 'generate_personality_analysis',
             child_id: childId,
             payload: {
-              prompt: buildPersonalityAnalysisPrompt({ childData: merged, personalityTypeKeys: PERSONALITY_TYPE_KEYS }),
+              prompt: buildPersonalityAnalysisPrompt({
+                childData: merged,
+                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+              }),
               response_json_schema: personalityLlmSchema(),
             },
             write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
@@ -285,11 +325,16 @@ export default function PersonalityType() {
         setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityType] Load failed:', err);
-        if (!cancelled) { setInitError(true); setIsInitializing(false); }
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 

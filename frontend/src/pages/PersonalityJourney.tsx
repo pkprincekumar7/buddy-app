@@ -15,12 +15,6 @@ import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeade
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
-const HEADER_PHASES: PhaseEntry[] = [
-  { num: 1, label: 'Getting to Know', status: 'done' },
-  { num: 2, label: 'Personality Analysis', status: 'done' },
-  { num: 3, label: 'Your Journey', status: 'active', progress: 50 },
-];
-
 // ── Step definitions ──────────────────────────────────────────────────────────
 
 // Steps:
@@ -35,14 +29,20 @@ const TOTAL_STEPS = 7;
 
 // ── Sub-screens ───────────────────────────────────────────────────────────────
 
-function TheRevealScreen({ childName, personalityType }: { childName: string; personalityType: string; }) {
+function TheRevealScreen({
+  childName,
+  personalityType,
+}: {
+  childName: string;
+  personalityType: string;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 text-center">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-8 text-center">
       <motion.p
         initial={{ opacity: 0, letterSpacing: '0.5em' }}
         animate={{ opacity: 1, letterSpacing: '0.25em' }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
-        className="text-[11px] font-bold uppercase text-primary tracking-[0.25em]"
+        className="text-[11px] font-bold uppercase tracking-[0.25em] text-primary"
       >
         ✨ The Reveal
       </motion.p>
@@ -52,7 +52,7 @@ function TheRevealScreen({ childName, personalityType }: { childName: string; pe
           initial={{ scale: 0.3, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 60, damping: 10, delay: 0.2 }}
-          className="flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/30 to-violet-500/30 ring-4 ring-primary/20 shadow-[0_0_48px_rgba(45,212,191,0.3)] text-6xl"
+          className="flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/30 to-violet-500/30 text-6xl shadow-[0_0_48px_rgba(45,212,191,0.3)] ring-4 ring-primary/20"
         >
           🌟
         </motion.div>
@@ -79,7 +79,7 @@ function TheRevealScreen({ childName, personalityType }: { childName: string; pe
           initial={{ opacity: 0, y: 20, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ delay: 0.85, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-          className="text-4xl sm:text-5xl font-extrabold tracking-tight text-foreground"
+          className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl"
         >
           THE{' '}
           <span className="bg-gradient-to-r from-primary to-violet-400 bg-clip-text text-transparent">
@@ -92,7 +92,7 @@ function TheRevealScreen({ childName, personalityType }: { childName: string; pe
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.3, duration: 0.5 }}
-        className="max-w-xs text-sm text-muted-foreground/70 italic"
+        className="max-w-xs text-sm italic text-muted-foreground/70"
       >
         Tap "Next" to explore what this means
       </motion.p>
@@ -119,11 +119,13 @@ function PersonalityCardScreen({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
       >
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary mb-1">
+        <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
           {childName}'s personality type
         </p>
         <h2 className="text-2xl font-extrabold text-foreground">
-          {typeLabel && <span className="text-muted-foreground text-lg font-medium mr-2">{typeLabel} ·</span>}
+          {typeLabel && (
+            <span className="mr-2 text-lg font-medium text-muted-foreground">{typeLabel} ·</span>
+          )}
           {typeTitle}
         </h2>
       </motion.div>
@@ -132,7 +134,7 @@ function PersonalityCardScreen({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.5 }}
-        className="rounded-2xl border border-white/[0.08] bg-card p-6 space-y-4"
+        className="space-y-4 rounded-2xl border border-white/[0.08] bg-card p-6"
       >
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/30 to-violet-500/30 text-2xl shadow-[0_0_18px_rgba(45,212,191,0.2)]">
@@ -140,12 +142,12 @@ function PersonalityCardScreen({
           </div>
           <div>
             <h3 className="text-base font-bold text-foreground">{typeTitle}</h3>
-            <p className="text-xs text-primary font-medium">{childName}'s dominant style</p>
+            <p className="text-xs font-medium text-primary">{childName}'s dominant style</p>
           </div>
         </div>
 
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2.5">
+          <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
             Key traits
           </p>
           <div className="flex flex-wrap gap-2">
@@ -167,13 +169,7 @@ function PersonalityCardScreen({
   );
 }
 
-function InANutshellScreen({
-  childName,
-  description,
-}: {
-  childName: string;
-  description: string;
-}) {
+function InANutshellScreen({ childName, description }: { childName: string; description: string }) {
   return (
     <div className="space-y-5">
       <motion.div
@@ -181,7 +177,7 @@ function InANutshellScreen({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: 'easeOut' }}
       >
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary mb-1">
+        <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
           In a nutshell
         </p>
         <h2 className="text-xl font-bold text-foreground">What makes {childName} unique</h2>
@@ -194,7 +190,7 @@ function InANutshellScreen({
         className="relative rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.06] to-violet-500/[0.06] p-6"
       >
         <div className="absolute left-4 top-4 h-6 w-1 rounded-full bg-gradient-to-b from-primary to-violet-400" />
-        <p className="pl-4 text-base leading-relaxed text-foreground font-medium">
+        <p className="pl-4 text-base font-medium leading-relaxed text-foreground">
           "{description}"
         </p>
       </motion.div>
@@ -230,7 +226,7 @@ function StrengthsScreen({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
       >
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary mb-1">
+        <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
           Emerging strengths · {setLabel}
         </p>
         <h2 className="text-xl font-bold text-foreground">{childName}'s natural gifts</h2>
@@ -241,7 +237,7 @@ function StrengthsScreen({
           // Try to split "Title: description" or "Title — description"
           const sep = strength.match(/[:—–-](.+)/);
           const title = sep ? strength.slice(0, strength.indexOf(sep[0])).trim() : strength;
-          const detail = sep ? sep[1].trim() : '';
+          const detail = sep ? (sep[1]?.trim() ?? '') : '';
 
           return (
             <motion.div
@@ -251,12 +247,14 @@ function StrengthsScreen({
               transition={{ delay: 0.12 + idx * 0.14, duration: 0.45, ease: 'easeOut' }}
               className="flex items-start gap-4 rounded-xl border border-white/[0.08] bg-card px-5 py-4"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/20">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/20 bg-gradient-to-br from-amber-500/20 to-orange-500/10">
                 <Star className="h-4 w-4 text-amber-400" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">{title}</p>
-                {detail && <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{detail}</p>}
+                {detail && (
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{detail}</p>
+                )}
               </div>
             </motion.div>
           );
@@ -268,12 +266,12 @@ function StrengthsScreen({
 
 function WhatsNextScreen({ childName }: { childName: string }) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[40vh] gap-6 text-center">
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-6 text-center">
       <motion.div
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 60, damping: 10 }}
-        className="flex h-24 w-24 items-center justify-center rounded-full bg-violet-500/15 ring-4 ring-violet-400/20 text-5xl shadow-[0_0_36px_rgba(139,92,246,0.25)]"
+        className="flex h-24 w-24 items-center justify-center rounded-full bg-violet-500/15 text-5xl shadow-[0_0_36px_rgba(139,92,246,0.25)] ring-4 ring-violet-400/20"
       >
         🧭
       </motion.div>
@@ -282,13 +280,12 @@ function WhatsNextScreen({ childName }: { childName: string }) {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.5 }}
-        className="space-y-2 max-w-xs"
+        className="max-w-xs space-y-2"
       >
-        <h2 className="text-2xl font-bold text-foreground">
-          What's next for {childName}?
-        </h2>
+        <h2 className="text-2xl font-bold text-foreground">What's next for {childName}?</h2>
         <p className="text-sm text-muted-foreground">
-          Discover specific growth areas and personalised activities to help {childName} become their best version.
+          Discover specific growth areas and personalised activities to help {childName} become
+          their best version.
         </p>
       </motion.div>
     </div>
@@ -312,7 +309,7 @@ function FinalCTAScreen({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="rounded-2xl border border-personality/20 bg-card p-6 space-y-4 text-center"
+        className="space-y-4 rounded-2xl border border-personality/20 bg-card p-6 text-center"
       >
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 text-3xl">
           🚀
@@ -328,7 +325,7 @@ function FinalCTAScreen({
           <Button
             size="xl"
             onClick={() => navigate(`/GrowthAreas/${childId ?? ''}`)}
-            className="w-full rounded-2xl bg-gradient-to-r from-primary to-violet-400 text-white font-semibold hover:opacity-90 transition-opacity shadow-[0_0_20px_rgba(45,212,191,0.2)]"
+            className="w-full rounded-2xl bg-gradient-to-r from-primary to-violet-400 font-semibold text-white shadow-[0_0_20px_rgba(45,212,191,0.2)] transition-opacity hover:opacity-90"
           >
             <Zap className="mr-2 h-4 w-4" />
             Continue Now
@@ -337,7 +334,7 @@ function FinalCTAScreen({
             size="xl"
             variant="outline"
             onClick={onHome}
-            className="w-full rounded-2xl border-white/[0.1] bg-transparent text-foreground hover:bg-surface-elevated transition-colors"
+            className="w-full rounded-2xl border-white/[0.1] bg-transparent text-foreground transition-colors hover:bg-surface-elevated"
           >
             <Clock className="mr-2 h-4 w-4" />
             Catch Up Later
@@ -366,20 +363,31 @@ export default function PersonalityJourney() {
     if (!childId) return;
     try {
       await api.entities.Child.update(childId, { onboarding_phase: 3, onboarding_completed: true });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }, [childId]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
-    if (!isAuthenticated) { navigate('/Onboarding', { replace: true }); return; }
-    if (!childId) { navigate('/Home', { replace: true }); return; }
+    if (!isAuthenticated) {
+      navigate('/Onboarding', { replace: true });
+      return;
+    }
+    if (!childId) {
+      navigate('/Home', { replace: true });
+      return;
+    }
     let cancelled = false;
 
     void (async () => {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-        if (!child) { navigate('/Home', { replace: true }); return; }
+        if (!child) {
+          navigate('/Home', { replace: true });
+          return;
+        }
 
         const personality = child.personality;
         const vm = personality?.view_model;
@@ -388,7 +396,7 @@ export default function PersonalityJourney() {
           return;
         }
 
-        setViewModel(vm as Record<string, unknown>);
+        setViewModel(vm);
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
         setChildName(merged.name || '');
         setProfile(onboardingProfileFromViewModel(vm));
@@ -399,11 +407,16 @@ export default function PersonalityJourney() {
         setIsInitializing(false);
       } catch (err) {
         console.warn('[PersonalityJourney] Load failed:', err);
-        if (!cancelled) { setInitError(true); setIsInitializing(false); }
+        if (!cancelled) {
+          setInitError(true);
+          setIsInitializing(false);
+        }
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isLoadingAuth, isAuthenticated, childId, navigate, markJourneyComplete]);
 
   const goNext = () => {
@@ -425,7 +438,10 @@ export default function PersonalityJourney() {
   if (status === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div {...SPINNER} className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent" />
+        <motion.div
+          {...SPINNER}
+          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
+        />
       </div>
     );
   }
@@ -434,7 +450,10 @@ export default function PersonalityJourney() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Something went wrong. Please try again.</p>
-        <Button onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')} className="btn-primary rounded-2xl px-8">
+        <Button
+          onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')}
+          className="btn-primary rounded-2xl px-8"
+        >
           Go Back
         </Button>
       </div>
@@ -442,9 +461,9 @@ export default function PersonalityJourney() {
   }
 
   const strengths = (profile?.top_strengths as string[]) ?? [];
-  const traits = Array.isArray((viewModel as Record<string, unknown> | null)?.profile)
+  const traits = Array.isArray(viewModel?.profile)
     ? []
-    : (((viewModel as Record<string, unknown> | null)?.profile as Record<string, unknown> | undefined)?.traits as string[]) ?? [];
+    : (((viewModel?.profile as Record<string, unknown> | undefined)?.traits as string[]) ?? []);
   const description = profile?.summary ?? '';
   const personalityType = profile?.personality_type ?? '';
 
@@ -467,7 +486,7 @@ export default function PersonalityJourney() {
 
       <div className="mx-auto max-w-lg px-4 py-8">
         {/* Step dots */}
-        <div className="flex justify-center gap-1.5 mb-8">
+        <div className="mb-8 flex justify-center gap-1.5">
           {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
             <div
               key={i}
@@ -498,7 +517,11 @@ export default function PersonalityJourney() {
               <TheRevealScreen childName={childName} personalityType={personalityType} />
             )}
             {currentStep === 2 && (
-              <PersonalityCardScreen childName={childName} personalityType={personalityType} traits={traits} />
+              <PersonalityCardScreen
+                childName={childName}
+                personalityType={personalityType}
+                traits={traits}
+              />
             )}
             {currentStep === 3 && (
               <InANutshellScreen childName={childName} description={description} />
@@ -517,11 +540,13 @@ export default function PersonalityJourney() {
                 setLabel="Part 2 of 2"
               />
             )}
-            {currentStep === 6 && (
-              <WhatsNextScreen childName={childName} />
-            )}
+            {currentStep === 6 && <WhatsNextScreen childName={childName} />}
             {currentStep === 7 && (
-              <FinalCTAScreen childName={childName} childId={childId} onHome={() => navigate('/Home')} />
+              <FinalCTAScreen
+                childName={childName}
+                childId={childId}
+                onHome={() => navigate('/Home')}
+              />
             )}
           </motion.div>
         </AnimatePresence>
@@ -533,8 +558,8 @@ export default function PersonalityJourney() {
             onClick={goBack}
             disabled={currentStep === 1}
             className={cn(
-              'rounded-2xl border-white/[0.1] px-6 h-11 text-sm font-medium transition-all',
-              currentStep === 1 ? 'opacity-0 pointer-events-none' : '',
+              'h-11 rounded-2xl border-white/[0.1] px-6 text-sm font-medium transition-all',
+              currentStep === 1 ? 'pointer-events-none opacity-0' : '',
             )}
           >
             ← Back
@@ -543,7 +568,7 @@ export default function PersonalityJourney() {
           {currentStep < TOTAL_STEPS ? (
             <Button
               onClick={goNext}
-              className="h-11 rounded-2xl bg-primary text-primary-foreground px-8 font-semibold hover:bg-primary/90 transition-all shadow-[0_0_16px_rgba(45,212,191,0.2)] gap-2"
+              className="h-11 gap-2 rounded-2xl bg-primary px-8 font-semibold text-primary-foreground shadow-[0_0_16px_rgba(45,212,191,0.2)] transition-all hover:bg-primary/90"
             >
               Next
               <ChevronRight className="h-4 w-4" />

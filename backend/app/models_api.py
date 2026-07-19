@@ -331,7 +331,7 @@ class ChildResponse(BaseModel):
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
     # Avatar / profile photo — set during onboarding step 2.
-    avatar_id: str | None = None   # emoji avatar selection (e.g. "capper-boy")
+    avatar_id: str | None = None  # emoji avatar selection (e.g. "capper-boy")
     avatar_url: str | None = None  # S3 URL of an uploaded profile photo
     # Soft-delete fields — present on all documents; False by default.
     # deleted_at is set when is_deleted is set to True.

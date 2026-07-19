@@ -29,7 +29,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
       transition={{ duration: 0.55, ease: 'easeOut' }}
       className="mx-auto max-w-lg"
     >
-      <div className="rounded-2xl border border-white/[0.08] bg-card p-8 sm:p-10 text-center space-y-6">
+      <div className="space-y-6 rounded-2xl border border-white/[0.08] bg-card p-8 text-center sm:p-10">
         {/* Buddy logo — solid teal filled circle with white sprout */}
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
@@ -39,11 +39,25 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
         >
           <svg viewBox="0 0 20 22" className="h-10 w-10">
             {/* stem */}
-            <line x1="10" y1="21" x2="10" y2="14" stroke="#0d3d2e" strokeWidth="2.2" strokeLinecap="round" />
+            <line
+              x1="10"
+              y1="21"
+              x2="10"
+              y2="14"
+              stroke="#0d3d2e"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
             {/* left leaf — teardrop pointing upper-left */}
-            <path d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+            <path
+              d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+              fill="#0d3d2e"
+            />
             {/* right leaf — teardrop pointing upper-right */}
-            <path d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z" fill="#0d3d2e" />
+            <path
+              d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+              fill="#0d3d2e"
+            />
           </svg>
         </motion.div>
 
@@ -53,7 +67,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.35, duration: 0.5 }}
-            className="text-[11px] font-semibold tracking-[0.16em] uppercase text-primary"
+            className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary"
           >
             Welcome to your growth journey
           </motion.p>
@@ -61,7 +75,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5, duration: 0.55, ease: 'easeOut' }}
-            className="text-3xl sm:text-4xl font-bold text-foreground leading-tight"
+            className="text-3xl font-bold leading-tight text-foreground sm:text-4xl"
           >
             Hey {firstName}! 👋
             <br />
@@ -76,10 +90,10 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.75, duration: 0.5 }}
-          className="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto"
+          className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground"
         >
-          In a few light, friendly questions I'll learn about your child — one thing at a time.
-          No long forms, no pressure. Promise.
+          In a few light, friendly questions I'll learn about your child — one thing at a time. No
+          long forms, no pressure. Promise.
         </motion.p>
 
         {/* Feature chips */}
@@ -87,7 +101,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.95, duration: 0.5 }}
-          className="flex items-center justify-center gap-3 w-full"
+          className="flex w-full items-center justify-center gap-3"
         >
           {FEATURES.map((f, i) => (
             <motion.div
@@ -95,7 +109,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               initial={{ opacity: 0, scale: 0.88 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 1.0 + i * 0.1, duration: 0.35, ease: 'easeOut' }}
-              className="flex flex-1 flex-col items-center gap-2 py-4 rounded-xl border border-white/[0.08] bg-surface-elevated"
+              className="flex flex-1 flex-col items-center gap-2 rounded-xl border border-white/[0.08] bg-surface-elevated py-4"
             >
               <f.icon className="h-5 w-5 text-primary" />
               <span className="text-xs font-medium text-foreground">{f.text}</span>
@@ -113,7 +127,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           {isAuthenticated ? (
             <Button
               onClick={onContinue}
-              className="h-12 rounded-full bg-primary text-primary-foreground text-base font-semibold px-12 hover:bg-primary/90 transition-all duration-200 shadow-[0_0_20px_rgba(45,212,191,0.25)]"
+              className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground shadow-[0_0_20px_rgba(45,212,191,0.25)] transition-all duration-200 hover:bg-primary/90"
             >
               Let's start &rarr;
             </Button>
@@ -121,11 +135,13 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
             <>
               <Button
                 onClick={handleGoogleLogin}
-                className="h-12 rounded-full bg-primary text-primary-foreground text-base font-semibold px-12 hover:bg-primary/90 transition-all duration-200 shadow-[0_0_20px_rgba(45,212,191,0.25)]"
+                className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground shadow-[0_0_20px_rgba(45,212,191,0.25)] transition-all duration-200 hover:bg-primary/90"
               >
                 Get started &rarr;
               </Button>
-              <p className="text-xs text-muted-foreground/60">Sign in to save your progress securely</p>
+              <p className="text-xs text-muted-foreground/60">
+                Sign in to save your progress securely
+              </p>
             </>
           )}
           <p className="text-xs text-muted-foreground/50">Takes about 2 minutes</p>
