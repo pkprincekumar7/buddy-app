@@ -369,7 +369,6 @@ export default function GoalsDashboard() {
     childData,
     concern,
     goalPlan,
-    setGoalPlan,
     isLoading,
     saveActivityCompletion,
     handleActivityReset,
@@ -534,7 +533,6 @@ export default function GoalsDashboard() {
                     childAge={childData?.['age'] as string | number | undefined}
                     childGender={childData?.['gender'] as string | undefined}
                     activeJobs={childData?.['active_jobs'] as Record<string, string> | undefined}
-                    onPlanUpdate={(plan) => setGoalPlan(plan)}
                     onClose={() => setShowProgress(false)}
                   />
                 )}

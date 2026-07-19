@@ -532,6 +532,7 @@ export default function ConversationalOnboarding({
       // ── field-level validation ──────────────────────────────────────────────
       if (step?.field === 'age') {
         const trimmed = response.trim();
+        // eslint-disable-next-line security/detect-unsafe-regex
         const ageMatch = trimmed.match(/^(\d+)\s*(years?|months?|y|m)?/i);
         if (!ageMatch) {
           setTimeout(() => {

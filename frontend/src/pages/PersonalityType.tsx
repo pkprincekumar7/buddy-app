@@ -57,7 +57,7 @@ export default function PersonalityType() {
           personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           onboarding_phase: 2,
         }).catch((err) => console.error('[PersonalityType] Failed to persist personality:', err));
-      } else if (personality?.view_model?.type && personality?.view_model?.profile) {
+      } else if (personality?.view_model?.profile?.name) {
         // Another device already finalized — use that result
         const clamped = maybeClampStoredPersonalityDescription(personality.view_model, {
           analysisSource: personality?.source,
@@ -112,7 +112,7 @@ export default function PersonalityType() {
         // Already analysed — show result immediately
         const personality = child.personality;
         const viewModel = personality?.view_model;
-        if (viewModel?.type && viewModel?.profile) {
+        if (viewModel?.profile?.name) {
           const clamped = maybeClampStoredPersonalityDescription(viewModel, {
             analysisSource: personality?.source,
           });

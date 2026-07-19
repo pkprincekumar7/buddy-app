@@ -17,6 +17,20 @@ from app.models_api import (
     ChildResponse,
 )
 
+# Fields returned by the child-card list view. Heavy sub-documents
+# (personality scores/traits, full recommendations blob) are excluded and
+# fetched in full by GET /children/{child_id} when a specific child loads.
+# current_phase is intentionally excluded from the list view.
+_LIST_PROJECTION = {
+    "name": 1,
+    "age": 1,
+    "school": 1,
+    "onboarding_completed": 1,
+    "recommendations.pathway_overview": 1,
+    "personality.view_model.profile.name": 1,
+    "created_at": 1,
+}
+
 router = APIRouter(tags=["children"])
 log = logging.getLogger(__name__)
 
@@ -32,6 +46,8 @@ _CHILD_SYSTEM_FIELDS = {
     "location",  # DB identity / shard key
     "created_at",
     "updated_at",  # server-managed timestamps
+    "is_deleted",
+    "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
 }
 
 
@@ -79,7 +95,10 @@ async def list_children(
 
     docs = await (
         db[models.CHILDREN]
-        .find({"user_id": user["_id"], "location": user["location"]})
+        .find(
+            {"user_id": user["_id"], "location": user["location"], "is_deleted": False},
+            _LIST_PROJECTION,
+        )
         .sort(sort_spec)
         .to_list(limit)
     )
@@ -100,7 +119,7 @@ async def create_child(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     count = await db[models.CHILDREN].count_documents(
-        {"user_id": user["_id"], "location": user["location"]}
+        {"user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if count >= 10:
         raise HTTPException(status_code=422, detail="Maximum of 10 children allowed per account")
@@ -117,6 +136,8 @@ async def create_child(
         "_id": child_id,
         "user_id": user["_id"],
         "location": user["location"],
+        "is_deleted": False,
+        "deleted_at": None,
         "created_at": now,
         "updated_at": now,
         **data,
@@ -138,7 +159,7 @@ async def get_child(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     doc = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
@@ -175,12 +196,27 @@ async def update_child(
         else:
             set_fields[k] = v
 
+    # When the client commits the final personality, clear the staging field via
+    # $unset to avoid keeping ~2 KB of duplicate LLM output permanently on the
+    # document. Remove it from $set first — MongoDB raises ConflictingUpdateOperators
+    # (code 40) if the same path appears in both $set and $unset.
+    clear_pending_vm = "personality" in set_fields
+    if clear_pending_vm:
+        set_fields.pop("pending_personality_vm", None)
+
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
         update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
+    if clear_pending_vm:
+        update_op["$unset"] = {"pending_personality_vm": ""}
 
     doc = await db[models.CHILDREN].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        {
+            "_id": child_id,
+            "user_id": user["_id"],
+            "location": user["location"],
+            "is_deleted": False,
+        },
         update_op,
         return_document=True,
     )
@@ -192,7 +228,12 @@ async def update_child(
 @router.delete(
     "/children/{child_id}",
     status_code=204,
-    description="Remove a child profile and all associated data.",
+    description=(
+        "Soft-delete a child profile. The profile is hidden immediately but retained "
+        "for 30 days so accidental deletions can be recovered. Associated data "
+        "(goals, growth areas, etc.) is preserved during the retention window and "
+        "purged by a scheduled hard-delete job after expiry."
+    ),
 )
 @user_limiter.limit("10/minute")
 async def delete_child(
@@ -201,17 +242,15 @@ async def delete_child(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    existing = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    now = datetime.now(UTC)
+    result = await db[models.CHILDREN].update_one(
+        {
+            "_id": child_id,
+            "user_id": user["_id"],
+            "location": user["location"],
+            "is_deleted": False,
+        },
+        {"$set": {"is_deleted": True, "deleted_at": now, "updated_at": now}},
     )
-    if not existing:
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Child not found")
-    loc = existing["location"]
-    # All three collections are sharded by location, so they land on the same shard
-    # and can be included in a single transaction — identical pattern to account deletion.
-    async with await db.client.start_session() as session, session.start_transaction():
-        await db[models.GOALS].delete_one({"_id": child_id, "location": loc}, session=session)
-        await db[models.GROWTH_AREAS].delete_many(
-            {"child_id": child_id, "location": loc}, session=session
-        )
-        await db[models.CHILDREN].delete_one({"_id": child_id, "location": loc}, session=session)

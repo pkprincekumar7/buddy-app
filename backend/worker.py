@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import boto3
@@ -143,10 +144,9 @@ async def handle_llm_failure(job: dict, error: str) -> None:
             new_attempt,
             error,
         )
-        await db[CHILDREN].update_one(
-            {"_id": job["child_id"]},
-            {"$unset": {f"active_jobs.{job['type']}": ""}},
-        )
+        # Mark job failed FIRST — same reasoning as write_to_domain's "Mark job completed FIRST"
+        # comment. If active_jobs were cleared first, the frontend stops polling before it
+        # can read status=failed, and the parent never sees the failure.
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
             {
@@ -158,6 +158,10 @@ async def handle_llm_failure(job: dict, error: str) -> None:
                     "updated_at": now,
                 }
             },
+        )
+        await db[CHILDREN].update_one(
+            {"_id": job["child_id"]},
+            {"$unset": {f"active_jobs.{job['type']}": ""}},
         )
     else:
         backoff = LLM_BACKOFF_SECONDS[min(new_attempt, len(LLM_BACKOFF_SECONDS) - 1)]
@@ -195,10 +199,9 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
             new_attempt,
             error,
         )
-        await db[CHILDREN].update_one(
-            {"_id": job["child_id"]},
-            {"$unset": {f"active_jobs.{job['type']}": ""}},
-        )
+        # Mark job failed FIRST — same reasoning as write_to_domain's "Mark job completed FIRST"
+        # comment. Clearing active_jobs first would cause the frontend to stop polling before
+        # it can read status=failed.
         await db[JOBS].update_one(
             {"job_id": job["job_id"]},
             {
@@ -209,6 +212,10 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
                     "updated_at": now,
                 }
             },
+        )
+        await db[CHILDREN].update_one(
+            {"_id": job["child_id"]},
+            {"$unset": {f"active_jobs.{job['type']}": ""}},
         )
     else:
         log.info(
@@ -237,10 +244,44 @@ async def handle_domain_write_failure(job: dict, error: str) -> None:
 async def write_to_domain(job: dict) -> None:
     wb = job["write_back"]
     now = datetime.now(UTC)
+    # Defensive guards: location and user_id must always be present in the filter.
+    # enqueue_job injects both at enqueue time, but a filter missing either field
+    # would create an unscoped document — no shard key on M10+, or data visible
+    # across users on M0. Fail the job explicitly rather than silently upsert bad data.
+    for required_field in ("location", "user_id"):
+        if required_field not in wb["filter"]:
+            await handle_domain_write_failure(
+                job, f"write_back.filter is missing required '{required_field}' field"
+            )
+            return
     try:
         await db[wb["collection"]].update_one(
             wb["filter"],
-            {"$set": {wb["field"]: job["result"]}},
+            {
+                "$set": {wb["field"]: job["result"], "updated_at": now},
+                # $setOnInsert runs only when upsert creates a new document.
+                # _id handling differs by collection type:
+                #
+                # Collections where child_id IS the document _id
+                #   (goals, goal_insights) — _id is an equality condition in the
+                #   filter, so MongoDB uses the filter value for the new doc.
+                #   We must NOT include _id in $setOnInsert here: if the filter
+                #   and $setOnInsert both specify _id with different values MongoDB
+                #   raises "Updating the path '_id' would create a conflict at '_id'".
+                #
+                # Collections where _id is a generated UUID
+                #   (goal_months, growth_areas) — _id is not in the filter, so
+                #   we provide a UUID string here to match the convention used by
+                #   route handler upserts (str(uuid.uuid4()) rather than ObjectId).
+                #   This also satisfies M10+ sharding: the shard key (location) is
+                #   always present in the filter, so every new doc lands on the
+                #   correct shard regardless of what _id value is chosen.
+                "$setOnInsert": {
+                    "created_at": now,
+                    **({} if "_id" in wb["filter"] else {"_id": str(uuid.uuid4())}),
+                },
+            },
+            upsert=True,
         )
     except Exception as e:
         await handle_domain_write_failure(job, str(e))

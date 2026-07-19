@@ -60,7 +60,7 @@ class ChildActivity(BaseModel):
 class CompletedGrowthArea(BaseModel):
     area_id: str
     area_name: str
-    area_color: str
+    area_color: str | None = None
     answers: dict[str, str] = Field(default_factory=dict)
     recommendations: list[str] | None = None
     child_activity: ChildActivity | None = None
@@ -98,7 +98,7 @@ _GROWTH_AREA_MAX_BYTES = 65_536  # 64 KB cap on the total serialised dict payloa
 class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
-    area_color: str = Field(max_length=100)
+    area_color: str | None = Field(None, max_length=100)
     answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(
         default_factory=dict, max_length=100
     )
@@ -201,31 +201,101 @@ class GoalsPlan(BaseModel):
 
 _GOALS_PLAN_MAX_BYTES = 262_144  # 256 KB cap on the total serialised goals plan
 
+# ---------------------------------------------------------------------------
+# goals — base document (parent_concern only)
+# ---------------------------------------------------------------------------
+
 
 class UserGoals(BaseModel):
     parent_concern: str | None = None
-    plan: GoalsPlan | None = None
+    # Staging field written by the generate_goals_plan worker.
+    # The client reads this, splits it into goal_months docs, then clears it.
+    goals_plan: dict | None = None
 
 
 class UserGoalsPatch(BaseModel):
     parent_concern: str | None = Field(None, max_length=2000)
-    plan: GoalsPlan | None = None
-    clear_plan: bool = False
     clear_concern: bool = False
+    clear_goals_plan: bool = False  # set True after client splits goals_plan into goal_months
+
+
+# ---------------------------------------------------------------------------
+# goal_months — one document per month per child
+# ---------------------------------------------------------------------------
+
+
+class GoalMonthsResponse(BaseModel):
+    months: list[GoalsMonth]
+
+
+class GoalMonthsPatch(BaseModel):
+    # min_length=1 prevents an accidental empty submission from silently deleting
+    # all month documents for the child (the route handler's delete_many with
+    # $nin: [] would wipe every doc). Submitting zero months is not a valid plan
+    # update — use a dedicated clear endpoint if that behaviour is ever needed.
+    months: list[GoalsMonth] = Field(min_length=1, max_length=12)
 
     @model_validator(mode="after")
-    def limit_goals_plan_size(self) -> UserGoalsPatch:
-        if self.plan is not None:
-            try:
-                size = len(json.dumps(self.plan.model_dump()))
-            except (RecursionError, ValueError, TypeError):
-                raise ValueError(
-                    "Goals plan contains an invalid or too-deeply nested structure"
-                ) from None
-            if size > _GOALS_PLAN_MAX_BYTES:
-                raise ValueError(
-                    f"Goals plan exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
-                )
+    def validate_months(self) -> GoalMonthsPatch:
+        month_numbers = [m.month for m in self.months]
+        if len(month_numbers) != len(set(month_numbers)):
+            raise ValueError("months list contains duplicate month numbers")
+        try:
+            # _GOALS_PLAN_MAX_BYTES is reused here as a cap on the total batch
+            # payload size (up to 12 months × 10 periods × 20 activities), not
+            # on a single stored document — each month is persisted as its own doc.
+            size = len(json.dumps([m.model_dump() for m in self.months]))
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError(
+                "Goal months payload contains an invalid or too-deeply nested structure"
+            ) from None
+        if size > _GOALS_PLAN_MAX_BYTES:
+            raise ValueError(
+                f"Goal months payload exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# goal_insights — one document per child
+# ---------------------------------------------------------------------------
+
+
+class GoalInsightsResponse(BaseModel):
+    schema_version: int | None = None
+    insight_items: list[InsightItem] = Field(default_factory=list, max_length=50)
+    insights_signature: int | None = None
+    # Staging field: worker writes the full LLM response here; frontend promotes
+    # insight_items via PATCH then the staging field is cleared.
+    pending_insights: dict | None = None
+
+
+class GoalInsightsPatch(BaseModel):
+    # For int fields, None means "no update" (leave the stored value unchanged).
+    # To explicitly reset a field to null, set the corresponding clear_* flag to True.
+    # This mirrors the clear_concern / clear_goals_plan pattern used in UserGoalsPatch.
+    schema_version: int | None = None
+    clear_schema_version: bool = False
+    # None means "no update" — use explicit None rather than default_factory=list
+    # so that `is not None` guards in the route handler work correctly.
+    insight_items: list[InsightItem] | None = Field(None, max_length=50)
+    insights_signature: int | None = None
+    clear_insights_signature: bool = False
+
+    @model_validator(mode="after")
+    def limit_insights_size(self) -> GoalInsightsPatch:
+        if self.insight_items is None:
+            return self
+        try:
+            size = len(json.dumps([i.model_dump() for i in self.insight_items]))
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError(
+                "Goal insights payload contains an invalid or too-deeply nested structure"
+            ) from None
+        if size > _GOALS_PLAN_MAX_BYTES:
+            raise ValueError(
+                f"Goal insights payload exceeds maximum allowed size ({_GOALS_PLAN_MAX_BYTES // 1024} KB)"
+            )
         return self
 
 
@@ -240,13 +310,13 @@ class ChildResponse(BaseModel):
     id: str
     created_date: str
     name: str = ""
-    age: str | int | None = None
+    age: int | None = None
     gender: str | None = None
     school: str | None = None
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
+    current_phase: str | None = None
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -260,9 +330,23 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Soft-delete fields — present on all documents; False by default.
+    # deleted_at is set when is_deleted is set to True.
+    is_deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 _PAYLOAD_MAX_BYTES = 65_536  # 64 KB limit for extra payload fields
+
+
+def _parse_age(v: int | str | None) -> int | None:
+    """Accept an integer or a string like '12', '12 years', '18 months'."""
+    if v is None or isinstance(v, int):
+        return v
+    m = re.match(r"^\s*(\d+)", str(v))
+    if not m:
+        raise ValueError("age must be a number or start with a number (e.g. '12' or '12 years')")
+    return int(m.group(1))
 
 
 class ChildCreate(BaseModel):
@@ -272,12 +356,18 @@ class ChildCreate(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str | None = Field(None, max_length=255)
-    age: str | int | None = Field(None, max_length=20)
+    age: int | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age(cls, v: object) -> int | None:
+        return _parse_age(v)  # type: ignore[arg-type]
+
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
+    current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -314,13 +404,18 @@ class ChildPatch(BaseModel):
     model_config = {"extra": "allow"}
 
     name: str | None = Field(None, max_length=255)
-    # Promoted columns — declared explicitly so max_length validation applies on the patch path.
-    age: str | int | None = Field(None, max_length=20)
+    age: int | None = None
+
+    @field_validator("age", mode="before")
+    @classmethod
+    def coerce_age(cls, v: object) -> int | None:
+        return _parse_age(v)  # type: ignore[arg-type]
+
     school: str | None = Field(None, max_length=300)
     onboarding_phase: int | None = None
     onboarding_completed: bool | None = None
+    current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -361,12 +456,17 @@ JobType = Literal[
     "generate_goals_plan",
     "generate_activity",
     "generate_personality_analysis",
-    "generate_journey_recommendations",
     "generate_journey_insights",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
-_ALLOWED_WRITE_BACK_COLLECTIONS = {"growth_areas", "goals", "children"}
+_ALLOWED_WRITE_BACK_COLLECTIONS = {
+    "growth_areas",
+    "goals",
+    "goal_months",
+    "goal_insights",
+    "children",
+}
 
 _SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
 # Dots in a field path are interpreted by MongoDB $set as nested sub-field
@@ -387,7 +487,7 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
         "recommendations_plan",
         "pending_recommendations",
     },
-    "generate_goals_plan": {"plan", "goals_plan", "plan.months"},
+    "generate_goals_plan": {"goals_plan"},
     "generate_activity": {
         "activity",
         "activity_plan",
@@ -398,10 +498,9 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # raw LLM output via adaptAiPersonalityToViewModel before finalising the
     # canonical personality.view_model field.
     "generate_personality_analysis": {"pending_personality_vm"},
-    # journey recommendations are written directly — no client-side transform required.
-    "generate_journey_recommendations": {"recommendations"},
-    # insights written to the nested insights sub-document inside goals_plan.
-    "generate_journey_insights": {"goals_plan.insights"},
+    # insights written to the goal_insights staging field; finalizeInsights promotes
+    # it to insight_items via PATCH after the job completes.
+    "generate_journey_insights": {"pending_insights"},
 }
 
 _FILTER_MAX_KEYS = 20

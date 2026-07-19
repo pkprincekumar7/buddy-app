@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import uuid
+from collections import OrderedDict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
@@ -15,6 +17,37 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 log = logging.getLogger(__name__)
 
 _MAX_IN_FLIGHT_PER_TYPE = 2
+
+# In-process lock per (user_id, child_id, job_type) to close the TOCTOU window
+# between count_documents and insert_one on M0/M2/M5 (no transaction support).
+# This prevents two concurrent requests from the same user+child+type from both
+# reading count < _MAX_IN_FLIGHT_PER_TYPE and both inserting, exceeding the cap.
+# The lock is purely in-process — it does not guard against concurrent requests
+# landing on different API server instances. That remaining cross-instance race
+# is closed on M10+ by wrapping count+insert in a MongoDB transaction.
+# TODO(M10+): Remove _enqueue_locks once the transaction is in place.
+#
+# LRU cap: bounded at _ENQUEUE_LOCKS_MAX entries to prevent unbounded memory
+# growth over the server lifetime. When the cap is reached, the oldest entry
+# (least recently used key) is evicted. If a lock were evicted while a coroutine
+# held it, the next caller would receive a new lock object and bypass the mutex —
+# but this cannot happen in practice: each lock is held for only two fast DB ops
+# (< 5 ms combined) and the cap is 10,000 unique (user, child, type) keys. To
+# exhaust the cap and evict an actively-held lock simultaneously would require
+# 10,000+ concurrent unique enqueue keys — far beyond M0/M2/M5 capacity.
+_ENQUEUE_LOCKS_MAX = 10_000
+_enqueue_locks: OrderedDict[tuple, asyncio.Lock] = OrderedDict()
+
+
+def _get_enqueue_lock(key: tuple) -> asyncio.Lock:
+    if key in _enqueue_locks:
+        _enqueue_locks.move_to_end(key)
+        return _enqueue_locks[key]
+    lock = asyncio.Lock()
+    _enqueue_locks[key] = lock
+    if len(_enqueue_locks) > _ENQUEUE_LOCKS_MAX:
+        _enqueue_locks.popitem(last=False)  # evict least recently used
+    return lock
 
 
 def _sanitize_for_log(value: object) -> str:
@@ -41,7 +74,12 @@ async def enqueue_job(
 
     # Auth guard — child must belong to this user
     child = await db[models.CHILDREN].find_one(
-        {"_id": body.child_id, "user_id": user_id, "location": user["location"]}
+        {
+            "_id": body.child_id,
+            "user_id": user_id,
+            "location": user["location"],
+            "is_deleted": False,
+        }
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
@@ -50,12 +88,13 @@ async def enqueue_job(
     job_id = str(uuid.uuid4())
 
     # Scope the domain write to the exact child being operated on.
-    # `children` and `goals` use child_id as _id, so inject _id directly.
-    # `growth_areas` uses a UUID _id and a separate child_id field — inject
-    # child_id as a field instead so update_one matches the right document.
+    # Collections that use child_id as _id (children, goals, goal_insights):
+    #   inject _id = child_id so the filter hits the primary key index.
+    # Collections that use a UUID _id with a separate child_id field
+    #   (growth_areas, goal_months): inject child_id as a field filter.
     wb_dict = body.write_back.model_dump()
     collection = wb_dict["collection"]
-    if collection == "growth_areas":
+    if collection in ("growth_areas", "goal_months"):
         child_scope = {"child_id": body.child_id}
     else:
         child_scope = {"_id": body.child_id}
@@ -64,6 +103,7 @@ async def enqueue_job(
         "filter": {
             **wb_dict["filter"],
             **child_scope,
+            "user_id": user_id,  # always scope writes to the authenticated user
             "location": user["location"],  # overwrite any client-supplied location
         },
     }
@@ -96,45 +136,41 @@ async def enqueue_job(
         "completed_at": None,
     }
 
-    # Use a transaction to atomically check the in-flight cap and insert the job.
-    # Without a transaction, two concurrent requests from the same user can both
-    # read count < _MAX_IN_FLIGHT_PER_TYPE and both insert, exceeding the cap.
-    #
-    # IMPORTANT: Multi-document transactions require a MongoDB replica set or
-    # sharded cluster (Atlas M10+). They are not available on Atlas M0/M2/M5
-    # shared tiers. If this service is deployed on a shared tier, the transaction
-    # will raise OperationFailure and enqueue_job will return 503.
-    #
-    # To catch this early rather than at request time, add a startup check in
-    # main.py (similar to the worker's MongoDB ping) that tests transaction
-    # support:
+    # TODO(M10+): Replace the lock+count+insert below with a single atomic MongoDB
+    # transaction once the cluster is upgraded to Atlas M10 or higher, and remove
+    # _enqueue_locks. On M10+ also add a startup probe in main.py:
     #   async with await db.client.start_session() as s:
     #       async with s.start_transaction():
-    #           pass  # raises OperationFailure on M0/M2/M5, fails fast at boot
+    #           pass
     try:
-        async with await db.client.start_session() as session, session.start_transaction():
+        # Acquire the per-(user, child, type) lock before counting to prevent the
+        # TOCTOU race between count_documents and insert_one on M0/M2/M5. Without
+        # the lock, two concurrent requests can both read count < cap and both
+        # insert, exceeding the in-flight cap. The lock is in-process only — it
+        # does not guard cross-instance races (closed on M10+ via transaction).
+        async with _get_enqueue_lock((user_id, body.child_id, body.type)):
             existing = await db[models.JOBS].count_documents(
                 {
+                    "location": user["location"],
                     "user_id": user_id,
                     "child_id": body.child_id,
                     "type": body.type,
                     "status": {"$in": ["pending", "processing", "result_ready"]},
-                },
-                session=session,
+                }
             )
             if existing >= _MAX_IN_FLIGHT_PER_TYPE:
                 raise HTTPException(
                     status_code=429,
                     detail=f"Too many pending jobs for this child and type (max {_MAX_IN_FLIGHT_PER_TYPE})",
                 )
-            await db[models.JOBS].insert_one(doc, session=session)
+            await db[models.JOBS].insert_one(doc)
     except HTTPException:
         raise
     except Exception as e:
         log.error("job.enqueue_failed job_id=%s error=%s", job_id, e, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Job queue is temporarily unavailable. Ensure the database supports transactions (Atlas M10+).",
+            detail="Job queue is temporarily unavailable.",
         ) from e
 
     # Record job_id in children.active_jobs so every device can resume polling.
@@ -174,7 +210,11 @@ async def get_job_status(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    doc = await db[models.JOBS].find_one({"job_id": job_id, "user_id": user["_id"]})
+    # Field order matches the index (location, job_id, user_id) so the query
+    # hits the index prefix and avoids a scatter-gather on a sharded cluster.
+    doc = await db[models.JOBS].find_one(
+        {"location": user["location"], "job_id": job_id, "user_id": user["_id"]}
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")
 

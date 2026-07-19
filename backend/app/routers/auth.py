@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import re
@@ -773,44 +774,39 @@ async def delete_account(
     location = user.get("location", settings.default_location)
     now = datetime.now(UTC)
 
-    # All sharded collections share the same location value, so this
-    # transaction touches only one zone shard — supported on all Atlas tiers
-    # including M0.  email_index is intentionally kept outside the transaction:
-    # it is an unsharded collection (primary shard) and including it would make
-    # this a cross-shard transaction, which Atlas M0/M2/M5 does not support.
-    # If the post-commit email_index delete fails, the orphaned entry is cleaned
-    # up automatically the next time someone registers with the same address.
-    async with await db.client.start_session() as mongo_session, mongo_session.start_transaction():
-        # Step 1 — revoke all tokens and mark deletion in progress
-        await db[models.USERS].update_one(
-            {"_id": user_id, "location": location},
-            {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
-            session=mongo_session,
-        )
-        await db[models.SESSIONS].delete_many(
-            {"user_id": user_id, "location": location}, session=mongo_session
-        )
+    # TODO(M10+): Wrap all steps below in a single multi-document transaction once
+    # the cluster is upgraded to Atlas M10 or higher. Atlas M0/M2/M5 shared tiers
+    # do not support multi-document transactions, so we use sequential operations
+    # for now. A crash between any two steps will leave orphaned documents; these
+    # are harmless (the account is already token-revoked/marked for deletion) but
+    # a clean-up job or idempotent re-run would be needed to fully remove them.
+    # email_index must remain outside the transaction even on M10+: it lives on
+    # the primary shard and including it would make this a cross-shard transaction.
 
-        # Step 2 — delete all other owned collections
-        await db[models.CHILDREN].delete_many(
-            {"user_id": user_id, "location": location}, session=mongo_session
-        )
-        # goals/growth_areas are child-scoped and store user_id,
-        # so delete_many by user_id covers every document in one pass.
-        await db[models.GOALS].delete_many(
-            {"user_id": user_id, "location": location}, session=mongo_session
-        )
-        await db[models.GROWTH_AREAS].delete_many(
-            {"user_id": user_id, "location": location}, session=mongo_session
-        )
+    # Step 1 — revoke all tokens and mark deletion in progress
+    await db[models.USERS].update_one(
+        {"_id": user_id, "location": location},
+        {"$set": {"tokens_revoked_at": now, "is_being_deleted": True, "updated_at": now}},
+    )
+    await db[models.SESSIONS].delete_many({"user_id": user_id, "location": location})
 
-        # Step 3 — delete the user document
-        await db[models.USERS].delete_one(
-            {"_id": user_id, "location": location}, session=mongo_session
-        )
+    # Step 2 — delete all other owned collections in parallel (independent, no ordering constraint).
+    # goals/growth_areas/goal_months/goal_insights are all child-scoped and store user_id,
+    # so delete_many by user_id covers every document in one pass.
+    await asyncio.gather(
+        db[models.CHILDREN].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOALS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOAL_INSIGHTS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GOAL_MONTHS].delete_many({"user_id": user_id, "location": location}),
+        db[models.GROWTH_AREAS].delete_many({"user_id": user_id, "location": location}),
+    )
 
-    # Step 4 — release the email (outside the transaction: email_index is
-    # unsharded and must not be included in a single-zone shard transaction).
+    # Step 3 — delete the user document
+    await db[models.USERS].delete_one({"_id": user_id, "location": location})
+
+    # Step 4 — release the email slot.
+    # email_index is unsharded (primary shard) and must stay outside any future
+    # M10+ transaction: including it would make this a cross-shard transaction.
     # If this delete fails, the orphaned entry is reclaimed on the next
     # registration attempt for the same address (see /auth/register).
     try:

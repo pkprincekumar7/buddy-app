@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Star, Compass, Zap, Clock, ChevronLeft } from 'lucide-react';
@@ -6,13 +6,10 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import { recommendationsJourneySchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft, determinePhase } from '@/lib/onboardingHelpers';
-import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
+import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import { SPINNER } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
-import { useJob } from '@/hooks/useJob';
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
@@ -20,16 +17,12 @@ export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [profile, setProfile] = useState<ProfileType>(null);
   const [childName, setChildName] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(false);
-  // Stores merged child data for building the prompt inside enqueue, so the useEffect
-  // only needs to run once and doesn't depend on re-render state.
-  const mergedRef = useRef<Record<string, unknown> | null>(null);
 
-  const onJourneyComplete = useCallback(async () => {
+  const markJourneyComplete = useCallback(async () => {
     if (!childId) return;
     try {
       await api.entities.Child.update(childId, {
@@ -40,12 +33,6 @@ export default function PersonalityJourney() {
       /* non-fatal */
     }
   }, [childId]);
-
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_journey_recommendations',
-    onCompleted: onJourneyComplete,
-  });
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -70,58 +57,18 @@ export default function PersonalityJourney() {
         }
         const personality = child.personality;
         const viewModel = personality?.view_model;
-        if (!viewModel?.type) {
+        if (!viewModel?.profile?.name) {
           navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }
         const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
-        mergedRef.current = merged;
         setChildName(merged.name || '');
-        setChildData(child);
 
         const gp = onboardingProfileFromViewModel(viewModel);
         setProfile(gp);
 
-        // Already generated — show immediately
-        const recommendations = child.recommendations;
-        if (
-          recommendations &&
-          (typeof recommendations['pathway_overview'] === 'string' ||
-            (Array.isArray(recommendations['focus_areas']) &&
-              (recommendations['focus_areas'] as unknown[]).length > 0))
-        ) {
-          setIsInitializing(false);
-          return;
-        }
-
-        if (!merged.name?.trim()) {
-          navigate(`/PersonalityType/${childId}`, { replace: true });
-          return;
-        }
-
-        // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = child.active_jobs?.generate_journey_recommendations;
-        if (!activeJobId) {
-          const age = parseInt(String(merged.age), 10) || 10;
-          const lifePhase = determinePhase(age);
-          await job.enqueue({
-            type: 'generate_journey_recommendations',
-            child_id: childId,
-            payload: {
-              prompt: buildJourneyRecommendationsPrompt({
-                childData: merged,
-                age,
-                lifePhase,
-                personalityType:
-                  gp?.personality_type ??
-                  `${viewModel?.type ?? 'Unknown'} (${(viewModel?.profile?.['name'] as string) ?? ''})`,
-                personalityNarrative: gp?.summary,
-                growthAreas: gp?.growth_areas as string[] | undefined,
-              }),
-              response_json_schema: recommendationsJourneySchema(),
-            },
-            write_back: { collection: 'children', filter: {}, field: 'recommendations' },
-          });
+        if (!child.onboarding_completed) {
+          await markJourneyComplete();
         }
         setIsInitializing(false);
       } catch (err) {
@@ -136,20 +83,9 @@ export default function PersonalityJourney() {
     return () => {
       cancelled = true;
     };
-    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingAuth, isAuthenticated, childId, navigate]);
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, markJourneyComplete]);
 
-  const isGenerating = !isInitializing && job.isLoading;
-  const isError = initError || job.isFailed;
-  const status =
-    isLoadingAuth || isInitializing
-      ? 'loading'
-      : isGenerating
-        ? 'generating'
-        : isError
-          ? 'error'
-          : 'ready';
+  const status = isLoadingAuth || isInitializing ? 'loading' : initError ? 'error' : 'ready';
 
   const sectionAnim = (delay: number) => ({
     initial: { opacity: 0, y: 24 },
@@ -170,16 +106,6 @@ export default function PersonalityJourney() {
               {...SPINNER}
               className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
             />
-          </div>
-        ) : status === 'generating' ? (
-          <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-            <motion.div
-              {...SPINNER}
-              className="h-12 w-12 rounded-full border-2 border-primary border-t-transparent"
-            />
-            <p className="max-w-md text-center font-medium text-muted-foreground">
-              Mapping personalized recommendations…
-            </p>
           </div>
         ) : status === 'error' ? (
           <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">

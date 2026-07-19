@@ -55,7 +55,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([]);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
-  const [lastVisitedPath, setLastVisitedPath] = useState<string | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
@@ -74,9 +73,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       ]);
       setUser(currentUser);
       setChildProfiles(children);
-      setLastVisitedPath(
-        typeof prefs.last_visited_path === 'string' ? prefs.last_visited_path : null,
-      );
       // Sync DB dark_mode → localStorage + <html> class so ALL pages (including
       // Login/Register) pick up the correct theme on next load via the inline script.
       if (typeof prefs.dark_mode === 'boolean') {
@@ -90,13 +86,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
-        setLastVisitedPath(null);
         setAuthError(null);
       } else {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
-        setLastVisitedPath(null);
         const msg =
           (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
         setAuthError({ type: 'unknown', message: msg });
@@ -175,7 +169,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(null);
       setIsAuthenticated(false);
       setChildProfiles([]);
-      setLastVisitedPath(null);
       setAuthError(null);
       if (shouldRedirect) {
         navigate('/Login', { replace: true });
@@ -208,23 +201,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         navigate('/Admin', { replace: true });
         return;
       }
-      const destination =
-        lastVisitedPath &&
-        lastVisitedPath.startsWith('/') &&
-        !BLOCKED_REDIRECT_PATHS.includes(lastVisitedPath)
-          ? lastVisitedPath
-          : mainPath;
-      navigate(destination, { replace: true });
+      navigate(mainPath, { replace: true });
     }
-  }, [
-    isLoadingAuth,
-    isAuthenticated,
-    user?.role,
-    location.pathname,
-    navigate,
-    mainPath,
-    lastVisitedPath,
-  ]);
+  }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath]);
 
   const contextValue = useMemo(
     () => ({
