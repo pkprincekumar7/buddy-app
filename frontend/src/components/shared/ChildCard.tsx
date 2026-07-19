@@ -24,9 +24,7 @@ export default function ChildCard({ child }: ChildCardProps) {
   const { doStartOver, isStartingOver } = useStartOver(child.id);
 
   const displayName = child.name ?? 'Unnamed child';
-  // Treat as completed if either flag is set OR recommendations exist —
-  // old records may have onboarding_completed: null even though the flow finished.
-  const completed = !!child.onboarding_completed || !!child.recommendations;
+  const completed = !!child.onboarding_completed;
 
   return (
     <>

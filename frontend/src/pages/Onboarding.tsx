@@ -59,9 +59,7 @@ export default function Onboarding() {
         if (cancelled) return;
         const listArr = Array.isArray(list) ? list : [];
         const child = listArr[0];
-        // A child is considered complete if onboarding_completed is true OR
-        // if recommendations already exist (matches ChildCard's completion check).
-        const alreadyComplete = !!child?.onboarding_completed || !!child?.recommendations;
+        const alreadyComplete = !!child?.onboarding_completed;
         if (child && !alreadyComplete) {
           setChildId(child.id);
         }

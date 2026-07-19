@@ -70,7 +70,7 @@ export default function ConversationalOnboarding() {
             ...mergedDraft,
             onboarding_phase: 2,
             onboarding_completed: false,
-            ...(!hasPersonality && { personality: null, recommendations: null }),
+            ...(!hasPersonality && { personality: null }),
           });
         }
       } catch (err) {

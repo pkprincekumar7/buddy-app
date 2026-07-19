@@ -317,7 +317,6 @@ class ChildResponse(BaseModel):
     onboarding_completed: bool | None = None
     current_phase: str | None = None
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -369,7 +368,6 @@ class ChildCreate(BaseModel):
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -418,7 +416,6 @@ class ChildPatch(BaseModel):
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
     personality: dict | None = None
-    recommendations: dict | None = None
     strengths: list | None = None
     hobbies: list | None = None
     thinking_pattern: str | None = None
@@ -459,7 +456,6 @@ JobType = Literal[
     "generate_goals_plan",
     "generate_activity",
     "generate_personality_analysis",
-    "generate_journey_recommendations",
     "generate_journey_insights",
 ]
 
@@ -502,8 +498,6 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # raw LLM output via adaptAiPersonalityToViewModel before finalising the
     # canonical personality.view_model field.
     "generate_personality_analysis": {"pending_personality_vm"},
-    # journey recommendations are written directly — no client-side transform required.
-    "generate_journey_recommendations": {"recommendations"},
     # insights written to the goal_insights staging field; finalizeInsights promotes
     # it to insight_items via PATCH after the job completes.
     "generate_journey_insights": {"pending_insights"},
