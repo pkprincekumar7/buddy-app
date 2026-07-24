@@ -17,7 +17,7 @@ export default function Onboarding() {
   const forceNew = (location.state as { forceNew?: boolean } | null)?.forceNew ?? false;
   const { childId: childIdParam } = useParams<{ childId?: string }>();
 
-  const { user, isAuthenticated, isLoadingAuth, childProfiles } = useAuth();
+  const { user, isAuthenticated, isLoadingAuth } = useAuth();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [childId, setChildId] = useState<string | undefined>(undefined);
@@ -48,21 +48,22 @@ export default function Onboarding() {
     };
 
     if (childIdParam) {
-      const owned = childProfiles.some((c) => c.id === childIdParam);
-      if (!owned) {
-        navigate('/Home', { replace: true });
-        return;
-      }
       setChildId(childIdParam);
-      // Fetch the specific child's saved data to pre-fill the form
+      // Fetch the specific child's saved data to pre-fill the form.
+      // Authorization is determined by the API response (404 → redirect to /Home).
       void (async () => {
         try {
           const child = await api.entities.Child.get(childIdParam);
-          if (cancelled || !child) return;
+          if (cancelled) return;
+          if (!child) {
+            navigate('/Home', { replace: true });
+            return;
+          }
           setChildComplete(!!child.onboarding_completed);
           applyChildData(child);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
+          if (!cancelled) navigate('/Home', { replace: true });
         } finally {
           if (!cancelled) setChecking(false);
         }
@@ -98,7 +99,7 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, childProfiles, navigate]);
+  }, [isLoadingAuth, isAuthenticated, forceNew, childIdParam, navigate]);
 
   // Step 1 → Step 2 (just UI transition, no API call yet)
   const handleWelcomeContinue = useCallback(() => {
@@ -119,11 +120,7 @@ export default function Onboarding() {
         // that child regardless of onboarding_completed. Only gate on childComplete for
         // the auto-flow (/Onboarding with no childId) so we don't create a duplicate
         // every time a completed child's parent revisits the wizard.
-        let targetId = childIdParam
-          ? childId
-          : childId && !childComplete
-            ? childId
-            : undefined;
+        let targetId = childIdParam ? childId : childId && !childComplete ? childId : undefined;
 
         if (!targetId) {
           const created = await api.entities.Child.create({
@@ -174,7 +171,7 @@ export default function Onboarding() {
         setIsSaving(false);
       }
     },
-    [isAuthenticated, childId, childComplete, navigate],
+    [isAuthenticated, childId, childIdParam, childComplete, navigate],
   );
 
   const stepLabel = step === 1 ? 'GETTING TO KNOW · STEP 1 / 12' : 'GETTING TO KNOW · STEP 2 / 12';

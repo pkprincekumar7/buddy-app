@@ -11,7 +11,6 @@ import type { Question } from '@/lib/growthAreaData';
 import { normalizeChildGameRecommendations } from '@/components/onboarding/ChildActivityGame';
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import { useJob } from '@/hooks/useJob';
 
@@ -470,7 +469,6 @@ export default function GrowthAreasActivityGreatInsights() {
               Back
             </Button>
           }
-          center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
               size="xl"

@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import StartOverButton from '@/components/shared/StartOverButton';
+import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
+import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
@@ -108,39 +109,41 @@ export default function ConversationalOnboarding() {
             />
           </div>
         ) : (
-          <div className="min-h-screen bg-background">
-            {/* Progress indicator */}
-            <div className="border-b-edge-faint sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
-              <div className="mx-auto max-w-4xl px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  {[
-                    { label: 'Getting to Know', icon: '💬', active: true },
-                    { label: 'Personality Analysis', icon: '⭐', active: false },
-                    { label: 'Your Journey', icon: '💡', active: false },
-                  ].map((phase) => (
-                    <div
-                      key={phase.label}
-                      className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 transition-all ${
-                        phase.active
-                          ? 'border border-primary/25 bg-primary/10'
-                          : 'bg-ghost border-edge-faint opacity-50'
-                      }`}
-                    >
-                      <span className="text-base" aria-hidden="true">
-                        {phase.icon}
-                      </span>
-                      <span
-                        className={`hidden text-xs font-medium sm:block ${phase.active ? 'text-primary' : 'text-muted-foreground'}`}
-                      >
-                        {phase.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <div className="flex min-h-screen flex-col bg-[#08090a]">
+            {/* Progress header — matches /Onboarding style */}
+            {(() => {
+              const headerPhases: PhaseEntry[] = [
+                { num: 1, label: 'Getting to Know', status: 'active', progress: 33 },
+                { num: 2, label: 'Personality Analysis', status: 'upcoming' },
+                { num: 3, label: 'Your Journey', status: 'upcoming' },
+              ];
+              return (
+                <OnboardingProgressHeader
+                  phases={headerPhases}
+                  stepLabel="GETTING TO KNOW · STEP 3 / 12"
+                />
+              );
+            })()}
+
+            {/* Back button row */}
+            <div className="mx-auto w-full max-w-5xl px-4 pt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', {
+                    state: { fromBack: true },
+                  })
+                }
+                className="gap-1 rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back
+              </Button>
             </div>
 
-            <div className="mx-auto max-w-3xl px-4 py-8">
+            {/* Chat fills remaining height */}
+            <div className="flex flex-1 flex-col">
               <ConversationalOnboardingChat
                 key={bootKey}
                 user={user}
@@ -153,29 +156,10 @@ export default function ConversationalOnboarding() {
                 onQuestionnairePersisted={handleQuestionnairePersisted}
                 onQuestionnaireCleared={() => setChildData(null)}
               />
-
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Button
-                  size="xl"
-                  variant="outline"
-                  onClick={() =>
-                    navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', {
-                      state: { fromBack: true },
-                    })
-                  }
-                  className="btn-secondary w-full rounded-2xl sm:w-auto"
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Back
-                </Button>
-                <StartOverButton childId={childId} className="w-full sm:w-auto" />
-              </div>
             </div>
           </div>
         )}
       </motion.div>
-
-      <AnimatePresence></AnimatePresence>
     </>
   );
 }

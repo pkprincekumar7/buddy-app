@@ -8,7 +8,6 @@ import { api } from '@/api/client';
 import { areaByUrlName, AREA_QUESTIONS } from '@/lib/growthAreaData';
 import type { Question } from '@/lib/growthAreaData';
 import { SPINNER } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 
@@ -304,7 +303,6 @@ export default function GrowthAreasActivity() {
               Back
             </Button>
           }
-          center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
           right={
             <Button
               size="xl"

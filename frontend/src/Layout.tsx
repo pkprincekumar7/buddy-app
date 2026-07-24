@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
@@ -7,16 +7,29 @@ import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
 import { readStoredDarkMode, applyTheme } from '@/lib/theme';
-import { Home, LogOut, VolumeX, Volume2, Mail, Sun, Moon } from 'lucide-react';
+import { Home, LogOut, VolumeX, Volume2, Mail, Sun, Moon, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AnimatePresence } from 'framer-motion';
+import { ConfirmModal } from '@/components/shared/StartOverButton';
+import { useStartOver } from '@/hooks/useStartOver';
 
 interface LayoutProps {
   children: ReactNode;
   currentPageName?: string;
 }
 
+// Extract childId from paths like /PageName/:childId or /PageName/:childId/...
+function useNavChildId() {
+  const { pathname } = useLocation();
+  const match = /^\/[^/]+\/([^/]+)/.exec(pathname);
+  return match?.[1] ?? null;
+}
+
 export default function Layout({ children, currentPageName }: LayoutProps) {
   const { user, isAuthenticated, childProfiles: _childProfiles, logout } = useAuth();
+  const navChildId = useNavChildId();
+  const { doStartOver, isStartingOver } = useStartOver(navChildId ?? undefined);
+  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
   const [darkMode, setDarkMode] = useState(readStoredDarkMode);
@@ -208,6 +221,20 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </Button>
 
+              {/* Start Over — shown on child-specific pages only */}
+              {isAuthenticated && navChildId && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setConfirmingStartOver(true)}
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Start Over"
+                  aria-label="Start Over"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              )}
+
               {/* Profile Avatar — authenticated */}
               {isAuthenticated && (
                 <div className="relative" ref={profileRef}>
@@ -297,6 +324,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
 
       {/* Page Content */}
       {children}
+
+      <AnimatePresence>
+        {confirmingStartOver && (
+          <ConfirmModal
+            onCancel={() => setConfirmingStartOver(false)}
+            onConfirm={() => {
+              setConfirmingStartOver(false);
+              void doStartOver();
+            }}
+            isStartingOver={isStartingOver}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

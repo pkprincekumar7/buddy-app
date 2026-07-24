@@ -9,7 +9,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { GROWTH_AREAS } from '@/lib/growthAreaData';
 import { SPINNER } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
 
 export default function GrowthAreas() {
@@ -158,7 +157,6 @@ export default function GrowthAreas() {
                     Back
                   </Button>
                 }
-                center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                 right={
                   anyDone && (
                     <motion.div

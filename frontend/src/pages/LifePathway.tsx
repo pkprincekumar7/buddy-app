@@ -12,7 +12,6 @@ import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { SPINNER, MODAL_BACKDROP, MODAL_SCALE, slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
-import StartOverButton from '@/components/shared/StartOverButton';
 import {
   LineChart,
   Line,
@@ -690,7 +689,6 @@ export default function LifePathway() {
                         ← Back
                       </Button>
                     }
-                    center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                     right={
                       <Button
                         onClick={handleStartJourney}

@@ -148,36 +148,6 @@ function buildAccThrough(
   return acc;
 }
 
-function buildReplayMessages(
-  flow: ConversationStep[],
-  data: Record<string, unknown>,
-  resumeIdx: number,
-  newMsgId: () => string,
-): ChatMessage[] {
-  const msgs: ChatMessage[] = [];
-  for (let i = 0; i < resumeIdx; i++) {
-    const step = flow[i];
-    if (!step) break;
-    if (step.type === 'auto') break;
-    const acc = buildAccThrough(flow, data, i);
-    // Merge full `data` (contains profile fields like name) so message functions
-    // that reference data['name'] always get the child's name, even at step 0.
-    const botText = typeof step.message === 'function' ? step.message({ ...data, ...acc }) : step.message;
-    if (!botText) continue;
-    msgs.push({ id: newMsgId(), role: 'bot', content: botText });
-    const val = data[step.field];
-    const userDisplay = Array.isArray(val)
-      ? val.join(', ')
-      : typeof val === 'string'
-        ? val
-        : typeof val === 'number' || typeof val === 'boolean'
-          ? String(val)
-          : '';
-    if (userDisplay) msgs.push({ id: newMsgId(), role: 'user', content: userDisplay });
-  }
-  return msgs;
-}
-
 function findResumeStepIndex(flow: ConversationStep[], data: Record<string, unknown>): number {
   for (let i = 0; i < flow.length; i++) {
     const step = flow[i];
@@ -317,8 +287,11 @@ export default function ConversationalOnboarding({
   const [analyzingState, setAnalyzingState] = useState<AnalyzingState>(ANALYZING_INITIAL);
   const [allAnswered, setAllAnswered] = useState(false);
   const [phaseSplash, setPhaseSplash] = useState<PhaseSplash | null>(null);
-  const [resumeSummary, setResumeSummary] = useState<Array<{ label: string; answer: string }> | null>(null);
-  const [summaryExpanded, setSummaryExpanded] = useState(true);
+  const [resumeSummary, setResumeSummary] = useState<Array<{
+    label: string;
+    answer: string;
+  }> | null>(null);
+  const summaryInitializedRef = useRef(false);
 
   const {
     show: showAnalyzing,
@@ -349,6 +322,12 @@ export default function ConversationalOnboarding({
   useEffect(() => {
     collectedDataRef.current = collectedData;
   }, [collectedData]);
+
+  // Keep the previously-answered summary in sync as the user progresses.
+  useEffect(() => {
+    if (!summaryInitializedRef.current) return;
+    setResumeSummary(buildResumeSummary(conversationFlowRef.current, collectedData, currentStep));
+  }, [collectedData, currentStep]);
 
   useEffect(() => {
     activeChildIdRef.current = activeChildId ?? undefined;
@@ -398,7 +377,8 @@ export default function ConversationalOnboarding({
       {
         id: 'ready_check',
         message: (data) => {
-          const name = typeof data['name'] === 'string' && data['name'] ? data['name'] : 'your child';
+          const name =
+            typeof data['name'] === 'string' && data['name'] ? data['name'] : 'your child';
           return `Hey ${parentName}! Let's now explore what makes ${name} unique.\nMention the top 3 strengths that ${name} has from your perspective.`;
         },
         field: 'strengths',
@@ -564,7 +544,6 @@ export default function ConversationalOnboarding({
 
         const flow = conversationFlowRef.current;
         const addBot = addBotMessageRef.current!;
-        const msgId = newMsgIdRef.current;
 
         const hasSaved = Object.keys(slim).length > 0;
 
@@ -585,6 +564,7 @@ export default function ConversationalOnboarding({
 
         if (hasSaved && answered && autoIx >= 0) {
           // All answered — show full summary, no messages needed
+          summaryInitializedRef.current = true;
           setResumeSummary(buildResumeSummary(flow, slim, autoIx));
           setCollectedData({ ...slim });
           setMessages([]);
@@ -611,6 +591,7 @@ export default function ConversationalOnboarding({
         // Show a compact summary of already-answered questions instead of
         // replaying individual message bubbles (which get clipped by slice(-6)).
         if (resumeIdx > 0) {
+          summaryInitializedRef.current = true;
           setResumeSummary(buildResumeSummary(flow, slim, resumeIdx));
         }
         setCollectedData({ ...slim });
@@ -689,21 +670,6 @@ export default function ConversationalOnboarding({
           : '';
     setCurrentInput(text);
   }, [waitingForResponse, currentStep, collectedData, conversationFlow, allAnswered]);
-
-  // Idle reminder
-  useEffect(() => {
-    if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current);
-    if (!waitingForResponse || showAnalyzing || showingLoadingDots || allAnswered) return;
-    idleTimerRef.current = setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        { id: newMsgId(), role: 'bot', content: "Just checking in 😊 — whenever you're ready!" },
-      ]);
-    }, 30000);
-    return () => {
-      if (idleTimerRef.current !== null) clearTimeout(idleTimerRef.current);
-    };
-  }, [waitingForResponse, currentStep, showAnalyzing, showingLoadingDots, allAnswered, newMsgId]);
 
   const processResponse = useCallback(
     (response: string) => {
@@ -859,6 +825,13 @@ export default function ConversationalOnboarding({
 
   const currentStepData = conversationFlow[currentStep];
 
+  // Derive last bot message for prominent display and history for scrollable area
+  const latestBotContent = useMemo(() => {
+    if (messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last?.role === 'bot' ? last.content : null;
+  }, [messages]);
+
   // Auto-proceed on 'auto' steps
   useEffect(() => {
     if (!waitingForResponse || currentStepData?.type !== 'auto' || allAnswered) return;
@@ -939,71 +912,84 @@ export default function ConversationalOnboarding({
   // ── Phase splash interstitial ────────────────────────────────────────────────
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-card">
-      {/* Chat header */}
-      <div className="flex items-center justify-between border-b border-white/[0.06] bg-surface-elevated px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary">
-            <svg viewBox="0 0 20 22" className="h-5 w-5">
-              <line
-                x1="10"
-                y1="21"
-                x2="10"
-                y2="14"
-                stroke="#0d3d2e"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-              />
-              <path
-                d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-                fill="#0d3d2e"
-              />
-              <path
-                d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-                fill="#0d3d2e"
-              />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">Buddy360 Guide</h3>
-            <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success-bright" />
-              Your growth companion
-            </p>
-          </div>
-        </div>
-      </div>
+    <div className="relative flex h-full flex-col">
+      {/* Deep blue ambient glow at bottom */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 h-80 opacity-70"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(59,130,246,0.18), transparent)',
+        }}
+      />
 
-      {/* Phase splash — full-screen overlay (rendered outside the card via fixed positioning) */}
+      {/* Phase splash — full-screen overlay */}
       <AnimatePresence>{phaseSplash && <PhaseSplashScreen splash={phaseSplash} />}</AnimatePresence>
 
-      {/* Main chat area (hidden during splash) */}
       {!phaseSplash && (
-        <>
-          {/* Previously answered summary card */}
-          {resumeSummary && resumeSummary.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="border-b border-white/[0.06] bg-surface-elevated/60 px-4 py-3"
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* ── Orb + greeting ─────────────────────────────────────────────── */}
+          <div className="flex shrink-0 flex-col items-center px-6 pb-5 pt-8">
+            <AnimatedOrb />
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.6 }}
+              className="mt-5 text-sm font-medium text-blue-300/70"
             >
-              <button
-                type="button"
-                onClick={() => setSummaryExpanded((p) => !p)}
-                className="flex w-full items-center justify-between gap-2 text-left"
-              >
+              Hello {parentName}!
+            </motion.p>
+            <AnimatePresence mode="wait">
+              {isTyping ? (
+                <motion.div
+                  key="typing-dots"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.35 }}
+                  className="mt-3 flex items-center gap-1.5"
+                >
+                  {[0, 150, 300].map((delay) => (
+                    <span
+                      key={delay}
+                      className="h-2.5 w-2.5 animate-bounce rounded-full bg-blue-400/50"
+                      style={{ animationDelay: `${delay}ms` }}
+                    />
+                  ))}
+                </motion.div>
+              ) : (
+                <motion.h2
+                  key={(latestBotContent ?? 'idle').substring(0, 50)}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="mt-2 max-w-lg text-center text-xl font-semibold leading-snug text-white/90"
+                >
+                  {latestBotContent ?? 'How can I help you today?'}
+                </motion.h2>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Previously answered summary ─────────────────────────────── */}
+          {resumeSummary && resumeSummary.length > 0 && (
+            <details
+              open
+              className="group mx-4 mb-3 shrink-0 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-4 py-3"
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/15 text-[10px] font-bold text-emerald-400">
                     ✓
                   </span>
-                  <span className="text-xs font-semibold text-muted-foreground">
+                  <span className="text-xs font-semibold text-white/50">
                     Previously answered · {resumeSummary.length} of 7
                   </span>
                 </div>
                 <svg
                   viewBox="0 0 16 16"
-                  className={`h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-200 ${summaryExpanded ? 'rotate-180' : ''}`}
+                  className="h-3.5 w-3.5 shrink-0 text-white/30 transition-transform duration-200 group-open:rotate-180"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
@@ -1012,174 +998,53 @@ export default function ConversationalOnboarding({
                 >
                   <polyline points="4 6 8 10 12 6" />
                 </svg>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {summaryExpanded && (
-                  <motion.div
-                    key="summary-items"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.25, ease: 'easeInOut' }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-2.5 space-y-1.5">
-                      {resumeSummary.map((item) => (
-                        <div key={item.label} className="flex items-baseline gap-2 text-xs">
-                          <span className="w-28 shrink-0 font-medium text-muted-foreground/70">
-                            {item.label}
-                          </span>
-                          <span className="text-foreground/80">{item.answer}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
+              </summary>
+              <div className="mt-2.5 space-y-1.5">
+                {resumeSummary.map((item) => (
+                  <div key={item.label} className="flex items-baseline gap-2 text-xs">
+                    <span className="w-28 shrink-0 font-medium text-white/40">{item.label}</span>
+                    <span className="text-white/70">{item.answer}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
 
-          {/* Messages */}
-          <div
-            ref={scrollContainerRef}
-            className="h-64 max-h-[320px] min-h-[200px] flex-1 space-y-3 overflow-y-auto p-5"
-          >
-            <AnimatePresence initial={false}>
-              {messages.slice(-6).map((msg) =>
-                msg.role === 'bot' ? (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      opacity: { duration: 1.4, ease: [0, 0, 0.6, 1] },
-                      y: { duration: 1.0, ease: 'easeOut' },
-                    }}
-                    className="flex items-start gap-2.5"
-                  >
-                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
-                      <svg viewBox="0 0 20 22" className="h-3.5 w-3.5">
-                        <line
-                          x1="10"
-                          y1="21"
-                          x2="10"
-                          y2="14"
-                          stroke="#0d3d2e"
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                        />
-                        <path
-                          d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-                          fill="#0d3d2e"
-                        />
-                        <path
-                          d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-                          fill="#0d3d2e"
-                        />
-                      </svg>
-                    </div>
-                    <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-white/[0.07] bg-surface-input px-4 py-2.5 text-sm text-foreground">
-                      <p className="whitespace-pre-line leading-relaxed">{msg.content}</p>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, x: 32 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      opacity: { duration: 1.2, ease: [0, 0, 0.6, 1] },
-                      x: { duration: 1.0, ease: [0.22, 1, 0.36, 1] },
-                    }}
-                    className="flex justify-end"
-                  >
-                    <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary-action px-4 py-2.5 text-sm text-white">
-                      <p className="whitespace-pre-line">{msg.content}</p>
-                    </div>
-                  </motion.div>
-                ),
-              )}
-            </AnimatePresence>
+          {/* Spacer — pushes controls to bottom */}
+          <div className="flex-1" />
 
-            {/* Typing indicator */}
-            <AnimatePresence>
-              {isTyping && (
-                <motion.div
-                  key="typing"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4, transition: { duration: 0.25 } }}
-                  className="flex items-start gap-2.5"
-                >
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary">
-                    <svg viewBox="0 0 20 22" className="h-3.5 w-3.5">
-                      <line
-                        x1="10"
-                        y1="21"
-                        x2="10"
-                        y2="14"
-                        stroke="#0d3d2e"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-                        fill="#0d3d2e"
-                      />
-                      <path
-                        d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-                        fill="#0d3d2e"
-                      />
-                    </svg>
-                  </div>
-                  <div className="rounded-2xl rounded-tl-sm border border-white/[0.07] bg-surface-input px-4 py-3">
-                    <div className="flex gap-1">
-                      {[0, 150, 300].map((delay) => (
-                        <span
-                          key={delay}
-                          className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/25"
-                          style={{ animationDelay: `${delay}ms` }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Dots loading (completing) */}
+          {/* ── Dots loading (completing) ───────────────────────────────── */}
           {showingLoadingDots && !allAnswered && (
-            <div className="border-t border-white/[0.06] px-5 pb-5 pt-3">
+            <div className="shrink-0 px-4 pb-3">
               <motion.div
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-3 rounded-xl border border-primary/15 bg-primary/[0.05] px-4 py-3"
+                className="flex items-center gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/[0.07] px-4 py-3"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/20">
-                  <Sparkles className="h-4 w-4 text-primary" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
+                  <Sparkles className="h-4 w-4 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-foreground">
+                  <p className="text-sm font-semibold text-white/90">
                     Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
                   </p>
-                  <p className="mt-0.5 text-xs text-primary">Getting things ready — almost there</p>
+                  <p className="mt-0.5 text-xs text-blue-300/60">
+                    Getting things ready — almost there
+                  </p>
                 </div>
               </motion.div>
             </div>
           )}
 
-          {/* MCQ grid for choice steps */}
+          {/* ── MCQ grid for choice steps ───────────────────────────────── */}
           {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-            <div className="space-y-3 border-t border-white/[0.06] px-5 pb-5 pt-4">
+            <div className="shrink-0 space-y-3 px-4 pb-4">
               <MCQGrid
                 options={currentStepData.options ?? []}
                 selected={collectedData[currentStepData.field] as string | undefined}
                 onSelect={handleChoiceSelect}
                 stepKey={currentStep}
               />
-              {/* Echo of last user answer */}
               <div className="flex justify-end">
                 <AnimatePresence>
                   {!!collectedData[currentStepData.field] && (
@@ -1188,7 +1053,7 @@ export default function ConversationalOnboarding({
                       initial={{ opacity: 0, x: 20, scale: 0.9 }}
                       animate={{ opacity: 1, x: 0, scale: 1 }}
                       transition={{ type: 'spring', stiffness: 80 }}
-                      className="rounded-xl bg-primary-action px-4 py-2 text-sm font-medium text-white"
+                      className="rounded-xl bg-blue-600/25 px-4 py-2 text-sm font-medium text-white/90"
                     >
                       {String(collectedData[currentStepData.field])}
                     </motion.div>
@@ -1198,50 +1063,113 @@ export default function ConversationalOnboarding({
             </div>
           )}
 
-          {/* Text input */}
-          {waitingForResponse &&
-            !allAnswered &&
-            (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-              <form onSubmit={handleSubmit} className="border-t border-white/[0.06] p-4">
-                {currentStepData.hint && (
-                  <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Sparkles className="h-3 w-3 text-primary/60" />
-                    {currentStepData.hint}
-                  </p>
-                )}
-                <div className="flex gap-2">
-                  <InputWithVoice
-                    ref={inputRef}
-                    value={currentInput}
-                    onChange={(e) => setCurrentInput(e.target.value)}
-                    placeholder={currentStepData.placeholder ?? 'Type your response…'}
-                    className="h-10 flex-1 rounded-xl border-white/[0.1] bg-surface-input text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40"
-                  />
-                  <Button
-                    type="submit"
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-action p-0 text-white hover:bg-primary-action/90"
-                    disabled={!currentInput.trim()}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </form>
-            )}
-
-          {/* All answered — continue button */}
+          {/* ── All answered — continue button ──────────────────────────── */}
           {allAnswered && typeof onContinueToPersonality === 'function' && (
-            <div className="border-t border-white/[0.06] p-4">
+            <div className="shrink-0 px-4 pb-4">
               <Button
                 type="button"
-                className="btn-primary h-11 w-full rounded-2xl"
+                className="h-12 w-full rounded-2xl bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700"
                 onClick={() => onContinueToPersonality()}
               >
                 Continue to personality analysis
               </Button>
             </div>
           )}
-        </>
+
+          {/* ── Pill text input (pinned bottom) ─────────────────────────── */}
+          {waitingForResponse &&
+            !allAnswered &&
+            (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
+              <div className="shrink-0 px-4 pb-6 pt-2">
+                {currentStepData.hint && (
+                  <p className="mb-2 flex items-center gap-1.5 text-xs text-white/40">
+                    <Sparkles className="h-3 w-3 text-blue-400/60" />
+                    {currentStepData.hint}
+                  </p>
+                )}
+                <form onSubmit={handleSubmit}>
+                  <div
+                    className="flex items-center gap-2 rounded-full border border-blue-400/20 px-5 py-2.5"
+                    style={{
+                      background: 'rgba(12, 20, 48, 0.88)',
+                      backdropFilter: 'blur(24px)',
+                      boxShadow:
+                        '0 0 40px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.05)',
+                    }}
+                  >
+                    <InputWithVoice
+                      ref={inputRef}
+                      value={currentInput}
+                      onChange={(e) => setCurrentInput(e.target.value)}
+                      placeholder={currentStepData.placeholder ?? 'Type your response…'}
+                      className="h-9 border-0 bg-transparent py-0 text-sm text-white shadow-none ring-0 placeholder:text-white/30 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                    <Button
+                      type="submit"
+                      disabled={!currentInput.trim()}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 p-0 text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            )}
+        </div>
       )}
+    </div>
+  );
+}
+
+// ── Animated Orb ──────────────────────────────────────────────────────────────
+
+function AnimatedOrb() {
+  return (
+    <div className="pointer-events-none relative flex h-32 w-32 items-center justify-center">
+      {/* Outer ambient pulse */}
+      <motion.div
+        animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+        className="absolute -inset-4 rounded-full"
+        style={{
+          background: 'radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%)',
+          filter: 'blur(10px)',
+        }}
+      />
+      {/* Spinning conic-gradient sphere */}
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+        className="absolute inset-4 rounded-full"
+        style={{
+          background:
+            'conic-gradient(from 0deg, #1e3a8a, #3b82f6, #60a5fa, #93c5fd, #3b82f6, #1d4ed8, #1e3a8a)',
+        }}
+      />
+      {/* Counter-rotating inner swirl */}
+      <motion.div
+        animate={{ rotate: -360 }}
+        transition={{ duration: 7, repeat: Infinity, ease: 'linear' }}
+        className="absolute inset-8 rounded-full"
+        style={{
+          background:
+            'conic-gradient(from 180deg, rgba(147,197,253,0.85), rgba(59,130,246,0.3), rgba(147,197,253,0.85))',
+        }}
+      />
+      {/* Bright inner core */}
+      <div
+        className="absolute inset-11 rounded-full"
+        style={{
+          background:
+            'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(186,230,253,0.65) 45%, transparent 80%)',
+        }}
+      />
+      {/* Pulsing outer ring */}
+      <motion.div
+        animate={{ scale: [1, 1.2, 1], opacity: [0.4, 0.1, 0.4] }}
+        transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
+        className="absolute -inset-1 rounded-full border border-blue-400/25"
+      />
     </div>
   );
 }
@@ -1259,11 +1187,8 @@ function MCQGrid({
   onSelect: (o: string) => void;
   stepKey: number;
 }) {
-  // Use full-width single column when any option is long
-  const useSingleCol = options.some((o) => o.length > 28);
-
   return (
-    <div className={cn('grid gap-2.5', useSingleCol ? 'grid-cols-1' : 'grid-cols-2')}>
+    <div className={cn('grid gap-2.5', 'grid-cols-1 md:grid-cols-2')}>
       {options.map((option, idx) => {
         const Icon = OPTION_ICONS[option] ?? HelpCircle;
         const isSelected = selected === option;
@@ -1279,22 +1204,19 @@ function MCQGrid({
             className={cn(
               'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all focus:outline-none',
               isSelected
-                ? 'bg-primary/12 border-primary text-foreground ring-1 ring-primary/30'
-                : 'border-white/[0.08] bg-surface-elevated text-muted-foreground hover:border-primary/30 hover:bg-primary/[0.05] hover:text-foreground',
+                ? 'border-blue-500/60 bg-blue-600/20 text-white ring-1 ring-blue-400/30'
+                : 'border-white/[0.07] bg-white/[0.03] text-white/60 hover:border-blue-400/30 hover:bg-blue-500/[0.07] hover:text-white/85',
             )}
           >
             <Icon
-              className={cn(
-                'h-4 w-4 shrink-0',
-                isSelected ? 'text-primary' : 'text-muted-foreground/60',
-              )}
+              className={cn('h-4 w-4 shrink-0', isSelected ? 'text-blue-400' : 'text-white/30')}
             />
             <span className="leading-tight">{option}</span>
             {isSelected && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary"
+                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-500"
               >
                 <Check className="h-2.5 w-2.5 text-white" />
               </motion.div>

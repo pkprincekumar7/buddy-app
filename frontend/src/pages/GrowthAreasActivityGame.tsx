@@ -11,7 +11,6 @@ import ChildActivityGame, {
   normalizeChildGameRecommendations,
 } from '@/components/onboarding/ChildActivityGame';
 import { SPINNER } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import { useJob } from '@/hooks/useJob';
 
 export default function GrowthAreasActivityGame() {
@@ -248,7 +247,6 @@ export default function GrowthAreasActivityGame() {
             <ChevronLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <StartOverButton childId={childId} className="w-full sm:w-auto" />
         </div>
       </div>
     </div>

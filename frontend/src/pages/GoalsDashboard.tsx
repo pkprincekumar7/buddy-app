@@ -19,7 +19,6 @@ import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
 import type { Dispatch, SetStateAction } from 'react';
 import { SPINNER, slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
-import StartOverButton from '@/components/shared/StartOverButton';
 
 interface DashActivity {
   completed?: boolean;
@@ -486,7 +485,6 @@ export default function GoalsDashboard() {
                         ← Back
                       </Button>
                     }
-                    center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                     right={
                       <Button
                         variant="outline"

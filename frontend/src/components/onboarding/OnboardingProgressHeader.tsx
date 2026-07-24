@@ -16,7 +16,7 @@ interface Props {
 
 export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel }: Props) {
   return (
-    <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-sidebar/95 backdrop-blur-xl">
+    <div className="sticky top-0 z-30 border-b border-white/[0.06] bg-sidebar/95 backdrop-blur-xl">
       {/* Phase row */}
       <div className="mx-auto flex max-w-5xl items-center px-4 py-3">
         {phases.map((phase, i) => (

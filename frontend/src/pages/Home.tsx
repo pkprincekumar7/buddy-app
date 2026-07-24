@@ -112,8 +112,6 @@ export default function Home() {
     navigate('/Onboarding');
   };
 
-  // "Continue Your Journey" routes to /Onboarding/:childId so the child is identified
-  // in the URL and survives a page refresh on the Onboarding page.
   // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
   const firstChild = children[0]?.id ? children[0] : null;
 
