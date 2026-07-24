@@ -80,13 +80,15 @@
     "js-yaml": "^4.3.0",
     "shell-quote": "^1.9.0",
     "launch-editor": "^2.14.1",
-    "body-parser": "^2.3.0"
+    "body-parser": "^2.3.0",
+    "postcss": "^8.5.18"
   },
   "overrides": {
     "brace-expansion": "^2.1.2",
     "js-yaml": "^4.3.0",
     "shell-quote": "^1.9.0",
     "launch-editor": "^2.14.1",
-    "body-parser": "^2.3.0"
+    "body-parser": "^2.3.0",
+    "postcss": "^8.5.18"
   }
 }

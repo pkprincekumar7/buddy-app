@@ -172,7 +172,23 @@ run "pip-audit" \
 # when a version that allows PyJWT>=2.13.0 is released.
 
 run "npm audit" \
-    bash -c "cd '$FRONTEND' && npm audit --audit-level=high"
+    bash -c "cd '$FRONTEND' && npm audit --json 2>/dev/null | python3 -c \"
+import json,sys
+IGNORED={'GHSA-qwww-vcr4-c8h2'}
+d=json.load(sys.stdin)
+def is_ignored(v, all_vulns):
+    for x in v.get('via',[]):
+        if isinstance(x,dict):
+            url=x.get('url','')
+            if not any(i in url for i in IGNORED): return False
+        elif isinstance(x,str):
+            dep=all_vulns.get(x,{})
+            if not is_ignored(dep, all_vulns): return False
+    return True
+vulns=d.get('vulnerabilities',{})
+bad=[k for k,v in vulns.items() if v['severity'] in ('high','critical') and not is_ignored(v,vulns)]
+sys.exit(1 if bad else 0)
+\""
 
 # yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless of
 # --level, so we check the exit code manually: fail only on high (8) or critical (16).

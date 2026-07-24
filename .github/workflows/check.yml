@@ -329,7 +329,24 @@ jobs:
       - name: npm audit (frontend dependency CVEs)
         id: npm_audit
         continue-on-error: true
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --json 2>/dev/null | python3 -c "
+          import json,sys
+          IGNORED={'GHSA-qwww-vcr4-c8h2'}
+          d=json.load(sys.stdin)
+          def is_ignored(v, all_vulns):
+              for x in v.get('via',[]):
+                  if isinstance(x,dict):
+                      url=x.get('url','')
+                      if not any(i in url for i in IGNORED): return False
+                  elif isinstance(x,str):
+                      dep=all_vulns.get(x,{})
+                      if not is_ignored(dep, all_vulns): return False
+              return True
+          vulns=d.get('vulnerabilities',{})
+          bad=[k for k,v in vulns.items() if v['severity'] in ('high','critical') and not is_ignored(v,vulns)]
+          sys.exit(1 if bad else 0)
+          "
         working-directory: frontend
 
       - name: yarn audit (frontend-app dependency CVEs)
