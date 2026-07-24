@@ -109,7 +109,7 @@ export default function Home() {
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
   const handleStartJourney = () => {
-    navigate('/Onboarding');
+    void navigate('/Onboarding');
   };
 
   // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
@@ -185,7 +185,7 @@ export default function Home() {
                 <Button
                   size="xl"
                   onClick={() =>
-                    navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
+                    void navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
                   }
                   className="btn-primary rounded-2xl transition-all duration-200"
                 >
@@ -266,7 +266,9 @@ export default function Home() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                    onClick={() => {
+                      void navigate('/Onboarding', { state: { forceNew: true } });
+                    }}
                     disabled={children.length >= 10}
                     className="rounded-xl"
                   >
@@ -284,7 +286,9 @@ export default function Home() {
                   No children yet.{' '}
                   <button
                     className="text-primary underline underline-offset-2"
-                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                    onClick={() => {
+                      void navigate('/Onboarding', { state: { forceNew: true } });
+                    }}
                   >
                     Add your first child
                   </button>{' '}

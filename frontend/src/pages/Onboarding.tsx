@@ -56,14 +56,14 @@ export default function Onboarding() {
           const child = await api.entities.Child.get(childIdParam);
           if (cancelled) return;
           if (!child) {
-            navigate('/Home', { replace: true });
+            void navigate('/Home', { replace: true });
             return;
           }
           setChildComplete(!!child.onboarding_completed);
           applyChildData(child);
         } catch (err) {
           console.warn('[Onboarding] Could not load child data:', err);
-          if (!cancelled) navigate('/Home', { replace: true });
+          if (!cancelled) void navigate('/Home', { replace: true });
         } finally {
           if (!cancelled) setChecking(false);
         }
@@ -104,7 +104,7 @@ export default function Onboarding() {
   // Step 1 → Step 2 (just UI transition, no API call yet)
   const handleWelcomeContinue = useCallback(() => {
     if (!isAuthenticated) {
-      navigate('/Onboarding');
+      void navigate('/Onboarding');
       return;
     }
     setStep(2);
@@ -158,7 +158,7 @@ export default function Onboarding() {
             ...(formData.avatarId ? { avatar_id: formData.avatarId } : {}),
             ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
           });
-          navigate(`/ConversationalOnboarding/${targetId}`);
+          void navigate(`/ConversationalOnboarding/${targetId}`);
         }
       } catch (err) {
         if (err instanceof ApiError && err.status === 422) {

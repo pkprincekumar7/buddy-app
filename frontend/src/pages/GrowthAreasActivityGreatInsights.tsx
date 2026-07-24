@@ -77,15 +77,15 @@ export default function GrowthAreasActivityGreatInsights() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     if (!area) {
-      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      void navigate(`/GrowthAreas/${childId}`, { replace: true });
       return;
     }
     let cancelled = false;
@@ -95,7 +95,7 @@ export default function GrowthAreasActivityGreatInsights() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
@@ -246,7 +246,9 @@ export default function GrowthAreasActivityGreatInsights() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Could not load insights. Please try again.</p>
         <Button
-          onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
+          onClick={() => {
+            void navigate(childId ? `/GrowthAreas/${childId}` : '/Home');
+          }}
           className="btn-primary rounded-2xl px-8"
         >
           Back to Growth Areas
@@ -462,7 +464,9 @@ export default function GrowthAreasActivityGreatInsights() {
             <Button
               size="xl"
               variant="outline"
-              onClick={() => navigate(`/GrowthAreas/${childId}`)}
+              onClick={() => {
+                void navigate(`/GrowthAreas/${childId}`);
+              }}
               className="btn-secondary w-full rounded-2xl sm:w-auto"
             >
               <ChevronLeft className="mr-1 h-4 w-4" />
@@ -472,7 +476,9 @@ export default function GrowthAreasActivityGreatInsights() {
           right={
             <Button
               size="xl"
-              onClick={() => navigate(`/GrowthAreas/${childId}`)}
+              onClick={() => {
+                void navigate(`/GrowthAreas/${childId}`);
+              }}
               className={`w-full rounded-2xl bg-gradient-to-r ${area.color} px-10 text-white sm:w-auto`}
             >
               Done

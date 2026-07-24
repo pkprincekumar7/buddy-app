@@ -22,11 +22,11 @@ export default function GrowthAreas() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     let cancelled = false;
@@ -36,11 +36,11 @@ export default function GrowthAreas() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
         if (!child.personality?.view_model?.type && !child.personality?.view_model?.profile?.name) {
-          navigate(`/PersonalityType/${childId}`, { replace: true });
+          void navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }
 
@@ -116,9 +116,9 @@ export default function GrowthAreas() {
                         y: { duration: 0.8, delay: 0.2 + i * 0.1, ease: 'easeOut' },
                         scale: { duration: 0.15, delay: 0 },
                       }}
-                      onClick={() =>
-                        navigate(`/GrowthAreas/${childId}/Activity/${area.urlName}?q=1`)
-                      }
+                      onClick={() => {
+                        void navigate(`/GrowthAreas/${childId}/Activity/${area.urlName}?q=1`);
+                      }}
                       className={`relative flex flex-col items-start gap-3 rounded-2xl border p-4 text-left transition-all hover:scale-[1.02] ${
                         done
                           ? 'border-success/30 bg-success/10'
@@ -148,9 +148,11 @@ export default function GrowthAreas() {
                   <Button
                     size="xl"
                     variant="outline"
-                    onClick={() =>
-                      navigate(`/PersonalityJourney/${childId}`, { state: { fromBack: true } })
-                    }
+                    onClick={() => {
+                      void navigate(`/PersonalityJourney/${childId}`, {
+                        state: { fromBack: true },
+                      });
+                    }}
                     className="btn-secondary w-full rounded-2xl sm:w-auto"
                   >
                     <ChevronLeft className="mr-1 h-4 w-4" />
@@ -166,7 +168,9 @@ export default function GrowthAreas() {
                     >
                       <Button
                         size="xl"
-                        onClick={() => navigate(`/LifePathway/${childId}`)}
+                        onClick={() => {
+                          void navigate(`/LifePathway/${childId}`);
+                        }}
                         className="w-full rounded-2xl bg-gradient-to-r from-primary-medium to-success-strong px-10 text-white sm:w-auto"
                       >
                         View Your Life Pathway

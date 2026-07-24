@@ -35,15 +35,15 @@ export default function GrowthAreasActivity() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     if (!area) {
-      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      void navigate(`/GrowthAreas/${childId}`, { replace: true });
       return;
     }
     let cancelled = false;
@@ -53,7 +53,7 @@ export default function GrowthAreasActivity() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
@@ -78,7 +78,7 @@ export default function GrowthAreasActivity() {
           const startQ = firstUnanswered === -1 ? questions.length + 1 : firstUnanswered + 1;
           if (startQ > questions.length) {
             // All answered — go straight to Game
-            navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`, { replace: true });
+            void navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`, { replace: true });
             return;
           }
           setSearchParams({ q: String(startQ) }, { replace: true });
@@ -160,7 +160,7 @@ export default function GrowthAreasActivity() {
 
       // Navigate immediately — smooth, no waiting for the network.
       if (isLast) {
-        navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`);
+        void navigate(`/GrowthAreas/${childId}/Activity/${activity}/Game`);
       } else {
         setSearchParams({ q: String(qIndex + 2) });
       }
@@ -173,7 +173,7 @@ export default function GrowthAreasActivity() {
 
   const handleBack = useCallback(() => {
     if (qIndex === 0) {
-      navigate(`/GrowthAreas/${childId}`);
+      void navigate(`/GrowthAreas/${childId}`);
     } else {
       setSearchParams({ q: String(qIndex) });
     }
@@ -195,7 +195,9 @@ export default function GrowthAreasActivity() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Area not found.</p>
         <Button
-          onClick={() => navigate(childId ? `/GrowthAreas/${childId}` : '/Home')}
+          onClick={() => {
+            void navigate(childId ? `/GrowthAreas/${childId}` : '/Home');
+          }}
           className="btn-primary rounded-2xl px-8"
         >
           Back

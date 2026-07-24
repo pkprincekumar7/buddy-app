@@ -1115,7 +1115,7 @@ export default function RecommendationsPhase({
       await saveCompletedGrowthArea(selectedArea, interactiveAnswers, recs, childActivity);
     }
     if (onFinish) await onFinish();
-    else navigate(createPageUrl('LifePathway'), { replace: true });
+    else void navigate(createPageUrl('LifePathway'), { replace: true });
   };
 
   /** Fetch area doc from DB and restore child game UI state. */
@@ -1281,7 +1281,9 @@ export default function RecommendationsPhase({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate(createPageUrl('Home'))}
+                onClick={() => {
+                  void navigate(createPageUrl('Home'));
+                }}
                 className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 <Clock className="mr-2 h-4 w-4" />
@@ -1703,7 +1705,9 @@ export default function RecommendationsPhase({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate(createPageUrl('Home'))}
+                onClick={() => {
+                  void navigate(createPageUrl('Home'));
+                }}
                 className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 Catch Up Later
@@ -2494,7 +2498,7 @@ export default function RecommendationsPhase({
                       setAiRecommendations(null);
                       setParentLiked(null);
                     } else {
-                      navigate(createPageUrl('LifePathway'), { replace: true });
+                      void navigate(createPageUrl('LifePathway'), { replace: true });
                     }
                   })();
                 }}
@@ -2538,7 +2542,7 @@ export default function RecommendationsPhase({
         </p>
         <Button
           onClick={() => {
-            navigate(createPageUrl('LifePathway'), { replace: true });
+            void navigate(createPageUrl('LifePathway'), { replace: true });
           }}
           className="h-12 rounded-2xl bg-gradient-to-r from-success to-primary-dark px-8 text-base"
         >

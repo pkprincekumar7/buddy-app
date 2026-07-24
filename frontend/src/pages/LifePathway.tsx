@@ -152,7 +152,7 @@ export default function LifePathway() {
 
   const handleStartJourney = () => {
     if (savedConcern) {
-      navigate(`/GoalsDashboard/${childId}`);
+      void navigate(`/GoalsDashboard/${childId}`);
       return;
     }
     setShowConcernModal(true);
@@ -172,10 +172,12 @@ export default function LifePathway() {
 
   const handleProceedToDashboard = () => {
     closeConcernModal();
-    navigate(`/GoalsDashboard/${childId}`);
+    void navigate(`/GoalsDashboard/${childId}`);
   };
 
-  const handleBack = () => navigate(`/GrowthAreas/${childId}`, { state: { fromBack: true } });
+  const handleBack = () => {
+    void navigate(`/GrowthAreas/${childId}`, { state: { fromBack: true } });
+  };
 
   const strengths = useMemo(
     () =>

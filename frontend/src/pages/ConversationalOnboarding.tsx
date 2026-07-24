@@ -26,11 +26,11 @@ export default function ConversationalOnboarding() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     let cancelled = false;
@@ -41,7 +41,7 @@ export default function ConversationalOnboarding() {
         if (cancelled) return;
 
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
@@ -88,7 +88,7 @@ export default function ConversationalOnboarding() {
       } catch (err) {
         console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
       }
-      navigate(`/PersonalityType/${childId}`);
+      void navigate(`/PersonalityType/${childId}`);
     },
     [childId, hasPersonality, navigate],
   );
@@ -130,11 +130,11 @@ export default function ConversationalOnboarding() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', {
+                onClick={() => {
+                  void navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', {
                     state: { fromBack: true },
-                  })
-                }
+                  });
+                }}
                 className="gap-1 rounded-xl text-muted-foreground hover:text-foreground"
               >
                 <ChevronLeft className="h-4 w-4" />

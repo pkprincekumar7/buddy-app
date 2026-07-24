@@ -244,7 +244,7 @@ export default function PersonalityType() {
     setCompletedSteps(ANALYSIS_STEPS.length);
     const t = setTimeout(() => {
       setNavigatingAway(true);
-      navigate(`/PersonalityJourney/${childId ?? ''}`);
+      void navigate(`/PersonalityJourney/${childId ?? ''}`);
     }, 1600);
     return () => clearTimeout(t);
   }, [mbtiResult, childId, navigate, navigatingAway]);
@@ -252,11 +252,11 @@ export default function PersonalityType() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     let cancelled = false;
@@ -266,7 +266,7 @@ export default function PersonalityType() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
@@ -302,7 +302,7 @@ export default function PersonalityType() {
         }
 
         if (!merged.name?.trim()) {
-          navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
+          void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
           return;
         }
 
@@ -357,7 +357,9 @@ export default function PersonalityType() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Something went wrong. Please try again.</p>
         <Button
-          onClick={() => navigate(childId ? `/ConversationalOnboarding/${childId}` : '/Home')}
+          onClick={() => {
+            void navigate(childId ? `/ConversationalOnboarding/${childId}` : '/Home');
+          }}
           className="btn-primary rounded-2xl px-8"
         >
           Go Back

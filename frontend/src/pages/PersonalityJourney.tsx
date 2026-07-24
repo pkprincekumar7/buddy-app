@@ -324,7 +324,9 @@ function FinalCTAScreen({
         <div className="flex flex-col gap-3 pt-2">
           <Button
             size="xl"
-            onClick={() => navigate(`/GrowthAreas/${childId ?? ''}`)}
+            onClick={() => {
+              void navigate(`/GrowthAreas/${childId ?? ''}`);
+            }}
             className="w-full rounded-2xl bg-gradient-to-r from-primary to-violet-400 font-semibold text-white shadow-[0_0_20px_rgba(45,212,191,0.2)] transition-opacity hover:opacity-90"
           >
             <Zap className="mr-2 h-4 w-4" />
@@ -371,11 +373,11 @@ export default function PersonalityJourney() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     let cancelled = false;
@@ -385,14 +387,14 @@ export default function PersonalityJourney() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
         const personality = child.personality;
         const vm = personality?.view_model;
         if (!vm?.profile?.name) {
-          navigate(`/PersonalityType/${childId}`, { replace: true });
+          void navigate(`/PersonalityType/${childId}`, { replace: true });
           return;
         }
 
@@ -451,7 +453,9 @@ export default function PersonalityJourney() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Something went wrong. Please try again.</p>
         <Button
-          onClick={() => navigate(childId ? `/PersonalityType/${childId}` : '/Home')}
+          onClick={() => {
+            void navigate(childId ? `/PersonalityType/${childId}` : '/Home');
+          }}
           className="btn-primary rounded-2xl px-8"
         >
           Go Back
@@ -545,7 +549,9 @@ export default function PersonalityJourney() {
               <FinalCTAScreen
                 childName={childName}
                 childId={childId}
-                onHome={() => navigate('/Home')}
+                onHome={() => {
+                  void navigate('/Home');
+                }}
               />
             )}
           </motion.div>

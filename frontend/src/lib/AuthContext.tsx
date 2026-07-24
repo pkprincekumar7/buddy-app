@@ -113,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(false);
       setChildProfiles([]);
       setAuthError(null);
-      navigate('/Login', { replace: true });
+      void navigate('/Login', { replace: true });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('buddy360:auth-expired', onExpired);
@@ -171,7 +171,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setChildProfiles([]);
       setAuthError(null);
       if (shouldRedirect) {
-        navigate('/Login', { replace: true });
+        void navigate('/Login', { replace: true });
       }
     },
     [navigate],
@@ -198,10 +198,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!publicPaths.includes(location.pathname)) return;
     if (isAuthenticated) {
       if (user?.role === 'admin') {
-        navigate('/Admin', { replace: true });
+        void navigate('/Admin', { replace: true });
         return;
       }
-      navigate(mainPath, { replace: true });
+      void navigate(mainPath, { replace: true });
     }
   }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath]);
 

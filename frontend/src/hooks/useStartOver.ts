@@ -31,7 +31,7 @@ export function useStartOver(childId: string | undefined) {
     // trigger the "Could not start over" toast when the delete already succeeded.
     await refreshChildren().catch(() => {});
     setIsStartingOver(false);
-    navigate('/Home', { replace: true });
+    void navigate('/Home', { replace: true });
   }, [isStartingOver, childId, navigate, queryClient, refreshChildren]);
 
   return { doStartOver, isStartingOver };

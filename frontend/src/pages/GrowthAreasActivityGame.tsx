@@ -34,15 +34,15 @@ export default function GrowthAreasActivityGame() {
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigate('/Onboarding', { replace: true });
+      void navigate('/Onboarding', { replace: true });
       return;
     }
     if (!childId) {
-      navigate('/Home', { replace: true });
+      void navigate('/Home', { replace: true });
       return;
     }
     if (!area) {
-      navigate(`/GrowthAreas/${childId}`, { replace: true });
+      void navigate(`/GrowthAreas/${childId}`, { replace: true });
       return;
     }
     let cancelled = false;
@@ -52,7 +52,7 @@ export default function GrowthAreasActivityGame() {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
         if (!child) {
-          navigate('/Home', { replace: true });
+          void navigate('/Home', { replace: true });
           return;
         }
 
@@ -164,7 +164,7 @@ export default function GrowthAreasActivityGame() {
         toast.error('Could not save game results. Try again or check your connection.');
         return;
       }
-      navigate(`/GrowthAreas/${childId}/Activity/${activity}/GreatInsights`);
+      void navigate(`/GrowthAreas/${childId}/Activity/${activity}/GreatInsights`);
     },
     [childId, area, activity, navigate, savedAnswers],
   );
@@ -240,7 +240,7 @@ export default function GrowthAreasActivityGame() {
             variant="outline"
             onClick={() => {
               const questions = AREA_QUESTIONS[area.id] ?? [];
-              navigate(`/GrowthAreas/${childId}/Activity/${activity}?q=${questions.length}`);
+              void navigate(`/GrowthAreas/${childId}/Activity/${activity}?q=${questions.length}`);
             }}
             className="btn-secondary w-full rounded-2xl sm:w-auto"
           >

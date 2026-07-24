@@ -477,9 +477,9 @@ export default function GoalsDashboard() {
                     left={
                       <Button
                         variant="outline"
-                        onClick={() =>
-                          navigate(`/LifePathway/${childId}`, { state: { fromBack: true } })
-                        }
+                        onClick={() => {
+                          void navigate(`/LifePathway/${childId}`, { state: { fromBack: true } });
+                        }}
                         className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         ← Back

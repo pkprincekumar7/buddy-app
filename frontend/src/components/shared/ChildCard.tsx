@@ -88,7 +88,9 @@ export default function ChildCard({ child }: ChildCardProps) {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(`/Onboarding/${child.id}`)}
+              onClick={() => {
+                void navigate(`/Onboarding/${child.id}`);
+              }}
               aria-label="View journey"
               title="View journey"
             >
