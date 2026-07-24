@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
@@ -15,7 +15,8 @@ export default function ConversationalOnboarding() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [_childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const childDataRef = useRef<Record<string, unknown> | null>(null);
   const [hasPersonality, setHasPersonality] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   // bootKey is a static mount key for the chat component; held as a constant since it never changes.
@@ -48,7 +49,11 @@ export default function ConversationalOnboarding() {
         const personalityReady = !!(viewModel?.type && viewModel?.profile);
         setHasPersonality(personalityReady);
         const normalized = normalizeOnboardingChildDataBlob(child);
-        if (normalized) setChildData(mergeChildDraft(normalized));
+        if (normalized) {
+          const merged = mergeChildDraft(normalized);
+          childDataRef.current = merged;
+          setChildData(merged);
+        }
       } catch (err) {
         console.warn('[ConversationalOnboarding] Hydration failed:', err);
       } finally {
@@ -61,9 +66,15 @@ export default function ConversationalOnboarding() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
+  const handleQuestionnairePersisted = useCallback((slice: Record<string, unknown>) => {
+    const merged = mergeChildDraft({ ...(childDataRef.current ?? {}), ...slice });
+    childDataRef.current = merged;
+    setChildData(merged);
+  }, []);
+
   const handleComplete = useCallback(
     async (conversationData: Record<string, unknown>) => {
-      const mergedDraft = mergeChildDraft({ ...(childData ?? {}), ...conversationData });
+      const mergedDraft = mergeChildDraft({ ...(childDataRef.current ?? {}), ...conversationData });
       try {
         if (childId) {
           await api.entities.Child.update(childId, {
@@ -78,7 +89,7 @@ export default function ConversationalOnboarding() {
       }
       navigate(`/PersonalityType/${childId}`);
     },
-    [childData, childId, hasPersonality, navigate],
+    [childId, hasPersonality, navigate],
   );
 
   return (
@@ -139,9 +150,7 @@ export default function ConversationalOnboarding() {
                 onContinueToPersonality={() => {
                   void handleComplete({});
                 }}
-                onQuestionnairePersisted={(slice) =>
-                  setChildData((prev) => mergeChildDraft({ ...(prev ?? {}), ...slice }))
-                }
+                onQuestionnairePersisted={handleQuestionnairePersisted}
                 onQuestionnaireCleared={() => setChildData(null)}
               />
 

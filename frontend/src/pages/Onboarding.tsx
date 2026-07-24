@@ -115,7 +115,15 @@ export default function Onboarding() {
       if (!isAuthenticated) return;
       setIsSaving(true);
       try {
-        let targetId = childId && !childComplete ? childId : undefined;
+        // When the user arrived via /Onboarding/:childId (explicit edit), always reuse
+        // that child regardless of onboarding_completed. Only gate on childComplete for
+        // the auto-flow (/Onboarding with no childId) so we don't create a duplicate
+        // every time a completed child's parent revisits the wizard.
+        let targetId = childIdParam
+          ? childId
+          : childId && !childComplete
+            ? childId
+            : undefined;
 
         if (!targetId) {
           const created = await api.entities.Child.create({

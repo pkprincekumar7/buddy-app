@@ -3,6 +3,8 @@ import type { FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import InputWithVoice from '@/components/shared/InputWithVoice';
+import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
+import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 import { Button } from '@/components/ui/button';
 import {
   Send,
@@ -113,19 +115,19 @@ const OPTION_ICONS: Record<string, LucideIcon> = {
 
 // Splashes shown BEFORE advancing to the given flow index
 const PHASE_SPLASHES: Record<number, PhaseSplash> = {
-  6: {
+  2: {
     icon: '🧠',
     iconColor: 'bg-violet-500/20 text-violet-300 ring-violet-400/20',
     title: "Now let's understand how {name} thinks",
     subtitle: 'Two quick taps — pick the one that feels closest.',
-    displayStep: 5,
+    displayStep: 3,
   },
-  8: {
+  4: {
     icon: '⚡',
     iconColor: 'bg-teal-500/20 text-teal-300 ring-teal-400/20',
     title: 'Almost there — a few more about their nature ⚡',
     subtitle: 'Energy, social, emotional. One tap each. Promise.',
-    displayStep: 8,
+    displayStep: 5,
   },
 };
 
@@ -158,7 +160,9 @@ function buildReplayMessages(
     if (!step) break;
     if (step.type === 'auto') break;
     const acc = buildAccThrough(flow, data, i);
-    const botText = typeof step.message === 'function' ? step.message(acc) : step.message;
+    // Merge full `data` (contains profile fields like name) so message functions
+    // that reference data['name'] always get the child's name, even at step 0.
+    const botText = typeof step.message === 'function' ? step.message({ ...data, ...acc }) : step.message;
     if (!botText) continue;
     msgs.push({ id: newMsgId(), role: 'bot', content: botText });
     const val = data[step.field];
@@ -193,6 +197,105 @@ const ANALYZING_INITIAL: AnalyzingState = {
   dotCount: 0,
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  strengths: 'Strengths',
+  hobbies: 'Hobbies',
+  thinking_pattern: 'Thinking style',
+  communication_style: 'Communication',
+  energy_level: 'Energy level',
+  social_behaviour: 'Social behaviour',
+  emotional_behaviour: 'Emotional nature',
+};
+
+function buildResumeSummary(
+  flow: ConversationStep[],
+  data: Record<string, unknown>,
+  upToIdx: number,
+): Array<{ label: string; answer: string }> {
+  const items: Array<{ label: string; answer: string }> = [];
+  for (let i = 0; i < upToIdx; i++) {
+    const step = flow[i];
+    if (!step || step.type === 'auto') break;
+    const val = data[step.field];
+    const answer = Array.isArray(val)
+      ? val.join(', ')
+      : typeof val === 'string'
+        ? val
+        : typeof val === 'number'
+          ? String(val)
+          : '';
+    if (!answer) continue;
+    const label = FIELD_LABELS[step.field] ?? step.field;
+    items.push({ label, answer });
+  }
+  return items;
+}
+
+const TOTAL_CHAT_STEPS = 8;
+
+// ── Phase splash full-screen interstitial ─────────────────────────────────────
+
+function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
+  const progressPct = Math.round((splash.displayStep / TOTAL_CHAT_STEPS) * 100);
+  const phases: PhaseEntry[] = [
+    { num: 1, label: 'Getting to Know', status: 'active', progress: progressPct },
+    { num: 2, label: 'Personality Analysis', status: 'upcoming' },
+    { num: 3, label: 'Your Journey', status: 'upcoming' },
+  ];
+
+  return (
+    <motion.div
+      key="phase-splash"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-50 flex flex-col bg-background"
+    >
+      <OnboardingProgressHeader phases={phases} />
+
+      <div className="flex flex-1 flex-col items-center justify-center gap-8 px-8 text-center">
+        <motion.p
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+          className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50"
+        >
+          Getting to Know — Step {splash.displayStep} / {TOTAL_CHAT_STEPS}
+        </motion.p>
+
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 70, damping: 12, delay: 0.15 }}
+          className={`flex h-24 w-24 items-center justify-center rounded-full text-5xl ring-4 ${splash.iconColor}`}
+        >
+          {splash.icon}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
+          className="max-w-xs space-y-3"
+        >
+          <h2 className="text-2xl font-bold text-foreground">{splash.title}</h2>
+          <p className="text-sm text-muted-foreground">{splash.subtitle}</p>
+        </motion.div>
+
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+          className="animate-pulse text-[11px] font-bold uppercase tracking-[0.2em] text-primary"
+        >
+          One moment…
+        </motion.p>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ConversationalOnboarding({
@@ -214,6 +317,8 @@ export default function ConversationalOnboarding({
   const [analyzingState, setAnalyzingState] = useState<AnalyzingState>(ANALYZING_INITIAL);
   const [allAnswered, setAllAnswered] = useState(false);
   const [phaseSplash, setPhaseSplash] = useState<PhaseSplash | null>(null);
+  const [resumeSummary, setResumeSummary] = useState<Array<{ label: string; answer: string }> | null>(null);
+  const [summaryExpanded, setSummaryExpanded] = useState(true);
 
   const {
     show: showAnalyzing,
@@ -227,6 +332,7 @@ export default function ConversationalOnboarding({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeChildIdRef = useRef(activeChildId);
   const botMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatSessionStartedRef = useRef(false);
   const allowEmptySessionRecoveryRef = useRef(false);
@@ -235,27 +341,54 @@ export default function ConversationalOnboarding({
   const msgIdCounterRef = useRef(0);
   const newMsgId = useCallback(() => `${Date.now()}-${++msgIdCounterRef.current}`, []);
   const splashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable refs for the resume effect — avoids re-triggering it when these change
+  const conversationFlowRef = useRef<ConversationStep[]>([]);
+  const addBotMessageRef = useRef<((text: string) => void) | null>(null);
+  const newMsgIdRef = useRef(newMsgId);
 
   useEffect(() => {
     collectedDataRef.current = collectedData;
   }, [collectedData]);
 
+  useEffect(() => {
+    activeChildIdRef.current = activeChildId ?? undefined;
+  }, [activeChildId]);
+
   const persistQuestionnaireDraft = useCallback(
     (mergedCollected: Record<string, unknown>) => {
       onQuestionnairePersisted?.(mergedCollected);
       if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+      // Keep a ref to the latest data so the unmount-flush can use it
+      collectedDataRef.current = mergedCollected;
       persistTimerRef.current = setTimeout(() => {
+        persistTimerRef.current = null;
         void (async () => {
-          if (!activeChildId) return;
+          if (!activeChildIdRef.current) return;
           try {
-            await api.entities.Child.update(activeChildId, mergedCollected);
+            await api.entities.Child.update(activeChildIdRef.current, mergedCollected);
           } catch (err) {
             console.warn('[ConversationalOnboarding] Auto-persist failed:', err);
           }
         })();
       }, 500);
     },
-    [onQuestionnairePersisted, activeChildId],
+    [onQuestionnairePersisted],
+  );
+
+  // Flush any unsaved answer when the component unmounts (e.g. user navigates
+  // away before the 500 ms debounce fires).
+  useEffect(
+    () => () => {
+      if (persistTimerRef.current === null) return; // nothing pending
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+      const childId = activeChildIdRef.current;
+      const data = collectedDataRef.current;
+      if (childId && Object.keys(data).length > 0) {
+        void api.entities.Child.update(childId, data).catch(() => {});
+      }
+    },
+    [],
   );
 
   const parentName = user?.full_name?.split(' ')[0] ?? 'there';
@@ -263,42 +396,11 @@ export default function ConversationalOnboarding({
   const conversationFlow = useMemo<ConversationStep[]>(
     () => [
       {
-        id: 'greeting',
-        message: `Hey ${parentName}! Hope your day is going well.\nLet's start.\nWhat is your child's name?`,
-        field: 'name',
-        type: 'text',
-        phase: 1,
-      },
-      {
-        id: 'age',
-        message: (data) =>
-          `Wonderful! And how old is ${typeof data['name'] === 'string' ? data['name'] : ''}?`,
-        field: 'age',
-        type: 'text',
-        placeholder: 'e.g., 10 years',
-        phase: 1,
-      },
-      {
-        id: 'gender',
-        message: (data) =>
-          `Got it! What is ${typeof data['name'] === 'string' ? data['name'] : ''}'s gender?`,
-        field: 'gender',
-        type: 'choice',
-        options: ['Male', 'Female', 'Other'],
-        phase: 1,
-      },
-      {
-        id: 'school',
-        message: (data) =>
-          `Great! Which school does ${typeof data['name'] === 'string' ? data['name'] : ''} go to?`,
-        field: 'school',
-        type: 'text',
-        phase: 1,
-      },
-      {
         id: 'ready_check',
-        message: (data) =>
-          `Fantastic. Let's start exploring ${typeof data['name'] === 'string' ? data['name'] : ''}'s best version for life right away.\nMention the top 3 strengths that ${typeof data['name'] === 'string' ? data['name'] : ''} has from your perspective.`,
+        message: (data) => {
+          const name = typeof data['name'] === 'string' && data['name'] ? data['name'] : 'your child';
+          return `Hey ${parentName}! Let's now explore what makes ${name} unique.\nMention the top 3 strengths that ${name} has from your perspective.`;
+        },
         field: 'strengths',
         type: 'multi_text',
         placeholder: 'e.g., Intelligent, Energetic, Well-mannered',
@@ -412,6 +514,18 @@ export default function ConversationalOnboarding({
     [speak, newMsgId],
   );
 
+  // Keep stable refs in sync so the resume effect can read them without
+  // needing them as deps (which would cause the effect to re-fire and race).
+  useEffect(() => {
+    conversationFlowRef.current = conversationFlow;
+  });
+  useEffect(() => {
+    addBotMessageRef.current = addBotMessage;
+  });
+  useEffect(() => {
+    newMsgIdRef.current = newMsgId;
+  });
+
   useEffect(
     () => () => {
       if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current);
@@ -425,16 +539,19 @@ export default function ConversationalOnboarding({
     [],
   );
 
-  // Resume hydration
+  // Resume hydration — deps are intentionally minimal to prevent race conditions.
+  // conversationFlow, addBotMessage, newMsgId are read via stable refs so that a
+  // parentName change (user loading after render) doesn't cancel an in-flight fetch.
   useEffect(() => {
     if (!resumeHydrationReady) return;
     let cancelled = false;
+    const childId = activeChildIdRef.current;
 
     void (async () => {
       try {
         let slim: Record<string, unknown> = {};
         const [child, prefs] = await Promise.all([
-          activeChildId ? api.entities.Child.get(activeChildId) : Promise.resolve(null),
+          childId ? api.entities.Child.get(childId) : Promise.resolve(null),
           api.preferences.get(),
         ]);
         slim = child
@@ -444,6 +561,10 @@ export default function ConversationalOnboarding({
           voiceEnabledRef.current = prefs.tts_enabled;
         }
         if (cancelled) return;
+
+        const flow = conversationFlowRef.current;
+        const addBot = addBotMessageRef.current!;
+        const msgId = newMsgIdRef.current;
 
         const hasSaved = Object.keys(slim).length > 0;
 
@@ -458,14 +579,15 @@ export default function ConversationalOnboarding({
         chatSessionStartedRef.current = true;
         allowEmptySessionRecoveryRef.current = !hasSaved;
 
-        const autoIx = conversationFlow.findIndex((s) => s.type === 'auto');
+        const autoIx = flow.findIndex((s) => s.type === 'auto');
         const answered =
           autoIx >= 0 && CHATBOT_CAPTURED_FIELDS.every((f) => questionnaireFieldHasValue(f, slim));
 
         if (hasSaved && answered && autoIx >= 0) {
-          const replay = buildReplayMessages(conversationFlow, slim, autoIx, newMsgId);
+          // All answered — show full summary, no messages needed
+          setResumeSummary(buildResumeSummary(flow, slim, autoIx));
           setCollectedData({ ...slim });
-          setMessages(replay);
+          setMessages([]);
           setCurrentStep(autoIx);
           setWaitingForResponse(false);
           setAnalyzingState(ANALYZING_INITIAL);
@@ -474,23 +596,28 @@ export default function ConversationalOnboarding({
         }
 
         if (!hasSaved) {
-          const firstStep = conversationFlow[0];
+          const firstStep = flow[0];
           const firstMessage = firstStep
             ? typeof firstStep.message === 'function'
-              ? firstStep.message({})
+              ? firstStep.message(slim)
               : firstStep.message
             : '';
-          addBotMessage(firstMessage);
+          setCollectedData({ ...slim });
+          addBot(firstMessage);
           return;
         }
 
-        const resumeIdx = findResumeStepIndex(conversationFlow, slim);
-        const replay = buildReplayMessages(conversationFlow, slim, resumeIdx, newMsgId);
+        const resumeIdx = findResumeStepIndex(flow, slim);
+        // Show a compact summary of already-answered questions instead of
+        // replaying individual message bubbles (which get clipped by slice(-6)).
+        if (resumeIdx > 0) {
+          setResumeSummary(buildResumeSummary(flow, slim, resumeIdx));
+        }
         setCollectedData({ ...slim });
-        setMessages(replay);
+        setMessages([]);
         setCurrentStep(resumeIdx);
 
-        const stepAt = conversationFlow[resumeIdx];
+        const stepAt = flow[resumeIdx];
         if (!stepAt) return;
         if (stepAt.type === 'auto') {
           setWaitingForResponse(false);
@@ -499,10 +626,12 @@ export default function ConversationalOnboarding({
           return;
         }
 
-        const accR = buildAccThrough(conversationFlow, slim, resumeIdx);
+        const accR = buildAccThrough(flow, slim, resumeIdx);
         const nextBot =
-          typeof stepAt.message === 'function' ? stepAt.message(accR) : stepAt.message;
-        addBotMessage(nextBot);
+          typeof stepAt.message === 'function'
+            ? stepAt.message({ ...slim, ...accR })
+            : stepAt.message;
+        addBot(nextBot);
       } catch (err) {
         console.warn('[ConversationalOnboarding] Resume hydration failed:', err);
       }
@@ -511,7 +640,7 @@ export default function ConversationalOnboarding({
     return () => {
       cancelled = true;
     };
-  }, [resumeHydrationReady, conversationFlow, addBotMessage, newMsgId, activeChildId]);
+  }, [resumeHydrationReady, activeChildId]);
 
   // Smooth scroll to bottom
   useEffect(() => {
@@ -845,49 +974,72 @@ export default function ConversationalOnboarding({
         </div>
       </div>
 
-      {/* Phase splash overlay */}
-      <AnimatePresence>
-        {phaseSplash && (
-          <motion.div
-            key="phase-splash"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.35 }}
-            className="flex flex-col items-center justify-center gap-5 px-8 py-16 text-center"
-          >
-            <motion.div
-              initial={{ scale: 0.6, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 80, damping: 12 }}
-              className={`flex h-20 w-20 items-center justify-center rounded-full text-4xl ring-4 ${phaseSplash.iconColor}`}
-            >
-              {phaseSplash.icon}
-            </motion.div>
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.45 }}
-              className="space-y-2"
-            >
-              <h2 className="text-xl font-bold text-foreground">{phaseSplash.title}</h2>
-              <p className="text-sm text-muted-foreground">{phaseSplash.subtitle}</p>
-            </motion.div>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="animate-pulse text-xs font-semibold uppercase tracking-wider text-primary"
-            >
-              One moment…
-            </motion.p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Phase splash — full-screen overlay (rendered outside the card via fixed positioning) */}
+      <AnimatePresence>{phaseSplash && <PhaseSplashScreen splash={phaseSplash} />}</AnimatePresence>
 
       {/* Main chat area (hidden during splash) */}
       {!phaseSplash && (
         <>
+          {/* Previously answered summary card */}
+          {resumeSummary && resumeSummary.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="border-b border-white/[0.06] bg-surface-elevated/60 px-4 py-3"
+            >
+              <button
+                type="button"
+                onClick={() => setSummaryExpanded((p) => !p)}
+                className="flex w-full items-center justify-between gap-2 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
+                    ✓
+                  </span>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Previously answered · {resumeSummary.length} of 7
+                  </span>
+                </div>
+                <svg
+                  viewBox="0 0 16 16"
+                  className={`h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-200 ${summaryExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="4 6 8 10 12 6" />
+                </svg>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {summaryExpanded && (
+                  <motion.div
+                    key="summary-items"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-2.5 space-y-1.5">
+                      {resumeSummary.map((item) => (
+                        <div key={item.label} className="flex items-baseline gap-2 text-xs">
+                          <span className="w-28 shrink-0 font-medium text-muted-foreground/70">
+                            {item.label}
+                          </span>
+                          <span className="text-foreground/80">{item.answer}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+
           {/* Messages */}
           <div
             ref={scrollContainerRef}
