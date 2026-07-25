@@ -174,7 +174,7 @@ run "pip-audit" \
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED={'GHSA-qwww-vcr4-c8h2'}
+IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg'}
 d=json.load(sys.stdin)
 def is_ignored(v, all_vulns):
     for x in v.get('via',[]):
@@ -190,10 +190,26 @@ bad=[k for k,v in vulns.items() if v['severity'] in ('high','critical') and not 
 sys.exit(1 if bad else 0)
 \""
 
-# yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless of
-# --level, so we check the exit code manually: fail only on high (8) or critical (16).
+# yarn v1 --json outputs NDJSON; parse it to filter known-acceptable advisories before
+# checking severity. Fail only on unignored high (bit 3) or critical (bit 4) findings.
+# Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev tooling
+# (eslint, jest), never shipped to the production bundle.
 run "yarn audit (frontend-app)" \
-    bash -c "cd '$FRONTEND_APP' && yarn audit --level high; code=\$?; [ \$(( code & 24 )) -eq 0 ]"
+    bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
+import json,sys
+IGNORED_IDS={1124334}
+high=0
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try: obj=json.loads(line)
+    except: continue
+    if obj.get('type')!='auditAdvisory': continue
+    adv=obj['data']['advisory']
+    if adv.get('id') in IGNORED_IDS: continue
+    if adv.get('severity') in ('high','critical'): high+=1
+sys.exit(1 if high else 0)
+\""
 
 # retire-jsrepo.json is downloaded by the bootstrap above (refreshed every 7 days).
 # --jsrepo avoids retire.js making its own network request on every invocation.

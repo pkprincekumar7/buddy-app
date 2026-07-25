@@ -332,7 +332,7 @@ jobs:
         run: |
           npm audit --json 2>/dev/null | python3 -c "
           import json,sys
-          IGNORED={'GHSA-qwww-vcr4-c8h2'}
+          IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg'}
           d=json.load(sys.stdin)
           def is_ignored(v, all_vulns):
               for x in v.get('via',[]):
@@ -352,11 +352,25 @@ jobs:
       - name: yarn audit (frontend-app dependency CVEs)
         id: yarn_audit_frontend_app
         continue-on-error: true
-        # yarn v1 exits with a severity bitmask (4=moderate 8=high 16=critical) regardless
-        # of --level. Check the exit code manually: fail only on high(8) or critical(16).
+        # yarn v1 --json outputs NDJSON; parse it to filter known-acceptable advisories.
+        # Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev
+        # tooling (eslint, jest), never shipped to the production bundle.
         run: |
-          yarn audit --level high || code=$?
-          [ $(( ${code:-0} & 24 )) -eq 0 ]
+          yarn audit --json 2>/dev/null | python3 -c "
+          import json,sys
+          IGNORED_IDS={1124334}
+          high=0
+          for line in sys.stdin:
+              line=line.strip()
+              if not line: continue
+              try: obj=json.loads(line)
+              except: continue
+              if obj.get('type')!='auditAdvisory': continue
+              adv=obj['data']['advisory']
+              if adv.get('id') in IGNORED_IDS: continue
+              if adv.get('severity') in ('high','critical'): high+=1
+          sys.exit(1 if high else 0)
+          "
         working-directory: frontend-app
 
       - name: Restore retire.js database cache

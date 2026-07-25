@@ -2,3 +2,8 @@
 # This is a Windows-platform NuGet dependency inside node_modules.
 # The app targets Android and iOS only — the Windows code path is never compiled or shipped.
 CVE-2024-21907
+
+# CVE-2026-14257 / GHSA-mh99-v99m-4gvg: brace-expansion DoS (< 5.0.8)
+# Transitive dependency of eslint and jest — dev tooling only.
+# Not included in any shipped binary (Android APK or iOS IPA).
+CVE-2026-14257
