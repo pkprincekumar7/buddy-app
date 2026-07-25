@@ -14,7 +14,6 @@ import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import { applyTheme } from '@/lib/theme';
 import type { UserRecord, ChildRecord } from '@/types/api';
 
 type UserData = UserRecord;
@@ -73,11 +72,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       ]);
       setUser(currentUser);
       setChildProfiles(children);
-      // Sync DB dark_mode → localStorage + <html> class so ALL pages (including
-      // Login/Register) pick up the correct theme on next load via the inline script.
-      if (typeof prefs.dark_mode === 'boolean') {
-        applyTheme(prefs.dark_mode);
-      }
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);

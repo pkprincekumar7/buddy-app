@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check } from 'lucide-react';
+import { Check, Brain, Star, Sprout, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
@@ -22,10 +22,46 @@ import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeade
 // ── Analysis checklist steps ────────────────────────────────────────────────
 
 const ANALYSIS_STEPS = [
-  { label: 'Processing questionnaire' },
-  { label: 'Matching personality patterns' },
-  { label: "Building your child's profile" },
-  { label: 'Preparing your results' },
+  {
+    label: 'Reading personality traits',
+    Icon: Brain,
+    heading: (name: string) => `Reading ${name}'s personality traits...`,
+    subtitle: 'Looking at how your child thinks, feels and responds.',
+    iconBg: 'bg-primary/15',
+    iconColor: 'text-primary',
+    glow: 'shadow-[0_0_28px_rgba(45,212,191,0.2)]',
+    ring: 'ring-primary/20',
+  },
+  {
+    label: 'Mapping strengths & interests',
+    Icon: Star,
+    heading: (_name: string) => 'Mapping strengths & interests...',
+    subtitle: "Connecting the dots between what they love and what they're great at.",
+    iconBg: 'bg-amber-500/15',
+    iconColor: 'text-amber-400',
+    glow: 'shadow-[0_0_28px_rgba(245,158,11,0.2)]',
+    ring: 'ring-amber-400/20',
+  },
+  {
+    label: 'Building growth profile',
+    Icon: Sprout,
+    heading: (_name: string) => 'Building the growth profile...',
+    subtitle: 'Shaping a personal plan rooted in their unique strengths.',
+    iconBg: 'bg-primary/15',
+    iconColor: 'text-primary',
+    glow: 'shadow-[0_0_28px_rgba(45,212,191,0.2)]',
+    ring: 'ring-primary/20',
+  },
+  {
+    label: 'Finalizing personalized journey',
+    Icon: Compass,
+    heading: (_name: string) => 'Finalizing the personalized journey...',
+    subtitle: 'Almost there — preparing recommendations made just for them.',
+    iconBg: 'bg-violet-500/15',
+    iconColor: 'text-violet-400',
+    glow: 'shadow-[0_0_28px_rgba(139,92,246,0.2)]',
+    ring: 'ring-violet-400/20',
+  },
 ];
 
 const HEADER_PHASES: PhaseEntry[] = [
@@ -39,142 +75,126 @@ const HEADER_PHASES: PhaseEntry[] = [
 function AnalysisLoadingScreen({
   childName,
   completedSteps,
+  progressPct,
 }: {
   childName: string;
   completedSteps: number;
+  progressPct: number;
 }) {
+  const activeIdx = Math.min(completedSteps, ANALYSIS_STEPS.length - 1);
+  const activeStep = ANALYSIS_STEPS[activeIdx] ?? ANALYSIS_STEPS[0]!;
+  const stepNum = Math.min(completedSteps + 1, ANALYSIS_STEPS.length);
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4">
+    <div className="flex min-h-screen flex-col items-start bg-background px-4">
       <OnboardingProgressHeader phases={HEADER_PHASES} />
 
-      <div className="w-full max-w-sm space-y-6 text-center">
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 70, damping: 12 }}
-          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 shadow-[0_0_28px_rgba(45,212,191,0.2)] ring-4 ring-primary/20"
-        >
-          <motion.div
-            animate={{ rotate: completedSteps >= ANALYSIS_STEPS.length ? 0 : 360 }}
-            transition={
-              completedSteps >= ANALYSIS_STEPS.length
-                ? { duration: 0.3 }
-                : { duration: 2.4, repeat: Infinity, ease: 'linear' }
-            }
-          >
-            {completedSteps >= ANALYSIS_STEPS.length ? (
-              <Check className="h-10 w-10 text-primary" />
-            ) : (
-              <svg viewBox="0 0 40 42" className="h-10 w-10" fill="none">
-                <line
-                  x1="20"
-                  y1="34"
-                  x2="20"
-                  y2="22"
-                  stroke="hsl(174 72% 56%)"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M20 28 C20 22 13 18 13 13 C13 8.5 16.2 6 20 6 C23.8 6 27 8.5 27 13 C27 18 20 22 20 28"
-                  stroke="hsl(174 72% 56%)"
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  fill="none"
-                />
-              </svg>
-            )}
-          </motion.div>
-        </motion.div>
+      <div className="flex w-full flex-1 flex-col items-center justify-center gap-6 pb-8">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
+          Personality Analysis · Step {stepNum} / {ANALYSIS_STEPS.length}
+        </p>
 
-        <div className="space-y-1.5">
-          <motion.h2
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-            className="text-xl font-bold text-foreground"
-          >
-            Analysing <span className="text-primary">{childName || 'your child'}</span>
-            's personality
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="text-sm text-muted-foreground"
-          >
-            This takes a moment — hang tight!
-          </motion.p>
-        </div>
+        <div className="w-full max-w-sm space-y-6 rounded-2xl border border-white/[0.08] bg-card p-6 text-center">
+          {/* Step icon */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeIdx}
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.7, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 200, damping: 18 }}
+              className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${activeStep.iconBg} ${activeStep.glow} ring-4 ${activeStep.ring}`}
+            >
+              <activeStep.Icon className={`h-10 w-10 ${activeStep.iconColor}`} />
+            </motion.div>
+          </AnimatePresence>
 
-        {/* Checklist */}
-        <div className="space-y-3">
-          {ANALYSIS_STEPS.map((step, idx) => {
-            const isDone = idx < completedSteps;
-            const isActive = idx === completedSteps;
-            return (
+          {/* Heading + subtitle */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`text-${activeIdx}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.35 }}
+              className="space-y-1.5"
+            >
+              <h2 className="text-xl font-bold text-foreground">
+                {activeStep.heading(childName || 'your child')}
+              </h2>
+              <p className="text-sm text-muted-foreground">{activeStep.subtitle}</p>
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Progress bar */}
+          <div className="space-y-1.5">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]">
               <motion.div
-                key={step.label}
-                initial={{ opacity: 0, x: -16 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.6 + idx * 0.18, duration: 0.4, ease: 'easeOut' }}
-                className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${
-                  isDone
-                    ? 'border-primary/30 bg-primary/[0.07]'
-                    : isActive
-                      ? 'border-white/[0.12] bg-surface-elevated'
-                      : 'border-white/[0.06] bg-transparent opacity-40'
-                }`}
-              >
-                <div
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
+                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-400"
+                initial={{ width: '0%' }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+              />
+            </div>
+            <p className="text-xs font-semibold tracking-wider text-muted-foreground">
+              {progressPct}%
+            </p>
+          </div>
+
+          {/* Checklist */}
+          <div className="space-y-2.5">
+            {ANALYSIS_STEPS.map((step, idx) => {
+              const isDone = idx < completedSteps;
+              const isActive = idx === completedSteps;
+              return (
+                <motion.div
+                  key={step.label}
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 + idx * 0.12, duration: 0.4, ease: 'easeOut' }}
+                  className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${
                     isDone
-                      ? 'border-primary bg-primary'
+                      ? 'border-primary/30 bg-primary/[0.07]'
                       : isActive
-                        ? 'border-primary/60 bg-transparent'
-                        : 'border-white/[0.15] bg-transparent'
+                        ? 'border-primary/40 bg-surface-elevated'
+                        : 'border-white/[0.06] bg-transparent opacity-40'
                   }`}
                 >
-                  {isDone ? (
+                  <step.Icon
+                    className={`h-4 w-4 shrink-0 ${
+                      isDone ? 'text-primary' : isActive ? 'text-foreground/70' : 'text-muted-foreground/30'
+                    }`}
+                  />
+                  <span
+                    className={`text-sm font-medium ${
+                      isDone ? 'text-primary' : isActive ? 'text-foreground' : 'text-muted-foreground/40'
+                    }`}
+                  >
+                    {step.label}
+                    {isActive && (
+                      <motion.span
+                        animate={{ opacity: [0.4, 1, 0.4] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="ml-1"
+                      >
+                        ...
+                      </motion.span>
+                    )}
+                  </span>
+                  {isDone && (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: 'spring', stiffness: 200 }}
+                      className="ml-auto"
                     >
-                      <Check className="h-3.5 w-3.5 text-primary-foreground" />
+                      <Check className="h-3.5 w-3.5 text-primary" />
                     </motion.div>
-                  ) : isActive ? (
-                    <motion.div
-                      animate={{ scale: [0.8, 1.2, 0.8] }}
-                      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                      className="h-2 w-2 rounded-full bg-primary"
-                    />
-                  ) : null}
-                </div>
-                <span
-                  className={`text-sm font-medium ${
-                    isDone
-                      ? 'text-primary'
-                      : isActive
-                        ? 'text-foreground'
-                        : 'text-muted-foreground/40'
-                  }`}
-                >
-                  {step.label}
-                </span>
-                {isActive && (
-                  <motion.span
-                    animate={{ opacity: [0.4, 1, 0.4] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className="ml-auto text-xs text-primary"
-                  >
-                    …
-                  </motion.span>
-                )}
-              </motion.div>
-            );
-          })}
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -193,6 +213,7 @@ export default function PersonalityType() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(false);
   const [completedSteps, setCompletedSteps] = useState(0);
+  const [progressPct, setProgressPct] = useState(0);
   const [navigatingAway, setNavigatingAway] = useState(false);
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
@@ -236,18 +257,26 @@ export default function PersonalityType() {
     const progress = Math.min((job.elapsedMs / 1000 / 30) * 100, 95);
     const steps = progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 95 ? 3 : 4;
     setCompletedSteps(steps);
+    setProgressPct(Math.round(progress));
   }, [job.isLoading, job.elapsedMs, mbtiResult]);
 
-  // Animate all steps done → navigate to journey
+  // When job is done, animate remaining steps one-by-one then navigate
   useEffect(() => {
     if (!mbtiResult || navigatingAway) return;
-    setCompletedSteps(ANALYSIS_STEPS.length);
+    if (completedSteps < ANALYSIS_STEPS.length) {
+      const next = completedSteps + 1;
+      const t = setTimeout(() => {
+        setCompletedSteps(next);
+        setProgressPct(Math.round((next / ANALYSIS_STEPS.length) * 100));
+      }, 600);
+      return () => clearTimeout(t);
+    }
     const t = setTimeout(() => {
       setNavigatingAway(true);
       void navigate(`/PersonalityJourney/${childId ?? ''}`);
-    }, 1600);
+    }, 1200);
     return () => clearTimeout(t);
-  }, [mbtiResult, childId, navigate, navigatingAway]);
+  }, [mbtiResult, completedSteps, navigatingAway, childId, navigate]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -368,35 +397,13 @@ export default function PersonalityType() {
     );
   }
 
-  // Analysing — show animated checklist
-  if (!mbtiResult || navigatingAway) {
-    return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key="analysing"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.4 }}
-        >
-          <AnalysisLoadingScreen childName={childName} completedSteps={completedSteps} />
-        </motion.div>
-      </AnimatePresence>
-    );
-  }
-
-  // mbtiResult ready → will navigate away via useEffect above; show completion briefly
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key="complete"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        <AnalysisLoadingScreen childName={childName} completedSteps={ANALYSIS_STEPS.length} />
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      <AnalysisLoadingScreen childName={childName} completedSteps={completedSteps} progressPct={progressPct} />
+    </motion.div>
   );
 }

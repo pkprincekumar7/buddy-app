@@ -1068,7 +1068,7 @@ export default function ConversationalOnboarding({
             <div className="shrink-0 px-4 pb-4">
               <Button
                 type="button"
-                className="h-12 w-full rounded-2xl bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700"
+                className="h-12 rounded-full bg-blue-600 px-8 text-white hover:bg-blue-500 active:bg-blue-700"
                 onClick={() => onContinueToPersonality()}
               >
                 Continue to personality analysis

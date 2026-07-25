@@ -6,8 +6,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { readStoredDarkMode, applyTheme } from '@/lib/theme';
-import { Home, LogOut, VolumeX, Volume2, Mail, Sun, Moon, RotateCcw } from 'lucide-react';
+import { Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
@@ -32,9 +31,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
-  const [darkMode, setDarkMode] = useState(readStoredDarkMode);
-  // Initialise ref in sync with state so handleToggleDarkMode is correct before first useEffect.
-  const darkModeRef = useRef(readStoredDarkMode());
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,12 +65,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     if (!ttsEnabled && typeof window !== 'undefined') window.speechSynthesis.cancel();
   }, [ttsEnabled]);
 
-  /** Sync dark/light class on <html> + localStorage whenever darkMode changes. */
-  useEffect(() => {
-    darkModeRef.current = darkMode;
-    applyTheme(darkMode);
-  }, [darkMode]);
-
   /** After login, load saved voice + theme preferences from DB. */
   useEffect(() => {
     let cancelled = false;
@@ -87,11 +77,9 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
       try {
         const prefs = (await api.preferences.get()) as {
           tts_enabled?: boolean;
-          dark_mode?: boolean;
         };
         if (!cancelled) {
           if (typeof prefs.tts_enabled === 'boolean') setTtsEnabled(prefs.tts_enabled);
-          if (typeof prefs.dark_mode === 'boolean') setDarkMode(prefs.dark_mode);
         }
       } catch (err) {
         console.warn('[Layout] Could not load preferences:', err);
@@ -132,17 +120,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
       await api.preferences.patch({ tts_enabled: next });
     } catch (err) {
       console.warn('[Layout] Could not persist TTS toggle:', err);
-    }
-  }, []);
-
-  /** Theme toggle: optimistic UI + persist so next session matches. */
-  const handleToggleDarkMode = useCallback(async () => {
-    const next = !darkModeRef.current;
-    setDarkMode(next);
-    try {
-      await api.preferences.patch({ dark_mode: next });
-    } catch (err) {
-      console.warn('[Layout] Could not persist theme toggle:', err);
     }
   }, []);
 
@@ -191,21 +168,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
 
             {/* Right side controls */}
             <div className="flex items-center gap-2">
-              {/* Dark / Light mode toggle */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  void handleToggleDarkMode();
-                }}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground"
-                title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-                aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-                aria-pressed={darkMode}
-              >
-                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-
               {/* TTS Toggle */}
               <Button
                 variant="ghost"

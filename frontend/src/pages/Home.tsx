@@ -167,7 +167,7 @@ export default function Home() {
               capable individual.
             </p>
 
-            <div className="flex flex-col justify-center gap-4 sm:flex-row">
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               {children.length === 0 ? (
                 <Button
                   size="xl"

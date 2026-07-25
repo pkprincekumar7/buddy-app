@@ -13,7 +13,6 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
-import { readStoredDarkMode, applyTheme } from '@/lib/theme';
 
 const GrowthAreasActivity = lazy(() => import('./pages/GrowthAreasActivity'));
 const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGame'));
@@ -302,13 +301,6 @@ function AppShell() {
 }
 
 function App() {
-  // Apply theme from localStorage on every React mount (covers all routes, including
-  // Login/Register where Layout doesn't render). The inline script in index.html
-  // handles zero-flash on hard reload; this catches Vite HMR and in-app navigations.
-  useEffect(() => {
-    applyTheme(readStoredDarkMode());
-  }, []);
-
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>

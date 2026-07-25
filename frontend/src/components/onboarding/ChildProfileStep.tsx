@@ -3,19 +3,113 @@ import { motion } from 'framer-motion';
 import { Camera, Upload, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
+
+// ── Inline SVG avatar illustrations ──────────────────────────────────────────
+
+const CapperSVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    <circle cx="30" cy="41" r="19" fill="#FDDCB5" />
+    {/* Cap crown — flat top */}
+    <path d="M10 30 Q10 11 30 11 Q50 11 50 30 Z" fill="#1a1a1a" />
+    {/* Wide flat brim */}
+    <rect x="4" y="27" width="52" height="7" rx="3.5" fill="#111" />
+    <circle cx="23" cy="40" r="2.5" fill="#2C2C2C" />
+    <circle cx="37" cy="40" r="2.5" fill="#2C2C2C" />
+    <path d="M23 48 Q30 54 37 48" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const CurlySVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    {/* Compact wavy hair — no side puffing */}
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#8B4513" />
+    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const SpecsSVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    <path d="M11 36 Q11 15 30 15 Q49 15 49 36" fill="#1a1a1a" />
+    <circle cx="22" cy="40" r="7" fill="none" stroke="#222" strokeWidth="2.5" />
+    <circle cx="38" cy="40" r="7" fill="none" stroke="#222" strokeWidth="2.5" />
+    <path d="M29 40 L31 40" stroke="#222" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M9 39 L15 39" stroke="#222" strokeWidth="2" strokeLinecap="round" />
+    <path d="M45 39 L51 39" stroke="#222" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="22" cy="41" r="1.5" fill="#333" />
+    <circle cx="38" cy="41" r="1.5" fill="#333" />
+    <path d="M24 49 Q30 54 36 49" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const BraidSVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    {/* Narrow pigtail braids — behind face */}
+    <rect x="3" y="38" width="9" height="20" rx="4.5" fill="#C8854A" />
+    <rect x="48" y="38" width="9" height="20" rx="4.5" fill="#C8854A" />
+    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    {/* Top hair */}
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#C8854A" />
+    {/* Pink hair ties */}
+    <circle cx="8" cy="38" r="4" fill="#FF85B3" />
+    <circle cx="52" cy="38" r="4" fill="#FF85B3" />
+    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const GirlCurlsSVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    {/* Big voluminous curly hair — wide ellipse surrounding face */}
+    <ellipse cx="30" cy="28" rx="24" ry="22" fill="#C8854A" />
+    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
+
+const BowSVG = () => (
+  <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
+    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    {/* Hair */}
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#C8854A" />
+    {/* Bow left wing */}
+    <path d="M20 13 C20 6 29 6 30 13 C29 20 20 20 20 13 Z" fill="#FF85B3" />
+    {/* Bow right wing */}
+    <path d="M40 13 C40 6 31 6 30 13 C31 20 40 20 40 13 Z" fill="#FF85B3" />
+    {/* Bow knot */}
+    <circle cx="30" cy="13" r="3" fill="#E0449A" />
+    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </svg>
+);
 
 // ── Avatar definitions ────────────────────────────────────────────────────────
 
-const BOY_AVATARS = [
-  { id: 'capper-boy', label: 'Capper', bg: 'bg-teal-600', emoji: '🧢' },
-  { id: 'curly-boy', label: 'Curly', bg: 'bg-violet-600', emoji: '🦱' },
-  { id: 'specs-boy', label: 'Specs', bg: 'bg-amber-600', emoji: '🤓' },
+interface AvatarDef {
+  id: string;
+  label: string;
+  bg: string;
+  emoji: ReactNode;
+}
+
+const BOY_AVATARS: AvatarDef[] = [
+  { id: 'capper-boy', label: 'Capper', bg: 'bg-teal-600', emoji: <CapperSVG /> },
+  { id: 'curly-boy', label: 'Curly', bg: 'bg-violet-600', emoji: <CurlySVG /> },
+  { id: 'specs-boy', label: 'Specs', bg: 'bg-amber-600', emoji: <SpecsSVG /> },
 ];
 
-const GIRL_AVATARS = [
-  { id: 'braid-girl', label: 'Braid', bg: 'bg-pink-600', emoji: '👧' },
-  { id: 'curls-girl', label: 'Curls', bg: 'bg-rose-600', emoji: '💁‍♀️' },
-  { id: 'bow-girl', label: 'Bow', bg: 'bg-fuchsia-600', emoji: '🎀' },
+const GIRL_AVATARS: AvatarDef[] = [
+  { id: 'braid-girl', label: 'Braid', bg: 'bg-pink-600', emoji: <BraidSVG /> },
+  { id: 'curls-girl', label: 'Curls', bg: 'bg-rose-600', emoji: <GirlCurlsSVG /> },
+  { id: 'bow-girl', label: 'Bow', bg: 'bg-fuchsia-600', emoji: <BowSVG /> },
 ];
 
 const ALL_AVATARS = [...BOY_AVATARS, ...GIRL_AVATARS];

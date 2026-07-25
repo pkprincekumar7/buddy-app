@@ -108,7 +108,6 @@ export interface EnqueueJobResponse {
 
 export interface PreferencesRecord {
   tts_enabled?: boolean;
-  dark_mode?: boolean;
   last_visited_path?: string;
   [key: string]: unknown;
 }
