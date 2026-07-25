@@ -64,12 +64,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
       const currentUser = await api.auth.me();
-      const [children, prefs] = await Promise.all([
-        currentUser.role === 'admin'
-          ? Promise.resolve([])
-          : api.entities.Child.list('-created_date'),
-        api.preferences.get(),
-      ]);
+      const children =
+        currentUser.role === 'admin' ? [] : await api.entities.Child.list('-created_date');
       setUser(currentUser);
       setChildProfiles(children);
       setIsAuthenticated(true);

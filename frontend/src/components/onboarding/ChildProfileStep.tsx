@@ -16,7 +16,13 @@ const CapperSVG = () => (
     <rect x="4" y="27" width="52" height="7" rx="3.5" fill="#111" />
     <circle cx="23" cy="40" r="2.5" fill="#2C2C2C" />
     <circle cx="37" cy="40" r="2.5" fill="#2C2C2C" />
-    <path d="M23 48 Q30 54 37 48" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M23 48 Q30 54 37 48"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -27,7 +33,13 @@ const CurlySVG = () => (
     <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#8B4513" />
     <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
     <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
-    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M23 47 Q30 53 37 47"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -42,7 +54,13 @@ const SpecsSVG = () => (
     <path d="M45 39 L51 39" stroke="#222" strokeWidth="2" strokeLinecap="round" />
     <circle cx="22" cy="41" r="1.5" fill="#333" />
     <circle cx="38" cy="41" r="1.5" fill="#333" />
-    <path d="M24 49 Q30 54 36 49" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M24 49 Q30 54 36 49"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -59,7 +77,13 @@ const BraidSVG = () => (
     <circle cx="52" cy="38" r="4" fill="#FF85B3" />
     <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
     <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
-    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M23 47 Q30 53 37 47"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -70,7 +94,13 @@ const GirlCurlsSVG = () => (
     <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
     <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
     <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
-    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M23 47 Q30 53 37 47"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 
@@ -87,7 +117,13 @@ const BowSVG = () => (
     <circle cx="30" cy="13" r="3" fill="#E0449A" />
     <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
     <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
-    <path d="M23 47 Q30 53 37 47" stroke="#2C2C2C" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+    <path
+      d="M23 47 Q30 53 37 47"
+      stroke="#2C2C2C"
+      strokeWidth="1.5"
+      fill="none"
+      strokeLinecap="round"
+    />
   </svg>
 );
 

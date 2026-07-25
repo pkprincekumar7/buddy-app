@@ -42,12 +42,37 @@ const TOTAL_STEPS = 8;
 
 // ── Strength badge styles ─────────────────────────────────────────────────────
 const STRENGTH_BADGE_STYLES = [
-  { numBg: 'bg-indigo-500/20', numText: 'text-indigo-400', numBorder: 'border-indigo-500/25', Icon: Info },
+  {
+    numBg: 'bg-indigo-500/20',
+    numText: 'text-indigo-400',
+    numBorder: 'border-indigo-500/25',
+    Icon: Info,
+  },
   { numBg: 'bg-teal-500/20', numText: 'text-teal-400', numBorder: 'border-teal-500/25', Icon: Eye },
-  { numBg: 'bg-amber-500/20', numText: 'text-amber-400', numBorder: 'border-amber-500/25', Icon: Smile },
-  { numBg: 'bg-rose-500/20', numText: 'text-rose-400', numBorder: 'border-rose-500/25', Icon: Users },
-  { numBg: 'bg-emerald-500/20', numText: 'text-emerald-400', numBorder: 'border-emerald-500/25', Icon: Heart },
-  { numBg: 'bg-violet-500/20', numText: 'text-violet-400', numBorder: 'border-violet-500/25', Icon: Sparkles },
+  {
+    numBg: 'bg-amber-500/20',
+    numText: 'text-amber-400',
+    numBorder: 'border-amber-500/25',
+    Icon: Smile,
+  },
+  {
+    numBg: 'bg-rose-500/20',
+    numText: 'text-rose-400',
+    numBorder: 'border-rose-500/25',
+    Icon: Users,
+  },
+  {
+    numBg: 'bg-emerald-500/20',
+    numText: 'text-emerald-400',
+    numBorder: 'border-emerald-500/25',
+    Icon: Heart,
+  },
+  {
+    numBg: 'bg-violet-500/20',
+    numText: 'text-violet-400',
+    numBorder: 'border-violet-500/25',
+    Icon: Sparkles,
+  },
 ] as const;
 
 // ── Sub-screens ───────────────────────────────────────────────────────────────
@@ -229,7 +254,8 @@ function InANutshellScreen({
     let colorIdx = 0;
     return parts.map((part, i) => {
       if (sorted.some((t) => t.toLowerCase() === part.toLowerCase())) {
-        const color = HIGHLIGHT_COLORS[colorIdx++ % HIGHLIGHT_COLORS.length] ?? HIGHLIGHT_COLORS[0]!;
+        const color =
+          HIGHLIGHT_COLORS[colorIdx++ % HIGHLIGHT_COLORS.length] ?? HIGHLIGHT_COLORS[0]!;
         return (
           <span key={i} className={`font-semibold ${color}`}>
             {part}
@@ -294,12 +320,13 @@ function StrengthsIntroScreen({
   useEffect(() => {
     const t = setTimeout(() => onCompleteRef.current(), 2800);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="relative flex min-h-[55vh] flex-col items-center justify-center gap-6 text-center">
-      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">Friendly pause...</p>
+      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">
+        Friendly pause...
+      </p>
 
       <motion.div
         initial={{ scale: 0, opacity: 0 }}
@@ -430,13 +457,7 @@ function StrengthsScreen({
   );
 }
 
-function WhatsNextScreen({
-  childName,
-  onComplete,
-}: {
-  childName: string;
-  onComplete: () => void;
-}) {
+function WhatsNextScreen({ childName, onComplete }: { childName: string; onComplete: () => void }) {
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -445,12 +466,13 @@ function WhatsNextScreen({
   useEffect(() => {
     const t = setTimeout(() => onCompleteRef.current(), 2800);
     return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="relative flex min-h-[55vh] flex-col items-center justify-center gap-6 text-center">
-      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">Friendly pause...</p>
+      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">
+        Friendly pause...
+      </p>
 
       <motion.div
         initial={{ scale: 0, opacity: 0 }}
@@ -511,7 +533,9 @@ function FinalCTAScreen({
       </div>
 
       {/* Label */}
-      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">One Last Step</p>
+      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
+        One Last Step
+      </p>
 
       {/* Heading */}
       <h2 className="text-2xl font-extrabold leading-snug text-foreground">
@@ -764,7 +788,6 @@ export default function PersonalityJourney() {
             )}
           </motion.div>
         </AnimatePresence>
-
       </div>
     </div>
   );

@@ -162,12 +162,20 @@ function AnalysisLoadingScreen({
                 >
                   <step.Icon
                     className={`h-4 w-4 shrink-0 ${
-                      isDone ? 'text-primary' : isActive ? 'text-foreground/70' : 'text-muted-foreground/30'
+                      isDone
+                        ? 'text-primary'
+                        : isActive
+                          ? 'text-foreground/70'
+                          : 'text-muted-foreground/30'
                     }`}
                   />
                   <span
                     className={`text-sm font-medium ${
-                      isDone ? 'text-primary' : isActive ? 'text-foreground' : 'text-muted-foreground/40'
+                      isDone
+                        ? 'text-primary'
+                        : isActive
+                          ? 'text-foreground'
+                          : 'text-muted-foreground/40'
                     }`}
                   >
                     {step.label}
@@ -398,12 +406,12 @@ export default function PersonalityType() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.4 }}
-    >
-      <AnalysisLoadingScreen childName={childName} completedSteps={completedSteps} progressPct={progressPct} />
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
+      <AnalysisLoadingScreen
+        childName={childName}
+        completedSteps={completedSteps}
+        progressPct={progressPct}
+      />
     </motion.div>
   );
 }

@@ -266,6 +266,44 @@ function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
   );
 }
 
+// ── Ivy intro splash ─────────────────────────────────────────────────────────
+
+function IvyIntroScreen() {
+  return (
+    <motion.div
+      key="ivy-intro"
+      initial={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5 }}
+      className="fixed inset-0 z-50 bg-black"
+    >
+      <img
+        src="/app-assets/avatars/ivy-intro.jpg"
+        alt="Ivy"
+        className="h-full w-full object-cover object-top"
+      />
+      {/* Dark gradient veil */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(3,4,12,0.1) 0%, rgba(3,4,12,0.3) 55%, rgba(3,4,12,0.88) 100%)',
+        }}
+      />
+      {/* Greeting text */}
+      <motion.p
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.6 }}
+        className="absolute bottom-16 left-0 right-0 px-8 text-center text-xl font-bold leading-snug text-white"
+        style={{ textShadow: '0 2px 18px rgba(0,0,0,0.6)' }}
+      >
+        Hi, I am Ivy. Let's transform your child to their superpower personality.
+      </motion.p>
+    </motion.div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ConversationalOnboarding({
@@ -277,6 +315,7 @@ export default function ConversationalOnboarding({
   onQuestionnairePersisted,
   onQuestionnaireCleared: _onQuestionnaireCleared,
 }: ConversationalOnboardingProps) {
+  const [showIntro, setShowIntro] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState('');
   const [currentStep, setCurrentStep] = useState(0);
@@ -322,6 +361,42 @@ export default function ConversationalOnboarding({
   useEffect(() => {
     collectedDataRef.current = collectedData;
   }, [collectedData]);
+
+  // Ivy intro: show image, speak greeting, dismiss when speech ends.
+  useEffect(() => {
+    const IVY_MSG = "Hi, I am Ivy. Let's transform your child to their superpower personality.";
+    // Fallback: dismiss after 10s if speech never fires onend.
+    const fallback = setTimeout(() => setShowIntro(false), 10000);
+
+    const speakIntro = () => {
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        clearTimeout(fallback);
+        setTimeout(() => setShowIntro(false), 2000);
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(IVY_MSG);
+      const voice = pickPreferredVoice();
+      if (voice) utter.voice = voice;
+      utter.rate = 0.95;
+      const done = () => {
+        clearTimeout(fallback);
+        setShowIntro(false);
+      };
+      utter.onend = done;
+      utter.onerror = done;
+      window.speechSynthesis.speak(utter);
+    };
+
+    if (window.speechSynthesis.getVoices().length > 0) {
+      speakIntro();
+    } else {
+      window.speechSynthesis.addEventListener('voiceschanged', speakIntro, { once: true });
+    }
+    return () => {
+      clearTimeout(fallback);
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   // Keep the previously-answered summary in sync as the user progresses.
   useEffect(() => {
@@ -913,6 +988,9 @@ export default function ConversationalOnboarding({
 
   return (
     <div className="relative flex h-full flex-col">
+      {/* Ivy intro — full-screen image for 2 s */}
+      <AnimatePresence>{showIntro && <IvyIntroScreen />}</AnimatePresence>
+
       {/* Deep blue ambient glow at bottom */}
       <div
         aria-hidden="true"
