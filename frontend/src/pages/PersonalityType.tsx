@@ -9,8 +9,8 @@ import {
   adaptAiPersonalityToViewModel,
   PERSONALITY_TYPE_KEYS,
 } from '@/components/shared/PersonalityAnalysis';
-import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
 import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
+import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -268,7 +268,7 @@ export default function PersonalityType() {
     setProgressPct(Math.round(progress));
   }, [job.isLoading, job.elapsedMs, mbtiResult]);
 
-  // When job is done, animate remaining steps one-by-one then navigate
+  // When job is done, animate remaining steps one-by-one then auto-navigate
   useEffect(() => {
     if (!mbtiResult || navigatingAway) return;
     if (completedSteps < ANALYSIS_STEPS.length) {

@@ -23,6 +23,8 @@ import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
+import { personalityTypes } from '@/components/shared/PersonalityAnalysis';
+import { generateAvatarDataUri } from '@/lib/avatarUtils';
 import { SPINNER } from '@/lib/animations';
 import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
 import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
@@ -160,11 +162,15 @@ function PersonalityCardScreen({
   childName,
   personalityType,
   traits,
+  famousPeople,
+  typeColor,
   onNext,
 }: {
   childName: string;
   personalityType: string;
   traits: string[];
+  famousPeople: Array<{ name: string; image?: string }>;
+  typeColor: string;
   onNext: () => void;
 }) {
   const typeTitle = personalityType?.split(' - ')[1] ?? personalityType ?? 'Unique';
@@ -187,8 +193,10 @@ function PersonalityCardScreen({
     >
       {/* Card header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/20">
-          <Brain className="h-5 w-5 text-primary" />
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${typeColor}`}
+        >
+          <Brain className="h-5 w-5 text-white" />
         </div>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
@@ -199,12 +207,12 @@ function PersonalityCardScreen({
       </div>
 
       {/* Inner personality card */}
-      <div className="space-y-4 rounded-xl border border-primary/15 bg-gradient-to-br from-[#0a2a30] via-[#0d1f2d] to-[#0d1a2a] p-5 text-center">
+      <div className="space-y-4 rounded-xl border border-white/[0.07] bg-gradient-to-br from-[#0d1525] via-[#0a1020] to-[#080c18] p-5 text-center">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/50">
             {childName.toUpperCase()} IS A
           </p>
-          <h3 className="text-5xl font-extrabold italic leading-tight text-primary">{typeTitle}</h3>
+          <h3 className="text-5xl font-extrabold leading-tight text-primary">{typeTitle}</h3>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           {traits.map((trait, idx) => (
@@ -221,6 +229,40 @@ function PersonalityCardScreen({
           ))}
         </div>
       </div>
+
+      {/* Famous people */}
+      {famousPeople.length > 0 && (
+        <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] p-4">
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
+            Famous people with similar traits
+          </p>
+          <div className="flex justify-center gap-8">
+            {famousPeople.map((person, i) => (
+              <motion.div
+                key={person.name}
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5 + i * 0.15, duration: 0.4 }}
+                className="flex flex-col items-center gap-2"
+              >
+                <div className="h-14 w-14 overflow-hidden rounded-full border-2 border-white/15">
+                  <img
+                    src={`/app-assets/famous_people/${person.name.replace(/ /g, '_')}.png`}
+                    alt={person.name}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = generateAvatarDataUri(person.name);
+                    }}
+                  />
+                </div>
+                <span className="max-w-[72px] text-center text-[11px] font-medium leading-tight text-muted-foreground">
+                  {person.name}
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Button
         onClick={onNext}
@@ -701,6 +743,8 @@ export default function PersonalityJourney() {
     : (((viewModel?.profile as Record<string, unknown> | undefined)?.traits as string[]) ?? []);
   const description = profile?.summary ?? '';
   const personalityType = profile?.personality_type ?? '';
+  const famousPeople = personalityTypes[personalityType]?.famous_people ?? [];
+  const typeColor = personalityTypes[personalityType]?.color ?? 'from-primary to-primary/70';
 
   const variants = {
     enter: (d: number) => ({ opacity: 0, x: d * 40, scale: 0.97 }),
@@ -742,6 +786,8 @@ export default function PersonalityJourney() {
                 childName={childName}
                 personalityType={personalityType}
                 traits={traits}
+                famousPeople={famousPeople}
+                typeColor={typeColor}
                 onNext={goNext}
               />
             )}
