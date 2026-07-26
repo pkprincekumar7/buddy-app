@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 
@@ -197,10 +197,20 @@ export default function VoiceInput({
     >
       {isTranscribing ? (
         <Loader2 className="h-4 w-4 animate-spin text-white" />
-      ) : isRecording ? (
-        <MicOff className="h-4 w-4 text-white" />
       ) : (
-        <Mic className="h-4 w-4 text-muted-foreground" />
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          className={isRecording ? 'text-white' : 'text-muted-foreground'}
+        >
+          <rect x="1" y="5" width="2" height="6" rx="1" />
+          <rect x="4" y="2" width="2" height="12" rx="1" />
+          <rect x="7" y="0" width="2" height="16" rx="1" />
+          <rect x="10" y="3" width="2" height="10" rx="1" />
+          <rect x="13" y="5" width="2" height="6" rx="1" />
+        </svg>
       )}
     </Button>
   );
