@@ -30,7 +30,10 @@ const CurlySVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
     <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Compact wavy hair — no side puffing */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-dark" />
+    <path
+      d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z"
+      className="fill-avatar-hair-dark"
+    />
     <circle cx="23" cy="39" r="2.5" className="fill-avatar-dark" />
     <circle cx="37" cy="39" r="2.5" className="fill-avatar-dark" />
     <path
@@ -49,9 +52,24 @@ const SpecsSVG = () => (
     <path d="M11 36 Q11 15 30 15 Q49 15 49 36" className="fill-avatar-darker" />
     <circle cx="22" cy="40" r="7" fill="none" className="stroke-avatar-glasses" strokeWidth="2.5" />
     <circle cx="38" cy="40" r="7" fill="none" className="stroke-avatar-glasses" strokeWidth="2.5" />
-    <path d="M29 40 L31 40" className="stroke-avatar-glasses" strokeWidth="2.5" strokeLinecap="round" />
-    <path d="M9 39 L15 39" className="stroke-avatar-glasses" strokeWidth="2" strokeLinecap="round" />
-    <path d="M45 39 L51 39" className="stroke-avatar-glasses" strokeWidth="2" strokeLinecap="round" />
+    <path
+      d="M29 40 L31 40"
+      className="stroke-avatar-glasses"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    />
+    <path
+      d="M9 39 L15 39"
+      className="stroke-avatar-glasses"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+    <path
+      d="M45 39 L51 39"
+      className="stroke-avatar-glasses"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
     <circle cx="22" cy="41" r="1.5" className="fill-avatar-pupil" />
     <circle cx="38" cy="41" r="1.5" className="fill-avatar-pupil" />
     <path
@@ -71,7 +89,10 @@ const BraidSVG = () => (
     <rect x="48" y="38" width="9" height="20" rx="4.5" className="fill-avatar-hair-mid" />
     <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Top hair */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-mid" />
+    <path
+      d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z"
+      className="fill-avatar-hair-mid"
+    />
     {/* Pink hair ties */}
     <circle cx="8" cy="38" r="4" className="fill-avatar-pink" />
     <circle cx="52" cy="38" r="4" className="fill-avatar-pink" />
@@ -108,7 +129,10 @@ const BowSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
     <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Hair */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-mid" />
+    <path
+      d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z"
+      className="fill-avatar-hair-mid"
+    />
     {/* Bow left wing */}
     <path d="M20 13 C20 6 29 6 30 13 C29 20 20 20 20 13 Z" className="fill-avatar-pink" />
     {/* Bow right wing */}
@@ -255,7 +279,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="mx-auto max-w-lg"
     >
-      <div className="space-y-6 rounded-2xl border-edge bg-card p-6 sm:p-8">
+      <div className="border-edge space-y-6 rounded-2xl bg-card p-6 sm:p-8">
         {/* Header */}
         <div className="space-y-1 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
@@ -304,7 +328,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             variant="outline"
             size="sm"
             onClick={() => fileRef.current?.click()}
-            className="gap-1.5 rounded-full border-c-strong px-4 text-xs"
+            className="border-c-strong gap-1.5 rounded-full px-4 text-xs"
           >
             <Upload className="h-3 w-3" />
             Upload photo
@@ -312,12 +336,12 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {/* Avatar picker */}
-        <div className="space-y-3 rounded-xl border-edge-faint bg-surface-elevated/40 p-4">
+        <div className="border-edge-faint space-y-3 rounded-xl bg-surface-elevated/40 p-4">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               <span className="text-base">🎭</span> Or pick an avatar
             </span>
-            <div className="flex overflow-hidden rounded-lg border-edge-md">
+            <div className="border-edge-md flex overflow-hidden rounded-lg">
               {(['boy', 'girl'] as const).map((g) => (
                 <button
                   key={g}
@@ -380,11 +404,11 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-ghost-light" />
+          <div className="bg-ghost-light h-px flex-1" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
             About your child
           </span>
-          <div className="h-px flex-1 bg-ghost-light" />
+          <div className="bg-ghost-light h-px flex-1" />
         </div>
 
         {/* Form fields */}
@@ -464,7 +488,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
               value={form.school}
               onChange={(e) => setField('school', e.target.value)}
               placeholder="Greenfield International"
-              className="w-full rounded-xl border-edge-md bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1"
+              className="border-edge-md w-full rounded-xl bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1"
             />
           </div>
         </div>
@@ -476,7 +500,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             type="button"
             onClick={handleContinue}
             disabled={isLoading}
-            className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground glow-teal-btn transition-all hover:bg-primary/90"
+            className="glow-teal-btn h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
           >
             {isLoading ? (
               <span className="flex items-center gap-2">

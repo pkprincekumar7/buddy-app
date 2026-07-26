@@ -83,7 +83,7 @@ function TheRevealScreen({ childName, onNext }: { childName: string; onNext: () 
         initial={{ scale: 0.3, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 60, damping: 10, delay: 0.2 }}
-        className="flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/30 to-personality/30 glow-teal-lg ring-4 ring-primary/20"
+        className="glow-teal-lg flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/30 to-personality/30 ring-4 ring-primary/20"
       >
         <Sparkles className="h-14 w-14 text-primary" />
       </motion.div>
@@ -124,7 +124,7 @@ function TheRevealScreen({ childName, onNext }: { childName: string; onNext: () 
       >
         <Button
           onClick={onNext}
-          className="h-12 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground glow-teal-btn transition-all hover:bg-primary/90"
+          className="glow-teal-btn h-12 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
         >
           Show me →
         </Button>
@@ -164,7 +164,7 @@ function PersonalityCardScreen({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="space-y-5 rounded-2xl border-edge bg-card p-5"
+      className="border-edge space-y-5 rounded-2xl bg-card p-5"
     >
       {/* Card header */}
       <div className="flex items-center gap-3">
@@ -182,7 +182,7 @@ function PersonalityCardScreen({
       </div>
 
       {/* Inner personality card */}
-      <div className="space-y-4 rounded-xl border-edge-faint bg-deep-navy-gradient p-5 text-center">
+      <div className="border-edge-faint bg-deep-navy-gradient space-y-4 rounded-xl p-5 text-center">
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/50">
             {childName.toUpperCase()} IS A
@@ -196,7 +196,7 @@ function PersonalityCardScreen({
               initial={{ opacity: 0, scale: 0.85 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3 + idx * 0.07 }}
-              className="border-edge-md flex items-center gap-1.5 rounded-lg bg-ghost-md px-3 py-1.5 text-xs font-medium text-foreground/80"
+              className="border-edge-md bg-ghost-md flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/80"
             >
               <span className="text-muted-foreground/60">{traitIcon(trait)}</span>
               {trait}
@@ -207,7 +207,7 @@ function PersonalityCardScreen({
 
       {/* Famous people */}
       {famousPeople.length > 0 && (
-        <div className="border-edge-faint rounded-xl bg-ghost p-4">
+        <div className="border-edge-faint bg-ghost rounded-xl p-4">
           <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
             Famous people with similar traits
           </p>
@@ -241,7 +241,7 @@ function PersonalityCardScreen({
 
       <Button
         onClick={onNext}
-        className="h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground glow-teal-btn transition-all hover:bg-primary/90"
+        className="glow-teal-btn h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
       >
         See the summary →
       </Button>
@@ -288,7 +288,7 @@ function InANutshellScreen({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="space-y-5 rounded-2xl border-edge bg-card p-5"
+      className="border-edge space-y-5 rounded-2xl bg-card p-5"
     >
       {/* Card header */}
       <div className="flex items-center gap-3">
@@ -314,7 +314,7 @@ function InANutshellScreen({
 
       <Button
         onClick={onNext}
-        className="h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground glow-teal-btn transition-all hover:bg-primary/90"
+        className="glow-teal-btn h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
       >
         Show emerging strengths →
       </Button>
@@ -349,7 +349,7 @@ function StrengthsIntroScreen({
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 60, damping: 10 }}
-        className="flex h-24 w-24 items-center justify-center rounded-full bg-primary/15 glow-teal-lg ring-4 ring-primary/20"
+        className="glow-teal-lg flex h-24 w-24 items-center justify-center rounded-full bg-primary/15 ring-4 ring-primary/20"
       >
         <Star className="h-10 w-10 text-primary" />
       </motion.div>
@@ -402,7 +402,7 @@ function StrengthsScreen({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="space-y-5 rounded-2xl border-edge bg-card p-5"
+      className="border-edge space-y-5 rounded-2xl bg-card p-5"
     >
       {/* Card header */}
       <div className="flex items-center gap-3">
@@ -434,7 +434,7 @@ function StrengthsScreen({
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.1 + idx * 0.12, duration: 0.4, ease: 'easeOut' }}
-              className="flex items-start gap-4 rounded-xl border-edge-faint bg-surface-elevated px-4 py-3.5"
+              className="border-edge-faint flex items-start gap-4 rounded-xl bg-surface-elevated px-4 py-3.5"
             >
               <div
                 className={`flex h-9 w-9 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border ${style.numBorder} ${style.numBg}`}
@@ -465,7 +465,7 @@ function StrengthsScreen({
         </div>
         <Button
           onClick={onNext}
-          className="h-10 shrink-0 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground glow-teal-sm hover:bg-primary/90"
+          className="glow-teal-sm h-10 shrink-0 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
         >
           {isLastSet ? 'See next steps →' : `Next ${remaining} strengths →`}
         </Button>
@@ -495,7 +495,7 @@ function WhatsNextScreen({ childName, onComplete }: { childName: string; onCompl
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 60, damping: 10 }}
-        className="flex h-24 w-24 items-center justify-center rounded-full bg-personality/15 glow-personality-lg ring-4 ring-personality-alt/20"
+        className="glow-personality-lg flex h-24 w-24 items-center justify-center rounded-full bg-personality/15 ring-4 ring-personality-alt/20"
       >
         <Compass className="h-10 w-10 text-personality-alt" />
       </motion.div>
@@ -542,10 +542,10 @@ function FinalCTAScreen({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="space-y-6 rounded-2xl border-edge bg-card p-6 text-center"
+      className="border-edge space-y-6 rounded-2xl bg-card p-6 text-center"
     >
       {/* Icon */}
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-personality/15 glow-personality ring-4 ring-personality-alt/20">
+      <div className="glow-personality mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-personality/15 ring-4 ring-personality-alt/20">
         <Wand2 className="h-8 w-8 text-personality-alt" />
       </div>
 
@@ -571,7 +571,7 @@ function FinalCTAScreen({
           onClick={() => {
             void navigate(`/GrowthAreas/${childId ?? ''}`);
           }}
-          className="h-11 flex-1 rounded-full bg-personality font-semibold text-white glow-personality hover:bg-personality/90"
+          className="glow-personality h-11 flex-1 rounded-full bg-personality font-semibold text-white hover:bg-personality/90"
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Continue Now
@@ -579,7 +579,7 @@ function FinalCTAScreen({
         <Button
           variant="outline"
           onClick={onHome}
-          className="h-11 flex-1 rounded-full border-c-md bg-transparent text-foreground hover:bg-surface-elevated"
+          className="border-c-md h-11 flex-1 rounded-full bg-transparent text-foreground hover:bg-surface-elevated"
         >
           <Clock className="mr-1.5 h-4 w-4" />
           Catch Up Later
@@ -588,14 +588,14 @@ function FinalCTAScreen({
 
       {/* Restart */}
       <div className="space-y-3 pt-1">
-        <div className="h-px bg-ghost-strong" />
+        <div className="bg-ghost-strong h-px" />
         <p className="text-xs text-muted-foreground/50">Want to see the flow again?</p>
         <Button
           variant="outline"
           onClick={() => {
             void navigate(`/Onboarding/${childId ?? ''}`);
           }}
-          className="h-10 w-full rounded-full border-c-md bg-transparent text-sm text-foreground hover:bg-surface-elevated"
+          className="border-c-md h-10 w-full rounded-full bg-transparent text-sm text-foreground hover:bg-surface-elevated"
         >
           Restart the journey
         </Button>

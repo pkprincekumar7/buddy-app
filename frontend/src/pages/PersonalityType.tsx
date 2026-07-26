@@ -94,7 +94,7 @@ function AnalysisLoadingScreen({
           Personality Analysis · Step {stepNum} / {ANALYSIS_STEPS.length}
         </p>
 
-        <div className="w-full max-w-sm space-y-6 rounded-2xl border-edge bg-card p-6 text-center">
+        <div className="border-edge w-full max-w-sm space-y-6 rounded-2xl bg-card p-6 text-center">
           {/* Step icon */}
           <AnimatePresence mode="wait">
             <motion.div
@@ -128,7 +128,7 @@ function AnalysisLoadingScreen({
 
           {/* Progress bar */}
           <div className="space-y-1.5">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-ghost-strong">
+            <div className="bg-ghost-strong h-2 w-full overflow-hidden rounded-full">
               <motion.div
                 className="h-full rounded-full bg-gradient-to-r from-primary to-personality-alt"
                 initial={{ width: '0%' }}

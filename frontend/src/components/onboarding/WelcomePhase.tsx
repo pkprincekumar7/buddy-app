@@ -29,13 +29,13 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
       transition={{ duration: 0.55, ease: 'easeOut' }}
       className="mx-auto max-w-lg"
     >
-      <div className="space-y-6 rounded-2xl border-edge bg-card p-8 text-center sm:p-10">
+      <div className="border-edge space-y-6 rounded-2xl bg-card p-8 text-center sm:p-10">
         {/* Buddy logo — solid teal filled circle with white sprout */}
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 70, damping: 12, delay: 0.1 }}
-          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary glow-teal-icon"
+          className="glow-teal-icon mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary"
         >
           <svg viewBox="0 0 20 22" className="h-10 w-10">
             {/* stem */}
@@ -109,7 +109,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               initial={{ opacity: 0, scale: 0.88 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 1.0 + i * 0.1, duration: 0.35, ease: 'easeOut' }}
-              className="flex flex-1 flex-col items-center gap-2 rounded-xl border-edge bg-surface-elevated py-4"
+              className="border-edge flex flex-1 flex-col items-center gap-2 rounded-xl bg-surface-elevated py-4"
             >
               <f.icon className="h-5 w-5 text-primary" />
               <span className="text-xs font-medium text-foreground">{f.text}</span>
@@ -127,7 +127,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           {isAuthenticated ? (
             <Button
               onClick={onContinue}
-              className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground glow-teal-md transition-all duration-200 hover:bg-primary/90"
+              className="glow-teal-md h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground transition-all duration-200 hover:bg-primary/90"
             >
               Let's start &rarr;
             </Button>
@@ -135,7 +135,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
             <>
               <Button
                 onClick={handleGoogleLogin}
-                className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground glow-teal-md transition-all duration-200 hover:bg-primary/90"
+                className="glow-teal-md h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground transition-all duration-200 hover:bg-primary/90"
               >
                 Get started &rarr;
               </Button>

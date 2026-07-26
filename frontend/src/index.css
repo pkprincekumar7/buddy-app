@@ -160,16 +160,16 @@
     --badge-6-color: 271 81% 56%;
 
     /* Avatar illustration palette — redefine per theme to restyle avatars */
-    --avatar-skin: #FDDCB5;
-    --avatar-dark: #2C2C2C;
+    --avatar-skin: #fddcb5;
+    --avatar-dark: #2c2c2c;
     --avatar-darker: #1a1a1a;
     --avatar-darkest: #111;
     --avatar-glasses: #222;
     --avatar-pupil: #333;
-    --avatar-hair-dark: #8B4513;
-    --avatar-hair-mid: #C8854A;
-    --avatar-pink: #FF85B3;
-    --avatar-pink-deep: #E0449A;
+    --avatar-hair-dark: #8b4513;
+    --avatar-hair-mid: #c8854a;
+    --avatar-pink: #ff85b3;
+    --avatar-pink-deep: #e0449a;
 
     /* Logo sprout leaf color */
     --logo-leaf: #0d3d2e;
@@ -579,56 +579,136 @@
 
 /* Personality lighter, avatar circles, badge palette, milestone dot */
 @layer utilities {
-  .text-personality-lighter { color: hsl(var(--personality-lighter)); }
+  .text-personality-lighter {
+    color: hsl(var(--personality-lighter));
+  }
 
-  .bg-avatar-circle-1 { background-color: hsl(var(--avatar-circle-1)); }
-  .bg-avatar-circle-2 { background-color: hsl(var(--avatar-circle-2)); }
-  .bg-avatar-circle-3 { background-color: hsl(var(--avatar-circle-3)); }
-  .bg-avatar-circle-4 { background-color: hsl(var(--avatar-circle-4)); }
-  .bg-avatar-circle-5 { background-color: hsl(var(--avatar-circle-5)); }
-  .bg-avatar-circle-6 { background-color: hsl(var(--avatar-circle-6)); }
+  .bg-avatar-circle-1 {
+    background-color: hsl(var(--avatar-circle-1));
+  }
+  .bg-avatar-circle-2 {
+    background-color: hsl(var(--avatar-circle-2));
+  }
+  .bg-avatar-circle-3 {
+    background-color: hsl(var(--avatar-circle-3));
+  }
+  .bg-avatar-circle-4 {
+    background-color: hsl(var(--avatar-circle-4));
+  }
+  .bg-avatar-circle-5 {
+    background-color: hsl(var(--avatar-circle-5));
+  }
+  .bg-avatar-circle-6 {
+    background-color: hsl(var(--avatar-circle-6));
+  }
 
-  .badge-1-bg     { background-color: hsl(var(--badge-1-color) / 0.2); }
-  .badge-1-text   { color: hsl(var(--badge-1-color)); }
-  .badge-1-border { border-color: hsl(var(--badge-1-color) / 0.25); }
-  .badge-2-bg     { background-color: hsl(var(--badge-2-color) / 0.2); }
-  .badge-2-text   { color: hsl(var(--badge-2-color)); }
-  .badge-2-border { border-color: hsl(var(--badge-2-color) / 0.25); }
-  .badge-3-bg     { background-color: hsl(var(--badge-3-color) / 0.2); }
-  .badge-3-text   { color: hsl(var(--badge-3-color)); }
-  .badge-3-border { border-color: hsl(var(--badge-3-color) / 0.25); }
-  .badge-4-bg     { background-color: hsl(var(--badge-4-color) / 0.2); }
-  .badge-4-text   { color: hsl(var(--badge-4-color)); }
-  .badge-4-border { border-color: hsl(var(--badge-4-color) / 0.25); }
-  .badge-5-bg     { background-color: hsl(var(--badge-5-color) / 0.2); }
-  .badge-5-text   { color: hsl(var(--badge-5-color)); }
-  .badge-5-border { border-color: hsl(var(--badge-5-color) / 0.25); }
-  .badge-6-bg     { background-color: hsl(var(--badge-6-color) / 0.2); }
-  .badge-6-text   { color: hsl(var(--badge-6-color)); }
-  .badge-6-border { border-color: hsl(var(--badge-6-color) / 0.25); }
+  .badge-1-bg {
+    background-color: hsl(var(--badge-1-color) / 0.2);
+  }
+  .badge-1-text {
+    color: hsl(var(--badge-1-color));
+  }
+  .badge-1-border {
+    border-color: hsl(var(--badge-1-color) / 0.25);
+  }
+  .badge-2-bg {
+    background-color: hsl(var(--badge-2-color) / 0.2);
+  }
+  .badge-2-text {
+    color: hsl(var(--badge-2-color));
+  }
+  .badge-2-border {
+    border-color: hsl(var(--badge-2-color) / 0.25);
+  }
+  .badge-3-bg {
+    background-color: hsl(var(--badge-3-color) / 0.2);
+  }
+  .badge-3-text {
+    color: hsl(var(--badge-3-color));
+  }
+  .badge-3-border {
+    border-color: hsl(var(--badge-3-color) / 0.25);
+  }
+  .badge-4-bg {
+    background-color: hsl(var(--badge-4-color) / 0.2);
+  }
+  .badge-4-text {
+    color: hsl(var(--badge-4-color));
+  }
+  .badge-4-border {
+    border-color: hsl(var(--badge-4-color) / 0.25);
+  }
+  .badge-5-bg {
+    background-color: hsl(var(--badge-5-color) / 0.2);
+  }
+  .badge-5-text {
+    color: hsl(var(--badge-5-color));
+  }
+  .badge-5-border {
+    border-color: hsl(var(--badge-5-color) / 0.25);
+  }
+  .badge-6-bg {
+    background-color: hsl(var(--badge-6-color) / 0.2);
+  }
+  .badge-6-text {
+    color: hsl(var(--badge-6-color));
+  }
+  .badge-6-border {
+    border-color: hsl(var(--badge-6-color) / 0.25);
+  }
 
   /* Area milestone — color injected per-element via --area-color custom property */
-  .area-milestone-dot   { background-color: var(--area-color, hsl(var(--primary))); }
-  .area-milestone-badge { background-color: var(--area-color, hsl(var(--primary))); }
+  .area-milestone-dot {
+    background-color: var(--area-color, hsl(var(--primary)));
+  }
+  .area-milestone-badge {
+    background-color: var(--area-color, hsl(var(--primary)));
+  }
 }
 
 /* Avatar SVG fill/stroke utilities — colors driven by CSS variables above */
 @layer utilities {
-  .fill-avatar-skin    { fill: var(--avatar-skin); }
-  .fill-avatar-dark    { fill: var(--avatar-dark); }
-  .fill-avatar-darker  { fill: var(--avatar-darker); }
-  .fill-avatar-darkest { fill: var(--avatar-darkest); }
-  .fill-avatar-pupil   { fill: var(--avatar-pupil); }
-  .fill-avatar-hair-dark { fill: var(--avatar-hair-dark); }
-  .fill-avatar-hair-mid  { fill: var(--avatar-hair-mid); }
-  .fill-avatar-pink      { fill: var(--avatar-pink); }
-  .fill-avatar-pink-deep { fill: var(--avatar-pink-deep); }
-  .stroke-avatar-dark    { stroke: var(--avatar-dark); }
-  .stroke-avatar-glasses { stroke: var(--avatar-glasses); }
+  .fill-avatar-skin {
+    fill: var(--avatar-skin);
+  }
+  .fill-avatar-dark {
+    fill: var(--avatar-dark);
+  }
+  .fill-avatar-darker {
+    fill: var(--avatar-darker);
+  }
+  .fill-avatar-darkest {
+    fill: var(--avatar-darkest);
+  }
+  .fill-avatar-pupil {
+    fill: var(--avatar-pupil);
+  }
+  .fill-avatar-hair-dark {
+    fill: var(--avatar-hair-dark);
+  }
+  .fill-avatar-hair-mid {
+    fill: var(--avatar-hair-mid);
+  }
+  .fill-avatar-pink {
+    fill: var(--avatar-pink);
+  }
+  .fill-avatar-pink-deep {
+    fill: var(--avatar-pink-deep);
+  }
+  .stroke-avatar-dark {
+    stroke: var(--avatar-dark);
+  }
+  .stroke-avatar-glasses {
+    stroke: var(--avatar-glasses);
+  }
 
   /* Logo sprout leaf */
-  .fill-logo-leaf   { fill: var(--logo-leaf); }
-  .stroke-logo-leaf { stroke: var(--logo-leaf); }
+  .fill-logo-leaf {
+    fill: var(--logo-leaf);
+  }
+  .stroke-logo-leaf {
+    stroke: var(--logo-leaf);
+  }
 }
 
 @layer components {
@@ -654,41 +734,72 @@
 
   /* Deep navy gradient — inner personality card background */
   .bg-deep-navy-gradient {
-    background: linear-gradient(to bottom right, var(--bg-deep-1), var(--bg-deep-2), var(--bg-deep-3));
+    background: linear-gradient(
+      to bottom right,
+      var(--bg-deep-1),
+      var(--bg-deep-2),
+      var(--bg-deep-3)
+    );
   }
 
   /* Onboarding intro photo overlay — dark veil gradient */
   .onboarding-intro-veil {
-    background: linear-gradient(180deg, rgba(3,4,12,0.1) 0%, rgba(3,4,12,0.3) 55%, rgba(3,4,12,0.88) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(3, 4, 12, 0.1) 0%,
+      rgba(3, 4, 12, 0.3) 55%,
+      rgba(3, 4, 12, 0.88) 100%
+    );
   }
   .onboarding-intro-text-shadow {
-    text-shadow: 0 2px 18px rgba(0,0,0,0.6);
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
   }
 
   /* Ambient blue glow pinned to bottom of conversational onboarding screen */
   .onboarding-bg-glow {
-    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(59,130,246,0.18), transparent);
+    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(59, 130, 246, 0.18), transparent);
   }
 
   /* Pill-shaped text input in conversational onboarding */
   .onboarding-input-pill {
     background: rgba(12, 20, 48, 0.88);
     backdrop-filter: blur(24px);
-    box-shadow: 0 0 40px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.05);
+    box-shadow:
+      0 0 40px rgba(59, 130, 246, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   /* Animated orb layers */
   .orb-ambient {
-    background: radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, transparent 70%);
     filter: blur(10px);
   }
   .orb-sphere {
-    background: conic-gradient(from 0deg, #1e3a8a, #3b82f6, #60a5fa, #93c5fd, #3b82f6, #1d4ed8, #1e3a8a);
+    background: conic-gradient(
+      from 0deg,
+      #1e3a8a,
+      #3b82f6,
+      #60a5fa,
+      #93c5fd,
+      #3b82f6,
+      #1d4ed8,
+      #1e3a8a
+    );
   }
   .orb-swirl {
-    background: conic-gradient(from 180deg, rgba(147,197,253,0.85), rgba(59,130,246,0.3), rgba(147,197,253,0.85));
+    background: conic-gradient(
+      from 180deg,
+      rgba(147, 197, 253, 0.85),
+      rgba(59, 130, 246, 0.3),
+      rgba(147, 197, 253, 0.85)
+    );
   }
   .orb-core {
-    background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(186,230,253,0.65) 45%, transparent 80%);
+    background: radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(186, 230, 253, 0.65) 45%,
+      transparent 80%
+    );
   }
 }

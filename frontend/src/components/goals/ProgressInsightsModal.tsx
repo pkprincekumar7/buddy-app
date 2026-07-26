@@ -703,7 +703,7 @@ export default function ProgressInsightsModal({
 
                 {/* Insights list */}
                 {insightsData && !insightsLoading && insightsData.insight_items.length > 0 && (
-                  <div className="border-edge-faint divide-y divide-edge-xs overflow-hidden rounded-2xl">
+                  <div className="border-edge-faint divide-edge-xs divide-y overflow-hidden rounded-2xl">
                     {(insightsData.insight_items || []).map((itemRaw, idx) => {
                       const item = itemRaw as InsightItem;
                       const isAnomaly = item.type === 'anomaly';

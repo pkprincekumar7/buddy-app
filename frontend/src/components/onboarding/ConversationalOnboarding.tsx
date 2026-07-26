@@ -968,7 +968,7 @@ export default function ConversationalOnboarding({
           <p className="text-sm text-muted-foreground">Getting things ready — almost there.</p>
         </div>
         <div className="w-full max-w-xs space-y-1.5">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-ghost-strong">
+          <div className="bg-ghost-strong h-1.5 w-full overflow-hidden rounded-full">
             <motion.div
               animate={{ width: `${analyzeProgress}%` }}
               transition={{ duration: 0.1 }}
@@ -1052,7 +1052,7 @@ export default function ConversationalOnboarding({
             {resumeSummary && resumeSummary.length > 0 && (
               <details
                 open
-                className="group mx-4 mb-3 shrink-0 rounded-2xl border-edge-faint bg-ghost-md px-4 py-3"
+                className="border-edge-faint bg-ghost-md group mx-4 mb-3 shrink-0 rounded-2xl px-4 py-3"
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                   <div className="flex items-center gap-2">
@@ -1165,9 +1165,7 @@ export default function ConversationalOnboarding({
                     </p>
                   )}
                   <form onSubmit={handleSubmit}>
-                    <div
-                      className="onboarding-input-pill flex items-center gap-2 rounded-full border border-info/20 px-5 py-2.5"
-                    >
+                    <div className="onboarding-input-pill flex items-center gap-2 rounded-full border border-info/20 px-5 py-2.5">
                       <InputWithVoice
                         ref={inputRef}
                         value={currentInput}
@@ -1258,7 +1256,10 @@ function MCQGrid({
             )}
           >
             <Icon
-              className={cn('h-4 w-4 shrink-0', isSelected ? 'text-info' : 'text-muted-foreground/50')}
+              className={cn(
+                'h-4 w-4 shrink-0',
+                isSelected ? 'text-info' : 'text-muted-foreground/50',
+              )}
             />
             <span className="leading-tight">{option}</span>
             {isSelected && (
