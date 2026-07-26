@@ -22,7 +22,11 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
         {phases.map((phase, i) => (
           <div
             key={phase.label}
-            className={`flex items-center ${i < phases.length - 1 ? 'min-w-0 flex-1' : 'shrink-0'}`}
+            className={`flex items-center ${
+              i < phases.length - 1
+                ? `min-w-0 ${phase.status === 'active' ? 'flex-[2]' : 'flex-1'}`
+                : 'shrink-0'
+            }`}
           >
             {/* Circle badge */}
             <div
@@ -37,9 +41,11 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
               {phase.status === 'done' ? <Check className="h-3.5 w-3.5" /> : phase.num}
             </div>
 
-            {/* Label */}
+            {/* Label — always visible on sm+; on mobile only the active phase shows its label */}
             <span
               className={`ml-2 shrink-0 whitespace-nowrap text-xs font-medium transition-colors duration-500 ${
+                phase.status !== 'active' ? 'hidden sm:inline' : ''
+              } ${
                 phase.status === 'done'
                   ? 'text-success-bright'
                   : phase.status === 'active'

@@ -566,7 +566,7 @@ function FinalCTAScreen({
       </p>
 
       {/* Primary CTAs */}
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <Button
           onClick={() => {
             void navigate(`/GrowthAreas/${childId ?? ''}`);
