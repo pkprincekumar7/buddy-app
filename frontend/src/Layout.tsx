@@ -142,17 +142,17 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     y1="21"
                     x2="10"
                     y2="14"
-                    stroke="#0d3d2e"
+                    className="stroke-logo-leaf"
                     strokeWidth="2.2"
                     strokeLinecap="round"
                   />
                   <path
                     d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-                    fill="#0d3d2e"
+                    className="fill-logo-leaf"
                   />
                   <path
                     d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-                    fill="#0d3d2e"
+                    className="fill-logo-leaf"
                   />
                 </svg>
               </div>

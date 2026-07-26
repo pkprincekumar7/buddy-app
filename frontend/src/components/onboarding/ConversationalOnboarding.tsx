@@ -117,14 +117,14 @@ const OPTION_ICONS: Record<string, LucideIcon> = {
 const PHASE_SPLASHES: Record<number, PhaseSplash> = {
   2: {
     icon: '🧠',
-    iconColor: 'bg-violet-500/20 text-violet-300 ring-violet-400/20',
+    iconColor: 'bg-personality/20 text-personality-lighter ring-personality-alt/20',
     title: "Now let's understand how {name} thinks",
     subtitle: 'Two quick taps — pick the one that feels closest.',
     displayStep: 3,
   },
   4: {
     icon: '⚡',
-    iconColor: 'bg-teal-500/20 text-teal-300 ring-teal-400/20',
+    iconColor: 'bg-primary-medium/20 text-primary-light ring-primary/20',
     title: 'Almost there — a few more about their nature ⚡',
     subtitle: 'Energy, social, emotional. One tap each. Promise.',
     displayStep: 5,
@@ -283,20 +283,13 @@ function IvyIntroScreen() {
         className="h-full w-full object-cover object-top"
       />
       {/* Dark gradient veil */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'linear-gradient(180deg, rgba(3,4,12,0.1) 0%, rgba(3,4,12,0.3) 55%, rgba(3,4,12,0.88) 100%)',
-        }}
-      />
+      <div className="onboarding-intro-veil absolute inset-0" />
       {/* Greeting text */}
       <motion.p
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.6 }}
-        className="absolute bottom-16 left-0 right-0 px-8 text-center text-xl font-bold leading-snug text-white"
-        style={{ textShadow: '0 2px 18px rgba(0,0,0,0.6)' }}
+        className="onboarding-intro-text-shadow absolute bottom-16 left-0 right-0 px-8 text-center text-xl font-bold leading-snug text-white"
       >
         Hi, I am Ivy. Let's transform your child to their superpower personality.
       </motion.p>
@@ -963,7 +956,7 @@ export default function ConversationalOnboarding({
         <motion.div
           animate={{ scale: [1, 1.06, 1] }}
           transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          className="flex h-20 w-20 items-center justify-center rounded-2xl bg-violet-500/15 text-4xl ring-4 ring-violet-400/20"
+          className="flex h-20 w-20 items-center justify-center rounded-2xl bg-personality/15 text-4xl ring-4 ring-personality-alt/20"
         >
           🎉
         </motion.div>
@@ -975,11 +968,11 @@ export default function ConversationalOnboarding({
           <p className="text-sm text-muted-foreground">Getting things ready — almost there.</p>
         </div>
         <div className="w-full max-w-xs space-y-1.5">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.07]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-ghost-strong">
             <motion.div
               animate={{ width: `${analyzeProgress}%` }}
               transition={{ duration: 0.1 }}
-              className="h-full rounded-full bg-gradient-to-r from-primary to-violet-400"
+              className="h-full rounded-full bg-gradient-to-r from-primary to-personality-alt"
             />
           </div>
           <p className="text-right text-xs text-muted-foreground/50">{analyzeProgress}%</p>
@@ -1001,11 +994,7 @@ export default function ConversationalOnboarding({
       {/* Deep blue ambient glow at bottom */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed bottom-0 left-0 right-0 h-80 opacity-70"
-        style={{
-          background:
-            'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(59,130,246,0.18), transparent)',
-        }}
+        className="onboarding-bg-glow pointer-events-none fixed bottom-0 left-0 right-0 h-80 opacity-70"
       />
 
       {/* Phase splash — full-screen overlay */}
@@ -1039,7 +1028,7 @@ export default function ConversationalOnboarding({
                     {[0, 150, 300].map((delay) => (
                       <span
                         key={delay}
-                        className="h-2.5 w-2.5 animate-bounce rounded-full bg-blue-400/50"
+                        className="h-2.5 w-2.5 animate-bounce rounded-full bg-info/50"
                         style={{ animationDelay: `${delay}ms` }}
                       />
                     ))}
@@ -1063,11 +1052,11 @@ export default function ConversationalOnboarding({
             {resumeSummary && resumeSummary.length > 0 && (
               <details
                 open
-                className="group mx-4 mb-3 shrink-0 rounded-2xl border border-white/[0.07] bg-white/[0.04] px-4 py-3"
+                className="group mx-4 mb-3 shrink-0 rounded-2xl border-edge-faint bg-ghost-md px-4 py-3"
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400/15 text-[10px] font-bold text-emerald-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
                       ✓
                     </span>
                     <span className="text-xs font-semibold text-white/50">
@@ -1107,16 +1096,16 @@ export default function ConversationalOnboarding({
                 <motion.div
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3 rounded-2xl border border-blue-400/15 bg-blue-500/[0.07] px-4 py-3"
+                  className="flex items-center gap-3 rounded-2xl border border-info/15 bg-info-medium/[0.07] px-4 py-3"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15">
-                    <Sparkles className="h-4 w-4 text-blue-400" />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-medium/15">
+                    <Sparkles className="h-4 w-4 text-info" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-white/90">
                       Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
                     </p>
-                    <p className="mt-0.5 text-xs text-blue-300/60">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       Getting things ready — almost there
                     </p>
                   </div>
@@ -1141,7 +1130,7 @@ export default function ConversationalOnboarding({
                         initial={{ opacity: 0, x: 20, scale: 0.9 }}
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         transition={{ type: 'spring', stiffness: 80 }}
-                        className="rounded-xl bg-blue-600/25 px-4 py-2 text-sm font-medium text-white/90"
+                        className="rounded-xl bg-info-strong/25 px-4 py-2 text-sm font-medium text-foreground"
                       >
                         {String(collectedData[currentStepData.field])}
                       </motion.div>
@@ -1156,7 +1145,7 @@ export default function ConversationalOnboarding({
               <div className="shrink-0 px-4 pb-4">
                 <Button
                   type="button"
-                  className="h-12 rounded-full bg-blue-600 px-8 text-white hover:bg-blue-500 active:bg-blue-700"
+                  className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
                   onClick={() => onContinueToPersonality()}
                 >
                   Continue to personality analysis
@@ -1171,19 +1160,13 @@ export default function ConversationalOnboarding({
                 <div className="shrink-0 px-4 pb-8 pt-2">
                   {currentStepData.hint && (
                     <p className="mb-2 flex items-center gap-1.5 text-xs text-white/40">
-                      <Sparkles className="h-3 w-3 text-blue-400/60" />
+                      <Sparkles className="h-3 w-3 text-info/60" />
                       {currentStepData.hint}
                     </p>
                   )}
                   <form onSubmit={handleSubmit}>
                     <div
-                      className="flex items-center gap-2 rounded-full border border-blue-400/20 px-5 py-2.5"
-                      style={{
-                        background: 'rgba(12, 20, 48, 0.88)',
-                        backdropFilter: 'blur(24px)',
-                        boxShadow:
-                          '0 0 40px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.05)',
-                      }}
+                      className="onboarding-input-pill flex items-center gap-2 rounded-full border border-info/20 px-5 py-2.5"
                     >
                       <InputWithVoice
                         ref={inputRef}
@@ -1195,7 +1178,7 @@ export default function ConversationalOnboarding({
                       <Button
                         type="submit"
                         disabled={!currentInput.trim()}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 p-0 text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-30"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-info-medium p-0 text-white hover:bg-info disabled:cursor-not-allowed disabled:opacity-30"
                       >
                         <Send className="h-3.5 w-3.5" />
                       </Button>
@@ -1220,40 +1203,22 @@ function AnimatedOrb() {
       <motion.div
         animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute -inset-4 rounded-full"
-        style={{
-          background: 'radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%)',
-          filter: 'blur(10px)',
-        }}
+        className="orb-ambient absolute -inset-4 rounded-full"
       />
       {/* Spinning conic-gradient sphere */}
       <motion.div
         animate={{ rotate: 360 }}
         transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
-        className="absolute inset-4 rounded-full"
-        style={{
-          background:
-            'conic-gradient(from 0deg, #1e3a8a, #3b82f6, #60a5fa, #93c5fd, #3b82f6, #1d4ed8, #1e3a8a)',
-        }}
+        className="orb-sphere absolute inset-4 rounded-full"
       />
       {/* Counter-rotating inner swirl */}
       <motion.div
         animate={{ rotate: -360 }}
         transition={{ duration: 7, repeat: Infinity, ease: 'linear' }}
-        className="absolute inset-8 rounded-full"
-        style={{
-          background:
-            'conic-gradient(from 180deg, rgba(147,197,253,0.85), rgba(59,130,246,0.3), rgba(147,197,253,0.85))',
-        }}
+        className="orb-swirl absolute inset-8 rounded-full"
       />
       {/* Bright inner core */}
-      <div
-        className="absolute inset-11 rounded-full"
-        style={{
-          background:
-            'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(186,230,253,0.65) 45%, transparent 80%)',
-        }}
-      />
+      <div className="orb-core absolute inset-11 rounded-full" />
     </div>
   );
 }
@@ -1288,19 +1253,19 @@ function MCQGrid({
             className={cn(
               'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all focus:outline-none',
               isSelected
-                ? 'border-blue-500/60 bg-blue-600/20 text-white ring-1 ring-blue-400/30'
-                : 'border-white/[0.07] bg-white/[0.03] text-white/60 hover:border-blue-400/30 hover:bg-blue-500/[0.07] hover:text-white/85',
+                ? 'border-info-medium/60 bg-info-strong/20 text-foreground ring-1 ring-info/30'
+                : 'border-edge-faint bg-ghost-md text-muted-foreground hover:border-info/30 hover:bg-info-medium/[0.07] hover:text-foreground',
             )}
           >
             <Icon
-              className={cn('h-4 w-4 shrink-0', isSelected ? 'text-blue-400' : 'text-white/30')}
+              className={cn('h-4 w-4 shrink-0', isSelected ? 'text-info' : 'text-muted-foreground/50')}
             />
             <span className="leading-tight">{option}</span>
             {isSelected && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-500"
+                className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-info-medium"
               >
                 <Check className="h-2.5 w-2.5 text-white" />
               </motion.div>

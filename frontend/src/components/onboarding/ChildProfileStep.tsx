@@ -9,16 +9,16 @@ import type { ReactNode } from 'react';
 
 const CapperSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
-    <circle cx="30" cy="41" r="19" fill="#FDDCB5" />
+    <circle cx="30" cy="41" r="19" className="fill-avatar-skin" />
     {/* Cap crown — flat top */}
-    <path d="M10 30 Q10 11 30 11 Q50 11 50 30 Z" fill="#1a1a1a" />
+    <path d="M10 30 Q10 11 30 11 Q50 11 50 30 Z" className="fill-avatar-darker" />
     {/* Wide flat brim */}
-    <rect x="4" y="27" width="52" height="7" rx="3.5" fill="#111" />
-    <circle cx="23" cy="40" r="2.5" fill="#2C2C2C" />
-    <circle cx="37" cy="40" r="2.5" fill="#2C2C2C" />
+    <rect x="4" y="27" width="52" height="7" rx="3.5" className="fill-avatar-darkest" />
+    <circle cx="23" cy="40" r="2.5" className="fill-avatar-dark" />
+    <circle cx="37" cy="40" r="2.5" className="fill-avatar-dark" />
     <path
       d="M23 48 Q30 54 37 48"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -28,14 +28,14 @@ const CapperSVG = () => (
 
 const CurlySVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
-    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Compact wavy hair — no side puffing */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#8B4513" />
-    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
-    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-dark" />
+    <circle cx="23" cy="39" r="2.5" className="fill-avatar-dark" />
+    <circle cx="37" cy="39" r="2.5" className="fill-avatar-dark" />
     <path
       d="M23 47 Q30 53 37 47"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -45,18 +45,18 @@ const CurlySVG = () => (
 
 const SpecsSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
-    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
-    <path d="M11 36 Q11 15 30 15 Q49 15 49 36" fill="#1a1a1a" />
-    <circle cx="22" cy="40" r="7" fill="none" stroke="#222" strokeWidth="2.5" />
-    <circle cx="38" cy="40" r="7" fill="none" stroke="#222" strokeWidth="2.5" />
-    <path d="M29 40 L31 40" stroke="#222" strokeWidth="2.5" strokeLinecap="round" />
-    <path d="M9 39 L15 39" stroke="#222" strokeWidth="2" strokeLinecap="round" />
-    <path d="M45 39 L51 39" stroke="#222" strokeWidth="2" strokeLinecap="round" />
-    <circle cx="22" cy="41" r="1.5" fill="#333" />
-    <circle cx="38" cy="41" r="1.5" fill="#333" />
+    <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
+    <path d="M11 36 Q11 15 30 15 Q49 15 49 36" className="fill-avatar-darker" />
+    <circle cx="22" cy="40" r="7" fill="none" className="stroke-avatar-glasses" strokeWidth="2.5" />
+    <circle cx="38" cy="40" r="7" fill="none" className="stroke-avatar-glasses" strokeWidth="2.5" />
+    <path d="M29 40 L31 40" className="stroke-avatar-glasses" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M9 39 L15 39" className="stroke-avatar-glasses" strokeWidth="2" strokeLinecap="round" />
+    <path d="M45 39 L51 39" className="stroke-avatar-glasses" strokeWidth="2" strokeLinecap="round" />
+    <circle cx="22" cy="41" r="1.5" className="fill-avatar-pupil" />
+    <circle cx="38" cy="41" r="1.5" className="fill-avatar-pupil" />
     <path
       d="M24 49 Q30 54 36 49"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -67,19 +67,19 @@ const SpecsSVG = () => (
 const BraidSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
     {/* Narrow pigtail braids — behind face */}
-    <rect x="3" y="38" width="9" height="20" rx="4.5" fill="#C8854A" />
-    <rect x="48" y="38" width="9" height="20" rx="4.5" fill="#C8854A" />
-    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    <rect x="3" y="38" width="9" height="20" rx="4.5" className="fill-avatar-hair-mid" />
+    <rect x="48" y="38" width="9" height="20" rx="4.5" className="fill-avatar-hair-mid" />
+    <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Top hair */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#C8854A" />
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-mid" />
     {/* Pink hair ties */}
-    <circle cx="8" cy="38" r="4" fill="#FF85B3" />
-    <circle cx="52" cy="38" r="4" fill="#FF85B3" />
-    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
-    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="8" cy="38" r="4" className="fill-avatar-pink" />
+    <circle cx="52" cy="38" r="4" className="fill-avatar-pink" />
+    <circle cx="23" cy="39" r="2.5" className="fill-avatar-dark" />
+    <circle cx="37" cy="39" r="2.5" className="fill-avatar-dark" />
     <path
       d="M23 47 Q30 53 37 47"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -90,13 +90,13 @@ const BraidSVG = () => (
 const GirlCurlsSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
     {/* Big voluminous curly hair — wide ellipse surrounding face */}
-    <ellipse cx="30" cy="28" rx="24" ry="22" fill="#C8854A" />
-    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
-    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
-    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <ellipse cx="30" cy="28" rx="24" ry="22" className="fill-avatar-hair-mid" />
+    <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
+    <circle cx="23" cy="39" r="2.5" className="fill-avatar-dark" />
+    <circle cx="37" cy="39" r="2.5" className="fill-avatar-dark" />
     <path
       d="M23 47 Q30 53 37 47"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -106,20 +106,20 @@ const GirlCurlsSVG = () => (
 
 const BowSVG = () => (
   <svg viewBox="0 0 60 70" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-full w-full">
-    <circle cx="30" cy="40" r="19" fill="#FDDCB5" />
+    <circle cx="30" cy="40" r="19" className="fill-avatar-skin" />
     {/* Hair */}
-    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" fill="#C8854A" />
+    <path d="M13 36 Q13 13 30 13 Q47 13 47 36 Q43 29 30 28 Q17 29 13 36 Z" className="fill-avatar-hair-mid" />
     {/* Bow left wing */}
-    <path d="M20 13 C20 6 29 6 30 13 C29 20 20 20 20 13 Z" fill="#FF85B3" />
+    <path d="M20 13 C20 6 29 6 30 13 C29 20 20 20 20 13 Z" className="fill-avatar-pink" />
     {/* Bow right wing */}
-    <path d="M40 13 C40 6 31 6 30 13 C31 20 40 20 40 13 Z" fill="#FF85B3" />
+    <path d="M40 13 C40 6 31 6 30 13 C31 20 40 20 40 13 Z" className="fill-avatar-pink" />
     {/* Bow knot */}
-    <circle cx="30" cy="13" r="3" fill="#E0449A" />
-    <circle cx="23" cy="39" r="2.5" fill="#2C2C2C" />
-    <circle cx="37" cy="39" r="2.5" fill="#2C2C2C" />
+    <circle cx="30" cy="13" r="3" className="fill-avatar-pink-deep" />
+    <circle cx="23" cy="39" r="2.5" className="fill-avatar-dark" />
+    <circle cx="37" cy="39" r="2.5" className="fill-avatar-dark" />
     <path
       d="M23 47 Q30 53 37 47"
-      stroke="#2C2C2C"
+      className="stroke-avatar-dark"
       strokeWidth="1.5"
       fill="none"
       strokeLinecap="round"
@@ -137,15 +137,15 @@ interface AvatarDef {
 }
 
 const BOY_AVATARS: AvatarDef[] = [
-  { id: 'capper-boy', label: 'Capper', bg: 'bg-teal-600', emoji: <CapperSVG /> },
-  { id: 'curly-boy', label: 'Curly', bg: 'bg-violet-600', emoji: <CurlySVG /> },
-  { id: 'specs-boy', label: 'Specs', bg: 'bg-amber-600', emoji: <SpecsSVG /> },
+  { id: 'capper-boy', label: 'Capper', bg: 'bg-avatar-circle-1', emoji: <CapperSVG /> },
+  { id: 'curly-boy', label: 'Curly', bg: 'bg-avatar-circle-2', emoji: <CurlySVG /> },
+  { id: 'specs-boy', label: 'Specs', bg: 'bg-avatar-circle-3', emoji: <SpecsSVG /> },
 ];
 
 const GIRL_AVATARS: AvatarDef[] = [
-  { id: 'braid-girl', label: 'Braid', bg: 'bg-pink-600', emoji: <BraidSVG /> },
-  { id: 'curls-girl', label: 'Curls', bg: 'bg-rose-600', emoji: <GirlCurlsSVG /> },
-  { id: 'bow-girl', label: 'Bow', bg: 'bg-fuchsia-600', emoji: <BowSVG /> },
+  { id: 'braid-girl', label: 'Braid', bg: 'bg-avatar-circle-4', emoji: <BraidSVG /> },
+  { id: 'curls-girl', label: 'Curls', bg: 'bg-avatar-circle-5', emoji: <GirlCurlsSVG /> },
+  { id: 'bow-girl', label: 'Bow', bg: 'bg-avatar-circle-6', emoji: <BowSVG /> },
 ];
 
 const ALL_AVATARS = [...BOY_AVATARS, ...GIRL_AVATARS];
@@ -255,7 +255,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       className="mx-auto max-w-lg"
     >
-      <div className="space-y-6 rounded-2xl border border-white/[0.08] bg-card p-6 sm:p-8">
+      <div className="space-y-6 rounded-2xl border-edge bg-card p-6 sm:p-8">
         {/* Header */}
         <div className="space-y-1 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
@@ -304,7 +304,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             variant="outline"
             size="sm"
             onClick={() => fileRef.current?.click()}
-            className="gap-1.5 rounded-full border-white/[0.12] px-4 text-xs"
+            className="gap-1.5 rounded-full border-c-strong px-4 text-xs"
           >
             <Upload className="h-3 w-3" />
             Upload photo
@@ -312,12 +312,12 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
         </div>
 
         {/* Avatar picker */}
-        <div className="space-y-3 rounded-xl border border-white/[0.07] bg-surface-elevated/40 p-4">
+        <div className="space-y-3 rounded-xl border-edge-faint bg-surface-elevated/40 p-4">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               <span className="text-base">🎭</span> Or pick an avatar
             </span>
-            <div className="flex overflow-hidden rounded-lg border border-white/[0.1]">
+            <div className="flex overflow-hidden rounded-lg border-edge-md">
               {(['boy', 'girl'] as const).map((g) => (
                 <button
                   key={g}
@@ -351,7 +351,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                   'flex flex-col items-center gap-2 rounded-xl border p-3 transition-all focus:outline-none',
                   form.avatarId === av.id
                     ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
-                    : 'border-white/[0.07] bg-surface-elevated hover:border-primary/40',
+                    : 'border-c-edge bg-surface-elevated hover:border-primary/40',
                 )}
               >
                 <div
@@ -380,11 +380,11 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-ghost-light" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
             About your child
           </span>
-          <div className="h-px flex-1 bg-white/[0.06]" />
+          <div className="h-px flex-1 bg-ghost-light" />
         </div>
 
         {/* Form fields */}
@@ -401,7 +401,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 placeholder="Arjun"
                 className={cn(
                   'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
-                  errors.name ? 'border-red-500/50' : 'border-white/[0.1]',
+                  errors.name ? 'border-red-500/50' : 'border-c-md',
                 )}
               />
               {errors.name && <p className="text-[10px] text-red-400">{errors.name}</p>}
@@ -420,7 +420,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 max={30}
                 className={cn(
                   'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
-                  errors.age ? 'border-red-500/50' : 'border-white/[0.1]',
+                  errors.age ? 'border-red-500/50' : 'border-c-md',
                 )}
               />
               {errors.age && <p className="text-[10px] text-red-400">{errors.age}</p>}
@@ -442,7 +442,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                     'rounded-xl border py-2.5 text-sm font-medium transition-all',
                     form.gender === g
                       ? 'border-primary bg-primary/15 text-primary'
-                      : 'border-white/[0.1] text-muted-foreground hover:border-primary/30 hover:text-foreground',
+                      : 'border-c-md text-muted-foreground hover:border-primary/30 hover:text-foreground',
                   )}
                 >
                   {g}
@@ -464,7 +464,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
               value={form.school}
               onChange={(e) => setField('school', e.target.value)}
               placeholder="Greenfield International"
-              className="w-full rounded-xl border border-white/[0.1] bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1"
+              className="w-full rounded-xl border-edge-md bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1"
             />
           </div>
         </div>
@@ -476,7 +476,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
             type="button"
             onClick={handleContinue}
             disabled={isLoading}
-            className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground shadow-[0_0_16px_rgba(45,212,191,0.2)] transition-all hover:bg-primary/90"
+            className="h-11 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground glow-teal-btn transition-all hover:bg-primary/90"
           >
             {isLoading ? (
               <span className="flex items-center gap-2">

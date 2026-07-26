@@ -29,7 +29,7 @@ const ANALYSIS_STEPS = [
     subtitle: 'Looking at how your child thinks, feels and responds.',
     iconBg: 'bg-primary/15',
     iconColor: 'text-primary',
-    glow: 'shadow-[0_0_28px_rgba(45,212,191,0.2)]',
+    glow: 'glow-teal-md',
     ring: 'ring-primary/20',
   },
   {
@@ -37,10 +37,10 @@ const ANALYSIS_STEPS = [
     Icon: Star,
     heading: (_name: string) => 'Mapping strengths & interests...',
     subtitle: "Connecting the dots between what they love and what they're great at.",
-    iconBg: 'bg-amber-500/15',
-    iconColor: 'text-amber-400',
-    glow: 'shadow-[0_0_28px_rgba(245,158,11,0.2)]',
-    ring: 'ring-amber-400/20',
+    iconBg: 'bg-warning-medium/15',
+    iconColor: 'text-warning',
+    glow: 'glow-amber',
+    ring: 'ring-warning/20',
   },
   {
     label: 'Building growth profile',
@@ -49,7 +49,7 @@ const ANALYSIS_STEPS = [
     subtitle: 'Shaping a personal plan rooted in their unique strengths.',
     iconBg: 'bg-primary/15',
     iconColor: 'text-primary',
-    glow: 'shadow-[0_0_28px_rgba(45,212,191,0.2)]',
+    glow: 'glow-teal-md',
     ring: 'ring-primary/20',
   },
   {
@@ -57,10 +57,10 @@ const ANALYSIS_STEPS = [
     Icon: Compass,
     heading: (_name: string) => 'Finalizing the personalized journey...',
     subtitle: 'Almost there — preparing recommendations made just for them.',
-    iconBg: 'bg-violet-500/15',
-    iconColor: 'text-violet-400',
-    glow: 'shadow-[0_0_28px_rgba(139,92,246,0.2)]',
-    ring: 'ring-violet-400/20',
+    iconBg: 'bg-personality/15',
+    iconColor: 'text-personality-alt',
+    glow: 'glow-personality',
+    ring: 'ring-personality-alt/20',
   },
 ];
 
@@ -94,7 +94,7 @@ function AnalysisLoadingScreen({
           Personality Analysis · Step {stepNum} / {ANALYSIS_STEPS.length}
         </p>
 
-        <div className="w-full max-w-sm space-y-6 rounded-2xl border border-white/[0.08] bg-card p-6 text-center">
+        <div className="w-full max-w-sm space-y-6 rounded-2xl border-edge bg-card p-6 text-center">
           {/* Step icon */}
           <AnimatePresence mode="wait">
             <motion.div
@@ -128,9 +128,9 @@ function AnalysisLoadingScreen({
 
           {/* Progress bar */}
           <div className="space-y-1.5">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.08]">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-ghost-strong">
               <motion.div
-                className="h-full rounded-full bg-gradient-to-r from-primary to-violet-400"
+                className="h-full rounded-full bg-gradient-to-r from-primary to-personality-alt"
                 initial={{ width: '0%' }}
                 animate={{ width: `${progressPct}%` }}
                 transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -157,7 +157,7 @@ function AnalysisLoadingScreen({
                       ? 'border-primary/30 bg-primary/[0.07]'
                       : isActive
                         ? 'border-primary/40 bg-surface-elevated'
-                        : 'border-white/[0.06] bg-transparent opacity-40'
+                        : 'border-c-edge bg-transparent opacity-40'
                   }`}
                 >
                   <step.Icon

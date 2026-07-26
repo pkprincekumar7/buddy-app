@@ -441,8 +441,8 @@ export default function LifePathway() {
                             className="flex items-center gap-2 text-sm text-muted-foreground"
                           >
                             <span
-                              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                              style={{ backgroundColor: m.color }}
+                              className="area-milestone-dot h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                              style={{ '--area-color': m.color } as React.CSSProperties}
                             />
                             <span className="w-14 flex-shrink-0 font-medium text-foreground">
                               Age {m.age}
@@ -450,8 +450,8 @@ export default function LifePathway() {
                             <span className="text-xs">{m.text}</span>
                             {m.area !== 'Core' && (
                               <span
-                                className="ml-auto flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white"
-                                style={{ backgroundColor: m.color }}
+                                className="area-milestone-badge ml-auto flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white"
+                                style={{ '--area-color': m.color } as React.CSSProperties}
                               >
                                 {m.area}
                               </span>
@@ -562,8 +562,8 @@ export default function LifePathway() {
                               </div>
                               {milestone.area !== 'Core' && (
                                 <span
-                                  className="flex-shrink-0 self-start rounded-full px-1.5 py-0.5 text-xs text-white"
-                                  style={{ backgroundColor: milestone.color }}
+                                  className="area-milestone-badge flex-shrink-0 self-start rounded-full px-1.5 py-0.5 text-xs text-white"
+                                  style={{ '--area-color': milestone.color } as React.CSSProperties}
                                 >
                                   {milestone.area}
                                 </span>

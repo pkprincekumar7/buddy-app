@@ -131,6 +131,7 @@
     /* RGB channels for glow utilities (no alpha — alpha is applied at the use site) */
     --glow-primary-rgb: 45 212 191;
     --glow-warning-rgb: 245 158 11;
+    --glow-personality-rgb: 139 92 246;
 
     /* Modal/drawer backdrop overlay */
     --overlay: 0 0% 0% / 0.75;
@@ -138,6 +139,45 @@
     /* Image scrim — dark gradient over photos/tiles for text legibility */
     --image-scrim-rgb: 0 0 0;
     --image-scrim-opacity: 0.6;
+
+    /* Personality lighter tint (= violet-300) */
+    --personality-lighter: 267 92% 81%;
+
+    /* Avatar circle background palette (6 categorical slots for avatar picker) */
+    --avatar-circle-1: 174 84% 32%;
+    --avatar-circle-2: 262 83% 58%;
+    --avatar-circle-3: 32 95% 44%;
+    --avatar-circle-4: 333 71% 51%;
+    --avatar-circle-5: 347 89% 44%;
+    --avatar-circle-6: 293 69% 49%;
+
+    /* Strength badge palette (6 categorical slots for badge colors) */
+    --badge-1-color: 239 84% 67%;
+    --badge-2-color: 174 84% 39%;
+    --badge-3-color: 38 92% 50%;
+    --badge-4-color: 343 96% 65%;
+    --badge-5-color: 160 84% 39%;
+    --badge-6-color: 271 81% 56%;
+
+    /* Avatar illustration palette — redefine per theme to restyle avatars */
+    --avatar-skin: #FDDCB5;
+    --avatar-dark: #2C2C2C;
+    --avatar-darker: #1a1a1a;
+    --avatar-darkest: #111;
+    --avatar-glasses: #222;
+    --avatar-pupil: #333;
+    --avatar-hair-dark: #8B4513;
+    --avatar-hair-mid: #C8854A;
+    --avatar-pink: #FF85B3;
+    --avatar-pink-deep: #E0449A;
+
+    /* Logo sprout leaf color */
+    --logo-leaf: #0d3d2e;
+
+    /* Deep navy gradient used on inner personality card — dark theme */
+    --bg-deep-1: #0d1525;
+    --bg-deep-2: #0a1020;
+    --bg-deep-3: #080c18;
   }
 }
 
@@ -186,6 +226,25 @@
   }
   .glow-amber {
     box-shadow: 0 0 20px rgb(var(--glow-warning-rgb) / 0.15);
+  }
+  /* Dynamic per-element glow: set --pillar-glow on the element to activate. */
+  .glow-teal-md {
+    box-shadow: 0 0 28px rgb(var(--glow-primary-rgb) / 0.2);
+  }
+  .glow-personality {
+    box-shadow: 0 0 28px rgb(var(--glow-personality-rgb) / 0.2);
+  }
+  .glow-personality-lg {
+    box-shadow: 0 0 40px rgb(var(--glow-personality-rgb) / 0.3);
+  }
+  .glow-teal-lg {
+    box-shadow: 0 0 48px rgb(var(--glow-primary-rgb) / 0.3);
+  }
+  .glow-teal-btn {
+    box-shadow: 0 0 16px rgb(var(--glow-primary-rgb) / 0.3);
+  }
+  .glow-teal-icon {
+    box-shadow: 0 0 32px rgb(var(--glow-primary-rgb) / 0.4);
   }
   /* Dynamic per-element glow: set --pillar-glow on the element to activate. */
   .glow-pillar {
@@ -238,8 +297,16 @@
   .border-c-md {
     border-color: rgb(var(--edge-rgb) / 0.1);
   }
+  .border-c-strong {
+    border-color: rgb(var(--edge-rgb) / 0.12);
+  }
   .border-c-bright {
     border-color: rgb(var(--edge-rgb) / 0.18);
+  }
+
+  /* Divide utility — applies edge border-color between children (matches Tailwind's divide-y selector) */
+  .divide-edge-xs > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgb(var(--edge-rgb) / 0.04);
   }
 
   /* Background ghost/tint utilities */
@@ -510,6 +577,60 @@
   }
 }
 
+/* Personality lighter, avatar circles, badge palette, milestone dot */
+@layer utilities {
+  .text-personality-lighter { color: hsl(var(--personality-lighter)); }
+
+  .bg-avatar-circle-1 { background-color: hsl(var(--avatar-circle-1)); }
+  .bg-avatar-circle-2 { background-color: hsl(var(--avatar-circle-2)); }
+  .bg-avatar-circle-3 { background-color: hsl(var(--avatar-circle-3)); }
+  .bg-avatar-circle-4 { background-color: hsl(var(--avatar-circle-4)); }
+  .bg-avatar-circle-5 { background-color: hsl(var(--avatar-circle-5)); }
+  .bg-avatar-circle-6 { background-color: hsl(var(--avatar-circle-6)); }
+
+  .badge-1-bg     { background-color: hsl(var(--badge-1-color) / 0.2); }
+  .badge-1-text   { color: hsl(var(--badge-1-color)); }
+  .badge-1-border { border-color: hsl(var(--badge-1-color) / 0.25); }
+  .badge-2-bg     { background-color: hsl(var(--badge-2-color) / 0.2); }
+  .badge-2-text   { color: hsl(var(--badge-2-color)); }
+  .badge-2-border { border-color: hsl(var(--badge-2-color) / 0.25); }
+  .badge-3-bg     { background-color: hsl(var(--badge-3-color) / 0.2); }
+  .badge-3-text   { color: hsl(var(--badge-3-color)); }
+  .badge-3-border { border-color: hsl(var(--badge-3-color) / 0.25); }
+  .badge-4-bg     { background-color: hsl(var(--badge-4-color) / 0.2); }
+  .badge-4-text   { color: hsl(var(--badge-4-color)); }
+  .badge-4-border { border-color: hsl(var(--badge-4-color) / 0.25); }
+  .badge-5-bg     { background-color: hsl(var(--badge-5-color) / 0.2); }
+  .badge-5-text   { color: hsl(var(--badge-5-color)); }
+  .badge-5-border { border-color: hsl(var(--badge-5-color) / 0.25); }
+  .badge-6-bg     { background-color: hsl(var(--badge-6-color) / 0.2); }
+  .badge-6-text   { color: hsl(var(--badge-6-color)); }
+  .badge-6-border { border-color: hsl(var(--badge-6-color) / 0.25); }
+
+  /* Area milestone — color injected per-element via --area-color custom property */
+  .area-milestone-dot   { background-color: var(--area-color, hsl(var(--primary))); }
+  .area-milestone-badge { background-color: var(--area-color, hsl(var(--primary))); }
+}
+
+/* Avatar SVG fill/stroke utilities — colors driven by CSS variables above */
+@layer utilities {
+  .fill-avatar-skin    { fill: var(--avatar-skin); }
+  .fill-avatar-dark    { fill: var(--avatar-dark); }
+  .fill-avatar-darker  { fill: var(--avatar-darker); }
+  .fill-avatar-darkest { fill: var(--avatar-darkest); }
+  .fill-avatar-pupil   { fill: var(--avatar-pupil); }
+  .fill-avatar-hair-dark { fill: var(--avatar-hair-dark); }
+  .fill-avatar-hair-mid  { fill: var(--avatar-hair-mid); }
+  .fill-avatar-pink      { fill: var(--avatar-pink); }
+  .fill-avatar-pink-deep { fill: var(--avatar-pink-deep); }
+  .stroke-avatar-dark    { stroke: var(--avatar-dark); }
+  .stroke-avatar-glasses { stroke: var(--avatar-glasses); }
+
+  /* Logo sprout leaf */
+  .fill-logo-leaf   { fill: var(--logo-leaf); }
+  .stroke-logo-leaf { stroke: var(--logo-leaf); }
+}
+
 @layer components {
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
@@ -529,5 +650,45 @@
   /* Amber destructive-light button (Start Over, etc.) */
   .btn-start-over {
     @apply border border-warning-medium/30 bg-transparent text-warning hover:bg-warning-medium/10;
+  }
+
+  /* Deep navy gradient — inner personality card background */
+  .bg-deep-navy-gradient {
+    background: linear-gradient(to bottom right, var(--bg-deep-1), var(--bg-deep-2), var(--bg-deep-3));
+  }
+
+  /* Onboarding intro photo overlay — dark veil gradient */
+  .onboarding-intro-veil {
+    background: linear-gradient(180deg, rgba(3,4,12,0.1) 0%, rgba(3,4,12,0.3) 55%, rgba(3,4,12,0.88) 100%);
+  }
+  .onboarding-intro-text-shadow {
+    text-shadow: 0 2px 18px rgba(0,0,0,0.6);
+  }
+
+  /* Ambient blue glow pinned to bottom of conversational onboarding screen */
+  .onboarding-bg-glow {
+    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(59,130,246,0.18), transparent);
+  }
+
+  /* Pill-shaped text input in conversational onboarding */
+  .onboarding-input-pill {
+    background: rgba(12, 20, 48, 0.88);
+    backdrop-filter: blur(24px);
+    box-shadow: 0 0 40px rgba(59,130,246,0.1), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  /* Animated orb layers */
+  .orb-ambient {
+    background: radial-gradient(circle, rgba(59,130,246,0.22) 0%, transparent 70%);
+    filter: blur(10px);
+  }
+  .orb-sphere {
+    background: conic-gradient(from 0deg, #1e3a8a, #3b82f6, #60a5fa, #93c5fd, #3b82f6, #1d4ed8, #1e3a8a);
+  }
+  .orb-swirl {
+    background: conic-gradient(from 180deg, rgba(147,197,253,0.85), rgba(59,130,246,0.3), rgba(147,197,253,0.85));
+  }
+  .orb-core {
+    background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(186,230,253,0.65) 45%, transparent 80%);
   }
 }

@@ -16,7 +16,7 @@ interface Props {
 
 export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel }: Props) {
   return (
-    <div className="sticky top-0 z-30 w-full border-b border-white/[0.06] bg-sidebar/95 backdrop-blur-xl">
+    <div className="sticky top-0 z-30 w-full border-b-edge-faint bg-sidebar/95 backdrop-blur-xl">
       {/* Phase row */}
       <div className="mx-auto flex max-w-5xl items-center px-4 py-3">
         {phases.map((phase, i) => (
@@ -30,8 +30,8 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
                 phase.status === 'done'
                   ? 'border border-success/40 bg-success/20 text-success-bright'
                   : phase.status === 'active'
-                    ? 'bg-primary text-primary-foreground shadow-[0_0_12px_rgba(45,212,191,0.35)]'
-                    : 'border border-white/[0.08] bg-surface-elevated text-muted-foreground/40'
+                    ? 'bg-primary text-primary-foreground glow-teal-sm'
+                    : 'border-edge bg-surface-elevated text-muted-foreground/40'
               }`}
             >
               {phase.status === 'done' ? <Check className="h-3.5 w-3.5" /> : phase.num}
@@ -52,7 +52,7 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
 
             {/* Progress bar segment (not after last item) */}
             {i < phases.length - 1 && (
-              <div className="relative mx-3 h-[2px] min-w-[24px] flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+              <div className="relative mx-3 h-[2px] min-w-[24px] flex-1 overflow-hidden rounded-full bg-ghost-strong">
                 {phase.status === 'done' && (
                   <motion.div
                     initial={{ scaleX: 0 }}
@@ -78,7 +78,7 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
 
       {/* Step label row */}
       {(stepLabel ?? rightLabel) && (
-        <div className="mx-auto flex max-w-5xl items-center justify-between border-t border-white/[0.04] px-4 py-1.5">
+        <div className="mx-auto flex max-w-5xl items-center justify-between border-t-edge-xs px-4 py-1.5">
           {stepLabel && (
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
               {stepLabel}

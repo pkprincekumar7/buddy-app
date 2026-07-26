@@ -29,13 +29,13 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
       transition={{ duration: 0.55, ease: 'easeOut' }}
       className="mx-auto max-w-lg"
     >
-      <div className="space-y-6 rounded-2xl border border-white/[0.08] bg-card p-8 text-center sm:p-10">
+      <div className="space-y-6 rounded-2xl border-edge bg-card p-8 text-center sm:p-10">
         {/* Buddy logo — solid teal filled circle with white sprout */}
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 70, damping: 12, delay: 0.1 }}
-          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary shadow-[0_0_32px_rgba(45,212,191,0.45)]"
+          className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-primary glow-teal-icon"
         >
           <svg viewBox="0 0 20 22" className="h-10 w-10">
             {/* stem */}
@@ -44,19 +44,19 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               y1="21"
               x2="10"
               y2="14"
-              stroke="#0d3d2e"
+              className="stroke-logo-leaf"
               strokeWidth="2.2"
               strokeLinecap="round"
             />
             {/* left leaf — teardrop pointing upper-left */}
             <path
               d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-              fill="#0d3d2e"
+              className="fill-logo-leaf"
             />
             {/* right leaf — teardrop pointing upper-right */}
             <path
               d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-              fill="#0d3d2e"
+              className="fill-logo-leaf"
             />
           </svg>
         </motion.div>
@@ -109,7 +109,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
               initial={{ opacity: 0, scale: 0.88 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 1.0 + i * 0.1, duration: 0.35, ease: 'easeOut' }}
-              className="flex flex-1 flex-col items-center gap-2 rounded-xl border border-white/[0.08] bg-surface-elevated py-4"
+              className="flex flex-1 flex-col items-center gap-2 rounded-xl border-edge bg-surface-elevated py-4"
             >
               <f.icon className="h-5 w-5 text-primary" />
               <span className="text-xs font-medium text-foreground">{f.text}</span>
@@ -127,7 +127,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
           {isAuthenticated ? (
             <Button
               onClick={onContinue}
-              className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground shadow-[0_0_20px_rgba(45,212,191,0.25)] transition-all duration-200 hover:bg-primary/90"
+              className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground glow-teal-md transition-all duration-200 hover:bg-primary/90"
             >
               Let's start &rarr;
             </Button>
@@ -135,7 +135,7 @@ export default function WelcomePhase({ onContinue, isAuthenticated, user }: Welc
             <>
               <Button
                 onClick={handleGoogleLogin}
-                className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground shadow-[0_0_20px_rgba(45,212,191,0.25)] transition-all duration-200 hover:bg-primary/90"
+                className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground glow-teal-md transition-all duration-200 hover:bg-primary/90"
               >
                 Get started &rarr;
               </Button>
