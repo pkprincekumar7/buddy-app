@@ -109,7 +109,7 @@ export default function ConversationalOnboarding() {
             />
           </div>
         ) : (
-          <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#08090a]">
+          <div className="flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
             {/* Progress header — matches /Onboarding style */}
             {(() => {
               const headerPhases: PhaseEntry[] = [

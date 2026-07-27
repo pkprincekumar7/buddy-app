@@ -275,7 +275,7 @@ function IvyIntroScreen() {
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.5 }}
-      className="fixed inset-0 z-50 bg-black"
+      className="fixed inset-0 z-50 bg-[var(--bg-deep-3)]"
     >
       <img
         src="/app-assets/avatars/ivy-intro.jpg"

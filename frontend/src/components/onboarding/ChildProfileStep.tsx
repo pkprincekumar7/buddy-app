@@ -425,10 +425,10 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 placeholder="Arjun"
                 className={cn(
                   'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
-                  errors.name ? 'border-red-500/50' : 'border-c-md',
+                  errors.name ? 'border-error/50' : 'border-c-md',
                 )}
               />
-              {errors.name && <p className="text-[10px] text-red-400">{errors.name}</p>}
+              {errors.name && <p className="text-[10px] text-error">{errors.name}</p>}
             </div>
 
             <div className="space-y-1.5">
@@ -444,10 +444,10 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 max={30}
                 className={cn(
                   'w-full rounded-xl border bg-surface-input px-4 py-2.5 text-sm text-foreground outline-none ring-primary/40 transition-all placeholder:text-muted-foreground/40 focus:ring-1',
-                  errors.age ? 'border-red-500/50' : 'border-c-md',
+                  errors.age ? 'border-error/50' : 'border-c-md',
                 )}
               />
-              {errors.age && <p className="text-[10px] text-red-400">{errors.age}</p>}
+              {errors.age && <p className="text-[10px] text-error">{errors.age}</p>}
             </div>
           </div>
 
@@ -473,7 +473,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 </button>
               ))}
             </div>
-            {errors.gender && <p className="text-[10px] text-red-400">{errors.gender}</p>}
+            {errors.gender && <p className="text-[10px] text-error">{errors.gender}</p>}
           </div>
 
           {/* School */}
