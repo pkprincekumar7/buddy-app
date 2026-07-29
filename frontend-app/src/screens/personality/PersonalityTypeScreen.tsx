@@ -1,26 +1,24 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { EmojiText } from '@/components/ui/EmojiText';
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { View, Text, ActivityIndicator } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+} from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RouteProp } from '@react-navigation/native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { Brain, Star, Sprout, Compass, Check } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
-import { useSlideUpWhenReady } from '@/lib/animations';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import {
   adaptAiPersonalityToViewModel,
   PERSONALITY_TYPE_KEYS,
   type MbtiResult,
 } from '@/lib/personalityLogic';
-import PersonalityAnalysis from '@/components/shared/PersonalityAnalysis';
-import StartOverButton from '@/components/shared/StartOverButton';
-import PageActions from '@/components/shared/PageActions';
 import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
 import {
   sanitizeViewModelAvatars,
@@ -33,20 +31,71 @@ import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import type { RootStackParamList } from '@/navigation';
 import { useJob } from '@/hooks/useJob';
 
-// The PersonalityType screen lives in the Personality stack which is inside the Main tab.
-// We use a generic navigation prop here so it can go to sibling screens and back to Main root.
 type PersonalityTypeNavProp = StackNavigationProp<RootStackParamList>;
-
-// Route carries optional childId param (passed by previous screens).
 type PersonalityTypeRouteProp = RouteProp<
   { PersonalityType: { childId?: string } | undefined },
   'PersonalityType'
 >;
 
+// ── Analysis checklist steps — mirrors web PersonalityType.tsx ────────────────
+
+type LucideIcon = typeof Brain;
+
+interface AnalysisStep {
+  label: string;
+  Icon: LucideIcon;
+  heading: (name: string) => string;
+  subtitle: string;
+  iconColor: string;
+  iconBg: string;
+}
+
+function useAnalysisSteps() {
+  const { colors } = useTheme();
+  const steps: AnalysisStep[] = [
+    {
+      label: 'Reading personality traits',
+      Icon: Brain,
+      heading: (name: string) => `Reading ${name}'s personality traits...`,
+      subtitle: 'Looking at how your child thinks, feels and responds.',
+      iconColor: colors.primary,
+      iconBg: colors.primarySubtle,
+    },
+    {
+      label: 'Mapping strengths & interests',
+      Icon: Star,
+      heading: () => 'Mapping strengths & interests...',
+      subtitle:
+        "Connecting the dots between what they love and what they're great at.",
+      iconColor: colors.warning,
+      iconBg: colors.successSubtle,
+    },
+    {
+      label: 'Building growth profile',
+      Icon: Sprout,
+      heading: () => 'Building the growth profile...',
+      subtitle: 'Shaping a personal plan rooted in their unique strengths.',
+      iconColor: colors.primary,
+      iconBg: colors.primarySubtle,
+    },
+    {
+      label: 'Finalizing personalized journey',
+      Icon: Compass,
+      heading: () => 'Finalizing the personalized journey...',
+      subtitle: 'Almost there — preparing recommendations made just for them.',
+      iconColor: colors.personality,
+      iconBg: colors.primaryMuted,
+    },
+  ];
+  return steps;
+}
+
+// ── Phase bar (numbered stepper — mirrors web OnboardingProgressHeader) ────────
+
 const PHASES = [
-  { label: 'Getting to Know', icon: '💬', done: true, active: false },
-  { label: 'Personality Analysis', icon: '⭐', done: false, active: true },
-  { label: 'Your Journey', icon: '💡', done: false, active: false },
+  { num: 1, label: 'Getting to Know', done: true, active: false },
+  { num: 2, label: 'Personality Analysis', done: false, active: true },
+  { num: 3, label: 'Your Journey', done: false, active: false },
 ];
 
 function PhaseBar() {
@@ -58,60 +107,383 @@ function PhaseBar() {
         borderBottomColor: colors.border,
         backgroundColor: colors.card,
       }}
-      className="px-4 py-3"
     >
-      <View className="flex-row items-center justify-between gap-2">
-        {PHASES.map(phase => (
-          <View
-            key={phase.label}
-            className="flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 border"
-            style={{
-              borderColor: phase.active
-                ? colors.primary + '40'
-                : phase.done
-                ? colors.success + '33'
-                : colors.border,
-              backgroundColor: phase.active
-                ? colors.primary + '1A'
-                : phase.done
-                ? colors.success + '1A'
-                : 'transparent',
-              opacity: !phase.active && !phase.done ? 0.5 : 1,
-            }}
-          >
-            <EmojiText size="base">{phase.icon}</EmojiText>
-            <Text
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 8,
+        }}
+      >
+        {PHASES.map((phase, i, arr) => {
+          const isLast = i === arr.length - 1;
+          return (
+            <View
+              key={phase.label}
               style={{
-                color: phase.active
-                  ? colors.primary
-                  : phase.done
-                  ? colors.success
-                  : colors.iconColor,
+                flexDirection: 'row',
+                alignItems: 'center',
+                ...(isLast
+                  ? { flexGrow: 0, flexShrink: 0 }
+                  : { flex: phase.active ? 2 : 1 }),
               }}
-              className="text-xs font-medium flex-1"
-              numberOfLines={1}
             >
-              {phase.label}
-            </Text>
-            {phase.done && (
-              <Text style={{ color: colors.success }} className="text-xs">
-                ✓
-              </Text>
-            )}
-          </View>
-        ))}
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  ...(phase.done
+                    ? { backgroundColor: colors.success }
+                    : phase.active
+                    ? { backgroundColor: colors.primary }
+                    : {
+                        backgroundColor: colors.surfaceElevated,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }),
+                }}
+              >
+                {phase.done ? (
+                  <Check size={13} color="#fff" />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '700',
+                      color: phase.active ? colors.primaryForeground : colors.textMuted,
+                      opacity: phase.active ? 1 : 0.4,
+                    }}
+                  >
+                    {phase.num}
+                  </Text>
+                )}
+              </View>
+              {phase.active && (
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    fontWeight: '500',
+                    color: colors.text,
+                    flexShrink: 1,
+                  }}
+                  numberOfLines={1}
+                >
+                  {phase.label}
+                </Text>
+              )}
+              {!isLast && (
+                <View
+                  style={{
+                    flex: 1,
+                    height: 2,
+                    marginHorizontal: 12,
+                    minWidth: 24,
+                    borderRadius: 1,
+                    backgroundColor: colors.border,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {phase.done && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: colors.success,
+                      }}
+                    />
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })}
       </View>
     </View>
   );
 }
+
+// ── Animated checklist item ───────────────────────────────────────────────────
+
+function ChecklistItem({
+  step,
+  isDone,
+  isActive,
+  delay,
+}: {
+  step: AnalysisStep;
+  isDone: boolean;
+  isActive: boolean;
+  delay: number;
+}) {
+  const { colors } = useTheme();
+  const opacity = useSharedValue(0);
+  const translateX = useSharedValue(-16);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      opacity.value = withTiming(1, { duration: 400 });
+      translateX.value = withTiming(0, { duration: 400 });
+    }, delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const checkScale = useSharedValue(0);
+  useEffect(() => {
+    if (isDone) checkScale.value = withSpring(1, { stiffness: 200 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDone]);
+  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
+
+  const { Icon } = step;
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          borderRadius: 12,
+          borderWidth: 1,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
+          borderColor: isDone
+            ? colors.primaryBorder
+            : isActive
+            ? colors.primaryMuted
+            : colors.border,
+          backgroundColor: isDone
+            ? colors.primarySubtle
+            : isActive
+            ? colors.surfaceElevated
+            : 'transparent',
+          opacity: !isDone && !isActive ? 0.4 : 1,
+        },
+      ]}
+    >
+      <Icon
+        size={16}
+        color={
+          isDone
+            ? colors.primary
+            : isActive
+            ? colors.text
+            : colors.textMuted
+        }
+      />
+      <Text
+        className="flex-1 text-sm font-medium"
+        style={{
+          color: isDone
+            ? colors.primary
+            : isActive
+            ? colors.text
+            : colors.textMuted,
+        }}
+      >
+        {step.label}
+        {isActive ? '...' : ''}
+      </Text>
+      {isDone && (
+        <Animated.View style={checkStyle}>
+          <Check size={14} color={colors.primary} />
+        </Animated.View>
+      )}
+    </Animated.View>
+  );
+}
+
+// ── Animated icon (swaps on step change) ─────────────────────────────────────
+
+function ActiveStepIcon({
+  step,
+  stepIndex,
+}: {
+  step: AnalysisStep;
+  stepIndex: number;
+}) {
+  const scale = useSharedValue(0.7);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withSpring(1, { stiffness: 200, damping: 18 });
+    opacity.value = withTiming(1, { duration: 300 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIndex]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  const { Icon } = step;
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          height: 80,
+          width: 80,
+          borderRadius: 40,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: step.iconBg,
+          borderWidth: 4,
+          borderColor: step.iconColor + '33',
+        },
+      ]}
+    >
+      <Icon size={40} color={step.iconColor} />
+    </Animated.View>
+  );
+}
+
+// ── Analysis loading screen ───────────────────────────────────────────────────
+
+function AnalysisLoadingScreen({
+  childName,
+  completedSteps,
+  progressPct,
+  steps,
+}: {
+  childName: string;
+  completedSteps: number;
+  progressPct: number;
+  steps: AnalysisStep[];
+}) {
+  const { colors } = useTheme();
+  const activeIdx = Math.min(completedSteps, steps.length - 1);
+  const activeStep = steps[activeIdx] ?? steps[0]!;
+  const stepNum = Math.min(completedSteps + 1, steps.length);
+
+  const progressWidth = useSharedValue(0);
+  useEffect(() => {
+    progressWidth.value = withTiming(progressPct, { duration: 600 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressPct]);
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progressWidth.value}%`,
+  }));
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <PhaseBar />
+      <View
+        className="flex-1 items-center justify-center px-4"
+        style={{ gap: 20, paddingBottom: 24 }}
+      >
+        <Text
+          className="text-[11px] font-semibold uppercase"
+          style={{ letterSpacing: 2.5, color: colors.textMuted, opacity: 0.6 }}
+        >
+          Personality Analysis · Step {stepNum} / {steps.length}
+        </Text>
+
+        <View
+          style={{
+            width: '100%',
+            maxWidth: 360,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+            padding: 24,
+            alignItems: 'center',
+            gap: 20,
+          }}
+        >
+          {/* Animated icon */}
+          <ActiveStepIcon step={activeStep} stepIndex={activeIdx} />
+
+          {/* Heading + subtitle */}
+          <View className="items-center" style={{ gap: 4 }}>
+            <Text
+              className="text-xl font-bold text-center"
+              style={{ color: colors.text }}
+            >
+              {activeStep.heading(childName || 'your child')}
+            </Text>
+            <Text
+              className="text-sm text-center"
+              style={{ color: colors.textMuted }}
+            >
+              {activeStep.subtitle}
+            </Text>
+          </View>
+
+          {/* Progress bar */}
+          <View style={{ width: '100%', gap: 4 }}>
+            <View
+              style={{
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: colors.surfaceDark,
+                overflow: 'hidden',
+                width: '100%',
+              }}
+            >
+              <Animated.View
+                style={[
+                  progressStyle,
+                  {
+                    height: '100%',
+                    borderRadius: 4,
+                    backgroundColor: colors.primary,
+                  },
+                ]}
+              />
+            </View>
+            <Text
+              className="text-xs font-semibold text-center"
+              style={{ color: colors.textMuted }}
+            >
+              {progressPct}%
+            </Text>
+          </View>
+
+          {/* Checklist */}
+          <View style={{ width: '100%', gap: 8 }}>
+            {steps.map((s, idx) => (
+              <ChecklistItem
+                key={s.label}
+                step={s}
+                isDone={idx < completedSteps}
+                isActive={idx === completedSteps}
+                delay={400 + idx * 120}
+              />
+            ))}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PersonalityTypeScreen() {
   const navigation = useNavigation<PersonalityTypeNavProp>();
   const { colors } = useTheme();
   const route = useRoute<PersonalityTypeRouteProp>();
 
-  // Prefer explicit childId from navigation params (onboarding flow);
-  // fall back to the auth context's active child (Personality tab access).
   const {
     isAuthenticated,
     isLoading: isLoadingAuth,
@@ -120,6 +492,7 @@ export default function PersonalityTypeScreen() {
   const routeChildId = (route.params as { childId?: string } | undefined)
     ?.childId;
   const childId = routeChildId ?? activeChildId;
+
   const [childData, setChildData] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -127,11 +500,12 @@ export default function PersonalityTypeScreen() {
   const [mbtiResult, setMbtiResult] = useState<MbtiResult | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(false);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  // Stores merged child data for the onCompleted callback without re-render dependencies.
+  const [completedSteps, setCompletedSteps] = useState(0);
+  const [progressPct, setProgressPct] = useState(0);
+  const [navigatingAway, setNavigatingAway] = useState(false);
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
-  const [showSplash, startTimer] = useStageSplash();
+  const steps = useAnalysisSteps();
 
   const finalizePersonality = useCallback(async () => {
     if (!childId) return;
@@ -147,18 +521,12 @@ export default function PersonalityTypeScreen() {
           pendingVm,
           merged.name as string,
         );
-        // Show result immediately — don't block on the save.
         setMbtiResult(sanitizeViewModelAvatars(vm) as unknown as MbtiResult);
-        // Strip SVG data-URI images before saving — WAF blocks payloads containing
-        // <svg>/<text> tags. sanitizeViewModelAvatars regenerates them on next load.
         api.entities.Child.update(childId, {
           personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           onboarding_phase: 2,
         }).catch(err =>
-          console.error(
-            '[PersonalityTypeScreen] Failed to persist personality:',
-            err,
-          ),
+          console.error('[PersonalityType] Failed to persist personality:', err),
         );
       } else if (
         personality?.view_model?.type &&
@@ -166,19 +534,14 @@ export default function PersonalityTypeScreen() {
       ) {
         const clamped = maybeClampStoredPersonalityDescription(
           personality.view_model,
-          {
-            analysisSource: personality?.source,
-          },
+          { analysisSource: personality?.source },
         );
         setMbtiResult(
           sanitizeViewModelAvatars(clamped) as unknown as MbtiResult,
         );
       }
     } catch (err) {
-      console.error(
-        '[PersonalityTypeScreen] Failed to finalize personality:',
-        err,
-      );
+      console.error('[PersonalityType] Failed to finalize personality:', err);
     }
   }, [childId]);
 
@@ -190,15 +553,44 @@ export default function PersonalityTypeScreen() {
 
   const isAnalysing = !isInitializing && job.isLoading;
   const isError = initError || job.isFailed;
-  const isReady =
-    !isInitializing && !isAnalysing && !isError && mbtiResult !== null;
-  // Animate in only after data is ready AND stage-2 splash is gone — mirrors web PersonalityType.tsx.
-  const contentStyle = useSlideUpWhenReady(isReady && !showSplash);
+
+  // Advance checklist steps as job progresses (mirrors web PersonalityType.tsx)
+  useEffect(() => {
+    if (!isAnalysing || mbtiResult) return;
+    const progress = Math.min((job.elapsedMs / 1000 / 30) * 100, 95);
+    const s =
+      progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 95 ? 3 : 4;
+    setCompletedSteps(s);
+    setProgressPct(Math.round(progress));
+  }, [isAnalysing, job.elapsedMs, mbtiResult]);
+
+  // When analysis done: animate remaining steps then auto-navigate to PersonalityJourney
+  useEffect(() => {
+    if (!mbtiResult || navigatingAway) return;
+    if (completedSteps < steps.length) {
+      const next = completedSteps + 1;
+      const t = setTimeout(() => {
+        setCompletedSteps(next);
+        setProgressPct(Math.round((next / steps.length) * 100));
+      }, 600);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setNavigatingAway(true);
+      (
+        navigation as unknown as {
+          navigate: (name: string, params?: unknown) => void;
+        }
+      ).navigate('PersonalityJourney', childId ? { childId } : undefined);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [mbtiResult, completedSteps, navigatingAway, childId, navigation, steps.length]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigation.navigate('Onboarding');
+      // React Navigation automatically switches to the Auth stack when the user
+      // is no longer authenticated — no explicit navigate needed.
       return;
     }
     if (!childId) {
@@ -209,19 +601,12 @@ export default function PersonalityTypeScreen() {
 
     void (async () => {
       try {
-        const [child, prefs] = await Promise.all([
-          api.entities.Child.get(childId),
-          api.preferences.get().catch(() => null),
-        ]);
+        const child = await api.entities.Child.get(childId);
         if (cancelled) return;
 
         if (!child) {
           navigation.navigate('Main');
           return;
-        }
-
-        if (prefs && typeof prefs.tts_enabled === 'boolean') {
-          setTtsEnabled(prefs.tts_enabled);
         }
 
         const merged = mergeChildDraft(
@@ -231,7 +616,6 @@ export default function PersonalityTypeScreen() {
         setChildName(merged.name || '');
         setChildData(child as Record<string, unknown>);
 
-        // Already analysed — show result immediately
         const personality = child.personality;
         const viewModel = personality?.view_model;
         if (viewModel?.type && viewModel?.profile) {
@@ -245,7 +629,6 @@ export default function PersonalityTypeScreen() {
           return;
         }
 
-        // pending_personality_vm means worker succeeded but client crashed before finalizing
         const pendingVm = (child.pending_personality_vm ??
           personality?.pending_view_model) as
           | Record<string, unknown>
@@ -264,12 +647,7 @@ export default function PersonalityTypeScreen() {
               view_model: stripViewModelImages(vm),
             },
             onboarding_phase: 2,
-          }).catch(err =>
-            console.error(
-              '[PersonalityTypeScreen] Failed to persist recovered personality:',
-              err,
-            ),
-          );
+          }).catch(console.error);
           return;
         }
 
@@ -278,7 +656,6 @@ export default function PersonalityTypeScreen() {
           return;
         }
 
-        // Only enqueue if no active job is already polling (useJob picks it up via childData)
         const activeJobId = (
           child.active_jobs as Record<string, string> | undefined
         )?.generate_personality_analysis;
@@ -300,9 +677,10 @@ export default function PersonalityTypeScreen() {
             },
           });
         }
+        setCompletedSteps(1);
         setIsInitializing(false);
       } catch (err) {
-        console.warn('[PersonalityTypeScreen] Load failed:', err);
+        console.warn('[PersonalityType] Load failed:', err);
         if (!cancelled) {
           setInitError(true);
           setIsInitializing(false);
@@ -313,25 +691,8 @@ export default function PersonalityTypeScreen() {
     return () => {
       cancelled = true;
     };
-    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);
-
-  const handleContinue = async () => {
-    if (childId) {
-      await api.entities.Child.update(childId, { onboarding_phase: 3 }).catch(
-        () => {},
-      );
-    }
-    // Navigate to PersonalityJourney — it is a sibling screen in the Personality stack.
-    // We navigate within the stack by going back or using a named route. Use navigate on
-    // the parent navigator by name. Here we push within the personality nested stack.
-    (
-      navigation as unknown as {
-        navigate: (name: string, params?: unknown) => void;
-      }
-    ).navigate('PersonalityJourney', childId ? { childId } : undefined);
-  };
 
   // — Loading state
   if (isLoadingAuth || isInitializing) {
@@ -345,26 +706,8 @@ export default function PersonalityTypeScreen() {
     );
   }
 
-  // — Analysing state
-  if (isAnalysing) {
-    return (
-      <View
-        style={{ flex: 1, backgroundColor: colors.background }}
-        className="flex-col items-center justify-center gap-4 px-4"
-      >
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text
-          style={{ color: colors.textMuted }}
-          className="max-w-xs text-center font-medium mt-4"
-        >
-          Shaping personality insights from your questionnaire…
-        </Text>
-      </View>
-    );
-  }
-
-  // — Error / no result state
-  if (isError || !mbtiResult) {
+  // — Error state
+  if (isError) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -396,89 +739,25 @@ export default function PersonalityTypeScreen() {
     );
   }
 
-  // — Ready state
+  // — Analysing state: animated checklist (mirrors web AnalysisLoadingScreen)
+  if (isAnalysing || (mbtiResult && completedSteps < steps.length)) {
+    return (
+      <AnalysisLoadingScreen
+        childName={childName}
+        completedSteps={completedSteps}
+        progressPct={progressPct}
+        steps={steps}
+      />
+    );
+  }
+
+  // — Navigating away: keep checklist visible while transition happens
   return (
-    <View style={{ flex: 1 }}>
-      <Animated.View
-        style={[contentStyle, { backgroundColor: colors.background }]}
-        className="flex-1"
-      >
-        <PhaseBar />
-
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 24,
-            paddingBottom: 40,
-          }}
-        >
-          <PersonalityAnalysis
-            mbtiResult={mbtiResult}
-            childName={childName}
-            ready={!showSplash}
-            ttsEnabled={ttsEnabled}
-          />
-
-          {/* Navigation actions */}
-          <PageActions
-            className="mt-10"
-            left={
-              <Button
-                variant="outline"
-                onPress={() =>
-                  navigation.navigate('Onboarding', {
-                    screen: 'ConversationalOnboarding',
-                    params: { fromBack: true },
-                  } as never)
-                }
-                className="w-full rounded-2xl"
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <ChevronLeft size={16} color={colors.textMuted} />
-                  <Text
-                    style={{ color: colors.textMuted }}
-                    className="text-base font-medium"
-                  >
-                    Back
-                  </Text>
-                </View>
-              </Button>
-            }
-            center={
-              <StartOverButton
-                childId={childId ?? undefined}
-                className="w-full"
-              />
-            }
-            right={
-              <Button
-                size="xl"
-                onPress={() => {
-                  void handleContinue();
-                }}
-                className="w-full rounded-2xl"
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <Text
-                    style={{
-                      fontSize: 16,
-                      fontWeight: '600',
-                      color: colors.primaryForeground,
-                    }}
-                  >
-                    Continue
-                  </Text>
-                  <ChevronRight size={16} color={colors.primaryForeground} />
-                </View>
-              </Button>
-            }
-          />
-        </ScrollView>
-      </Animated.View>
-
-      {/* Stage-2 splash — mirrors web PersonalityType.tsx */}
-      {showSplash && <StageSplash stage={2} onReady={startTimer} />}
-    </View>
+    <AnalysisLoadingScreen
+      childName={childName}
+      completedSteps={steps.length}
+      progressPct={100}
+      steps={steps}
+    />
   );
 }

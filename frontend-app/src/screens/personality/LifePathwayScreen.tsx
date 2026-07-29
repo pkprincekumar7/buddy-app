@@ -38,8 +38,6 @@ import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import {
   GradientIconBox,
   GradientButton,
@@ -691,17 +689,23 @@ export default function LifePathwayScreen() {
     [buddy360Milestones],
   );
 
-  const [showSplash, startTimer] = useStageSplash();
-
   const scrollRef = useRef<ScrollView>(null);
   useFocusEffect(
     useCallback(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     }, []),
   );
+  // Close concern modal when screen loses focus — mirrors web's pageshow/unmount cleanup.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        closeConcernModal();
+      };
+    }, [closeConcernModal]),
+  );
 
   // Section entrance animations — mirrors web slideUp(0.1 / 0.8 / 1.6 / 1.8)
-  const ready = !isLoading && !showSplash;
+  const ready = !isLoading;
   const contentStyle = useFocusEntranceAnim(ready, 0, 800);
   const headerAnim = useFocusEntranceAnim(ready, 100, 800);
   const chartAnim = useFocusEntranceAnim(ready, 800, 800);
@@ -1353,7 +1357,7 @@ export default function LifePathwayScreen() {
                     {(user?.full_name as string | undefined)?.split(' ')[0] ??
                       'Parent'}
                   </Text>{' '}
-                  and <Text style={{ color: colors.success }}>{childName}</Text>{' '}
+                  and <Text style={{ color: colors.successBright }}>{childName}</Text>{' '}
                   to Buddy360. We look forward to powering up your life in all
                   possible dimensions.
                 </Text>
@@ -1361,7 +1365,7 @@ export default function LifePathwayScreen() {
             ) : null}
 
             <Text
-              style={{ color: colors.iconColor }}
+              style={{ color: colors.textMuted }}
               className="mt-2 text-sm text-center"
             >
               Click below to continue this interesting journey with Buddy360.
@@ -1639,7 +1643,6 @@ export default function LifePathwayScreen() {
         </Modal>
       </Animated.View>
 
-      {showSplash && <StageSplash stage={4} onReady={startTimer} />}
     </View>
   );
 }

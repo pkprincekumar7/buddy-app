@@ -122,6 +122,20 @@ export interface AppColors {
   /** Numeric shadow radius — kept here so components do one token lookup. */
   headerShadowRadius: number;
 
+  // ─── Primary opacity tints ────────────────────────────────────────────────
+  /** 10 % primary tint — icon container backgrounds (replaces colors.primary+'1A'). */
+  primarySubtle: string;
+  /** 20 % primary tint — badge backgrounds (replaces colors.primary+'33'). */
+  primaryMuted: string;
+  /** 25 % primary tint — card borders on primary-tinted surfaces (replaces colors.primary+'40'). */
+  primaryBorder: string;
+
+  // ─── Success opacity tints ────────────────────────────────────────────────
+  /** 10 % success tint — done-card background (replaces ${colors.success}1a). */
+  successSubtle: string;
+  /** 30 % success tint — done-card border (replaces ${colors.success}4d). */
+  successBorder: string;
+
   // ─── Ghost / edge tints (edge-rgb pattern from web) ──────────────────────
   /** 4 % white/black tint — faintest surface overlay. */
   ghostMd: string;
@@ -235,6 +249,15 @@ export const darkColors: AppColors = {
   headerShadowColor: 'rgba(45,212,191,0.45)',
   headerShadowRadius: 10,
 
+  // Primary opacity tints
+  primarySubtle: 'rgba(62,224,207,0.10)',
+  primaryMuted: 'rgba(62,224,207,0.20)',
+  primaryBorder: 'rgba(62,224,207,0.25)',
+
+  // Success opacity tints
+  successSubtle: 'rgba(16,183,127,0.10)',
+  successBorder: 'rgba(16,183,127,0.30)',
+
   // Ghost tints — white base in dark mode
   ghostMd: 'rgba(255,255,255,0.04)',
   ghostLight: 'rgba(255,255,255,0.06)',
@@ -337,6 +360,15 @@ export const lightColors: AppColors = {
   shadowColor: '#000000',
   headerShadowColor: 'transparent',
   headerShadowRadius: 0,
+
+  // Primary opacity tints
+  primarySubtle: 'rgba(29,175,161,0.10)',
+  primaryMuted: 'rgba(29,175,161,0.20)',
+  primaryBorder: 'rgba(29,175,161,0.25)',
+
+  // Success opacity tints
+  successSubtle: 'rgba(12,141,98,0.10)',
+  successBorder: 'rgba(12,141,98,0.30)',
 
   // Ghost tints — black base in light mode
   ghostMd: 'rgba(0,0,0,0.04)',

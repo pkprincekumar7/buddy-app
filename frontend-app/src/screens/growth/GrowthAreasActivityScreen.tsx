@@ -131,7 +131,7 @@ export default function GrowthAreasActivityScreen() {
             a => a.area_id === area.id && a.status === 'in_progress',
           ) ?? allDocs.find(a => a.area_id === area.id);
 
-        const savedAnswers = areaDoc?.interactive_answers ?? {};
+        const savedAnswers = areaDoc?.interactive_answers ?? areaDoc?.answers ?? {};
         setAnswers(savedAnswers);
 
         // fromReview=true means the user tapped an area card directly (mirrors web's ?q=1).
@@ -334,7 +334,7 @@ export default function GrowthAreasActivityScreen() {
             {/* Gradient progress bar */}
             <View
               className="mt-1 overflow-hidden rounded-full"
-              style={{ height: 6, backgroundColor: colors.surfaceElevated }}
+              style={{ height: 6, backgroundColor: colors.surfaceDark }}
               onLayout={e => setProgressTrackW(e.nativeEvent.layout.width)}
             >
               {progressTrackW > 0 && (
@@ -377,7 +377,7 @@ export default function GrowthAreasActivityScreen() {
               )}
             </View>
           </View>
-          <Text className="text-xs" style={{ color: colors.iconColor }}>
+          <Text className="text-xs" style={{ color: colors.textMuted }}>
             {qIndex + 1} / {questions.length}
           </Text>
         </View>

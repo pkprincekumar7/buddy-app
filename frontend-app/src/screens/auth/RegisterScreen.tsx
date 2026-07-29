@@ -49,6 +49,10 @@ export default function RegisterScreen() {
       setError('Please enter your full name.');
       return;
     }
+    if (!email.trim()) {
+      setError('Please enter your email address.');
+      return;
+    }
     if (!countryCode) {
       setError('Please select your country.');
       return;
@@ -146,7 +150,7 @@ export default function RegisterScreen() {
               <View>
                 <Text
                   className="mb-1 text-sm font-medium"
-                  style={{ color: colors.textMuted }}
+                  style={{ color: colors.text }}
                 >
                   Full name
                 </Text>
@@ -172,7 +176,7 @@ export default function RegisterScreen() {
               <View>
                 <Text
                   className="mb-1 text-sm font-medium"
-                  style={{ color: colors.textMuted }}
+                  style={{ color: colors.text }}
                 >
                   Username (email)
                 </Text>
@@ -198,7 +202,7 @@ export default function RegisterScreen() {
               <View>
                 <Text
                   className="mb-1 text-sm font-medium"
-                  style={{ color: colors.textMuted }}
+                  style={{ color: colors.text }}
                 >
                   Country
                 </Text>
@@ -224,7 +228,7 @@ export default function RegisterScreen() {
               <View>
                 <Text
                   className="mb-1 text-sm font-medium"
-                  style={{ color: colors.textMuted }}
+                  style={{ color: colors.text }}
                 >
                   Password
                 </Text>
@@ -248,7 +252,7 @@ export default function RegisterScreen() {
               <View>
                 <Text
                   className="mb-1 text-sm font-medium"
-                  style={{ color: colors.textMuted }}
+                  style={{ color: colors.text }}
                 >
                   Confirm password
                 </Text>
@@ -343,7 +347,7 @@ export default function RegisterScreen() {
                 key={code}
                 variant="ghost"
                 className="w-full justify-start rounded-none border-b px-4"
-                style={{ borderBottomColor: colors.border + '4D' }}
+                style={{ borderBottomColor: colors.ghostLight }}
                 onPress={() => {
                   setCountryCode(code);
                   setShowCountryPicker(false);

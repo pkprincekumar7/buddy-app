@@ -1,47 +1,49 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { EmojiText } from '@/components/ui/EmojiText';
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import { GradientIconBox } from '@/components/shared/GradientView';
+import {
+  View,
+  Text,
+  ScrollView,
+  Image,
+  ActivityIndicator,
+  TouchableOpacity,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  withDelay,
+  withSpring,
   Easing,
 } from 'react-native-reanimated';
-import {
-  useNavigation,
-  useRoute,
-  useFocusEffect,
-} from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RouteProp } from '@react-navigation/native';
 import {
   Sparkles,
   Star,
-  Compass,
-  Zap,
   Clock,
-  ChevronLeft,
+  Pencil,
+  Info,
+  Eye,
+  Smile,
+  Users,
+  Heart,
+  MessageCircle,
+  Compass,
+  WandSparkles,
+  Plus,
+  Brain,
+  Check,
 } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
-import { useFocusEntranceAnim } from '@/lib/animations';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import { recommendationsJourneySchema } from '@/lib/llmSchemas';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
-import { mergeChildDraft, determinePhase } from '@/lib/onboardingHelpers';
-import { buildJourneyRecommendationsPrompt } from '@/lib/prompts';
-import StartOverButton from '@/components/shared/StartOverButton';
-import PageActions from '@/components/shared/PageActions';
-import {
-  GradientIconBox,
-  GradientButton,
-} from '@/components/shared/GradientView';
-import { PERSONALITY_JOURNEY_GRADIENT } from '@/lib/gradientColors';
+import { mergeChildDraft } from '@/lib/onboardingHelpers';
+import { personalityTypes } from '@/lib/personalityLogic';
 import type { RootStackParamList } from '@/navigation';
-import { useJob } from '@/hooks/useJob';
 
 type PersonalityJourneyNavProp = StackNavigationProp<RootStackParamList>;
 type PersonalityJourneyRouteProp = RouteProp<
@@ -50,11 +52,20 @@ type PersonalityJourneyRouteProp = RouteProp<
 >;
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
+type LucideIcon = typeof Sparkles;
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const TOTAL_STEPS = 8;
+
+const STRENGTH_ICONS: LucideIcon[] = [Info, Eye, Smile, Users, Heart, Sparkles];
+
+// ── Phase bar (numbered stepper — mirrors web OnboardingProgressHeader) ────────
 
 const PHASES = [
-  { label: 'Getting to Know', icon: '💬', done: true, active: false },
-  { label: 'Personality Analysis', icon: '⭐', done: true, active: false },
-  { label: 'Your Journey', icon: '💡', done: false, active: true },
+  { num: 1, label: 'Getting to Know', done: true, active: false },
+  { num: 2, label: 'Personality Analysis', done: true, active: false },
+  { num: 3, label: 'Your Journey', done: false, active: true },
 ];
 
 function PhaseBar() {
@@ -66,77 +77,807 @@ function PhaseBar() {
         borderBottomColor: colors.border,
         backgroundColor: colors.card,
       }}
-      className="px-4 py-3"
     >
-      <View className="flex-row items-center justify-between gap-2">
-        {PHASES.map(phase => (
-          <View
-            key={phase.label}
-            className="flex-row items-center gap-1.5 rounded-xl px-2.5 py-2 flex-1 border"
-            style={{
-              borderColor: phase.active
-                ? colors.primary + '40'
-                : phase.done
-                ? colors.success + '33'
-                : colors.border,
-              backgroundColor: phase.active
-                ? colors.primary + '1A'
-                : phase.done
-                ? colors.success + '1A'
-                : 'transparent',
-              opacity: !phase.active && !phase.done ? 0.5 : 1,
-            }}
-          >
-            <EmojiText size="sm">{phase.icon}</EmojiText>
-            <Text
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 8,
+        }}
+      >
+        {PHASES.map((phase, i, arr) => {
+          const isLast = i === arr.length - 1;
+          return (
+            <View
+              key={phase.label}
               style={{
-                color: phase.active
-                  ? colors.primary
-                  : phase.done
-                  ? colors.success
-                  : colors.iconColor,
+                flexDirection: 'row',
+                alignItems: 'center',
+                ...(isLast
+                  ? { flexGrow: 0, flexShrink: 0 }
+                  : { flex: phase.active ? 2 : 1 }),
               }}
-              className="text-xs font-medium flex-1"
-              numberOfLines={1}
             >
-              {phase.label}
-            </Text>
-            {phase.done && (
-              <Text style={{ color: colors.success }} className="text-xs">
-                ✓
-              </Text>
-            )}
-          </View>
-        ))}
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  ...(phase.done
+                    ? { backgroundColor: colors.success }
+                    : phase.active
+                    ? { backgroundColor: colors.primary }
+                    : {
+                        backgroundColor: colors.surfaceElevated,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }),
+                }}
+              >
+                {phase.done ? (
+                  <Check size={13} color="#fff" />
+                ) : (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '700',
+                      color: phase.active ? colors.primaryForeground : colors.textMuted,
+                      opacity: phase.active ? 1 : 0.4,
+                    }}
+                  >
+                    {phase.num}
+                  </Text>
+                )}
+              </View>
+              {phase.active && (
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    fontWeight: '500',
+                    color: colors.text,
+                    flexShrink: 1,
+                  }}
+                  numberOfLines={1}
+                >
+                  {phase.label}
+                </Text>
+              )}
+              {!isLast && (
+                <View
+                  style={{
+                    flex: 1,
+                    height: 2,
+                    marginHorizontal: 12,
+                    minWidth: 24,
+                    borderRadius: 1,
+                    backgroundColor: colors.border,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {phase.done && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: colors.success,
+                      }}
+                    />
+                  )}
+                </View>
+              )}
+            </View>
+          );
+        })}
       </View>
     </View>
   );
 }
 
-// Staggered slide-in for each strength row (mirrors web motion.div delay: 1.1 + index * 0.25s)
-function AnimatedStrengthItem({
-  strength,
-  index,
+// ── Animated step wrapper ─────────────────────────────────────────────────────
+
+function StepWrapper({
+  children,
+  stepKey,
+  direction,
 }: {
-  strength: string;
-  index: number;
+  children: React.ReactNode;
+  stepKey: number;
+  direction: 1 | -1;
 }) {
-  const { colors: strengthColors } = useTheme();
   const opacity = useSharedValue(0);
-  const translateX = useSharedValue(-20);
+  const translateX = useSharedValue(direction * 40);
 
   useEffect(() => {
-    const delay = 1100 + index * 250;
-    const cfg = { duration: 800, easing: Easing.out(Easing.ease) };
-    opacity.value = withDelay(delay, withTiming(1, cfg));
-    translateX.value = withDelay(delay, withTiming(0, cfg));
+    opacity.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.ease) });
+    translateX.value = withTiming(0, { duration: 420, easing: Easing.out(Easing.ease) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stepKey]);
 
   const style = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [{ translateX: translateX.value }],
   }));
+
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
+// ── Step 1: TheRevealScreen ───────────────────────────────────────────────────
+
+const DOT_CONFIGS = [
+  { top: '8%', left: '10%', color: null, size: 8, delay: 200, usePersonality: false },
+  { top: '15%', left: '80%', color: null, size: 10, delay: 400, usePersonality: true },
+  { top: '40%', left: '5%', color: null, size: 6, delay: 300, useWarning: true },
+  { top: '60%', left: '90%', color: null, size: 8, delay: 500, usePersonality: false },
+  { top: '75%', left: '15%', color: null, size: 6, delay: 350, useAccentPink: true },
+  { top: '80%', left: '75%', color: null, size: 8, delay: 250, usePersonality: true },
+  { top: '25%', left: '92%', color: null, size: 6, delay: 450, useWarning: true },
+  { top: '55%', left: '3%', color: null, size: 6, delay: 600, usePersonality: false },
+] as const;
+
+function FloatingDot({
+  cfg,
+  dotColor,
+}: {
+  cfg: (typeof DOT_CONFIGS)[number];
+  dotColor: string;
+}) {
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      opacity.value = withTiming(1, { duration: 400 });
+      scale.value = withSpring(1, { stiffness: 200 });
+    }, cfg.delay);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          position: 'absolute',
+          top: cfg.top,
+          left: cfg.left,
+          width: cfg.size,
+          height: cfg.size,
+          borderRadius: cfg.size / 2,
+          backgroundColor: dotColor,
+        },
+      ]}
+    />
+  );
+}
+
+function TheRevealScreen({
+  childName,
+  onNext,
+}: {
+  childName: string;
+  onNext: () => void;
+}) {
+  const { colors } = useTheme();
+
+  const iconScale = useSharedValue(0.3);
+  const iconOpacity = useSharedValue(0);
+  useEffect(() => {
+    iconScale.value = withSpring(1, { stiffness: 60, damping: 10 });
+    iconOpacity.value = withTiming(1, { duration: 400 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+    opacity: iconOpacity.value,
+  }));
+
+  const textOpacity = useSharedValue(0);
+  const textY = useSharedValue(20);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      textOpacity.value = withTiming(1, { duration: 650 });
+      textY.value = withTiming(0, { duration: 650, easing: Easing.out(Easing.ease) });
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const textStyle = useAnimatedStyle(() => ({
+    opacity: textOpacity.value,
+    transform: [{ translateY: textY.value }],
+  }));
+
+  const btnOpacity = useSharedValue(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      btnOpacity.value = withTiming(1, { duration: 500 });
+    }, 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const btnStyle = useAnimatedStyle(() => ({ opacity: btnOpacity.value }));
+
+  const dotColors = [
+    colors.primary,
+    colors.personalityAlt,
+    colors.warning,
+    colors.primary,
+    colors.personalityAlt,
+    colors.personalityAlt,
+    colors.warning,
+    colors.primary,
+  ];
+
+  return (
+    <View
+      style={{
+        minHeight: 420,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 24,
+        paddingVertical: 32,
+        position: 'relative',
+      }}
+    >
+      {DOT_CONFIGS.map((cfg, i) => (
+        <FloatingDot key={i} cfg={cfg} dotColor={dotColors[i]!} />
+      ))}
+
+      {/* Web: h-28 w-28 rounded-3xl bg-gradient-to-br from-primary/30 to-personality/30
+              ring-4 ring-primary/20 glow-teal-lg */}
+      <Animated.View
+        style={[
+          iconStyle,
+          {
+            borderRadius: 28,
+            borderWidth: 4,
+            borderColor: colors.primary + '33',
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.3,
+            shadowRadius: 24,
+            elevation: 8,
+          },
+        ]}
+      >
+        <GradientIconBox
+          from={colors.primary + '4D'}
+          to={colors.personalityAlt + '4D'}
+          size={112}
+          radius={24}
+          diagonal
+        >
+          <Sparkles size={56} color={colors.primary} />
+        </GradientIconBox>
+      </Animated.View>
+
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 4,
+          textTransform: 'uppercase',
+        }}
+      >
+        THE REVEAL
+      </Text>
+
+      <Animated.View style={[textStyle, { alignItems: 'center', gap: 8 }]}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 28,
+            fontWeight: '800',
+            textAlign: 'center',
+            lineHeight: 36,
+          }}
+        >
+          Your Personalized Journey
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center' }}>
+          Here's what we've discovered about{' '}
+          <Text style={{ fontWeight: '600', color: colors.text }}>{childName}</Text>{' '}
+          ✨
+        </Text>
+      </Animated.View>
+
+      <Animated.View style={btnStyle}>
+        <Button onPress={onNext} className="rounded-full px-8">
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 16 }}>
+            Show me →
+          </Text>
+        </Button>
+      </Animated.View>
+    </View>
+  );
+}
+
+// ── Step 2: PersonalityCardScreen ─────────────────────────────────────────────
+
+function traitIcon(trait: string, size: number, color: string) {
+  const t = trait.toLowerCase();
+  if (/calm|steady|quiet|peace/.test(t)) return <Heart size={size} color={color} />;
+  if (/friend|social|connect|warm|kind/.test(t)) return <Users size={size} color={color} />;
+  if (/visual|see|look|observ/.test(t)) return <Eye size={size} color={color} />;
+  if (/talk|voice|speak|express|verbal/.test(t)) return <MessageCircle size={size} color={color} />;
+  return <Sparkles size={size} color={color} />;
+}
+
+function FamousPersonCircle({
+  name,
+  image,
+  index,
+}: {
+  name: string;
+  image?: string;
+  index: number;
+}) {
+  const { colors } = useTheme();
+  const [imgFailed, setImgFailed] = useState(false);
+  const initials = name
+    .split(' ')
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('');
+  const bgColors = [colors.primarySubtle, colors.successSubtle, colors.primaryMuted];
+  const textColors = [colors.primary, colors.success, colors.personalityAlt];
+  const showImage = !!image && !imgFailed;
+  return (
+    <View style={{ alignItems: 'center', gap: 6 }}>
+      <View
+        style={{
+          height: 56,
+          width: 56,
+          borderRadius: 28,
+          borderWidth: 2,
+          borderColor: colors.border,
+          backgroundColor: bgColors[index % bgColors.length],
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        {showImage ? (
+          <Image
+            source={{ uri: image }}
+            style={{ width: 56, height: 56, borderRadius: 28 }}
+            resizeMode="cover"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <Text
+            style={{
+              color: textColors[index % textColors.length],
+              fontWeight: '700',
+              fontSize: 16,
+            }}
+          >
+            {initials}
+          </Text>
+        )}
+      </View>
+      <Text
+        style={{
+          color: colors.textMuted,
+          fontSize: 11,
+          fontWeight: '500',
+          textAlign: 'center',
+          maxWidth: 72,
+          lineHeight: 15,
+        }}
+      >
+        {name}
+      </Text>
+    </View>
+  );
+}
+
+function PersonalityCardScreen({
+  childName,
+  personalityType,
+  traits,
+  famousPeople,
+  typeColor,
+  onNext,
+}: {
+  childName: string;
+  personalityType: string;
+  traits: string[];
+  famousPeople: Array<{ name: string; image?: string }>;
+  typeColor: string;
+  onNext: () => void;
+}) {
+  const { colors } = useTheme();
+  const typeTitle = personalityType?.split(' - ')[1] ?? personalityType ?? 'Unique';
+  // typeColor is a web Tailwind class like "from-primary to-primary/70" — use primary on mobile
+  void typeColor;
+
+  return (
+    <View
+      style={{
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        padding: 20,
+        gap: 20,
+      }}
+    >
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View
+          style={{
+            height: 40,
+            width: 40,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.primarySubtle,
+          }}
+        >
+          <Brain size={20} color={colors.primary} />
+        </View>
+        <View>
+          <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' }}>
+            {childName}'s Profile · 1 of 3
+          </Text>
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>
+            Personality Type
+          </Text>
+        </View>
+      </View>
+
+      {/* Inner card */}
+      <View
+        style={{
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceDark,
+          padding: 20,
+          alignItems: 'center',
+          gap: 16,
+        }}
+      >
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 3, textTransform: 'uppercase' }}>
+            {childName.toUpperCase()} IS A
+          </Text>
+          <Text style={{ color: colors.primary, fontSize: 40, fontWeight: '800', lineHeight: 48, textAlign: 'center' }}>
+            {typeTitle}
+          </Text>
+        </View>
+
+        {/* Traits */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+          {traits.map((trait, idx) => (
+            <View
+              key={trait}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.ghostLight,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                opacity: 1,
+              }}
+            >
+              {traitIcon(trait, 12, colors.textMuted)}
+              <Text
+                style={{ color: colors.text, fontSize: 12, fontWeight: '500' }}
+                key={`t-${idx}`}
+              >
+                {trait}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Famous people */}
+      {famousPeople.length > 0 && (
+        <View
+          style={{
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surfaceElevated,
+            padding: 16,
+            gap: 12,
+          }}
+        >
+          <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' }}>
+            Famous people with similar traits
+          </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 32 }}>
+            {famousPeople.map((person, i) => (
+              <FamousPersonCircle key={person.name} name={person.name} image={person.image} index={i} />
+            ))}
+          </View>
+        </View>
+      )}
+
+      <Button onPress={onNext} className="rounded-full">
+        <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 16 }}>
+          See the summary →
+        </Text>
+      </Button>
+    </View>
+  );
+}
+
+// ── Step 3: InANutshellScreen ─────────────────────────────────────────────────
+
+function InANutshellScreen({
+  childName,
+  description,
+  traits,
+  onNext,
+}: {
+  childName: string;
+  description: string;
+  traits: string[];
+  onNext: () => void;
+}) {
+  const { colors } = useTheme();
+  const HIGHLIGHT_COLORS = [colors.primary, colors.personalityAlt, colors.warning];
+
+  function highlightTraits(text: string): React.ReactNode[] {
+    if (!traits.length) return [<Text key="all">{text}</Text>];
+    const sorted = [...traits].sort((a, b) => b.length - a.length);
+    const escaped = sorted.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+    const parts = text.split(pattern);
+    let colorIdx = 0;
+    return parts.map((part, i) => {
+      if (sorted.some(t => t.toLowerCase() === part.toLowerCase())) {
+        const color = HIGHLIGHT_COLORS[colorIdx++ % HIGHLIGHT_COLORS.length] ?? HIGHLIGHT_COLORS[0]!;
+        return (
+          <Text key={i} style={{ fontWeight: '600', color }}>
+            {part}
+          </Text>
+        );
+      }
+      return <Text key={i}>{part}</Text>;
+    });
+  }
+
+  return (
+    <View
+      style={{
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        padding: 20,
+        gap: 20,
+      }}
+    >
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View
+          style={{
+            height: 40,
+            width: 40,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.primarySubtle,
+            borderWidth: 1,
+            borderColor: colors.primaryBorder,
+          }}
+        >
+          <Pencil size={20} color={colors.primary} />
+        </View>
+        <View>
+          <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' }}>
+            {childName}'s Profile · 2 of 3
+          </Text>
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>
+            In a nutshell
+          </Text>
+        </View>
+      </View>
+
+      <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', lineHeight: 28 }}>
+        "{highlightTraits(description)}"
+      </Text>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Sparkles size={14} color={colors.textMuted} />
+        <Text style={{ color: colors.textMuted, fontSize: 12, flex: 1 }}>
+          One sentence — read it slowly. We'll get into the details next.
+        </Text>
+      </View>
+
+      <Button onPress={onNext} className="rounded-full">
+        <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 16 }}>
+          Show emerging strengths →
+        </Text>
+      </Button>
+    </View>
+  );
+}
+
+// ── Step 4: StrengthsIntroScreen (auto-advance) ───────────────────────────────
+
+function StrengthsIntroScreen({
+  childName,
+  onComplete,
+}: {
+  childName: string;
+  onComplete: () => void;
+}) {
+  const { colors } = useTheme();
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; });
+
+  useEffect(() => {
+    const t = setTimeout(() => onCompleteRef.current(), 2800);
+    return () => clearTimeout(t);
+  }, []);
+
+  const iconScale = useSharedValue(0);
+  const iconOpacity = useSharedValue(0);
+  useEffect(() => {
+    iconScale.value = withSpring(1, { stiffness: 60, damping: 10 });
+    iconOpacity.value = withTiming(1, { duration: 400 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+    opacity: iconOpacity.value,
+  }));
+
+  const textOpacity = useSharedValue(0);
+  const textY = useSharedValue(12);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      textOpacity.value = withTiming(1, { duration: 500 });
+      textY.value = withTiming(0, { duration: 500 });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const textStyle = useAnimatedStyle(() => ({
+    opacity: textOpacity.value,
+    transform: [{ translateY: textY.value }],
+  }));
+
+  return (
+    <View
+      style={{
+        minHeight: 380,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 24,
+        paddingVertical: 32,
+      }}
+    >
+      <Text
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          color: colors.textMuted,
+          fontSize: 11,
+          opacity: 0.4,
+        }}
+      >
+        Friendly pause...
+      </Text>
+
+      <Animated.View
+        style={[
+          iconStyle,
+          {
+            height: 96,
+            width: 96,
+            borderRadius: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.primarySubtle,
+            borderWidth: 4,
+            borderColor: colors.primaryBorder,
+          },
+        ]}
+      >
+        <Star size={40} color={colors.primary} />
+      </Animated.View>
+
+      <Animated.View style={[textStyle, { alignItems: 'center', gap: 8 }]}>
+        <Text
+          style={{ color: colors.text, fontSize: 22, fontWeight: '700', textAlign: 'center' }}
+        >
+          Here come {childName}'s emerging strengths ⭐
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center' }}>
+          We've split them across two screens so each one lands.
+        </Text>
+      </Animated.View>
+
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 3.5,
+          textTransform: 'uppercase',
+          opacity: 0.7,
+        }}
+      >
+        One moment...
+      </Text>
+    </View>
+  );
+}
+
+// ── Steps 5–6: StrengthsScreen ────────────────────────────────────────────────
+
+function StrengthItem({
+  strength,
+  globalIdx,
+  itemIdx,
+}: {
+  strength: string;
+  globalIdx: number;
+  itemIdx: number;
+}) {
+  const { colors } = useTheme();
+  const Icon = STRENGTH_ICONS[globalIdx % STRENGTH_ICONS.length]!;
+  const num = String(globalIdx + 1).padStart(2, '0');
+
+  const sep = strength.match(/[:—–-](.+)/);
+  const title = sep ? strength.slice(0, strength.indexOf(sep[0]!)).trim() : strength;
+  const detail = sep ? (sep[1]?.trim() ?? '') : '';
+
+  const opacity = useSharedValue(0);
+  const translateX = useSharedValue(-16);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      opacity.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) });
+      translateX.value = withTiming(0, { duration: 400, easing: Easing.out(Easing.ease) });
+    }, 100 + itemIdx * 120);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const bgColors = [
+    colors.primarySubtle,
+    colors.successSubtle,
+    colors.primaryMuted,
+    colors.primarySubtle,
+    colors.successSubtle,
+    colors.primarySubtle,
+  ];
+  const fgColors = [
+    colors.primary,
+    colors.success,
+    colors.personalityAlt,
+    colors.primary,
+    colors.success,
+    colors.primary,
+  ];
 
   return (
     <Animated.View
@@ -147,64 +888,409 @@ function AnimatedStrengthItem({
           alignItems: 'flex-start',
           gap: 12,
           borderRadius: 12,
-          padding: 12,
-          backgroundColor: strengthColors.muted,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceElevated,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
         },
       ]}
     >
       <View
-        className="h-7 w-7 flex-shrink-0 rounded-lg items-center justify-center"
-        style={{ backgroundColor: strengthColors.warning + '26' }}
+        style={{
+          height: 36,
+          width: 36,
+          borderRadius: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1,
+          backgroundColor: bgColors[globalIdx % bgColors.length],
+          borderWidth: 1,
+          borderColor: fgColors[globalIdx % fgColors.length] + '33',
+          flexShrink: 0,
+        }}
       >
         <Text
-          style={{ color: strengthColors.warning }}
-          className="text-xs font-bold"
+          style={{
+            color: fgColors[globalIdx % fgColors.length],
+            fontSize: 10,
+            fontWeight: '700',
+            lineHeight: 12,
+          }}
         >
-          {index + 1}
+          {num}
         </Text>
+        <Icon size={12} color={fgColors[globalIdx % fgColors.length]!} />
       </View>
-      <Text
-        style={{ color: strengthColors.text }}
-        className="text-sm font-semibold flex-1"
-      >
-        {strength}
-      </Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>{title}</Text>
+        {detail ? (
+          <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 2 }}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
     </Animated.View>
   );
 }
+
+function StrengthsScreen({
+  childName,
+  strengths,
+  globalStartIdx,
+  totalStrengths,
+  isLastSet,
+  onNext,
+}: {
+  childName: string;
+  strengths: string[];
+  globalStartIdx: number;
+  totalStrengths: number;
+  isLastSet: boolean;
+  onNext: () => void;
+}) {
+  const { colors } = useTheme();
+  const remaining = totalStrengths - (globalStartIdx + strengths.length);
+  const setNum = globalStartIdx === 0 ? 1 : 2;
+
+  return (
+    <View
+      style={{
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        padding: 20,
+        gap: 20,
+      }}
+    >
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View
+          style={{
+            height: 40,
+            width: 40,
+            borderRadius: 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.successSubtle,
+            borderWidth: 1,
+            borderColor: colors.successBorder,
+          }}
+        >
+          <Star size={20} color={colors.warning} />
+        </View>
+        <View>
+          <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 2, textTransform: 'uppercase' }}>
+            {childName}'s Profile · 3 of 3 · Set {setNum} of 2
+          </Text>
+          <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>
+            Emerging Strengths
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ gap: 10 }}>
+        {strengths.map((s, idx) => (
+          <StrengthItem
+            key={s}
+            strength={s}
+            globalIdx={globalStartIdx + idx}
+            itemIdx={idx}
+          />
+        ))}
+      </View>
+
+      {/* Footer row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+          <Sparkles size={14} color={colors.textMuted} />
+          <Text style={{ color: colors.textMuted, fontSize: 12, flex: 1 }}>
+            {isLastSet
+              ? `That's all ${totalStrengths} strengths!`
+              : `${remaining} more strength${remaining !== 1 ? 's' : ''} to discover.`}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={onNext}
+          style={{
+            backgroundColor: colors.primary,
+            borderRadius: 20,
+            paddingHorizontal: 18,
+            paddingVertical: 10,
+          }}
+        >
+          <Text style={{ color: colors.primaryForeground, fontWeight: '600', fontSize: 14 }}>
+            {isLastSet ? 'See next steps →' : `Next ${remaining} strengths →`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ── Step 7: WhatsNextScreen (auto-advance) ─────────────────────────────────────
+
+function WhatsNextScreen({
+  childName,
+  onComplete,
+}: {
+  childName: string;
+  onComplete: () => void;
+}) {
+  const { colors } = useTheme();
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; });
+
+  useEffect(() => {
+    const t = setTimeout(() => onCompleteRef.current(), 2800);
+    return () => clearTimeout(t);
+  }, []);
+
+  const iconScale = useSharedValue(0);
+  const iconOpacity = useSharedValue(0);
+  useEffect(() => {
+    iconScale.value = withSpring(1, { stiffness: 60, damping: 10 });
+    iconOpacity.value = withTiming(1, { duration: 400 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+    opacity: iconOpacity.value,
+  }));
+
+  const textOpacity = useSharedValue(0);
+  const textY = useSharedValue(12);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      textOpacity.value = withTiming(1, { duration: 500 });
+      textY.value = withTiming(0, { duration: 500 });
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const textStyle = useAnimatedStyle(() => ({
+    opacity: textOpacity.value,
+    transform: [{ translateY: textY.value }],
+  }));
+
+  return (
+    <View
+      style={{
+        minHeight: 380,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 24,
+        paddingVertical: 32,
+      }}
+    >
+      <Text
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          color: colors.textMuted,
+          fontSize: 11,
+          opacity: 0.4,
+        }}
+      >
+        Friendly pause...
+      </Text>
+
+      <Animated.View
+        style={[
+          iconStyle,
+          {
+            height: 96,
+            width: 96,
+            borderRadius: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.primaryMuted,
+            borderWidth: 4,
+            borderColor: colors.personalityAlt + '33',
+          },
+        ]}
+      >
+        <Compass size={40} color={colors.personalityAlt} />
+      </Animated.View>
+
+      <Animated.View style={[textStyle, { alignItems: 'center', gap: 8 }]}>
+        <Text
+          style={{ color: colors.text, fontSize: 22, fontWeight: '700', textAlign: 'center' }}
+        >
+          Ready to grow further with {childName}?
+        </Text>
+        <Text style={{ fontSize: 28 }}>🌟</Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center' }}>
+          Next, we'll show personalized growth areas and activities.
+        </Text>
+      </Animated.View>
+
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 3.5,
+          textTransform: 'uppercase',
+          opacity: 0.7,
+        }}
+      >
+        One moment...
+      </Text>
+    </View>
+  );
+}
+
+// ── Step 8: FinalCTAScreen ─────────────────────────────────────────────────────
+
+function FinalCTAScreen({
+  childName,
+  childId,
+  navigation,
+}: {
+  childName: string;
+  childId: string | undefined;
+  navigation: PersonalityJourneyNavProp;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <View
+      style={{
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        padding: 24,
+        alignItems: 'center',
+        gap: 20,
+      }}
+    >
+      {/* Icon */}
+      <View
+        style={{
+          height: 64,
+          width: 64,
+          borderRadius: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.primaryMuted,
+          borderWidth: 4,
+          borderColor: colors.personalityAlt + '33',
+        }}
+      >
+        <WandSparkles size={32} color={colors.personalityAlt} />
+      </View>
+
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 3,
+          textTransform: 'uppercase',
+        }}
+      >
+        One Last Step
+      </Text>
+
+      <Text
+        style={{
+          color: colors.text,
+          fontSize: 22,
+          fontWeight: '800',
+          textAlign: 'center',
+          lineHeight: 30,
+        }}
+      >
+        Want to explore the specific growth areas for{' '}
+        <Text style={{ color: colors.primary }}>{childName}</Text> to become their best
+        version?
+      </Text>
+
+      <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center' }}>
+        Discover personalized activities to help {childName} develop key life skills.
+      </Text>
+
+      {/* Primary CTAs */}
+      <View style={{ width: '100%', gap: 10 }}>
+        <TouchableOpacity
+          onPress={() =>
+            (
+              navigation as unknown as {
+                navigate: (name: string, params?: unknown) => void;
+              }
+            ).navigate('Growth', childId ? { childId } : undefined)
+          }
+          style={{
+            backgroundColor: colors.personality,
+            borderRadius: 24,
+            paddingVertical: 14,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          <Plus size={16} color="#fff" />
+          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>
+            Continue Now
+          </Text>
+        </TouchableOpacity>
+        <Button
+          size="xl"
+          variant="outline"
+          onPress={() => navigation.navigate('Main')}
+          className="rounded-full"
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Clock size={16} color={colors.textMuted} />
+            <Text style={{ color: colors.textMuted, fontSize: 15 }}>Catch Up Later</Text>
+          </View>
+        </Button>
+      </View>
+
+      {/* Divider + Restart */}
+      <View style={{ width: '100%', gap: 10, paddingTop: 4 }}>
+        <View style={{ height: 1, backgroundColor: colors.border }} />
+        <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: 'center', opacity: 0.5 }}>
+          Want to see the flow again?
+        </Text>
+        <Button
+          size="xl"
+          variant="outline"
+          onPress={() => navigation.navigate('Onboarding')}
+          className="rounded-full w-full"
+        >
+          <Text style={{ color: colors.text, fontSize: 14 }}>Restart the journey</Text>
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+// ── Main screen ────────────────────────────────────────────────────────────────
 
 export default function PersonalityJourneyScreen() {
   const navigation = useNavigation<PersonalityJourneyNavProp>();
   const { colors } = useTheme();
   const route = useRoute<PersonalityJourneyRouteProp>();
 
-  // Prefer explicit childId from navigation params (onboarding flow);
-  // fall back to the auth context's active child (Personality tab access).
-  const {
-    isAuthenticated,
-    isLoading: isLoadingAuth,
-    activeChildId,
-  } = useAuth();
-  const routeChildId = (route.params as { childId?: string } | undefined)
-    ?.childId;
+  const { isAuthenticated, isLoading: isLoadingAuth, activeChildId } = useAuth();
+  const routeChildId = (route.params as { childId?: string } | undefined)?.childId;
   const childId = routeChildId ?? activeChildId;
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(
-    null,
-  );
+
   const [profile, setProfile] = useState<ProfileType>(null);
+  const [viewModel, setViewModel] = useState<Record<string, unknown> | null>(null);
   const [childName, setChildName] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [direction, setDirection] = useState<1 | -1>(1);
 
-  const scrollRef = useRef<ScrollView>(null);
-  // Reset scroll to top every time the screen gains focus (covers back navigation).
-  useFocusEffect(
-    useCallback(() => {
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
-    }, []),
-  );
-
-  const onJourneyComplete = useCallback(async () => {
+  const markJourneyComplete = useCallback(async () => {
     if (!childId) return;
     try {
       await api.entities.Child.update(childId, {
@@ -216,27 +1302,11 @@ export default function PersonalityJourneyScreen() {
     }
   }, [childId]);
 
-  const job = useJob({
-    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
-    jobType: 'generate_journey_recommendations',
-    onCompleted: onJourneyComplete,
-  });
-
-  const isGenerating = !isInitializing && job.isLoading;
-  const isError = initError || job.isFailed;
-  const ready = !isInitializing && !isGenerating && !isError;
-
-  // Section animations match web delays: header 100ms, profile 800ms, growth 1800ms.
-  // useFocusEntranceAnim re-plays on back navigation for polish.
-  const contentStyle = useFocusEntranceAnim(ready, 0, 1000);
-  const headerAnim = useFocusEntranceAnim(ready, 100, 1000);
-  const profileAnim = useFocusEntranceAnim(ready, 800, 1000);
-  const growthAnim = useFocusEntranceAnim(ready, 1800, 1000);
-
   useEffect(() => {
     if (isLoadingAuth) return;
     if (!isAuthenticated) {
-      navigation.navigate('Onboarding');
+      // React Navigation automatically switches to the Auth stack when the user
+      // is no longer authenticated — no explicit navigate needed.
       return;
     }
     if (!childId) {
@@ -249,16 +1319,14 @@ export default function PersonalityJourneyScreen() {
       try {
         const child = await api.entities.Child.get(childId);
         if (cancelled) return;
-
         if (!child) {
           navigation.navigate('Main');
           return;
         }
 
         const personality = child.personality;
-        const viewModel = personality?.view_model;
-        if (!viewModel?.type) {
-          // Not analysed yet — go back to personality type screen
+        const vm = personality?.view_model;
+        if (!vm?.profile?.name) {
           (
             navigation as unknown as {
               navigate: (name: string, params?: unknown) => void;
@@ -267,71 +1335,19 @@ export default function PersonalityJourneyScreen() {
           return;
         }
 
+        setViewModel(vm);
         const merged = mergeChildDraft(
           normalizeOnboardingChildDataBlob(child) ?? {},
         );
         setChildName(merged.name || '');
-        setChildData(child as Record<string, unknown>);
+        setProfile(onboardingProfileFromViewModel(vm));
 
-        const gp = onboardingProfileFromViewModel(viewModel);
-        setProfile(gp);
-
-        // Already generated — show immediately
-        const recommendations = child.recommendations;
-        if (
-          recommendations &&
-          (typeof recommendations.pathway_overview === 'string' ||
-            (Array.isArray(recommendations.focus_areas) &&
-              (recommendations.focus_areas as unknown[]).length > 0))
-        ) {
-          setIsInitializing(false);
-          return;
+        if (!child.onboarding_completed) {
+          await markJourneyComplete();
         }
-
-        if (!merged.name?.trim()) {
-          (
-            navigation as unknown as {
-              navigate: (name: string, params?: unknown) => void;
-            }
-          ).navigate('PersonalityType', childId ? { childId } : undefined);
-          return;
-        }
-
-        // Only enqueue if no active job is already polling (useJob picks it up via childData)
-        const activeJobId = (
-          child.active_jobs as Record<string, string> | undefined
-        )?.generate_journey_recommendations;
-        if (!activeJobId) {
-          const age = parseInt(String(merged.age), 10) || 10;
-          const lifePhase = determinePhase(age);
-          await job.enqueue({
-            type: 'generate_journey_recommendations',
-            child_id: childId,
-            payload: {
-              prompt: buildJourneyRecommendationsPrompt({
-                childData: merged,
-                age,
-                lifePhase,
-                personalityType:
-                  gp?.personality_type ??
-                  `${viewModel?.type ?? 'Unknown'} (${
-                    (viewModel?.profile?.name as string) ?? ''
-                  })`,
-                personalityNarrative: gp?.summary,
-                growthAreas: gp?.growth_areas as string[] | undefined,
-              }),
-              response_json_schema: recommendationsJourneySchema(),
-            },
-            write_back: {
-              collection: 'children',
-              filter: {},
-              field: 'recommendations',
-            },
-          });
-        }
-        setIsInitializing(false);
+        if (!cancelled) setIsInitializing(false);
       } catch (err) {
-        console.warn('[PersonalityJourneyScreen] Load failed:', err);
+        console.warn('[PersonalityJourney] Load failed:', err);
         if (!cancelled) {
           setInitError(true);
           setIsInitializing(false);
@@ -342,11 +1358,14 @@ export default function PersonalityJourneyScreen() {
     return () => {
       cancelled = true;
     };
-    // job.enqueue intentionally excluded — stable ref, adding it re-triggers the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoadingAuth, isAuthenticated, childId]);
 
-  // — Loading state
+  const goNext = useCallback(() => {
+    setDirection(1);
+    setCurrentStep(s => Math.min(s + 1, TOTAL_STEPS));
+  }, []);
+
   if (isLoadingAuth || isInitializing) {
     return (
       <View
@@ -358,26 +1377,7 @@ export default function PersonalityJourneyScreen() {
     );
   }
 
-  // — Generating state
-  if (isGenerating) {
-    return (
-      <View
-        style={{ flex: 1, backgroundColor: colors.background }}
-        className="flex-col items-center justify-center gap-4 px-4"
-      >
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text
-          style={{ color: colors.textMuted }}
-          className="max-w-xs text-center font-medium mt-4"
-        >
-          Mapping personalized recommendations…
-        </Text>
-      </View>
-    );
-  }
-
-  // — Error state
-  if (isError) {
+  if (initError) {
     return (
       <View
         style={{ flex: 1, backgroundColor: colors.background }}
@@ -413,234 +1413,131 @@ export default function PersonalityJourneyScreen() {
     );
   }
 
-  // — Ready state
+  const strengths = (profile?.top_strengths as string[]) ?? [];
+  const traits = Array.isArray(viewModel?.profile)
+    ? []
+    : (
+        ((viewModel?.profile as Record<string, unknown> | undefined)
+          ?.traits as string[]) ?? []
+      );
+  const description = profile?.summary ?? '';
+  const personalityType = profile?.personality_type ?? '';
+  // personality_type is "vm.type - p.name" (e.g. "Ambitious - Highly Energetic").
+  // personalityTypes is keyed by vm.type only, so split to get the lookup key.
+  const personalityTypeKey = personalityType.split(' - ')[0] ?? personalityType;
+  const famousPeople = (
+    personalityTypes[personalityTypeKey]?.famous_people ?? []
+  ) as Array<{ name: string; image?: string }>;
+  const typeColor =
+    personalityTypes[personalityTypeKey]?.color ?? 'from-primary to-primary/70';
+
+  const progress = Math.round(((currentStep - 1) / (TOTAL_STEPS - 1)) * 100);
+
   return (
-    <View style={{ flex: 1 }}>
-      <Animated.View
-        style={[contentStyle, { backgroundColor: colors.background }]}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <PhaseBar />
+
+      <ScrollView
         className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 20,
+          paddingBottom: 40,
+        }}
       >
-        <PhaseBar />
-
-        <ScrollView
-          ref={scrollRef}
-          className="flex-1"
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 24,
-            paddingBottom: 40,
-          }}
-        >
-          {/* Header — mirrors web: gradient rounded-3xl box + Sparkles icon */}
-          <Animated.View style={headerAnim} className="items-center mb-6">
-            <GradientIconBox
-              from={colors.primaryLight}
-              to={colors.primary}
-              size={96}
-              radius={24}
-              diagonal
-            >
-              <Sparkles size={48} color={colors.primaryForeground} />
-            </GradientIconBox>
-            <Text
-              style={{ color: colors.text }}
-              className="text-xl font-bold text-center mb-2 mt-5"
-            >
-              {childName
-                ? `${childName}'s Personalized Journey`
-                : 'Personalized Journey'}
-            </Text>
-            <Text
-              style={{ color: colors.textMuted }}
-              className="text-sm text-center"
-            >
-              Here's what we've discovered about {childName}
-            </Text>
-          </Animated.View>
-
-          {/* Profile summary — mirrors web: border-edge + gradient star icon + surface-input strengths */}
-          {profile && (
-            <Animated.View
-              style={[
-                profileAnim,
-                {
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  backgroundColor: colors.card,
-                },
-              ]}
-              className="rounded-2xl p-6 mb-5"
-            >
-              <View className="flex-row items-start gap-4 mb-4">
-                <GradientIconBox
-                  from={colors.primaryLight}
-                  to={colors.primary}
-                  size={48}
-                  radius={12}
-                  diagonal
-                >
-                  <Star size={24} color={colors.primaryForeground} />
-                </GradientIconBox>
-                <View className="flex-1">
-                  <Text
-                    style={{ color: colors.text }}
-                    className="text-lg font-bold"
-                  >
-                    {childName}'s Profile
-                  </Text>
-                  <Text
-                    style={{ color: colors.primary }}
-                    className="text-sm font-medium"
-                  >
-                    {profile.personality_type?.split(' - ')[1] ??
-                      profile.personality_type}
-                  </Text>
-                </View>
-              </View>
-
-              <Text
-                style={{ color: colors.textMuted }}
-                className="text-sm leading-relaxed mb-5"
-              >
-                {profile.summary}
-              </Text>
-
-              <Text
-                style={{ color: colors.iconColor }}
-                className="text-xs font-semibold uppercase tracking-widest mb-3"
-              >
-                Emerging Strengths
-              </Text>
-              <View className="gap-2">
-                {(profile.top_strengths as string[])?.map((strength, index) => (
-                  <AnimatedStrengthItem
-                    key={String(strength)}
-                    strength={String(strength)}
-                    index={index}
-                  />
-                ))}
-              </View>
-            </Animated.View>
-          )}
-
-          {/* Growth areas prompt — mirrors web: gradient compass icon + gradient Continue + Clock Later */}
-          <Animated.View
-            style={[
-              growthAnim,
-              {
-                backgroundColor: colors.card,
-                borderColor: PERSONALITY_JOURNEY_GRADIENT.from + '33',
-              },
-            ]}
-            className="rounded-2xl border p-6 mb-5"
+        {/* Step counter + progress */}
+        <View style={{ marginBottom: 16, gap: 6 }}>
+          <Text
+            style={{
+              color: colors.textMuted,
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 2.5,
+              textTransform: 'uppercase',
+              opacity: 0.6,
+            }}
           >
-            <View className="items-center gap-4">
-              <GradientIconBox
-                from={PERSONALITY_JOURNEY_GRADIENT.from}
-                to={PERSONALITY_JOURNEY_GRADIENT.to}
-                size={56}
-                radius={16}
-                diagonal
-              >
-                <Compass size={28} color={colors.primaryForeground} />
-              </GradientIconBox>
-              <Text
-                style={{ color: colors.text }}
-                className="text-base font-bold text-center"
-              >
-                Do you want to explore the specific growth areas for {childName}{' '}
-                to become their best version?
-              </Text>
-              <Text
-                style={{ color: colors.textMuted }}
-                className="text-sm text-center"
-              >
-                Discover personalized activities to help {childName} develop key
-                life skills
-              </Text>
-              <View className="w-full gap-3 pt-1">
-                <GradientButton
-                  from={PERSONALITY_JOURNEY_GRADIENT.from}
-                  to={PERSONALITY_JOURNEY_GRADIENT.to}
-                  height={48}
-                  borderRadius={16}
-                  onPress={() =>
-                    (
-                      navigation as unknown as {
-                        navigate: (name: string, params?: unknown) => void;
-                      }
-                    ).navigate('Growth', childId ? { childId } : undefined)
-                  }
-                  style={{ width: '100%' }}
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Zap size={16} color={colors.primaryForeground} />
-                    <Text
-                      className="text-sm font-semibold"
-                      style={{ color: colors.primaryForeground }}
-                    >
-                      Continue Now
-                    </Text>
-                  </View>
-                </GradientButton>
-                <Button
-                  size="xl"
-                  variant="outline"
-                  onPress={() => navigation.navigate('Main')}
-                  className="rounded-2xl"
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Clock size={16} color={colors.textMuted} />
-                    <Text
-                      style={{ color: colors.textMuted }}
-                      className="text-base"
-                    >
-                      Catch Up Later
-                    </Text>
-                  </View>
-                </Button>
-              </View>
-            </View>
-          </Animated.View>
+            Your Journey · Step {currentStep} / {TOTAL_STEPS}
+          </Text>
+          <View
+            style={{
+              height: 3,
+              borderRadius: 2,
+              backgroundColor: colors.surfaceDark,
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                height: '100%',
+                width: `${progress}%`,
+                borderRadius: 2,
+                backgroundColor: colors.primary,
+              }}
+            />
+          </View>
+        </View>
 
-          {/* Back navigation + Start Over */}
-          <PageActions
-            className="mt-2"
-            left={
-              <Button
-                variant="outline"
-                onPress={() =>
-                  (
-                    navigation as unknown as {
-                      navigate: (name: string, params?: unknown) => void;
-                    }
-                  ).navigate(
-                    'PersonalityType',
-                    childId ? { childId, fromBack: true } : { fromBack: true },
-                  )
-                }
-                className="w-full rounded-2xl"
-              >
-                <View className="flex-row items-center gap-1.5">
-                  <ChevronLeft size={16} color={colors.textMuted} />
-                  <Text
-                    style={{ color: colors.textMuted }}
-                    className="text-base font-medium"
-                  >
-                    Back
-                  </Text>
-                </View>
-              </Button>
-            }
-            center={
-              <StartOverButton
-                childId={childId ?? undefined}
-                className="w-full"
-              />
-            }
-          />
-        </ScrollView>
-      </Animated.View>
+        {/* Step content with slide animation */}
+        <StepWrapper stepKey={currentStep} direction={direction}>
+          {currentStep === 1 && (
+            <TheRevealScreen childName={childName} onNext={goNext} />
+          )}
+          {currentStep === 2 && (
+            <PersonalityCardScreen
+              childName={childName}
+              personalityType={personalityType}
+              traits={traits}
+              famousPeople={famousPeople}
+              typeColor={typeColor}
+              onNext={goNext}
+            />
+          )}
+          {currentStep === 3 && (
+            <InANutshellScreen
+              childName={childName}
+              description={description}
+              traits={traits}
+              onNext={goNext}
+            />
+          )}
+          {currentStep === 4 && (
+            <StrengthsIntroScreen childName={childName} onComplete={goNext} />
+          )}
+          {currentStep === 5 && (
+            <StrengthsScreen
+              childName={childName}
+              strengths={strengths.slice(0, 3)}
+              globalStartIdx={0}
+              totalStrengths={strengths.length}
+              isLastSet={strengths.length <= 3}
+              onNext={goNext}
+            />
+          )}
+          {currentStep === 6 && (
+            <StrengthsScreen
+              childName={childName}
+              strengths={
+                strengths.length > 3 ? strengths.slice(3) : strengths.slice(0, 3)
+              }
+              globalStartIdx={3}
+              totalStrengths={strengths.length}
+              isLastSet
+              onNext={goNext}
+            />
+          )}
+          {currentStep === 7 && (
+            <WhatsNextScreen childName={childName} onComplete={goNext} />
+          )}
+          {currentStep === 8 && (
+            <FinalCTAScreen
+              childName={childName}
+              childId={childId ?? undefined}
+              navigation={navigation}
+            />
+          )}
+        </StepWrapper>
+      </ScrollView>
     </View>
   );
 }

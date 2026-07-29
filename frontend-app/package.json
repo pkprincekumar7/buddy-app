@@ -24,6 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "expo": "~56.0.0",
+    "expo-image-picker": "~56.0.22",
     "expo-modules-core": "^56.0.14",
     "expo-speech-recognition": "^56.0.0",
     "expo-video": "^56.1.3",

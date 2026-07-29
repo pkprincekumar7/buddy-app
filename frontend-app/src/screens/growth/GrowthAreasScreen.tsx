@@ -24,8 +24,6 @@ import { GROWTH_AREAS } from '@/lib/growthAreaData';
 import { useFocusEntranceAnim, useFadeIn } from '@/lib/animations';
 import StartOverButton from '@/components/shared/StartOverButton';
 import PageActions from '@/components/shared/PageActions';
-import StageSplash from '@/components/shared/StageSplash';
-import { useStageSplash } from '@/hooks/useStageSplash';
 import {
   GradientIconBox,
   GradientButton,
@@ -76,8 +74,8 @@ function AnimatedAreaCard({
           borderRadius: 16,
           padding: 16,
           borderWidth: 1,
-          borderColor: done ? `${colors.success}4d` : colors.border,
-          backgroundColor: done ? `${colors.success}1a` : colors.card,
+          borderColor: done ? colors.successBorder : colors.border,
+          backgroundColor: done ? colors.successSubtle : colors.card,
           position: 'relative',
         }}
       >
@@ -91,13 +89,13 @@ function AnimatedAreaCard({
         <Text className="text-sm font-semibold" style={{ color: colors.text }}>
           {area.name}
         </Text>
-        <Text className="mt-0.5 text-xs" style={{ color: colors.iconColor }}>
+        <Text className="mt-0.5 text-xs" style={{ color: colors.textMuted }}>
           {area.description}
         </Text>
 
         {done && (
           <View style={{ position: 'absolute', top: 12, right: 12 }}>
-            <CheckCircle2 size={20} color={colors.success} />
+            <CheckCircle2 size={20} color={colors.successBright} />
           </View>
         )}
       </TouchableOpacity>
@@ -119,8 +117,6 @@ export default function GrowthAreasScreen() {
   >(new Set());
   const [hydrated, setHydrated] = useState(false);
 
-  const [showSplash, startTimer] = useStageSplash();
-
   const scrollRef = useRef<ScrollView>(null);
   useFocusEffect(
     useCallback(() => {
@@ -128,9 +124,7 @@ export default function GrowthAreasScreen() {
     }, []),
   );
 
-  const contentStyle = useFocusEntranceAnim(
-    !isLoadingAuth && hydrated && !showSplash,
-  );
+  const contentStyle = useFocusEntranceAnim(!isLoadingAuth && hydrated);
   // Life Pathway button fades in when it becomes visible (mirrors web motion.div opacity 0→1)
   const pathwayFadeStyle = useFadeIn(0, 600);
 
@@ -146,6 +140,16 @@ export default function GrowthAreasScreen() {
         const child = await api.entities.Child.get(activeChildId);
         if (cancelled) return;
         if (!child) return;
+
+        // Personality gate — mirrors web GrowthAreas.tsx
+        const childObj = child as Record<string, unknown>;
+        const viewModel = (childObj.personality as Record<string, unknown> | undefined)?.view_model as Record<string, unknown> | undefined;
+        if (!viewModel?.type && !(viewModel?.profile as Record<string, unknown> | undefined)?.name) {
+          (navigation.getParent() as unknown as { navigate: (name: string, params?: unknown) => void })?.navigate('Personality', {
+            screen: 'PersonalityType',
+          });
+          return;
+        }
 
         const areas = await api.completedGrowthAreas.list(activeChildId);
         if (cancelled) return;
@@ -172,7 +176,7 @@ export default function GrowthAreasScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, activeChildId]);
+  }, [isLoadingAuth, isAuthenticated, activeChildId, navigation]);
 
   const anyDone = completedAreaIds.size >= 1;
 
@@ -300,7 +304,6 @@ export default function GrowthAreasScreen() {
         </ScrollView>
       </Animated.View>
 
-      {showSplash && <StageSplash stage={7} onReady={startTimer} />}
     </View>
   );
 }

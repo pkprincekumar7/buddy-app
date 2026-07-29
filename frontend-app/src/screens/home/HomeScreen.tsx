@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import { useFadeIn, useSlideUp } from '@/lib/animations';
 import { useTheme } from '@/lib/ThemeContext';
 import { PILLAR_BG_COLORS } from '@/lib/gradientColors';
 import ChildCard from '@/components/shared/ChildCard';
+import { useAuth } from '@/lib/AuthContext';
+import { navigateTo } from '@/lib/navigationRef';
 import type { RootStackParamList } from '@/navigation';
 
 type HomeNavProp = StackNavigationProp<RootStackParamList>;
@@ -127,6 +129,19 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
   const { colors } = useTheme();
+  const { activeChild, isLoading: isLoadingAuth } = useAuth();
+
+  // Replace the old RootNavigator conditional — push Onboarding once for
+  // new or incomplete users. The ref prevents re-triggering on re-renders.
+  const onboardingGuardFiredRef = useRef(false);
+  useEffect(() => {
+    if (isLoadingAuth || onboardingGuardFiredRef.current) return;
+    if (!activeChild?.onboarding_completed) {
+      onboardingGuardFiredRef.current = true;
+      navigation.navigate('Onboarding');
+    }
+  }, [isLoadingAuth, activeChild, navigation]);
+
   const handleAddChild = useCallback(async () => {
     await AsyncStorage.setItem('buddy360:forceNewOnboarding', '1').catch(
       () => {},
@@ -150,6 +165,17 @@ export default function HomeScreen() {
     navigation.navigate('Onboarding');
   };
 
+  const handleContinueJourney = useCallback(() => {
+    if (activeChild?.onboarding_completed) {
+      navigateTo('Main', {
+        screen: 'Personality',
+        params: { screen: 'PersonalityJourney' },
+      });
+    } else {
+      navigation.navigate('Onboarding');
+    }
+  }, [activeChild, navigation]);
+
   if (isLoading) {
     return (
       <View
@@ -170,16 +196,14 @@ export default function HomeScreen() {
       {/* Hero */}
       <Animated.View
         style={heroAnim}
-        className={`px-5 items-center ${
-          children.length > 0 ? 'pt-8 pb-4' : 'pt-16 pb-10'
-        }`}
+        className="px-5 items-center pt-16 pb-10"
       >
         {/* Badge */}
         <View
           className="flex-row items-center gap-2 rounded-full border px-4 py-2 mb-8"
           style={{
-            borderColor: colors.primary + '33',
-            backgroundColor: colors.primary + '1A',
+            borderColor: colors.primaryMuted,
+            backgroundColor: colors.primarySubtle,
           }}
         >
           <Text
@@ -211,7 +235,7 @@ export default function HomeScreen() {
           a thoughtful, capable individual.
         </Text>
 
-        {children.length === 0 && (
+        {children.length === 0 ? (
           <Button
             size="xl"
             onPress={handleStartJourney}
@@ -227,62 +251,89 @@ export default function HomeScreen() {
               ✨ Start Your Journey →
             </Text>
           </Button>
-        )}
-      </Animated.View>
-
-      {/* Children management */}
-      <Animated.View style={childrenAnim} className="px-5 pb-6">
-        <View className="flex-row items-center justify-between mb-3">
-          <Text
-            className="text-base font-semibold"
-            style={{ color: colors.text }}
+        ) : (
+          // "Continue Your Journey" shown because the children management section
+          // below is hidden. When that section is re-enabled, remove this else-branch
+          // so the hero goes back to showing no button when children exist.
+          <Button
+            size="xl"
+            onPress={handleContinueJourney}
+            className="rounded-2xl"
           >
-            Your Children
-          </Text>
-          <View className="items-end gap-1">
-            <Pressable
-              onPress={() => void handleAddChild()}
-              disabled={children.length >= 10}
-              className="flex-row items-center gap-1 rounded-xl border px-3 py-1.5"
+            <Text
               style={{
-                borderColor: colors.border,
-                backgroundColor: colors.surfaceElevated,
-                opacity: children.length >= 10 ? 0.45 : 1,
+                fontSize: 16,
+                fontWeight: '600',
+                color: colors.primaryForeground,
               }}
             >
-              <Text
-                className="text-xs font-medium"
-                style={{ color: colors.text }}
-              >
-                + Add Child
-              </Text>
-            </Pressable>
-            {children.length >= 10 && (
-              <Text className="text-[10px]" style={{ color: colors.textMuted }}>
-                Maximum of 10 children reached.
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {children.length === 0 ? (
-          <Pressable
-            onPress={() => void handleAddChild()}
-            className="rounded-2xl border border-dashed py-6 items-center"
-            style={{ borderColor: colors.border }}
-          >
-            <Text className="text-sm" style={{ color: colors.textMuted }}>
-              No children yet. Tap to add your first child.
+              ✨ Continue Your Journey →
             </Text>
-          </Pressable>
-        ) : (
-          <View className="gap-3">
-            {children.map(child => (
-              <ChildCard key={child.id} child={child} />
-            ))}
-          </View>
+          </Button>
         )}
       </Animated.View>
+
+      {/* FEATURE HIDDEN: Children management section (add child, child cards, delete child).
+          To re-enable: remove the `{false && ( ... )}` wrapper below, remove firstChild
+          and the "Continue Your Journey" else-branch in the hero above, and restore the
+          hero padding conditional. The underlying API and hooks are untouched. */}
+      {false && (
+        <Animated.View style={childrenAnim} className="px-5 pb-6">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text
+              className="text-base font-semibold"
+              style={{ color: colors.text }}
+            >
+              Your Children
+            </Text>
+            <View className="items-end gap-1">
+              <Pressable
+                onPress={() => void handleAddChild()}
+                disabled={children.length >= 10}
+                className="flex-row items-center gap-1 rounded-xl border px-3 py-1.5"
+                style={{
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceElevated,
+                  opacity: children.length >= 10 ? 0.45 : 1,
+                }}
+              >
+                <Text
+                  className="text-xs font-medium"
+                  style={{ color: colors.text }}
+                >
+                  + Add Child
+                </Text>
+              </Pressable>
+              {children.length >= 10 && (
+                <Text
+                  className="text-[10px]"
+                  style={{ color: colors.textMuted }}
+                >
+                  Maximum of 10 children reached.
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {children.length === 0 ? (
+            <Pressable
+              onPress={() => void handleAddChild()}
+              className="rounded-2xl border border-dashed py-6 items-center"
+              style={{ borderColor: colors.border }}
+            >
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
+                No children yet. Tap to add your first child.
+              </Text>
+            </Pressable>
+          ) : (
+            <View className="gap-3">
+              {children.map(child => (
+                <ChildCard key={child.id} child={child} />
+              ))}
+            </View>
+          )}
+        </Animated.View>
+      )}
 
       {/* 6 Pillars */}
       <Animated.View style={pillarsAnim} className="px-3 pb-10">
@@ -341,7 +392,7 @@ export default function HomeScreen() {
               </Text>
               <Text
                 className="text-sm leading-relaxed text-center"
-                style={{ color: colors.iconColor }}
+                style={{ color: colors.textMuted }}
               >
                 {item.description}
               </Text>

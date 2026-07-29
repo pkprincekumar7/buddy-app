@@ -275,7 +275,7 @@ function MonthCard({
             </View>
           </View>
           <Animated.View style={chevronStyle}>
-            <ChevronDown size={20} color={colors.text} />
+            <ChevronDown size={20} color={colors.primaryForeground} />
           </Animated.View>
         </GradientSurface>
         {month.objective && (
@@ -345,7 +345,7 @@ function MonthCard({
                         <Text
                           className="text-sm font-semibold"
                           style={{
-                            color: isLocked ? colors.border : colors.text,
+                            color: isLocked ? colors.textMuted : colors.text,
                           }}
                         >
                           {act.title}
@@ -353,7 +353,7 @@ function MonthCard({
                         <Text
                           className="mt-0.5 text-xs"
                           style={{
-                            color: isLocked ? colors.border : colors.iconColor,
+                            color: isLocked ? colors.faint : colors.textMuted,
                           }}
                         >
                           {act.objective}

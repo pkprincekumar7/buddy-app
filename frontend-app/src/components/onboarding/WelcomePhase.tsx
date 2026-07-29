@@ -1,15 +1,27 @@
-import Animated from 'react-native-reanimated';
+import type { ComponentType } from 'react';
+import { useEffect } from 'react';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withDelay,
+  withSpring,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { View, Text, Pressable } from 'react-native';
-import { EmojiText } from '@/components/ui/EmojiText';
+import Svg, { Path as SvgPath, Line as SvgLine } from 'react-native-svg';
+import { MessageSquare, Sparkles, Target } from 'lucide-react-native';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/api/client';
-import { useFadeIn, useSlideUp } from '@/lib/animations';
+import { useSlideUp } from '@/lib/animations';
 import { useTheme } from '@/lib/ThemeContext';
 
-const WELCOME_FEATURES = [
-  { emoji: '❤️', text: 'Understanding your child deeply' },
-  { emoji: '🧭', text: 'Creating a personalized growth pathway' },
-  { emoji: '✨', text: 'Getting life-changing recommendations' },
+type LucideIcon = ComponentType<{ size?: number; color?: string }>;
+
+const FEATURES: { icon: LucideIcon; text: string }[] = [
+  { icon: MessageSquare, text: 'Quick chat' },
+  { icon: Sparkles, text: 'Personalized' },
+  { icon: Target, text: 'Actionable' },
 ];
 
 interface WelcomePhaseProps {
@@ -18,205 +30,199 @@ interface WelcomePhaseProps {
   user?: { full_name?: string; email?: string } | null;
 }
 
-// Each feature item gets its own animated wrapper so hooks are called at component level.
-function FeatureItem({
-  emoji,
-  text,
-  delay,
-}: {
-  emoji: string;
-  text: string;
-  delay: number;
-}) {
-  const { colors } = useTheme();
-  const anim = useFadeIn(delay, 700);
-  return (
-    <Animated.View style={anim} className="flex-row items-center gap-3">
-      <View
-        className="h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-        style={{ backgroundColor: colors.primary + '1A' }}
-      >
-        <EmojiText size="base">{emoji}</EmojiText>
-      </View>
-      <Text className="text-sm" style={{ color: colors.textMuted }}>
-        {text}
-      </Text>
-    </Animated.View>
-  );
-}
-
 export default function WelcomePhase({
   onContinue,
   isAuthenticated,
   user,
 }: WelcomePhaseProps) {
   const { colors } = useTheme();
+  const firstName = user?.full_name?.split(' ')[0] ?? 'there';
+
   const handleGoogleLogin = () => {
     void api.auth.redirectToLogin();
   };
 
-  const logoAnim = useFadeIn(100, 700);
+  // Logo spring animation — mirrors web Framer Motion: scale 0→1, stiffness: 70, damping: 12
+  const logoScale = useSharedValue(0);
+  const logoOpacity = useSharedValue(0);
+  useEffect(() => {
+    logoScale.value = withDelay(100, withSpring(1, { stiffness: 70, damping: 12 }));
+    logoOpacity.value = withDelay(
+      100,
+      withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const logoSpringStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: logoScale.value }],
+    opacity: logoOpacity.value,
+  }));
+
   const titleAnim = useSlideUp(0.55, 800);
   const subtitleAnim = useSlideUp(0.85, 800);
-  const featuresAnim = useSlideUp(1.15, 800);
+  // Staggered per-chip animations — mirrors web: delay 1.0 + i * 0.1s
+  const chip0Anim = useSlideUp(1.0, 800);
+  const chip1Anim = useSlideUp(1.1, 800);
+  const chip2Anim = useSlideUp(1.2, 800);
+  const chipAnims = [chip0Anim, chip1Anim, chip2Anim];
   const ctaAnim = useSlideUp(2.15, 800);
-  const timeAnim = useFadeIn(2500, 800);
+  const timeAnim = useSlideUp(2.5, 800);
 
   return (
-    <View className="pb-8">
+    <View
+      style={{
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.card,
+        padding: 24,
+      }}
+    >
       {/* Hero */}
-      <View className="items-center mb-8">
+      <View className="items-center mb-6">
+        {/* Logo — spring scale + fade, mirrors web Framer Motion spring */}
         <Animated.View
-          style={[logoAnim, { backgroundColor: colors.primary }]}
-          className="mb-6 h-20 w-20 items-center justify-center rounded-2xl"
+          style={[logoSpringStyle, { backgroundColor: colors.primary }]}
+          className="mb-6 h-20 w-20 items-center justify-center rounded-full"
         >
-          <Text
-            className="text-2xl font-bold"
-            style={{ color: colors.primaryForeground }}
-          >
-            B
-          </Text>
+          <Svg width={40} height={44} viewBox="0 0 20 22">
+            <SvgLine
+              x1="10"
+              y1="21"
+              x2="10"
+              y2="14"
+              stroke="white"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
+            <SvgPath
+              d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+              fill="white"
+            />
+            <SvgPath
+              d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+              fill="white"
+            />
+          </Svg>
         </Animated.View>
 
         <Animated.View style={titleAnim} className="items-center">
           <Text
-            className="mb-3 text-center text-3xl font-bold tracking-tight"
+            className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-center"
+            style={{ color: colors.primary }}
+          >
+            Welcome to your growth journey
+          </Text>
+          <Text
+            className="text-3xl font-bold leading-tight tracking-tight text-center"
             style={{ color: colors.text }}
           >
-            Welcome to Buddy360
+            Hey {firstName}! 👋{'\n'}I'm{' '}
+            <Text style={{ color: colors.primary }}>Buddy</Text>
+            , your child's{'\n'}growth companion.
           </Text>
         </Animated.View>
 
-        <Animated.View style={subtitleAnim} className="items-center px-4">
+        <Animated.View style={subtitleAnim} className="items-center mt-4">
           <Text
-            className="text-center text-base leading-relaxed"
+            className="text-center text-sm leading-relaxed"
             style={{ color: colors.textMuted }}
           >
-            A guided journey to help your child discover their strengths and
-            design a meaningful life
+            In a few light, friendly questions I'll learn about your child —
+            one thing at a time. No long forms, no pressure. Promise.
           </Text>
         </Animated.View>
       </View>
 
-      {/* Features */}
-      <Animated.View
-        style={[
-          featuresAnim,
-          {
-            backgroundColor: colors.surfaceElevated,
-            borderColor: colors.border,
-          },
-        ]}
-        className="mx-4 mb-8 rounded-2xl p-6 border"
-      >
-        <Text
-          className="mb-5 text-xs font-semibold uppercase tracking-widest"
-          style={{ color: colors.iconColor }}
-        >
-          Let's Start By
-        </Text>
-        <View className="space-y-4">
-          {WELCOME_FEATURES.map((feature, index) => (
-            <FeatureItem
-              key={feature.text}
-              emoji={feature.emoji}
-              text={feature.text}
-              delay={1400 + index * 250}
-            />
-          ))}
-        </View>
-      </Animated.View>
-
-      {/* Login/Continue */}
-      <Animated.View
-        style={ctaAnim}
-        className="mx-4 mb-8 items-center space-y-4"
-      >
-        {isAuthenticated ? (
-          <>
-            <View
-              className="w-full flex-row items-center gap-3 rounded-2xl p-4 border"
-              style={{
-                backgroundColor: colors.surfaceElevated,
-                borderColor: colors.border,
-              }}
-            >
+      {/* Feature chips — staggered entrance, Lucide icons in primary color */}
+      <View className="flex-row mb-6" style={{ gap: 12 }}>
+        {FEATURES.map((f, i) => {
+          const Icon = f.icon;
+          return (
+            <Animated.View key={f.text} style={[chipAnims[i], { flex: 1 }]}>
               <View
-                className="h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                style={{ backgroundColor: colors.primary }}
+                className="items-center gap-2 rounded-xl border py-4"
+                style={{
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: colors.border,
+                }}
               >
+                <Icon size={20} color={colors.primary} />
                 <Text
-                  className="text-sm font-bold"
-                  style={{ color: colors.primaryForeground }}
-                >
-                  {user?.full_name?.[0] ?? user?.email?.[0] ?? '?'}
-                </Text>
-              </View>
-              <View>
-                <Text
-                  className="text-sm font-medium"
+                  className="text-xs font-medium text-center"
                   style={{ color: colors.text }}
                 >
-                  {user?.full_name ?? 'Welcome!'}
-                </Text>
-                <Text className="text-xs" style={{ color: colors.iconColor }}>
-                  {user?.email}
+                  {f.text}
                 </Text>
               </View>
-            </View>
+            </Animated.View>
+          );
+        })}
+      </View>
 
+      {/* CTA — glow shadow mirrors web glow-teal-md */}
+      <Animated.View style={[ctaAnim, { gap: 8 }]} className="items-center mb-4">
+        {isAuthenticated ? (
+          <View
+            style={{
+              width: '100%',
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
+              elevation: 8,
+            }}
+          >
             <Button
               onPress={onContinue}
-              className="w-full rounded-2xl h-14 items-center justify-center"
-              style={{ backgroundColor: colors.primaryAction }}
+              className="w-full rounded-full h-12 items-center justify-center"
+              style={{ backgroundColor: colors.primary }}
             >
               <Text
                 className="text-base font-semibold"
                 style={{ color: colors.primaryForeground }}
               >
-                ✨ Let's Begin
+                Let's start →
               </Text>
             </Button>
-          </>
+          </View>
         ) : (
           <>
             <View
-              className="w-full rounded-2xl p-5 border"
               style={{
-                backgroundColor: colors.surfaceElevated,
-                borderColor: colors.border,
+                width: '100%',
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.35,
+                shadowRadius: 12,
+                elevation: 8,
               }}
             >
-              <View className="mb-4 flex-row items-center justify-center gap-2">
-                <Text className="text-xs" style={{ color: colors.iconColor }}>
-                  🛡 Sign in to save your progress securely
-                </Text>
-              </View>
-
               <Pressable
                 onPress={handleGoogleLogin}
                 style={{
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor: colors.primary,
+                  borderRadius: 999,
+                  height: 48,
+                  width: '100%',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
-                className="h-12 w-full flex-row items-center justify-center rounded-xl border"
                 android_ripple={{ color: colors.pressedBackground }}
               >
                 <Text
-                  className="text-sm font-medium"
-                  style={{ color: colors.text }}
+                  className="text-base font-semibold"
+                  style={{ color: colors.primaryForeground }}
                 >
-                  Continue with Google
+                  Get started →
                 </Text>
               </Pressable>
             </View>
-
             <Text
               className="text-xs text-center"
               style={{ color: colors.iconColor }}
             >
-              By continuing, you agree to our Terms of Service and Privacy
-              Policy
+              Sign in to save your progress securely
             </Text>
           </>
         )}
@@ -226,9 +232,9 @@ export default function WelcomePhase({
       <Animated.View style={timeAnim}>
         <Text
           className="text-center text-xs"
-          style={{ color: colors.iconColor }}
+          style={{ color: colors.iconColor, opacity: 0.5 }}
         >
-          This will take about 5–7 minutes
+          Takes about 2 minutes
         </Text>
       </Animated.View>
     </View>

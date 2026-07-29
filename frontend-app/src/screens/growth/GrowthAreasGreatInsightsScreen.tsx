@@ -52,6 +52,8 @@ function normalizeChildGameRecommendations(
   const rawObj = raw as Record<string, unknown>;
   const suggested = Array.isArray(rawObj.suggested_activities)
     ? [...(rawObj.suggested_activities as unknown[])]
+    : Array.isArray(rawObj.activities)
+    ? [...(rawObj.activities as unknown[])]
     : [];
   const { activities: _a, suggested_activities: _s, ...rest } = rawObj;
   return { ...rest, suggested_activities: suggested };
@@ -196,7 +198,7 @@ function AnimatedRecItem({
       </GradientIconBox>
       <Text
         className="flex-1 text-sm leading-relaxed"
-        style={{ color: colors.textMuted }}
+        style={{ color: colors.text }}
       >
         {rec}
       </Text>
@@ -357,8 +359,6 @@ export default function GrowthAreasGreatInsightsScreen() {
       } catch (err) {
         console.warn('[GrowthAreasGreatInsightsScreen] Load failed:', err);
         if (!cancelled) setStatus('error');
-      } finally {
-        if (!cancelled) setStatus(prev => (prev === 'loading' ? 'idle' : prev));
       }
     })();
 
@@ -581,7 +581,7 @@ export default function GrowthAreasGreatInsightsScreen() {
                   >
                     <Text
                       className="mb-1 text-xs"
-                      style={{ color: colors.iconColor }}
+                      style={{ color: colors.textMuted }}
                     >
                       {q.question.replace(
                         /\{name\}/g,
