@@ -118,18 +118,18 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
-      path="/PersonalityType/:childId"
-      element={
-        <LayoutWrapper currentPageName="PersonalityType">
-          <Pages.PersonalityType />
-        </LayoutWrapper>
-      }
-    />
-    <Route
       path="/PersonalityJourney/:childId"
       element={
         <LayoutWrapper currentPageName="PersonalityJourney">
           <Pages.PersonalityJourney />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/PersonalityProfile/:childId"
+      element={
+        <LayoutWrapper currentPageName="PersonalityProfile">
+          <Pages.PersonalityProfile />
         </LayoutWrapper>
       }
     />

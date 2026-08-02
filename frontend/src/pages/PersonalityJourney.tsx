@@ -1,606 +1,578 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Sparkles,
-  Star,
-  Clock,
-  Brain,
-  Pencil,
-  Info,
-  Eye,
-  Smile,
-  Users,
-  Heart,
-  MessageCircle,
-  Compass,
-  Wand2,
-  Plus,
-} from 'lucide-react';
+import { Zap, Sparkles, Heart, Brain, MessageSquare, Activity, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
-import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
-import { personalityTypes } from '@/components/shared/PersonalityAnalysis';
-import { generateAvatarDataUri } from '@/lib/avatarUtils';
 import { SPINNER } from '@/lib/animations';
-import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
-import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
+import {
+  adaptAiPersonalityToViewModel,
+  PERSONALITY_TYPE_KEYS,
+} from '@/components/shared/PersonalityAnalysis';
+import { sanitizeViewModelAvatars, stripViewModelImages } from '@/lib/avatarUtils';
+import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescriptionOneLiner';
+import { personalityLlmSchema } from '@/lib/llmSchemas';
+import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
+import { useJob } from '@/hooks/useJob';
+import { useStartOver } from '@/hooks/useStartOver';
+import { ConfirmModal } from '@/components/shared/StartOverButton';
 
-type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
+type Phase = 1 | 2;
 
-// ── Step definitions ──────────────────────────────────────────────────────────
-// 1 – THE REVEAL splash
-// 2 – Personality card (type + traits)
-// 3 – In a nutshell (description)
-// 4 – Strengths intro (auto-advance)
-// 5 – Emerging Strengths set 1 (strengths 0–2)
-// 6 – Emerging Strengths set 2 (strengths 3–5)
-// 7 – What's next
-// 8 – CTA (Continue Now / Catch Up Later)
-const TOTAL_STEPS = 8;
+const DIMENSIONS = [
+  { key: 'strengths', label: 'Strengths', Icon: Sparkles, color: 'rgba(255,217,138,0.9)', glow: 'rgba(255,217,138,0.25)' },
+  { key: 'hobbies', label: 'Hobbies', Icon: Heart, color: 'rgba(255,138,192,0.9)', glow: 'rgba(255,138,192,0.25)' },
+  { key: 'thinking_pattern', label: 'Thinking', Icon: Brain, color: 'rgba(75,233,255,0.9)', glow: 'rgba(75,233,255,0.25)' },
+  { key: 'communication_style', label: 'Talk', Icon: MessageSquare, color: 'rgba(168,255,120,0.9)', glow: 'rgba(168,255,120,0.25)' },
+  { key: 'energy_level', label: 'Energy', Icon: Activity, color: 'rgba(255,154,60,0.9)', glow: 'rgba(255,154,60,0.25)' },
+  { key: 'social_behaviour', label: 'Social', Icon: Shield, color: 'rgba(199,125,255,0.9)', glow: 'rgba(199,125,255,0.25)' },
+];
 
-// ── Strength badge styles ─────────────────────────────────────────────────────
-const STRENGTH_BADGE_STYLES = [
-  { numBg: 'badge-1-bg', numText: 'badge-1-text', numBorder: 'badge-1-border', Icon: Info },
-  { numBg: 'badge-2-bg', numText: 'badge-2-text', numBorder: 'badge-2-border', Icon: Eye },
-  { numBg: 'badge-3-bg', numText: 'badge-3-text', numBorder: 'badge-3-border', Icon: Smile },
-  { numBg: 'badge-4-bg', numText: 'badge-4-text', numBorder: 'badge-4-border', Icon: Users },
-  { numBg: 'badge-5-bg', numText: 'badge-5-text', numBorder: 'badge-5-border', Icon: Heart },
-  { numBg: 'badge-6-bg', numText: 'badge-6-text', numBorder: 'badge-6-border', Icon: Sparkles },
-] as const;
+// Hexagonal positions for 6 outer circles (radius ~130px from centre)
+const HEX_POSITIONS = [
+  { x: 0, y: -130 },
+  { x: 112, y: -65 },
+  { x: 112, y: 65 },
+  { x: 0, y: 130 },
+  { x: -112, y: 65 },
+  { x: -112, y: -65 },
+];
 
-// ── Sub-screens ───────────────────────────────────────────────────────────────
+// ── Phase 1: Buddy 360 Orb ────────────────────────────────────────────────────
 
-function TheRevealScreen({ childName, onNext }: { childName: string; onNext: () => void }) {
-  const dots = [
-    { top: '8%', left: '10%', color: 'bg-primary', size: 'h-2 w-2', delay: 0.2 },
-    { top: '15%', left: '80%', color: 'bg-personality-alt', size: 'h-2.5 w-2.5', delay: 0.4 },
-    { top: '40%', left: '5%', color: 'bg-warning', size: 'h-1.5 w-1.5', delay: 0.3 },
-    { top: '60%', left: '90%', color: 'bg-primary', size: 'h-2 w-2', delay: 0.5 },
-    { top: '75%', left: '15%', color: 'bg-accent-pink', size: 'h-1.5 w-1.5', delay: 0.35 },
-    { top: '80%', left: '75%', color: 'bg-personality-alt', size: 'h-2 w-2', delay: 0.25 },
-    { top: '25%', left: '92%', color: 'bg-warning', size: 'h-1.5 w-1.5', delay: 0.45 },
-    { top: '55%', left: '3%', color: 'bg-primary', size: 'h-1.5 w-1.5', delay: 0.6 },
-  ];
-
-  return (
-    <div className="relative flex min-h-[60vh] flex-col items-center justify-center gap-8 text-center">
-      {dots.map((dot, i) => (
-        <motion.div
-          key={i}
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: dot.delay, duration: 0.4 }}
-          className={`absolute rounded-full ${dot.color} ${dot.size}`}
-          style={{ top: dot.top, left: dot.left }}
-        />
-      ))}
-
-      <motion.div
-        initial={{ scale: 0.3, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 60, damping: 10, delay: 0.2 }}
-        className="glow-teal-lg flex h-28 w-28 items-center justify-center rounded-3xl bg-gradient-to-br from-primary/30 to-personality/30 ring-4 ring-primary/20"
-      >
-        <Sparkles className="h-14 w-14 text-primary" />
-      </motion.div>
-
-      <motion.p
-        initial={{ opacity: 0, letterSpacing: '0.5em' }}
-        animate={{ opacity: 1, letterSpacing: '0.25em' }}
-        transition={{ duration: 0.8, ease: 'easeOut' }}
-        className="text-[11px] font-bold uppercase tracking-[0.25em] text-primary"
-      >
-        THE REVEAL
-      </motion.p>
-
-      <div className="space-y-3">
-        <motion.h1
-          initial={{ opacity: 0, y: 20, scale: 0.9 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ delay: 0.5, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-          className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl"
-        >
-          Your Personalized Journey
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7, duration: 0.5 }}
-          className="text-sm text-muted-foreground"
-        >
-          Here's what we've discovered about{' '}
-          <span className="font-semibold text-foreground">{childName}</span> ✨
-        </motion.p>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.0, duration: 0.5 }}
-      >
-        <Button
-          onClick={onNext}
-          className="glow-teal-btn h-12 gap-2 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-        >
-          Show me →
-        </Button>
-      </motion.div>
-    </div>
-  );
-}
-
-function PersonalityCardScreen({
+function BuddyOrbScreen({
   childName,
-  personalityType,
-  traits,
-  famousPeople,
-  typeColor,
-  onNext,
+  isAnalyzing,
+  onTap,
 }: {
   childName: string;
-  personalityType: string;
-  traits: string[];
-  famousPeople: Array<{ name: string; image?: string }>;
-  typeColor: string;
-  onNext: () => void;
+  isAnalyzing: boolean;
+  onTap: () => void;
 }) {
-  const typeTitle = personalityType?.split(' - ')[1] ?? personalityType ?? 'Unique';
-
-  function traitIcon(trait: string) {
-    const t = trait.toLowerCase();
-    if (/calm|steady|quiet|peace/.test(t)) return <Heart className="h-3 w-3" />;
-    if (/friend|social|connect|warm|kind/.test(t)) return <Users className="h-3 w-3" />;
-    if (/visual|see|look|observ/.test(t)) return <Eye className="h-3 w-3" />;
-    if (/talk|voice|speak|express|verbal/.test(t)) return <MessageCircle className="h-3 w-3" />;
-    return <Sparkles className="h-3 w-3" />;
-  }
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="border-edge space-y-5 rounded-2xl bg-card p-5"
-    >
-      {/* Card header */}
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${typeColor}`}
-        >
-          <Brain className="h-5 w-5 text-white" />
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
-            {childName}'s Profile · 1 of 3
-          </p>
-          <h2 className="text-base font-bold text-foreground">Personality Type</h2>
-        </div>
-      </div>
-
-      {/* Inner personality card */}
-      <div className="border-edge-faint bg-deep-navy-gradient space-y-4 rounded-xl p-5 text-center">
-        <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/50">
-            {childName.toUpperCase()} IS A
-          </p>
-          <h3 className="text-5xl font-extrabold leading-tight text-primary">{typeTitle}</h3>
-        </div>
-        <div className="flex flex-wrap justify-center gap-2">
-          {traits.map((trait, idx) => (
-            <motion.span
-              key={trait}
-              initial={{ opacity: 0, scale: 0.85 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 + idx * 0.07 }}
-              className="border-edge-md bg-ghost-md flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/80"
+    <div className="relative" style={{ minHeight: '100vh', width: '100%' }}>
+      {/* Text above — heading bottom pinned 32px above orb top */}
+      <div
+        className="absolute left-0 right-0 px-6 text-center"
+        style={{
+          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px) - 32px)',
+          transform: 'translateY(-100%)',
+        }}
+      >
+      <motion.div
+        initial={{ opacity: 0, y: -16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
+      >
+        {isAnalyzing ? (
+          <div className="flex flex-col items-center gap-4">
+            <h1
+              className="text-white"
+              style={{
+                fontFamily: 'Orbitron, sans-serif',
+                fontWeight: 700,
+                fontSize: 'clamp(28px, 4vw, 42px)',
+                lineHeight: 1.25,
+                maxWidth: 640,
+                textWrap: 'pretty',
+              }}
             >
-              <span className="text-muted-foreground/60">{traitIcon(trait)}</span>
-              {trait}
-            </motion.span>
-          ))}
-        </div>
-      </div>
-
-      {/* Famous people */}
-      {famousPeople.length > 0 && (
-        <div className="border-edge-faint bg-ghost rounded-xl p-4">
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
-            Famous people with similar traits
-          </p>
-          <div className="flex justify-center gap-8">
-            {famousPeople.map((person, i) => (
-              <motion.div
-                key={person.name}
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.5 + i * 0.15, duration: 0.4 }}
-                className="flex flex-col items-center gap-2"
-              >
-                <div className="h-14 w-14 overflow-hidden rounded-full border-2 border-white/15">
-                  <img
-                    src={`/app-assets/famous_people/${person.name.replace(/ /g, '_')}.png`}
-                    alt={person.name}
-                    className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = generateAvatarDataUri(person.name);
-                    }}
-                  />
-                </div>
-                <span className="max-w-[72px] text-center text-[11px] font-medium leading-tight text-muted-foreground">
-                  {person.name}
-                </span>
-              </motion.div>
-            ))}
+              Preparing{' '}
+              <span style={{ color: '#4be9ff' }}>{childName}&apos;s</span>
+              {' '}profile
+            </h1>
+            <div className="flex gap-2">
+              {[0, 0.15, 0.3].map((delay, i) => (
+                <motion.span
+                  key={i}
+                  animate={{ y: [0, -7, 0] }}
+                  transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
+                  className="block h-2 w-2 rounded-full"
+                  style={{ background: '#1ec4e8' }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <h1
+            className="text-white"
+            style={{
+              fontFamily: 'Orbitron, sans-serif',
+              fontWeight: 900,
+              fontSize: 'clamp(28px, 4vw, 42px)',
+              lineHeight: 1.25,
+              maxWidth: 640,
+              textWrap: 'pretty',
+            }}
+          >
+            Click here to begin your child&apos;s{' '}
+            <span style={{ color: '#4be9ff' }}>transformation</span>
+          </h1>
+        )}
+      </motion.div>
+      </div>
+
+      {/* Orb centered at device vertical center (50vh) */}
+      <div
+        className="absolute"
+        style={{
+          left: '50%',
+          top: 'calc(50vh - 64px - clamp(100px, 36vmin, 150px))',
+          transform: 'translateX(-50%)',
+        }}
+      >
+      <motion.button
+        onClick={isAnalyzing ? undefined : onTap}
+        whileTap={isAnalyzing ? undefined : { scale: 0.94 }}
+        className={`relative focus:outline-none ${isAnalyzing ? 'cursor-default' : 'cursor-pointer'}`}
+        initial={{ opacity: 0, scale: 0.7 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <svg
+          viewBox="0 0 350 350"
+          xmlns="http://www.w3.org/2000/svg"
+          style={{ display: 'block', overflow: 'visible', width: 'clamp(200px, 72vmin, 300px)', height: 'clamp(200px, 72vmin, 300px)' }}
+        >
+          <style>{`
+            @keyframes buddySpin {
+              from { transform: rotate(0deg); }
+              to   { transform: rotate(360deg); }
+            }
+            @keyframes buddySpinRev {
+              from { transform: rotate(0deg); }
+              to   { transform: rotate(-360deg); }
+            }
+            @keyframes buddyGoldBreathe {
+              0%, 100% { transform: scale(1); }
+              50%       { transform: scale(1.04); }
+            }
+            @keyframes buddyGoldPulse {
+              0%, 100% { transform: scale(1); }
+              50%       { transform: scale(1.10); }
+            }
+          `}</style>
+
+          <defs>
+            {/* Warm gold → cyan → deep teal gradient for inner sphere */}
+            <radialGradient id="buddyCoreGrad" cx="50%" cy="42%" r="60%">
+              <stop offset="0%"   stopColor="#fff6dc" />
+              <stop offset="22%"  stopColor="#ffd98a" />
+              <stop offset="52%"  stopColor="#4be9ff" />
+              <stop offset="100%" stopColor="#0a5b74" />
+            </radialGradient>
+            {/* Soft gold halo between rings */}
+            <radialGradient id="buddyGoldHalo" cx="50%" cy="50%" r="50%">
+              <stop offset="55%"  stopColor="rgba(255,206,110,0)" />
+              <stop offset="82%"  stopColor="rgba(255,206,110,0.30)" />
+              <stop offset="100%" stopColor="rgba(255,206,110,0)" />
+            </radialGradient>
+          </defs>
+
+          {/* ① Outer dotted ring — rotates clockwise 18s */}
+          <g style={{ animation: 'buddySpin 18s linear infinite', transformOrigin: '175px 175px' }}>
+            <circle
+              cx="175" cy="175" r="150"
+              fill="none"
+              stroke="#1ec4e8"
+              strokeWidth="3"
+              strokeDasharray="4 8"
+              opacity="0.65"
+            />
+          </g>
+
+          {/* ② Inner segmented ring — counter-rotates 26s */}
+          <g style={{ animation: 'buddySpinRev 26s linear infinite', transformOrigin: '175px 175px' }}>
+            {/* Dark base ring */}
+            <circle cx="175" cy="175" r="124" fill="none" stroke="#0e3a4a" strokeWidth="11" opacity="0.55" />
+            {/* Cyan segments on top */}
+            <circle
+              cx="175" cy="175" r="124"
+              fill="none"
+              stroke="#1ec4e8"
+              strokeWidth="11"
+              strokeDasharray="20 12 46 12 20 70"
+              opacity="0.9"
+            />
+          </g>
+
+          {/* ③ Thin separator ring */}
+          <circle cx="175" cy="175" r="98" fill="none" stroke="#3c5568" strokeWidth="1" opacity="0.5" />
+
+          {/* ④ Gold halo atmosphere */}
+          <circle
+            cx="175" cy="175" r="101"
+            fill="url(#buddyGoldHalo)"
+            style={{ animation: 'buddyGoldPulse 3.6s ease-in-out infinite', transformOrigin: '175px 175px' }}
+          />
+
+          {/* ⑤ Inner sphere — breathing */}
+          <circle
+            cx="175" cy="175" r="63"
+            fill="url(#buddyCoreGrad)"
+            style={{ animation: 'buddyGoldBreathe 3.2s ease-in-out infinite', transformOrigin: '175px 175px' }}
+          />
+
+          {/* ⑥ Gold accent dashes — fast spin 6s */}
+          <g style={{ animation: 'buddySpin 6s linear infinite', transformOrigin: '175px 175px' }}>
+            <circle
+              cx="175" cy="175" r="76"
+              fill="none"
+              stroke="#ffd98a"
+              strokeWidth="1.6"
+              strokeDasharray="14 206"
+              opacity="0.85"
+              style={{ filter: 'drop-shadow(0 0 6px rgba(255,214,130,0.9))' }}
+            />
+          </g>
+
+          {/* ⑦ Lightning bolt (polygon from clip-path in HTML, converted to SVG path) */}
+          <path
+            d="M175 152.5 L155 185 L170 185 L160 210 L195 172.5 L177.5 172.5 Z"
+            fill="#05131a"
+            opacity="0.9"
+          />
+        </svg>
+      </motion.button>
+      </div>
+
+      {/* Text below orb — 32px gap below orb bottom */}
+      {!isAnalyzing && (
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.7, delay: 0.5 }}
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: 'calc(50vh - 64px + clamp(100px, 36vmin, 150px) + 32px)',
+            transform: 'translateX(-50%)',
+            whiteSpace: 'nowrap',
+            fontFamily: 'sans-serif',
+            fontWeight: 700,
+            fontSize: '12.5px',
+            letterSpacing: '0.22em',
+            textTransform: 'uppercase',
+            color: '#84a0b2',
+          }}
+        >
+          Tap the core to enter the zone
+        </motion.p>
       )}
-
-      <Button
-        onClick={onNext}
-        className="glow-teal-btn h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-      >
-        See the summary →
-      </Button>
-    </motion.div>
-  );
-}
-
-function InANutshellScreen({
-  childName,
-  description,
-  traits,
-  onNext,
-}: {
-  childName: string;
-  description: string;
-  traits: string[];
-  onNext: () => void;
-}) {
-  const HIGHLIGHT_COLORS = ['text-primary', 'text-personality-alt', 'text-warning'];
-
-  function highlightTraits(text: string) {
-    if (!traits.length) return <>{text}</>;
-    const sorted = [...traits].sort((a, b) => b.length - a.length);
-    const escaped = sorted.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
-    const parts = text.split(pattern);
-    let colorIdx = 0;
-    return parts.map((part, i) => {
-      if (sorted.some((t) => t.toLowerCase() === part.toLowerCase())) {
-        const color =
-          HIGHLIGHT_COLORS[colorIdx++ % HIGHLIGHT_COLORS.length] ?? HIGHLIGHT_COLORS[0]!;
-        return (
-          <span key={i} className={`font-semibold ${color}`}>
-            {part}
-          </span>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: 'easeOut' }}
-      className="border-edge space-y-5 rounded-2xl bg-card p-5"
-    >
-      {/* Card header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/20">
-          <Pencil className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
-            {childName}'s Profile · 2 of 3
-          </p>
-          <h2 className="text-base font-bold text-foreground">In a nutshell</h2>
-        </div>
-      </div>
-
-      <p className="text-xl font-bold leading-relaxed text-foreground">
-        "{highlightTraits(description)}"
-      </p>
-
-      <div className="flex items-center gap-2 text-muted-foreground/50">
-        <Sparkles className="h-3.5 w-3.5 shrink-0" />
-        <p className="text-xs">One sentence — read it slowly. We'll get into the details next.</p>
-      </div>
-
-      <Button
-        onClick={onNext}
-        className="glow-teal-btn h-12 rounded-full bg-primary px-8 font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-      >
-        Show emerging strengths →
-      </Button>
-    </motion.div>
-  );
-}
-
-function StrengthsIntroScreen({
-  childName,
-  onComplete,
-}: {
-  childName: string;
-  onComplete: () => void;
-}) {
-  const onCompleteRef = useRef(onComplete);
-  useEffect(() => {
-    onCompleteRef.current = onComplete;
-  });
-
-  useEffect(() => {
-    const t = setTimeout(() => onCompleteRef.current(), 2800);
-    return () => clearTimeout(t);
-  }, []);
-
-  return (
-    <div className="relative flex min-h-[55vh] flex-col items-center justify-center gap-6 text-center">
-      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">
-        Friendly pause...
-      </p>
-
-      <motion.div
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 60, damping: 10 }}
-        className="glow-teal-lg flex h-24 w-24 items-center justify-center rounded-full bg-primary/15 ring-4 ring-primary/20"
-      >
-        <Star className="h-10 w-10 text-primary" />
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-        className="space-y-2"
-      >
-        <h2 className="text-2xl font-bold text-foreground">
-          Here come {childName}'s emerging strengths ⭐
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          We've split them across two screens so each one lands.
-        </p>
-      </motion.div>
-
-      <motion.p
-        animate={{ opacity: [0.4, 1, 0.4] }}
-        transition={{ duration: 1.5, repeat: Infinity }}
-        className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary"
-      >
-        One moment...
-      </motion.p>
     </div>
   );
 }
 
-function StrengthsScreen({
-  childName,
-  strengths,
-  globalStartIdx,
-  totalStrengths,
-  isLastSet,
-  onNext,
+// ── Phase 2: Buddy 360 Nav (matches HTML exactly) ────────────────────────────
+
+const NODE_STYLE = {
+  position: 'absolute' as const,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 92,
+  height: 92,
+  transform: 'translate(-50%, -50%)',
+  zIndex: 2,
+};
+
+const ACTIVE_INNER: React.CSSProperties = {
+  width: 54, height: 54, borderRadius: '50%',
+  background: 'radial-gradient(circle at 38% 32%,#eafdff,#4be9ff 42%,#0a5b74 100%)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'pointer', position: 'relative', zIndex: 2,
+};
+
+const INACTIVE_INNER: React.CSSProperties = {
+  width: 54, height: 54, borderRadius: '50%',
+  background: 'radial-gradient(circle at 38% 32%,#cbd6dd,#5b6b78 55%,#2a333c 100%)',
+  boxShadow: '0 0 10px rgba(91,107,120,.4)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  cursor: 'not-allowed', position: 'relative', zIndex: 2,
+};
+
+const NODE_LABEL: React.CSSProperties = {
+  position: 'absolute', top: '100%', left: '50%',
+  transform: 'translateX(-50%)', marginTop: 10,
+  fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: 14,
+  color: '#e7f5f9', whiteSpace: 'nowrap',
+};
+
+const COMPLETED_SUB: React.CSSProperties = {
+  display: 'block', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
+  fontSize: 10.5, letterSpacing: '.15em', textTransform: 'uppercase',
+  color: '#84a0b2', marginTop: 2,
+};
+
+const CHECK_BADGE: React.CSSProperties = {
+  position: 'absolute', top: -4, right: -4, width: 22, height: 22,
+  borderRadius: '50%', background: '#05070f', border: '1.5px solid #5b6b78',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3,
+};
+
+function DimensionCirclesScreen({
+  onDiscover,
+  onGoHome,
+  onStartAgain,
+  onGrow,
 }: {
   childName: string;
-  strengths: string[];
-  globalStartIdx: number;
-  totalStrengths: number;
-  isLastSet: boolean;
-  onNext: () => void;
+  mergedData: Record<string, unknown>;
+  onDiscover: () => void;
+  onGoHome: () => void;
+  onStartAgain: () => void;
+  onGrow: () => void;
 }) {
-  const remaining = totalStrengths - (globalStartIdx + strengths.length);
-  const setNum = globalStartIdx === 0 ? 1 : 2;
+  const ringAreaRef = useRef<HTMLDivElement>(null);
+  const [ringScale, setRingScale] = useState(1);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="border-edge space-y-5 rounded-2xl bg-card p-5"
-    >
-      {/* Card header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-warning-medium/15 ring-1 ring-warning-medium/20">
-          <Star className="h-5 w-5 text-warning" />
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/50">
-            {childName}'s Profile · 3 of 3 · Set {setNum} of 2
-          </p>
-          <h2 className="text-base font-bold text-foreground">Emerging Strengths</h2>
-        </div>
-      </div>
-
-      {/* Strength items */}
-      <div className="space-y-3">
-        {strengths.map((strength, idx) => {
-          const sep = strength.match(/[:—–-](.+)/);
-          const title = sep ? strength.slice(0, strength.indexOf(sep[0])).trim() : strength;
-          const detail = sep ? (sep[1]?.trim() ?? '') : '';
-          const globalIdx = globalStartIdx + idx;
-          const style = STRENGTH_BADGE_STYLES[globalIdx % STRENGTH_BADGE_STYLES.length]!;
-          const { Icon } = style;
-          const num = String(globalIdx + 1).padStart(2, '0');
-
-          return (
-            <motion.div
-              key={strength}
-              initial={{ opacity: 0, x: -16 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 + idx * 0.12, duration: 0.4, ease: 'easeOut' }}
-              className="border-edge-faint flex items-start gap-4 rounded-xl bg-surface-elevated px-4 py-3.5"
-            >
-              <div
-                className={`flex h-9 w-9 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border ${style.numBorder} ${style.numBg}`}
-              >
-                <span className={`text-[10px] font-bold leading-none ${style.numText}`}>{num}</span>
-                <Icon className={`h-3 w-3 ${style.numText}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground">{title}</p>
-                {detail && (
-                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{detail}</p>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Footer row */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-muted-foreground/50">
-          <Sparkles className="h-3.5 w-3.5 shrink-0" />
-          <p className="text-xs">
-            {isLastSet
-              ? `That's all ${totalStrengths} strengths!`
-              : `${remaining} more strength${remaining !== 1 ? 's' : ''} to discover.`}
-          </p>
-        </div>
-        <Button
-          onClick={onNext}
-          className="glow-teal-sm h-10 shrink-0 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-        >
-          {isLastSet ? 'See next steps →' : `Next ${remaining} strengths →`}
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
-function WhatsNextScreen({ childName, onComplete }: { childName: string; onComplete: () => void }) {
-  const onCompleteRef = useRef(onComplete);
+  // Exact match to HTML's watchRing: scale ring to fit available space
   useEffect(() => {
-    onCompleteRef.current = onComplete;
-  });
-
-  useEffect(() => {
-    const t = setTimeout(() => onCompleteRef.current(), 2800);
-    return () => clearTimeout(t);
+    const measure = () => {
+      const el = ringAreaRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const mobile = window.innerWidth < 640;
+      setIsMobile(mobile);
+      const s = mobile
+        ? Math.min(r.width / 488, r.height / 560, 1)
+        : Math.min(r.width / 730, r.height / 730, 1);
+      setRingScale(prev => (Math.abs(s - prev) > 0.005 ? s : prev));
+    };
+    measure();
+    const id = setInterval(measure, 250);
+    window.addEventListener('resize', measure);
+    return () => { clearInterval(id); window.removeEventListener('resize', measure); };
   }, []);
 
+  const SK = isMobile ? 'spokeDrawSm' : 'spokeDraw';
+  const SD = isMobile ? '200' : '260';
+  const SP = isMobile ? {
+    disc:       'M350 350 L350 150',
+    connect:    'M350 350 L177 250',
+    transform:  'M350 350 L523 250',
+    release:    'M350 350 L523 450',
+    grow:       'M350 350 L177 450',
+    startAgain: 'M350 350 L350 550',
+    discover:   'M350 350 L350 150',
+  } : {
+    disc:       'M350 350 L350 90',
+    connect:    'M350 350 L125 220',
+    transform:  'M350 350 L575 220',
+    release:    'M350 350 L575 480',
+    grow:       'M350 350 L125 480',
+    startAgain: 'M350 350 L350 610',
+    discover:   'M350 350 L350 90',
+  };
+  const NP = isMobile ? {
+    connect:    { left: '25.27%', top: '35.71%' },
+    discover:   { left: '50%',    top: '21.43%' },
+    transform:  { left: '74.73%', top: '35.71%' },
+    release:    { left: '74.73%', top: '64.29%' },
+    grow:       { left: '25.27%', top: '64.29%' },
+    startAgain: { left: '50%',    top: '78.57%' },
+  } : {
+    connect:    { left: '17.86%', top: '31.43%' },
+    discover:   { left: '50%',    top: '12.86%' },
+    transform:  { left: '82.14%', top: '31.43%' },
+    release:    { left: '82.14%', top: '68.57%' },
+    grow:       { left: '17.86%', top: '68.57%' },
+    startAgain: { left: '50%',    top: '87.14%' },
+  };
+
   return (
-    <div className="relative flex min-h-[55vh] flex-col items-center justify-center gap-6 text-center">
-      <p className="absolute right-0 top-0 text-[11px] text-muted-foreground/40">
-        Friendly pause...
-      </p>
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'space-between', minHeight: '100vh', padding: '0 0 18px',
+      transformOrigin: '50% 50%',
+      animation: 'scopeFocus 2.4s cubic-bezier(.22,.9,.25,1) both',
+      width: '100vw', marginLeft: 'calc(50% - 50vw)',
+    }}>
+      <style>{`
+        @keyframes tagBob {
+          0%,100% { transform: translate(-50%,-118%); }
+          50%      { transform: translate(-50%,-118%) translateY(-4px); }
+        }
+        @keyframes nodePulse {
+          0%   { transform: scale(.85); opacity: .7; }
+          100% { transform: scale(1.35); opacity: 0; }
+        }
+        @keyframes spokeDraw {
+          from { stroke-dashoffset: 260; }
+          to   { stroke-dashoffset: 0; }
+        }
+        @keyframes spokeDrawSm {
+          from { stroke-dashoffset: 200; }
+          to   { stroke-dashoffset: 0; }
+        }
+        @keyframes lineGlow {
+          0%,100% { opacity:.45; filter: drop-shadow(0 0 3px rgba(75,233,255,.75)); }
+          50%     { opacity:.85; filter: drop-shadow(0 0 8px rgba(75,233,255,1)); }
+        }
+        @keyframes hubIn {
+          0%   { opacity: 0; transform: translate(-50%,-50%) scale(.1) rotate(-90deg); }
+          100% { opacity: 1; transform: translate(-50%,-50%) scale(1)   rotate(0deg); }
+        }
+        @keyframes nodeIn {
+          0%   { opacity: 0; transform: translate(-50%,-50%) scale(.2); }
+          100% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        }
+        @keyframes scopeFocus {
+          0%   { opacity:0; transform:scale(1.14); filter:blur(9px); }
+          45%  { opacity:1; }
+          100% { opacity:1; transform:scale(1);    filter:blur(0px); }
+        }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+        @keyframes buddySpin    { to { transform: rotate(360deg); } }
+        @keyframes buddySpinRev { to { transform: rotate(-360deg); } }
+        @keyframes buddyGoldBreathe {
+          0%,100% { filter: drop-shadow(0 0 14px rgba(255,206,110,.65)) drop-shadow(0 0 30px rgba(75,233,255,.45)); }
+          50%     { filter: drop-shadow(0 0 26px rgba(255,214,130,.95)) drop-shadow(0 0 54px rgba(75,233,255,.55)); }
+        }
+        @keyframes buddyGoldPulse {
+          0%,100% { opacity: .55; }
+          50%     { opacity: 1; }
+        }
+        @keyframes ctaGlow {
+          0%,100% { box-shadow: 0 0 22px rgba(75,233,255,.9),0 0 46px rgba(30,196,232,.55); }
+          50%     { box-shadow: 0 0 36px rgba(75,233,255,1),0 0 74px rgba(30,196,232,.9); }
+        }
+      `}</style>
 
-      <motion.div
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 60, damping: 10 }}
-        className="glow-personality-lg flex h-24 w-24 items-center justify-center rounded-full bg-personality/15 ring-4 ring-personality-alt/20"
-      >
-        <Compass className="h-10 w-10 text-personality-alt" />
-      </motion.div>
+      {/* Ring area */}
+      <div ref={ringAreaRef} style={{ flex: 1, minHeight: 0, width: '100%', position: 'relative' }}>
+        <div style={{ position: 'absolute', left: '50%', top: 'calc(50vh - 64px)', width: 700, height: 700, transform: `translate(-50%, -50%) scale(${ringScale})`, zIndex: 1 }}>
 
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-        className="space-y-2"
-      >
-        <h2 className="text-2xl font-bold text-foreground">
-          Ready to grow further with {childName}?
-        </h2>
-        <p className="text-2xl">🌟</p>
-        <p className="text-sm text-muted-foreground">
-          Next, we'll show personalized growth areas and activities.
-        </p>
-      </motion.div>
+          {/* SVG spokes */}
+          <svg viewBox="0 0 700 700" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
+            <defs><path id="p-hub-disc" d={SP.disc} /></defs>
+            <path d={SP.connect}    fill="none" stroke="#1ec4e8" strokeWidth="1.6" strokeDasharray={SD} style={{ opacity: .4, animation: `${SK} .8s ease .35s both` }} />
+            <path d={SP.transform}  fill="none" stroke="#1ec4e8" strokeWidth="1.6" strokeDasharray={SD} style={{ opacity: .4, animation: `${SK} .8s ease .45s both` }} />
+            <path d={SP.release}    fill="none" stroke="#1ec4e8" strokeWidth="1.6" strokeDasharray={SD} style={{ opacity: .4, animation: `${SK} .8s ease .55s both` }} />
+            <path d={SP.grow}       fill="none" stroke="#5b6b78" strokeWidth="1.1" strokeDasharray={SD} style={{ opacity: .22, animation: `${SK} .8s ease .5s both` }} />
+            <path d={SP.startAgain} fill="none" stroke="#5b6b78" strokeWidth="1.1" strokeDasharray={SD} style={{ opacity: .22, animation: `${SK} .8s ease .6s both` }} />
+            <path d={SP.discover}   fill="none" stroke="#1ec4e8" strokeWidth="3.4" strokeDasharray={SD} style={{ animation: `${SK} .8s ease .3s both, lineGlow 3.4s ease-in-out 1.1s infinite` }} />
+            <circle r="3.2" fill="#eafdff" style={{ filter: 'drop-shadow(0 0 4px rgba(75,233,255,1))' }}>
+              <animateMotion dur="1.7s" repeatCount="indefinite" begin="1.2s"><mpath href="#p-hub-disc" /></animateMotion>
+            </circle>
+            <circle r="2.8" fill="#eafdff" style={{ filter: 'drop-shadow(0 0 4px rgba(75,233,255,1))' }}>
+              <animateMotion dur="1.7s" repeatCount="indefinite" begin="2.05s"><mpath href="#p-hub-disc" /></animateMotion>
+            </circle>
+          </svg>
 
-      <motion.p
-        animate={{ opacity: [0.4, 1, 0.4] }}
-        transition={{ duration: 1.5, repeat: Infinity }}
-        className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary"
-      >
-        One moment...
-      </motion.p>
+          {/* Center Hub */}
+          <div onClick={onGoHome} style={{ position: 'absolute', left: '50%', top: '50%', width: 190, height: 190, transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3, cursor: 'pointer', animation: 'hubIn .95s cubic-bezier(.16,1,.3,1) both' }}>
+            <svg viewBox="0 0 190 190" width="190" height="190" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+              <defs>
+                <path id="hubTextPath" d="M95,49 A46,46 0 1,1 94.9,49" />
+                <radialGradient id="coreGradHub" cx="50%" cy="42%" r="60%">
+                  <stop offset="0%"   stopColor="#fff6dc" />
+                  <stop offset="22%"  stopColor="#ffd98a" />
+                  <stop offset="52%"  stopColor="#4be9ff" />
+                  <stop offset="100%" stopColor="#0a5b74" />
+                </radialGradient>
+                <radialGradient id="goldHaloHub" cx="50%" cy="50%" r="50%">
+                  <stop offset="55%"  stopColor="rgba(255,206,110,0)" />
+                  <stop offset="82%"  stopColor="rgba(255,206,110,0.30)" />
+                  <stop offset="100%" stopColor="rgba(255,206,110,0)" />
+                </radialGradient>
+              </defs>
+              <g style={{ animation: 'buddySpin 18s linear infinite', transformOrigin: '95px 95px' }}>
+                <circle cx="95" cy="95" r="86" fill="none" stroke="#1ec4e8" strokeWidth="2.4" strokeDasharray="3.5 6.5" opacity="0.65" />
+              </g>
+              <g style={{ animation: 'buddySpinRev 26s linear infinite', transformOrigin: '95px 95px' }}>
+                <circle cx="95" cy="95" r="71" fill="none" stroke="#0e3a4a" strokeWidth="8" opacity="0.55" />
+                <circle cx="95" cy="95" r="71" fill="none" stroke="#1ec4e8" strokeWidth="8" strokeDasharray="13 8 30 8 13 46" opacity="0.9" />
+              </g>
+              <circle cx="95" cy="95" r="56" fill="none" stroke="#3c5568" strokeWidth="1" opacity="0.5" />
+              <circle cx="95" cy="95" r="58" fill="url(#goldHaloHub)" style={{ animation: 'buddyGoldPulse 3.6s ease-in-out infinite', transformOrigin: '95px 95px' }} />
+              <circle cx="95" cy="95" r="36" fill="url(#coreGradHub)" style={{ animation: 'buddyGoldBreathe 3.2s ease-in-out infinite', transformOrigin: '95px 95px' }} />
+              <circle cx="95" cy="95" r="43" fill="none" stroke="#ffd98a" strokeWidth="1.2" strokeDasharray="8 118" opacity=".85" style={{ animation: 'buddySpin 6s linear infinite', transformOrigin: '95px 95px', filter: 'drop-shadow(0 0 5px rgba(255,214,130,.9))' }} />
+              <path d="M95 80 L83 100 L92 100 L86 116 L108 92 L97 92 Z" fill="#05131a" opacity="0.9" />
+              <g style={{ animation: 'buddySpin 32s linear infinite', transformOrigin: '95px 95px' }}>
+                <text style={{ fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: '8.5px', letterSpacing: '.13em', fill: '#4be9ff' } as React.CSSProperties}>
+                  <textPath href="#hubTextPath" startOffset="0%">HOME&nbsp;&nbsp;•&nbsp;&nbsp;HOME&nbsp;&nbsp;•&nbsp;&nbsp;HOME&nbsp;&nbsp;•&nbsp;&nbsp;HOME&nbsp;&nbsp;•&nbsp;&nbsp;HOME&nbsp;&nbsp;•&nbsp;&nbsp;HOME&nbsp;&nbsp;•&nbsp;&nbsp;</textPath>
+                </text>
+              </g>
+            </svg>
+          </div>
+
+          {/* Connect — top-left (inactive) */}
+          <div style={{ ...NODE_STYLE, ...NP.connect, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .55s both' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #5b6b78', opacity: .4 }} />
+            <div style={INACTIVE_INNER}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#1b232b', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></svg>
+            </div>
+            <div style={{ ...NODE_LABEL, color: '#84a0b2' }}>Connect</div>
+          </div>
+
+          {/* Discover — top-center (CTA) */}
+          <div onClick={onDiscover} style={{ ...NODE_STYLE, ...NP.discover, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .45s both', cursor: 'pointer' }}>
+            <div style={{ position: 'absolute', left: '50%', top: -14, transform: 'translate(-50%, -100%)', background: 'linear-gradient(135deg,#4be9ff,#1ec4e8)', color: '#05070f', fontFamily: 'Rajdhani, sans-serif', fontWeight: 700, fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', padding: '5px 11px', borderRadius: 999, whiteSpace: 'nowrap', boxShadow: '0 0 14px rgba(75,233,255,.6)', animation: 'tagBob 1.7s ease-in-out infinite' }}>Start here</div>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #1ec4e8', opacity: .5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid #f2fdff', animation: 'nodePulse 1.7s ease-out infinite' }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #4be9ff', animation: 'nodePulse 1.7s ease-out .85s infinite' }} />
+            <div style={{ ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><circle cx="12" cy="8.5" r="3.2" /><path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6" /></svg>
+            </div>
+            <div style={{ ...CHECK_BADGE, border: '1.5px solid #1ec4e8' }}><svg viewBox="0 0 24 24" style={{ width: 11, height: 11, stroke: '#4be9ff', fill: 'none', strokeWidth: 2.6 } as React.CSSProperties}><path d="M5 13l4 4L19 7" /></svg></div>
+            <div style={{ ...NODE_LABEL, color: '#f2fdff' }}>Discover</div>
+          </div>
+
+          {/* Transform — top-right */}
+          <div style={{ ...NODE_STYLE, ...NP.transform, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .65s both' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #1ec4e8', opacity: .5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #4be9ff', animation: 'nodePulse 2.6s ease-out infinite' }} />
+            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
+            </div>
+            <div style={NODE_LABEL}>Transform</div>
+          </div>
+
+          {/* Release — bottom-right */}
+          <div style={{ ...NODE_STYLE, ...NP.release, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .75s both' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #1ec4e8', opacity: .5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #4be9ff', animation: 'nodePulse 2.6s ease-out infinite' }} />
+            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><circle cx="12" cy="8" r="3.4" /><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" /></svg>
+            </div>
+            <div style={NODE_LABEL}>Release</div>
+          </div>
+
+          {/* Grow — bottom-left */}
+          <div onClick={onGrow} style={{ ...NODE_STYLE, ...NP.grow, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .8s both', cursor: 'pointer' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #1ec4e8', opacity: .5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #4be9ff', animation: 'nodePulse 2.6s ease-out infinite' }} />
+            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><path d="M4 20V10M11 20V4M18 20v-7" /></svg>
+            </div>
+            <div style={NODE_LABEL}>Grow</div>
+          </div>
+
+          {/* Start Again — bottom-center */}
+          <div onClick={onStartAgain} style={{ ...NODE_STYLE, ...NP.startAgain, animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both', cursor: 'pointer' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #1ec4e8', opacity: .5 }} />
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1.5px solid #4be9ff', animation: 'nodePulse 2.6s ease-out infinite' }} />
+            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+              <svg viewBox="0 0 24 24" style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 } as React.CSSProperties}><path d="M4 4v6h6M20 20v-6h-6" /><path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" /></svg>
+            </div>
+            <div style={NODE_LABEL}>Start Again</div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ flexShrink: 0, textAlign: 'center', fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, fontSize: 12, letterSpacing: '.18em', textTransform: 'uppercase', color: '#84a0b2', animation: 'fadeIn .8s ease 1.2s both' }}>
+        Tap the center HUD to return home
+      </div>
     </div>
-  );
-}
-
-function FinalCTAScreen({
-  childName,
-  childId,
-  onHome,
-}: {
-  childName: string;
-  childId: string | undefined;
-  onHome: () => void;
-}) {
-  const navigate = useNavigate();
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="border-edge space-y-6 rounded-2xl bg-card p-6 text-center"
-    >
-      {/* Icon */}
-      <div className="glow-personality mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-personality/15 ring-4 ring-personality-alt/20">
-        <Wand2 className="h-8 w-8 text-personality-alt" />
-      </div>
-
-      {/* Label */}
-      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">
-        One Last Step
-      </p>
-
-      {/* Heading */}
-      <h2 className="text-2xl font-extrabold leading-snug text-foreground">
-        Want to explore the specific growth areas for{' '}
-        <span className="text-primary">{childName}</span> to become their best version?
-      </h2>
-
-      {/* Subtitle */}
-      <p className="text-sm text-muted-foreground">
-        Discover personalized activities to help {childName} develop key life skills.
-      </p>
-
-      {/* Primary CTAs */}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <Button
-          onClick={() => {
-            void navigate(`/GrowthAreas/${childId ?? ''}`);
-          }}
-          className="glow-personality h-11 flex-1 rounded-full bg-personality font-semibold text-white hover:bg-personality/90"
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          Continue Now
-        </Button>
-        <Button
-          variant="outline"
-          onClick={onHome}
-          className="border-c-md h-11 flex-1 rounded-full bg-transparent text-foreground hover:bg-surface-elevated"
-        >
-          <Clock className="mr-1.5 h-4 w-4" />
-          Catch Up Later
-        </Button>
-      </div>
-
-      {/* Restart */}
-      <div className="space-y-3 pt-1">
-        <div className="bg-ghost-strong h-px" />
-        <p className="text-xs text-muted-foreground/50">Want to see the flow again?</p>
-        <Button
-          variant="outline"
-          onClick={() => {
-            void navigate(`/Onboarding/${childId ?? ''}`);
-          }}
-          className="border-c-md h-10 w-full rounded-full bg-transparent text-sm text-foreground hover:bg-surface-elevated"
-        >
-          Restart the journey
-        </Button>
-      </div>
-    </motion.div>
   );
 }
 
@@ -610,13 +582,145 @@ export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { isAuthenticated, isLoadingAuth } = useAuth();
-  const [profile, setProfile] = useState<ProfileType>(null);
-  const [viewModel, setViewModel] = useState<Record<string, unknown> | null>(null);
+  const [phase, setPhase] = useState<Phase>(1);
+  const [mergedData, setMergedData] = useState<Record<string, unknown>>({});
   const [childName, setChildName] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [initError, setInitError] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
-  const [direction, setDirection] = useState(1);
+  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
+  const { doStartOver, isStartingOver } = useStartOver(childId ?? undefined);
+  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const mergedDataRef = useRef<Record<string, unknown> | null>(null);
+
+  // ── Sound + warp-enter ────────────────────────────────────────────────────────
+  const { ttsEnabled: soundOn } = useAuth();
+  const [isEntering, setIsEntering] = useState(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const warpCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const warpRafRef = useRef<number | null>(null);
+  const enterTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Play intro voice when orb screen (phase 1) is active — mirrors HTML's playVoice()
+  const orbVoiceRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    if (phase !== 1 || !soundOn) {
+      orbVoiceRef.current?.pause();
+      return;
+    }
+    const audio = new Audio('/orb-voice.mp3');
+    audio.volume = 0.9;
+    orbVoiceRef.current = audio;
+    const timer = setTimeout(() => {
+      audio.play().catch(() => {});
+    }, 800);
+    return () => {
+      clearTimeout(timer);
+      audio.pause();
+    };
+  }, [phase, soundOn]);
+
+  // Cleanup warp on unmount
+  useEffect(() => () => {
+    enterTimersRef.current.forEach(clearTimeout);
+    if (warpRafRef.current) cancelAnimationFrame(warpRafRef.current);
+  }, []);
+
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+    if (audioCtxRef.current.state === 'suspended') void audioCtxRef.current.resume();
+    return audioCtxRef.current;
+  };
+
+  const whoosh = () => {
+    if (!soundOn) return;
+    try {
+      const ac = getAudioCtx(), t = ac.currentTime;
+      const len = Math.floor(ac.sampleRate * 2.4);
+      const buf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * 0.6;
+      const src = ac.createBufferSource(); src.buffer = buf;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+      bp.frequency.setValueAtTime(180, t);
+      bp.frequency.exponentialRampToValueAtTime(4200, t + 1.6);
+      bp.frequency.exponentialRampToValueAtTime(400, t + 2.3);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 1.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.35);
+      src.connect(bp).connect(g).connect(ac.destination);
+      src.start(t); src.stop(t + 2.4);
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(70, t + 1.55);
+      o.frequency.exponentialRampToValueAtTime(36, t + 2.4);
+      og.gain.setValueAtTime(0.0001, t + 1.55);
+      og.gain.exponentialRampToValueAtTime(0.55, t + 1.68);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+      o.connect(og).connect(ac.destination);
+      o.start(t + 1.55); o.stop(t + 2.6);
+    } catch { /* noop */ }
+  };
+
+  // Start hyperspace-streak canvas (exact match to HTML)
+  useEffect(() => {
+    if (!isEntering) return;
+    const c = warpCanvasRef.current; if (!c) return;
+    const ctx = c.getContext('2d')!;
+    const w = c.width = window.innerWidth, h = c.height = window.innerHeight;
+    const cx = w / 2, cy = h / 2;
+    const far = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+    const palette = ['#ffffff', '#dff6ff', '#8ef2ff', '#b9c6ff', '#ffe6c9'];
+    type Star = { a: number; d: number; z: number; tw: number; col: string };
+    const stars: Star[] = Array.from({ length: 340 }, () => ({
+      a: Math.random() * Math.PI * 2, d: Math.random() * far + 4,
+      z: Math.random() * 0.85 + 0.15, tw: Math.random() * Math.PI * 2,
+      col: palette[Math.floor(Math.random() * palette.length)],
+    }));
+    const duration = 4600;
+    const t0 = performance.now();
+    const draw = (now: number) => {
+      const t = Math.min(1.15, (now - t0) / duration);
+      if (t >= 1.15) { ctx.clearRect(0, 0, w, h); return; }
+      const glide = 0.9 + Math.sin(Math.min(1, t) * Math.PI) * 3.4;
+      const alpha = t < 0.18 ? t / 0.18 : (t > 0.82 ? Math.max(0, (1.02 - t) / 0.2) : 1);
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineCap = 'round';
+      for (const s of stars) {
+        const prev = s.d;
+        s.d += s.z * glide * 1.5;
+        if (s.d > far * 1.12) { s.d = 6 + Math.random() * 30; s.a = Math.random() * Math.PI * 2; continue; }
+        s.tw += 0.05;
+        const ca = Math.cos(s.a), sa = Math.sin(s.a);
+        const len = Math.min((s.d - prev) * 5.5, 70);
+        const depth = Math.min(1, 0.2 + s.d / (far * 0.75));
+        ctx.strokeStyle = s.col;
+        ctx.globalAlpha = alpha * depth * (0.55 + 0.45 * Math.sin(s.tw));
+        ctx.lineWidth = Math.min(2.2, 0.4 + s.z * 1.6 * depth);
+        ctx.beginPath();
+        ctx.moveTo(cx + ca * (s.d - len), cy + sa * (s.d - len));
+        ctx.lineTo(cx + ca * s.d, cy + sa * s.d);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      warpRafRef.current = requestAnimationFrame(draw);
+    };
+    warpRafRef.current = requestAnimationFrame(draw);
+    return () => { if (warpRafRef.current) cancelAnimationFrame(warpRafRef.current); };
+  }, [isEntering]);
+
+  const handleEnterNav = () => {
+    if (isEntering) return;
+    setIsEntering(true);
+    whoosh();
+    enterTimersRef.current.forEach(clearTimeout);
+    // Match HTML timing: phase:'nav' at 3350ms, warp:false at 5100ms, scope:false at 5700ms
+    const t1 = setTimeout(() => setPhase(2), 3350);
+    const t2 = setTimeout(() => setIsEntering(false), 5700);
+    enterTimersRef.current = [t1, t2];
+  };
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const markJourneyComplete = useCallback(async () => {
     if (!childId) return;
@@ -626,6 +730,58 @@ export default function PersonalityJourney() {
       /* non-fatal */
     }
   }, [childId]);
+
+  const finalizePersonality = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const child = await api.entities.Child.get(childId);
+      const personality = child?.personality;
+      const pendingVm = (child?.pending_personality_vm ?? personality?.pending_view_model) as
+        | Record<string, unknown>
+        | undefined;
+      const merged = mergedDataRef.current;
+
+      let vm: Record<string, unknown> | null = null;
+      if (pendingVm && merged) {
+        const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name as string);
+        vm = sanitizeViewModelAvatars(adapted);
+        api.entities.Child.update(childId, {
+          personality: { source: 'llm', view_model: stripViewModelImages(adapted) },
+          onboarding_phase: 2,
+        }).catch((err) => console.error('[PersonalityJourney] Failed to persist personality:', err));
+      } else if (personality?.view_model?.profile?.name) {
+        vm = sanitizeViewModelAvatars(
+          maybeClampStoredPersonalityDescription(personality.view_model, {
+            analysisSource: personality?.source,
+          }),
+        );
+      }
+
+      void vm;
+      setIsAnalyzing(false);
+      await markJourneyComplete();
+    } catch (err) {
+      console.error('[PersonalityJourney] Failed to finalize personality:', err);
+      setIsAnalyzing(false);
+      setInitError(true);
+    }
+  }, [childId, markJourneyComplete]);
+
+  const job = useJob({
+    activeJobs: childData?.active_jobs as Record<string, string> | undefined,
+    jobType: 'generate_personality_analysis',
+    onCompleted: finalizePersonality,
+  });
+
+  const { enqueue: enqueueJob } = job;
+
+  // Surface job failures as page error
+  useEffect(() => {
+    if (job.isFailed) {
+      setIsAnalyzing(false);
+      setInitError(true);
+    }
+  }, [job.isFailed]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -650,20 +806,65 @@ export default function PersonalityJourney() {
 
         const personality = child.personality;
         const vm = personality?.view_model;
-        if (!vm?.profile?.name) {
-          void navigate(`/PersonalityType/${childId}`, { replace: true });
+        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
+        mergedDataRef.current = merged;
+        setChildName(merged.name || '');
+        setMergedData(merged as Record<string, unknown>);
+
+        if (vm?.profile?.name) {
+          // Personality already analysed — show orb immediately, fully interactive
+          setIsInitializing(false);
+          if (!child.onboarding_completed) {
+            await markJourneyComplete();
+          }
           return;
         }
 
-        setViewModel(vm);
-        const merged = mergeChildDraft(normalizeOnboardingChildDataBlob(child) ?? {});
-        setChildName(merged.name || '');
-        setProfile(onboardingProfileFromViewModel(vm));
-
-        if (!child.onboarding_completed) {
-          await markJourneyComplete();
+        // No complete personality yet — need to run or resume analysis
+        if (!merged.name?.trim()) {
+          void navigate(`/ConversationalOnboarding/${childId}`, { replace: true });
+          return;
         }
+
+        // Check for pending_personality_vm (LLM done but write-back not yet saved as view_model)
+        const pendingVm = (child.pending_personality_vm ?? personality?.pending_view_model) as
+          | Record<string, unknown>
+          | undefined;
+        if (pendingVm) {
+          const adapted = adaptAiPersonalityToViewModel(pendingVm, merged.name);
+          if (cancelled) return;
+          setIsInitializing(false);
+          api.entities.Child.update(childId, {
+            personality: { source: 'llm', view_model: stripViewModelImages(adapted) },
+            onboarding_phase: 2,
+          }).catch(console.error);
+          await markJourneyComplete();
+          return;
+        }
+
+        // Show orb in analyzing state while job runs in background
+        setChildData(child);
+        setIsAnalyzing(true);
         setIsInitializing(false);
+
+        // Only enqueue if no job is already running
+        const activeJobId = (child.active_jobs as Record<string, string> | undefined)
+          ?.generate_personality_analysis;
+        if (!activeJobId) {
+          await enqueueJob({
+            type: 'generate_personality_analysis',
+            child_id: childId,
+            payload: {
+              prompt: buildPersonalityAnalysisPrompt({
+                childData: merged,
+                personalityTypeKeys: PERSONALITY_TYPE_KEYS,
+              }),
+              response_json_schema: personalityLlmSchema(),
+            },
+            write_back: { collection: 'children', filter: {}, field: 'pending_personality_vm' },
+          });
+        }
+        // else: useJob picks up activeJobId from setChildData(child) and polls automatically
       } catch (err) {
         console.warn('[PersonalityJourney] Load failed:', err);
         if (!cancelled) {
@@ -676,21 +877,21 @@ export default function PersonalityJourney() {
     return () => {
       cancelled = true;
     };
-  }, [isLoadingAuth, isAuthenticated, childId, navigate, markJourneyComplete]);
-
-  const goNext = useCallback(() => {
-    setDirection(1);
-    setCurrentStep((s) => Math.min(s + 1, TOTAL_STEPS));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoadingAuth, isAuthenticated, childId, navigate, markJourneyComplete, enqueueJob]);
 
   const status = isLoadingAuth || isInitializing ? 'loading' : initError ? 'error' : 'ready';
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ background: '#05070f' }}
+      >
         <motion.div
           {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
+          className="h-10 w-10 rounded-full border-2 border-t-transparent"
+          style={{ borderColor: 'rgba(30,196,232,0.6)', borderTopColor: 'transparent' }}
         />
       </div>
     );
@@ -700,116 +901,111 @@ export default function PersonalityJourney() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <p className="text-muted-foreground">Something went wrong. Please try again.</p>
-        <Button
-          onClick={() => {
-            void navigate(childId ? `/PersonalityType/${childId}` : '/Home');
-          }}
-          className="btn-primary rounded-2xl px-8"
-        >
+        <Button onClick={() => void navigate('/Home')} className="btn-primary rounded-2xl px-8">
           Go Back
         </Button>
       </div>
     );
   }
 
-  const strengths = (profile?.top_strengths as string[]) ?? [];
-  const traits = Array.isArray(viewModel?.profile)
-    ? []
-    : (((viewModel?.profile as Record<string, unknown> | undefined)?.traits as string[]) ?? []);
-  const description = profile?.summary ?? '';
-  const personalityType = profile?.personality_type ?? '';
-  const famousPeople = personalityTypes[personalityType]?.famous_people ?? [];
-  const typeColor = personalityTypes[personalityType]?.color ?? 'from-primary to-primary/70';
-
-  const variants = {
-    enter: (d: number) => ({ opacity: 0, x: d * 40, scale: 0.97 }),
-    center: { opacity: 1, x: 0, scale: 1 },
-    exit: (d: number) => ({ opacity: 0, x: d * -40, scale: 0.97 }),
-  };
-
-  const progress = Math.round(((currentStep - 1) / (TOTAL_STEPS - 1)) * 100);
-  const headerPhases: PhaseEntry[] = [
-    { num: 1, label: 'Getting to Know', status: 'done' },
-    { num: 2, label: 'Personality Analysis', status: 'done' },
-    { num: 3, label: 'Your Journey', status: 'active', progress },
-  ];
-
   return (
-    <div className="min-h-screen bg-background">
-      <OnboardingProgressHeader phases={headerPhases} />
+    <div className="min-h-screen overflow-hidden" style={{ background: '#05070f' }}>
+      {/* Global warp keyframes */}
+      <style>{`
+        @keyframes scopeDolly {
+          0%   { transform:scale(1);    filter:blur(0px)  saturate(1);    opacity:1; }
+          60%  { transform:scale(1.28); filter:blur(1.2px) saturate(1.15); opacity:1; }
+          100% { transform:scale(1.55); filter:blur(7px)  saturate(1.3);  opacity:0; }
+        }
+        @keyframes voidVeil {
+          0%  { opacity:0; }
+          30% { opacity:1; }
+          72% { opacity:.9; }
+          100%{ opacity:0; }
+        }
+        @keyframes nebulaDrift {
+          0%   { opacity:0;   transform:translate(-50%,-50%) scale(.6)  rotate(0deg); }
+          22%  { opacity:.85; }
+          70%  { opacity:.7;  }
+          100% { opacity:0;   transform:translate(-50%,-50%) scale(2.6) rotate(26deg); }
+        }
+        @keyframes uiDissolve {
+          0%   { opacity:1; filter:blur(0); }
+          100% { opacity:0; filter:blur(7px); }
+        }
+      `}</style>
 
-      <div className="mx-auto max-w-lg px-4 py-8">
-        {/* Step counter */}
-        <p className="mb-6 text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">
-          Your Journey · Step {currentStep} / {TOTAL_STEPS}
-        </p>
+      {/* Warp enter overlays */}
+      {isEntering && (
+        <>
+          <canvas ref={warpCanvasRef} style={{ position: 'fixed', inset: 0, zIndex: 52, pointerEvents: 'none', width: '100%', height: '100%' }} />
+          <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 51, pointerEvents: 'none', background: '#05070f', animation: 'voidVeil 5.6s ease forwards' }} />
+          <div aria-hidden="true" style={{ position: 'fixed', left: '50%', top: '50%', zIndex: 50, width: 520, height: 520, borderRadius: '50%', background: 'radial-gradient(circle, rgba(14,58,74,0.9) 0%, rgba(30,196,232,0.35) 38%, transparent 70%)', pointerEvents: 'none', animation: 'nebulaDrift 5.6s cubic-bezier(.4,0,.35,1) forwards' }} />
+        </>
+      )}
 
-        {/* Step content */}
-        <AnimatePresence mode="wait" custom={direction}>
-          <motion.div
-            key={currentStep}
-            custom={direction}
-            variants={variants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {currentStep === 1 && <TheRevealScreen childName={childName} onNext={goNext} />}
-            {currentStep === 2 && (
-              <PersonalityCardScreen
+      {/* Ambient background blob */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div
+          className="absolute left-1/2 top-1/2 h-[700px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(14,58,74,0.35) 0%, transparent 60%)' }}
+        />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-lg">
+        <AnimatePresence mode="wait">
+          {phase === 1 && (
+            <motion.div
+              key="phase-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.05 } }}
+              style={isEntering ? { animation: 'scopeDolly 3.4s cubic-bezier(.35,0,.3,1) forwards' } : {}}
+              className="min-h-screen"
+            >
+              <BuddyOrbScreen
                 childName={childName}
-                personalityType={personalityType}
-                traits={traits}
-                famousPeople={famousPeople}
-                typeColor={typeColor}
-                onNext={goNext}
+                isAnalyzing={isAnalyzing}
+                onTap={handleEnterNav}
               />
-            )}
-            {currentStep === 3 && (
-              <InANutshellScreen
+            </motion.div>
+          )}
+
+          {phase === 2 && (
+            <motion.div
+              key="phase-2"
+              initial={{ opacity: 0, scale: 1.06 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              transition={{ duration: 0.5 }}
+              className="min-h-screen"
+            >
+              <DimensionCirclesScreen
                 childName={childName}
-                description={description}
-                traits={traits}
-                onNext={goNext}
+                mergedData={mergedData}
+                onDiscover={() => void navigate(`/PersonalityProfile/${childId ?? ''}`)}
+                onGoHome={() => setPhase(1)}
+                onStartAgain={() => setConfirmingStartOver(true)}
+                onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
               />
-            )}
-            {currentStep === 4 && (
-              <StrengthsIntroScreen childName={childName} onComplete={goNext} />
-            )}
-            {currentStep === 5 && (
-              <StrengthsScreen
-                childName={childName}
-                strengths={strengths.slice(0, 3)}
-                globalStartIdx={0}
-                totalStrengths={strengths.length}
-                isLastSet={strengths.length <= 3}
-                onNext={goNext}
-              />
-            )}
-            {currentStep === 6 && (
-              <StrengthsScreen
-                childName={childName}
-                strengths={strengths.length > 3 ? strengths.slice(3) : strengths.slice(0, 3)}
-                globalStartIdx={3}
-                totalStrengths={strengths.length}
-                isLastSet
-                onNext={goNext}
-              />
-            )}
-            {currentStep === 7 && <WhatsNextScreen childName={childName} onComplete={goNext} />}
-            {currentStep === 8 && (
-              <FinalCTAScreen
-                childName={childName}
-                childId={childId}
-                onHome={() => {
-                  void navigate('/Home');
-                }}
-              />
-            )}
-          </motion.div>
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {confirmingStartOver && (
+          <ConfirmModal
+            onCancel={() => setConfirmingStartOver(false)}
+            onConfirm={() => {
+              setConfirmingStartOver(false);
+              void doStartOver();
+            }}
+            isStartingOver={isStartingOver}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -8,8 +8,6 @@ import { api } from '@/api/client';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
 import type { ChildFormData } from '@/components/onboarding/ChildProfileStep';
-import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
-import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -174,24 +172,9 @@ export default function Onboarding() {
     [isAuthenticated, childId, childIdParam, childComplete, navigate],
   );
 
-  const stepLabel = step === 1 ? 'GETTING TO KNOW · STEP 1 / 12' : 'GETTING TO KNOW · STEP 2 / 12';
-  const headerPhases: PhaseEntry[] = [
-    { num: 1, label: 'Getting to Know', status: 'active', progress: step === 1 ? 8 : 16 },
-    { num: 2, label: 'Personality Analysis', status: 'upcoming' },
-    { num: 3, label: 'Your Journey', status: 'upcoming' },
-  ];
-
   return (
     <div className="min-h-screen bg-background">
-      <OnboardingProgressHeader phases={headerPhases} />
-
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
-        {/* Step label — left-aligned with card */}
-        <div className="mx-auto mb-4 max-w-lg">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/60">
-            {stepLabel}
-          </p>
-        </div>
 
         {isLoadingAuth || checking ? (
           <div className="flex min-h-[60vh] items-center justify-center">

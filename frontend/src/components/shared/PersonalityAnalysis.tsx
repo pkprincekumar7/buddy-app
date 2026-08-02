@@ -39,6 +39,7 @@ export const personalityCategories: Record<string, PersonalityCategory> = {
 interface FamousPerson {
   name: string;
   image?: string;
+  caption?: string;
 }
 
 interface PersonalityTypeEntry {
@@ -291,6 +292,7 @@ const PERSONALITY_CATEGORY_KEYS = ['motivators', 'socializers', 'creatives', 'ad
 
 interface RoleModel {
   name?: unknown;
+  caption?: unknown;
   [key: string]: unknown;
 }
 
@@ -302,9 +304,11 @@ function roleModelAvatars(roleModels: unknown, fallbackName: string | undefined)
   }
   return two.map((r) => {
     const nm = typeof r?.name === 'string' && r.name.trim() ? r.name.trim() : 'Guide';
+    const cap = typeof r?.caption === 'string' && r.caption.trim() ? r.caption.trim() : undefined;
     return {
       name: nm,
       image: generateAvatarDataUri(nm),
+      ...(cap ? { caption: cap } : {}),
     };
   });
 }
@@ -318,6 +322,9 @@ interface AiPersonalityInput {
   personalized_growth_areas?: unknown;
   role_models?: unknown;
   secondary_styles?: unknown;
+  trait_scores?: unknown;
+  child_quote?: unknown;
+  parent_note?: unknown;
 }
 
 /**
@@ -368,7 +375,7 @@ export function adaptAiPersonalityToViewModel(
       ? (gaRaw as unknown[]).map((t) => String(t)).filter(Boolean)
       : base.growth_areas;
 
-  const famous_people = roleModelAvatars(ai?.role_models, safeName);
+  const famous_people = base.famous_people ?? [];
 
   const scoresBase: Record<string, number> = PERSONALITY_TYPE_KEYS.reduce(
     (acc, key) => {
@@ -389,6 +396,22 @@ export function adaptAiPersonalityToViewModel(
     if (!scoresBase[sty] || (scoresBase[sty] ?? 0) < clamped) scoresBase[sty] = clamped;
   }
 
+  const traitScoresRaw = ai?.trait_scores;
+  const trait_scores =
+    Array.isArray(traitScoresRaw) && traitScoresRaw.length > 0
+      ? (traitScoresRaw as unknown[])
+          .map((t) => {
+            const item = t as Record<string, unknown>;
+            return { label: String(item?.label ?? ''), score: Number(item?.score ?? 0) };
+          })
+          .filter((t) => t.label)
+      : [];
+
+  const child_quote =
+    typeof ai?.child_quote === 'string' && ai.child_quote.trim() ? ai.child_quote.trim() : '';
+  const parent_note =
+    typeof ai?.parent_note === 'string' && ai.parent_note.trim() ? ai.parent_note.trim() : '';
+
   const profile = {
     ...base,
     category: categoryKey,
@@ -398,6 +421,9 @@ export function adaptAiPersonalityToViewModel(
     famous_people,
     strengths,
     growth_areas,
+    trait_scores,
+    child_quote,
+    parent_note,
   };
 
   return {

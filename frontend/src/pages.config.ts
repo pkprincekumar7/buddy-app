@@ -7,9 +7,9 @@ const LifePathway = lazy(() => import('./pages/LifePathway'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const GoalsDashboard = lazy(() => import('./pages/GoalsDashboard'));
 const ConversationalOnboarding = lazy(() => import('./pages/ConversationalOnboarding'));
-const PersonalityType = lazy(() => import('./pages/PersonalityType'));
 const PersonalityJourney = lazy(() => import('./pages/PersonalityJourney'));
 const GrowthAreas = lazy(() => import('./pages/GrowthAreas'));
+const PersonalityProfile = lazy(() => import('./pages/PersonalityProfile'));
 
 export const PAGES = {
   Home,
@@ -17,8 +17,8 @@ export const PAGES = {
   Onboarding,
   GoalsDashboard,
   ConversationalOnboarding,
-  PersonalityType,
   PersonalityJourney,
+  PersonalityProfile,
   GrowthAreas,
 };
 

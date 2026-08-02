@@ -3,8 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
-import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
@@ -79,7 +77,7 @@ export default function ConversationalOnboarding() {
       } catch (err) {
         console.warn('[ConversationalOnboarding] Could not save chatbot data:', err);
       }
-      void navigate(`/PersonalityType/${childId}`);
+      void navigate(`/PersonalityJourney/${childId}`);
     },
     [childId, hasPersonality, navigate],
   );
@@ -101,20 +99,6 @@ export default function ConversationalOnboarding() {
           </div>
         ) : (
           <div className="flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
-            {/* Progress header — matches /Onboarding style */}
-            {(() => {
-              const headerPhases: PhaseEntry[] = [
-                { num: 1, label: 'Getting to Know', status: 'active', progress: 33 },
-                { num: 2, label: 'Personality Analysis', status: 'upcoming' },
-                { num: 3, label: 'Your Journey', status: 'upcoming' },
-              ];
-              return (
-                <OnboardingProgressHeader
-                  phases={headerPhases}
-                  stepLabel="GETTING TO KNOW · STEP 3 / 12"
-                />
-              );
-            })()}
 
             {/* Back button row */}
             <div className="mx-auto w-full max-w-5xl px-4 pt-4">

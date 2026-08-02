@@ -97,8 +97,11 @@ Requirements:
 • personalized_traits: 4–6 concise trait chips that are directly anchored in the parent's actual answers and the dominant archetype. Do not invent traits — only include what the questionnaire supports.
 • personalized_description: EXACTLY ONE sentence (max 160 characters), written warmly for the parent/caregiver. Mention "${childName}" naturally once. Connect specific questionnaire cues to temperament. Use the correct pronoun. No invented facts, no second sentence, no bullets, no line breaks.
 • personalized_growth_areas: 4–7 specific, actionable growth opportunities. Each bullet must: (a) name a concrete skill or behaviour gap visible in the questionnaire answers, (b) be appropriate for the child's age (${age}) and gender (${gender}), and (c) be something a parent can meaningfully work on with the child. Write each bullet using the correct pronoun.
-• role_models: EXACTLY two well-known, admirable public figures whose temperament and life story genuinely match the dominant archetype, and who are relatable and inspiring for a ${age}-year-old ${gender} child. Provide full names only.
-• strength_summary_bullets: exactly 6 strength-focused bullets. Draw solely from what the parent's answers directly support — do not infer beyond the evidence. If extrapolating, frame it as a possibility, not a fact.`;
+• role_models: EXACTLY two well-known, admirable public figures whose temperament and life story genuinely match the dominant archetype, and who are relatable and inspiring for a ${age}-year-old ${gender} child. For each provide: name (full name) and caption (a 4–6 word lowercase phrase describing what made them notable, e.g. "wondered about everything", "never stopped asking why").
+• strength_summary_bullets: exactly 6 strength-focused bullets. Draw solely from what the parent's answers directly support — do not infer beyond the evidence. If extrapolating, frame it as a possibility, not a fact.
+• trait_scores: 4–5 named mind-dimension scores (0–100 integers) that are directly grounded in the questionnaire evidence. Label each dimension concisely (e.g. "Curiosity", "Focus Power", "Creativity", "Social Energy"). Scores must reflect the actual questionnaire answers — do not invent.
+• child_quote: A short, vivid first-person phrase (max 110 characters) that sounds like it could genuinely come from this child based on the questionnaire cues. Use the correct pronoun. No invented facts.
+• parent_note: One or two warm, actionable sentences of parenting advice specific to this personality type and the questionnaire evidence. Address the parent directly ("Your child…"). Max 200 characters.`;
 }
 
 export function buildJourneyRecommendationsPrompt({

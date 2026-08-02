@@ -3,8 +3,6 @@ import type { FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import ChatInputBar from '@/components/shared/ChatInputBar';
-import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
-import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 import { Button } from '@/components/ui/button';
 import {
   Sparkles,
@@ -199,13 +197,6 @@ const TOTAL_CHAT_STEPS = 8;
 // ── Phase splash full-screen interstitial ─────────────────────────────────────
 
 function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
-  const progressPct = Math.round((splash.displayStep / TOTAL_CHAT_STEPS) * 100);
-  const phases: PhaseEntry[] = [
-    { num: 1, label: 'Getting to Know', status: 'active', progress: progressPct },
-    { num: 2, label: 'Personality Analysis', status: 'upcoming' },
-    { num: 3, label: 'Your Journey', status: 'upcoming' },
-  ];
-
   return (
     <motion.div
       key="phase-splash"
@@ -215,18 +206,7 @@ function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
       transition={{ duration: 0.3 }}
       className="fixed inset-0 z-50 flex flex-col bg-background"
     >
-      <OnboardingProgressHeader phases={phases} />
-
       <div className="flex flex-1 flex-col items-center justify-center gap-8 px-8 text-center">
-        <motion.p
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-          className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50"
-        >
-          Getting to Know — Step {splash.displayStep} / {TOTAL_CHAT_STEPS}
-        </motion.p>
-
         <motion.div
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -764,20 +744,14 @@ export default function ConversationalOnboarding({
         const finalData = nextCollected;
         setAnalyzingState({
           show: true,
-          progress: 0,
+          progress: 100,
           name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child',
-          showingDots: false,
+          showingDots: true,
           dotCount: 0,
         });
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += 1;
-          setAnalyzingState((s) => ({ ...s, progress }));
-          if (progress >= 100) {
-            clearInterval(interval);
-            Promise.resolve(onComplete(finalData)).catch(() => {});
-          }
-        }, 28);
+        setTimeout(() => {
+          Promise.resolve(onComplete(finalData)).catch(() => {});
+        }, 2000);
         return;
       }
 
@@ -860,73 +834,16 @@ export default function ConversationalOnboarding({
     const dotInterval = setInterval(() => {
       count += 1;
       setAnalyzingState((s) => ({ ...s, dotCount: count }));
-      if (count >= 12) {
+      if (count >= 10) {
         clearInterval(dotInterval);
         const finalData = { ...collectedDataRef.current };
-        setAnalyzingState({
-          show: true,
-          progress: 0,
-          name: typeof finalData['name'] === 'string' ? finalData['name'] : 'your child',
-          showingDots: false,
-          dotCount: 0,
-        });
-        let progress = 0;
-        progressInterval = setInterval(() => {
-          progress += 1;
-          setAnalyzingState((s) => ({ ...s, progress }));
-          if (progress >= 100) {
-            if (progressInterval !== null) clearInterval(progressInterval);
-            Promise.resolve(onComplete(finalData)).catch(() => {});
-          }
-        }, 55);
+        Promise.resolve(onComplete(finalData)).catch(() => {});
       }
     }, 200);
     return () => {
       clearInterval(dotInterval);
-      if (progressInterval !== null) clearInterval(progressInterval);
     };
   }, [waitingForResponse, currentStep, currentStepData?.type, allAnswered, onComplete]);
-
-  // ── Completion splash (step 12) ─────────────────────────────────────────────
-
-  if (showAnalyzing) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="flex flex-col items-center justify-center space-y-6 py-16 text-center"
-      >
-        <motion.div
-          animate={{ scale: [1, 1.06, 1] }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          className="flex h-20 w-20 items-center justify-center rounded-2xl bg-personality/15 text-4xl ring-4 ring-personality-alt/20"
-        >
-          🎉
-        </motion.div>
-        <div className="space-y-1.5">
-          <h2 className="text-2xl font-bold text-foreground">
-            Perfect! Let's do <span className="text-primary">{analyzingName || 'your child'}</span>
-            's personality analysis ✨
-          </h2>
-          <p className="text-sm text-muted-foreground">Getting things ready — almost there.</p>
-        </div>
-        <div className="w-full max-w-xs space-y-1.5">
-          <div className="bg-ghost-strong h-1.5 w-full overflow-hidden rounded-full">
-            <motion.div
-              animate={{ width: `${analyzeProgress}%` }}
-              transition={{ duration: 0.1 }}
-              className="h-full rounded-full bg-gradient-to-r from-primary to-personality-alt"
-            />
-          </div>
-          <p className="text-right text-xs text-muted-foreground/50">{analyzeProgress}%</p>
-        </div>
-        <p className="animate-pulse text-xs font-semibold uppercase tracking-wider text-primary">
-          One moment…
-        </p>
-      </motion.div>
-    );
-  }
 
   // ── Phase splash interstitial ────────────────────────────────────────────────
 
@@ -960,7 +877,30 @@ export default function ConversationalOnboarding({
                 Hello {parentName}!
               </motion.p>
               <AnimatePresence mode="wait">
-                {isTyping ? (
+                {showingLoadingDots || showAnalyzing ? (
+                  <motion.div
+                    key="thank-you"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                    className="mt-2 flex flex-col items-center gap-6"
+                  >
+                    <p className="w-full max-w-2xl text-center text-4xl font-bold leading-[1.08] text-white/90">
+                      Thank you for your responses, continuing ahead
+                    </p>
+                    <div className="flex items-center gap-2.5">
+                      {[0, 0.15, 0.3].map((delay, i) => (
+                        <motion.span
+                          key={i}
+                          animate={{ y: [0, -10, 0] }}
+                          transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
+                          className="h-3 w-3 rounded-full bg-info/60"
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                ) : isTyping ? (
                   <motion.div
                     key="typing-dots"
                     initial={{ opacity: 0, y: 8 }}
@@ -1045,34 +985,23 @@ export default function ConversationalOnboarding({
                 </div>
               </div>
             )}
+            {/* ── All answered — continue button ──────────────────────────── */}
+            {allAnswered && typeof onContinueToPersonality === 'function' && (
+              <div className="flex justify-center px-4 pt-6 pb-8">
+                <Button
+                  type="button"
+                  className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
+                  onClick={() => onContinueToPersonality()}
+                >
+                  Continue to personality analysis
+                </Button>
+              </div>
+            )}
           </div>
           {/* end scrollable top */}
 
           {/* ── Pinned bottom controls ──────────────────────────────────── */}
           <div className="shrink-0">
-            {/* ── Dots loading (completing) ───────────────────────────────── */}
-            {showingLoadingDots && !allAnswered && (
-              <div className="shrink-0 px-4 pb-3">
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-3 rounded-2xl border border-info/15 bg-info-medium/[0.07] px-4 py-3"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-medium/15">
-                    <Sparkles className="h-4 w-4 text-info" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white/90">
-                      Let's do a personality analysis{'.'.repeat(1 + (dotCount % 3))}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Getting things ready — almost there
-                    </p>
-                  </div>
-                </motion.div>
-              </div>
-            )}
-
             {/* ── MCQ grid for choice steps ───────────────────────────────── */}
             {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
               <div className="shrink-0 space-y-3 px-4 pb-8">
@@ -1100,18 +1029,6 @@ export default function ConversationalOnboarding({
               </div>
             )}
 
-            {/* ── All answered — continue button ──────────────────────────── */}
-            {allAnswered && typeof onContinueToPersonality === 'function' && (
-              <div className="shrink-0 px-4 pb-4">
-                <Button
-                  type="button"
-                  className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
-                  onClick={() => onContinueToPersonality()}
-                >
-                  Continue to personality analysis
-                </Button>
-              </div>
-            )}
 
             {/* ── Chat input bar (pinned bottom) ───────────────────────────── */}
             {waitingForResponse &&

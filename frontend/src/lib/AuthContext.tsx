@@ -40,6 +40,8 @@ interface AuthContextValue {
   logout: (shouldRedirect?: boolean) => Promise<void>;
   navigateToLogin: () => void;
   checkAppState: (options?: { withLoading?: boolean }) => Promise<void>;
+  ttsEnabled: boolean;
+  toggleTts: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -55,6 +57,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([]);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const ttsEnabledRef = useRef(true);
 
   const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
     const withLoading = options.withLoading !== false;
@@ -153,6 +157,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => clearTimeout(timer);
   }, [location.pathname, location.search, isAuthenticated]);
 
+  // Keep ref in sync so toggleTts never captures a stale value
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  // Load tts_enabled from DB after login; reset to true on logout
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setTtsEnabled(true);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const prefs = (await api.preferences.get()) as { tts_enabled?: boolean };
+        if (!cancelled && typeof prefs.tts_enabled === 'boolean') setTtsEnabled(prefs.tts_enabled);
+      } catch (err) {
+        console.warn('[AuthContext] Could not load TTS preference:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
+  const toggleTts = useCallback(() => {
+    const next = !ttsEnabledRef.current;
+    setTtsEnabled(next);
+    api.preferences.patch({ tts_enabled: next }).catch((err) => {
+      console.warn('[AuthContext] Could not persist TTS toggle:', err);
+    });
+  }, []);
+
   const logout = useCallback(
     async (shouldRedirect = true) => {
       await api.auth.logout();
@@ -206,6 +241,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       navigateToLogin,
       checkAppState,
+      ttsEnabled,
+      toggleTts,
     }),
     [
       user,
@@ -217,6 +254,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       navigateToLogin,
       checkAppState,
+      ttsEnabled,
+      toggleTts,
     ],
   );
 

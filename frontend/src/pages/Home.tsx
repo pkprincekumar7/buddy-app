@@ -172,7 +172,7 @@ export default function Home() {
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Start Your Journey
@@ -187,7 +187,7 @@ export default function Home() {
                   onClick={() =>
                     void navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
                   }
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Continue Your Journey
@@ -428,7 +428,7 @@ export default function Home() {
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   Get Started Free
                   <ArrowRight className="ml-2 h-4 w-4" />

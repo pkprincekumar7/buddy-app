@@ -25,12 +25,10 @@ function useNavChildId() {
 }
 
 export default function Layout({ children, currentPageName }: LayoutProps) {
-  const { user, isAuthenticated, childProfiles: _childProfiles, logout } = useAuth();
+  const { user, isAuthenticated, childProfiles: _childProfiles, logout, ttsEnabled, toggleTts } = useAuth();
   const navChildId = useNavChildId();
   const { doStartOver, isStartingOver } = useStartOver(navChildId ?? undefined);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  const ttsEnabledRef = useRef(true);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
 
@@ -60,35 +58,10 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
+  // Cancel any in-progress speech when TTS is disabled
   useEffect(() => {
-    ttsEnabledRef.current = ttsEnabled;
     if (!ttsEnabled && typeof window !== 'undefined') window.speechSynthesis.cancel();
   }, [ttsEnabled]);
-
-  /** After login, load saved voice + theme preferences from DB. */
-  useEffect(() => {
-    let cancelled = false;
-    if (!isAuthenticated) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    void (async () => {
-      try {
-        const prefs = (await api.preferences.get()) as {
-          tts_enabled?: boolean;
-        };
-        if (!cancelled) {
-          if (typeof prefs.tts_enabled === 'boolean') setTtsEnabled(prefs.tts_enabled);
-        }
-      } catch (err) {
-        console.warn('[Layout] Could not load preferences:', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
 
   /** Close profile panel on Escape. */
   useEffect(() => {
@@ -112,16 +85,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [profileOpen]);
 
-  /** Speaker click: optimistic UI + persist so next session matches. */
-  const handleToggleTts = useCallback(async () => {
-    const next = !ttsEnabledRef.current;
-    setTtsEnabled(next);
-    try {
-      await api.preferences.patch({ tts_enabled: next });
-    } catch (err) {
-      console.warn('[Layout] Could not persist TTS toggle:', err);
-    }
-  }, []);
 
   const handleLogout = useCallback(() => {
     void logout(true);
@@ -173,7 +136,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  void handleToggleTts();
+                  toggleTts();
                 }}
                 className="text-muted-foreground hover:bg-accent hover:text-foreground"
                 title={ttsEnabled ? 'Turn off voice' : 'Turn on voice'}
