@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
 import { EmojiText } from '@/components/ui/EmojiText';
 import {
   View,
@@ -110,7 +116,6 @@ function buildAccThrough(
   return acc;
 }
 
-
 function findResumeStepIndex(
   flow: ConversationStep[],
   data: Record<string, unknown>,
@@ -132,7 +137,6 @@ const ANALYZING_INITIAL: AnalyzingState = {
   showingDots: false,
   dotCount: 0,
 };
-
 
 // ── Resume summary helpers (mirrors web buildResumeSummary) ──────────────────
 
@@ -270,8 +274,16 @@ function AnimatedOrb() {
     const cfg = { duration: 2000, easing: Easing.inOut(Easing.ease) };
     pulseScale.value = withRepeat(withTiming(1.15, cfg), -1, true);
     pulseOpacity.value = withRepeat(withTiming(0.6, cfg), -1, true);
-    rot1.value = withRepeat(withTiming(360, { duration: 10000, easing: Easing.linear }), -1, false);
-    rot2.value = withRepeat(withTiming(-360, { duration: 7000, easing: Easing.linear }), -1, false);
+    rot1.value = withRepeat(
+      withTiming(360, { duration: 10000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    rot2.value = withRepeat(
+      withTiming(-360, { duration: 7000, easing: Easing.linear }),
+      -1,
+      false,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -287,7 +299,14 @@ function AnimatedOrb() {
   }));
 
   return (
-    <View style={{ width: 128, height: 128, alignItems: 'center', justifyContent: 'center' }}>
+    <View
+      style={{
+        width: 128,
+        height: 128,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       {/* Outer ambient pulse — radial glow approximation */}
       <Animated.View
         style={[
@@ -402,6 +421,7 @@ function BouncingDots({
 // Enter: opacity 0→1 + y 10→0 (450ms easeOut).
 // Exit:  opacity 1→0 + y 0→-6 (300ms easeIn).
 // Mirrors web's AnimatePresence exit={{ opacity:0, y:-6, transition:{ duration:0.3 } }}.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function TypingIndicatorBubble({ visible }: { visible: boolean }) {
   const { colors } = useTheme();
   const opacity = useSharedValue(0);
@@ -455,6 +475,7 @@ function TypingIndicatorBubble({ visible }: { visible: boolean }) {
 // Per-message entrance animation — matches web's Framer Motion durations exactly:
 //   bot:  opacity 2000ms bezier(0,0,0.6,1)  y 1600ms easeOut
 //   user: opacity 1600ms bezier(0,0,0.6,1)  x 1400ms bezier(0.22,1,0.36,1)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AnimatedMessage({
   role,
   children,
@@ -527,7 +548,7 @@ function AnimatedChoiceChip({
   onPress: () => void;
   icon: LucideRNIcon;
 }) {
-  const { colors } = useTheme();
+  const { colors: _colors } = useTheme();
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
 
@@ -570,7 +591,9 @@ function AnimatedChoiceChip({
         <Text
           className="text-sm font-medium flex-1"
           style={{
-            color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)',
+            color: isSelected
+              ? 'rgba(255,255,255,0.9)'
+              : 'rgba(255,255,255,0.55)',
           }}
         >
           {option}
@@ -606,11 +629,23 @@ function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
   const pulseOpacity = useSharedValue(0);
 
   useEffect(() => {
-    opacity.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.ease) });
-    iconScale.value = withDelay(150, withTiming(1, { duration: 500, easing: Easing.out(Easing.ease) }));
+    opacity.value = withTiming(1, {
+      duration: 300,
+      easing: Easing.out(Easing.ease),
+    });
+    iconScale.value = withDelay(
+      150,
+      withTiming(1, { duration: 500, easing: Easing.out(Easing.ease) }),
+    );
     textOpacity.value = withDelay(300, withTiming(1, { duration: 500 }));
-    textY.value = withDelay(300, withTiming(0, { duration: 500, easing: Easing.out(Easing.ease) }));
-    pulseOpacity.value = withDelay(600, withRepeat(withTiming(1, { duration: 600 }), -1, true));
+    textY.value = withDelay(
+      300,
+      withTiming(0, { duration: 500, easing: Easing.out(Easing.ease) }),
+    );
+    pulseOpacity.value = withDelay(
+      600,
+      withRepeat(withTiming(1, { duration: 600 }), -1, true),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -870,7 +905,7 @@ function AnalyzingScreen({
             lineHeight: 30,
           }}
         >
-          {'Perfect! Let\'s do '}
+          {"Perfect! Let's do "}
           <Text style={{ color: colors.primary }}>
             {analyzingName || 'your child'}
           </Text>
@@ -900,7 +935,11 @@ function AnalyzingScreen({
           <Animated.View
             style={[
               progressStyle,
-              { height: '100%', borderRadius: 999, backgroundColor: colors.primary },
+              {
+                height: '100%',
+                borderRadius: 999,
+                backgroundColor: colors.primary,
+              },
             ]}
           />
         </View>
@@ -943,7 +982,7 @@ export default function ConversationalOnboarding({
   onQuestionnaireCleared,
   onStepChange,
 }: ConversationalOnboardingProps) {
-  const { colors } = useTheme();
+  const { colors: _colors } = useTheme();
   const [showIntro, setShowIntro] = useState(true);
   const showIntroRef = useRef(true);
   const [phaseSplash, setPhaseSplash] = useState<PhaseSplash | null>(null);
@@ -955,7 +994,7 @@ export default function ConversationalOnboarding({
     {},
   );
   const [isTyping, setIsTyping] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [_voiceEnabled, setVoiceEnabled] = useState(true);
   const voiceEnabledRef = useRef(true);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [analyzingState, setAnalyzingState] =
@@ -968,9 +1007,10 @@ export default function ConversationalOnboarding({
     dotCount,
   } = analyzingState;
   const [allAnswered, setAllAnswered] = useState(false);
-  const [resumeSummary, setResumeSummary] = useState<
-    Array<{ label: string; answer: string }> | null
-  >(null);
+  const [resumeSummary, setResumeSummary] = useState<Array<{
+    label: string;
+    answer: string;
+  }> | null>(null);
   const [summaryExpanded, setSummaryExpanded] = useState(true);
   const summaryInitializedRef = useRef(false);
 
@@ -1286,7 +1326,6 @@ export default function ConversationalOnboarding({
       subs.forEach(s => s.remove());
       void Speech.stop();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const speak = useCallback((text: string) => {
@@ -1406,7 +1445,9 @@ export default function ConversationalOnboarding({
         const resumeIdx = findResumeStepIndex(conversationFlow, slim);
         if (resumeIdx > 0) {
           summaryInitializedRef.current = true;
-          setResumeSummary(buildResumeSummary(conversationFlow, slim, resumeIdx));
+          setResumeSummary(
+            buildResumeSummary(conversationFlow, slim, resumeIdx),
+          );
         }
         setCollectedData({ ...slim });
         setMessages([]);
@@ -1523,7 +1564,9 @@ export default function ConversationalOnboarding({
   // Keep previously-answered summary in sync as the user progresses (mirrors web).
   useEffect(() => {
     if (!summaryInitializedRef.current) return;
-    setResumeSummary(buildResumeSummary(conversationFlow, collectedData, currentStep));
+    setResumeSummary(
+      buildResumeSummary(conversationFlow, collectedData, currentStep),
+    );
   }, [collectedData, currentStep, conversationFlow]);
 
   const processResponse = useCallback(
@@ -1651,7 +1694,7 @@ export default function ConversationalOnboarding({
   );
 
   // Persist voice toggle state to the server (matches web's persistVoiceToggle).
-  const persistVoiceToggle = useCallback(async () => {
+  const _persistVoiceToggle = useCallback(async () => {
     const next = !voiceEnabledRef.current;
     voiceEnabledRef.current = next;
     setVoiceEnabled(next);
@@ -1666,7 +1709,7 @@ export default function ConversationalOnboarding({
     }
   }, []);
 
-  const handleReset = useCallback(() => {
+  const _handleReset = useCallback(() => {
     chatSessionStartedRef.current = false;
     allowEmptySessionRecoveryRef.current = false;
     userTurnCountRef.current = 0;
@@ -1851,7 +1894,9 @@ export default function ConversationalOnboarding({
                 borderColor: 'rgba(255,255,255,0.08)',
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              >
                 <View
                   style={{
                     width: 20,
@@ -1874,7 +1919,11 @@ export default function ConversationalOnboarding({
                   Previously answered · {resumeSummary.length} of 7
                 </Text>
               </View>
-              <View style={{ transform: [{ rotate: summaryExpanded ? '180deg' : '0deg' }] }}>
+              <View
+                style={{
+                  transform: [{ rotate: summaryExpanded ? '180deg' : '0deg' }],
+                }}
+              >
                 <ChevronDown size={14} color="rgba(255,255,255,0.3)" />
               </View>
             </Pressable>
@@ -1957,9 +2006,7 @@ export default function ConversationalOnboarding({
                   Getting things ready — almost there
                 </Text>
                 <View className="mt-3">
-                  <BouncingDots
-                    colors={['#93c5fd', '#3b82f6', '#1d4ed8']}
-                  />
+                  <BouncingDots colors={['#93c5fd', '#3b82f6', '#1d4ed8']} />
                 </View>
               </View>
             </View>
@@ -1971,7 +2018,14 @@ export default function ConversationalOnboarding({
       {waitingForResponse &&
         !allAnswered &&
         currentStepData?.type === 'choice' && (
-          <View style={{ paddingHorizontal: 16, paddingBottom: 16, paddingTop: 8, gap: 10 }}>
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 16,
+              paddingTop: 8,
+              gap: 10,
+            }}
+          >
             {(currentStepData.options ?? []).map((option, index) => {
               const chosen = collectedData[currentStepData.field];
               const isSelected = chosen === option;
@@ -1995,9 +2049,18 @@ export default function ConversationalOnboarding({
         !allAnswered &&
         (currentStepData?.type === 'text' ||
           currentStepData?.type === 'multi_text') && (
-          <View style={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 }}>
+          <View
+            style={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 }}
+          >
             {currentStepData.hint && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginBottom: 8,
+                }}
+              >
                 <Sparkles size={12} color="rgba(147,197,253,0.6)" />
                 <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>
                   {currentStepData.hint}
@@ -2020,7 +2083,9 @@ export default function ConversationalOnboarding({
               <InputWithVoice
                 value={currentInput}
                 onChange={e => setCurrentInput(e.target.value)}
-                placeholder={currentStepData.placeholder ?? 'Type your response…'}
+                placeholder={
+                  currentStepData.placeholder ?? 'Type your response…'
+                }
                 style={{
                   color: 'rgba(255,255,255,0.9)',
                   backgroundColor: 'transparent',
@@ -2051,7 +2116,9 @@ export default function ConversationalOnboarding({
 
       {/* ── Continue button (all answered) ─────────────────────────────── */}
       {allAnswered && typeof onContinueToPersonality === 'function' && (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 }}>
+        <View
+          style={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 }}
+        >
           <Pressable
             onPress={() => onContinueToPersonality()}
             style={({ pressed }) => ({

@@ -143,9 +143,18 @@ export default function GrowthAreasScreen() {
 
         // Personality gate — mirrors web GrowthAreas.tsx
         const childObj = child as Record<string, unknown>;
-        const viewModel = (childObj.personality as Record<string, unknown> | undefined)?.view_model as Record<string, unknown> | undefined;
-        if (!viewModel?.type && !(viewModel?.profile as Record<string, unknown> | undefined)?.name) {
-          (navigation.getParent() as unknown as { navigate: (name: string, params?: unknown) => void })?.navigate('Personality', {
+        const viewModel = (
+          childObj.personality as Record<string, unknown> | undefined
+        )?.view_model as Record<string, unknown> | undefined;
+        if (
+          !viewModel?.type &&
+          !(viewModel?.profile as Record<string, unknown> | undefined)?.name
+        ) {
+          (
+            navigation.getParent() as unknown as {
+              navigate: (name: string, params?: unknown) => void;
+            }
+          )?.navigate('Personality', {
             screen: 'PersonalityType',
           });
           return;
@@ -303,7 +312,6 @@ export default function GrowthAreasScreen() {
           />
         </ScrollView>
       </Animated.View>
-
     </View>
   );
 }

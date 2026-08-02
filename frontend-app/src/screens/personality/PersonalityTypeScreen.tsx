@@ -156,7 +156,9 @@ function PhaseBar() {
                     style={{
                       fontSize: 11,
                       fontWeight: '700',
-                      color: phase.active ? colors.primaryForeground : colors.textMuted,
+                      color: phase.active
+                        ? colors.primaryForeground
+                        : colors.textMuted,
                       opacity: phase.active ? 1 : 0.4,
                     }}
                   >
@@ -248,7 +250,9 @@ function ChecklistItem({
     if (isDone) checkScale.value = withSpring(1, { stiffness: 200 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDone]);
-  const checkStyle = useAnimatedStyle(() => ({ transform: [{ scale: checkScale.value }] }));
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
+  }));
 
   const { Icon } = step;
 
@@ -281,11 +285,7 @@ function ChecklistItem({
       <Icon
         size={16}
         color={
-          isDone
-            ? colors.primary
-            : isActive
-            ? colors.text
-            : colors.textMuted
+          isDone ? colors.primary : isActive ? colors.text : colors.textMuted
         }
       />
       <Text
@@ -526,7 +526,10 @@ export default function PersonalityTypeScreen() {
           personality: { source: 'llm', view_model: stripViewModelImages(vm) },
           onboarding_phase: 2,
         }).catch(err =>
-          console.error('[PersonalityType] Failed to persist personality:', err),
+          console.error(
+            '[PersonalityType] Failed to persist personality:',
+            err,
+          ),
         );
       } else if (
         personality?.view_model?.type &&
@@ -559,7 +562,15 @@ export default function PersonalityTypeScreen() {
     if (!isAnalysing || mbtiResult) return;
     const progress = Math.min((job.elapsedMs / 1000 / 30) * 100, 95);
     const s =
-      progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 95 ? 3 : 4;
+      progress < 25
+        ? 0
+        : progress < 50
+        ? 1
+        : progress < 75
+        ? 2
+        : progress < 95
+        ? 3
+        : 4;
     setCompletedSteps(s);
     setProgressPct(Math.round(progress));
   }, [isAnalysing, job.elapsedMs, mbtiResult]);
@@ -584,7 +595,14 @@ export default function PersonalityTypeScreen() {
       ).navigate('PersonalityJourney', childId ? { childId } : undefined);
     }, 1200);
     return () => clearTimeout(t);
-  }, [mbtiResult, completedSteps, navigatingAway, childId, navigation, steps.length]);
+  }, [
+    mbtiResult,
+    completedSteps,
+    navigatingAway,
+    childId,
+    navigation,
+    steps.length,
+  ]);
 
   useEffect(() => {
     if (isLoadingAuth) return;

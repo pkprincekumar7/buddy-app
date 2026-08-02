@@ -1357,7 +1357,10 @@ export default function LifePathwayScreen() {
                     {(user?.full_name as string | undefined)?.split(' ')[0] ??
                       'Parent'}
                   </Text>{' '}
-                  and <Text style={{ color: colors.successBright }}>{childName}</Text>{' '}
+                  and{' '}
+                  <Text style={{ color: colors.successBright }}>
+                    {childName}
+                  </Text>{' '}
                   to Buddy360. We look forward to powering up your life in all
                   possible dimensions.
                 </Text>
@@ -1642,7 +1645,6 @@ export default function LifePathwayScreen() {
           </Pressable>
         </Modal>
       </Animated.View>
-
     </View>
   );
 }

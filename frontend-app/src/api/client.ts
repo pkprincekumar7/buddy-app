@@ -334,10 +334,17 @@ export const api = {
   },
 
   admin: {
-    listAllowedEmails: (skip: number, limit: number): Promise<AllowedEmailsPage> =>
-      request(`/admin/allowed-emails?skip=${skip}&limit=${limit}`) as Promise<AllowedEmailsPage>,
+    listAllowedEmails: (
+      skip: number,
+      limit: number,
+    ): Promise<AllowedEmailsPage> =>
+      request(
+        `/admin/allowed-emails?skip=${skip}&limit=${limit}`,
+      ) as Promise<AllowedEmailsPage>,
     getAllowedEmail: (email: string): Promise<AllowedEmailRecord> =>
-      request(`/admin/allowed-emails/${encodeURIComponent(email)}`) as Promise<AllowedEmailRecord>,
+      request(
+        `/admin/allowed-emails/${encodeURIComponent(email)}`,
+      ) as Promise<AllowedEmailRecord>,
     addAllowedEmail: (email: string): Promise<AllowedEmailRecord> =>
       request('/admin/allowed-emails', {
         method: 'POST',
@@ -348,17 +355,25 @@ export const api = {
         method: 'DELETE',
       }) as Promise<void>,
     listUsers: (skip: number, limit: number): Promise<AdminUsersPage> =>
-      request(`/admin/users?skip=${skip}&limit=${limit}`) as Promise<AdminUsersPage>,
+      request(
+        `/admin/users?skip=${skip}&limit=${limit}`,
+      ) as Promise<AdminUsersPage>,
     getUserByEmail: (email: string): Promise<AdminUserRecord> =>
-      request(`/admin/users/by-email/${encodeURIComponent(email)}`) as Promise<AdminUserRecord>,
+      request(
+        `/admin/users/by-email/${encodeURIComponent(email)}`,
+      ) as Promise<AdminUserRecord>,
     lockUser: (userId: string, location: string): Promise<AdminUserRecord> =>
       request(
-        `/admin/users/${encodeURIComponent(userId)}/lock?location=${encodeURIComponent(location)}`,
+        `/admin/users/${encodeURIComponent(
+          userId,
+        )}/lock?location=${encodeURIComponent(location)}`,
         { method: 'PATCH' },
       ) as Promise<AdminUserRecord>,
     unlockUser: (userId: string, location: string): Promise<AdminUserRecord> =>
       request(
-        `/admin/users/${encodeURIComponent(userId)}/unlock?location=${encodeURIComponent(location)}`,
+        `/admin/users/${encodeURIComponent(
+          userId,
+        )}/unlock?location=${encodeURIComponent(location)}`,
         { method: 'PATCH' },
       ) as Promise<AdminUserRecord>,
   },
@@ -473,7 +488,9 @@ export const api = {
           headers: { 'Content-Type': contentType },
         });
         if (!s3Res.ok) {
-          throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
+          throw new Error(
+            `S3 upload failed: ${s3Res.status} ${s3Res.statusText}`,
+          );
         }
         return { avatar_url };
       },

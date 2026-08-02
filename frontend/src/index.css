@@ -8,7 +8,9 @@
   font-weight: 700 900;
   font-display: swap;
   src: url('/fonts/playfair-display.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
@@ -17,7 +19,9 @@
   font-weight: 700 900;
   font-display: swap;
   src: url('/fonts/playfair-display-italic.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
@@ -847,7 +851,12 @@
   }
   .orb-main {
     background:
-      radial-gradient(circle at 75% 30%, rgb(var(--orb-cyan-rgb)) 0%, rgb(var(--orb-blue-rgb)) 18%, transparent 35%),
+      radial-gradient(
+        circle at 75% 30%,
+        rgb(var(--orb-cyan-rgb)) 0%,
+        rgb(var(--orb-blue-rgb)) 18%,
+        transparent 35%
+      ),
       radial-gradient(circle at 35% 70%, rgb(var(--orb-purple-rgb)) 0%, transparent 35%),
       radial-gradient(circle at center, rgb(var(--orb-dark-rgb)) 35%, var(--bg-deep-3) 100%);
     box-shadow: 0 0 45px rgb(var(--chatbar-glow-rgb) / 0.5);
@@ -871,7 +880,8 @@
 
 /* Voice waveform animation — applied via .voice-wave-active on the VoiceInput button */
 @keyframes voice-wave {
-  0%, 100% {
+  0%,
+  100% {
     transform: scaleY(1);
   }
   50% {
@@ -884,50 +894,116 @@
   transform-box: fill-box;
   transform-origin: bottom;
 }
-.voice-wave-active svg rect:nth-child(1) { animation-delay: 0ms; }
-.voice-wave-active svg rect:nth-child(2) { animation-delay: 90ms; }
-.voice-wave-active svg rect:nth-child(3) { animation-delay: 180ms; }
-.voice-wave-active svg rect:nth-child(4) { animation-delay: 90ms; }
-.voice-wave-active svg rect:nth-child(5) { animation-delay: 0ms; }
+.voice-wave-active svg rect:nth-child(1) {
+  animation-delay: 0ms;
+}
+.voice-wave-active svg rect:nth-child(2) {
+  animation-delay: 90ms;
+}
+.voice-wave-active svg rect:nth-child(3) {
+  animation-delay: 180ms;
+}
+.voice-wave-active svg rect:nth-child(4) {
+  animation-delay: 90ms;
+}
+.voice-wave-active svg rect:nth-child(5) {
+  animation-delay: 0ms;
+}
 
 /* HTML span bars (ChatInputBar waveform) */
 .voice-wave-active span {
   animation: voice-wave 0.55s ease-in-out infinite;
   transform-origin: bottom center;
 }
-.voice-wave-active span:nth-child(1) { animation-delay: 0ms; }
-.voice-wave-active span:nth-child(2) { animation-delay: 90ms; }
-.voice-wave-active span:nth-child(3) { animation-delay: 180ms; }
-.voice-wave-active span:nth-child(4) { animation-delay: 90ms; }
-.voice-wave-active span:nth-child(5) { animation-delay: 0ms; }
+.voice-wave-active span:nth-child(1) {
+  animation-delay: 0ms;
+}
+.voice-wave-active span:nth-child(2) {
+  animation-delay: 90ms;
+}
+.voice-wave-active span:nth-child(3) {
+  animation-delay: 180ms;
+}
+.voice-wave-active span:nth-child(4) {
+  animation-delay: 90ms;
+}
+.voice-wave-active span:nth-child(5) {
+  animation-delay: 0ms;
+}
 
 /* ── PersonalityProfile reveal animations ──────────────────────────────────── */
 @keyframes ppRingOut {
-  0%   { transform: scale(0.15); opacity: 0; }
-  15%  { opacity: 0.9; }
-  100% { transform: scale(2.6);  opacity: 0; }
+  0% {
+    transform: scale(0.15);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
 }
 @keyframes ppSparkFall {
-  0%   { transform: translateY(-40px) rotate(45deg);  opacity: 0; }
-  12%  { opacity: 1; }
-  100% { transform: translateY(760px) rotate(225deg); opacity: 0; }
+  0% {
+    transform: translateY(-40px) rotate(45deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(760px) rotate(225deg);
+    opacity: 0;
+  }
 }
 @keyframes ppRiseIn {
-  0%   { transform: translateY(26px); opacity: 0; filter: blur(8px); }
-  100% { transform: translateY(0);    opacity: 1; filter: blur(0); }
+  0% {
+    transform: translateY(26px);
+    opacity: 0;
+    filter: blur(8px);
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 @keyframes ppBadgeSweep {
-  0%   { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
-  40%  { opacity: 0.8; }
-  100% { transform: translateX(220%)  skewX(-18deg); opacity: 0; }
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
 }
 @keyframes ppPageIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes ppBadgePop {
-  0%   { transform: scale(0.6);    opacity: 0; }
-  60%  { transform: scale(1.06);   opacity: 1; }
-  100% { transform: scale(1);      opacity: 1; }
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
-

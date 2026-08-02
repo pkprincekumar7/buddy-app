@@ -99,7 +99,6 @@ export default function ConversationalOnboarding() {
           </div>
         ) : (
           <div className="flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
-
             {/* Back button row */}
             <div className="mx-auto w-full max-w-5xl px-4 pt-4">
               <Button

@@ -227,23 +227,39 @@ export default function ProfileHeaderButton() {
             <View style={{ height: 60, justifyContent: 'center' }}>
               <Pressable
                 onPress={toggleTheme}
-                accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+                accessibilityLabel={
+                  isDark ? 'Switch to light mode' : 'Switch to dark mode'
+                }
                 accessibilityRole="button"
                 style={({ pressed }) => ({
                   flex: 1,
                   paddingHorizontal: 16,
                   borderRadius: 12,
-                  backgroundColor: pressed ? colors.pressedBackground : 'transparent',
+                  backgroundColor: pressed
+                    ? colors.pressedBackground
+                    : 'transparent',
                   justifyContent: 'center',
                 })}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
                   {isDark ? (
                     <Sun size={20} color={colors.textMuted} />
                   ) : (
                     <Moon size={20} color={colors.textMuted} />
                   )}
-                  <Text style={{ color: colors.textMuted, fontSize: 15, fontWeight: '500' }}>
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 15,
+                      fontWeight: '500',
+                    }}
+                  >
                     {isDark ? 'Light mode' : 'Dark mode'}
                   </Text>
                 </View>

@@ -216,8 +216,13 @@ function HeaderLogo() {
       >
         <Svg width={14} height={15} viewBox="0 0 20 22">
           <SvgLine
-            x1="10" y1="21" x2="10" y2="14"
-            stroke="white" strokeWidth="2.2" strokeLinecap="round"
+            x1="10"
+            y1="21"
+            x2="10"
+            y2="14"
+            stroke="white"
+            strokeWidth="2.2"
+            strokeLinecap="round"
           />
           <SvgPath
             d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
@@ -231,7 +236,12 @@ function HeaderLogo() {
       </View>
       <View>
         <Text
-          style={{ fontSize: 15, fontWeight: '700', letterSpacing: -0.3, color: colors.text }}
+          style={{
+            fontSize: 15,
+            fontWeight: '700',
+            letterSpacing: -0.3,
+            color: colors.text,
+          }}
           numberOfLines={1}
         >
           Buddy<Text style={{ color: colors.primary }}>360</Text>
@@ -476,7 +486,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       },
       Onboarding: {
         screens: {
-          Onboarding: 'onboarding',
+          OnboardingWelcome: 'onboarding',
           ConversationalOnboarding: 'onboarding/chat',
         },
       },
@@ -501,14 +511,8 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function RootNavigator() {
-  const {
-    isAuthenticated,
-    isLoading,
-    authError,
-    checkAppState,
-    logout,
-    user,
-  } = useAuth();
+  const { isAuthenticated, isLoading, authError, checkAppState, logout, user } =
+    useAuth();
   const { colors } = useTheme();
 
   if (isLoading) {

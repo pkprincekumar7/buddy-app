@@ -177,7 +177,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.warn('[AuthContext] Could not load TTS preference:', err);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
   const toggleTts = useCallback(() => {

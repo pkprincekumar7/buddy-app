@@ -46,7 +46,10 @@ export default function WelcomePhase({
   const logoScale = useSharedValue(0);
   const logoOpacity = useSharedValue(0);
   useEffect(() => {
-    logoScale.value = withDelay(100, withSpring(1, { stiffness: 70, damping: 12 }));
+    logoScale.value = withDelay(
+      100,
+      withSpring(1, { stiffness: 70, damping: 12 }),
+    );
     logoOpacity.value = withDelay(
       100,
       withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) }),
@@ -118,8 +121,8 @@ export default function WelcomePhase({
             style={{ color: colors.text }}
           >
             Hey {firstName}! 👋{'\n'}I'm{' '}
-            <Text style={{ color: colors.primary }}>Buddy</Text>
-            , your child's{'\n'}growth companion.
+            <Text style={{ color: colors.primary }}>Buddy</Text>, your child's
+            {'\n'}growth companion.
           </Text>
         </Animated.View>
 
@@ -128,8 +131,8 @@ export default function WelcomePhase({
             className="text-center text-sm leading-relaxed"
             style={{ color: colors.textMuted }}
           >
-            In a few light, friendly questions I'll learn about your child —
-            one thing at a time. No long forms, no pressure. Promise.
+            In a few light, friendly questions I'll learn about your child — one
+            thing at a time. No long forms, no pressure. Promise.
           </Text>
         </Animated.View>
       </View>
@@ -161,7 +164,10 @@ export default function WelcomePhase({
       </View>
 
       {/* CTA — glow shadow mirrors web glow-teal-md */}
-      <Animated.View style={[ctaAnim, { gap: 8 }]} className="items-center mb-4">
+      <Animated.View
+        style={[ctaAnim, { gap: 8 }]}
+        className="items-center mb-4"
+      >
         {isAuthenticated ? (
           <View
             style={{

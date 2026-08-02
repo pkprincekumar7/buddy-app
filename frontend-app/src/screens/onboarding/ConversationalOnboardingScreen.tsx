@@ -143,8 +143,18 @@ export default function ConversationalOnboardingScreen() {
               }}
             >
               {[
-                { num: 1, label: 'Getting to Know', active: true, progress: phase1Progress },
-                { num: 2, label: 'Personality Analysis', active: false, progress: 0 },
+                {
+                  num: 1,
+                  label: 'Getting to Know',
+                  active: true,
+                  progress: phase1Progress,
+                },
+                {
+                  num: 2,
+                  label: 'Personality Analysis',
+                  active: false,
+                  progress: 0,
+                },
                 { num: 3, label: 'Your Journey', active: false, progress: 0 },
               ].map((phase, i, arr) => {
                 const isLast = i === arr.length - 1;

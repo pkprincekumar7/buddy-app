@@ -175,7 +175,6 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
-
         {isLoadingAuth || checking ? (
           <div className="flex min-h-[60vh] items-center justify-center">
             <motion.div

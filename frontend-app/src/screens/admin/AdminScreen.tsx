@@ -83,8 +83,12 @@ export default function AdminScreen() {
     queryFn: () => api.admin.listUsers(usersSkip, PAGE_SIZE),
   });
 
-  const emailTotalPages = emailsData ? Math.ceil(emailsData.total / PAGE_SIZE) : 0;
-  const usersTotalPages = usersData ? Math.ceil(usersData.total / PAGE_SIZE) : 0;
+  const emailTotalPages = emailsData
+    ? Math.ceil(emailsData.total / PAGE_SIZE)
+    : 0;
+  const usersTotalPages = usersData
+    ? Math.ceil(usersData.total / PAGE_SIZE)
+    : 0;
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const addMutation = useMutation({
@@ -190,14 +194,18 @@ export default function AdminScreen() {
   };
 
   const confirmDelete = (email: string) => {
-    Alert.alert('Remove from allowlist?', `${email} will no longer be able to register.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => deleteMutation.mutate(email),
-      },
-    ]);
+    Alert.alert(
+      'Remove from allowlist?',
+      `${email} will no longer be able to register.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => deleteMutation.mutate(email),
+        },
+      ],
+    );
   };
 
   const confirmLock = (u: AdminUserRecord) => {
@@ -244,7 +252,11 @@ export default function AdminScreen() {
     >
       <View className="flex-row items-center gap-2 flex-1 min-w-0">
         <Mail size={16} color={colors.primary} />
-        <Text className="text-sm flex-1" style={{ color: colors.text }} numberOfLines={1}>
+        <Text
+          className="text-sm flex-1"
+          style={{ color: colors.text }}
+          numberOfLines={1}
+        >
           {item.email}
         </Text>
       </View>
@@ -269,10 +281,18 @@ export default function AdminScreen() {
       style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}
     >
       <View className="flex-1 min-w-0">
-        <Text className="text-sm font-semibold" style={{ color: colors.text }} numberOfLines={1}>
+        <Text
+          className="text-sm font-semibold"
+          style={{ color: colors.text }}
+          numberOfLines={1}
+        >
           {item.full_name ?? '—'}
         </Text>
-        <Text className="text-xs mt-0.5" style={{ color: colors.textMuted }} numberOfLines={1}>
+        <Text
+          className="text-xs mt-0.5"
+          style={{ color: colors.textMuted }}
+          numberOfLines={1}
+        >
           {item.email ?? '—'}
         </Text>
       </View>
@@ -286,7 +306,10 @@ export default function AdminScreen() {
               paddingVertical: 2,
             }}
           >
-            <Text className="text-xs font-medium" style={{ color: colors.error }}>
+            <Text
+              className="text-xs font-medium"
+              style={{ color: colors.error }}
+            >
               Locked
             </Text>
           </View>
@@ -336,7 +359,10 @@ export default function AdminScreen() {
           disabled={page === 0}
           className="flex-row items-center gap-1"
         >
-          <ChevronLeft size={16} color={page === 0 ? colors.border : colors.textMuted} />
+          <ChevronLeft
+            size={16}
+            color={page === 0 ? colors.border : colors.textMuted}
+          />
           <Text
             className="text-sm"
             style={{ color: page === 0 ? colors.border : colors.textMuted }}
@@ -354,7 +380,9 @@ export default function AdminScreen() {
         >
           <Text
             className="text-sm"
-            style={{ color: page >= total - 1 ? colors.border : colors.textMuted }}
+            style={{
+              color: page >= total - 1 ? colors.border : colors.textMuted,
+            }}
           >
             Next
           </Text>
@@ -382,7 +410,10 @@ export default function AdminScreen() {
           <Shield size={20} color={colors.primary} />
         </View>
         <View className="flex-1">
-          <Text className="text-xl font-semibold" style={{ color: colors.text }}>
+          <Text
+            className="text-xl font-semibold"
+            style={{ color: colors.text }}
+          >
             Admin
           </Text>
           <Text className="text-sm" style={{ color: colors.textMuted }}>
@@ -421,9 +452,7 @@ export default function AdminScreen() {
         <TouchableOpacity
           className="flex-1 flex-row items-center justify-center gap-2 rounded-lg py-2"
           style={
-            activeTab === 'users'
-              ? { backgroundColor: colors.card }
-              : undefined
+            activeTab === 'users' ? { backgroundColor: colors.card } : undefined
           }
           onPress={() => setActiveTab('users')}
         >
@@ -447,7 +476,10 @@ export default function AdminScreen() {
         <View>
           {/* Sub-header */}
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-sm flex-1 mr-3" style={{ color: colors.textMuted }}>
+            <Text
+              className="text-sm flex-1 mr-3"
+              style={{ color: colors.textMuted }}
+            >
               Only these emails can register for the application.
             </Text>
             <TouchableOpacity
@@ -456,7 +488,10 @@ export default function AdminScreen() {
               onPress={() => setAddModalOpen(true)}
             >
               <Plus size={14} color={colors.primaryForeground} />
-              <Text className="text-sm font-medium" style={{ color: colors.primaryForeground }}>
+              <Text
+                className="text-sm font-medium"
+                style={{ color: colors.primaryForeground }}
+              >
                 Add email
               </Text>
             </TouchableOpacity>
@@ -465,7 +500,10 @@ export default function AdminScreen() {
           {/* Email search card */}
           <View style={cardStyle}>
             <View className="px-4 pt-4 pb-3">
-              <Text className="text-sm font-medium mb-3" style={{ color: colors.text }}>
+              <Text
+                className="text-sm font-medium mb-3"
+                style={{ color: colors.text }}
+              >
                 Look up an email
               </Text>
               <View className="flex-row gap-2">
@@ -500,7 +538,10 @@ export default function AdminScreen() {
               </View>
 
               {emailSearchResult === 'not_found' && (
-                <Text className="mt-2 text-sm" style={{ color: colors.textMuted }}>
+                <Text
+                  className="mt-2 text-sm"
+                  style={{ color: colors.textMuted }}
+                >
                   Not found in allowlist.
                 </Text>
               )}
@@ -515,10 +556,17 @@ export default function AdminScreen() {
                 >
                   <View className="flex-row items-center gap-2 flex-1 min-w-0">
                     <Mail size={14} color={colors.primary} />
-                    <Text className="text-sm flex-1" style={{ color: colors.text }} numberOfLines={1}>
+                    <Text
+                      className="text-sm flex-1"
+                      style={{ color: colors.text }}
+                      numberOfLines={1}
+                    >
                       {emailSearchResult.email}
                     </Text>
-                    <Text className="text-xs" style={{ color: colors.textMuted }}>
+                    <Text
+                      className="text-xs"
+                      style={{ color: colors.textMuted }}
+                    >
                       Added {formatDate(emailSearchResult.added_at)}
                     </Text>
                   </View>
@@ -537,7 +585,10 @@ export default function AdminScreen() {
           {/* Email list card */}
           <View style={cardStyle}>
             <View className="flex-row items-center justify-between px-5 py-3">
-              <Text className="text-sm font-medium" style={{ color: colors.text }}>
+              <Text
+                className="text-sm font-medium"
+                style={{ color: colors.text }}
+              >
                 All allowed emails
               </Text>
               {emailsData && (
@@ -583,7 +634,10 @@ export default function AdminScreen() {
           {/* User search card */}
           <View style={cardStyle}>
             <View className="px-4 pt-4 pb-3">
-              <Text className="text-sm font-medium mb-3" style={{ color: colors.text }}>
+              <Text
+                className="text-sm font-medium mb-3"
+                style={{ color: colors.text }}
+              >
                 Look up a user
               </Text>
               <View className="flex-row gap-2">
@@ -618,7 +672,10 @@ export default function AdminScreen() {
               </View>
 
               {userSearchResult === 'not_found' && (
-                <Text className="mt-2 text-sm" style={{ color: colors.textMuted }}>
+                <Text
+                  className="mt-2 text-sm"
+                  style={{ color: colors.textMuted }}
+                >
                   No registered user found.
                 </Text>
               )}
@@ -685,7 +742,10 @@ export default function AdminScreen() {
           {/* Users list card */}
           <View style={cardStyle}>
             <View className="flex-row items-center justify-between px-5 py-3">
-              <Text className="text-sm font-medium" style={{ color: colors.text }}>
+              <Text
+                className="text-sm font-medium"
+                style={{ color: colors.text }}
+              >
                 All registered users
               </Text>
               {usersData && (
@@ -730,9 +790,16 @@ export default function AdminScreen() {
         >
           <View
             className="w-full max-w-sm mx-5 rounded-2xl p-6"
-            style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+            style={{
+              backgroundColor: colors.card,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
           >
-            <Text className="text-base font-semibold mb-4" style={{ color: colors.text }}>
+            <Text
+              className="text-base font-semibold mb-4"
+              style={{ color: colors.text }}
+            >
               Add email to allowlist
             </Text>
             <TextInput
@@ -764,24 +831,34 @@ export default function AdminScreen() {
                   setAddEmail('');
                 }}
               >
-                <Text className="text-sm font-medium" style={{ color: colors.text }}>
+                <Text
+                  className="text-sm font-medium"
+                  style={{ color: colors.text }}
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 className="flex-1 items-center justify-center rounded-lg py-2.5"
                 style={{
-                  backgroundColor: !addEmail.trim() || addMutation.isPending
-                    ? colors.primaryAction + '80'
-                    : colors.primaryAction,
+                  backgroundColor:
+                    !addEmail.trim() || addMutation.isPending
+                      ? colors.primaryAction + '80'
+                      : colors.primaryAction,
                 }}
                 disabled={!addEmail.trim() || addMutation.isPending}
                 onPress={() => addMutation.mutate(addEmail.trim())}
               >
                 {addMutation.isPending ? (
-                  <ActivityIndicator size="small" color={colors.primaryForeground} />
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.primaryForeground}
+                  />
                 ) : (
-                  <Text className="text-sm font-medium" style={{ color: colors.primaryForeground }}>
+                  <Text
+                    className="text-sm font-medium"
+                    style={{ color: colors.primaryForeground }}
+                  >
                     Add
                   </Text>
                 )}

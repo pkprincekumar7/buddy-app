@@ -131,7 +131,8 @@ export default function GrowthAreasActivityScreen() {
             a => a.area_id === area.id && a.status === 'in_progress',
           ) ?? allDocs.find(a => a.area_id === area.id);
 
-        const savedAnswers = areaDoc?.interactive_answers ?? areaDoc?.answers ?? {};
+        const savedAnswers =
+          areaDoc?.interactive_answers ?? areaDoc?.answers ?? {};
         setAnswers(savedAnswers);
 
         // fromReview=true means the user tapped an area card directly (mirrors web's ?q=1).

@@ -192,8 +192,6 @@ function buildResumeSummary(
   return items;
 }
 
-const TOTAL_CHAT_STEPS = 8;
-
 // ── Phase splash full-screen interstitial ─────────────────────────────────────
 
 function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
@@ -299,10 +297,10 @@ export default function ConversationalOnboarding({
 
   const {
     show: showAnalyzing,
-    progress: analyzeProgress,
-    name: analyzingName,
+    progress: _analyzeProgress,
+    name: _analyzingName,
     showingDots: showingLoadingDots,
-    dotCount,
+    dotCount: _dotCount,
   } = analyzingState;
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -829,7 +827,6 @@ export default function ConversationalOnboarding({
   useEffect(() => {
     if (!waitingForResponse || currentStepData?.type !== 'auto' || allAnswered) return;
     setAnalyzingState((s) => ({ ...s, showingDots: true, dotCount: 0 }));
-    let progressInterval: ReturnType<typeof setInterval> | null = null;
     let count = 0;
     const dotInterval = setInterval(() => {
       count += 1;
@@ -955,7 +952,7 @@ export default function ConversationalOnboarding({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
-                        className="rounded-2xl border border-edge-faint bg-ghost-md px-3.5 py-3"
+                        className="border-edge-faint bg-ghost-md rounded-2xl border px-3.5 py-3"
                       >
                         <div className="mb-1.5 flex items-center gap-1.5">
                           <Icon className="h-3 w-3 text-info/60" />
@@ -987,7 +984,7 @@ export default function ConversationalOnboarding({
             )}
             {/* ── All answered — continue button ──────────────────────────── */}
             {allAnswered && typeof onContinueToPersonality === 'function' && (
-              <div className="flex justify-center px-4 pt-6 pb-8">
+              <div className="flex justify-center px-4 pb-8 pt-6">
                 <Button
                   type="button"
                   className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
@@ -1028,7 +1025,6 @@ export default function ConversationalOnboarding({
                 </div>
               </div>
             )}
-
 
             {/* ── Chat input bar (pinned bottom) ───────────────────────────── */}
             {waitingForResponse &&

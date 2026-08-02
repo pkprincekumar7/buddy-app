@@ -13,7 +13,10 @@ import { ApiError } from '@/api/errors';
 import { toast } from '@/lib/toast';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
-import type { ChildFormData, PhotoAsset } from '@/components/onboarding/ChildProfileStep';
+import type {
+  ChildFormData,
+  PhotoAsset,
+} from '@/components/onboarding/ChildProfileStep';
 import { useTheme } from '@/lib/ThemeContext';
 
 type OnboardingNavigationProp = StackNavigationProp<
@@ -23,7 +26,8 @@ type OnboardingNavigationProp = StackNavigationProp<
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<OnboardingNavigationProp>();
-  const route = useRoute<RouteProp<OnboardingStackParamList, 'OnboardingWelcome'>>();
+  const route =
+    useRoute<RouteProp<OnboardingStackParamList, 'OnboardingWelcome'>>();
   const childIdParam = route.params?.childId;
   const { colors } = useTheme();
   const {
@@ -38,7 +42,7 @@ export default function OnboardingScreen() {
   // When editing a specific child via childIdParam, go straight to the profile form (step 2).
   const [step, setStep] = useState<1 | 2>(childIdParam ? 2 : 1);
   const [childId, setChildId] = useState<string | undefined>(undefined);
-  const [childComplete, setChildComplete] = useState(false);
+  const [_childComplete, setChildComplete] = useState(false);
   const [checking, setChecking] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [prefillData, setPrefillData] = useState<Partial<ChildFormData>>({});
@@ -62,7 +66,8 @@ export default function OnboardingScreen() {
           if (cancelled) return;
           setChildComplete(!!child.onboarding_completed);
           const prefill: Partial<ChildFormData> = {};
-          if (typeof child.name === 'string' && child.name) prefill.name = child.name;
+          if (typeof child.name === 'string' && child.name)
+            prefill.name = child.name;
           if (child.age != null) prefill.age = String(child.age);
           if (typeof child.gender === 'string' && child.gender) {
             const g =
@@ -101,9 +106,7 @@ export default function OnboardingScreen() {
           setChildComplete(!!childSummary.onboarding_completed);
           // Fetch full child for prefill AND for an authoritative
           // onboarding_completed value (list projection can be stale).
-          const child = await api.entities.Child.get(
-            childSummary.id as string,
-          );
+          const child = await api.entities.Child.get(childSummary.id as string);
           if (cancelled) return;
           // Mirror the childIdParam branch: use the GET result for childComplete
           // so the gate in handleProfileContinue has the authoritative value.
@@ -111,8 +114,7 @@ export default function OnboardingScreen() {
           const prefill: Partial<ChildFormData> = {};
           if (typeof child.name === 'string' && child.name)
             prefill.name = child.name;
-          if (child.age != null)
-            prefill.age = String(child.age);
+          if (child.age != null) prefill.age = String(child.age);
           if (typeof child.gender === 'string' && child.gender) {
             const g =
               child.gender.charAt(0).toUpperCase() +
@@ -188,7 +190,9 @@ export default function OnboardingScreen() {
               avatarUrl = result.avatar_url;
             } catch (uploadErr) {
               console.warn('[Onboarding] Photo upload failed:', uploadErr);
-              toast.error('Photo upload failed — profile saved without a photo.');
+              toast.error(
+                'Photo upload failed — profile saved without a photo.',
+              );
             }
           }
           await api.entities.Child.update(targetId, {
@@ -229,7 +233,6 @@ export default function OnboardingScreen() {
     [
       isAuthenticated,
       childId,
-      childIdParam,
       navigation,
       activeChildId,
       setActiveChildId,
@@ -261,11 +264,35 @@ export default function OnboardingScreen() {
         className="flex-1"
       >
         {/* Phase bar — mirrors web OnboardingProgressHeader (numbered stepper) */}
-        <View style={{ borderBottomWidth: 1, borderColor: colors.border, backgroundColor: colors.card }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+        <View
+          style={{
+            borderBottomWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: 8,
+            }}
+          >
             {[
-              { num: 1, label: 'Getting to Know', active: true, progress: phaseProgress },
-              { num: 2, label: 'Personality Analysis', active: false, progress: 0 },
+              {
+                num: 1,
+                label: 'Getting to Know',
+                active: true,
+                progress: phaseProgress,
+              },
+              {
+                num: 2,
+                label: 'Personality Analysis',
+                active: false,
+                progress: 0,
+              },
               { num: 3, label: 'Your Journey', active: false, progress: 0 },
             ].map((phase, i, arr) => {
               const isLast = i === arr.length - 1;
@@ -275,7 +302,9 @@ export default function OnboardingScreen() {
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    ...(isLast ? { flexGrow: 0, flexShrink: 0 } : { flex: phase.active ? 2 : 1 }),
+                    ...(isLast
+                      ? { flexGrow: 0, flexShrink: 0 }
+                      : { flex: phase.active ? 2 : 1 }),
                   }}
                 >
                   {/* Numbered circle — teal when active, muted when upcoming */}
@@ -289,14 +318,20 @@ export default function OnboardingScreen() {
                       flexShrink: 0,
                       ...(phase.active
                         ? { backgroundColor: colors.primary }
-                        : { backgroundColor: colors.surfaceElevated, borderWidth: 1, borderColor: colors.border }),
+                        : {
+                            backgroundColor: colors.surfaceElevated,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                          }),
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 11,
                         fontWeight: '700',
-                        color: phase.active ? colors.primaryForeground : colors.textMuted,
+                        color: phase.active
+                          ? colors.primaryForeground
+                          : colors.textMuted,
                         opacity: phase.active ? 1 : 0.4,
                       }}
                     >
@@ -307,7 +342,13 @@ export default function OnboardingScreen() {
                   {/* Label — only shown for the active phase on mobile */}
                   {phase.active && (
                     <Text
-                      style={{ marginLeft: 8, fontSize: 12, fontWeight: '500', color: colors.text, flexShrink: 1 }}
+                      style={{
+                        marginLeft: 8,
+                        fontSize: 12,
+                        fontWeight: '500',
+                        color: colors.text,
+                        flexShrink: 1,
+                      }}
                       numberOfLines={1}
                     >
                       {phase.label}
@@ -382,17 +423,17 @@ export default function OnboardingScreen() {
                 />
               ) : (
                 <ChildProfileStep
-                  onContinue={(data, photo) => void handleProfileContinue(data, photo)}
+                  onContinue={(data, photo) =>
+                    void handleProfileContinue(data, photo)
+                  }
                   initialData={prefillData}
                   isLoading={isSaving}
                 />
               )}
             </Animated.View>
-
           </View>
         </ScrollView>
       </Animated.View>
-
     </View>
   );
 }

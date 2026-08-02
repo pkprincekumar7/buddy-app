@@ -290,29 +290,6 @@ export function calculateMBTI(data: CalculateMbtiData) {
 export const PERSONALITY_TYPE_KEYS = Object.keys(personalityTypes);
 const PERSONALITY_CATEGORY_KEYS = ['motivators', 'socializers', 'creatives', 'adventurers'];
 
-interface RoleModel {
-  name?: unknown;
-  caption?: unknown;
-  [key: string]: unknown;
-}
-
-function roleModelAvatars(roleModels: unknown, fallbackName: string | undefined): FamousPerson[] {
-  const list: RoleModel[] = Array.isArray(roleModels) ? (roleModels as RoleModel[]) : [];
-  const two = [...list.slice(0, 2)];
-  while (two.length < 2) {
-    two.push({ name: two.length === 0 ? (fallbackName ?? 'Role model A') : 'Role model B' });
-  }
-  return two.map((r) => {
-    const nm = typeof r?.name === 'string' && r.name.trim() ? r.name.trim() : 'Guide';
-    const cap = typeof r?.caption === 'string' && r.caption.trim() ? r.caption.trim() : undefined;
-    return {
-      name: nm,
-      image: generateAvatarDataUri(nm),
-      ...(cap ? { caption: cap } : {}),
-    };
-  });
-}
-
 interface AiPersonalityInput {
   dominant_style?: unknown;
   personality_category?: unknown;
@@ -402,7 +379,10 @@ export function adaptAiPersonalityToViewModel(
       ? (traitScoresRaw as unknown[])
           .map((t) => {
             const item = t as Record<string, unknown>;
-            return { label: String(item?.label ?? ''), score: Number(item?.score ?? 0) };
+            return {
+              label: String((item?.label as string) ?? ''),
+              score: Number(item?.score ?? 0),
+            };
           })
           .filter((t) => t.label)
       : [];

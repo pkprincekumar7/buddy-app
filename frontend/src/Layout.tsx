@@ -25,7 +25,14 @@ function useNavChildId() {
 }
 
 export default function Layout({ children, currentPageName }: LayoutProps) {
-  const { user, isAuthenticated, childProfiles: _childProfiles, logout, ttsEnabled, toggleTts } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    childProfiles: _childProfiles,
+    logout,
+    ttsEnabled,
+    toggleTts,
+  } = useAuth();
   const navChildId = useNavChildId();
   const { doStartOver, isStartingOver } = useStartOver(navChildId ?? undefined);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
@@ -84,7 +91,6 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [profileOpen]);
-
 
   const handleLogout = useCallback(() => {
     void logout(true);

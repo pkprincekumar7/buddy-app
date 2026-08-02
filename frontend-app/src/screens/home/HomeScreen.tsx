@@ -194,10 +194,7 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
     >
       {/* Hero */}
-      <Animated.View
-        style={heroAnim}
-        className="px-5 items-center pt-16 pb-10"
-      >
+      <Animated.View style={heroAnim} className="px-5 items-center pt-16 pb-10">
         {/* Badge */}
         <View
           className="flex-row items-center gap-2 rounded-full border px-4 py-2 mb-8"
