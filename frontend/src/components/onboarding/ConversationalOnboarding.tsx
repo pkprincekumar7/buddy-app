@@ -2,12 +2,11 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import InputWithVoice from '@/components/shared/InputWithVoice';
+import ChatInputBar from '@/components/shared/ChatInputBar';
 import OnboardingProgressHeader from '@/components/onboarding/OnboardingProgressHeader';
 import type { PhaseEntry } from '@/components/onboarding/OnboardingProgressHeader';
 import { Button } from '@/components/ui/button';
 import {
-  Send,
   Sparkles,
   Eye,
   BarChart2,
@@ -79,9 +78,19 @@ interface ConversationalOnboardingProps {
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
   onContinueToPersonality?: () => void;
-  onQuestionnairePersisted?: (data: Record<string, unknown>) => void;
-  onQuestionnaireCleared?: () => void;
 }
+
+// ── Summary card icon map ─────────────────────────────────────────────────────
+
+const SUMMARY_ICONS: Record<string, LucideIcon> = {
+  Strengths: Sparkles,
+  Hobbies: Heart,
+  'Thinking style': Eye,
+  Communication: MessageSquare,
+  'Energy level': Activity,
+  'Social behaviour': Shield,
+  'Emotional nature': Moon,
+};
 
 // ── Option icon map ───────────────────────────────────────────────────────────
 
@@ -113,23 +122,7 @@ const OPTION_ICONS: Record<string, LucideIcon> = {
 
 // ── Phase splash definitions (triggered when crossing these flow indices) ─────
 
-// Splashes shown BEFORE advancing to the given flow index
-const PHASE_SPLASHES: Record<number, PhaseSplash> = {
-  2: {
-    icon: '🧠',
-    iconColor: 'bg-personality/20 text-personality-lighter ring-personality-alt/20',
-    title: "Now let's understand how {name} thinks",
-    subtitle: 'Two quick taps — pick the one that feels closest.',
-    displayStep: 3,
-  },
-  4: {
-    icon: '⚡',
-    iconColor: 'bg-primary-medium/20 text-primary-light ring-primary/20',
-    title: 'Almost there — a few more about their nature ⚡',
-    subtitle: 'Energy, social, emotional. One tap each. Promise.',
-    displayStep: 5,
-  },
-};
+const PHASE_SPLASHES: Record<number, PhaseSplash> = {};
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
@@ -305,8 +298,6 @@ export default function ConversationalOnboarding({
   onComplete,
   resumeHydrationReady = true,
   onContinueToPersonality,
-  onQuestionnairePersisted,
-  onQuestionnaireCleared: _onQuestionnaireCleared,
 }: ConversationalOnboardingProps) {
   const [showIntro, setShowIntro] = useState(true);
   const showIntroRef = useRef(true);
@@ -337,7 +328,6 @@ export default function ConversationalOnboarding({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChildIdRef = useRef(activeChildId);
   const botMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatSessionStartedRef = useRef(false);
@@ -406,43 +396,6 @@ export default function ConversationalOnboarding({
   useEffect(() => {
     activeChildIdRef.current = activeChildId ?? undefined;
   }, [activeChildId]);
-
-  const persistQuestionnaireDraft = useCallback(
-    (mergedCollected: Record<string, unknown>) => {
-      onQuestionnairePersisted?.(mergedCollected);
-      if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
-      // Keep a ref to the latest data so the unmount-flush can use it
-      collectedDataRef.current = mergedCollected;
-      persistTimerRef.current = setTimeout(() => {
-        persistTimerRef.current = null;
-        void (async () => {
-          if (!activeChildIdRef.current) return;
-          try {
-            await api.entities.Child.update(activeChildIdRef.current, mergedCollected);
-          } catch (err) {
-            console.warn('[ConversationalOnboarding] Auto-persist failed:', err);
-          }
-        })();
-      }, 500);
-    },
-    [onQuestionnairePersisted],
-  );
-
-  // Flush any unsaved answer when the component unmounts (e.g. user navigates
-  // away before the 500 ms debounce fires).
-  useEffect(
-    () => () => {
-      if (persistTimerRef.current === null) return; // nothing pending
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
-      const childId = activeChildIdRef.current;
-      const data = collectedDataRef.current;
-      if (childId && Object.keys(data).length > 0) {
-        void api.entities.Child.update(childId, data).catch(() => {});
-      }
-    },
-    [],
-  );
 
   const parentName = user?.full_name?.split(' ')[0] ?? 'there';
 
@@ -805,7 +758,6 @@ export default function ConversationalOnboarding({
         }
         nextCollected = { ...collectedData, [step.field]: value };
         setCollectedData(nextCollected);
-        persistQuestionnaireDraft(nextCollected);
       }
 
       if (step?.id === 'complete') {
@@ -867,15 +819,7 @@ export default function ConversationalOnboarding({
         }
       }
     },
-    [
-      conversationFlow,
-      currentStep,
-      collectedData,
-      addBotMessage,
-      persistQuestionnaireDraft,
-      onComplete,
-      newMsgId,
-    ],
+    [conversationFlow, currentStep, collectedData, addBotMessage, onComplete, newMsgId],
   );
 
   const handleSubmit = useCallback(
@@ -1011,7 +955,7 @@ export default function ConversationalOnboarding({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3, duration: 0.6 }}
-                className="mt-5 text-sm font-medium text-white/60"
+                className="mt-5 text-[22px] font-medium text-white/60"
               >
                 Hello {parentName}!
               </motion.p>
@@ -1040,9 +984,9 @@ export default function ConversationalOnboarding({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}
-                    className="mt-2 max-w-lg text-center text-xl font-semibold leading-snug text-white/90"
+                    className="mt-2 w-full max-w-2xl text-center text-4xl font-bold leading-[1.08] text-white/90"
                   >
-                    {latestBotContent ?? 'How can I help you today?'}
+                    {latestBotContent}
                   </motion.h2>
                 )}
               </AnimatePresence>
@@ -1050,40 +994,56 @@ export default function ConversationalOnboarding({
 
             {/* ── Previously answered summary ─────────────────────────────── */}
             {resumeSummary && resumeSummary.length > 0 && (
-              <details
-                open
-                className="border-edge-faint bg-ghost-md group mx-4 mb-3 shrink-0 rounded-2xl px-4 py-3"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
-                      ✓
-                    </span>
-                    <span className="text-xs font-semibold text-white/50">
-                      Previously answered · {resumeSummary.length} of 7
-                    </span>
-                  </div>
-                  <svg
-                    viewBox="0 0 16 16"
-                    className="h-3.5 w-3.5 shrink-0 text-white/30 transition-transform duration-200 group-open:rotate-180"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="4 6 8 10 12 6" />
-                  </svg>
-                </summary>
-                <div className="mt-2.5 space-y-1.5">
-                  {resumeSummary.map((item) => (
-                    <div key={item.label} className="flex items-baseline gap-2 text-xs">
-                      <span className="w-28 shrink-0 font-medium text-white/40">{item.label}</span>
-                      <span className="text-white/70">{item.answer}</span>
-                    </div>
-                  ))}
+              <div className="mx-4 mb-4 space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
+                    ✓
+                  </span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-white/30">
+                    Your answers · {resumeSummary.length} of 7
+                  </span>
                 </div>
-              </details>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {resumeSummary.map((item, i) => {
+                    const Icon = SUMMARY_ICONS[item.label] ?? Sparkles;
+                    const values = item.answer.includes(',')
+                      ? item.answer.split(',').map((v) => v.trim())
+                      : null;
+                    return (
+                      <motion.div
+                        key={item.label}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
+                        className="rounded-2xl border border-edge-faint bg-ghost-md px-3.5 py-3"
+                      >
+                        <div className="mb-1.5 flex items-center gap-1.5">
+                          <Icon className="h-3 w-3 text-info/60" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                            {item.label}
+                          </span>
+                        </div>
+                        {values ? (
+                          <div className="flex flex-wrap gap-1">
+                            {values.map((v) => (
+                              <span
+                                key={v}
+                                className="rounded-full bg-info-strong/15 px-2 py-0.5 text-[11px] font-medium text-white/70"
+                              >
+                                {v}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm font-medium leading-snug text-white/80">
+                            {item.answer}
+                          </p>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
           {/* end scrollable top */}
@@ -1153,36 +1113,29 @@ export default function ConversationalOnboarding({
               </div>
             )}
 
-            {/* ── Pill text input (pinned bottom) ─────────────────────────── */}
+            {/* ── Chat input bar (pinned bottom) ───────────────────────────── */}
             {waitingForResponse &&
               !allAnswered &&
               (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-                <div className="shrink-0 px-4 pb-8 pt-2">
+                <>
                   {currentStepData.hint && (
-                    <p className="mb-2 flex items-center gap-1.5 text-xs text-white/40">
+                    <p className="mb-1 flex items-center gap-1.5 px-5 text-xs text-white/40">
                       <Sparkles className="h-3 w-3 text-info/60" />
                       {currentStepData.hint}
                     </p>
                   )}
-                  <form onSubmit={handleSubmit}>
-                    <div className="onboarding-input-pill flex items-center gap-2 rounded-full border border-info/20 px-5 py-2.5">
-                      <InputWithVoice
-                        ref={inputRef}
-                        value={currentInput}
-                        onChange={(e) => setCurrentInput(e.target.value)}
-                        placeholder={currentStepData.placeholder ?? 'Type your response…'}
-                        className="h-9 border-0 bg-transparent py-0 text-sm text-white shadow-none ring-0 placeholder:text-white/30 focus-visible:ring-0 focus-visible:ring-offset-0"
-                      />
-                      <Button
-                        type="submit"
-                        disabled={!currentInput.trim()}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-info-medium p-0 text-white hover:bg-info disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </form>
-                </div>
+                  <ChatInputBar
+                    inputRef={inputRef}
+                    value={currentInput}
+                    onChange={(e) => setCurrentInput(e.target.value)}
+                    onSubmit={handleSubmit}
+                    onVoiceTranscript={(text) =>
+                      setCurrentInput((prev) => (prev ? `${prev} ${text}` : text))
+                    }
+                    disabled={!waitingForResponse}
+                    placeholder={currentStepData.placeholder ?? 'Type your response…'}
+                  />
+                </>
               )}
           </div>
           {/* end pinned bottom controls */}
@@ -1196,27 +1149,20 @@ export default function ConversationalOnboarding({
 
 function AnimatedOrb() {
   return (
-    <div className="pointer-events-none relative flex h-32 w-32 items-center justify-center">
-      {/* Outer ambient pulse */}
+    <div className="pointer-events-none relative">
+      {/* Pulsing ambient glow */}
       <motion.div
-        animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] }}
+        animate={{ scale: [1, 1.3, 1], opacity: [0.35, 0.65, 0.35] }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
         className="orb-ambient absolute -inset-4 rounded-full"
       />
-      {/* Spinning conic-gradient sphere */}
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
-        className="orb-sphere absolute inset-4 rounded-full"
-      />
-      {/* Counter-rotating inner swirl */}
-      <motion.div
-        animate={{ rotate: -360 }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'linear' }}
-        className="orb-swirl absolute inset-8 rounded-full"
-      />
-      {/* Bright inner core */}
-      <div className="orb-core absolute inset-11 rounded-full" />
+      {/* Main orb — multi-radial gradient matching reference design */}
+      <div className="orb-main relative h-[120px] w-[120px] rounded-full">
+        {/* Inner ring */}
+        <div className="orb-ring absolute inset-[5px]" />
+        {/* Crescent arc */}
+        <div className="orb-crescent" />
+      </div>
     </div>
   );
 }

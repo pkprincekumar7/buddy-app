@@ -16,7 +16,6 @@ export default function ConversationalOnboarding() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { user, isAuthenticated, isLoadingAuth } = useAuth();
-  const [_childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const childDataRef = useRef<Record<string, unknown> | null>(null);
   const [hasPersonality, setHasPersonality] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -51,9 +50,7 @@ export default function ConversationalOnboarding() {
         setHasPersonality(personalityReady);
         const normalized = normalizeOnboardingChildDataBlob(child);
         if (normalized) {
-          const merged = mergeChildDraft(normalized);
-          childDataRef.current = merged;
-          setChildData(merged);
+          childDataRef.current = mergeChildDraft(normalized);
         }
       } catch (err) {
         console.warn('[ConversationalOnboarding] Hydration failed:', err);
@@ -66,12 +63,6 @@ export default function ConversationalOnboarding() {
       cancelled = true;
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
-
-  const handleQuestionnairePersisted = useCallback((slice: Record<string, unknown>) => {
-    const merged = mergeChildDraft({ ...(childDataRef.current ?? {}), ...slice });
-    childDataRef.current = merged;
-    setChildData(merged);
-  }, []);
 
   const handleComplete = useCallback(
     async (conversationData: Record<string, unknown>) => {
@@ -153,8 +144,6 @@ export default function ConversationalOnboarding() {
                 onContinueToPersonality={() => {
                   void handleComplete({});
                 }}
-                onQuestionnairePersisted={handleQuestionnairePersisted}
-                onQuestionnaireCleared={() => setChildData(null)}
               />
             </div>
           </div>

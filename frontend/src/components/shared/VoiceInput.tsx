@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import { cn } from '@/lib/utils';
 
 const NativeSpeechRecognition: typeof window.webkitSpeechRecognition | null =
   typeof window !== 'undefined' ? (window.webkitSpeechRecognition ?? null) : null;
@@ -32,6 +33,10 @@ interface VoiceInputProps {
   isRecording: boolean;
   setIsRecording: (value: boolean) => void;
   'aria-label'?: string;
+  /** When provided, fully replaces the default button className (background, size, etc.) */
+  buttonClassName?: string;
+  /** Forward a ref to the underlying <button> for programmatic triggering */
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }
 
 export default function VoiceInput({
@@ -39,6 +44,8 @@ export default function VoiceInput({
   isRecording,
   setIsRecording,
   'aria-label': ariaLabel,
+  buttonClassName,
+  buttonRef,
 }: VoiceInputProps) {
   const recognitionRef = useRef<InstanceType<typeof window.webkitSpeechRecognition> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -182,18 +189,23 @@ export default function VoiceInput({
 
   return (
     <Button
+      ref={buttonRef}
       type="button"
       onClick={toggleRecording}
       disabled={isTranscribing}
       size="icon"
       aria-label={ariaLabel ?? defaultLabel}
-      className={`h-10 w-10 flex-shrink-0 rounded-xl ${
-        isRecording
-          ? 'bg-error-medium hover:bg-error-strong'
-          : isTranscribing
-            ? 'cursor-wait bg-warning'
-            : 'bg-ghost-strong hover:bg-ghost-hover'
-      }`}
+      className={
+        buttonClassName ??
+        cn(
+          'h-10 w-10 flex-shrink-0 rounded-xl',
+          isRecording
+            ? 'bg-error-medium hover:bg-error-strong'
+            : isTranscribing
+              ? 'cursor-wait bg-warning'
+              : 'bg-ghost-strong hover:bg-ghost-hover',
+        )
+      }
     >
       {isTranscribing ? (
         <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -203,7 +215,15 @@ export default function VoiceInput({
           height="16"
           viewBox="0 0 16 16"
           fill="currentColor"
-          className={isRecording ? 'text-white' : 'text-muted-foreground'}
+          className={
+            buttonClassName
+              ? isRecording
+                ? 'text-error-medium'
+                : 'text-muted-foreground/70'
+              : isRecording
+                ? 'text-white'
+                : 'text-muted-foreground'
+          }
         >
           <rect x="1" y="5" width="2" height="6" rx="1" />
           <rect x="4" y="2" width="2" height="12" rx="1" />

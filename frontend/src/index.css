@@ -178,6 +178,17 @@
     --bg-deep-1: #0d1525;
     --bg-deep-2: #0a1020;
     --bg-deep-3: #080c18;
+
+    /* Chat input bar glow (blue-500 RGB channels) */
+    --chatbar-glow-rgb: 59 130 246;
+
+    /* Animated orb palette */
+    --orb-cyan-rgb: 159 244 255;
+    --orb-blue-rgb: 121 198 255;
+    --orb-dark-rgb: 23 53 93;
+    --orb-purple-rgb: 141 115 255;
+    --orb-ring-rgb: 120 220 255;
+    --orb-crescent-rgb: 126 243 255;
   }
 }
 
@@ -712,6 +723,32 @@
 }
 
 @layer components {
+  /* Bottom gradient panel for the chat input bar — matches chatbotdesign.html strengths */
+  .chat-bar-panel {
+    background: linear-gradient(
+      to top,
+      rgb(var(--chatbar-glow-rgb) / 0.65),
+      rgb(var(--chatbar-glow-rgb) / 0.18),
+      transparent
+    );
+  }
+
+  /* Glassmorphism pill — chat input container */
+  .chat-input-bar {
+    background: rgb(var(--edge-rgb) / 0.12);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgb(var(--edge-rgb) / 0.15);
+    box-shadow:
+      inset 0 1px 1px rgb(var(--edge-rgb) / 0.14),
+      0 15px 50px rgb(var(--chatbar-glow-rgb) / 0.18);
+  }
+
+  /* Safe bottom padding — expands to home-bar inset on iOS notched devices */
+  .pb-safe {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
     @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-foreground outline-none ring-primary-medium focus:border-primary-medium/50 focus:ring-2;
@@ -771,35 +808,61 @@
 
   /* Animated orb layers */
   .orb-ambient {
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, transparent 70%);
+    background: radial-gradient(circle, rgb(var(--chatbar-glow-rgb) / 0.22) 0%, transparent 70%);
     filter: blur(10px);
   }
-  .orb-sphere {
-    background: conic-gradient(
-      from 0deg,
-      #1e3a8a,
-      #3b82f6,
-      #60a5fa,
-      #93c5fd,
-      #3b82f6,
-      #1d4ed8,
-      #1e3a8a
-    );
+  .orb-main {
+    background:
+      radial-gradient(circle at 75% 30%, rgb(var(--orb-cyan-rgb)) 0%, rgb(var(--orb-blue-rgb)) 18%, transparent 35%),
+      radial-gradient(circle at 35% 70%, rgb(var(--orb-purple-rgb)) 0%, transparent 35%),
+      radial-gradient(circle at center, rgb(var(--orb-dark-rgb)) 35%, var(--bg-deep-3) 100%);
+    box-shadow: 0 0 45px rgb(var(--chatbar-glow-rgb) / 0.5);
   }
-  .orb-swirl {
-    background: conic-gradient(
-      from 180deg,
-      rgba(147, 197, 253, 0.85),
-      rgba(59, 130, 246, 0.3),
-      rgba(147, 197, 253, 0.85)
-    );
+  .orb-ring {
+    border: 2px solid rgb(var(--orb-ring-rgb) / 0.5);
+    border-radius: 50%;
   }
-  .orb-core {
-    background: radial-gradient(
-      circle,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(186, 230, 253, 0.65) 45%,
-      transparent 80%
-    );
+  .orb-crescent {
+    position: absolute;
+    width: 80px;
+    height: 40px;
+    border-radius: 50%;
+    border-bottom: 5px solid rgb(var(--orb-crescent-rgb));
+    transform: rotate(-25deg);
+    left: 20px;
+    top: 48px;
+    filter: blur(0.3px);
   }
 }
+
+/* Voice waveform animation — applied via .voice-wave-active on the VoiceInput button */
+@keyframes voice-wave {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.65);
+  }
+}
+
+.voice-wave-active svg rect {
+  animation: voice-wave 0.55s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+.voice-wave-active svg rect:nth-child(1) { animation-delay: 0ms; }
+.voice-wave-active svg rect:nth-child(2) { animation-delay: 90ms; }
+.voice-wave-active svg rect:nth-child(3) { animation-delay: 180ms; }
+.voice-wave-active svg rect:nth-child(4) { animation-delay: 90ms; }
+.voice-wave-active svg rect:nth-child(5) { animation-delay: 0ms; }
+
+/* HTML span bars (ChatInputBar waveform) */
+.voice-wave-active span {
+  animation: voice-wave 0.55s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+.voice-wave-active span:nth-child(1) { animation-delay: 0ms; }
+.voice-wave-active span:nth-child(2) { animation-delay: 90ms; }
+.voice-wave-active span:nth-child(3) { animation-delay: 180ms; }
+.voice-wave-active span:nth-child(4) { animation-delay: 90ms; }
+.voice-wave-active span:nth-child(5) { animation-delay: 0ms; }
