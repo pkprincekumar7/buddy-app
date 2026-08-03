@@ -648,7 +648,7 @@ export default function ConversationalOnboarding({
   }, [messages, isTyping]);
 
   useEffect(() => {
-    if (waitingForResponse && inputRef.current) inputRef.current.focus();
+    if (waitingForResponse && inputRef.current) inputRef.current.focus({ preventScroll: true });
   }, [waitingForResponse]);
 
   // Pre-fill text inputs from saved data
@@ -881,7 +881,7 @@ export default function ConversationalOnboarding({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.5, ease: 'easeOut' }}
-                  className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-24 sm:pb-0"
+                  className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-40"
                 >
                   <p className="w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
                     Thank you for your responses, continuing ahead
