@@ -1,8 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ChevronLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
@@ -99,23 +97,6 @@ export default function ConversationalOnboarding() {
           </div>
         ) : (
           <div className="flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
-            {/* Back button row */}
-            <div className="mx-auto w-full max-w-5xl px-4 pt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  void navigate(childId ? `/Onboarding/${childId}` : '/Onboarding', {
-                    state: { fromBack: true },
-                  });
-                }}
-                className="gap-1 rounded-xl text-muted-foreground hover:text-foreground"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Back
-              </Button>
-            </div>
-
             {/* Chat fills remaining height */}
             <div className="flex flex-1 flex-col">
               <ConversationalOnboardingChat

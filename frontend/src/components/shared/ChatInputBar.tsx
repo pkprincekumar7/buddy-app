@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { ChangeEvent, FormEvent, Ref } from 'react';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,23 @@ export default function ChatInputBar({
 }: ChatInputBarProps) {
   const [isRecording, setIsRecording] = useState(false);
   const voiceButtonRef = useRef<HTMLButtonElement>(null);
+  const [isSmallScreen, setIsSmallScreen] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const handler = (e: MediaQueryListEvent) => setIsSmallScreen(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // On small screens, keep only the first example value to avoid overlapping the mic icon
+  const displayPlaceholder = (() => {
+    if (!isSmallScreen || !placeholder) return placeholder;
+    const parts = placeholder.split(',');
+    return parts.length > 2 ? `${parts.slice(0, 2).join(',')}…` : placeholder;
+  })();
 
   const showSend = value.trim().length > 0;
 
@@ -67,7 +84,7 @@ export default function ChatInputBar({
             value={value}
             onChange={onChange}
             disabled={disabled}
-            placeholder={isRecording ? 'Listening…' : placeholder}
+            placeholder={isRecording ? 'Listening…' : displayPlaceholder}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="sentences"

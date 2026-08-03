@@ -488,14 +488,11 @@ export default function ConversationalOnboarding({
 
   const addBotMessage = useCallback(
     (text: string) => {
-      setIsTyping(true);
       if (botMsgTimerRef.current !== null) clearTimeout(botMsgTimerRef.current);
-      botMsgTimerRef.current = setTimeout(() => {
-        setMessages((prev) => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
-        setIsTyping(false);
-        speak(text);
-        setWaitingForResponse(true);
-      }, 1400);
+      setMessages((prev) => [...prev, { id: newMsgId(), role: 'bot', content: text }]);
+      setIsTyping(false);
+      speak(text);
+      setWaitingForResponse(true);
     },
     [speak, newMsgId],
   );
@@ -860,198 +857,205 @@ export default function ConversationalOnboarding({
 
       {!phaseSplash && (
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* ── Scrollable top: orb + greeting + summary ───────────────────── */}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {/* ── Orb + greeting ─────────────────────────────────────────────── */}
-            <div className="flex flex-col items-center px-6 pb-5 pt-8">
-              <AnimatedOrb />
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3, duration: 0.6 }}
-                className="mt-5 text-[22px] font-medium text-white/60"
-              >
-                Hello {parentName}!
-              </motion.p>
-              <AnimatePresence mode="wait">
-                {showingLoadingDots || showAnalyzing ? (
-                  <motion.div
-                    key="thank-you"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                    className="mt-2 flex flex-col items-center gap-6"
-                  >
-                    <p className="w-full max-w-2xl text-center text-4xl font-bold leading-[1.08] text-white/90">
-                      Thank you for your responses, continuing ahead
-                    </p>
-                    <div className="flex items-center gap-2.5">
-                      {[0, 0.15, 0.3].map((delay, i) => (
-                        <motion.span
-                          key={i}
-                          animate={{ y: [0, -10, 0] }}
-                          transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
-                          className="h-3 w-3 rounded-full bg-info/60"
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
-                ) : isTyping ? (
-                  <motion.div
-                    key="typing-dots"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.35 }}
-                    className="mt-3 flex items-center gap-1.5"
-                  >
-                    {[0, 150, 300].map((delay) => (
-                      <span
-                        key={delay}
-                        className="h-2.5 w-2.5 animate-bounce rounded-full bg-info/50"
-                        style={{ animationDelay: `${delay}ms` }}
+          {/* ── Static: orb + greeting (never flips) ───────────────────────── */}
+          <div className="flex shrink-0 flex-col items-center px-6 pb-3 pt-8">
+            <AnimatedOrb />
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.6 }}
+              className="mt-5 text-[22px] font-medium text-white/60"
+            >
+              Hello {parentName}!
+            </motion.p>
+          </div>
+
+          {/* ── Single flip unit: question (scrollable) + input (pinned bottom) */}
+          {/* One AnimatePresence = perfect sync, no separate wrappers needed   */}
+          <div className="flex min-h-0 flex-1 flex-col" style={{ perspective: '1200px' }}>
+            <AnimatePresence mode="wait">
+              {showingLoadingDots || showAnalyzing ? (
+                <motion.div
+                  key="thank-you"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-24 sm:pb-0"
+                >
+                  <p className="w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
+                    Thank you for your responses, continuing ahead
+                  </p>
+                  <div className="flex items-center gap-2.5">
+                    {[0, 0.15, 0.3].map((delay, i) => (
+                      <motion.span
+                        key={i}
+                        animate={{ y: [0, -10, 0] }}
+                        transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
+                        className="h-3 w-3 rounded-full bg-info/60"
                       />
                     ))}
-                  </motion.div>
-                ) : (
-                  <motion.h2
-                    key={(latestBotContent ?? 'idle').substring(0, 50)}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                    className="mt-2 w-full max-w-2xl text-center text-4xl font-bold leading-[1.08] text-white/90"
-                  >
-                    {latestBotContent}
-                  </motion.h2>
-                )}
-              </AnimatePresence>
-            </div>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={currentStep}
+                  variants={{
+                    initial: { rotateY: 90, opacity: 0, scale: 0.96 },
+                    enter: {
+                      rotateY: 0,
+                      opacity: 1,
+                      scale: 1,
+                      transition: { duration: 2, ease: [0.4, 0, 0.2, 1] },
+                    },
+                    exit: {
+                      rotateY: -90,
+                      opacity: 0,
+                      scale: 0.96,
+                      transition: { duration: 2, ease: [0.4, 0, 0.2, 1] },
+                    },
+                  }}
+                  initial="initial"
+                  animate="enter"
+                  exit="exit"
+                  style={{ backfaceVisibility: 'hidden', transformStyle: 'preserve-3d' }}
+                  className="flex flex-1 flex-col overflow-hidden"
+                >
+                  {/* Scrollable: question text + summary + continue button */}
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="flex flex-col items-center px-6 pb-5 pt-4">
+                      <h2 className="mx-auto w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
+                        {latestBotContent}
+                      </h2>
+                    </div>
 
-            {/* ── Previously answered summary ─────────────────────────────── */}
-            {resumeSummary && resumeSummary.length > 0 && (
-              <div className="mx-4 mb-4 space-y-3">
-                <div className="flex items-center gap-2 px-1">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
-                    ✓
-                  </span>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-white/30">
-                    Your answers · {resumeSummary.length} of 7
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {resumeSummary.map((item, i) => {
-                    const Icon = SUMMARY_ICONS[item.label] ?? Sparkles;
-                    const values = item.answer.includes(',')
-                      ? item.answer.split(',').map((v) => v.trim())
-                      : null;
-                    return (
-                      <motion.div
-                        key={item.label}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
-                        className="border-edge-faint bg-ghost-md rounded-2xl border px-3.5 py-3"
-                      >
-                        <div className="mb-1.5 flex items-center gap-1.5">
-                          <Icon className="h-3 w-3 text-info/60" />
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
-                            {item.label}
+                    {/* ── Previously answered summary ────────────────────────── */}
+                    {resumeSummary && resumeSummary.length > 0 && (
+                      <div className="mx-4 mb-4 space-y-3">
+                        <div className="flex items-center gap-2 px-1">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
+                            ✓
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-wider text-white/30">
+                            Your answers · {resumeSummary.length} of 7
                           </span>
                         </div>
-                        {values ? (
-                          <div className="flex flex-wrap gap-1">
-                            {values.map((v) => (
-                              <span
-                                key={v}
-                                className="rounded-full bg-info-strong/15 px-2 py-0.5 text-[11px] font-medium text-white/70"
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {resumeSummary.map((item, i) => {
+                            const Icon = SUMMARY_ICONS[item.label] ?? Sparkles;
+                            const values = item.answer.includes(',')
+                              ? item.answer.split(',').map((v) => v.trim())
+                              : null;
+                            return (
+                              <motion.div
+                                key={item.label}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
+                                className="border-edge-faint bg-ghost-md rounded-2xl border px-3.5 py-3"
                               >
-                                {v}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-sm font-medium leading-snug text-white/80">
-                            {item.answer}
-                          </p>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {/* ── All answered — continue button ──────────────────────────── */}
-            {allAnswered && typeof onContinueToPersonality === 'function' && (
-              <div className="flex justify-center px-4 pb-8 pt-6">
-                <Button
-                  type="button"
-                  className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
-                  onClick={() => onContinueToPersonality()}
-                >
-                  Continue to personality analysis
-                </Button>
-              </div>
-            )}
-          </div>
-          {/* end scrollable top */}
-
-          {/* ── Pinned bottom controls ──────────────────────────────────── */}
-          <div className="shrink-0">
-            {/* ── MCQ grid for choice steps ───────────────────────────────── */}
-            {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-              <div className="shrink-0 space-y-3 px-4 pb-8">
-                <MCQGrid
-                  options={currentStepData.options ?? []}
-                  selected={collectedData[currentStepData.field] as string | undefined}
-                  onSelect={handleChoiceSelect}
-                  stepKey={currentStep}
-                />
-                <div className="flex justify-end">
-                  <AnimatePresence>
-                    {!!collectedData[currentStepData.field] && (
-                      <motion.div
-                        key={String(collectedData[currentStepData.field])}
-                        initial={{ opacity: 0, x: 20, scale: 0.9 }}
-                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                        transition={{ type: 'spring', stiffness: 80 }}
-                        className="rounded-xl bg-info-strong/25 px-4 py-2 text-sm font-medium text-foreground"
-                      >
-                        {String(collectedData[currentStepData.field])}
-                      </motion.div>
+                                <div className="mb-1.5 flex items-center gap-1.5">
+                                  <Icon className="h-3 w-3 text-info/60" />
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                                    {item.label}
+                                  </span>
+                                </div>
+                                {values ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {values.map((v) => (
+                                      <span
+                                        key={v}
+                                        className="rounded-full bg-info-strong/15 px-2 py-0.5 text-[11px] font-medium text-white/70"
+                                      >
+                                        {v}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm font-medium leading-snug text-white/80">
+                                    {item.answer}
+                                  </p>
+                                )}
+                              </motion.div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
-                  </AnimatePresence>
-                </div>
-              </div>
-            )}
 
-            {/* ── Chat input bar (pinned bottom) ───────────────────────────── */}
-            {waitingForResponse &&
-              !allAnswered &&
-              (currentStepData?.type === 'text' || currentStepData?.type === 'multi_text') && (
-                <>
-                  {currentStepData.hint && (
-                    <p className="mb-1 flex items-center gap-1.5 px-5 text-xs text-white/40">
-                      <Sparkles className="h-3 w-3 text-info/60" />
-                      {currentStepData.hint}
-                    </p>
-                  )}
-                  <ChatInputBar
-                    inputRef={inputRef}
-                    value={currentInput}
-                    onChange={(e) => setCurrentInput(e.target.value)}
-                    onSubmit={handleSubmit}
-                    onVoiceTranscript={(text) =>
-                      setCurrentInput((prev) => (prev ? `${prev} ${text}` : text))
-                    }
-                    disabled={!waitingForResponse}
-                    placeholder={currentStepData.placeholder ?? 'Type your response…'}
-                  />
-                </>
+                    {/* ── All answered — continue button ─────────────────────── */}
+                    {allAnswered && typeof onContinueToPersonality === 'function' && (
+                      <div className="flex justify-center px-4 pb-8 pt-6">
+                        <Button
+                          type="button"
+                          className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
+                          onClick={() => onContinueToPersonality()}
+                        >
+                          Continue to personality analysis
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pinned bottom: MCQ or chat input — part of same flip unit */}
+                  <div className="shrink-0">
+                    {/* MCQ grid for choice steps */}
+                    {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
+                      <div className="space-y-3 px-4 pb-8">
+                        <MCQGrid
+                          options={currentStepData.options ?? []}
+                          selected={collectedData[currentStepData.field] as string | undefined}
+                          onSelect={handleChoiceSelect}
+                          stepKey={currentStep}
+                        />
+                        <div className="flex justify-end">
+                          <AnimatePresence>
+                            {!!collectedData[currentStepData.field] && (
+                              <motion.div
+                                key={String(collectedData[currentStepData.field])}
+                                initial={{ opacity: 0, x: 20, scale: 0.9 }}
+                                animate={{ opacity: 1, x: 0, scale: 1 }}
+                                transition={{ type: 'spring', stiffness: 80 }}
+                                className="rounded-xl bg-info-strong/25 px-4 py-2 text-sm font-medium text-foreground"
+                              >
+                                {String(collectedData[currentStepData.field])}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Chat input bar for text steps */}
+                    {waitingForResponse &&
+                      !allAnswered &&
+                      (currentStepData?.type === 'text' ||
+                        currentStepData?.type === 'multi_text') && (
+                        <>
+                          {currentStepData.hint && (
+                            <p className="mb-1 flex items-center gap-1.5 px-5 text-xs text-white/40">
+                              <Sparkles className="h-3 w-3 text-info/60" />
+                              {currentStepData.hint}
+                            </p>
+                          )}
+                          <ChatInputBar
+                            inputRef={inputRef}
+                            value={currentInput}
+                            onChange={(e) => setCurrentInput(e.target.value)}
+                            onSubmit={handleSubmit}
+                            onVoiceTranscript={(text) =>
+                              setCurrentInput((prev) => (prev ? `${prev} ${text}` : text))
+                            }
+                            disabled={!waitingForResponse}
+                            placeholder={currentStepData.placeholder ?? 'Type your response…'}
+                          />
+                        </>
+                      )}
+                  </div>
+                </motion.div>
               )}
+            </AnimatePresence>
           </div>
-          {/* end pinned bottom controls */}
         </div>
       )}
     </div>
@@ -1108,7 +1112,7 @@ function MCQGrid({
             transition={{ delay: idx * 0.06, duration: 0.3, ease: 'easeOut' }}
             onClick={() => onSelect(option)}
             className={cn(
-              'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all focus:outline-none',
+              'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-all focus:outline-none sm:px-5 sm:py-4 sm:text-base',
               isSelected
                 ? 'border-info-medium/60 bg-info-strong/20 text-foreground ring-1 ring-info/30'
                 : 'border-edge-faint bg-ghost-md text-muted-foreground hover:border-info/30 hover:bg-info-medium/[0.07] hover:text-foreground',
