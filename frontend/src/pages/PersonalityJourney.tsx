@@ -18,6 +18,7 @@ import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { useJob } from '@/hooks/useJob';
 import { useStartOver } from '@/hooks/useStartOver';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
+import StageSplash from '@/components/shared/StageSplash';
 
 type Phase = 1 | 2;
 
@@ -1045,6 +1046,12 @@ export default function PersonalityJourney() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [initError, setInitError] = useState(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
+  const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
+
+  const handleDiscoverSplashReady = useCallback(() => {
+    setShowDiscoverSplash(false);
+    void navigate(`/PersonalityProfile/${childId ?? ''}`);
+  }, [navigate, childId]);
   const { doStartOver, isStartingOver } = useStartOver(childId ?? undefined);
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
@@ -1503,7 +1510,7 @@ export default function PersonalityJourney() {
               <DimensionCirclesScreen
                 childName={childName}
                 mergedData={mergedData}
-                onDiscover={() => void navigate(`/PersonalityProfile/${childId ?? ''}`)}
+                onDiscover={() => setShowDiscoverSplash(true)}
                 onGoHome={() => setPhase(1)}
                 onStartAgain={() => setConfirmingStartOver(true)}
                 onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
@@ -1512,6 +1519,10 @@ export default function PersonalityJourney() {
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showDiscoverSplash && <StageSplash stage={2} onReady={handleDiscoverSplashReady} />}
+      </AnimatePresence>
 
       <AnimatePresence>
         {confirmingStartOver && (

@@ -199,7 +199,7 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     age: initialData?.age ?? '',
     gender: initialData?.gender ?? '',
     school: initialData?.school ?? '',
-    avatarId: initialData?.avatarId ?? '',
+    avatarId: initialData?.avatarUrl ? '' : (initialData?.avatarId ?? ''),
   });
   const [avatarTab, setAvatarTab] = useState<'boy' | 'girl'>(
     GIRL_AVATARS.some((a) => a.id === initialData?.avatarId) ? 'girl' : 'boy',
@@ -215,15 +215,17 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
     if (!initialData || Object.keys(initialData).length === 0) return;
     if (prefillApplied.current) return;
     prefillApplied.current = true;
+    // Photo takes precedence: if avatarUrl is set, suppress avatarId so only one is active.
+    const effectiveAvatarId = initialData.avatarUrl ? '' : (initialData.avatarId ?? '');
     setForm({
       name: initialData.name ?? '',
       age: initialData.age ?? '',
       gender: initialData.gender ?? '',
       school: initialData.school ?? '',
-      avatarId: initialData.avatarId ?? '',
+      avatarId: effectiveAvatarId,
     });
-    if (initialData.avatarId) {
-      setAvatarTab(GIRL_AVATARS.some((a) => a.id === initialData.avatarId) ? 'girl' : 'boy');
+    if (effectiveAvatarId) {
+      setAvatarTab(GIRL_AVATARS.some((a) => a.id === effectiveAvatarId) ? 'girl' : 'boy');
     }
     if (initialData.avatarUrl) {
       setPhotoPreview(initialData.avatarUrl);

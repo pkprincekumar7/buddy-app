@@ -153,8 +153,14 @@ export default function Onboarding() {
             age: Number(formData.age),
             gender: formData.gender,
             ...(formData.school ? { school: formData.school.trim() } : {}),
-            ...(formData.avatarId ? { avatar_id: formData.avatarId } : {}),
-            ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+            // Always clear the field that was NOT chosen so the DB never holds both.
+            ...(formData.avatarId
+              ? { avatar_id: formData.avatarId, avatar_url: null }
+              : avatarUrl
+                ? { avatar_url: avatarUrl, avatar_id: null }
+                : !photoFile
+                  ? { avatar_id: null } // keeping existing photo — clean up any stale avatar_id
+                  : {}), // upload was attempted but failed — leave DB untouched
           });
           void navigate(`/ConversationalOnboarding/${targetId}`);
         }
