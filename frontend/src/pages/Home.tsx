@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 import ChildCard from '@/components/shared/ChildCard';

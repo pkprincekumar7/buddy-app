@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ComponentType } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { debounce } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

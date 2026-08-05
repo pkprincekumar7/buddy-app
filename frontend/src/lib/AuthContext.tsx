@@ -8,7 +8,7 @@ import {
   useMemo,
 } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';

@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { cn } from '@/lib/utils';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Target, ChevronDown, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';

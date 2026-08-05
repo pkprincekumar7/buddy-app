@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
@@ -162,10 +162,10 @@ export default function ConversationalOnboarding() {
       // Kick off personality analysis job; navigation happens via useJob onCompleted.
       try {
         const freshChild = await api.entities.Child.get(childId!);
-        setChildData(freshChild as Record<string, unknown>);
+        setChildData(freshChild);
 
-        const activeJobId = (freshChild as Record<string, Record<string, string>>)
-          ?.active_jobs?.generate_personality_analysis;
+        const activeJobId = (freshChild as Record<string, Record<string, string>>)?.active_jobs
+          ?.generate_personality_analysis;
 
         const payload: EnqueueJobPayload = {
           type: 'generate_personality_analysis',

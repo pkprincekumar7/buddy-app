@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/errors';
 import { motion, AnimatePresence } from 'framer-motion';
