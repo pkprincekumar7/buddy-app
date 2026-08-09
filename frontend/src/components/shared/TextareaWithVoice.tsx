@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import VoiceInput from './VoiceInput';
@@ -11,37 +11,37 @@ type TextareaWithVoiceProps = Omit<
   onChange: (e: { target: { value: string } }) => void;
 };
 
-export default function TextareaWithVoice({
-  value,
-  onChange,
-  placeholder,
-  className,
-  ...props
-}: TextareaWithVoiceProps) {
-  const [isRecording, setIsRecording] = useState(false);
+const TextareaWithVoice = forwardRef<HTMLTextAreaElement, TextareaWithVoiceProps>(
+  ({ value, onChange, placeholder, className, ...props }, ref) => {
+    const [isRecording, setIsRecording] = useState(false);
 
-  const handleTranscript = (transcript: string) => {
-    const newValue = value ? `${value} ${transcript}` : transcript;
-    onChange({ target: { value: newValue } });
-  };
+    const handleTranscript = (transcript: string) => {
+      const newValue = value ? `${value} ${transcript}` : transcript;
+      onChange({ target: { value: newValue } });
+    };
 
-  return (
-    <div className="relative">
-      <Textarea
-        value={value}
-        onChange={onChange}
-        placeholder={isRecording ? 'Listening...' : placeholder}
-        disabled={isRecording}
-        className={className}
-        {...props}
-      />
-      <div className="absolute bottom-3 right-3">
-        <VoiceInput
-          onTranscript={handleTranscript}
-          isRecording={isRecording}
-          setIsRecording={setIsRecording}
+    return (
+      <div className="relative">
+        <Textarea
+          ref={ref}
+          value={value}
+          onChange={onChange}
+          placeholder={isRecording ? 'Listening...' : placeholder}
+          disabled={isRecording}
+          className={className}
+          {...props}
         />
+        <div className="absolute bottom-3 right-3">
+          <VoiceInput
+            onTranscript={handleTranscript}
+            isRecording={isRecording}
+            setIsRecording={setIsRecording}
+          />
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  },
+);
+TextareaWithVoice.displayName = 'TextareaWithVoice';
+
+export default TextareaWithVoice;

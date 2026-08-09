@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import {
   AREA_GAMES,
   AREA_QUESTIONS,
@@ -421,7 +422,7 @@ export default function GrowthAreaSheet({
                   <div style={{ marginTop: 8, fontSize: 13.5, fontWeight: 600, color: '#84a0b2' }}>
                     {fillTemplate(currentQuestion.hint, childName, childGender)}
                   </div>
-                  <textarea
+                  <TextareaWithVoice
                     ref={textareaRef}
                     value={answers[currentQuestion.id] ?? ''}
                     onChange={(e) =>
@@ -435,6 +436,7 @@ export default function GrowthAreaSheet({
                       resize: 'none',
                       borderRadius: 12,
                       padding: '12px 14px',
+                      paddingRight: 44,
                       background: 'rgba(5,9,18,.85)',
                       border: '1px solid rgba(75,233,255,.24)',
                       outline: 'none',
