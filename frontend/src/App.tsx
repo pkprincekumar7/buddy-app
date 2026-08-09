@@ -15,6 +15,7 @@ import {
 } from 'react-router';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
@@ -303,9 +304,11 @@ function App() {
         <ScrollToTop />
         <AuthProvider>
           <NavigationTracker />
-          <ErrorBoundary>
-            <AppShell />
-          </ErrorBoundary>
+          <AmbientAudioProvider>
+            <ErrorBoundary>
+              <AppShell />
+            </ErrorBoundary>
+          </AmbientAudioProvider>
         </AuthProvider>
         <SonnerToaster position="bottom-center" />
       </Router>

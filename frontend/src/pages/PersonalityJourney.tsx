@@ -17,6 +17,7 @@ import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { useJob } from '@/hooks/useJob';
 import StageSplash from '@/components/shared/StageSplash';
+import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 
 type Phase = 1 | 2;
 
@@ -561,10 +562,10 @@ function DimensionCirclesScreen({
             <path
               d={SP.grow}
               fill="none"
-              stroke="#5b6b78"
-              strokeWidth="1.1"
+              stroke="#1ec4e8"
+              strokeWidth="1.6"
               strokeDasharray={SD}
-              style={{ opacity: 0.22, animation: `${SK} .8s ease .5s both` }}
+              style={{ opacity: 0.4, animation: `${SK} .8s ease .5s both` }}
             />
             <path
               d={SP.startAgain}
@@ -1088,6 +1089,18 @@ export default function PersonalityJourney() {
     };
   }, [phase, soundOn]);
 
+  // Looping ambient bed — shared across the whole journey (see
+  // AmbientAudioContext) so it keeps playing uninterrupted as the user moves
+  // between this page and the pages it leads to, rather than restarting per page.
+  const { duck: duckAmbient, setSuppressed: setAmbientSuppressed } = useAmbientAudio();
+
+  // The Discover splash (stage 2) plays its own unmuted video — keep the
+  // ambient bed silent for that beat so the two don't overlap.
+  useEffect(() => {
+    setAmbientSuppressed(showDiscoverSplash);
+    return () => setAmbientSuppressed(false);
+  }, [showDiscoverSplash, setAmbientSuppressed]);
+
   // Cleanup warp on unmount
   useEffect(
     () => () => {
@@ -1209,6 +1222,8 @@ export default function PersonalityJourney() {
     if (isEntering) return;
     setIsEntering(true);
     whoosh();
+    duckAmbient(0.12, 1600);
+    orbVoiceRef.current?.pause();
     enterTimersRef.current.forEach(clearTimeout);
     // Match HTML timing: phase:'nav' at 3350ms, warp:false at 5100ms, scope:false at 5700ms
     const t1 = setTimeout(
@@ -1216,7 +1231,8 @@ export default function PersonalityJourney() {
       3350,
     );
     const t2 = setTimeout(() => setIsEntering(false), 5700);
-    enterTimersRef.current = [t1, t2];
+    const t3 = setTimeout(() => duckAmbient(0.5, 1800), 5700);
+    enterTimersRef.current = [t1, t2, t3];
   };
   // ─────────────────────────────────────────────────────────────────────────────
 

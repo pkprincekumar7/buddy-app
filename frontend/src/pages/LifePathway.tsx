@@ -3,6 +3,7 @@ import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
+import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -117,6 +118,15 @@ export default function LifePathway() {
     useLifePathwayData(childId);
   const childName = (childData?.['name'] as string | undefined) ?? '';
   const [showSplash, startTimer] = useStageSplash(0);
+  const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
+
+  // The journey's shared ambient bed (see AmbientAudioContext) plays through
+  // this page automatically — just keep it silent while the splash video's
+  // own unmuted audio plays, so the two don't overlap.
+  useEffect(() => {
+    setAmbientSuppressed(showSplash);
+    return () => setAmbientSuppressed(false);
+  }, [showSplash, setAmbientSuppressed]);
 
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');

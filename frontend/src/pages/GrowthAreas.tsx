@@ -6,6 +6,7 @@ import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import { useJob } from '@/hooks/useJob';
 import { useAuth } from '@/lib/AuthContext';
+import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { api } from '@/api/client';
 import {
@@ -68,7 +69,8 @@ const CHECK_BADGE: React.CSSProperties = {
 export default function GrowthAreas() {
   const navigate = useNavigate();
   const { childId } = useParams();
-  const { isAuthenticated, isLoadingAuth, ttsEnabled } = useAuth();
+  const { isAuthenticated, isLoadingAuth } = useAuth();
+  const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
   const isMobile = useIsMobile();
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const [childName, setChildName] = useState('');
@@ -92,7 +94,6 @@ export default function GrowthAreas() {
   const [recsStatus, setRecsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [recommendations, setRecommendations] = useState<GrowthRecommendation[]>([]);
   const [showSplash, startTimer] = useStageSplash(0);
-  const ambientRef = useRef<HTMLAudioElement | null>(null);
   // Which area the in-flight/last recommendations job belongs to — the sheet
   // only ever shows results for the area it's currently open on, but the job
   // itself is anchored here so it survives the parent closing the sheet.
@@ -192,37 +193,12 @@ export default function GrowthAreas() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
-  // Ambient track, gated on the same sound preference as the rest of the app.
-  // Starts once the splash video has finished so the two never overlap.
+  // Ambient track is shared across the whole journey (see AmbientAudioContext) —
+  // keep it silent while the splash video plays its own audio, same as before.
   useEffect(() => {
-    if (showSplash || !hydrated) return;
-    if (!ttsEnabled) {
-      ambientRef.current?.pause();
-      return;
-    }
-    const audio = ambientRef.current ?? new Audio('/growth-ambient.mp3');
-    audio.loop = true;
-    audio.volume = 0.32;
-    ambientRef.current = audio;
-    // Autoplay may be blocked until the page has been interacted with; retry on
-    // the first pointer event rather than leaving it silently stopped.
-    const play = () => void audio.play().catch(() => {});
-    play();
-    const onPointerDown = () => {
-      play();
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [showSplash, hydrated, ttsEnabled]);
-
-  useEffect(
-    () => () => {
-      ambientRef.current?.pause();
-      ambientRef.current = null;
-    },
-    [],
-  );
+    setAmbientSuppressed(showSplash || !hydrated);
+    return () => setAmbientSuppressed(false);
+  }, [showSplash, hydrated, setAmbientSuppressed]);
 
   /**
    * The one and only write for the reflection step, on Finish at question five.
@@ -558,8 +534,33 @@ export default function GrowthAreas() {
                     height: isMobile ? 560 : 260,
                   }}
                 >
-                  {/* Arc guides — stretched to the container, so they track the nodes */}
-                  {!isMobile && (
+                  {/* Arc guides — stretched to the container, so they track the nodes.
+                      Desktop is a single horizontal wave; mobile mirrors the two-column
+                      ladder with a vertical zigzag through the same node positions. */}
+                  {isMobile ? (
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                    >
+                      <path
+                        d="M27 8 C27 15 73 15 73 22 C73 29 27 29 27 36 C27 43 73 43 73 50 C73 57 27 57 27 64 C27 71 73 71 73 78"
+                        fill="none"
+                        stroke="rgba(75,233,255,.22)"
+                        strokeWidth="1"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <path
+                        d="M33 8 C33 15 67 15 67 22 C67 29 33 29 33 36 C33 43 67 43 67 50 C67 57 33 57 33 64 C33 71 67 71 67 78"
+                        fill="none"
+                        stroke="rgba(75,233,255,.08)"
+                        strokeWidth="1"
+                        strokeDasharray="3 10"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </svg>
+                  ) : (
                     <svg
                       aria-hidden="true"
                       viewBox="0 0 1000 200"
