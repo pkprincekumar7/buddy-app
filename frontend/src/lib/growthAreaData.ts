@@ -1,15 +1,165 @@
 import { Rocket, Heart, Brain, Palette, Dumbbell, MessageSquare } from 'lucide-react';
 
-export interface Question {
-  id: string;
-  question: string;
-  type: string;
-  placeholder?: string;
-  options?: string[];
-  followUp: string;
+// ─── Name, pronoun and verb-agreement templating ──────────────────────────────
+// Question, hint and archetype copy is authored with tokens rather than a fixed
+// gender, because the source design was written entirely in "he" and reads
+// wrong for anyone else.
+//
+//   {name}                            the child's first name
+//   {he} {his} {him} {himself}        pronouns (+ capitalised forms)
+//   {is} {does} {has} {was}           agreement-sensitive auxiliaries
+//   {s} {es} {ies}                    third-person verb endings
+//
+// The endings matter for singular "they": "{he} want{s}" renders as
+// "he wants" / "she wants" / "they want". Without them the neutral voice
+// produces "they wants". Only verbs whose SUBJECT is the pronoun carry a
+// token — where the subject is {name}, agreement stays singular for everyone
+// ("How does {name} behave when {he} join{s} …").
+
+export interface CopyTokens {
+  he: string;
+  He: string;
+  his: string;
+  His: string;
+  him: string;
+  Him: string;
+  himself: string;
+  Himself: string;
+  is: string;
+  Is: string;
+  does: string;
+  Does: string;
+  has: string;
+  Has: string;
+  was: string;
+  Was: string;
+  /** third-person singular verb endings — empty in the neutral voice */
+  s: string;
+  es: string;
+  ies: string;
 }
 
-export const GROWTH_AREAS = [
+const MASCULINE: CopyTokens = {
+  he: 'he',
+  He: 'He',
+  his: 'his',
+  His: 'His',
+  him: 'him',
+  Him: 'Him',
+  himself: 'himself',
+  Himself: 'Himself',
+  is: 'is',
+  Is: 'Is',
+  does: 'does',
+  Does: 'Does',
+  has: 'has',
+  Has: 'Has',
+  was: 'was',
+  Was: 'Was',
+  s: 's',
+  es: 'es',
+  ies: 'ies',
+};
+
+const FEMININE: CopyTokens = {
+  he: 'she',
+  He: 'She',
+  his: 'her',
+  His: 'Her',
+  him: 'her',
+  Him: 'Her',
+  himself: 'herself',
+  Himself: 'Herself',
+  is: 'is',
+  Is: 'Is',
+  does: 'does',
+  Does: 'Does',
+  has: 'has',
+  Has: 'Has',
+  was: 'was',
+  Was: 'Was',
+  s: 's',
+  es: 'es',
+  ies: 'ies',
+};
+
+// Singular "they" takes plural verb forms: they are / they do / they have.
+const NEUTRAL: CopyTokens = {
+  he: 'they',
+  He: 'They',
+  his: 'their',
+  His: 'Their',
+  him: 'them',
+  Him: 'Them',
+  himself: 'themselves',
+  Himself: 'Themselves',
+  is: 'are',
+  Is: 'Are',
+  does: 'do',
+  Does: 'Do',
+  has: 'have',
+  Has: 'Have',
+  was: 'were',
+  Was: 'Were',
+  s: '',
+  es: '',
+  ies: 'y',
+};
+
+/** Gender comes from ChildProfileStep: 'Male' | 'Female' | 'Other' | ''.
+ *  'Other', empty and missing all resolve to the neutral voice. */
+export function copyTokensFor(gender?: string | null): CopyTokens {
+  const g = gender?.trim().toLowerCase();
+  if (g === 'male') return MASCULINE;
+  if (g === 'female') return FEMININE;
+  return NEUTRAL;
+}
+
+/**
+ * Resolve {name} and voice tokens in a copy string.
+ * An unrecognised token is left verbatim rather than blanked, so a typo shows
+ * up in review instead of silently opening a gap mid-sentence.
+ */
+export function fillTemplate(
+  text: string,
+  childName?: string | null,
+  gender?: string | null,
+): string {
+  const tokens = copyTokensFor(gender) as unknown as Record<string, string>;
+  const trimmed = childName?.trim() ?? '';
+  const name = trimmed === '' ? 'your child' : trimmed;
+  return text.replace(/\{(\w+)\}/g, (whole, slot: string) => {
+    if (slot === 'name') return name;
+    return tokens[slot] ?? whole;
+  });
+}
+
+// ─── Growth areas ─────────────────────────────────────────────────────────────
+
+export interface GrowthArea {
+  id: string;
+  urlName: string;
+  name: string;
+  /** lucide icon — used by the card/header layouts */
+  icon: typeof Rocket;
+  /** tailwind gradient stops — used by the card/header layouts */
+  color: string;
+  description: string;
+  /** "r,g,b" triple driving the node glow on the growth map */
+  hue: string;
+  /** inline SVG path for the growth-map node */
+  iconPath: string;
+  iconColor: string;
+  /** node position on the growth-map arc, in percent of the container */
+  pos: { left: number; top: number };
+}
+
+export const PARENT_QUESTIONS_PER_AREA = 5;
+export const GAME_ROUNDS_PER_AREA = 6;
+
+// area `id` and `urlName` are deliberately unchanged from before the redesign:
+// stored growth_area documents key on area_id, and existing routes embed urlName.
+export const GROWTH_AREAS: GrowthArea[] = [
   {
     id: 'life_ambition',
     urlName: 'LifeAmbition',
@@ -17,6 +167,11 @@ export const GROWTH_AREAS = [
     icon: Rocket,
     color: 'from-personality to-personality-alt-strong',
     description: 'Discovering purpose and future goals',
+    hue: '160,120,255',
+    iconPath:
+      'M11.5 15.5 8.5 12.5c0-5.5 3.5-9.5 9-10.5.5 5.5-3 9.5-9 10.5zM8.5 12.5 6 13l-.8 3 3-.5M11.5 15.5 12 18l3 .8-.5-3',
+    iconColor: '#c3a6ff',
+    pos: { left: 8.0, top: 62.0 },
   },
   {
     id: 'self_care',
@@ -25,6 +180,10 @@ export const GROWTH_AREAS = [
     icon: Heart,
     color: 'from-error-medium to-accent-pink',
     description: 'Building healthy habits and emotional wellness',
+    hue: '255,120,170',
+    iconPath: 'M12 20s-7-4.4-7-9.3A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.7C19 15.6 12 20 12 20z',
+    iconColor: '#ff9ec2',
+    pos: { left: 24.8, top: 41.5 },
   },
   {
     id: 'critical_thinking',
@@ -33,6 +192,11 @@ export const GROWTH_AREAS = [
     icon: Brain,
     color: 'from-info-medium to-primary-medium',
     description: 'Problem solving and analytical skills',
+    hue: '90,170,255',
+    iconPath:
+      'M12 5a3 3 0 0 0-3 3 2.6 2.6 0 0 0-1.6 4.6A2.8 2.8 0 0 0 9 18h3zM12 5a3 3 0 0 1 3 3 2.6 2.6 0 0 1 1.6 4.6A2.8 2.8 0 0 1 15 18h-3zM12 5v13',
+    iconColor: '#8fc4ff',
+    pos: { left: 41.6, top: 31.3 },
   },
   {
     id: 'creativity',
@@ -41,6 +205,11 @@ export const GROWTH_AREAS = [
     icon: Palette,
     color: 'from-warning-medium to-warning-orange-medium',
     description: 'Imagination and creative expression',
+    hue: '255,180,90',
+    iconPath:
+      'M12 4a8 8 0 0 0 0 16c1.4 0 1.8-1 1.4-2-.5-1.3.3-2.4 1.7-2.4H18a2.6 2.6 0 0 0 2-4.3C18.6 6.4 15.6 4 12 4z',
+    iconColor: '#ffc978',
+    pos: { left: 58.4, top: 31.3 },
   },
   {
     id: 'physical_wellness',
@@ -49,6 +218,10 @@ export const GROWTH_AREAS = [
     icon: Dumbbell,
     color: 'from-success to-primary-dark',
     description: 'Body awareness and physical health',
+    hue: '60,225,190',
+    iconPath: 'M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10',
+    iconColor: '#5fe8c4',
+    pos: { left: 75.2, top: 41.5 },
   },
   {
     id: 'social_skills',
@@ -57,256 +230,1102 @@ export const GROWTH_AREAS = [
     icon: MessageSquare,
     color: 'from-personality-alt to-personality-alt-strong',
     description: 'Communication and relationship building',
+    hue: '150,140,255',
+    iconPath: 'M20 12a7 7 0 0 1-7 7H9l-4 3 1-4.2A7 7 0 0 1 13 5a7 7 0 0 1 7 7z',
+    iconColor: '#b3aaff',
+    pos: { left: 92.0, top: 62.0 },
   },
 ];
 
 /** Map URL param name → area definition, e.g. "LifeAmbition" → { id: 'life_ambition', ... } */
-export function areaByUrlName(urlName: string): (typeof GROWTH_AREAS)[number] | null {
+export function areaByUrlName(urlName: string): GrowthArea | null {
   return GROWTH_AREAS.find((a) => a.urlName === urlName) ?? null;
 }
 
 /** Map area_id → area definition, e.g. "life_ambition" → { id: 'life_ambition', ... } */
-export function areaById(id: string): (typeof GROWTH_AREAS)[number] | null {
+export function areaById(id: string): GrowthArea | null {
   return GROWTH_AREAS.find((a) => a.id === id) ?? null;
+}
+
+// ─── Step 1: five free-text reflections, answered by the parent ───────────────
+// Ids are area-prefixed and positional, and share no key with the pre-redesign
+// question set. A document still holding old answers therefore resolves to
+// "nothing answered" and the wizard restarts cleanly at question 1.
+
+export interface Question {
+  id: string;
+  question: string;
+  hint: string;
 }
 
 export const AREA_QUESTIONS: Record<string, Question[]> = {
   life_ambition: [
     {
-      id: 'dream_career',
-      question: 'What does {name} dream of becoming when he/she grows up?',
-      type: 'text',
-      placeholder: 'e.g., Doctor, Teacher, Astronaut, Artist...',
-      followUp: "That's wonderful! Dreams are the seeds of future achievements.",
+      id: 'la_q1',
+      question: 'When {name} talks about what {he} want{s} to be one day, what {does} {he} say?',
+      hint: '{His} words, even if they change every month.',
     },
     {
-      id: 'interests_alignment',
-      question: 'Are his/her interests & hobbies in line with his/her dream?',
-      type: 'choice',
-      options: ['Yes', 'No', 'Not Sure at this point'],
-      followUp: 'Understanding this helps us guide their journey better.',
+      id: 'la_q2',
+      question: 'What {does} {he} do without being asked or reminded?',
+      hint: 'The thing {he} return{s} to on {his} own.',
     },
     {
-      id: 'support_type',
-      question:
-        'What kind of support are you willing to give to support his/her dream at this point?',
-      type: 'choice',
-      options: ['In every aspect', 'Financially', 'Moral support', 'Not sure at this point'],
-      followUp: 'Your support is crucial in nurturing their aspirations.',
+      id: 'la_q3',
+      question: 'Which activity makes {him} forget about time completely?',
+      hint: 'The last time you had to call {him} twice.',
     },
     {
-      id: 'explore_options',
-      question: 'Do you think {name} should explore other career options as well?',
-      type: 'choice',
-      options: ['Yes', 'No', 'Not sure at this point'],
-      followUp: 'Exploration helps children discover their true passions.',
+      id: 'la_q4',
+      question: 'Who {does} {he} look up to, and what {does} {he} admire about them?',
+      hint: 'A family member, teacher, athlete or character.',
     },
     {
-      id: 'revisit_timeline',
-      question: "When do you want to re-visit {name}'s life aspirations?",
-      type: 'choice',
-      options: ['After 1 year', 'After 3 years', 'After 5 years', 'Not sure at this point'],
-      followUp: 'Regular check-ins help keep dreams aligned with growth.',
+      id: 'la_q5',
+      question: 'What is one thing you would like to see {him} try in the next few months?',
+      hint: 'Something small and specific.',
     },
   ],
   self_care: [
     {
-      id: 'emotional_awareness',
-      question: 'How well does {name} recognize and name their own emotions?',
-      type: 'choice',
-      options: ['Very well', 'Somewhat', 'Needs support', 'Not sure'],
-      followUp: 'Emotional awareness is the first step to self-care.',
+      id: 'sc_q1',
+      question: 'How does {name} usually show you that {he} {is} upset or overwhelmed?',
+      hint: 'Words, silence, anger, stomach aches.',
     },
     {
-      id: 'stress_response',
-      question: 'How does {name} typically respond when stressed or overwhelmed?',
-      type: 'text',
-      placeholder: 'e.g., withdraws, cries, talks about it...',
-      followUp: 'Understanding stress responses helps us build better coping strategies.',
+      id: 'sc_q2',
+      question: 'What helps {him} settle down again?',
+      hint: 'What has actually worked, not what should work.',
     },
     {
-      id: 'sleep_habits',
-      question: "How would you describe {name}'s sleep habits?",
-      type: 'choice',
-      options: ['Very consistent', 'Somewhat consistent', 'Irregular', 'Problematic'],
-      followUp: 'Good sleep is fundamental to emotional and physical well-being.',
+      id: 'sc_q3',
+      question: 'Which daily routines are a struggle at the moment?',
+      hint: 'Waking, homework, screens, bedtime.',
     },
     {
-      id: 'self_soothing',
-      question: 'Does {name} have any self-soothing or relaxation activities?',
-      type: 'choice',
-      options: ['Yes, several', 'One or two', 'Not really', 'Not sure'],
-      followUp: 'Self-soothing skills are important tools for lifelong wellness.',
+      id: 'sc_q4',
+      question: 'Who {does} {he} go to first when something is bothering {him}?',
+      hint: 'If it is no one, write that.',
     },
     {
-      id: 'self_care_goals',
-      question: 'What self-care habit would you most like {name} to develop?',
-      type: 'text',
-      placeholder: 'e.g., morning routine, mindfulness, journaling...',
-      followUp: 'Great goal! Small daily habits create lasting change.',
+      id: 'sc_q5',
+      question: 'What {does} {he} say about {himself} when things go wrong?',
+      hint: 'Try to recall {his} exact phrasing.',
     },
   ],
   critical_thinking: [
     {
-      id: 'problem_approach',
-      question: "How does {name} typically approach a problem they can't solve immediately?",
-      type: 'choice',
-      options: ['Tries different strategies', 'Asks for help', 'Gets frustrated', 'Gives up'],
-      followUp: 'Problem-solving persistence is a key thinking skill.',
+      id: 'ct_q1',
+      question: 'When {name} gets stuck on something hard, what {does} {he} do next?',
+      hint: 'Asks, guesses, gives up, tries again.',
     },
     {
-      id: 'curiosity_level',
-      question: 'How curious is {name} about how things work?',
-      type: 'choice',
-      options: [
-        'Very curious',
-        'Moderately curious',
-        'Not particularly curious',
-        'Depends on the topic',
-      ],
-      followUp: 'Curiosity is the engine of critical thinking!',
+      id: 'ct_q2',
+      question: 'What kinds of questions {does} {he} ask you most often?',
+      hint: 'How things work, why rules exist, what if.',
     },
     {
-      id: 'decision_making',
-      question: 'Can {name} make decisions independently, weighing pros and cons?',
-      type: 'choice',
-      options: ['Yes, quite well', 'Sometimes', 'Rarely', 'Not yet'],
-      followUp: 'Decision-making is a skill that grows with practice.',
+      id: 'ct_q3',
+      question: 'How {does} {he} handle being told {he} {is} wrong?',
+      hint: 'Describe a recent example.',
     },
     {
-      id: 'question_asking',
-      question: "Does {name} ask a lot of 'why' or 'how' questions?",
-      type: 'choice',
-      options: ['All the time', 'Often', 'Occasionally', 'Rarely'],
-      followUp: 'Asking questions is a sign of an active, thinking mind.',
+      id: 'ct_q4',
+      question: 'Give an example of {him} working something out for {himself}.',
+      hint: 'School, a game, a problem at home.',
     },
     {
-      id: 'thinking_goals',
-      question: 'What critical thinking skill would you most like {name} to strengthen?',
-      type: 'text',
-      placeholder: 'e.g., logical reasoning, creative solutions, evaluating information...',
-      followUp: "Excellent focus area! We'll build activities around this.",
+      id: 'ct_q5',
+      question: 'Which decisions do you let {him} make on {his} own right now?',
+      hint: 'And which ones feel too early.',
     },
   ],
   creativity: [
     {
-      id: 'creative_outlets',
-      question: 'What creative activities does {name} enjoy most?',
-      type: 'text',
-      placeholder: 'e.g., drawing, storytelling, building, music...',
-      followUp: 'Wonderful! Creative outlets are essential for expression and growth.',
+      id: 'cr_q1',
+      question: 'What does {name} make, build or invent when left to {himself}?',
+      hint: 'Drawings, stories, games, contraptions.',
     },
     {
-      id: 'imagination_use',
-      question: 'How often does {name} engage in imaginative play or storytelling?',
-      type: 'choice',
-      options: ['Daily', 'Several times a week', 'Occasionally', 'Rarely'],
-      followUp: 'Imagination is the birthplace of all creativity.',
+      id: 'cr_q2',
+      question: 'What {does} {he} do when {he} say{s} {he} {is} bored?',
+      hint: 'What happens in the ten minutes after.',
     },
     {
-      id: 'creative_confidence',
-      question: 'Does {name} feel confident sharing their creative work with others?',
-      type: 'choice',
-      options: ['Very confident', 'Somewhat confident', 'Hesitant', 'Avoids sharing'],
-      followUp: 'Building creative confidence takes a supportive environment.',
+      id: 'cr_q3',
+      question: 'How {does} {he} react when something {he} make{s} does not turn out right?',
+      hint: 'Starts over, hides it, gets frustrated.',
     },
     {
-      id: 'open_ended_play',
-      question: 'Does {name} prefer structured activities or open-ended creative play?',
-      type: 'choice',
-      options: ['Prefers structured', 'Prefers open-ended', 'Enjoys both equally', 'Not sure'],
-      followUp: 'Both styles have value — balance is key.',
+      id: 'cr_q4',
+      question: 'Which of {his} ideas has surprised you recently?',
+      hint: 'Even a small one counts.',
     },
     {
-      id: 'creativity_goals',
-      question: "How would you like to nurture {name}'s creativity in the next 3 months?",
-      type: 'text',
-      placeholder: 'e.g., art classes, music lessons, creative writing...',
-      followUp: "We'll use this to craft the perfect creative missions!",
+      id: 'cr_q5',
+      question: 'What creative materials or space {does} {he} have access to at home?',
+      hint: 'And what is missing.',
     },
   ],
   physical_wellness: [
     {
-      id: 'activity_level',
-      question: 'How physically active is {name} on a typical day?',
-      type: 'choice',
-      options: ['Very active', 'Moderately active', 'Somewhat sedentary', 'Very sedentary'],
-      followUp: 'Physical activity is a cornerstone of holistic wellness.',
+      id: 'pw_q1',
+      question: 'How much of {his} day involves active play or sport?',
+      hint: 'A rough estimate across a normal week.',
     },
     {
-      id: 'preferred_activities',
-      question: 'What physical activities does {name} enjoy most?',
-      type: 'text',
-      placeholder: 'e.g., swimming, cycling, football, dancing...',
-      followUp: 'Linking movement to enjoyment makes it sustainable.',
+      id: 'pw_q2',
+      question: 'Which kinds of physical activity {does} {he} genuinely enjoy?',
+      hint: 'Enjoys, not tolerates.',
     },
     {
-      id: 'body_awareness',
-      question: "Is {name} aware of their body's signals (hunger, tiredness, discomfort)?",
-      type: 'choice',
-      options: ['Very aware', 'Somewhat aware', 'Not very aware', 'Not sure'],
-      followUp: 'Body awareness is the foundation of physical self-care.',
+      id: 'pw_q3',
+      question: 'What does {his} sleep look like on a school night?',
+      hint: 'Bedtime, how long to fall asleep, waking.',
     },
     {
-      id: 'screen_time',
-      question: 'How much screen time does {name} typically have per day?',
-      type: 'choice',
-      options: ['Less than 1 hour', '1-2 hours', '3-4 hours', 'More than 4 hours'],
-      followUp: 'Balancing screen time with physical activity is a key wellness goal.',
+      id: 'pw_q4',
+      question: 'How would you describe {his} eating habits and appetite?',
+      hint: 'Include the parts that worry you.',
     },
     {
-      id: 'wellness_goals',
-      question: 'What physical wellness goal would you set for {name} over the next 3 months?',
-      type: 'text',
-      placeholder: 'e.g., learn to swim, improve stamina, develop a sport...',
-      followUp: 'A clear physical goal gives movement real purpose!',
+      id: 'pw_q5',
+      question: 'What {does} {he} say about {his} own body or strength?',
+      hint: 'Comments about being fast, weak, tall, tired.',
     },
   ],
   social_skills: [
     {
-      id: 'friendship_quality',
-      question: "How would you describe {name}'s friendships?",
-      type: 'choice',
-      options: [
-        'Has many close friends',
-        'Has a few close friends',
-        'Mostly acquaintances',
-        'Struggles to connect',
-      ],
-      followUp: 'The quality of friendships matters more than quantity.',
+      id: 'ss_q1',
+      question:
+        'How does {name} behave when {he} join{s} a group of children {he} {does} not know?',
+      hint: 'Leads, watches, waits to be invited.',
     },
     {
-      id: 'conflict_handling',
-      question: 'How does {name} handle disagreements or conflicts with peers?',
-      type: 'choice',
-      options: [
-        'Resolves calmly',
-        'Needs some guidance',
-        'Gets upset easily',
-        'Avoids conflict entirely',
-      ],
-      followUp: 'Healthy conflict resolution is a powerful life skill.',
+      id: 'ss_q2',
+      question: 'Who are {his} closest friends, and what draws {him} to them?',
+      hint: 'Names are not needed, just the pattern.',
     },
     {
-      id: 'empathy_level',
-      question: "Does {name} show empathy and concern for others' feelings?",
-      type: 'choice',
-      options: ['Consistently', 'Often', 'Sometimes', 'Rarely'],
-      followUp: 'Empathy is the foundation of all meaningful relationships.',
+      id: 'ss_q3',
+      question: 'How {does} {he} handle disagreements with friends or siblings?',
+      hint: 'A recent example is best.',
     },
     {
-      id: 'group_participation',
-      question: 'How does {name} behave in group settings (school, teams, clubs)?',
-      type: 'choice',
-      options: ['Natural leader', 'Active participant', 'Observer', 'Withdraws'],
-      followUp: 'Understanding group dynamics helps us tailor the right activities.',
+      id: 'ss_q4',
+      question: 'When {does} {he} find it hardest to speak up?',
+      hint: 'With adults, in class, in large groups.',
     },
     {
-      id: 'social_goals',
-      question: 'What social skill would you most like {name} to build in the next 3 months?',
-      type: 'text',
-      placeholder: 'e.g., starting conversations, teamwork, expressing feelings...',
-      followUp: 'Wonderful focus! Social skills open doors throughout life.',
+      id: 'ss_q5',
+      question: 'How {does} {he} respond when someone else is upset?',
+      hint: 'Notices, comforts, withdraws, teases.',
     },
   ],
 };
+
+// ─── Step 2: six either/or rounds, answered by the child ──────────────────────
+// Each option carries a `tag`; the most-frequent tag across the six picks
+// selects the archetype in AREA_ARCHETYPES. `star` is the short label shown on
+// the constellation. `icon` is an inline SVG path — there are no bitmap assets,
+// so this step has no dependency on the S3 asset bucket.
+//
+// Option copy addresses the child in second person ("Build a robot…"), so it
+// carries no name or pronoun tokens.
+
+export interface GameOption {
+  id: string;
+  text: string;
+  tag: string;
+  /** short label for the constellation node */
+  star: string;
+  /** inline SVG path */
+  icon: string;
+}
+
+export interface GameRound {
+  a: GameOption;
+  b: GameOption;
+}
+
+const P = {
+  book: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5zM19 18v3H6.5',
+  box: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8',
+  chat: 'M20 12a7 7 0 0 1-7 7H9l-4 3 1-4.2A7 7 0 0 1 13 5a7 7 0 0 1 7 7z',
+  clock: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 8v4l3 2',
+  flag: 'M6 3v18M6 4h11l-2 4 2 4H6',
+  glass: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16 16l4 4',
+  globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+  hand: 'M9 11V5.5a1.5 1.5 0 0 1 3 0V11M12 11V4.5a1.5 1.5 0 0 1 3 0V11M15 11V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6H10a4 4 0 0 1-4-4v-5a1.5 1.5 0 0 1 3 0',
+  heart: 'M12 20s-7-4.4-7-9.3A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.7C19 15.6 12 20 12 20z',
+  leaf: 'M20 4C11 4 4 9 4 16v4M20 4c0 8-6 12-12 12',
+  mic: 'M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 12 4zM6 11a6 6 0 0 0 12 0M12 17v4M9 21h6',
+  moon: 'M20 14a8 8 0 1 1-10-10 6.5 6.5 0 0 0 10 10z',
+  music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-2.5-2.5H9M19 16a2.5 2.5 0 1 1-2.5-2.5H19',
+  pad: 'M6 8h12a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3zM7 12h3M8.5 10.5v3M15 11h.01M17 13h.01',
+  palette:
+    'M12 3a9 9 0 1 0 0 18c1.5 0 1.5-2 3-2h2a4 4 0 0 0 4-4c0-6-4-12-9-12zM8 9h.01M7 13h.01M11 7h.01',
+  plate: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM8 12h8',
+  rocket: 'M12 3c3 2.5 4.5 6 4.5 9.5L12 17l-4.5-4.5C7.5 9 9 5.5 12 3zM9.5 17 8 21l4-2 4 2-1.5-4',
+  run: 'M13.5 4.2a1.4 1.4 0 1 0 .01 0M11 8l-3 3 2 3-1 5M11 8l4 1 1 4M8 11 4 12',
+  shield: 'M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z',
+  spark: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l3 3M15 15l3 3M18 6l-3 3M9 15l-3 3',
+  trophy: 'M8 4h8v4a4 4 0 0 1-8 0zM8 6H5v2a3 3 0 0 0 3 3M16 6h3v2a3 3 0 0 1-3 3M10 15h4l.5 5h-5z',
+  wrench: 'M15 4a4 4 0 0 0 5 5l-9 9a3 3 0 1 1-4-4z',
+};
+
+export const AREA_GAMES: Record<string, GameRound[]> = {
+  life_ambition: [
+    {
+      a: {
+        id: 'la_r1a',
+        text: 'Build a robot that does your chores',
+        tag: 'maker',
+        star: 'Robot',
+        icon: P.wrench,
+      },
+      b: {
+        id: 'la_r1b',
+        text: 'Write a story your whole school reads',
+        tag: 'teller',
+        star: 'Story',
+        icon: P.book,
+      },
+    },
+    {
+      a: {
+        id: 'la_r2a',
+        text: 'Lead your team to win a tournament',
+        tag: 'leader',
+        star: 'Trophy',
+        icon: P.trophy,
+      },
+      b: {
+        id: 'la_r2b',
+        text: 'Discover a creature nobody has seen',
+        tag: 'explorer',
+        star: 'Creature',
+        icon: P.leaf,
+      },
+    },
+    {
+      a: {
+        id: 'la_r3a',
+        text: 'Teach a younger kid something you are great at',
+        tag: 'helper',
+        star: 'Teach',
+        icon: P.hand,
+      },
+      b: {
+        id: 'la_r3b',
+        text: 'Fix something everyone said was broken',
+        tag: 'maker',
+        star: 'Repair',
+        icon: P.wrench,
+      },
+    },
+    {
+      a: {
+        id: 'la_r4a',
+        text: 'Travel somewhere no one in your family has been',
+        tag: 'explorer',
+        star: 'Journey',
+        icon: P.globe,
+      },
+      b: {
+        id: 'la_r4b',
+        text: 'Make a game a thousand people play',
+        tag: 'maker',
+        star: 'Game',
+        icon: P.pad,
+      },
+    },
+    {
+      a: {
+        id: 'la_r5a',
+        text: 'Speak on a stage to a big crowd',
+        tag: 'leader',
+        star: 'Stage',
+        icon: P.mic,
+      },
+      b: {
+        id: 'la_r5b',
+        text: 'Solve a mystery no one could crack',
+        tag: 'thinker',
+        star: 'Mystery',
+        icon: P.glass,
+      },
+    },
+    {
+      a: {
+        id: 'la_r6a',
+        text: 'Start a club and choose what it does',
+        tag: 'leader',
+        star: 'Club',
+        icon: P.flag,
+      },
+      b: {
+        id: 'la_r6b',
+        text: 'Help someone who really needs you',
+        tag: 'helper',
+        star: 'Rescue',
+        icon: P.heart,
+      },
+    },
+  ],
+  self_care: [
+    {
+      a: {
+        id: 'sc_r1a',
+        text: 'Curl up with a book in a quiet room',
+        tag: 'rest',
+        star: 'Quiet',
+        icon: P.book,
+      },
+      b: {
+        id: 'sc_r1b',
+        text: 'Go outside and run around',
+        tag: 'body',
+        star: 'Fresh air',
+        icon: P.run,
+      },
+    },
+    {
+      a: {
+        id: 'sc_r2a',
+        text: 'Have the same calm routine every night',
+        tag: 'order',
+        star: 'Routine',
+        icon: P.clock,
+      },
+      b: {
+        id: 'sc_r2b',
+        text: 'Do something different every night',
+        tag: 'joy',
+        star: 'Surprise',
+        icon: P.spark,
+      },
+    },
+    {
+      a: {
+        id: 'sc_r3a',
+        text: 'Tell someone when you feel bad',
+        tag: 'feelings',
+        star: 'Talk',
+        icon: P.chat,
+      },
+      b: {
+        id: 'sc_r3b',
+        text: 'Have some time completely alone',
+        tag: 'rest',
+        star: 'Alone',
+        icon: P.moon,
+      },
+    },
+    {
+      a: {
+        id: 'sc_r4a',
+        text: 'A long full night of sleep',
+        tag: 'rest',
+        star: 'Sleep',
+        icon: P.moon,
+      },
+      b: {
+        id: 'sc_r4b',
+        text: 'A big proper breakfast',
+        tag: 'body',
+        star: 'Fuel',
+        icon: P.plate,
+      },
+    },
+    {
+      a: {
+        id: 'sc_r5a',
+        text: 'Tidy your room so it feels calm',
+        tag: 'order',
+        star: 'Tidy',
+        icon: P.box,
+      },
+      b: {
+        id: 'sc_r5b',
+        text: 'Put on music and dance',
+        tag: 'joy',
+        star: 'Music',
+        icon: P.music,
+      },
+    },
+    {
+      a: {
+        id: 'sc_r6a',
+        text: 'Learn to calm yourself by breathing',
+        tag: 'feelings',
+        star: 'Breathe',
+        icon: P.leaf,
+      },
+      b: {
+        id: 'sc_r6b',
+        text: 'Keep one hour a day just for fun',
+        tag: 'joy',
+        star: 'Play',
+        icon: P.pad,
+      },
+    },
+  ],
+  critical_thinking: [
+    {
+      a: {
+        id: 'ct_r1a',
+        text: 'Take a gadget apart to see inside',
+        tag: 'curious',
+        star: 'Inside',
+        icon: P.wrench,
+      },
+      b: {
+        id: 'ct_r1b',
+        text: 'Beat a hard puzzle in one go',
+        tag: 'logic',
+        star: 'Puzzle',
+        icon: P.glass,
+      },
+    },
+    {
+      a: {
+        id: 'ct_r2a',
+        text: 'Ask a hundred questions',
+        tag: 'curious',
+        star: 'Questions',
+        icon: P.chat,
+      },
+      b: {
+        id: 'ct_r2b',
+        text: 'Check whether something is really true',
+        tag: 'evidence',
+        star: 'Proof',
+        icon: P.shield,
+      },
+    },
+    {
+      a: {
+        id: 'ct_r3a',
+        text: 'Find the one wrong number in a long list',
+        tag: 'logic',
+        star: 'Spot it',
+        icon: P.glass,
+      },
+      b: {
+        id: 'ct_r3b',
+        text: 'Invent a new rule for a game',
+        tag: 'invent',
+        star: 'New rule',
+        icon: P.flag,
+      },
+    },
+    {
+      a: {
+        id: 'ct_r4a',
+        text: 'Keep trying one problem for an hour',
+        tag: 'patient',
+        star: 'Persist',
+        icon: P.clock,
+      },
+      b: {
+        id: 'ct_r4b',
+        text: 'Try ten problems fast',
+        tag: 'logic',
+        star: 'Speed',
+        icon: P.spark,
+      },
+    },
+    {
+      a: {
+        id: 'ct_r5a',
+        text: 'Win an argument with good reasons',
+        tag: 'evidence',
+        star: 'Reasons',
+        icon: P.mic,
+      },
+      b: {
+        id: 'ct_r5b',
+        text: 'Wonder about something nobody can answer',
+        tag: 'curious',
+        star: 'Wonder',
+        icon: P.globe,
+      },
+    },
+    {
+      a: {
+        id: 'ct_r6a',
+        text: 'Make a plan before you start',
+        tag: 'patient',
+        star: 'Plan',
+        icon: P.box,
+      },
+      b: {
+        id: 'ct_r6b',
+        text: 'Guess and adjust as you go',
+        tag: 'invent',
+        star: 'Adapt',
+        icon: P.leaf,
+      },
+    },
+  ],
+  creativity: [
+    {
+      a: {
+        id: 'cr_r1a',
+        text: 'Build something out of spare parts',
+        tag: 'make',
+        star: 'Build',
+        icon: P.wrench,
+      },
+      b: {
+        id: 'cr_r1b',
+        text: 'Invent a whole new world',
+        tag: 'imagine',
+        star: 'World',
+        icon: P.globe,
+      },
+    },
+    {
+      a: {
+        id: 'cr_r2a',
+        text: 'Draw a comic',
+        tag: 'story',
+        star: 'Comic',
+        icon: P.book,
+      },
+      b: {
+        id: 'cr_r2b',
+        text: 'Make up a song',
+        tag: 'perform',
+        star: 'Song',
+        icon: P.music,
+      },
+    },
+    {
+      a: {
+        id: 'cr_r3a',
+        text: 'Act out a character on stage',
+        tag: 'perform',
+        star: 'Stage',
+        icon: P.mic,
+      },
+      b: {
+        id: 'cr_r3b',
+        text: 'Design a game nobody has played',
+        tag: 'make',
+        star: 'Design',
+        icon: P.pad,
+      },
+    },
+    {
+      a: {
+        id: 'cr_r4a',
+        text: 'Mix two ideas nobody has combined',
+        tag: 'mix',
+        star: 'Mix',
+        icon: P.spark,
+      },
+      b: {
+        id: 'cr_r4b',
+        text: 'Retell an old story your own way',
+        tag: 'story',
+        star: 'Retell',
+        icon: P.book,
+      },
+    },
+    {
+      a: {
+        id: 'cr_r5a',
+        text: 'Make something beautiful',
+        tag: 'imagine',
+        star: 'Beauty',
+        icon: P.palette,
+      },
+      b: {
+        id: 'cr_r5b',
+        text: 'Make something useful',
+        tag: 'make',
+        star: 'Useful',
+        icon: P.box,
+      },
+    },
+    {
+      a: {
+        id: 'cr_r6a',
+        text: 'Show your work to a crowd',
+        tag: 'perform',
+        star: 'Share',
+        icon: P.mic,
+      },
+      b: {
+        id: 'cr_r6b',
+        text: 'Keep it just for you',
+        tag: 'imagine',
+        star: 'Secret',
+        icon: P.moon,
+      },
+    },
+  ],
+  physical_wellness: [
+    {
+      a: {
+        id: 'pw_r1a',
+        text: 'Race someone to the end of the street',
+        tag: 'speed',
+        star: 'Race',
+        icon: P.run,
+      },
+      b: {
+        id: 'pw_r1b',
+        text: 'Climb something tall and tricky',
+        tag: 'strength',
+        star: 'Climb',
+        icon: P.flag,
+      },
+    },
+    {
+      a: {
+        id: 'pw_r2a',
+        text: 'Learn a trick that takes a month',
+        tag: 'skill',
+        star: 'Trick',
+        icon: P.clock,
+      },
+      b: {
+        id: 'pw_r2b',
+        text: 'Win a game today',
+        tag: 'team',
+        star: 'Win',
+        icon: P.trophy,
+      },
+    },
+    {
+      a: {
+        id: 'pw_r3a',
+        text: 'Play a sport with a team',
+        tag: 'team',
+        star: 'Team',
+        icon: P.hand,
+      },
+      b: {
+        id: 'pw_r3b',
+        text: 'Train on your own',
+        tag: 'strength',
+        star: 'Train',
+        icon: P.box,
+      },
+    },
+    {
+      a: {
+        id: 'pw_r4a',
+        text: 'Spend a whole day outside',
+        tag: 'outdoors',
+        star: 'Outside',
+        icon: P.leaf,
+      },
+      b: {
+        id: 'pw_r4b',
+        text: 'Master one skateboard move',
+        tag: 'skill',
+        star: 'Move',
+        icon: P.spark,
+      },
+    },
+    {
+      a: {
+        id: 'pw_r5a',
+        text: 'Be the fastest in your class',
+        tag: 'speed',
+        star: 'Fastest',
+        icon: P.run,
+      },
+      b: {
+        id: 'pw_r5b',
+        text: 'Be the one who never gets tired',
+        tag: 'strength',
+        star: 'Stamina',
+        icon: P.shield,
+      },
+    },
+    {
+      a: {
+        id: 'pw_r6a',
+        text: 'Hike up a hill for the view',
+        tag: 'outdoors',
+        star: 'Summit',
+        icon: P.globe,
+      },
+      b: {
+        id: 'pw_r6b',
+        text: 'Teach a friend your best move',
+        tag: 'team',
+        star: 'Coach',
+        icon: P.mic,
+      },
+    },
+  ],
+  social_skills: [
+    {
+      a: {
+        id: 'ss_r1a',
+        text: 'Make one new friend today',
+        tag: 'friend',
+        star: 'New friend',
+        icon: P.hand,
+      },
+      b: {
+        id: 'ss_r1b',
+        text: 'Cheer up a friend who is sad',
+        tag: 'kind',
+        star: 'Cheer',
+        icon: P.heart,
+      },
+    },
+    {
+      a: {
+        id: 'ss_r2a',
+        text: 'Be captain of the group',
+        tag: 'lead',
+        star: 'Captain',
+        icon: P.flag,
+      },
+      b: {
+        id: 'ss_r2b',
+        text: 'Be the one everybody tells secrets to',
+        tag: 'listen',
+        star: 'Trusted',
+        icon: P.chat,
+      },
+    },
+    {
+      a: {
+        id: 'ss_r3a',
+        text: 'Speak first in a room of strangers',
+        tag: 'brave',
+        star: 'Speak up',
+        icon: P.mic,
+      },
+      b: {
+        id: 'ss_r3b',
+        text: 'Listen carefully before you talk',
+        tag: 'listen',
+        star: 'Listen',
+        icon: P.chat,
+      },
+    },
+    {
+      a: {
+        id: 'ss_r4a',
+        text: 'Stand up for someone left out',
+        tag: 'brave',
+        star: 'Stand up',
+        icon: P.shield,
+      },
+      b: {
+        id: 'ss_r4b',
+        text: 'Invite them into your game',
+        tag: 'kind',
+        star: 'Invite',
+        icon: P.hand,
+      },
+    },
+    {
+      a: {
+        id: 'ss_r5a',
+        text: 'Sort out an argument between friends',
+        tag: 'lead',
+        star: 'Peace',
+        icon: P.trophy,
+      },
+      b: {
+        id: 'ss_r5b',
+        text: 'Keep everyone laughing',
+        tag: 'friend',
+        star: 'Laughs',
+        icon: P.spark,
+      },
+    },
+    {
+      a: {
+        id: 'ss_r6a',
+        text: 'Have one best friend',
+        tag: 'friend',
+        star: 'Best friend',
+        icon: P.heart,
+      },
+      b: {
+        id: 'ss_r6b',
+        text: 'Know everyone in school',
+        tag: 'lead',
+        star: 'Everyone',
+        icon: P.globe,
+      },
+    },
+  ],
+};
+
+// ─── Archetypes ───────────────────────────────────────────────────────────────
+// Derived, never stored: recomputed from the saved picks on every render, so
+// nothing needs persisting alongside child_activity_selections.
+
+export interface Archetype {
+  title: string;
+  line: string;
+}
+
+export const AREA_ARCHETYPES: Record<string, Record<string, Archetype>> = {
+  life_ambition: {
+    maker: {
+      title: 'The Builder',
+      line: '{name} is drawn to making things that work. Give {him} materials, time and a problem worth fixing.',
+    },
+    teller: {
+      title: 'The Storyteller',
+      line: '{name} reaches for words and worlds. Audiences, journals and stages will feed this.',
+    },
+    leader: {
+      title: 'The Leader',
+      line: '{name} wants a team and a direction. Let {him} run something real, however small.',
+    },
+    explorer: {
+      title: 'The Explorer',
+      line: '{name} is pulled towards the unfamiliar. New places and open questions keep {him} alight.',
+    },
+    thinker: {
+      title: 'The Solver',
+      line: '{name} likes a puzzle with a locked door. Give {him} harder ones than you think {he} can take.',
+    },
+    helper: {
+      title: 'The Helper',
+      line: '{name} measures {himself} by who {he} lift{s}. Responsibility for others will grow {him} fastest.',
+    },
+  },
+  self_care: {
+    rest: {
+      title: 'The Recharger',
+      line: '{name} refills in quiet. Protect {his} downtime instead of filling it.',
+    },
+    body: {
+      title: 'The Body Listener',
+      line: '{name} feels things physically first. Food, air and movement change {his} mood fastest.',
+    },
+    feelings: {
+      title: 'The Feeler',
+      line: '{name} is ready to name what {he} feel{s}. Keep asking, and keep the answers safe.',
+    },
+    order: {
+      title: 'The Steady One',
+      line: '{name} does better with rhythm than with rules. Build the routine with {him}.',
+    },
+    joy: {
+      title: 'The Joy Seeker',
+      line: '{name} resets through fun. An hour of nothing useful is doing real work.',
+    },
+  },
+  critical_thinking: {
+    curious: {
+      title: 'The Question Machine',
+      line: '{name} learns by asking. Answer two, then hand the third back to {him}.',
+    },
+    logic: {
+      title: 'The Pattern Finder',
+      line: '{name} enjoys order in a mess. Puzzles, codes and strategy games suit {him}.',
+    },
+    evidence: {
+      title: 'The Fact Checker',
+      line: '{name} wants to know how you know. Show {him} where to look it up.',
+    },
+    invent: {
+      title: 'The Rule Bender',
+      line: '{name} reshapes the problem rather than solving it as given. Leave room for that.',
+    },
+    patient: {
+      title: 'The Long Thinker',
+      line: '{name} can stay with something difficult. Resist rescuing {him} too early.',
+    },
+  },
+  creativity: {
+    make: {
+      title: 'The Maker',
+      line: '{name} thinks with {his} hands. Keep raw materials within reach.',
+    },
+    story: {
+      title: 'The Storyteller',
+      line: '{name} turns everything into narrative. Give {him} somewhere to publish it.',
+    },
+    perform: {
+      title: 'The Performer',
+      line: '{name} needs an audience to come alive. Find {him} a small stage.',
+    },
+    imagine: {
+      title: 'The Dreamer',
+      line: '{name} builds whole worlds internally. Unstructured time is not wasted on {him}.',
+    },
+    mix: {
+      title: 'The Remixer',
+      line: '{name} collides ideas that do not belong together. Expose {him} to more of them.',
+    },
+  },
+  physical_wellness: {
+    speed: {
+      title: 'The Sprinter',
+      line: '{name} is built for bursts. Short, sharp challenges hold {him}.',
+    },
+    strength: {
+      title: 'The Strong One',
+      line: '{name} enjoys the effort itself. Give {him} something heavy and safe to work at.',
+    },
+    skill: {
+      title: 'The Skill Collector',
+      line: '{name} will drill one move for weeks. Reward the practice, not just the result.',
+    },
+    team: {
+      title: 'The Teammate',
+      line: '{name} moves best beside other people. Team sport beats solo training here.',
+    },
+    outdoors: {
+      title: 'The Outdoor Kid',
+      line: '{name} regulates {himself} outside. Long days out do more than any programme.',
+    },
+  },
+  social_skills: {
+    friend: {
+      title: 'The Friend Maker',
+      line: '{name} invests in people one at a time. Depth matters more than numbers.',
+    },
+    lead: {
+      title: 'The Natural Lead',
+      line: '{name} organises the room without being asked. Give {him} something to be in charge of.',
+    },
+    listen: {
+      title: 'The Listener',
+      line: '{name} holds what others tell {him}. Make sure someone is listening to {him} too.',
+    },
+    kind: {
+      title: 'The Kind One',
+      line: '{name} notices who is left out. Name it when you see it.',
+    },
+    brave: {
+      title: 'The Brave Voice',
+      line: '{name} will speak when it costs {him} something. Back {him} publicly.',
+    },
+  },
+};
+
+/** All options for an area, flattened — a and b of every round. */
+function areaOptions(areaId: string): GameOption[] {
+  return (AREA_GAMES[areaId] ?? []).flatMap((r) => [r.a, r.b]);
+}
+
+/** Resolve a saved pick id back to its option. Returns null for unknown ids. */
+export function optionById(areaId: string, optionId: string): GameOption | null {
+  return areaOptions(areaId).find((o) => o.id === optionId) ?? null;
+}
+
+/**
+ * Resolve saved picks to options, dropping any that no longer exist.
+ * Documents written before the redesign hold image-tile ids, which resolve to
+ * nothing — callers should read a short result as "the child step needs redoing"
+ * rather than rendering a partial constellation.
+ */
+export function pickedOptions(areaId: string, pickedIds: unknown): GameOption[] {
+  if (!Array.isArray(pickedIds)) return [];
+  return pickedIds
+    .map((id) => (typeof id === 'string' ? optionById(areaId, id) : null))
+    .filter((o): o is GameOption => o !== null);
+}
+
+/**
+ * Most-frequent tag across the child's picks → its archetype.
+ * A tie resolves to whichever tag first reached the winning count, following
+ * the round order the child answered in. Returns null when nothing resolves.
+ */
+export function topArchetype(
+  areaId: string,
+  pickedIds: unknown,
+): { tag: string; archetype: Archetype } | null {
+  const options = pickedOptions(areaId, pickedIds);
+  if (options.length === 0) return null;
+
+  const counts = new Map<string, number>();
+  for (const o of options) counts.set(o.tag, (counts.get(o.tag) ?? 0) + 1);
+
+  let bestTag = options[0]!.tag;
+  let bestCount = -1;
+  for (const [tag, n] of counts) {
+    if (n > bestCount) {
+      bestCount = n;
+      bestTag = tag;
+    }
+  }
+
+  const archetype = AREA_ARCHETYPES[areaId]?.[bestTag];
+  return archetype ? { tag: bestTag, archetype } : null;
+}
+
+// ─── Recommendations ──────────────────────────────────────────────────────────
+// Two shapes coexist in the database permanently and neither is migrated:
+//   • plain strings — every area completed before the redesign, plus anything
+//     the onboarding RecommendationsPhase writes (it still emits strings)
+//   • { title, detail } — everything the redesigned Growth Areas flow writes
+// Every read path must go through normalizeRecommendations() so both render.
+
+export interface GrowthRecommendation {
+  title: string;
+  detail: string;
+}
+
+const RECOMMENDATION_TITLE_MAX_WORDS = 10;
+const RECOMMENDATION_DETAIL_MAX_WORDS = 25;
+
+/**
+ * Truncates to at most `maxWords` words, marking the cut with an ellipsis.
+ * The prompt already asks the model to stay within budget, and the request
+ * schema states the same limit — but nothing here enforces it server-side
+ * (the LLM call uses plain JSON mode, not a provider's strict structured
+ * output), so this is the actual guarantee, not just a backstop for it.
+ */
+function capWords(text: string, maxWords: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text;
+  return `${words.slice(0, maxWords).join(' ')}…`;
+}
+
+export function normalizeRecommendations(raw: unknown): GrowthRecommendation[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GrowthRecommendation[] = [];
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      // Legacy shape — full-sentence recommendations written before the
+      // title/detail split existed, plus anything the onboarding flow still
+      // writes. These were never subject to a word budget, so they're left
+      // as-is rather than mangled by a cap they weren't authored for.
+      const title = item.trim();
+      if (title) out.push({ title, detail: '' });
+      continue;
+    }
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    // `t`/`b` is the shorthand the source design used — accepted so a payload
+    // authored against that shape is not silently dropped.
+    const title = typeof o.title === 'string' ? o.title : typeof o.t === 'string' ? o.t : '';
+    const detail = typeof o.detail === 'string' ? o.detail : typeof o.b === 'string' ? o.b : '';
+    const trimmedTitle = title.trim();
+    const trimmedDetail = detail.trim();
+    if (trimmedTitle || trimmedDetail) {
+      out.push({
+        title: capWords(trimmedTitle, RECOMMENDATION_TITLE_MAX_WORDS),
+        detail: capWords(trimmedDetail, RECOMMENDATION_DETAIL_MAX_WORDS),
+      });
+    }
+  }
+  return out;
+}
+
+/** Flatten recommendations to plain lines, for prompt context. */
+export function recommendationsToLines(raw: unknown): string[] {
+  return normalizeRecommendations(raw).map((r) =>
+    r.detail ? `${r.title} — ${r.detail}` : r.title,
+  );
+}

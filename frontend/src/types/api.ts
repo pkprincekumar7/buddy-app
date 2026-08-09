@@ -166,14 +166,24 @@ export interface GoalInsightsRecord {
   [key: string]: unknown;
 }
 
+/**
+ * A stored recommendation. Areas completed before the Growth Areas redesign —
+ * and anything the onboarding RecommendationsPhase writes — hold plain strings;
+ * the redesigned flow writes { title, detail }. Both shapes coexist and neither
+ * is migrated, so always read through normalizeRecommendations() in
+ * `@/lib/growthAreaData` rather than touching these values directly.
+ */
+export type StoredRecommendation = string | { title?: string; detail?: string };
+
 export interface CompletedArea {
   status?: string;
   area_id?: string;
   area_name?: string;
   area_color?: string;
   step?: string;
+  /** Written only by the onboarding flow — always plain strings. */
   recommendations?: string[];
-  ai_three_month_recommendations?: string[];
+  ai_three_month_recommendations?: StoredRecommendation[];
   answers?: Record<string, unknown>;
   interactive_answers?: Record<string, unknown>;
   child_activity?: Record<string, unknown>;

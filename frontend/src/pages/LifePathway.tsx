@@ -24,6 +24,7 @@ import {
 } from 'recharts';
 
 import { AREA_LINE_COLORS as areaColors } from '@/lib/gradientColors';
+import { normalizeRecommendations } from '@/lib/growthAreaData';
 
 const PRIMARY_CSS = 'hsl(var(--primary))';
 const MUTED_FG_CSS = 'hsl(var(--muted-foreground))';
@@ -590,11 +591,12 @@ export default function LifePathway() {
                       const bgTw =
                         (area.area_id && (areaBgTw as Record<string, string>)[area.area_id]) ??
                         'bg-success';
-                      const recs: unknown[] =
+                      const recs = normalizeRecommendations(
                         Array.isArray(area.ai_three_month_recommendations) &&
-                        area.ai_three_month_recommendations.length > 0
+                          area.ai_three_month_recommendations.length > 0
                           ? area.ai_three_month_recommendations
-                          : (area.recommendations ?? []);
+                          : (area.recommendations ?? []),
+                      );
                       return (
                         <motion.div
                           key={area.area_id ?? idx}
@@ -640,7 +642,20 @@ export default function LifePathway() {
                                     >
                                       {i + 1}
                                     </span>
-                                    <span>{String(rec)}</span>
+                                    <span>
+                                      {/* Legacy string recs have no detail — render the title alone. */}
+                                      {rec.detail ? (
+                                        <>
+                                          <span className="font-semibold text-foreground">
+                                            {rec.title}
+                                          </span>
+                                          {' — '}
+                                          {rec.detail}
+                                        </>
+                                      ) : (
+                                        rec.title
+                                      )}
+                                    </span>
                                   </li>
                                 ))}
                               </ul>

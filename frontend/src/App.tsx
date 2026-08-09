@@ -5,7 +5,14 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router';
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  Navigate,
+  useLocation,
+  useParams,
+} from 'react-router';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
@@ -14,11 +21,6 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
 
-const GrowthAreasActivity = lazy(() => import('./pages/GrowthAreasActivity'));
-const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGame'));
-const GrowthAreasActivityGreatInsights = lazy(
-  () => import('./pages/GrowthAreasActivityGreatInsights'),
-);
 const AdminAllowedEmails = lazy(() => import('./pages/AdminAllowedEmails'));
 
 interface ErrorBoundaryProps {
@@ -63,6 +65,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children;
   }
 }
+
+/** Sends a stale /Activity/:activity link back to the child's Growth Map. */
+const GrowthAreaMapRedirect = () => {
+  const { childId } = useParams();
+  return <Navigate to={childId ? `/GrowthAreas/${childId}` : '/Home'} replace />;
+};
 
 const PUBLIC_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
 
@@ -149,61 +157,25 @@ const ProtectedRoutes = () => (
         </LayoutWrapper>
       }
     />
-    {/* GrowthAreas nested routes (most-specific first) */}
+    {/* The parent's reflections, the handoff, the child's rounds and the result
+        (constellation + recommendations) are all one overlay on the Growth Map
+        now — the old /Activity/:activity page, the image-pick /Game page and
+        the separate /GreatInsights results page are all gone. Redirect stale
+        links (including bookmarks carrying ?q=) back to the map. */}
     <Route
       path="/GrowthAreas/:childId/Activity/:activity/GreatInsights"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGreatInsights />
-        </LayoutWrapper>
-      }
+      element={<GrowthAreaMapRedirect />}
     />
     <Route
       path="/GrowthAreas/:childId/Activity/:activity/Game"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGame />
-        </LayoutWrapper>
-      }
+      element={<GrowthAreaMapRedirect />}
     />
-    <Route
-      path="/GrowthAreas/:childId/Activity/:activity"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivity />
-        </LayoutWrapper>
-      }
-    />
+    <Route path="/GrowthAreas/:childId/Activity/:activity" element={<GrowthAreaMapRedirect />} />
     <Route
       path="/GrowthAreas/:childId"
       element={
         <LayoutWrapper currentPageName="GrowthAreas">
           <Pages.GrowthAreas />
-        </LayoutWrapper>
-      }
-    />
-    {/* Legacy routes without childId */}
-    <Route
-      path="/GrowthAreas/Activity/:activity/GreatInsights"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGreatInsights />
-        </LayoutWrapper>
-      }
-    />
-    <Route
-      path="/GrowthAreas/Activity/:activity/Game"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGame />
-        </LayoutWrapper>
-      }
-    />
-    <Route
-      path="/GrowthAreas/Activity/:activity"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivity />
         </LayoutWrapper>
       }
     />

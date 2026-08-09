@@ -186,6 +186,8 @@ export function buildGrowthAreaRecommendationsPrompt({
   childGameSummary,
   childGameStrengths,
   childGameSuggestedActivities,
+  childChoices,
+  childArchetype,
   parentFeedback,
 }: {
   childName: string;
@@ -193,18 +195,37 @@ export function buildGrowthAreaRecommendationsPrompt({
   childGender?: string | null;
   areaName: string;
   qaContext: string;
+  /** Legacy image-pick fields — still supplied by the onboarding flow. */
   childGameSummary?: string | null;
   childGameStrengths?: string[] | null;
   childGameSuggestedActivities?: string[] | null;
+  /** The six either/or options the child actually chose, in round order. */
+  childChoices?: string[] | null;
+  /** Archetype derived from those choices, e.g. "The Builder — …". */
+  childArchetype?: { title: string; line: string } | null;
   parentFeedback?: string | null;
 }): string {
-  const childGameSection =
+  const legacyGameSection =
     childGameSummary || childGameStrengths?.length || childGameSuggestedActivities?.length
       ? `\n\nChild's own game responses for this area:
 - Summary: ${childGameSummary ?? '(not available)'}
 - Strengths observed: ${childGameStrengths?.length ? childGameStrengths.join(', ') : '(none recorded)'}
 - Activities the child showed interest in: ${childGameSuggestedActivities?.length ? childGameSuggestedActivities.join(', ') : '(none recorded)'}`
       : '';
+
+  // The redesigned flow has the child pick one of two options per round. The
+  // picks are the child's own voice, so they matter as much as the parent's
+  // answers — state them verbatim rather than only the derived archetype.
+  const choicesSection = childChoices?.length
+    ? `\n\n${childName}'s own choices for this area (one per round, ${childChoices.length} rounds):
+${childChoices.map((c, i) => `${i + 1}. ${c}`).join('\n')}${
+        childArchetype
+          ? `\n\nPattern those choices form: "${childArchetype.title}" — ${childArchetype.line}`
+          : ''
+      }`
+    : '';
+
+  const childGameSection = choicesSection || legacyGameSection;
 
   const feedbackSection = parentFeedback?.trim()
     ? `\n\nParent's feedback on suggested activities: "${parentFeedback}"`
@@ -220,16 +241,19 @@ Child profile:
 Parent's responses:
 ${qaContext}${childGameSection}${feedbackSection}
 
-Instructions:
-- Before generating recommendations, identify the most significant gap or challenge the child has in the "${areaName}" area based on the data above. Name this gap explicitly in the first recommendation so the parent understands what they are working on and why it matters — do not bury it in positive framing.
-- Synthesise both the parent's perspective and the child's own responses to produce well-rounded recommendations.
-- Each recommendation must be specific to the child's age (${childAge ?? 'unknown'}), gender (${childGender ?? 'unknown'}), and the "${areaName}" growth area — do not produce generic advice.
-- Make each recommendation a specific, actionable step the parent can implement at home — describe what to do, how often, and what success looks like.
-- Order the 5 recommendations progressively: recommendation 1 should address the core gap directly and be something the parent can start in week 1; recommendations 2–3 should build on that foundation; recommendations 4–5 should represent more advanced or consolidated practice by month 3.
-- These 5 recommendations will feed directly into a personalised 3-month goal plan, so the progression must be realistic and achievable.
-- Be honest: if the data shows the child genuinely struggles in this area, reflect that in the tone and urgency of early recommendations. Warm language is welcome but must not override clarity about what needs to change.
+Each recommendation has two fields, both strict word limits — go over and the response is rejected:
+- "title": a short, concrete label for the action. Maximum 10 words. No trailing period. Must stand alone without the detail.
+- "detail": one instruction covering what to do and how often. Maximum 25 words. Do not restate the title, and do not restate the age/gender/area — every word must be new information.
 
-Return ONLY a JSON object with a "recommendations" array of exactly 5 strings, each 1–2 sentences, specific to the "${areaName}" growth area.`;
+Instructions:
+- Before generating recommendations, identify the single most significant gap or challenge the child has in the "${areaName}" area based on the data above. Recommendation 1's title must name that gap directly — do not bury it in positive framing.
+- Synthesise both the parent's perspective and the child's own responses; do not produce generic advice that could apply to any child.
+- Order the 5 recommendations progressively: recommendation 1 addresses the core gap and is something the parent can start in week 1; recommendations 2–3 build on that foundation; recommendations 4–5 represent more advanced or consolidated practice by month 3.
+- These 5 recommendations feed directly into a personalised 3-month goal plan, so the progression must be realistic and achievable.
+- Given the word limits, each detail should carry exactly one instruction — the action and its frequency. Drop success criteria, caveats, and explanations; say the single most important thing and stop.
+- Be honest: if the data shows the child genuinely struggles in this area, reflect that in the tone and urgency of early recommendations, within the same word limits.
+
+Return ONLY a JSON object with a "recommendations" array of exactly 5 objects, each with "title" (≤10 words) and "detail" (≤25 words), specific to the "${areaName}" growth area.`;
 }
 
 export function buildGoalsMonthlyPlanPrompt({

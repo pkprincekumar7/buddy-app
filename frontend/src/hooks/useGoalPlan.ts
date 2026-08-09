@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { goalsMonthlyPlanSchema } from '@/lib/llmSchemas';
 import { buildGoalsMonthlyPlanPrompt } from '@/lib/prompts';
+import { recommendationsToLines } from '@/lib/growthAreaData';
 import { useJob } from './useJob';
 
 interface Activity {
@@ -186,8 +187,20 @@ export function useGoalPlan(childId: string | undefined) {
           | undefined;
         const profile = vm?.profile?.name ? onboardingProfileFromViewModel(vm) : null;
         const safeAreas = areas ?? [];
+        // The redesigned Growth Areas flow writes ai_three_month_recommendations
+        // (objects); the onboarding flow writes recommendations (strings). Read
+        // both, newest field first, so the goals prompt keeps its area context
+        // whichever path produced the area.
         const areasContext = safeAreas
-          .map((a) => `${a.area_name ?? ''}: ${(a.recommendations ?? []).join('; ')}`)
+          .map((a) => {
+            const lines = recommendationsToLines(
+              Array.isArray(a.ai_three_month_recommendations) &&
+                a.ai_three_month_recommendations.length > 0
+                ? a.ai_three_month_recommendations
+                : (a.recommendations ?? []),
+            );
+            return `${a.area_name ?? ''}: ${lines.join('; ')}`;
+          })
           .join('\n');
 
         pendingSnapshotRef.current = completedSnapshot;
