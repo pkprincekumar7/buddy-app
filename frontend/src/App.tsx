@@ -126,6 +126,14 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
+      path="/PersonalityJourney/:childId/DimensionCircles"
+      element={
+        <LayoutWrapper currentPageName="PersonalityJourney">
+          <Pages.PersonalityJourney />
+        </LayoutWrapper>
+      }
+    />
+    <Route
       path="/PersonalityJourney/:childId"
       element={
         <LayoutWrapper currentPageName="PersonalityJourney">

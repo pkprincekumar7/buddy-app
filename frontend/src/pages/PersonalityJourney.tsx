@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
@@ -364,6 +364,7 @@ function DimensionCirclesScreen({
   onGoHome,
   onStartAgain,
   onGrow,
+  onTransform,
 }: {
   childName: string;
   mergedData: Record<string, unknown>;
@@ -371,6 +372,7 @@ function DimensionCirclesScreen({
   onGoHome: () => void;
   onStartAgain: () => void;
   onGrow: () => void;
+  onTransform: () => void;
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
@@ -858,10 +860,12 @@ function DimensionCirclesScreen({
 
           {/* Transform — top-right */}
           <div
+            onClick={onTransform}
             style={{
               ...NODE_STYLE,
               ...NP.transform,
               animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .65s both',
+              cursor: 'pointer',
             }}
           >
             <div
@@ -1038,8 +1042,9 @@ function DimensionCirclesScreen({
 export default function PersonalityJourney() {
   const navigate = useNavigate();
   const { childId } = useParams();
+  const location = useLocation();
   const { isAuthenticated, isLoadingAuth } = useAuth();
-  const [phase, setPhase] = useState<Phase>(1);
+  const phase: Phase = location.pathname.endsWith('/DimensionCircles') ? 2 : 1;
   const [mergedData, setMergedData] = useState<Record<string, unknown>>({});
   const [childName, setChildName] = useState('');
   const [isInitializing, setIsInitializing] = useState(true);
@@ -1206,7 +1211,10 @@ export default function PersonalityJourney() {
     whoosh();
     enterTimersRef.current.forEach(clearTimeout);
     // Match HTML timing: phase:'nav' at 3350ms, warp:false at 5100ms, scope:false at 5700ms
-    const t1 = setTimeout(() => setPhase(2), 3350);
+    const t1 = setTimeout(
+      () => navigate(`/PersonalityJourney/${childId ?? ''}/DimensionCircles`),
+      3350,
+    );
     const t2 = setTimeout(() => setIsEntering(false), 5700);
     enterTimersRef.current = [t1, t2];
   };
@@ -1511,9 +1519,10 @@ export default function PersonalityJourney() {
                 childName={childName}
                 mergedData={mergedData}
                 onDiscover={() => setShowDiscoverSplash(true)}
-                onGoHome={() => setPhase(1)}
+                onGoHome={() => navigate(`/PersonalityJourney/${childId ?? ''}`)}
                 onStartAgain={() => setConfirmingStartOver(true)}
                 onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
+                onTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
               />
             </motion.div>
           )}
