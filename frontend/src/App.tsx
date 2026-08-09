@@ -158,6 +158,22 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
+      path="/Observations/:childId"
+      element={
+        <LayoutWrapper currentPageName="Observations">
+          <Pages.Observations />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/Connect/:childId"
+      element={
+        <LayoutWrapper currentPageName="Connect">
+          <Pages.Connect />
+        </LayoutWrapper>
+      }
+    />
+    <Route
       path="/GoalsDashboard/:childId"
       element={
         <LayoutWrapper currentPageName="GoalsDashboard">

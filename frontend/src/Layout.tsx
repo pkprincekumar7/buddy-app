@@ -17,6 +17,16 @@ interface LayoutProps {
   currentPageName?: string;
 }
 
+// Maps a page's currentPageName to the seven-circle node label that leads to
+// it, so the header shows the same text as the circle the user tapped.
+const CIRCLE_LABELS: Record<string, string> = {
+  Connect: 'Connect',
+  PersonalityProfile: 'Discover',
+  LifePathway: 'Transform',
+  GrowthAreas: 'Grow',
+  Observations: 'Release',
+};
+
 // Extract childId from paths like /PageName/:childId or /PageName/:childId/...
 function useNavChildId() {
   const { pathname } = useLocation();
@@ -96,6 +106,8 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     void logout(true);
   }, [logout]);
 
+  const circleLabel = currentPageName ? CIRCLE_LABELS[currentPageName] : undefined;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
@@ -104,34 +116,36 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
-              <div className="glow-teal-sm flex h-8 w-8 items-center justify-center rounded-full bg-primary">
-                <svg viewBox="0 0 20 22" className="h-5 w-5">
-                  <line
-                    x1="10"
-                    y1="21"
-                    x2="10"
-                    y2="14"
-                    className="stroke-logo-leaf"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-                    className="fill-logo-leaf"
-                  />
-                  <path
-                    d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-                    className="fill-logo-leaf"
-                  />
-                </svg>
-              </div>
-              <div className="hidden flex-col sm:flex">
-                <span className="text-lg font-bold leading-tight tracking-tight text-sidebar-foreground">
-                  Buddy<span className="text-primary">360</span>
+              <div
+                className="h-[26px] w-[26px] flex-shrink-0 rounded-full"
+                style={{
+                  background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
+                  boxShadow: '0 0 14px rgba(75,233,255,.7)',
+                }}
+              />
+              <div className="hidden items-center gap-2.5 sm:flex">
+                <span
+                  className="text-sidebar-foreground"
+                  style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: 14, letterSpacing: '.06em' }}
+                >
+                  SUPERPOWER
                 </span>
-                <span className="text-[9px] font-semibold uppercase leading-tight tracking-[0.18em] text-muted-foreground/60">
-                  Children's Development
-                </span>
+                {circleLabel && (
+                  <>
+                    <span className="h-4 w-px" style={{ background: 'rgba(75,233,255,.25)' }} />
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 11,
+                        letterSpacing: '.22em',
+                        textTransform: 'uppercase',
+                        color: '#4be9ff',
+                      }}
+                    >
+                      {circleLabel}
+                    </span>
+                  </>
+                )}
               </div>
             </Link>
 

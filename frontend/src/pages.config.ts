@@ -10,6 +10,8 @@ const ConversationalOnboarding = lazy(() => import('./pages/ConversationalOnboar
 const PersonalityJourney = lazy(() => import('./pages/PersonalityJourney'));
 const GrowthAreas = lazy(() => import('./pages/GrowthAreas'));
 const PersonalityProfile = lazy(() => import('./pages/PersonalityProfile'));
+const Observations = lazy(() => import('./pages/Observations'));
+const Connect = lazy(() => import('./pages/Connect'));
 
 export const PAGES = {
   Home,
@@ -20,6 +22,8 @@ export const PAGES = {
   PersonalityJourney,
   PersonalityProfile,
   GrowthAreas,
+  Observations,
+  Connect,
 };
 
 export const pagesConfig = {

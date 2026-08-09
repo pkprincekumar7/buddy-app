@@ -16,8 +16,6 @@ import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescri
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { useJob } from '@/hooks/useJob';
-import { useStartOver } from '@/hooks/useStartOver';
-import { ConfirmModal } from '@/components/shared/StartOverButton';
 import StageSplash from '@/components/shared/StageSplash';
 
 type Phase = 1 | 2;
@@ -360,19 +358,21 @@ const CHECK_BADGE: React.CSSProperties = {
 };
 
 function DimensionCirclesScreen({
+  onConnect,
   onDiscover,
   onGoHome,
-  onStartAgain,
   onGrow,
   onTransform,
+  onRelease,
 }: {
   childName: string;
   mergedData: Record<string, unknown>;
+  onConnect: () => void;
   onDiscover: () => void;
   onGoHome: () => void;
-  onStartAgain: () => void;
   onGrow: () => void;
   onTransform: () => void;
+  onRelease: () => void;
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
@@ -751,12 +751,14 @@ function DimensionCirclesScreen({
             </svg>
           </div>
 
-          {/* Connect — top-left (inactive) */}
+          {/* Connect — top-left */}
           <div
+            onClick={onConnect}
             style={{
               ...NODE_STYLE,
               ...NP.connect,
               animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .55s both',
+              cursor: 'pointer',
             }}
           >
             <div
@@ -764,19 +766,28 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #5b6b78',
-                opacity: 0.4,
+                border: '1.5px solid #1ec4e8',
+                opacity: 0.5,
               }}
             />
-            <div style={INACTIVE_INNER}>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '1.5px solid #4be9ff',
+                animation: 'nodePulse 2.6s ease-out infinite',
+              }}
+            />
+            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#1b232b', fill: 'none', strokeWidth: 2.2 }}
+                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
               >
                 <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
               </svg>
             </div>
-            <div style={{ ...NODE_LABEL, color: '#84a0b2' }}>Connect</div>
+            <div style={NODE_LABEL}>Connect</div>
           </div>
 
           {/* Discover — top-center (CTA) */}
@@ -900,10 +911,12 @@ function DimensionCirclesScreen({
 
           {/* Release — bottom-right */}
           <div
+            onClick={onRelease}
             style={{
               ...NODE_STYLE,
               ...NP.release,
               animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .75s both',
+              cursor: 'pointer',
             }}
           >
             <div
@@ -975,14 +988,12 @@ function DimensionCirclesScreen({
             <div style={NODE_LABEL}>Grow</div>
           </div>
 
-          {/* Start Again — bottom-center */}
+          {/* Start Again — bottom-center (inactive) */}
           <div
-            onClick={onStartAgain}
             style={{
               ...NODE_STYLE,
               ...NP.startAgain,
               animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
-              cursor: 'pointer',
             }}
           >
             <div
@@ -990,29 +1001,20 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
-                opacity: 0.5,
+                border: '1.5px solid #5b6b78',
+                opacity: 0.4,
               }}
             />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+            <div style={INACTIVE_INNER}>
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{ width: 23, height: 23, stroke: '#1b232b', fill: 'none', strokeWidth: 2.2 }}
               >
                 <path d="M4 4v6h6M20 20v-6h-6" />
                 <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
               </svg>
             </div>
-            <div style={NODE_LABEL}>Start Again</div>
+            <div style={{ ...NODE_LABEL, color: '#84a0b2' }}>Start Again</div>
           </div>
         </div>
       </div>
@@ -1050,14 +1052,12 @@ export default function PersonalityJourney() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [initError, setInitError] = useState(false);
-  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
 
   const handleDiscoverSplashReady = useCallback(() => {
     setShowDiscoverSplash(false);
     void navigate(`/PersonalityProfile/${childId ?? ''}`);
   }, [navigate, childId]);
-  const { doStartOver, isStartingOver } = useStartOver(childId ?? undefined);
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
@@ -1212,7 +1212,7 @@ export default function PersonalityJourney() {
     enterTimersRef.current.forEach(clearTimeout);
     // Match HTML timing: phase:'nav' at 3350ms, warp:false at 5100ms, scope:false at 5700ms
     const t1 = setTimeout(
-      () => navigate(`/PersonalityJourney/${childId ?? ''}/DimensionCircles`),
+      () => void navigate(`/PersonalityJourney/${childId ?? ''}/DimensionCircles`),
       3350,
     );
     const t2 = setTimeout(() => setIsEntering(false), 5700);
@@ -1518,11 +1518,12 @@ export default function PersonalityJourney() {
               <DimensionCirclesScreen
                 childName={childName}
                 mergedData={mergedData}
+                onConnect={() => void navigate(`/Connect/${childId ?? ''}`)}
                 onDiscover={() => setShowDiscoverSplash(true)}
-                onGoHome={() => navigate(`/PersonalityJourney/${childId ?? ''}`)}
-                onStartAgain={() => setConfirmingStartOver(true)}
+                onGoHome={() => void navigate(`/PersonalityJourney/${childId ?? ''}`)}
                 onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
                 onTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
+                onRelease={() => void navigate(`/Observations/${childId ?? ''}`)}
               />
             </motion.div>
           )}
@@ -1531,19 +1532,6 @@ export default function PersonalityJourney() {
 
       <AnimatePresence>
         {showDiscoverSplash && <StageSplash stage={2} onReady={handleDiscoverSplashReady} />}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {confirmingStartOver && (
-          <ConfirmModal
-            onCancel={() => setConfirmingStartOver(false)}
-            onConfirm={() => {
-              setConfirmingStartOver(false);
-              void doStartOver();
-            }}
-            isStartingOver={isStartingOver}
-          />
-        )}
       </AnimatePresence>
     </div>
   );
