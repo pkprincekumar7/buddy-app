@@ -213,9 +213,9 @@ export function jobProgressMessage(elapsedMs: number, jobType: JobType): string 
   } else if (jobType === 'generate_personality_analysis') {
     if (s < 8) return 'Shaping personality insights…';
     if (s < 15) return "Finalising your child's personality profile…";
-  } else if (jobType === 'generate_journey_recommendations') {
+  } else if (jobType === 'generate_life_pathway') {
     if (s < 8) return 'Mapping a personalised journey…';
-    if (s < 15) return 'Tailoring recommendations for your child…';
+    if (s < 15) return 'Tailoring milestones for your child…';
   } else {
     if (s < 8) return 'Generating activity ideas…';
     if (s < 15) return 'Personalising activities for your child…';

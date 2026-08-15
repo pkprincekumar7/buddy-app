@@ -41,6 +41,35 @@
 }
 
 /*
+ * Rajdhani — the body face of the Superpower pages (Life Pathway, Growth Areas,
+ * Connect, Observations). Latin subsets only; the design's devanagari and
+ * latin-ext subsets are not shipped because no current copy needs them.
+ */
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/Rajdhani-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/Rajdhani-SemiBold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Rajdhani-Bold.woff2') format('woff2');
+}
+
+/*
  * ─── CENTRALIZED THEME TOKENS ───────────────────────────────────────────────
  * All colors are defined here as CSS custom properties (HSL channels).
  * Both dark (default) and light (`.light` class on <html>) are declared below.
@@ -704,14 +733,6 @@
   }
   .badge-6-border {
     border-color: hsl(var(--badge-6-color) / 0.25);
-  }
-
-  /* Area milestone — color injected per-element via --area-color custom property */
-  .area-milestone-dot {
-    background-color: var(--area-color, hsl(var(--primary)));
-  }
-  .area-milestone-badge {
-    background-color: var(--area-color, hsl(var(--primary)));
   }
 }
 

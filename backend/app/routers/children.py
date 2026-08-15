@@ -53,7 +53,35 @@ _CHILD_SYSTEM_FIELDS = {
     "updated_at",  # server-managed timestamps
     "is_deleted",
     "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
+    # Written exclusively by the generate_life_pathway worker, via the nested
+    # path life_pathway.areas.<area_id>. Client writes must be refused, not
+    # merely ignored by convention: several callers PATCH a spread of the record
+    # they just fetched (see useOnboardingComplete), and because GET emits
+    # "life_pathway": null for a child that has none, such a round-trip would
+    # store a real null here. A null parent makes the worker's dot-path $set
+    # fail permanently with "Cannot create field 'areas' in element
+    # {life_pathway: null}" — the field can only ever be absent or an object.
+    "life_pathway",
 }
+
+# Child fields the Life Pathway milestone cache is generated against. A change to
+# any of them invalidates every cached area, because the generated copy bakes them
+# in as literal text that cannot be re-resolved after the fact:
+#
+#   age    — milestones are keyed by offset slot (y1…y10) relative to the age at
+#            generation time, so a birthday re-points every slot at a different
+#            year: copy written for "age 11" would render under the "age 12" node.
+#   gender — the model is asked to write he/she/they literally, so cached copy
+#            keeps the old pronoun while the page's own templated copy switches
+#            voice around it, leaving both voices on screen at once.
+#
+# Compared by raw stored value rather than by resolved pronoun voice: mapping
+# gender to a voice here would duplicate copyTokensFor() from
+# frontend/src/lib/growthAreaData.ts, and if the two ever drifted the failure would
+# be a *missed* invalidation — stale pronouns, the bug this exists to prevent.
+# Comparing raw values can only ever over-invalidate (e.g. "Other" → ""), which
+# costs a regeneration rather than showing wrong copy.
+_LIFE_PATHWAY_INPUTS = ("age", "gender")
 
 
 # ---------------------------------------------------------------------------
@@ -209,19 +237,39 @@ async def update_child(
     if clear_pending_vm:
         set_fields.pop("pending_personality_vm", None)
 
+    unset_fields: dict[str, str] = {}
+    if clear_pending_vm:
+        unset_fields["pending_personality_vm"] = ""
+
+    owner_filter = {
+        "_id": child_id,
+        "user_id": user["_id"],
+        "location": user["location"],
+        "is_deleted": False,
+    }
+
+    # Drop the Life Pathway cache when any input it was generated against changes,
+    # so it regenerates lazily against the new values (see _LIFE_PATHWAY_INPUTS).
+    # Keyed off a real change rather than mere presence in the patch: callers
+    # re-send the whole fetched record with these fields unchanged (see
+    # useOnboardingComplete), which must not invalidate anything. One read covers
+    # every input, on the primary-key index.
+    touched_inputs = [f for f in _LIFE_PATHWAY_INPUTS if f in set_fields]
+    if touched_inputs:
+        prev = await db[models.CHILDREN].find_one(
+            owner_filter, dict.fromkeys(_LIFE_PATHWAY_INPUTS, 1)
+        )
+        if prev is not None and any(prev.get(f) != set_fields[f] for f in touched_inputs):
+            unset_fields["life_pathway"] = ""
+
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
         update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
-    if clear_pending_vm:
-        update_op["$unset"] = {"pending_personality_vm": ""}
+    if unset_fields:
+        update_op["$unset"] = unset_fields
 
     doc = await db[models.CHILDREN].find_one_and_update(
-        {
-            "_id": child_id,
-            "user_id": user["_id"],
-            "location": user["location"],
-            "is_deleted": False,
-        },
+        owner_filter,
         update_op,
         return_document=True,
     )

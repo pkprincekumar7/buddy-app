@@ -330,6 +330,11 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Life Pathway page content. Shape: {"areas": {<area_id>: {...milestones}}}.
+    # Written per area by the generate_life_pathway worker; declared here because
+    # this model ignores extra keys, so an undeclared field would be stripped from
+    # the response even though it is stored on the document.
+    life_pathway: dict | None = None
     # Avatar / profile photo — set during onboarding step 2.
     avatar_id: str | None = None  # emoji avatar selection (e.g. "capper-boy")
     avatar_url: str | None = None  # S3 URL of an uploaded profile photo
@@ -490,6 +495,7 @@ JobType = Literal[
     "generate_activity",
     "generate_personality_analysis",
     "generate_journey_insights",
+    "generate_life_pathway",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
@@ -534,6 +540,24 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # insights written to the goal_insights staging field; finalizeInsights promotes
     # it to insight_items via PATCH after the job completes.
     "generate_journey_insights": {"pending_insights"},
+    # Life Pathway milestone narrative, generated lazily one growth area at a time
+    # and cached per area on the child document. Written straight to the canonical
+    # field with no staging step: the client shows a loading state for an area it
+    # has no content for, so a partially-populated map is always a valid state and
+    # there is nothing for a promote step to do.
+    #
+    # Every path is listed explicitly rather than validated by pattern: the whole
+    # point of this allowlist is that a dot-path reaching MongoDB $set can address
+    # any neighbouring field, so the set stays exact-match. Keep in sync with
+    # GROWTH_AREAS in frontend/src/lib/growthAreaData.ts.
+    "generate_life_pathway": {
+        "life_pathway.areas.life_ambition",
+        "life_pathway.areas.self_care",
+        "life_pathway.areas.critical_thinking",
+        "life_pathway.areas.creativity",
+        "life_pathway.areas.physical_wellness",
+        "life_pathway.areas.social_skills",
+    },
 }
 
 _FILTER_MAX_KEYS = 20

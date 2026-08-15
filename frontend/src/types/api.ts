@@ -63,6 +63,12 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
+  /**
+   * Life Pathway milestone content, cached one growth area at a time by the
+   * generate_life_pathway job. Values are raw provider output — always read them
+   * through normalizeLifePathwayArea rather than trusting the shape.
+   */
+  life_pathway?: { areas?: Record<string, unknown> };
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
   is_deleted?: boolean;
@@ -70,13 +76,15 @@ export interface ChildRecord {
   [key: string]: unknown;
 }
 
+// Must stay in sync with JobType in backend/app/models_api.py — the backend
+// rejects any value it does not declare.
 export type JobType =
   | 'generate_recommendations'
   | 'generate_goals_plan'
   | 'generate_activity'
   | 'generate_personality_analysis'
-  | 'generate_journey_recommendations'
-  | 'generate_journey_insights';
+  | 'generate_journey_insights'
+  | 'generate_life_pathway';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 
