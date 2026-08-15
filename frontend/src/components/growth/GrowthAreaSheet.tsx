@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
+import { SPINNER } from '@/lib/animations';
 import {
-  AREA_GAMES,
-  AREA_QUESTIONS,
   GAME_ROUNDS_PER_AREA,
   fillTemplate,
   pickedOptions,
+  resolveRounds,
   topArchetype,
 } from '@/lib/growthAreaData';
 import type {
@@ -33,6 +33,13 @@ import type {
  * generation progresses. Closing the sheet mid-run discards the current step,
  * matching the source design — except mid-round, where it would strand the
  * child half-way through their six choices.
+ *
+ * Neither question set is owned here: both are generated per child per area by
+ * the caller and arrive as props, along with the status of that generation. Each
+ * set therefore has three states to render — waiting, unusable (with a retry),
+ * and ready — and the two waits are placed where they cost the parent least: the
+ * reflections load behind the sheet's own opening, and the child's rounds load
+ * behind the handoff beat while the parent reads "hand the screen over".
  */
 
 type Phase = 'questions' | 'handoff' | 'rounds' | 'result';
@@ -123,10 +130,114 @@ const CHOICE_TILE_PICKED: React.CSSProperties = {
   boxShadow: '0 0 0 1px rgba(240,201,138,.35),0 0 22px rgba(240,201,138,.25)',
 };
 
+/** Generation state of one question set, as reported by the caller's hook. */
+export type SetStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/**
+ * Stands in for a question set that is still being written, or could not be.
+ *
+ * The failure path offers a retry rather than the hardcoded questions, on
+ * purpose: the entire value of the set is that it was written for this child
+ * from their profile, so generic questions would quietly produce a generic plan
+ * while looking like they had worked.
+ */
+function SetGate({
+  status,
+  progress,
+  onRetry,
+  waiting,
+}: {
+  status: SetStatus;
+  progress: string;
+  onRetry: () => void;
+  waiting: string;
+}) {
+  const failed = status === 'error';
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.34, ease: 'easeOut' }}
+      style={{ marginTop: 30, marginBottom: 14, textAlign: 'center', minHeight: 150 }}
+      aria-live="polite"
+    >
+      {failed ? (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#f0c98a"
+          strokeWidth="1.7"
+          style={{ width: 30, height: 30, margin: '0 auto' }}
+        >
+          <path d="M12 8v5M12 16.5v.01M12 3l9 17H3z" />
+        </svg>
+      ) : (
+        <motion.div
+          {...SPINNER}
+          style={{
+            width: 34,
+            height: 34,
+            margin: '0 auto',
+            borderRadius: '50%',
+            border: '2px solid rgba(75,233,255,.28)',
+            borderTopColor: '#4be9ff',
+          }}
+        />
+      )}
+      <div
+        style={{
+          marginTop: 16,
+          fontFamily: ORBITRON,
+          fontWeight: 500,
+          fontSize: 15.5,
+          lineHeight: 1.45,
+          color: '#eafdff',
+        }}
+      >
+        {failed ? 'We couldn’t write these questions just now.' : waiting}
+      </div>
+      <div
+        style={{
+          marginTop: 9,
+          fontSize: 13.5,
+          fontWeight: 600,
+          color: '#84a0b2',
+          maxWidth: 400,
+          marginLeft: 'auto',
+          marginRight: 'auto',
+          minHeight: 20,
+        }}
+      >
+        {failed ? 'Nothing has been lost — give it another go.' : progress}
+      </div>
+      {failed && (
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{ ...PILL, ...CTA, display: 'inline-flex', marginTop: 20, padding: '11px 28px' }}
+        >
+          Try again
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
 interface GrowthAreaSheetProps {
   area: GrowthArea;
   childName: string;
   childGender: string;
+  /** The parent's five reflections for this area; null until generated. */
+  questions: Question[] | null;
+  questionsStatus: SetStatus;
+  /** Elapsed-time note shown while the reflections generate; '' when there is none. */
+  questionsProgress?: string;
+  onRetryQuestions: () => void;
+  /** The child's six either/or rounds for this area; null until generated. */
+  rounds: GameRound[] | null;
+  roundsStatus: SetStatus;
+  roundsProgress?: string;
+  onRetryRounds: () => void;
   /** Previously saved answers for this area, used to prefill a redo. */
   initialAnswers?: Record<string, unknown>;
   /** Mount straight into the result view for an already-finished area, skipping
@@ -138,6 +249,8 @@ interface GrowthAreaSheetProps {
   onClose: () => void;
   /** Resolve true to advance to the handoff; false keeps the parent on question five. */
   onSaveAnswers: (answers: Record<string, string>) => Promise<boolean>;
+  /** Called on Play Again, so the caller can generate rounds if it has none yet. */
+  onReplayRounds: () => void;
   /** Called once, with the six chosen option ids, after the last round (and again
    *  after any Play Again replay). The sheet moves to the result phase itself —
    *  this only needs to persist the picks and start recommendation generation. */
@@ -153,22 +266,34 @@ export default function GrowthAreaSheet({
   area,
   childName,
   childGender,
+  questions: generatedQuestions,
+  questionsStatus,
+  questionsProgress = '',
+  onRetryQuestions,
+  rounds: generatedRounds,
+  roundsStatus,
+  roundsProgress = '',
+  onRetryRounds,
   initialAnswers,
   initialPhase = 'questions',
   initialPicks,
   onClose,
   onSaveAnswers,
+  onReplayRounds,
   onCompleteRounds,
   isSaving = false,
   recsPhase = 'idle',
   recommendations = [],
 }: GrowthAreaSheetProps) {
-  const questions: Question[] = useMemo(() => AREA_QUESTIONS[area.id] ?? [], [area.id]);
-  const rounds: GameRound[] = useMemo(() => AREA_GAMES[area.id] ?? [], [area.id]);
+  // Stable empty arrays, so an area still waiting on its sets does not hand every
+  // downstream memo and effect a fresh reference on each render.
+  const questions: Question[] = useMemo(() => generatedQuestions ?? [], [generatedQuestions]);
+  const rounds: GameRound[] = useMemo(() => generatedRounds ?? [], [generatedRounds]);
 
-  if (import.meta.env.DEV && rounds.length !== GAME_ROUNDS_PER_AREA) {
-    // The handoff copy promises "Six quick choices"; shout in dev if the data
-    // ever stops matching that promise.
+  if (import.meta.env.DEV && generatedRounds && rounds.length !== GAME_ROUNDS_PER_AREA) {
+    // The handoff copy promises "Six quick choices"; shout in dev if a generated
+    // set ever stops matching that promise. Only checked once a set has actually
+    // arrived — an absent one is a wait, not a mismatch.
     console.warn(
       `[GrowthAreaSheet] ${area.id} has ${rounds.length} rounds but the handoff copy says ${GAME_ROUNDS_PER_AREA}.`,
     );
@@ -180,36 +305,53 @@ export default function GrowthAreaSheet({
   const [picks, setPicks] = useState<string[]>(
     initialPhase === 'result' ? (initialPicks ?? []) : [],
   );
-  const [answers, setAnswers] = useState<Record<string, string>>(() => {
-    // Keep only keys belonging to the current question set — a document written
-    // before the redesign holds ids that no longer exist.
-    const known = new Set(questions.map((q) => q.id));
-    const seed: Record<string, string> = {};
-    for (const [k, v] of Object.entries(initialAnswers ?? {})) {
-      if (known.has(k) && typeof v === 'string') seed[k] = v;
-    }
-    return seed;
-  });
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Prefill a redo from previously saved answers, keeping only keys belonging to
+  // the current question set — a document written against an earlier question set
+  // holds ids that no longer exist, and resolves to "nothing answered".
+  //
+  // An effect rather than a useState initialiser because the questions arrive
+  // asynchronously: on first open there is no set to match keys against yet.
+  // Merging into whatever is already typed means a set arriving late (or a
+  // re-render) can never discard the parent's own input.
+  useEffect(() => {
+    if (questions.length === 0) return;
+    const known = new Set(questions.map((q) => q.id));
+    setAnswers((prev) => {
+      const seed: Record<string, string> = {};
+      for (const [k, v] of Object.entries(initialAnswers ?? {})) {
+        if (known.has(k) && typeof v === 'string' && prev[k] === undefined) seed[k] = v;
+      }
+      return Object.keys(seed).length > 0 ? { ...prev, ...seed } : prev;
+    });
+  }, [questions, initialAnswers]);
 
   const currentQuestion = questions[qIdx];
   const currentRound = rounds[rIdx];
   const isLastQuestion = qIdx >= questions.length - 1;
 
+  // Closing mid-round would strand the child half-way through their choices —
+  // but while the rounds are still being written (or have failed) there is no run
+  // to strand, and a parent stuck on that wait must be able to get out.
+  const dismissable = phase !== 'rounds' || roundsStatus !== 'ready';
+
   // Escape closes, matching the ✕ affordance — but not once the child is
   // answering, where a stray key press would throw away their run.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && phase !== 'rounds') onClose();
+      if (e.key === 'Escape' && dismissable) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, phase]);
+  }, [onClose, dismissable]);
 
-  // Move focus into the field on open and on each question change.
+  // Move focus into the field on open and on each question change — including
+  // the moment the generated questions land and the field first exists.
   useEffect(() => {
-    if (phase === 'questions') textareaRef.current?.focus();
-  }, [qIdx, phase]);
+    if (phase === 'questions' && questionsStatus === 'ready') textareaRef.current?.focus();
+  }, [qIdx, phase, questionsStatus]);
 
   const goNext = useCallback(async () => {
     if (isSaving) return;
@@ -253,18 +395,26 @@ export default function GrowthAreaSheet({
     // questions prefill on a redo. `choose` overwrites in place as rounds are
     // revisited, so this is just the starting point, not a lock-in.
     setPhase('rounds');
-  }, []);
+    // No-op unless this area finished before its rounds were generated, in which
+    // case the rounds phase shows its wait while they are written.
+    onReplayRounds();
+  }, [onReplayRounds]);
 
+  // The picks being rendered may predate this child's generated rounds — an area
+  // completed against the hardcoded set still has to show what was actually
+  // chosen, so the set the ids belong to decides which one they resolve against.
+  const pickRounds = useMemo(
+    () => resolveRounds(area.id, generatedRounds, picks),
+    [area.id, generatedRounds, picks],
+  );
   const archetype = useMemo(
-    () => topArchetype(area.id, picks)?.archetype ?? null,
-    [area.id, picks],
+    () => topArchetype(area.id, pickRounds, picks)?.archetype ?? null,
+    [area.id, pickRounds, picks],
   );
   const pickedStars = useMemo(
-    () => pickedOptions(area.id, picks).map((o) => o.star),
-    [area.id, picks],
+    () => pickedOptions(pickRounds, picks).map((o) => o.star),
+    [pickRounds, picks],
   );
-
-  const dismissable = phase !== 'rounds';
 
   return (
     <motion.div
@@ -361,7 +511,19 @@ export default function GrowthAreaSheet({
         )}
 
         {/* ── Phase: the parent's five reflections ────────────────────────── */}
-        {phase === 'questions' && currentQuestion && (
+        {/* The sheet opens straight away and waits here, rather than holding the
+            map frozen — the parent sees the area they clicked while their
+            questions are written. */}
+        {phase === 'questions' && questionsStatus !== 'ready' && (
+          <SetGate
+            status={questionsStatus}
+            progress={questionsProgress}
+            onRetry={onRetryQuestions}
+            waiting={fillTemplate('Writing questions about {name}…', childName, childGender)}
+          />
+        )}
+
+        {phase === 'questions' && questionsStatus === 'ready' && currentQuestion && (
           <>
             <div className="flex items-center" style={{ gap: 7, marginTop: 20 }}>
               {questions.map((q, i) => (
@@ -556,35 +718,60 @@ export default function GrowthAreaSheet({
             >
               {fillTemplate(
                 // Spelled out, as the design has it — the round count is fixed by
-                // AREA_GAMES, asserted below so the copy can't drift from the data.
+                // GAME_ROUNDS_PER_AREA, asserted above so the copy can't drift
+                // from a generated set.
                 `Hand the screen to {name}. Six quick choices, then {his} ${area.name} constellation appears.`,
                 childName,
                 childGender,
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setRIdx(0);
-                setPicks([]);
-                setPhase('rounds');
-              }}
-              style={{
-                ...PILL,
-                ...CTA,
-                display: 'inline-flex',
-                marginTop: 20,
-                padding: '12px 30px',
-                fontSize: 13,
-              }}
-            >
-              I’m ready
-            </button>
+            {/* Where the second generation's wait is spent: the child's rounds
+                are being written from the answers the parent just gave, while the
+                parent reads the copy above. By the time they hand the screen over
+                it is almost always already done. */}
+            {roundsStatus === 'ready' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setRIdx(0);
+                  setPicks([]);
+                  setPhase('rounds');
+                }}
+                style={{
+                  ...PILL,
+                  ...CTA,
+                  display: 'inline-flex',
+                  marginTop: 20,
+                  padding: '12px 30px',
+                  fontSize: 13,
+                }}
+              >
+                I’m ready
+              </button>
+            ) : (
+              <SetGate
+                status={roundsStatus}
+                progress={roundsProgress}
+                onRetry={onRetryRounds}
+                waiting={fillTemplate('Building {name}’s choices…', childName, childGender)}
+              />
+            )}
           </motion.div>
         )}
 
         {/* ── Phase: the child's six either/or rounds ─────────────────────── */}
-        {phase === 'rounds' && currentRound && (
+        {/* Reachable un-generated only via Play Again on an area finished before
+            its rounds were ever generated; the handoff gates every other route in. */}
+        {phase === 'rounds' && roundsStatus !== 'ready' && (
+          <SetGate
+            status={roundsStatus}
+            progress={roundsProgress}
+            onRetry={onRetryRounds}
+            waiting={fillTemplate('Building {name}’s choices…', childName, childGender)}
+          />
+        )}
+
+        {phase === 'rounds' && roundsStatus === 'ready' && currentRound && (
           <motion.div
             key={rIdx}
             initial={{ opacity: 0, y: 10 }}

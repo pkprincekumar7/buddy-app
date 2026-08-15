@@ -448,7 +448,15 @@ export interface GameRound {
   b: GameOption;
 }
 
-const P = {
+/**
+ * Inline SVG paths for the option tiles, keyed by name.
+ *
+ * Exported because the generated child rounds select an icon *by key* — the key
+ * set is the enum the model is constrained to, and `iconPathFor` resolves the
+ * key it returns back to a path. Keeping this as the single source means a new
+ * icon becomes available to the model the moment it's added here.
+ */
+export const ICON_PATHS = {
   book: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5zM19 18v3H6.5',
   box: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8',
   chat: 'M20 12a7 7 0 0 1-7 7H9l-4 3 1-4.2A7 7 0 0 1 13 5a7 7 0 0 1 7 7z',
@@ -473,6 +481,27 @@ const P = {
   trophy: 'M8 4h8v4a4 4 0 0 1-8 0zM8 6H5v2a3 3 0 0 0 3 3M16 6h3v2a3 3 0 0 1-3 3M10 15h4l.5 5h-5z',
   wrench: 'M15 4a4 4 0 0 0 5 5l-9 9a3 3 0 1 1-4-4z',
 };
+
+/** Terse alias, purely to keep the AREA_GAMES table below readable. */
+const P = ICON_PATHS;
+
+export type IconKey = keyof typeof ICON_PATHS;
+
+/** The icon vocabulary a generated round may choose from. */
+export const ICON_KEYS = Object.keys(ICON_PATHS) as IconKey[];
+
+/**
+ * Resolve an icon key to its path, falling back to a neutral sparkle.
+ * The key comes from a model response, so an unrecognised one is expected
+ * occasionally — the icon is decoration, never meaning, so a fallback is the
+ * right call rather than rejecting the whole round set over it.
+ */
+export function iconPathFor(key: unknown): string {
+  if (typeof key === 'string' && key in ICON_PATHS) {
+    return ICON_PATHS[key as IconKey];
+  }
+  return ICON_PATHS.spark;
+}
 
 export const AREA_GAMES: Record<string, GameRound[]> = {
   life_ambition: [
@@ -1213,27 +1242,72 @@ export const AREA_ARCHETYPES: Record<string, Record<string, Archetype>> = {
   },
 };
 
-/** All options for an area, flattened — a and b of every round. */
-function areaOptions(areaId: string): GameOption[] {
-  return (AREA_GAMES[areaId] ?? []).flatMap((r) => [r.a, r.b]);
+/**
+ * The tag vocabulary for an area — the archetype keys, in declaration order.
+ * Doubles as the enum a generated round's `tag` is constrained to: a tag outside
+ * this set would leave topArchetype with nothing to resolve.
+ */
+export function tagsForArea(areaId: string): string[] {
+  return Object.keys(AREA_ARCHETYPES[areaId] ?? {});
+}
+
+/** All options in a round set, flattened — a and b of every round. */
+function allOptions(rounds: GameRound[]): GameOption[] {
+  return rounds.flatMap((r) => [r.a, r.b]);
 }
 
 /** Resolve a saved pick id back to its option. Returns null for unknown ids. */
-export function optionById(areaId: string, optionId: string): GameOption | null {
-  return areaOptions(areaId).find((o) => o.id === optionId) ?? null;
+export function optionById(rounds: GameRound[], optionId: string): GameOption | null {
+  return allOptions(rounds).find((o) => o.id === optionId) ?? null;
 }
 
 /**
  * Resolve saved picks to options, dropping any that no longer exist.
- * Documents written before the redesign hold image-tile ids, which resolve to
- * nothing — callers should read a short result as "the child step needs redoing"
- * rather than rendering a partial constellation.
+ * Callers should read a short result as "the child step needs redoing" rather
+ * than rendering a partial constellation.
  */
-export function pickedOptions(areaId: string, pickedIds: unknown): GameOption[] {
+export function pickedOptions(rounds: GameRound[], pickedIds: unknown): GameOption[] {
   if (!Array.isArray(pickedIds)) return [];
   return pickedIds
-    .map((id) => (typeof id === 'string' ? optionById(areaId, id) : null))
+    .map((id) => (typeof id === 'string' ? optionById(rounds, id) : null))
     .filter((o): o is GameOption => o !== null);
+}
+
+/**
+ * Pick the round set a saved list of ids should be read against.
+ *
+ * Three generations of pick ids coexist in the database and none are migrated:
+ *   • generated ids (`<area_id>_gr1a`) — everything written since questions
+ *     became LLM-generated, resolved against `generated`
+ *   • redesign ids (`la_r1a`) — areas completed against the hardcoded AREA_GAMES
+ *     table, which is kept precisely so these still resolve to the options the
+ *     child actually chose rather than to unrelated generated ones
+ *   • pre-redesign image-tile ids — resolve against neither, and correctly read
+ *     as "the child step needs redoing"
+ *
+ * Whichever set the ids actually belong to wins, so no caller has to know which
+ * generation a document came from.
+ */
+export function resolveRounds(
+  areaId: string,
+  generated: GameRound[] | null | undefined,
+  pickedIds: unknown,
+): GameRound[] {
+  const ids = Array.isArray(pickedIds) ? pickedIds.filter((id) => typeof id === 'string') : [];
+  const legacy = AREA_GAMES[areaId] ?? [];
+  if (ids.length === 0) return generated ?? legacy;
+
+  const resolvesIn = (rounds: GameRound[]): boolean => {
+    if (rounds.length === 0) return false;
+    const known = new Set(allOptions(rounds).map((o) => o.id));
+    return ids.every((id) => known.has(id));
+  };
+
+  if (generated && resolvesIn(generated)) return generated;
+  if (resolvesIn(legacy)) return legacy;
+  // Neither set owns these ids. Prefer the generated set so a fresh replay is
+  // played against this child's own rounds.
+  return generated ?? legacy;
 }
 
 /**
@@ -1243,9 +1317,10 @@ export function pickedOptions(areaId: string, pickedIds: unknown): GameOption[] 
  */
 export function topArchetype(
   areaId: string,
+  rounds: GameRound[],
   pickedIds: unknown,
 ): { tag: string; archetype: Archetype } | null {
-  const options = pickedOptions(areaId, pickedIds);
+  const options = pickedOptions(rounds, pickedIds);
   if (options.length === 0) return null;
 
   const counts = new Map<string, number>();
@@ -1328,4 +1403,141 @@ export function recommendationsToLines(raw: unknown): string[] {
   return normalizeRecommendations(raw).map((r) =>
     r.detail ? `${r.title} — ${r.detail}` : r.title,
   );
+}
+
+// ─── Generated question sets ──────────────────────────────────────────────────
+// Both question sets above are the fallback shape only; what a parent actually
+// answers is generated per child per area and cached on the child document at
+// growth_questions.areas.<area_id>.{parent,child}.
+//
+// The LLM call runs in plain JSON mode, not a provider's strict structured
+// output — the response schema reaches the model as a hint in the system message
+// (see backend/app/services/llm_service.py), so its enums and counts are
+// advisory. These normalisers are therefore the actual guarantee that what
+// reaches the UI is renderable, not a backstop for one.
+//
+// Returning null means "unusable" and surfaces to the parent as an error with a
+// retry, so the bar is deliberately: repair what is cosmetic, reject what would
+// silently degrade the result.
+
+const QUESTION_MAX_WORDS = 22;
+const HINT_MAX_WORDS = 14;
+const OPTION_TEXT_MAX_WORDS = 12;
+const STAR_MAX_CHARS = 14;
+
+/** Ids are assigned here, never taken from the model — see idsFor* below. */
+function questionId(areaId: string, index: number): string {
+  return `${areaId}_gq${index + 1}`;
+}
+
+function optionId(areaId: string, roundIndex: number, side: 'a' | 'b'): string {
+  return `${areaId}_gr${roundIndex + 1}${side}`;
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Unwrap `{ questions: [...] }` / `{ rounds: [...] }`, or a bare array. */
+function readArray(raw: unknown, key: string): unknown[] | null {
+  if (Array.isArray(raw)) return raw as unknown[];
+  if (!raw || typeof raw !== 'object') return null;
+  const nested = (raw as Record<string, unknown>)[key];
+  return Array.isArray(nested) ? (nested as unknown[]) : null;
+}
+
+/**
+ * Validate a generated parent reflection set, assigning stable ids.
+ *
+ * Ids are positional and namespaced per area (`life_ambition_gq1`), sharing no
+ * key with the hardcoded `la_q1` set. A document still holding hardcoded answers
+ * therefore resolves to "nothing answered" and the wizard restarts cleanly at
+ * question one — the same deliberate behaviour the redesign relied on, and far
+ * better than reusing the ids and showing an old answer under a new question.
+ *
+ * Returns null unless every slot carries a question; a short set would strand
+ * the parent on a wizard whose progress pips promise more than it has.
+ */
+export function normalizeGeneratedQuestions(raw: unknown, areaId: string): Question[] | null {
+  const items = readArray(raw, 'questions');
+  if (!items) return null;
+
+  const out: Question[] = [];
+  for (const item of items.slice(0, PARENT_QUESTIONS_PER_AREA)) {
+    if (!item || typeof item !== 'object') break;
+    const o = item as Record<string, unknown>;
+    const question = readString(o.question);
+    if (!question) break;
+    out.push({
+      id: questionId(areaId, out.length),
+      question: capWords(question, QUESTION_MAX_WORDS),
+      // An absent hint renders as nothing, which is a fine question with no
+      // sub-heading — not worth rejecting a set over.
+      hint: capWords(readString(o.hint), HINT_MAX_WORDS),
+    });
+  }
+
+  return out.length === PARENT_QUESTIONS_PER_AREA ? out : null;
+}
+
+function readOption(
+  raw: unknown,
+  areaId: string,
+  roundIndex: number,
+  side: 'a' | 'b',
+  allowedTags: Set<string>,
+): GameOption | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const text = readString(o.text);
+  const tag = readString(o.tag);
+  // A tag outside the area's set leaves topArchetype with nothing to resolve,
+  // which silently guts the result screen — the entire payoff of the child's
+  // step. Reject rather than guess a substitute and mis-attribute the child.
+  if (!text || !allowedTags.has(tag)) return null;
+
+  const star = readString(o.star) || (text.split(/\s+/)[0] ?? '');
+  return {
+    id: optionId(areaId, roundIndex, side),
+    text: capWords(text, OPTION_TEXT_MAX_WORDS),
+    tag,
+    star: star.slice(0, STAR_MAX_CHARS),
+    icon: iconPathFor(o.icon),
+  };
+}
+
+/**
+ * Validate a generated either/or round set, assigning stable ids.
+ *
+ * Returns null unless all six rounds are complete and every tag is one this
+ * area's archetypes can resolve — the handoff copy promises six choices and the
+ * result screen is built on the winning tag, so a partial set is not renderable.
+ */
+export function normalizeGeneratedRounds(raw: unknown, areaId: string): GameRound[] | null {
+  const items = readArray(raw, 'rounds');
+  if (!items) return null;
+
+  const allowedTags = new Set(tagsForArea(areaId));
+  if (allowedTags.size === 0) return null;
+
+  const out: GameRound[] = [];
+  for (const item of items.slice(0, GAME_ROUNDS_PER_AREA)) {
+    if (!item || typeof item !== 'object') break;
+    const o = item as Record<string, unknown>;
+    const a = readOption(o.a, areaId, out.length, 'a', allowedTags);
+    const b = readOption(o.b, areaId, out.length, 'b', allowedTags);
+    if (!a || !b) break;
+    if (import.meta.env.DEV && a.tag === b.tag) {
+      // Both sides scoring the same tag makes the round unable to discriminate.
+      // The archetype still computes, so this is a quality signal for review
+      // rather than grounds for making a parent sit through a retry.
+      console.warn(
+        `[growthAreaData] ${areaId} generated round ${out.length + 1} has the same tag ` +
+          `("${a.tag}") on both options — that round cannot discriminate.`,
+      );
+    }
+    out.push({ a, b });
+  }
+
+  return out.length === GAME_ROUNDS_PER_AREA ? out : null;
 }

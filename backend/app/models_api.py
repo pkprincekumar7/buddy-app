@@ -86,6 +86,19 @@ class CompletedGrowthArea(BaseModel):
     # Staging field written by the generate_activity worker before the client
     # finalises child_activity on the domain document.
     pending_child_activity: dict | None = None
+    # The two question sets this area was actually presented with, generated once
+    # per child per area and then reused for good. Written only by the
+    # generate_growth_parent_questions / generate_growth_child_rounds workers —
+    # append_completed_growth_area writes an explicit field allowlist, so a client
+    # cannot reach them.
+    #
+    # They sit alongside `answers` and `child_activity.selections` on purpose:
+    # those hold responses keyed by ids derived positionally from these sets, so
+    # splitting the two apart would leave answers whose wording lives elsewhere.
+    # Both must be declared here or _doc_to_growth_area, which constructs this
+    # model field by field, would silently drop them from every response.
+    parent_questions: dict | None = None
+    child_rounds: dict | None = None
 
 
 class CompletedGrowthAreasResponse(BaseModel):
@@ -496,6 +509,8 @@ JobType = Literal[
     "generate_personality_analysis",
     "generate_journey_insights",
     "generate_life_pathway",
+    "generate_growth_parent_questions",
+    "generate_growth_child_rounds",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
@@ -558,6 +573,24 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
         "life_pathway.areas.physical_wellness",
         "life_pathway.areas.social_skills",
     },
+    # The two Growth Areas question sets, generated lazily per area on first click
+    # and cached on that area's growth_areas document — the same document that
+    # already holds the answers to them, the child's picks and the resulting
+    # recommendations. Written straight to the canonical field with no staging
+    # step: the client shows a loading state for an area it has no questions for,
+    # so a partially-populated set is always a valid state.
+    #
+    # Flat field names, not dot-paths, because the area is identified by
+    # write_back.filter.area_id rather than baked into the path. That keeps this
+    # allowlist independent of GROWTH_AREAS, and takes the whole class of "cannot
+    # create field 'x' in element {y: null}" write failures off the table — there
+    # is no nullable ancestor for MongoDB to trip over.
+    #
+    # Split across two job types rather than one so the parent-questions job
+    # structurally cannot write into the child-rounds field, and each stage gets
+    # its own active_jobs slot and in-flight budget.
+    "generate_growth_parent_questions": {"parent_questions"},
+    "generate_growth_child_rounds": {"child_rounds"},
 }
 
 _FILTER_MAX_KEYS = 20

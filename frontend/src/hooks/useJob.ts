@@ -216,6 +216,12 @@ export function jobProgressMessage(elapsedMs: number, jobType: JobType): string 
   } else if (jobType === 'generate_life_pathway') {
     if (s < 8) return 'Mapping a personalised journey…';
     if (s < 15) return 'Tailoring milestones for your child…';
+  } else if (jobType === 'generate_growth_parent_questions') {
+    if (s < 8) return 'Reading your child’s profile…';
+    if (s < 15) return 'Writing questions just for them…';
+  } else if (jobType === 'generate_growth_child_rounds') {
+    if (s < 8) return 'Turning your answers into a game…';
+    if (s < 15) return 'Shaping choices your child will love…';
   } else {
     if (s < 8) return 'Generating activity ideas…';
     if (s < 15) return 'Personalising activities for your child…';

@@ -102,6 +102,8 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
         ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
         pending_recommendations=doc.get("pending_recommendations"),
         pending_child_activity=doc.get("pending_child_activity"),
+        parent_questions=doc.get("parent_questions"),
+        child_rounds=doc.get("child_rounds"),
     )
 
 

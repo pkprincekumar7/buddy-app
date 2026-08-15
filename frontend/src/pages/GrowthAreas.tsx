@@ -5,20 +5,24 @@ import { toast } from 'sonner';
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import { useJob } from '@/hooks/useJob';
+import { useGrowthAreaQuestions } from '@/hooks/useGrowthAreaQuestions';
 import { useAuth } from '@/lib/AuthContext';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { api } from '@/api/client';
 import {
+  // Not what a parent answers any more — kept as the accurate record of the
+  // wording used by areas answered before questions were generated.
   AREA_QUESTIONS,
   GROWTH_AREAS,
   fillTemplate,
   normalizeRecommendations,
   pickedOptions,
+  resolveRounds,
   topArchetype,
 } from '@/lib/growthAreaData';
 import type { GrowthArea, GrowthRecommendation } from '@/lib/growthAreaData';
-import type { StoredRecommendation } from '@/types/api';
+import type { CompletedArea, StoredRecommendation } from '@/types/api';
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { SPINNER } from '@/lib/animations';
 import Starfield from '@/components/shared/Starfield';
@@ -89,6 +93,12 @@ export default function GrowthAreas() {
     Record<string, { picks: string[]; recommendations: GrowthRecommendation[] }>
   >({});
   const [hydrated, setHydrated] = useState(false);
+  /** The raw growth_areas documents, which also carry the generated question sets. */
+  const [areaDocs, setAreaDocs] = useState<CompletedArea[]>([]);
+  // What the parent said worries them most, from the goals document. Prompt
+  // context only — the highest-signal single field for aiming the generated
+  // reflections at what this parent actually came here for.
+  const [parentConcern, setParentConcern] = useState<string | null>(null);
   const [activeArea, setActiveArea] = useState<GrowthArea | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [recsStatus, setRecsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -142,6 +152,9 @@ export default function GrowthAreas() {
         const areas = await api.completedGrowthAreas.list(childId);
         if (cancelled) return;
         const allDocs = areas.areas ?? [];
+        // Held as-is for useGrowthAreaQuestions, which reads each area's stored
+        // question sets off these same documents.
+        setAreaDocs(allDocs);
         const done = new Set(
           allDocs
             .filter(
@@ -181,6 +194,18 @@ export default function GrowthAreas() {
           }
         }
         setCompletedResults(results);
+
+        // Prompt context only, and the page is fully usable without it — so it
+        // gets its own guard rather than sharing the fate of the loads above.
+        try {
+          const goals = await api.goals.get(childId);
+          if (cancelled) return;
+          const concern =
+            typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '';
+          if (concern) setParentConcern(concern);
+        } catch (err) {
+          console.warn('[GrowthAreas] Could not load the parent concern:', err);
+        }
       } catch (err) {
         console.warn('[GrowthAreas] Load failed:', err);
       } finally {
@@ -201,6 +226,46 @@ export default function GrowthAreas() {
   }, [showSplash, hydrated, setAmbientSuppressed]);
 
   /**
+   * Both question sets, generated per child per area and cached on the child
+   * document. Anchored on the page rather than in the sheet so a job survives the
+   * parent closing the sheet mid-generation.
+   */
+  const generated = useGrowthAreaQuestions({
+    childId,
+    child: childData,
+    areas: areaDocs,
+    area: activeArea,
+    parentConcern,
+    enabled: hydrated,
+  });
+  const { ensureParent, ensureChild, questionsFor, roundsFor } = generated;
+
+  /**
+   * The reflections an area's saved answers belong to.
+   *
+   * Prefers this child's generated set, falling back to the hardcoded one for an
+   * area answered before questions were generated — for those documents the
+   * hardcoded wording is the accurate record of what the parent was asked, not a
+   * substitute for it.
+   */
+  const askedQuestions = useCallback(
+    (areaId: string) => questionsFor(areaId) ?? AREA_QUESTIONS[areaId] ?? [],
+    [questionsFor],
+  );
+
+  /** An area's answers as question/answer pairs, for prompt context. */
+  const qaPairsFor = useCallback(
+    (areaId: string, answers: Record<string, unknown>) =>
+      askedQuestions(areaId).flatMap((q) => {
+        const answer = typeof answers[q.id] === 'string' ? (answers[q.id] as string).trim() : '';
+        return answer
+          ? [{ question: fillTemplate(q.question, childName, childGender), answer }]
+          : [];
+      }),
+    [askedQuestions, childName, childGender],
+  );
+
+  /**
    * The one and only write for the reflection step, on Finish at question five.
    * Returns whether it landed so the sheet can hold position on failure rather
    * than handing a device to the child with the parent's answers lost.
@@ -219,6 +284,10 @@ export default function GrowthAreas() {
           interactive_answers: answers,
         });
         setSavedAnswers((prev) => ({ ...prev, [area.id]: answers }));
+        // Stage two starts here, not on the click that opened this area: the
+        // child's choices are built from the answers just written, and the wait
+        // then runs underneath the handoff beat the parent is about to read.
+        ensureChild(area, qaPairsFor(area.id, answers));
         return true;
       } catch (err) {
         console.error('[GrowthAreas] Saving reflection failed:', err);
@@ -228,7 +297,7 @@ export default function GrowthAreas() {
         setIsSaving(false);
       }
     },
-    [childId],
+    [childId, ensureChild, qaPairsFor],
   );
 
   /**
@@ -349,9 +418,10 @@ export default function GrowthAreas() {
           child_activity: { selections: pickedIds },
         });
 
-        const questions = AREA_QUESTIONS[area.id] ?? [];
+        // The questions this child was actually asked, not a template — they are
+        // what makes the answers below interpretable.
         const answers = savedAnswers[area.id] ?? {};
-        const qaContext = questions
+        const qaContext = askedQuestions(area.id)
           .filter((q) => answers[q.id])
           .map(
             (q) =>
@@ -360,7 +430,8 @@ export default function GrowthAreas() {
               `A: ${String(answers[q.id])}`,
           )
           .join('\n\n');
-        const archetype = topArchetype(area.id, pickedIds)?.archetype;
+        const rounds = resolveRounds(area.id, roundsFor(area.id), pickedIds);
+        const archetype = topArchetype(area.id, rounds, pickedIds)?.archetype;
 
         await jobEnqueue({
           type: 'generate_recommendations',
@@ -372,7 +443,7 @@ export default function GrowthAreas() {
               childGender: childGender || null,
               areaName: area.name,
               qaContext,
-              childChoices: pickedOptions(area.id, pickedIds).map((o) => o.text),
+              childChoices: pickedOptions(rounds, pickedIds).map((o) => o.text),
               childArchetype: archetype
                 ? {
                     title: archetype.title,
@@ -423,7 +494,17 @@ export default function GrowthAreas() {
         setIsSaving(false);
       }
     },
-    [childId, savedAnswers, childName, childAge, childGender, jobEnqueue, recsStatus],
+    [
+      childId,
+      savedAnswers,
+      childName,
+      childAge,
+      childGender,
+      jobEnqueue,
+      recsStatus,
+      askedQuestions,
+      roundsFor,
+    ],
   );
 
   // Mirrors the guard the old GreatInsights page used: job.isComplete fires
@@ -451,10 +532,27 @@ export default function GrowthAreas() {
         recsPicksRef.current = cached.picks;
         setRecsStatus('ready');
         setRecommendations(cached.recommendations);
+      } else {
+        // Stage one. Skipped for a finished area, which opens straight into its
+        // result and never shows a question — generating a set it would not
+        // display would only spend a parent's quota to fill a cache.
+        ensureParent(area);
       }
       setActiveArea(area);
     },
-    [completedResults, savedAnswers],
+    [completedResults, savedAnswers, ensureParent],
+  );
+
+  /**
+   * Play Again on an area finished before its rounds were ever generated: the
+   * result renders from the hardcoded set, but replaying deserves rounds of this
+   * child's own, and the answers to ground them in are already saved.
+   */
+  const handleReplayRounds = useCallback(
+    (area: GrowthArea) => {
+      ensureChild(area, qaPairsFor(area.id, savedAnswers[area.id] ?? {}));
+    },
+    [ensureChild, qaPairsFor, savedAnswers],
   );
 
   const size = isMobile ? MOBILE_NODE : NODE;
@@ -683,6 +781,14 @@ export default function GrowthAreas() {
                 area={activeArea}
                 childName={childName}
                 childGender={childGender}
+                questions={generated.questions}
+                questionsStatus={generated.parent.status}
+                questionsProgress={generated.parent.progressMessage}
+                onRetryQuestions={generated.parent.retry}
+                rounds={generated.rounds}
+                roundsStatus={generated.child.status}
+                roundsProgress={generated.child.progressMessage}
+                onRetryRounds={generated.child.retry}
                 initialAnswers={savedAnswers[activeArea.id]}
                 initialPhase={cached ? 'result' : 'questions'}
                 initialPicks={cached?.picks}
@@ -693,6 +799,7 @@ export default function GrowthAreas() {
                   if (!isSaving) setActiveArea(null);
                 }}
                 onSaveAnswers={(answers) => handleSaveAnswers(activeArea, answers)}
+                onReplayRounds={() => handleReplayRounds(activeArea)}
                 onCompleteRounds={(pickedIds) => {
                   void handleCompleteRounds(activeArea, pickedIds);
                 }}

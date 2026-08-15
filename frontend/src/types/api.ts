@@ -84,7 +84,9 @@ export type JobType =
   | 'generate_activity'
   | 'generate_personality_analysis'
   | 'generate_journey_insights'
-  | 'generate_life_pathway';
+  | 'generate_life_pathway'
+  | 'generate_growth_parent_questions'
+  | 'generate_growth_child_rounds';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 
@@ -196,6 +198,16 @@ export interface CompletedArea {
   interactive_answers?: Record<string, unknown>;
   child_activity?: Record<string, unknown>;
   child_activity_selections?: string[];
+  /**
+   * The two question sets this area was presented with, generated once per child
+   * per area by the generate_growth_parent_questions / generate_growth_child_rounds
+   * jobs. Raw provider output — always read through normalizeGeneratedQuestions /
+   * normalizeGeneratedRounds in `@/lib/growthAreaData` rather than trusting the
+   * shape. `answers` and `child_activity.selections` above are keyed by ids
+   * derived from these, so the three belong together on one document.
+   */
+  parent_questions?: Record<string, unknown>;
+  child_rounds?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
