@@ -104,6 +104,7 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
         pending_child_activity=doc.get("pending_child_activity"),
         parent_questions=doc.get("parent_questions"),
         child_rounds=doc.get("child_rounds"),
+        life_pathway_milestones=doc.get("life_pathway_milestones"),
     )
 
 

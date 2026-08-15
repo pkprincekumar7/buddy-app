@@ -53,20 +53,15 @@ _CHILD_SYSTEM_FIELDS = {
     "updated_at",  # server-managed timestamps
     "is_deleted",
     "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
-    # Written exclusively by the generate_life_pathway worker, via the nested
-    # path life_pathway.areas.<area_id>. Client writes must be refused, not
-    # merely ignored by convention: several callers PATCH a spread of the record
-    # they just fetched (see useOnboardingComplete), and because GET emits
-    # "life_pathway": null for a child that has none, such a round-trip would
-    # store a real null here. A null parent makes the worker's dot-path $set
-    # fail permanently with "Cannot create field 'areas' in element
-    # {life_pathway: null}" — the field can only ever be absent or an object.
-    "life_pathway",
 }
 
 # Child fields the Life Pathway milestone cache is generated against. A change to
-# any of them invalidates every cached area, because the generated copy bakes them
-# in as literal text that cannot be re-resolved after the fact:
+# any of them invalidates every cached area — the milestones live on the child's
+# growth_areas documents (CompletedGrowthArea.life_pathway_milestones), so
+# invalidating means clearing that field across them, not touching this document.
+#
+# The generated copy bakes these values in as literal text that cannot be
+# re-resolved after the fact:
 #
 #   age    — milestones are keyed by offset slot (y1…y10) relative to the age at
 #            generation time, so a birthday re-points every slot at a different
@@ -254,13 +249,20 @@ async def update_child(
     # re-send the whole fetched record with these fields unchanged (see
     # useOnboardingComplete), which must not invalidate anything. One read covers
     # every input, on the primary-key index.
+    #
+    # The cache lives on this child's growth_areas documents, so this is a
+    # cross-collection clear rather than an $unset on the document being patched.
+    # It runs after the child write below, not here: invalidating first and then
+    # failing to apply the change would throw away good copy for nothing.
+    invalidate_pathway = False
     touched_inputs = [f for f in _LIFE_PATHWAY_INPUTS if f in set_fields]
     if touched_inputs:
         prev = await db[models.CHILDREN].find_one(
             owner_filter, dict.fromkeys(_LIFE_PATHWAY_INPUTS, 1)
         )
-        if prev is not None and any(prev.get(f) != set_fields[f] for f in touched_inputs):
-            unset_fields["life_pathway"] = ""
+        invalidate_pathway = prev is not None and any(
+            prev.get(f) != set_fields[f] for f in touched_inputs
+        )
 
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
@@ -275,6 +277,25 @@ async def update_child(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    if invalidate_pathway:
+        # Every area at once: the inputs are child-level, so no area's cached copy
+        # survives a change to them. Areas with nothing cached simply match nothing
+        # to unset. Failure here is non-fatal — the patch itself has landed, and the
+        # cost is stale milestone copy rather than a lost edit, so it is logged and
+        # left rather than 500ing a successful profile update.
+        try:
+            await db[models.GROWTH_AREAS].update_many(
+                {
+                    "user_id": user["_id"],
+                    "child_id": child_id,
+                    "location": user["location"],
+                },
+                {"$unset": {"life_pathway_milestones": ""}},
+            )
+        except Exception:
+            log.exception("life pathway cache invalidation failed child_id=%s", child_id)
+
     return _child_to_api(doc)
 
 

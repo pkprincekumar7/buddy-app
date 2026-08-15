@@ -63,12 +63,6 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
-  /**
-   * Life Pathway milestone content, cached one growth area at a time by the
-   * generate_life_pathway job. Values are raw provider output — always read them
-   * through normalizeLifePathwayArea rather than trusting the shape.
-   */
-  life_pathway?: { areas?: Record<string, unknown> };
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
   is_deleted?: boolean;
@@ -208,6 +202,13 @@ export interface CompletedArea {
    */
   parent_questions?: Record<string, unknown>;
   child_rounds?: Record<string, unknown>;
+  /**
+   * Life Pathway milestone narrative for this area, written by the
+   * generate_life_pathway job and grounded in this document's own answers and
+   * recommendations. Raw provider output — read it through
+   * normalizeLifePathwayArea in `@/lib/lifePathwayData`.
+   */
+  life_pathway_milestones?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

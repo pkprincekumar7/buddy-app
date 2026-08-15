@@ -17,6 +17,12 @@ interface UseLifePathwayAreaOptions {
   area: GrowthArea | null;
   /** Stored answers/recommendations for the selected area, used to ground the prompt. */
   completedArea: CompletedArea | null;
+  /**
+   * Every completed area's document, as already loaded by the page. Seeds the
+   * cache: each area's milestones are stored on its own document, beside the
+   * answers and recommendations they were generated from.
+   */
+  areas: CompletedArea[];
   /** Prompt inputs the caller has already derived from the personality view model. */
   archetype: string | null;
   personalityNarrative: string | null;
@@ -64,8 +70,8 @@ export interface UseLifePathwayAreaResult {
  *      useJob: its server-sync effect would otherwise repoint polling at
  *      whichever job_id landed in the shared slot last, which for same-type
  *      concurrent jobs is not necessarily the one we are waiting on. The durable
- *      record of this work is the cache on the child document, not active_jobs,
- *      so nothing is lost by opting out of cross-device resume here.
+ *      record of this work is the cache on each area's growth_areas document, not
+ *      active_jobs, so nothing is lost by opting out of cross-device resume here.
  *
  * A failed area is not retried within the session — the caller's fallback copy
  * is complete and on-message, so a retry loop would burn quota for no visible
@@ -76,6 +82,7 @@ export function useLifePathwayArea({
   child,
   area,
   completedArea,
+  areas,
   archetype,
   personalityNarrative,
   strengths,
@@ -100,18 +107,18 @@ export function useLifePathwayArea({
   const startedAtRef = useRef(0);
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  // Seed from content already stored on the child record. Runs whenever the
-  // record changes and only fills gaps, so a completed job's merge is never
-  // overwritten by a subsequent child re-fetch.
+  // Seed from the milestones already stored on each area's document. Runs whenever
+  // the list changes and only fills gaps, so a completed job's merge is never
+  // overwritten by a subsequent re-fetch.
   useEffect(() => {
-    const stored = (child as ChildRecord | null)?.life_pathway?.areas;
-    if (!stored || typeof stored !== 'object') return;
+    if (areas.length === 0) return;
     setCache((prev) => {
       const next = { ...prev };
       let changed = false;
-      for (const [id, raw] of Object.entries(stored)) {
-        if (next[id]) continue;
-        const ms = normalizeLifePathwayArea(raw, ages);
+      for (const doc of areas) {
+        const id = doc.area_id;
+        if (!id || next[id]) continue;
+        const ms = normalizeLifePathwayArea(doc.life_pathway_milestones, ages);
         if (ms) {
           next[id] = ms;
           changed = true;
@@ -119,7 +126,7 @@ export function useLifePathwayArea({
       }
       return changed ? next : prev;
     });
-  }, [child, ages]);
+  }, [areas, ages]);
 
   useEffect(() => {
     if (!generatingId) return;
@@ -137,8 +144,9 @@ export function useLifePathwayArea({
     settle();
     if (!finished || !childId) return;
     try {
-      const fresh = await api.entities.Child.get(childId);
-      const ms = normalizeLifePathwayArea(fresh.life_pathway?.areas?.[finished], ages);
+      const fresh = await api.completedGrowthAreas.list(childId);
+      const doc = (fresh.areas ?? []).find((a) => a.area_id === finished);
+      const ms = normalizeLifePathwayArea(doc?.life_pathway_milestones, ages);
       if (ms) setCache((prev) => ({ ...prev, [finished]: ms }));
     } catch (err) {
       // The content is on the document either way — the next page load picks it
@@ -199,9 +207,11 @@ export function useLifePathwayArea({
       child_id: childId,
       payload: { prompt, response_json_schema: lifePathwayAreaSchema() },
       write_back: {
-        collection: 'children',
-        filter: {},
-        field: `life_pathway.areas.${areaId}`,
+        collection: 'growth_areas',
+        // area_id scopes the write to this area's document; child_id, user_id and
+        // location are injected by the enqueue route.
+        filter: { area_id: areaId },
+        field: 'life_pathway_milestones',
       },
     }).catch(() => {
       setFailed((prev) => (prev[areaId] ? prev : { ...prev, [areaId]: true }));

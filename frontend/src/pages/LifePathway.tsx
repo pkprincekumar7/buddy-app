@@ -157,6 +157,7 @@ export default function LifePathway() {
     child: childData,
     area: selectedArea,
     completedArea: selected?.completed ?? null,
+    areas: completedAreas,
     archetype,
     personalityNarrative: profile?.summary ?? null,
     strengths,
