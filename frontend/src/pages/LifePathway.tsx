@@ -7,7 +7,7 @@ import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
 import { useAuth } from '@/lib/AuthContext';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile, useMediaQuery } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
@@ -55,6 +55,23 @@ function asSentence(text: string): string {
   return /[.!?…]$/.test(text) ? text : `${text}.`;
 }
 
+/**
+ * Breaks the chart's gap caption after its pronoun clause — "everything {he}
+ * never" / "got exposed to" — for narrow screens.
+ *
+ * On one line the caption measures 199px, which on a 320px phone leaves it
+ * straddling the rising curve with nowhere to move; split, the widest line is
+ * 117px, so it keeps its full 13px size and still clears the curve. Splitting
+ * after the third word keeps the pronoun with its verb for every gender token.
+ * Returns null when the copy is too short to split, so callers fall back to a
+ * single line rather than rendering an empty second one.
+ */
+function splitGapCaption(text: string): [string, string] | null {
+  const words = text.split(' ');
+  if (words.length < 4) return null;
+  return [words.slice(0, 3).join(' '), words.slice(3).join(' ')];
+}
+
 const GOLD = '#f0c98a';
 const CYAN = '#4be9ff';
 const INK = '#04060d';
@@ -64,6 +81,14 @@ export default function LifePathway() {
   const { childId } = useParams();
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  // Two rows in the 90-day section run out of horizontal room well before the
+  // 768px mobile breakpoint, so they key off their own measured threshold: the
+  // month tabs measure 482px at full scale and stop fitting one line under
+  // ~522px (482 + main's 2×20px padding), and the timeline labels need to break
+  // in two around the same point. Using the real threshold rather than
+  // `isMobile` leaves a 600px tablet the full-size treatment it has room for;
+  // the few px of slack absorb font-loading and sub-pixel variance.
+  const isNarrow = useMediaQuery('(max-width: 535px)');
   const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
     useLifePathwayData(childId);
   const [showSplash, startTimer] = useStageSplash(0);
@@ -132,6 +157,9 @@ export default function LifePathway() {
   // no description, and an empty string must fall through to the lead.
   const summaryText = profile?.summary?.trim() ?? '';
   const superpowerLead = summaryText.length > 0 ? asSentence(summaryText) : t(superpower.lead);
+
+  /** Two-line form of the chart's gap caption; null on wide screens (see splitGapCaption). */
+  const gapCaptionLines = isNarrow ? splitGapCaption(t(COPY.gapSub)) : null;
 
   // ── Growth areas offered in the dropdown (completed only) ──────────────────
 
@@ -760,7 +788,23 @@ export default function LifePathway() {
                   <div
                     style={{
                       position: 'absolute',
-                      left: '56%',
+                      // An absolutely positioned box with `left` but no width is
+                      // shrink-to-fit *capped at (container − left)* — only 44%
+                      // of the chart here. That is roomy on desktop (~460px) but
+                      // leaves 106px on a 320px phone, which wrapped this caption
+                      // into three cramped lines straddling the curve. Declaring
+                      // the width opts out of that cap so the copy keeps its
+                      // natural single line (204px at full size); maxWidth still
+                      // keeps it inside the chart. The centring transform means
+                      // this does not move the caption on desktop.
+                      width: 'max-content',
+                      maxWidth: '100%',
+                      // Nudged right on narrow screens, where the curve climbs
+                      // through the caption's left edge. Only affordable because
+                      // the two-line split above shrinks the box to ~117px — the
+                      // gap wedge itself ends at 94% of the chart, so the caption
+                      // has to stay left of that.
+                      left: isNarrow ? '66%' : '56%',
                       top: '72%',
                       transform: 'translate(-50%,-50%)',
                       textAlign: 'center',
@@ -783,10 +827,22 @@ export default function LifePathway() {
                         marginTop: 5,
                         fontWeight: 600,
                         fontSize: 13,
+                        // Only meaningful once the caption is two lines, and left
+                        // unset otherwise so the single-line box keeps its
+                        // inherited 19.5px line box on wider screens.
+                        ...(gapCaptionLines === null ? {} : { lineHeight: 1.35 }),
                         color: 'rgba(200,222,234,.6)',
                       }}
                     >
-                      {t(COPY.gapSub)}
+                      {gapCaptionLines === null ? (
+                        t(COPY.gapSub)
+                      ) : (
+                        <>
+                          {gapCaptionLines[0]}
+                          <br />
+                          {gapCaptionLines[1]}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1201,8 +1257,21 @@ export default function LifePathway() {
                   </div>
                 </div>
 
+                {/*
+                  This SVG is sized by its viewBox, so everything in it — text
+                  included — scales with the container rather than holding a CSS
+                  px size. At 1000 units wide that reads fine on a desktop (a
+                  1120px box renders the 16-unit labels at ~17.9px) but collapses
+                  on a phone: a 335px box scales by 0.335, leaving the labels at
+                  ~5.4px. Narrow screens therefore break each label at its own
+                  "·" and roughly double the unit size, which nets ~10.7px at
+                  375px. Two lines are what make the bigger size possible — one
+                  line of "Day 60 · their own idea" at this scale would collide
+                  with its neighbours. The taller viewBox makes room for the
+                  second line and drops the rail below it.
+                */}
                 <svg
-                  viewBox="0 0 1000 52"
+                  viewBox={isNarrow ? '0 0 1000 106' : '0 0 1000 52'}
                   style={{
                     width: '100%',
                     height: 'auto',
@@ -1218,31 +1287,69 @@ export default function LifePathway() {
                     </linearGradient>
                   </defs>
                   <path
-                    d="M40 38 L960 38"
+                    d={isNarrow ? 'M40 96 L960 96' : 'M40 38 L960 38'}
                     fill="none"
                     stroke="url(#lpP90)"
                     strokeWidth={3}
                     strokeLinecap="round"
                   />
                   {TIMELINE.map((m) => (
-                    <circle key={`dot-${String(m.x)}`} cx={m.x} cy={38} r={m.r} fill={m.fill} />
+                    <circle
+                      key={`dot-${String(m.x)}`}
+                      cx={m.x}
+                      cy={isNarrow ? 96 : 38}
+                      r={m.r}
+                      fill={m.fill}
+                    />
                   ))}
-                  {TIMELINE.map((m) => (
-                    <text
-                      key={`txt-${String(m.x)}`}
-                      x={m.x}
-                      y={20}
-                      textAnchor={m.anchor}
-                      fill={m.color}
-                      fontSize={16}
-                      fontWeight={700}
-                    >
-                      {t(m.label)}
-                    </text>
-                  ))}
+                  {TIMELINE.map((m) => {
+                    const label = t(m.label);
+                    // Split on the first separator only, so a label that ever
+                    // carries two keeps the remainder instead of dropping it.
+                    const sep = isNarrow ? label.indexOf(' · ') : -1;
+                    const head = sep === -1 ? label : label.slice(0, sep);
+                    const tail = sep === -1 ? null : label.slice(sep + 3);
+                    return (
+                      <text
+                        key={`txt-${String(m.x)}`}
+                        x={m.x}
+                        y={isNarrow ? 32 : 20}
+                        textAnchor={m.anchor}
+                        fill={m.color}
+                        fontSize={isNarrow ? 32 : 16}
+                        fontWeight={700}
+                      >
+                        {tail === null ? (
+                          head
+                        ) : (
+                          <>
+                            <tspan x={m.x}>{head}</tspan>
+                            <tspan x={m.x} dy={38}>
+                              {tail}
+                            </tspan>
+                          </>
+                        )}
+                      </text>
+                    );
+                  })}
                 </svg>
 
-                <div style={{ display: 'flex', gap: 10, marginTop: 24, flexWrap: 'wrap' }}>
+                {/*
+                  Narrow phones get a compact pill so all three month tabs stay on
+                  one line. Tightening the font, letter-spacing, side padding and
+                  gap takes the row from 482px to 307px, which clears the 320px a
+                  360px-wide Android leaves inside `main`'s padding. Under ~347px
+                  (iPhone SE 1st gen) it wraps again — flexWrap keeps that tidy
+                  rather than overflowing the page.
+                */}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: isNarrow ? 6 : 10,
+                    marginTop: 24,
+                    flexWrap: 'wrap',
+                  }}
+                >
                   {MONTHS.map((m, i) => {
                     const on = i === monthIdx;
                     return (
@@ -1252,15 +1359,16 @@ export default function LifePathway() {
                         onClick={() => setMonthIdx(i)}
                         style={{
                           cursor: 'pointer',
-                          padding: '10px 20px',
+                          padding: isNarrow ? '6px 8px' : '10px 20px',
                           borderRadius: 999,
                           border: `1px solid ${on ? 'rgba(240,201,138,.6)' : 'rgba(75,233,255,.2)'}`,
                           background: on ? 'rgba(240,201,138,.12)' : 'rgba(8,14,26,.7)',
                           fontFamily: 'Rajdhani, sans-serif',
                           fontWeight: 700,
-                          fontSize: 11.5,
-                          letterSpacing: '.14em',
+                          fontSize: isNarrow ? 9.5 : 11.5,
+                          letterSpacing: isNarrow ? '.06em' : '.14em',
                           textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
                           color: on ? '#f5e6c4' : '#7f97a8',
                           transition: 'all .25s ease',
                         }}
