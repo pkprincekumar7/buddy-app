@@ -386,8 +386,6 @@ export default function Observations() {
     availableSources: ObservationSourceKey[];
   } | null>(null);
 
-  const observationsDocRef = useRef<Record<string, unknown>>({});
-
   const enqueueObservations = useCallback(
     async (enqueue: (payload: EnqueueJobPayload) => Promise<void>) => {
       const evidence = evidenceRef.current;
@@ -410,7 +408,7 @@ export default function Observations() {
           response_json_schema: observationsLlmSchema(),
         },
         write_back: {
-          collection: 'children',
+          collection: 'observations',
           filter: {},
           field: 'pending_observations',
         },
@@ -427,8 +425,8 @@ export default function Observations() {
   const finalizeObservations = useCallback(async () => {
     if (!childId) return;
     try {
-      const child = await api.entities.Child.get(childId);
-      const candidates = normalizeObservations(child?.pending_observations, {
+      const record = await api.observations.get(childId);
+      const candidates = normalizeObservations(record?.pending_observations, {
         allowedChoiceNotes: evidenceRef.current?.childChoiceLines ?? [],
       });
       if (candidates.length === 0) {
@@ -452,11 +450,12 @@ export default function Observations() {
             'Selection can reorder candidates but cannot invent one.',
         );
       }
-      const doc = { source: 'llm', items, watching: [] as string[] };
-      observationsDocRef.current = doc;
       setObservations(items);
       setTracked([]);
-      await api.entities.Child.update(childId, { observations: doc });
+      // Clearing `watching` is what resets the parent's ticks alongside a fresh
+      // set; the PATCH is field-wise now, so it has to be sent explicitly rather
+      // than falling out of rewriting the whole field.
+      await api.observations.patch(childId, { source: 'llm', items, watching: [] });
     } catch (err) {
       console.error('[Observations] Failed to finalize observations:', err);
       setGenError('Observations could not be saved. Please try again.');
@@ -493,9 +492,10 @@ export default function Observations() {
 
         // Neither of these is fatal: an observation set built on the
         // questionnaire alone is still honest, it just cites fewer sources.
-        const [goals, completed] = await Promise.all([
+        const [goals, completed, stored] = await Promise.all([
           api.goals.get(childId).catch(() => null),
           api.completedGrowthAreas.list(childId).catch(() => null),
+          api.observations.get(childId).catch(() => null),
         ]);
         if (cancelled) return;
 
@@ -528,19 +528,15 @@ export default function Observations() {
         };
         setHasEvidence(availableSources.length > 0);
 
-        const stored = child.observations ?? null;
         const storedItems = normalizeObservations(stored?.items);
         if (storedItems.length > 0) {
-          // Keep the VALIDATED items in the ref, not the raw stored ones. Start
-          // tracking spreads this ref to rewrite the whole field, so holding the
-          // raw copy would re-persist any item normalisation had just dropped —
-          // leaving the document permanently out of step with what was rendered.
-          observationsDocRef.current = { ...(stored as Record<string, unknown>), items: storedItems };
           setObservations(storedItems);
+          // Ticks are filtered against the ids that survived validation, so a
+          // stale id in `watching` cannot select a card that is not on screen.
           const valid = new Set(storedItems.map((o) => o.id));
-          setTracked((Array.isArray(stored?.watching) ? stored.watching : []).filter((id) =>
-            valid.has(id),
-          ));
+          setTracked(
+            (Array.isArray(stored?.watching) ? stored.watching : []).filter((id) => valid.has(id)),
+          );
           const storedSpan = SPANS.findIndex((s) => s.label === stored?.span);
           if (storedSpan >= 0) setSpan(storedSpan);
         }
@@ -585,16 +581,14 @@ export default function Observations() {
     if (!childId || tracked.length === 0) return;
     setIsSaving(true);
     try {
-      // `observations` is a single document field, so a partial patch would drop
-      // the generated items — always write the whole thing back.
-      const doc = {
-        ...observationsDocRef.current,
+      // Only the three fields the parent actually changed. When this lived as one
+      // field on the child document the whole thing had to be rewritten, which
+      // meant carrying the generated items along on every tick.
+      await api.observations.patch(childId, {
         watching: tracked,
         span: activeSpan.label,
         started_at: new Date().toISOString(),
-      };
-      await api.entities.Child.update(childId, { observations: doc });
-      observationsDocRef.current = doc;
+      });
       setStarted(true);
     } catch (err) {
       console.error('[Observations] Failed to save watch list:', err);

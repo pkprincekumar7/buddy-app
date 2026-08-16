@@ -6,6 +6,7 @@ import type {
   GoalsRecord,
   GoalMonthsRecord,
   GoalInsightsRecord,
+  ObservationsRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
   EnqueueJobResponse,
@@ -249,6 +250,18 @@ export const api = {
         method: 'PATCH',
         body,
       }) as Promise<void>,
+  },
+
+  observations: {
+    get: (childId: string): Promise<ObservationsRecord> =>
+      request(
+        `/user/observations?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<ObservationsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<ObservationsRecord> =>
+      request(`/user/observations?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<ObservationsRecord>,
   },
 
   goalInsights: {

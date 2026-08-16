@@ -63,24 +63,6 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
-  /**
-   * Release-page observation patterns and the parent's watch list. Raw provider
-   * output under `items` — always read it through normalizeObservations in
-   * `@/lib/observationsData` rather than trusting the shape.
-   */
-  observations?: {
-    source?: string;
-    items?: unknown;
-    /** Observation ids the parent ticked. */
-    watching?: string[];
-    /** SPANS label the parent chose, e.g. "3 months". */
-    span?: string;
-    /** When Start tracking was last pressed. Written but not yet read by anything. */
-    started_at?: string;
-    [key: string]: unknown;
-  } | null;
-  /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
-  pending_observations?: Record<string, unknown> | null;
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
   is_deleted?: boolean;
@@ -119,7 +101,13 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'goals' | 'goal_months' | 'goal_insights';
+    collection:
+      | 'growth_areas'
+      | 'children'
+      | 'goals'
+      | 'goal_months'
+      | 'goal_insights'
+      | 'observations';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -186,6 +174,28 @@ export interface GoalInsightsRecord {
   insights_signature?: number | null;
   /** Staging field: full LLM response written by worker; promoted to insight_items by finalizeInsights. */
   pending_insights?: { insight_items?: InsightItem[]; [key: string]: unknown } | null;
+  [key: string]: unknown;
+}
+
+/**
+ * The Release page's observations document — its own collection keyed by child_id,
+ * alongside goals and goal_insights rather than embedded on the child.
+ */
+export interface ObservationsRecord {
+  source?: string | null;
+  /**
+   * Raw provider objects. Always read through normalizeObservations in
+   * `@/lib/observationsData` rather than trusting the shape.
+   */
+  items?: unknown;
+  /** Observation ids the parent ticked. */
+  watching?: string[];
+  /** SPANS label the parent chose, e.g. "3 months". */
+  span?: string | null;
+  /** When Start tracking was last pressed. Written but not yet read by anything. */
+  started_at?: string | null;
+  /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
+  pending_observations?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
 

@@ -21,6 +21,8 @@ from app.models_api import (
     GoalMonthsPatch,
     GoalMonthsResponse,
     GoalsMonth,
+    ObservationsPatch,
+    ObservationsResponse,
     UserGoals,
     UserGoalsPatch,
     UserPreferences,
@@ -601,4 +603,97 @@ async def patch_goal_insights(
         schema_version=doc.get("schema_version") if doc else None,
         insight_items=doc.get("insight_items", []) if doc else [],
         insights_signature=doc.get("insights_signature") if doc else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# observations — one document per child
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/user/observations",
+    response_model=ObservationsResponse,
+    description="Retrieve the observations document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+)
+@user_limiter.limit("60/minute")
+async def get_observations(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
+    doc = await db[models.OBSERVATIONS].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
+    if not doc:
+        return ObservationsResponse()
+    # Shape coercion only — ObservationsResponse truncates over-long lists itself,
+    # so a document that outgrew the cap cannot 500 this endpoint.
+    raw_watching = doc.get("watching", [])
+    if not isinstance(raw_watching, list):
+        raw_watching = []
+    return ObservationsResponse(
+        source=doc.get("source"),
+        items=doc.get("items", []),
+        watching=[w for w in raw_watching if isinstance(w, str)],
+        span=doc.get("span"),
+        started_at=doc.get("started_at"),
+        pending_observations=doc.get("pending_observations"),
+    )
+
+
+@router.patch(
+    "/user/observations",
+    response_model=ObservationsResponse,
+    description="Update the observations document for a given child.",
+)
+@user_limiter.limit("20/minute")
+async def patch_observations(
+    request: Request,
+    body: ObservationsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields: dict = {"updated_at": now}
+    unset_fields: dict = {}
+
+    # exclude_unset so a PATCH carrying only `watching` cannot blank the generated
+    # set — the old shape stored everything in one field and had to rewrite it whole.
+    updates = body.model_dump(exclude_unset=True)
+    for key in ("source", "items", "watching", "span", "started_at"):
+        if key in updates and updates[key] is not None:
+            set_fields[key] = updates[key]
+
+    # Committing items means the staging field has been promoted — clear it.
+    if "items" in set_fields:
+        unset_fields["pending_observations"] = ""
+
+    update_op: dict = {
+        "$set": set_fields,
+        "$setOnInsert": {
+            "created_at": now,
+            "user_id": user["_id"],
+            "location": user["location"],
+        },
+    }
+    if unset_fields:
+        update_op["$unset"] = unset_fields
+
+    doc = await db[models.OBSERVATIONS].find_one_and_update(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        update_op,
+        upsert=True,
+        return_document=True,
+    )
+    return ObservationsResponse(
+        source=doc.get("source") if doc else None,
+        items=doc.get("items", []) if doc else [],
+        watching=doc.get("watching", []) if doc else [],
+        span=doc.get("span") if doc else None,
+        started_at=doc.get("started_at") if doc else None,
     )
