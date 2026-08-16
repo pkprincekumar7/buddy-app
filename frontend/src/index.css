@@ -886,15 +886,19 @@
     border: 2px solid rgb(var(--orb-ring-rgb) / 0.5);
     border-radius: 50%;
   }
+  /* Every figure here is an exact fraction of --orb-size (the design's 120px orb:
+     80/40 crescent at 20/48, 5px stroke). Kept as fractions rather than the raw
+     px so the orb can grow on wider viewports as one piece — hardcoded values
+     would leave the crescent sitting where the 120px orb used to be. */
   .orb-crescent {
     position: absolute;
-    width: 80px;
-    height: 40px;
+    width: calc(var(--orb-size, 120px) * 2 / 3);
+    height: calc(var(--orb-size, 120px) / 3);
     border-radius: 50%;
-    border-bottom: 5px solid rgb(var(--orb-crescent-rgb));
+    border-bottom: calc(var(--orb-size, 120px) / 24) solid rgb(var(--orb-crescent-rgb));
     transform: rotate(-25deg);
-    left: 20px;
-    top: 48px;
+    left: calc(var(--orb-size, 120px) / 6);
+    top: calc(var(--orb-size, 120px) * 0.4);
     filter: blur(0.3px);
   }
 }

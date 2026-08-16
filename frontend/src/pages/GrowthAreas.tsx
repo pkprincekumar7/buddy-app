@@ -28,11 +28,37 @@ import { SPINNER } from '@/lib/animations';
 import Starfield from '@/components/shared/Starfield';
 import GrowthAreaSheet from '@/components/growth/GrowthAreaSheet';
 
+/**
+ * Multiplies a design-time pixel value by `--ga-type-scale` — 1 on phones, 1.2
+ * from the tablet breakpoint up (see the style block in the component).
+ *
+ * The design mockups for this app carry NO media queries — fixed pixel type at
+ * every width. Scaling by viewport is a deliberate departure, matching what the
+ * Connect, LifePathway and Observations pages already do. Do not "restore mockup
+ * fidelity" here without checking that intent first.
+ */
+const gafs = (px: number) => `calc(${px}px * var(--ga-type-scale, 1))`;
+
 // Node geometry. `pos` on each area is the design's desktop arc; on narrow
 // screens the arc collapses to a two-column ladder, because six nodes spread
 // across an arc overlap badly under ~640px.
-const NODE = 66;
+//
+// The desktop figures carry the same +20% as --ga-type-scale, so the nodes, their
+// labels and the box all grow as one composition. ARC_W/ARC_H have to move with
+// the node: `pos` is in percentages, so the distance between two nodes is a share
+// of the box, and a bigger node in an unchanged box would close the arc up rather
+// than open it out. Mobile is deliberately untouched — the ladder is already
+// tight at 375px.
+const NODE = 78;
 const MOBILE_NODE = 58;
+const ICON = 31;
+const MOBILE_ICON = 26;
+const BADGE = 26;
+const MOBILE_BADGE = 22;
+/** The box the percentage `pos` values resolve against. */
+const ARC_W = 1040;
+const ARC_H = 300;
+const MOBILE_ARC_H = 560;
 
 const MOBILE_POS = [
   { left: 27, top: 8 },
@@ -48,19 +74,20 @@ const LABEL: React.CSSProperties = {
   top: '100%',
   left: '50%',
   transform: 'translateX(-50%)',
-  marginTop: 10,
+  // Scaled with the label so the gap under a larger node stays proportional.
+  marginTop: gafs(10),
   fontWeight: 700,
-  fontSize: 13.5,
+  fontSize: gafs(13.5),
   whiteSpace: 'nowrap',
   transition: 'color .3s ease',
 };
 
-const CHECK_BADGE: React.CSSProperties = {
+const checkBadge = (size: number): React.CSSProperties => ({
   position: 'absolute',
   top: -2,
   right: -2,
-  width: 22,
-  height: 22,
+  width: size,
+  height: size,
   borderRadius: '50%',
   background: '#05070f',
   border: '1.5px solid rgba(240,201,138,.8)',
@@ -68,7 +95,7 @@ const CHECK_BADGE: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 3,
-};
+});
 
 export default function GrowthAreas() {
   const navigate = useNavigate();
@@ -556,6 +583,8 @@ export default function GrowthAreas() {
   );
 
   const size = isMobile ? MOBILE_NODE : NODE;
+  const iconSize = isMobile ? MOBILE_ICON : ICON;
+  const badgeSize = isMobile ? MOBILE_BADGE : BADGE;
 
   return (
     <>
@@ -577,9 +606,19 @@ export default function GrowthAreas() {
             // The design composes this screen as a single fixed viewport. The
             // app's sticky nav is h-16, so subtract it rather than using
             // min-h-screen — otherwise the arc pushes the actions past the fold.
-            className="relative min-h-[calc(100vh-4rem)] overflow-hidden"
+            className="ga-root relative min-h-[calc(100vh-4rem)] overflow-hidden"
             style={{ background: '#05070f' }}
           >
+            <style>{`
+              /* A flat +20% from the tablet breakpoint up, matching Connect,
+                 LifePathway and Observations. 768px is also useIsMobile's
+                 breakpoint, so the node geometry above steps at the same width
+                 and type never grows out of step with the circles it labels.
+                 Phones stay at 1: the eyebrow is already at 10.5px. */
+              .ga-root { --ga-type-scale: 1; }
+              @media (min-width: 768px) { .ga-root { --ga-type-scale: 1.2; } }
+            `}</style>
+
             <Starfield />
 
             {/* Nebula wash — lifts the centre of the arc out of the flat black */}
@@ -592,7 +631,9 @@ export default function GrowthAreas() {
               }}
             />
 
-            <div className="relative z-[2] mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col px-4 py-6 md:py-8">
+            {/* max-w-6xl, not 5xl: 5xl (1024px) minus the padding capped the arc
+                box below ARC_W, so the wider spacing would never have shown. */}
+            <div className="relative z-[2] mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl flex-col px-4 py-6 md:py-8">
               <motion.div
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -600,20 +641,28 @@ export default function GrowthAreas() {
                 className="flex-shrink-0 text-center"
               >
                 <div
-                  className="mb-2 text-[10.5px] font-bold uppercase"
-                  style={{ letterSpacing: '.4em', color: '#1ec4e8' }}
+                  className="mb-2 font-bold uppercase"
+                  style={{ fontSize: gafs(10.5), letterSpacing: '.4em', color: '#1ec4e8' }}
                 >
                   {childName ? `${childName} · Growth Map` : 'Growth Map'}
                 </div>
                 <h1
-                  className="m-0 text-[clamp(22px,2.6vw,32px)] font-bold"
-                  style={{ fontFamily: 'Orbitron, sans-serif', color: '#eafdff' }}
+                  className="m-0 font-bold"
+                  style={{
+                    // The clamp is wrapped rather than replaced: it still does the
+                    // fluid work between 22 and 32px, the scale then lifts the
+                    // whole range. Passing the clamp raw would opt the one heading
+                    // on the page out of --ga-type-scale.
+                    fontSize: 'calc(clamp(22px,2.6vw,32px) * var(--ga-type-scale, 1))',
+                    fontFamily: 'Orbitron, sans-serif',
+                    color: '#eafdff',
+                  }}
                 >
                   Growth Areas
                 </h1>
                 <div
-                  className="mt-1.5 text-sm font-semibold"
-                  style={{ letterSpacing: '.05em', color: '#84a0b2' }}
+                  className="mt-1.5 font-semibold"
+                  style={{ fontSize: gafs(14), letterSpacing: '.05em', color: '#84a0b2' }}
                 >
                   Choose an area to explore
                 </div>
@@ -628,8 +677,8 @@ export default function GrowthAreas() {
                 <div
                   className="relative w-full"
                   style={{
-                    maxWidth: 900,
-                    height: isMobile ? 560 : 260,
+                    maxWidth: ARC_W,
+                    height: isMobile ? MOBILE_ARC_H : ARC_H,
                   }}
                 >
                   {/* Arc guides — stretched to the container, so they track the nodes.
@@ -737,20 +786,25 @@ export default function GrowthAreas() {
                               fill="none"
                               stroke={area.iconColor}
                               strokeWidth="1.8"
-                              style={{ width: 26, height: 26 }}
+                              style={{ width: iconSize, height: iconSize }}
                             >
                               <path d={area.iconPath} />
                             </svg>
                           </span>
 
                           {done && (
-                            <span style={CHECK_BADGE}>
+                            <span style={checkBadge(badgeSize)}>
                               <svg
                                 viewBox="0 0 24 24"
                                 fill="none"
                                 stroke="#f0c98a"
                                 strokeWidth="3"
-                                style={{ width: 12, height: 12 }}
+                                // The mockup's 12-in-22 tick, held as a ratio so
+                                // the larger badge keeps the same proportion.
+                                style={{
+                                  width: badgeSize * (12 / 22),
+                                  height: badgeSize * (12 / 22),
+                                }}
                               >
                                 <path d="M5 13l4 4L19 7" />
                               </svg>

@@ -29,8 +29,8 @@ import {
 import type { ChildRecord, CompletedArea, EnqueueJobPayload } from '@/types/api';
 
 /**
- * Multiplies a design-time pixel value by `--obs-type-scale`, which steps up at
- * the breakpoints in the component's style block.
+ * Multiplies a design-time pixel value by `--obs-type-scale` — 1 on phones, 1.2
+ * from the tablet breakpoint up (see the component's style block).
  *
  * Worth knowing before changing this: the design mockups carry NO media queries —
  * every size in them is a fixed pixel value at every width, with only the hero
@@ -661,12 +661,17 @@ export default function Observations() {
            Raising the floor with it holds the 3-across shape and spends the extra
            width on the cards themselves. */
         .obs-root { --obs-type-scale: 1; --obs-max: 1120px; --obs-card-min: 330px; }
-        /* Type and layout share the 1440/1800 stops so they grow as one composition
-           — a wider column with unchanged type just reads as a sparser page. The
-           768 stop lifts type only; the column is already comfortable there. */
-        @media (min-width: 768px)  { .obs-root { --obs-type-scale: 1.08; } }
-        @media (min-width: 1440px) { .obs-root { --obs-type-scale: 1.14; --obs-max: 1320px; --obs-card-min: 390px; } }
-        @media (min-width: 1800px) { .obs-root { --obs-type-scale: 1.20; --obs-max: 1560px; --obs-card-min: 460px; } }
+        /* Type: a flat +20% from the tablet breakpoint up, matching Connect. This
+           replaced a 1.08/1.14/1.20 ladder — the ladder kept type in step with the
+           column as it widened, but it also meant a 1200px laptop got noticeably
+           less lift than a 1900px monitor, which read as inconsistent between the
+           two pages. Phones stay at 1: these sizes were drawn against a 1120px
+           desktop layout and the smallest labels are already at 10.5px.
+           Layout still steps separately at 1440/1800 — see above for why those two
+           must move together. */
+        @media (min-width: 768px)  { .obs-root { --obs-type-scale: 1.2; } }
+        @media (min-width: 1440px) { .obs-root { --obs-max: 1320px; --obs-card-min: 390px; } }
+        @media (min-width: 1800px) { .obs-root { --obs-max: 1560px; --obs-card-min: 460px; } }
 
         /* Copy beside the CTA, which needs to stack before it runs out of room.
            'auto' sizes the button to its content and never yields, so on a narrow

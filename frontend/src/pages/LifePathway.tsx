@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, Sparkles, X } from 'lucide-react';
@@ -44,6 +44,31 @@ import type { Milestone } from '@/lib/lifePathwayData';
 import type { CompletedArea } from '@/types/api';
 
 /**
+ * Multiplies a design-time pixel value by `--lp-type-scale` — 1 on phones, 1.2
+ * from the tablet breakpoint up (see the style block in the component).
+ *
+ * Used for font sizes AND for prose max-widths: a readable measure is a character
+ * count, not a pixel width, so a cap frozen while the text grew 20% would quietly
+ * tighten every paragraph and add wrap lines.
+ *
+ * Everything that sets a size must route through here, including the orbitron()
+ * helper and the clamp()-sized headings — both originally passed raw values and so
+ * silently opted out of the scale, leaving most of the page unchanged.
+ *
+ * The design mockups for this app carry NO media queries — fixed pixel type at
+ * every width. Scaling by viewport is a deliberate departure, matching the
+ * Observations and Connect pages. Do not "restore mockup fidelity" here without
+ * checking that intent first.
+ */
+const lpScale = (px: number) => `calc(${px}px * var(--lp-type-scale, 1))`;
+
+/** Font sizes. */
+const lpfs = lpScale;
+
+/** Prose line-length caps. */
+const lpProseW = lpScale;
+
+/**
  * Ensures a fragment can be followed by another sentence. The superpower card
  * joins the profile description to a second, static sentence, and
  * personalizedDescriptionOneLiner only trims to the first sentence *if* it finds
@@ -76,6 +101,59 @@ const GOLD = '#f0c98a';
 const CYAN = '#4be9ff';
 const INK = '#04060d';
 
+/**
+ * Geometry for the 90-day rail's Day 0/30/60/90 labels.
+ *
+ * The rail is an SVG with a 1000-unit-wide viewBox scaled to its container, so a
+ * fixed unit size does NOT give a fixed rendered size — it renders at
+ * `units × containerWidth / 1000`. A single value therefore reads well at exactly
+ * one width and badly everywhere else: 16 units is ~17.9px in a 1120px box but
+ * ~11.6px at 727px and ~5.4px at 335px.
+ *
+ * So the size is computed from the measured container instead, holding the rendered
+ * size constant at every width. LABEL_TARGET_PX is what the parent actually sees.
+ */
+const LABEL_TARGET_PX = 15;
+
+/**
+ * Larger target once the rail is wide enough to carry it on ONE line.
+ *
+ * The gate is arithmetic, not taste: one line needs units ≤ LABEL_ONE_LINE_MAX_UNITS
+ * (20), and units = target × 1000 / rail, so an 18px target only stays on one line
+ * from a 900px rail up (18000/900 = 20). Applying it below that would flip wide-ish
+ * desktops back to two-line labels, which reads worse than the extra pixel.
+ */
+const LABEL_TARGET_PX_WIDE = 18;
+const LABEL_WIDE_RAIL_MIN = 900;
+
+/**
+ * Above this unit size the one-line form collides and the label must break at its
+ * "·". Measured, not estimated: at a 560px rail the smallest gap between adjacent
+ * one-line labels is 19px at 20 units, 4px at 22, and negative from 24 up.
+ *
+ * Both this and LABEL_MAX_UNITS are scale-invariant, so they work as plain unit
+ * thresholds at any rail width — a label's width and the 307-unit spacing between
+ * slots both scale with the viewBox, so their ratio never changes.
+ */
+const LABEL_ONE_LINE_MAX_UNITS = 20;
+
+/**
+ * Hard ceiling on the unit size, set by geometry rather than taste.
+ *
+ * The four labels sit at fixed x positions (40, 347, 653, 960) with start/middle/
+ * middle/end anchors, so the last one grows leftward into its neighbour. Measured
+ * at a 335px rail, the smallest gap between adjacent labels is 6px at 34 units,
+ * 1px at 36, and NEGATIVE from 38 up — "Day 60 · his own idea" and
+ * "Day 90 · second nature" start overlapping.
+ *
+ * This is what caps a phone at ~11.4px rather than LABEL_TARGET_PX: four labels of
+ * this length simply do not fit a 335px rail any larger, even split across two
+ * lines. Getting to 15px there would mean dropping the Day 30/60 labels on narrow
+ * screens (their dots would remain) or shortening the copy — a design decision,
+ * not something to force here.
+ */
+const LABEL_MAX_UNITS = 34;
+
 export default function LifePathway() {
   const navigate = useNavigate();
   const { childId } = useParams();
@@ -89,10 +167,33 @@ export default function LifePathway() {
   // `isMobile` leaves a 600px tablet the full-size treatment it has room for;
   // the few px of slack absorb font-loading and sub-pixel variance.
   const isNarrow = useMediaQuery('(max-width: 535px)');
+
   const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
     useLifePathwayData(childId);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
+
+  // Measured width of the 90-day rail, so its labels can hold a constant rendered
+  // size (see LABEL_TARGET_PX). A media query cannot do this: the rail's width
+  // depends on main's max-width AND its breakpoint-dependent padding, so the same
+  // viewport yields different rail widths and the same unit size renders at
+  // different pixel sizes either side of a padding change.
+  const railRef = useRef<SVGSVGElement>(null);
+  const [railWidth, setRailWidth] = useState(0);
+  // Deps are the two gates that decide whether the rail is mounted at all. With an
+  // empty dep list this ran once while isLoading still showed the spinner, found a
+  // null ref, bailed and never retried — leaving the labels on their fallback size
+  // forever. These gates are what make the ref become non-null.
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setRailWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLoading, showSplash]);
 
   // The journey's shared ambient bed (see AmbientAudioContext) plays through
   // this page automatically — just keep it silent while the splash video's
@@ -160,6 +261,35 @@ export default function LifePathway() {
 
   /** Two-line form of the chart's gap caption; null on wide screens (see splitGapCaption). */
   const gapCaptionLines = isNarrow ? splitGapCaption(t(COPY.gapSub)) : null;
+
+  /**
+   * Day 0/30/60/90 label geometry, derived from the measured rail width so the
+   * labels render at LABEL_TARGET_PX regardless of viewport.
+   *
+   * Everything downstream is expressed as a multiple of `units` rather than a fixed
+   * number, so the rail, the dots and the viewBox height all follow the type
+   * instead of being re-tuned by hand each time the size changes. The ratios are
+   * the ones the original hand-picked geometry used (y=32, dy=38, rail=96,
+   * height=106 against 32 units).
+   */
+  const railLabel = useMemo(() => {
+    const target = railWidth >= LABEL_WIDE_RAIL_MIN ? LABEL_TARGET_PX_WIDE : LABEL_TARGET_PX;
+    const units =
+      railWidth > 0
+        ? Math.min(LABEL_MAX_UNITS, Math.round((target * 1000) / railWidth))
+        : 16;
+    const split = units > LABEL_ONE_LINE_MAX_UNITS;
+    return {
+      units,
+      split,
+      // First baseline; the one-line form sits a little lower in its shorter box.
+      y: Math.round(units * (split ? 1 : 1.25)),
+      // Second-line offset, only used when split.
+      dy: Math.round(units * 1.19),
+      railY: Math.round(units * (split ? 3 : 2.375)),
+      viewBoxHeight: Math.round(units * (split ? 3.31 : 3.25)),
+    };
+  }, [railWidth]);
 
   // ── Growth areas offered in the dropdown (completed only) ──────────────────
 
@@ -307,17 +437,20 @@ export default function LifePathway() {
   const eyebrow: React.CSSProperties = {
     fontWeight: 700,
     letterSpacing: '.28em',
-    fontSize: 10.5,
+    fontSize: lpfs(10.5),
     textTransform: 'uppercase',
     color: GOLD,
   };
   // size is optional: the three headings that size themselves with clamp() would
   // otherwise have to pass a throwaway 0 and rely on a later `fontSize` key
   // overriding it — which works only while the keys stay in that order.
+  // Sizes go through lpfs() here rather than at each call site: this helper carries
+  // most of the page's headings, and passing a raw number would silently opt them
+  // out of --lp-type-scale — which is exactly what happened the first time.
   const orbitron = (size?: number, weight: 700 | 900 = 900): React.CSSProperties => ({
     fontFamily: 'Orbitron, sans-serif',
     fontWeight: weight,
-    ...(size === undefined ? {} : { fontSize: size }),
+    ...(size === undefined ? {} : { fontSize: lpfs(size) }),
   });
   const twoCol: React.CSSProperties = {
     display: 'grid',
@@ -349,8 +482,20 @@ export default function LifePathway() {
               fontFamily: 'Rajdhani, sans-serif',
               color: '#e7f5f9',
             }}
+            className="lp-root"
           >
             <style>{`
+              /* Content column widens on large displays; type takes a flat +20%
+                 from the tablet breakpoint up. Unlike Connect there is no fixed
+                 track to grow alongside the container — every section here is
+                 fractional (1fr 1fr, 1.15fr 1fr), so the components absorb the
+                 extra width on their own.
+                 Phones stay at scale 1: the smallest labels are already near the
+                 legibility floor, and isMobile separately drops the padding. */
+              .lp-root { --lp-max: 1200px; --lp-type-scale: 1; }
+              @media (min-width: 768px)  { .lp-root { --lp-type-scale: 1.2; } }
+              @media (min-width: 1440px) { .lp-root { --lp-max: 1400px; } }
+              @media (min-width: 1800px) { .lp-root { --lp-max: 1640px; } }
               @keyframes lpFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
               @keyframes lpFadeIn { from { opacity: 0; } to { opacity: 1; } }
               @keyframes lpDrawLine { from { stroke-dashoffset: 1600; } to { stroke-dashoffset: 0; } }
@@ -380,7 +525,7 @@ export default function LifePathway() {
             */}
             <main
               style={{
-                maxWidth: 1200,
+                maxWidth: 'var(--lp-max, 1200px)',
                 margin: '0 auto',
                 padding: isMobile ? '36px 20px 72px' : '52px 40px 96px',
               }}
@@ -395,8 +540,8 @@ export default function LifePathway() {
                 <p
                   style={{
                     margin: '18px auto 0',
-                    maxWidth: 760,
-                    fontSize: 15,
+                    maxWidth: lpProseW(760),
+                    fontSize: lpfs(15),
                     fontWeight: 700,
                     lineHeight: 1.5,
                     color: '#cfe9f2',
@@ -407,9 +552,9 @@ export default function LifePathway() {
                 <h1
                   style={{
                     margin: '16px auto 0',
-                    maxWidth: 940,
+                    maxWidth: lpProseW(940),
                     ...orbitron(),
-                    fontSize: 'clamp(26px,3.8vw,44px)',
+                    fontSize: 'calc(clamp(26px,3.8vw,44px) * var(--lp-type-scale, 1))',
                     lineHeight: 1.06,
                     letterSpacing: '-.01em',
                   }}
@@ -423,8 +568,8 @@ export default function LifePathway() {
                 <p
                   style={{
                     margin: '20px auto 0',
-                    maxWidth: 640,
-                    fontSize: 16,
+                    maxWidth: lpProseW(640),
+                    fontSize: lpfs(16),
                     fontWeight: 600,
                     lineHeight: 1.55,
                     color: '#a8c1d1',
@@ -474,7 +619,7 @@ export default function LifePathway() {
                       position: 'relative',
                       marginTop: 10,
                       ...orbitron(),
-                      fontSize: 'clamp(22px,2.5vw,30px)',
+                      fontSize: 'calc(clamp(22px,2.5vw,30px) * var(--lp-type-scale, 1))',
                       lineHeight: 1.05,
                       color: '#fff6e2',
                     }}
@@ -485,11 +630,11 @@ export default function LifePathway() {
                     style={{
                       position: 'relative',
                       marginTop: 10,
-                      fontSize: 14.5,
+                      fontSize: lpfs(14.5),
                       fontWeight: 600,
                       lineHeight: 1.5,
                       color: '#e0cba8',
-                      maxWidth: 460,
+                      maxWidth: lpProseW(460),
                     }}
                   >
                     {superpowerLead} {t(COPY.superpowerTail)}
@@ -512,7 +657,7 @@ export default function LifePathway() {
                             borderRadius: 999,
                             border: '1px solid rgba(240,201,138,.45)',
                             fontWeight: 700,
-                            fontSize: 12,
+                            fontSize: lpfs(12),
                             letterSpacing: '.12em',
                             textTransform: 'uppercase',
                             color: '#f5e6c4',
@@ -542,7 +687,7 @@ export default function LifePathway() {
                   <div
                     style={{
                       marginTop: 8,
-                      fontSize: 14,
+                      fontSize: lpfs(14),
                       fontWeight: 600,
                       lineHeight: 1.45,
                       color: '#93aebe',
@@ -580,7 +725,7 @@ export default function LifePathway() {
                       {COPY.chartTitle}
                     </div>
                     <div
-                      style={{ marginTop: 6, fontSize: 13.5, fontWeight: 600, color: '#7f97a8' }}
+                      style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}
                     >
                       {COPY.chartSub}
                     </div>
@@ -598,7 +743,7 @@ export default function LifePathway() {
                         <div
                           style={{
                             fontWeight: 700,
-                            fontSize: 10.5,
+                            fontSize: lpfs(10.5),
                             letterSpacing: '.2em',
                             textTransform: 'uppercase',
                             color: '#6f8a9c',
@@ -625,7 +770,7 @@ export default function LifePathway() {
                               border: '1px solid rgba(75,233,255,.34)',
                               fontFamily: 'Rajdhani, sans-serif',
                               fontWeight: 700,
-                              fontSize: 14,
+                              fontSize: lpfs(14),
                               letterSpacing: '.04em',
                               color: '#eafdff',
                               outline: 'none',
@@ -674,7 +819,7 @@ export default function LifePathway() {
                       <div
                         style={{
                           fontWeight: 700,
-                          fontSize: 11,
+                          fontSize: lpfs(11),
                           letterSpacing: '.14em',
                           textTransform: 'uppercase',
                           color: GOLD,
@@ -688,7 +833,7 @@ export default function LifePathway() {
                       <div
                         style={{
                           fontWeight: 700,
-                          fontSize: 11,
+                          fontSize: lpfs(11),
                           letterSpacing: '.14em',
                           textTransform: 'uppercase',
                           color: '#6f8697',
@@ -826,7 +971,7 @@ export default function LifePathway() {
                       style={{
                         marginTop: 5,
                         fontWeight: 600,
-                        fontSize: 13,
+                        fontSize: lpfs(13),
                         // Only meaningful once the caption is two lines, and left
                         // unset otherwise so the single-line box keeps its
                         // inherited 19.5px line box on wider screens.
@@ -911,7 +1056,7 @@ export default function LifePathway() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: 10,
-                            fontSize: 14,
+                            fontSize: lpfs(14),
                             fontWeight: 700,
                             letterSpacing: '.02em',
                             color: '#89d9ee',
@@ -960,7 +1105,7 @@ export default function LifePathway() {
                             <div
                               style={{
                                 fontWeight: 700,
-                                fontSize: 11,
+                                fontSize: lpfs(11),
                                 letterSpacing: '.2em',
                                 textTransform: 'uppercase',
                                 color: panel.accent,
@@ -1003,7 +1148,7 @@ export default function LifePathway() {
                         <div
                           style={{
                             marginTop: 16,
-                            fontSize: 13.5,
+                            fontSize: lpfs(13.5),
                             fontWeight: 600,
                             color: '#7f97a8',
                             animation: 'lpFadeIn .5s ease both',
@@ -1057,7 +1202,7 @@ export default function LifePathway() {
                             <div
                               style={{
                                 fontWeight: 700,
-                                fontSize: 11,
+                                fontSize: lpfs(11),
                                 letterSpacing: '.2em',
                                 textTransform: 'uppercase',
                                 color: CYAN,
@@ -1069,7 +1214,7 @@ export default function LifePathway() {
                           <div
                             style={{
                               marginTop: 10,
-                              fontSize: 15,
+                              fontSize: lpfs(15),
                               fontWeight: 600,
                               lineHeight: 1.5,
                               color: '#eafdff',
@@ -1083,7 +1228,7 @@ export default function LifePathway() {
                                 marginTop: 14,
                                 paddingTop: 12,
                                 borderTop: '1px dashed rgba(75,233,255,.22)',
-                                fontSize: 13.5,
+                                fontSize: lpfs(13.5),
                                 fontWeight: 700,
                                 letterSpacing: '.02em',
                                 color: '#89d9ee',
@@ -1114,7 +1259,7 @@ export default function LifePathway() {
                             <div
                               style={{
                                 fontWeight: 700,
-                                fontSize: 11,
+                                fontSize: lpfs(11),
                                 letterSpacing: '.2em',
                                 textTransform: 'uppercase',
                                 color: '#6f8697',
@@ -1126,7 +1271,7 @@ export default function LifePathway() {
                           <div
                             style={{
                               marginTop: 10,
-                              fontSize: 15,
+                              fontSize: lpfs(15),
                               fontWeight: 600,
                               lineHeight: 1.5,
                               color: '#7f95a5',
@@ -1179,7 +1324,7 @@ export default function LifePathway() {
                       style={{
                         position: 'relative',
                         marginTop: 9,
-                        fontSize: 14,
+                        fontSize: lpfs(14),
                         fontWeight: 700,
                         letterSpacing: '.02em',
                         lineHeight: 1.45,
@@ -1192,7 +1337,7 @@ export default function LifePathway() {
                       style={{
                         position: 'relative',
                         marginTop: 12,
-                        fontSize: 14.5,
+                        fontSize: lpfs(14.5),
                         fontWeight: 600,
                         lineHeight: 1.5,
                         color: '#eddfc6',
@@ -1215,7 +1360,7 @@ export default function LifePathway() {
                     <div
                       style={{
                         marginTop: 9,
-                        fontSize: 14,
+                        fontSize: lpfs(14),
                         fontWeight: 700,
                         letterSpacing: '.02em',
                         lineHeight: 1.45,
@@ -1227,7 +1372,7 @@ export default function LifePathway() {
                     <div
                       style={{
                         marginTop: 12,
-                        fontSize: 14.5,
+                        fontSize: lpfs(14.5),
                         fontWeight: 600,
                         lineHeight: 1.5,
                         color: '#7c91a1',
@@ -1248,7 +1393,7 @@ export default function LifePathway() {
               >
                 <div>
                   <div style={{ ...orbitron(17), color: '#f2fdff' }}>{COPY.ninetyTitle}</div>
-                  <div style={{ marginTop: 6, fontSize: 13.5, fontWeight: 600, color: '#7f97a8' }}>
+                  <div style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
                     Built for{' '}
                     {[childName, `age ${String(currentAge)}`, archetype ? `The ${archetype}` : null]
                       .filter(Boolean)
@@ -1258,20 +1403,15 @@ export default function LifePathway() {
                 </div>
 
                 {/*
-                  This SVG is sized by its viewBox, so everything in it — text
-                  included — scales with the container rather than holding a CSS
-                  px size. At 1000 units wide that reads fine on a desktop (a
-                  1120px box renders the 16-unit labels at ~17.9px) but collapses
-                  on a phone: a 335px box scales by 0.335, leaving the labels at
-                  ~5.4px. Narrow screens therefore break each label at its own
-                  "·" and roughly double the unit size, which nets ~10.7px at
-                  375px. Two lines are what make the bigger size possible — one
-                  line of "Day 60 · their own idea" at this scale would collide
-                  with its neighbours. The taller viewBox makes room for the
-                  second line and drops the rail below it.
+                  Sized by its viewBox, so text inside scales with the container
+                  rather than holding a CSS px size — see LABEL_TARGET_PX for why
+                  the label size is computed from the measured width instead of
+                  being a fixed number per breakpoint. The whole box (baselines,
+                  rail, dots, height) follows from that one size.
                 */}
                 <svg
-                  viewBox={isNarrow ? '0 0 1000 106' : '0 0 1000 52'}
+                  ref={railRef}
+                  viewBox={`0 0 1000 ${String(railLabel.viewBoxHeight)}`}
                   style={{
                     width: '100%',
                     height: 'auto',
@@ -1287,7 +1427,7 @@ export default function LifePathway() {
                     </linearGradient>
                   </defs>
                   <path
-                    d={isNarrow ? 'M40 96 L960 96' : 'M40 38 L960 38'}
+                    d={`M40 ${String(railLabel.railY)} L960 ${String(railLabel.railY)}`}
                     fill="none"
                     stroke="url(#lpP90)"
                     strokeWidth={3}
@@ -1297,7 +1437,7 @@ export default function LifePathway() {
                     <circle
                       key={`dot-${String(m.x)}`}
                       cx={m.x}
-                      cy={isNarrow ? 96 : 38}
+                      cy={railLabel.railY}
                       r={m.r}
                       fill={m.fill}
                     />
@@ -1306,17 +1446,17 @@ export default function LifePathway() {
                     const label = t(m.label);
                     // Split on the first separator only, so a label that ever
                     // carries two keeps the remainder instead of dropping it.
-                    const sep = isNarrow ? label.indexOf(' · ') : -1;
+                    const sep = railLabel.split ? label.indexOf(' · ') : -1;
                     const head = sep === -1 ? label : label.slice(0, sep);
                     const tail = sep === -1 ? null : label.slice(sep + 3);
                     return (
                       <text
                         key={`txt-${String(m.x)}`}
                         x={m.x}
-                        y={isNarrow ? 32 : 20}
+                        y={railLabel.y}
                         textAnchor={m.anchor}
                         fill={m.color}
-                        fontSize={isNarrow ? 32 : 16}
+                        fontSize={railLabel.units}
                         fontWeight={700}
                       >
                         {tail === null ? (
@@ -1324,7 +1464,7 @@ export default function LifePathway() {
                         ) : (
                           <>
                             <tspan x={m.x}>{head}</tspan>
-                            <tspan x={m.x} dy={38}>
+                            <tspan x={m.x} dy={railLabel.dy}>
                               {tail}
                             </tspan>
                           </>
@@ -1345,7 +1485,7 @@ export default function LifePathway() {
                 <div
                   style={{
                     display: 'flex',
-                    gap: isNarrow ? 6 : 10,
+                    gap: isNarrow ? 6 : lpScale(10),
                     marginTop: 24,
                     flexWrap: 'wrap',
                   }}
@@ -1359,13 +1499,20 @@ export default function LifePathway() {
                         onClick={() => setMonthIdx(i)}
                         style={{
                           cursor: 'pointer',
-                          padding: isNarrow ? '6px 8px' : '10px 20px',
+                          // Padding scales with the type so the pill grows with its
+                          // label rather than the text crowding a fixed box. The
+                          // compact phone form is left alone — it exists to keep all
+                          // three tabs on one line at 320px (see comment above).
+                          padding: isNarrow ? '6px 8px' : `${lpScale(10)} ${lpScale(20)}`,
                           borderRadius: 999,
                           border: `1px solid ${on ? 'rgba(240,201,138,.6)' : 'rgba(75,233,255,.2)'}`,
                           background: on ? 'rgba(240,201,138,.12)' : 'rgba(8,14,26,.7)',
                           fontFamily: 'Rajdhani, sans-serif',
                           fontWeight: 700,
-                          fontSize: isNarrow ? 9.5 : 11.5,
+                          // Was a bare ternary, which the page-wide conversion to
+                          // lpfs() did not match — so these tabs were the last text
+                          // on the page still opted out of --lp-type-scale.
+                          fontSize: lpfs(isNarrow ? 9.5 : 11.5),
                           letterSpacing: isNarrow ? '.06em' : '.14em',
                           textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
@@ -1405,7 +1552,7 @@ export default function LifePathway() {
                     <div
                       style={{
                         fontWeight: 700,
-                        fontSize: 11,
+                        fontSize: lpfs(11),
                         letterSpacing: '.16em',
                         textTransform: 'uppercase',
                         color: '#6f8a9c',
@@ -1417,8 +1564,8 @@ export default function LifePathway() {
                   <div
                     style={{
                       marginTop: 8,
-                      maxWidth: 660,
-                      fontSize: 14,
+                      maxWidth: lpProseW(660),
+                      fontSize: lpfs(14),
                       fontWeight: 600,
                       lineHeight: 1.45,
                       color: '#7f97a8',
@@ -1451,7 +1598,7 @@ export default function LifePathway() {
                         />
                         <div
                           style={{
-                            fontSize: 14,
+                            fontSize: lpfs(14),
                             fontWeight: 600,
                             lineHeight: 1.45,
                             color: '#c8dae5',
@@ -1467,7 +1614,7 @@ export default function LifePathway() {
                       marginTop: 24,
                       paddingTop: 16,
                       borderTop: '1px solid rgba(75,233,255,.14)',
-                      fontSize: 14,
+                      fontSize: lpfs(14),
                       fontWeight: 700,
                       color: '#8fd8e8',
                     }}
@@ -1488,9 +1635,9 @@ export default function LifePathway() {
                 <h2
                   style={{
                     margin: '0 auto',
-                    maxWidth: 760,
+                    maxWidth: lpProseW(760),
                     ...orbitron(),
-                    fontSize: 'clamp(19px,2.2vw,26px)',
+                    fontSize: 'calc(clamp(19px,2.2vw,26px) * var(--lp-type-scale, 1))',
                     lineHeight: 1.25,
                   }}
                 >
@@ -1583,12 +1730,12 @@ export default function LifePathway() {
                               <h3 style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
                                 One last thing
                               </h3>
-                              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#7f97a8' }}>
+                              <p style={{ fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
                                 Superpower wants to know
                               </p>
                             </div>
                           </div>
-                          <p style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.55 }}>
+                          <p style={{ fontSize: lpfs(15), fontWeight: 600, lineHeight: 1.55 }}>
                             Hey{' '}
                             <span style={{ fontWeight: 700, color: CYAN }}>
                               {user?.full_name?.split(' ')[0] ?? 'there'}
@@ -1640,7 +1787,7 @@ export default function LifePathway() {
                                 fontFamily: 'Orbitron, sans-serif',
                                 fontWeight: 900,
                                 letterSpacing: '.08em',
-                                fontSize: 12,
+                                fontSize: lpfs(12),
                                 textTransform: 'uppercase',
                               }}
                             >
@@ -1669,7 +1816,7 @@ export default function LifePathway() {
                             </h3>
                             <p
                               style={{
-                                fontSize: 15,
+                                fontSize: lpfs(15),
                                 fontWeight: 600,
                                 lineHeight: 1.55,
                                 color: '#a8c1d1',
@@ -1689,7 +1836,7 @@ export default function LifePathway() {
                               fontFamily: 'Orbitron, sans-serif',
                               fontWeight: 900,
                               letterSpacing: '.08em',
-                              fontSize: 12,
+                              fontSize: lpfs(12),
                               textTransform: 'uppercase',
                             }}
                           >

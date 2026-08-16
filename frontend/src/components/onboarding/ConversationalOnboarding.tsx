@@ -858,13 +858,13 @@ export default function ConversationalOnboarding({
       {!phaseSplash && (
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* ── Static: orb + greeting (never flips) ───────────────────────── */}
-          <div className="flex shrink-0 flex-col items-center px-6 pb-3 pt-8">
+          <div className="flex shrink-0 flex-col items-center px-6 pb-3 pt-8 md:pb-4 md:pt-10">
             <AnimatedOrb />
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3, duration: 0.6 }}
-              className="mt-5 text-[22px] font-medium text-white/60"
+              className="mt-5 text-[22px] font-medium text-white/60 md:mt-6 md:text-[26px]"
             >
               Hello {parentName}!
             </motion.p>
@@ -923,24 +923,27 @@ export default function ConversationalOnboarding({
                 >
                   {/* Scrollable: question text + summary + continue button */}
                   <div className="min-h-0 flex-1 overflow-y-auto">
-                    <div className="flex flex-col items-center px-6 pb-5 pt-4">
-                      <h2 className="mx-auto w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
+                    <div className="flex flex-col items-center px-6 pb-5 pt-4 md:pb-6 md:pt-6">
+                      {/* The measure widens with the type: a readable line is a
+                          character count, so a max-w frozen while the text grew
+                          would only add wrap lines. */}
+                      <h2 className="mx-auto w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl md:max-w-3xl md:text-[42px] lg:max-w-4xl lg:text-5xl">
                         {latestBotContent}
                       </h2>
                     </div>
 
                     {/* ── Previously answered summary ────────────────────────── */}
                     {resumeSummary && resumeSummary.length > 0 && (
-                      <div className="mx-4 mb-4 space-y-3">
-                        <div className="flex items-center gap-2 px-1">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright">
+                      <div className="mx-4 mb-4 space-y-3 md:mx-6 md:mb-6 md:space-y-4">
+                        <div className="flex items-center gap-2 px-1 md:gap-2.5">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success-bright/15 text-[10px] font-bold text-success-bright md:h-6 md:w-6 md:text-xs">
                             ✓
                           </span>
-                          <span className="text-xs font-semibold uppercase tracking-wider text-white/30">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-white/30 md:text-sm">
                             Your answers · {resumeSummary.length} of 7
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:gap-3 lg:grid-cols-3">
                           {resumeSummary.map((item, i) => {
                             const Icon = SUMMARY_ICONS[item.label] ?? Sparkles;
                             const values = item.answer.includes(',')
@@ -952,27 +955,27 @@ export default function ConversationalOnboarding({
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: i * 0.06, duration: 0.35, ease: 'easeOut' }}
-                                className="border-edge-faint bg-ghost-md rounded-2xl border px-3.5 py-3"
+                                className="border-edge-faint bg-ghost-md rounded-2xl border px-3.5 py-3 md:px-5 md:py-4"
                               >
-                                <div className="mb-1.5 flex items-center gap-1.5">
-                                  <Icon className="h-3 w-3 text-info/60" />
-                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                                <div className="mb-1.5 flex items-center gap-1.5 md:mb-2 md:gap-2">
+                                  <Icon className="h-3 w-3 text-info/60 md:h-4 md:w-4" />
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-white/30 md:text-xs">
                                     {item.label}
                                   </span>
                                 </div>
                                 {values ? (
-                                  <div className="flex flex-wrap gap-1">
+                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
                                     {values.map((v) => (
                                       <span
                                         key={v}
-                                        className="rounded-full bg-info-strong/15 px-2 py-0.5 text-[11px] font-medium text-white/70"
+                                        className="rounded-full bg-info-strong/15 px-2 py-0.5 text-[11px] font-medium text-white/70 md:px-2.5 md:py-1 md:text-[13px]"
                                       >
                                         {v}
                                       </span>
                                     ))}
                                   </div>
                                 ) : (
-                                  <p className="text-sm font-medium leading-snug text-white/80">
+                                  <p className="text-sm font-medium leading-snug text-white/80 md:text-base">
                                     {item.answer}
                                   </p>
                                 )}
@@ -985,10 +988,10 @@ export default function ConversationalOnboarding({
 
                     {/* ── All answered — continue button ─────────────────────── */}
                     {allAnswered && typeof onContinueToPersonality === 'function' && (
-                      <div className="flex justify-center px-4 pb-8 pt-6">
+                      <div className="flex justify-center px-4 pb-8 pt-6 md:pb-10 md:pt-8">
                         <Button
                           type="button"
-                          className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80"
+                          className="h-12 rounded-full bg-info-strong px-8 text-white hover:bg-info-medium active:bg-info-strong/80 md:h-14 md:px-10 md:text-base"
                           onClick={() => onContinueToPersonality()}
                         >
                           Continue to personality analysis
@@ -1066,17 +1069,20 @@ export default function ConversationalOnboarding({
 
 function AnimatedOrb() {
   return (
-    <div className="pointer-events-none relative">
+    // --orb-size is the single knob: the ring inset and the crescent geometry in
+    // index.css are both fractions of it, so one value per breakpoint scales the
+    // whole orb without knocking its layers out of register.
+    <div className="pointer-events-none relative [--orb-size:120px] md:[--orb-size:150px]">
       {/* Pulsing ambient glow */}
       <motion.div
         animate={{ scale: [1, 1.3, 1], opacity: [0.35, 0.65, 0.35] }}
         transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        className="orb-ambient absolute -inset-4 rounded-full"
+        className="orb-ambient absolute -inset-4 rounded-full md:-inset-5"
       />
       {/* Main orb — multi-radial gradient matching reference design */}
-      <div className="orb-main relative h-[120px] w-[120px] rounded-full">
+      <div className="orb-main relative h-[var(--orb-size)] w-[var(--orb-size)] rounded-full">
         {/* Inner ring */}
-        <div className="orb-ring absolute inset-[5px]" />
+        <div className="orb-ring absolute inset-[calc(var(--orb-size)/24)]" />
         {/* Crescent arc */}
         <div className="orb-crescent" />
       </div>
