@@ -124,23 +124,31 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
               <div
-                className="h-[26px] w-[26px] flex-shrink-0 rounded-full"
+                className="h-8 w-8 flex-shrink-0 rounded-full"
                 style={{
                   background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
-                  boxShadow: '0 0 14px rgba(75,233,255,.7)',
+                  boxShadow: '0 0 16px rgba(75,233,255,.7)',
                 }}
               />
-              <div className="hidden items-center gap-2.5 sm:flex">
+              {/*
+                Stacks below the sm breakpoint: the wordmark and the circle chip
+                side by side don't fit next to the right-hand controls on a 375px
+                header, so the chip drops onto a second line rather than the whole
+                block being hidden.
+              */}
+              <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
                 <span
-                  className="text-sidebar-foreground"
+                  className="whitespace-nowrap leading-none text-sidebar-foreground"
                   style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: 14, letterSpacing: '.06em' }}
                 >
                   SUPERPOWER
                 </span>
                 {circleLabel && (
                   <>
-                    <span className="h-4 w-px" style={{ background: 'rgba(75,233,255,.25)' }} />
+                    {/* Row-only separator — a vertical rule reads as noise once stacked. */}
+                    <span className="hidden h-4 w-px sm:block" style={{ background: 'rgba(75,233,255,.25)' }} />
                     <span
+                      className="whitespace-nowrap leading-none"
                       style={{
                         // Explicit, not inherited: in the design mockups the page
                         // root sets Rajdhani and the header picks it up, but here
