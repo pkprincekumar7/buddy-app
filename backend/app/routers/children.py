@@ -232,9 +232,18 @@ async def update_child(
     if clear_pending_vm:
         set_fields.pop("pending_personality_vm", None)
 
+    # Same staging-field handoff for the Release page's observations: the client
+    # promotes pending_observations into `observations` once it has validated the
+    # provider's icon/source enums, and the raw copy is dead weight after that.
+    clear_pending_observations = "observations" in set_fields
+    if clear_pending_observations:
+        set_fields.pop("pending_observations", None)
+
     unset_fields: dict[str, str] = {}
     if clear_pending_vm:
         unset_fields["pending_personality_vm"] = ""
+    if clear_pending_observations:
+        unset_fields["pending_observations"] = ""
 
     owner_filter = {
         "_id": child_id,

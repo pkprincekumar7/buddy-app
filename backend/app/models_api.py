@@ -352,6 +352,12 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Observation patterns for the Release page, plus which of them the parent
+    # chose to keep watching. Canonical field, promoted by the client from
+    # pending_observations below.
+    observations: dict | None = None
+    # Staging field written by the generate_observations worker.
+    pending_observations: dict | None = None
     # Avatar / profile photo — set during onboarding step 2.
     avatar_id: str | None = None  # emoji avatar selection (e.g. "capper-boy")
     avatar_url: str | None = None  # S3 URL of an uploaded profile photo
@@ -515,6 +521,7 @@ JobType = Literal[
     "generate_life_pathway",
     "generate_growth_parent_questions",
     "generate_growth_child_rounds",
+    "generate_observations",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
@@ -588,6 +595,13 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # its own active_jobs slot and in-flight budget.
     "generate_growth_parent_questions": {"parent_questions"},
     "generate_growth_child_rounds": {"child_rounds"},
+    # Observation patterns for the Release page, clustered from the parent's own
+    # onboarding answers, growth-area answers and stated concern. Staged, then
+    # promoted to the canonical `observations` field by the client — same shape of
+    # handoff as pending_personality_vm, and for the same reason: the client
+    # validates the icon/source enums and drops any item the provider returned
+    # malformed before it becomes the thing the page renders.
+    "generate_observations": {"pending_observations"},
 }
 
 _FILTER_MAX_KEYS = 20

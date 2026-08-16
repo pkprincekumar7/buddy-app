@@ -112,7 +112,14 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
       <nav className="sticky top-0 z-40 bg-sidebar/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/*
+          Full-bleed on purpose — a max-w cap here pinned the wordmark and the
+          controls ~350px in from the edges on a 1920 display. Padding only, and
+          responsive rather than the mockups' flat 40px, which would eat a quarter
+          of a 375px header. Does not align with page content, which is centred at
+          its own max-width; the design mockups do the same.
+        */}
+        <div className="px-4 sm:px-6 lg:px-10">
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
@@ -135,6 +142,12 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     <span className="h-4 w-px" style={{ background: 'rgba(75,233,255,.25)' }} />
                     <span
                       style={{
+                        // Explicit, not inherited: in the design mockups the page
+                        // root sets Rajdhani and the header picks it up, but here
+                        // the header sits outside each page's root element, so
+                        // without this it falls back to the Tailwind sans stack
+                        // and this chip alone renders in the wrong typeface.
+                        fontFamily: 'Rajdhani, sans-serif',
                         fontWeight: 700,
                         fontSize: 11,
                         letterSpacing: '.22em',

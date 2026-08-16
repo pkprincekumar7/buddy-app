@@ -63,6 +63,24 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
+  /**
+   * Release-page observation patterns and the parent's watch list. Raw provider
+   * output under `items` — always read it through normalizeObservations in
+   * `@/lib/observationsData` rather than trusting the shape.
+   */
+  observations?: {
+    source?: string;
+    items?: unknown;
+    /** Observation ids the parent ticked. */
+    watching?: string[];
+    /** SPANS label the parent chose, e.g. "3 months". */
+    span?: string;
+    /** When Start tracking was last pressed. Written but not yet read by anything. */
+    started_at?: string;
+    [key: string]: unknown;
+  } | null;
+  /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
+  pending_observations?: Record<string, unknown> | null;
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
   is_deleted?: boolean;
@@ -80,7 +98,8 @@ export type JobType =
   | 'generate_journey_insights'
   | 'generate_life_pathway'
   | 'generate_growth_parent_questions'
-  | 'generate_growth_child_rounds';
+  | 'generate_growth_child_rounds'
+  | 'generate_observations';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 

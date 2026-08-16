@@ -222,6 +222,9 @@ export function jobProgressMessage(elapsedMs: number, jobType: JobType): string 
   } else if (jobType === 'generate_growth_child_rounds') {
     if (s < 8) return 'Turning your answers into a game…';
     if (s < 15) return 'Shaping choices your child will love…';
+  } else if (jobType === 'generate_observations') {
+    if (s < 8) return 'Reading back what you have told us…';
+    if (s < 15) return 'Grouping it into patterns…';
   } else {
     if (s < 8) return 'Generating activity ideas…';
     if (s < 15) return 'Personalising activities for your child…';

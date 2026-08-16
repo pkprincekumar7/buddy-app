@@ -6,6 +6,14 @@
 import { slimChildConversationForStorage } from '@/lib/onboardingChildData';
 import { normalizeAge } from '@/lib/insightsUtils';
 
+/**
+ * Placeholder returned by questionnaireMarkdown when nothing is stored. Exported
+ * because callers need to distinguish "no evidence" from a real block, and
+ * sniffing the literal text would silently start treating this sentinel as
+ * evidence the moment someone reworded it.
+ */
+export const NO_QUESTIONNAIRE = '(no questionnaire stored yet)';
+
 // Formats stored questionnaire fields into a readable markdown block for LLM prompts.
 export function questionnaireMarkdown(mergedDraft: Record<string, unknown>): string {
   const slim = slimChildConversationForStorage(mergedDraft);
@@ -27,7 +35,7 @@ export function questionnaireMarkdown(mergedDraft: Record<string, unknown>): str
     const lbl = labelFor[k] ?? k;
     pairs.push(Array.isArray(v) ? `${lbl}: ${v.join(', ')}` : `${lbl}: ${String(v)}`);
   }
-  return pairs.length ? pairs.join('\n') : '(no questionnaire stored yet)';
+  return pairs.length ? pairs.join('\n') : NO_QUESTIONNAIRE;
 }
 
 // Brief archetype descriptors injected into the personality prompt so the LLM can
@@ -573,4 +581,137 @@ Based on the actual answers, quality of understanding, engagement, and expressio
 - "No Improvement" — both assessments show similar levels of understanding and effort with no meaningful change
 
 Example: { "progress_observation": "Improved" }`;
+}
+
+/**
+ * Release-page observations. This prompt is unusually restrictive on purpose: the
+ * page it feeds tells the parent "Superpower records what you notice. It draws no
+ * conclusions and labels nothing." Every constraint below traces back to keeping
+ * that sentence true.
+ *
+ * The hard one is the ban list. Read the six patterns a screening instrument
+ * would look for in this age band — inattention, decoding difficulty, sensory
+ * sensitivity, motor restlessness, expressive sequencing, social reciprocity —
+ * and a model clustering parent-reported behaviour will land on them unprompted,
+ * because that is genuinely what the evidence looks like. Producing that set
+ * under warm phrasing is de-facto screening output, which this product is not and
+ * must not read as. So the ban is on the vocabulary AND on the move: describe the
+ * behaviour the parent described, in their words, and stop there.
+ */
+export function buildObservationsPrompt({
+  childName,
+  childAge,
+  childGender,
+  questionnaireMd,
+  growthAreaContext,
+  childActivityContext,
+  parentConcern,
+  iconKeys,
+}: {
+  childName: string;
+  childAge?: number | string | null;
+  childGender?: string | null;
+  /** Onboarding questionnaire block, or '' when nothing is stored. */
+  questionnaireMd: string;
+  /** Per-area Q&A the parent has answered in Grow, or '' when none. */
+  growthAreaContext: string;
+  /** The child's own forced-choice picks from the Grow rounds, or '' when none. */
+  childActivityContext: string;
+  parentConcern?: string | null;
+  iconKeys: readonly string[];
+}): string {
+  const age = normalizeAge(childAge) ?? 'unknown';
+  const gender = typeof childGender === 'string' && childGender ? childGender : 'unknown';
+  const pronouns =
+    gender.toLowerCase() === 'female'
+      ? 'she/her'
+      : gender.toLowerCase() === 'male'
+        ? 'he/his'
+        : 'they/their';
+
+  const blocks: string[] = [];
+  const presentKeys: string[] = [];
+  if (questionnaireMd) {
+    presentKeys.push('onboarding');
+    blocks.push(
+      `[SOURCE: onboarding] Onboarding questionnaire, answered by the parent:\n"""\n${questionnaireMd}\n"""`,
+    );
+  }
+  if (growthAreaContext) {
+    presentKeys.push('grow');
+    blocks.push(
+      `[SOURCE: grow] Growth-area reflections, answered by the parent:\n"""\n${growthAreaContext}\n"""`,
+    );
+  }
+  if (childActivityContext) {
+    presentKeys.push('child');
+    blocks.push(
+      `[SOURCE: child] ${childName}'s own picks in the Grow rounds. Each line is a forced choice between two options WE offered — ${childName} tapped one, so these are choices, not quotations:\n"""\n${childActivityContext}\n"""`,
+    );
+  }
+  if (parentConcern) {
+    presentKeys.push('concern');
+    blocks.push(
+      `[SOURCE: concern] What the parent said they are worried about:\n"""\n${parentConcern}\n"""`,
+    );
+  }
+
+  // Rule 5 is the per-source guarantee that selectObservations enforces. It must
+  // only ever name blocks that are actually present above — an earlier version
+  // interpolated the count but kept prose referring to the grow and concern blocks
+  // unconditionally, which told a questionnaire-only child's prompt about two
+  // sources it had never been given.
+  const rule5 =
+    presentKeys.length === 1
+      ? `5. There is one source block above (${presentKeys[0]}). Everything you return must be grounded in it.`
+      : `5. There are ${presentKeys.length} source blocks above (${presentKeys.join(', ')}), so AT LEAST ${presentKeys.length} of your observations must each cite a different one. Count them before you answer. A longer block is not a more important one: one block may hold a handful of fields while another holds thirty answers, and both still get represented.${
+          presentKeys.includes('concern')
+            ? ' The concern block especially — it is the thing the parent chose to raise, so a set that ignores it has failed at the one job this page has.'
+            : ''
+        }`;
+
+  return `You are helping a parent see the patterns in what THEY have already told us about their child. You are a careful listener writing back what you heard. You are not an assessor.
+
+Child: ${childName}, age ${age}, gender ${gender}. Use ${pronouns} pronouns.
+
+Every evidence block below is tagged with the source key you must cite for anything you draw from it.
+
+${blocks.join('\n\n')}
+
+Return JSON ONLY conforming to the response schema.
+
+HOW TO BUILD THE SET
+1. Return EXACTLY six observations. Not five, not seven.
+2. Read across EVERY block before deciding what the six are. You are describing six different facets of one child — how attention works, how ${childName} communicates, what settles ${childName}, what ${childName} chooses, what ${childName} avoids, what ${childName} is drawn to. Two observations a parent would read as the same point waste a slot.
+3. Prefer merging two halves of one answer into a single richer observation. If merging everything mergeable leaves you short of six, do NOT split a pattern back apart to pad the count — return to the blocks and find a facet you have not used.
+4. Every observation must rest on something in the blocks above. If you cannot trace it, drop it and find another.
+${rule5}
+6. A pattern that shows up in MORE THAN ONE block is the strongest thing this page can offer, because it has turned up more than once. Group it into ONE observation citing every block it appears in, and put those observations FIRST in your list. Something the parent described that ${childName}'s own choices also point to is worth more than either on its own — do not split it into two cards and lose that.
+
+FIELD RULES
+• title — at most 8 words, and it must READ AS A PATTERN, containing a verb. Not a noun fragment lifted out of the answer.
+  Good: "Attention runs long on chosen projects" · "Settles better outdoors than indoors" · "Reading aloud runs slower than talking"
+  Bad, because it is a category: "Sensory sensitivity" · "Executive function"
+  Bad, because it is a fragment that tells the parent nothing: "Three things to do" · "Sit with a Lego build" · "Lego and focus"
+• summary — ONE sentence, max 28 words, addressed to the parent, using ${pronouns}. It states the pattern the notes are facets of. It must NOT restate any single note, and must not simply string the notes together: if the parent could delete this sentence and lose nothing, rewrite it.
+• notes — EXACTLY 2 or 3 points. These carry the value of the card. They are NOT a transcript, and a parent who has just written those answers gains nothing from being read them back.
+  – From the onboarding, grow or concern blocks: NEVER copy a sentence out of the block. Turn what it tells you into a specific observation. "I have to call him twice for dinner" is input; "Needs a second call before dinner lands once absorbed" is a note.
+  – Each note must add something the summary does NOT say, and something no other note on this card says. If two notes could merge without losing information, you have written one note twice — replace it.
+  – Reword and sharpen only. Do NOT add a fact, cause, motive or consequence the evidence does not contain. Every note must stay traceable to the block it came from.
+  – From the child block, the ONE exception to rewording: copy the line EXACTLY as written, whole, in its Chose “X” over “Y” form. Do not reword it, summarise it, or re-pair halves of two different lines. This is not stylistic — the two options in a round are the one thing you cannot paraphrase without risking claiming ${childName} chose something ${childName} actually rejected, and the rejected side is half the meaning. Reproduce a line verbatim or leave it out.
+  – ${childName} tapped one of two options WE wrote and said nothing, so never present a choice as ${childName}'s words or as speech.
+  Do NOT wrap a note in quotation marks — the page frames them itself. Quote marks belong only inside a child-block line, around each of the two options.
+• sources — every source key whose block you actually drew on for this pattern. Cite honestly; do not add a key for a block you did not use.
+• icon — closest match from: ${iconKeys.join(', ')}.
+
+WHAT THE BAN BELOW IS AND IS NOT
+Describing a behaviour the parent described, in the parent's own words, is always allowed — including behaviour around reading, attention, noise or social situations. That is the whole product. What is banned is NAMING it as a category, or implying it should be looked into. "Reading aloud runs slower than talking" is required of you if the parent said it. "Possible reading difficulty" is forbidden. Do not resolve this tension by dropping the observation: silently omitting what the parent raised is the worst available outcome, worse than either extreme.
+
+FORBIDDEN — these break the product's core promise to the parent
+• No diagnostic or screening vocabulary, in any field, including as a hedge. Never use: disorder, syndrome, condition, deficit, ADHD, ADD, autism, autistic, ASD, spectrum, neurodivergent, dyslexia, dyslexic, dyspraxia, sensory processing disorder, SPD, ODD, anxiety, depression, impairment, disability, delay, symptom, trait marker, clinical, diagnosis, assessment, screening.
+• Do not suggest the child be assessed, screened, evaluated, or seen by a professional. That is not this page's job. Note the parent may themselves be wondering whether to raise something with a teacher — reflect that they said it, but do not answer the question for them.
+• No frequency or repetition claims. You have single-sitting answers, not a log, so you cannot know how often anything happens. Never write "often", "always", "usually", "frequently", "repeatedly", "tends to", "every time", or any count. Write what was reported, not how often it occurs.
+• No comparison to other children or to developmental norms. Never "for ${String(age)}-year-olds", "behind", "ahead", "below average", "typical", "advanced", "struggles with".
+• No cause-and-effect explanation of why the child is like this. Report the pattern; do not theorise the mechanism.
+• Do not rank the patterns by concern, and do not flag any of them as the important one.`;
 }
