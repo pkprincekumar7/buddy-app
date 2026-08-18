@@ -275,9 +275,7 @@ export default function LifePathway() {
   const railLabel = useMemo(() => {
     const target = railWidth >= LABEL_WIDE_RAIL_MIN ? LABEL_TARGET_PX_WIDE : LABEL_TARGET_PX;
     const units =
-      railWidth > 0
-        ? Math.min(LABEL_MAX_UNITS, Math.round((target * 1000) / railWidth))
-        : 16;
+      railWidth > 0 ? Math.min(LABEL_MAX_UNITS, Math.round((target * 1000) / railWidth)) : 16;
     const split = units > LABEL_ONE_LINE_MAX_UNITS;
     return {
       units,
@@ -725,7 +723,12 @@ export default function LifePathway() {
                       {COPY.chartTitle}
                     </div>
                     <div
-                      style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}
+                      style={{
+                        marginTop: 6,
+                        fontSize: lpfs(13.5),
+                        fontWeight: 600,
+                        color: '#7f97a8',
+                      }}
                     >
                       {COPY.chartSub}
                     </div>
@@ -1393,7 +1396,14 @@ export default function LifePathway() {
               >
                 <div>
                   <div style={{ ...orbitron(17), color: '#f2fdff' }}>{COPY.ninetyTitle}</div>
-                  <div style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: lpfs(13.5),
+                      fontWeight: 600,
+                      color: '#7f97a8',
+                    }}
+                  >
                     Built for{' '}
                     {[childName, `age ${String(currentAge)}`, archetype ? `The ${archetype}` : null]
                       .filter(Boolean)
@@ -1730,7 +1740,9 @@ export default function LifePathway() {
                               <h3 style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
                                 One last thing
                               </h3>
-                              <p style={{ fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
+                              <p
+                                style={{ fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}
+                              >
                                 Superpower wants to know
                               </p>
                             </div>
