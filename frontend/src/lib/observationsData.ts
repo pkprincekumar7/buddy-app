@@ -32,7 +32,8 @@ export const OBSERVATION_ICONS = {
   sense: 'M12 4a8 8 0 0 0-8 8v5h4v-6M12 4a8 8 0 0 1 8 8v5h-4v-6',
   motion: 'M13 4l-2 7h5l-3 9M6 9l3-1M18 14l-3 1',
   words: 'M5 7h14M5 12h9M5 17h6',
-  social: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c1-3.5 3.2-5.2 6-5.2S14 16.5 15 20M16 5.5a3 3 0 0 1 0 6',
+  social:
+    'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c1-3.5 3.2-5.2 6-5.2S14 16.5 15 20M16 5.5a3 3 0 0 1 0 6',
   /**
    * Neutral fallback for an unrecognised key. Deliberately domain-free: showing
    * the "read" glyph on a pattern about mealtimes would signal a reading
@@ -122,20 +123,13 @@ const NOTE_MAX_WORDS = 22;
  * Renders provenance as a sentence, e.g. "From your onboarding and Grow answers".
  * Returns '' for an empty list so callers render nothing rather than a bare "From".
  */
-export function formatObservationSources(
-  sources: ObservationSourceKey[],
-  childName = '',
-): string {
+export function formatObservationSources(sources: ObservationSourceKey[], childName = ''): string {
   const nouns = sources.map((s) => sourceNoun(s, childName)).filter(Boolean);
   if (nouns.length === 0) return '';
   if (nouns.length === 1) return `From ${nouns[0]}`;
   // These two are the only pair sharing a "your … answers" shape, so they are the
   // only pair the shared head can be elided from.
-  if (
-    sources.length === 2 &&
-    sources.includes('onboarding') &&
-    sources.includes('grow')
-  ) {
+  if (sources.length === 2 && sources.includes('onboarding') && sources.includes('grow')) {
     return 'From your onboarding and Grow answers';
   }
   const head = nouns.slice(0, -1).join(', ');

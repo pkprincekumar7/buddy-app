@@ -194,10 +194,13 @@ sys.exit(1 if bad else 0)
 # checking severity. Fail only on unignored high (bit 3) or critical (bit 4) findings.
 # Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev tooling
 # (eslint, jest), never shipped to the production bundle.
+# Ignored: 1138808, 1138809 — image-size DoS via Metro's bundler dependency chain;
+# no patched release exists upstream yet, and image-size only runs at build time,
+# never shipped to the production bundle.
 run "yarn audit (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED_IDS={1124334}
+IGNORED_IDS={1124334, 1138808, 1138809}
 high=0
 for line in sys.stdin:
     line=line.strip()
@@ -275,8 +278,12 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' fs --format cyclonedx --output '$ROOT/sbom-frontend.cyclonedx.json' '$FRONTEND/' \
         && echo 'Frontend SBOM → sbom-frontend.cyclonedx.json'"
 
+  # --ignorefile: image-size (CVE-2025-71329, CVE-2025-71330) has no upstream fix yet;
+  # see frontend-app/.trivyignore for the rationale (same exception as the yarn audit
+  # IGNORED_IDS list above).
   run "trivy (frontend-app CVE scan)" \
-      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln '$FRONTEND_APP/'"
+      bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln \
+        --ignorefile '$FRONTEND_APP/.trivyignore' '$FRONTEND_APP/'"
 
   run "trivy (frontend-app license scan)" \
       bash -c "'$TRIVY' fs --exit-code 1 --severity HIGH,CRITICAL --scanners license '$FRONTEND_APP/'"
