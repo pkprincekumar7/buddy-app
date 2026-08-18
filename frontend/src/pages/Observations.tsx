@@ -87,10 +87,30 @@ const SPANS: ObservationSpan[] = [
     title: 'Month one: write it down as it happens',
     cadence: 'Two short notes a week',
     steps: [
-      { when: 'Week 1', title: 'Same questions, no changes', body: 'Answer as things are. Change nothing yet.', dot: '#4be9ff' },
-      { when: 'Week 2', title: 'Note the setting', body: 'Where it happened and what came before.', dot: '#4be9ff' },
-      { when: 'Week 3', title: 'Note the exceptions', body: 'The days it did not happen matter too.', dot: '#f0c98a' },
-      { when: 'Week 4', title: 'First look back', body: 'Your notes side by side, to see what repeated.', dot: '#f0c98a' },
+      {
+        when: 'Week 1',
+        title: 'Same questions, no changes',
+        body: 'Answer as things are. Change nothing yet.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 2',
+        title: 'Note the setting',
+        body: 'Where it happened and what came before.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 3',
+        title: 'Note the exceptions',
+        body: 'The days it did not happen matter too.',
+        dot: '#f0c98a',
+      },
+      {
+        when: 'Week 4',
+        title: 'First look back',
+        body: 'Your notes side by side, to see what repeated.',
+        dot: '#f0c98a',
+      },
     ],
   },
   {
@@ -99,10 +119,30 @@ const SPANS: ObservationSpan[] = [
     title: 'Month two: test the pattern against another view',
     cadence: 'Weekly note, one school check-in',
     steps: [
-      { when: 'Week 5', title: 'Bring in a second observer', body: 'A teacher or coach answers the same questions.', dot: '#4be9ff' },
-      { when: 'Week 6', title: 'Try one small change', body: 'One only. Movement before homework, say.', dot: '#4be9ff' },
-      { when: 'Week 7', title: 'Keep the change steady', body: 'Long enough to tell it from a good week.', dot: '#f0c98a' },
-      { when: 'Week 8', title: 'Compare the two views', body: 'Where both views agree is the sturdiest part.', dot: '#f0c98a' },
+      {
+        when: 'Week 5',
+        title: 'Bring in a second observer',
+        body: 'A teacher or coach answers the same questions.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 6',
+        title: 'Try one small change',
+        body: 'One only. Movement before homework, say.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 7',
+        title: 'Keep the change steady',
+        body: 'Long enough to tell it from a good week.',
+        dot: '#f0c98a',
+      },
+      {
+        when: 'Week 8',
+        title: 'Compare the two views',
+        body: 'Where both views agree is the sturdiest part.',
+        dot: '#f0c98a',
+      },
     ],
   },
   {
@@ -111,10 +151,30 @@ const SPANS: ObservationSpan[] = [
     title: 'Month three: see the whole picture',
     cadence: 'Fortnightly note, one summary',
     steps: [
-      { when: 'Week 9', title: 'Hold the routine', body: 'No new changes. Keep conditions steady.', dot: '#4be9ff' },
-      { when: 'Week 10', title: 'Note what {he} say{s}', body: '{His} own words about {his} day, kept verbatim.', dot: '#4be9ff' },
-      { when: 'Week 11', title: 'Build the summary', body: 'A one page record of the ninety days.', dot: '#f0c98a' },
-      { when: 'Week 12', title: 'Choose what happens next', body: 'Keep watching, close the note, or share the page.', dot: '#f0c98a' },
+      {
+        when: 'Week 9',
+        title: 'Hold the routine',
+        body: 'No new changes. Keep conditions steady.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 10',
+        title: 'Note what {he} say{s}',
+        body: '{His} own words about {his} day, kept verbatim.',
+        dot: '#4be9ff',
+      },
+      {
+        when: 'Week 11',
+        title: 'Build the summary',
+        body: 'A one page record of the ninety days.',
+        dot: '#f0c98a',
+      },
+      {
+        when: 'Week 12',
+        title: 'Choose what happens next',
+        body: 'Keep watching, close the note, or share the page.',
+        dot: '#f0c98a',
+      },
     ],
   },
 ];
@@ -125,8 +185,14 @@ const SPANS: ObservationSpan[] = [
  * live at module scope where it is not known yet.
  */
 const NEXT_STEPS = [
-  { title: 'Share it with {his} teacher', body: 'Makes a school conversation shorter and more specific.' },
-  { title: 'Use it to shape {his} routine', body: 'The settings that work for {him} are already in your notes.' },
+  {
+    title: 'Share it with {his} teacher',
+    body: 'Makes a school conversation shorter and more specific.',
+  },
+  {
+    title: 'Use it to shape {his} routine',
+    body: 'The settings that work for {him} are already in your notes.',
+  },
   { title: 'Or simply keep watching', body: 'Many patterns settle on their own as children grow.' },
 ];
 
@@ -205,17 +271,25 @@ function buildChildActivityContext(
     if (!areaId) continue;
 
     const durable = (area.child_activity as { selections?: unknown } | undefined)?.selections;
-    const picks = (Array.isArray(durable) ? durable : area.child_activity_selections ?? []).filter(
-      (id): id is string => typeof id === 'string',
-    );
+    const picks = (
+      Array.isArray(durable) ? durable : (area.child_activity_selections ?? [])
+    ).filter((id): id is string => typeof id === 'string');
     if (picks.length === 0) continue;
 
     // resolveRounds picks whichever generation of ids the saved picks belong to,
     // so areas played against the hardcoded rounds still resolve correctly.
-    const rounds = resolveRounds(areaId, normalizeGeneratedRounds(area.child_rounds, areaId), picks);
+    const rounds = resolveRounds(
+      areaId,
+      normalizeGeneratedRounds(area.child_rounds, areaId),
+      picks,
+    );
     const lines: string[] = [];
     for (const round of rounds) {
-      const chose = picks.includes(round.a.id) ? round.a : picks.includes(round.b.id) ? round.b : null;
+      const chose = picks.includes(round.a.id)
+        ? round.a
+        : picks.includes(round.b.id)
+          ? round.b
+          : null;
       if (!chose) continue;
       const over = chose.id === round.a.id ? round.b : round.a;
       // Typographic quotes here so the string the provider echoes back already
@@ -267,7 +341,13 @@ function ShieldIcon() {
 
 function ClockIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="#4be9ff" strokeWidth={2.2} style={{ width: 28, height: 28 }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#4be9ff"
+      strokeWidth={2.2}
+      style={{ width: 28, height: 28 }}
+    >
       <circle cx="12" cy="12" r="8.5" />
       <path d="M12 7.5V12l3 2" />
     </svg>
@@ -614,7 +694,9 @@ export default function Observations() {
         ? 'Nothing selected yet'
         : `${tracked.length} of ${observations.length} being watched`;
   const startTitle =
-    tracked.length === 0 ? 'Pick at least one observation to watch' : `Watch these for ${activeSpan.label}`;
+    tracked.length === 0
+      ? 'Pick at least one observation to watch'
+      : `Watch these for ${activeSpan.label}`;
   const startLine =
     tracked.length === 0
       ? 'Tick the ones that match what you see at home.'
@@ -626,7 +708,10 @@ export default function Observations() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ background: '#04060d' }}>
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ background: '#04060d' }}
+      >
         <motion.div
           {...SPINNER}
           className="h-10 w-10 rounded-full border-2 border-t-transparent"
@@ -690,7 +775,9 @@ export default function Observations() {
         @keyframes obsShimmer { 0%,100% { opacity: .45; } 50% { opacity: 1; } }
       `}</style>
 
-      <main style={{ maxWidth: 'var(--obs-max, 1120px)', margin: '0 auto', padding: '48px 40px 90px' }}>
+      <main
+        style={{ maxWidth: 'var(--obs-max, 1120px)', margin: '0 auto', padding: '48px 40px 90px' }}
+      >
         {/* Hero */}
         <section style={{ textAlign: 'center', animation: 'obsFadeUp .7s ease both' }}>
           <div
@@ -760,7 +847,8 @@ export default function Observations() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
+                gridTemplateColumns:
+                  'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
                 gap: 14,
                 marginTop: 16,
               }}
@@ -770,7 +858,9 @@ export default function Observations() {
               ))}
             </div>
           ) : generationFailed ? (
-            <div style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '30px 24px' }}>
+            <div
+              style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '30px 24px' }}
+            >
               <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
                 We could not group your answers just now
               </div>
@@ -784,7 +874,9 @@ export default function Observations() {
                   color: '#8ba1b1',
                 }}
               >
-                {genError ?? job.error ?? 'Something went wrong on our side. Your answers are safe.'}
+                {genError ??
+                  job.error ??
+                  'Something went wrong on our side. Your answers are safe.'}
               </div>
               <button
                 type="button"
@@ -812,7 +904,9 @@ export default function Observations() {
               </button>
             </div>
           ) : observations.length === 0 ? (
-            <div style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '34px 24px' }}>
+            <div
+              style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '34px 24px' }}
+            >
               <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
                 Nothing to group yet
               </div>
@@ -826,8 +920,8 @@ export default function Observations() {
                   color: '#8ba1b1',
                 }}
               >
-                This page reads back what you have already told us. Answer a Grow area or finish
-                the onboarding questions, and the patterns in your answers will appear here.
+                This page reads back what you have already told us. Answer a Grow area or finish the
+                onboarding questions, and the patterns in your answers will appear here.
               </div>
               <button
                 type="button"
@@ -854,7 +948,8 @@ export default function Observations() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
+                gridTemplateColumns:
+                  'repeat(auto-fill,minmax(min(var(--obs-card-min, 330px), 100%),1fr))',
                 gap: 14,
                 marginTop: 16,
               }}
@@ -877,7 +972,14 @@ export default function Observations() {
                       gap: 14,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: 14,
+                      }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         <div
                           style={{
@@ -892,12 +994,20 @@ export default function Observations() {
                             border: '1.5px solid rgba(240,201,138,.5)',
                           }}
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#f0c98a" strokeWidth={1.8} style={{ width: 18, height: 18 }}>
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#f0c98a"
+                            strokeWidth={1.8}
+                            style={{ width: 18, height: 18 }}
+                          >
                             <path d={OBSERVATION_ICONS[obs.icon]} />
                           </svg>
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>{obs.title}</div>
+                          <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
+                            {obs.title}
+                          </div>
                           <div
                             style={{
                               marginTop: 2,
@@ -939,7 +1049,14 @@ export default function Observations() {
                       </div>
                     </div>
 
-                    <div style={{ fontSize: fs(14.5), fontWeight: 600, lineHeight: 1.5, color: '#b9cedb' }}>
+                    <div
+                      style={{
+                        fontSize: fs(14.5),
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: '#b9cedb',
+                      }}
+                    >
                       {obs.summary}
                     </div>
 
@@ -949,7 +1066,12 @@ export default function Observations() {
                       {obs.notes.map((note) => (
                         <div
                           key={note}
-                          style={{ display: 'grid', gridTemplateColumns: '14px 1fr', gap: 10, alignItems: 'start' }}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '14px 1fr',
+                            gap: 10,
+                            alignItems: 'start',
+                          }}
                         >
                           <div
                             style={{
@@ -961,7 +1083,14 @@ export default function Observations() {
                               background: '#4be9ff',
                             }}
                           />
-                          <div style={{ fontSize: fs(13.5), fontWeight: 600, lineHeight: 1.45, color: '#8ba1b1' }}>
+                          <div
+                            style={{
+                              fontSize: fs(13.5),
+                              fontWeight: 600,
+                              lineHeight: 1.45,
+                              color: '#8ba1b1',
+                            }}
+                          >
                             {note}
                           </div>
                         </div>
@@ -992,7 +1121,15 @@ export default function Observations() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 22, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 10,
+              marginTop: 22,
+              flexWrap: 'wrap',
+            }}
+          >
             {SPANS.map((s, index) => {
               const selected = span === index;
               return (
@@ -1027,7 +1164,11 @@ export default function Observations() {
                   >
                     {s.label}
                   </div>
-                  <div style={{ marginTop: 3, fontWeight: 600, fontSize: fs(12.5), color: '#7e97a8' }}>{s.tag}</div>
+                  <div
+                    style={{ marginTop: 3, fontWeight: 600, fontSize: fs(12.5), color: '#7e97a8' }}
+                  >
+                    {s.tag}
+                  </div>
                 </div>
               );
             })}
@@ -1078,7 +1219,9 @@ export default function Observations() {
                     >
                       Check-in rhythm
                     </div>
-                    <div style={{ marginTop: 3, fontWeight: 700, fontSize: fs(15), color: '#f0c98a' }}>
+                    <div
+                      style={{ marginTop: 3, fontWeight: 700, fontSize: fs(15), color: '#f0c98a' }}
+                    >
                       {activeSpan.cadence}
                     </div>
                   </div>
@@ -1125,10 +1268,25 @@ export default function Observations() {
                           {step.when}
                         </div>
                       </div>
-                      <div style={{ marginTop: 10, fontWeight: 700, fontSize: fs(15), color: '#eafdff' }}>
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontWeight: 700,
+                          fontSize: fs(15),
+                          color: '#eafdff',
+                        }}
+                      >
                         {fillTemplate(step.title, childName, childGender)}
                       </div>
-                      <div style={{ marginTop: 6, fontSize: fs(13.5), fontWeight: 600, lineHeight: 1.45, color: '#8ba1b1' }}>
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: fs(13.5),
+                          fontWeight: 600,
+                          lineHeight: 1.45,
+                          color: '#8ba1b1',
+                        }}
+                      >
                         {fillTemplate(step.body, childName, childGender)}
                       </div>
                     </div>
@@ -1250,13 +1408,29 @@ export default function Observations() {
                 <div style={{ fontWeight: 700, fontSize: fs(15.5), color: '#eafdff' }}>
                   {fillTemplate(next.title, childName, childGender)}
                 </div>
-                <div style={{ marginTop: 7, fontSize: fs(14), fontWeight: 600, lineHeight: 1.5, color: '#8ba1b1' }}>
+                <div
+                  style={{
+                    marginTop: 7,
+                    fontSize: fs(14),
+                    fontWeight: 600,
+                    lineHeight: 1.5,
+                    color: '#8ba1b1',
+                  }}
+                >
                   {fillTemplate(next.body, childName, childGender)}
                 </div>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 20, display: 'flex', alignItems: 'flex-start', gap: 9, maxWidth: proseW(760) }}>
+          <div
+            style={{
+              marginTop: 20,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 9,
+              maxWidth: proseW(760),
+            }}
+          >
             <ShieldIcon />
             <div style={{ fontSize: fs(13), fontWeight: 600, lineHeight: 1.5, color: '#6f8a9c' }}>
               Notes stay in your account and are never shared unless you share them. Superpower
@@ -1284,7 +1458,8 @@ export default function Observations() {
               alignItems: 'center',
               justifyContent: 'center',
               padding: 26,
-              background: 'radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)',
+              background:
+                'radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)',
             }}
           >
             <motion.div
@@ -1323,10 +1498,26 @@ export default function Observations() {
               >
                 <ClockIcon />
               </div>
-              <div style={{ marginTop: 18, fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: fs(19), color: '#eafdff' }}>
+              <div
+                style={{
+                  marginTop: 18,
+                  fontFamily: 'Orbitron, sans-serif',
+                  fontWeight: 700,
+                  fontSize: fs(19),
+                  color: '#eafdff',
+                }}
+              >
                 Tracking started
               </div>
-              <div style={{ marginTop: 10, fontSize: fs(15), fontWeight: 600, lineHeight: 1.5, color: '#a8c1d1' }}>
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: fs(15),
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                  color: '#a8c1d1',
+                }}
+              >
                 {startedLine}
               </div>
               <button

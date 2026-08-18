@@ -139,14 +139,22 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
                 <span
                   className="whitespace-nowrap leading-none text-sidebar-foreground"
-                  style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: 14, letterSpacing: '.06em' }}
+                  style={{
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontWeight: 900,
+                    fontSize: 14,
+                    letterSpacing: '.06em',
+                  }}
                 >
                   SUPERPOWER
                 </span>
                 {circleLabel && (
                   <>
                     {/* Row-only separator — a vertical rule reads as noise once stacked. */}
-                    <span className="hidden h-4 w-px sm:block" style={{ background: 'rgba(75,233,255,.25)' }} />
+                    <span
+                      className="hidden h-4 w-px sm:block"
+                      style={{ background: 'rgba(75,233,255,.25)' }}
+                    />
                     <span
                       className="whitespace-nowrap leading-none"
                       style={{

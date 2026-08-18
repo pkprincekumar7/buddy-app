@@ -22,8 +22,10 @@ const IC = {
   mic: 'M12 4a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 12 4zM6 11a6 6 0 0 0 12 0M12 17v4',
   chart: 'M4 20V10M11 20V4M18 20v-7',
   school: 'M3 9l9-4 9 4-9 4zM7 12v4c0 1.5 2.2 3 5 3s5-1.5 5-3v-4',
-  sport: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM4.5 9h15M4.5 15h15M12 4c-2.5 4-2.5 12 0 16M12 4c2.5 4 2.5 12 0 16',
-  friends: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c1-3.5 3.2-5.2 6-5.2S14 16.5 15 20M16 5.5a3 3 0 0 1 0 6M18 14.6c1.7.8 2.8 2.4 3.3 5.4',
+  sport:
+    'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM4.5 9h15M4.5 15h15M12 4c-2.5 4-2.5 12 0 16M12 4c2.5 4 2.5 12 0 16',
+  friends:
+    'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c1-3.5 3.2-5.2 6-5.2S14 16.5 15 20M16 5.5a3 3 0 0 1 0 6M18 14.6c1.7.8 2.8 2.4 3.3 5.4',
   kind: 'M12 20s-7-4.4-7-9.3A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.7C19 15.6 12 20 12 20z',
 };
 
@@ -166,7 +168,13 @@ const TW_RING_CIRCUMFERENCE = 94.2;
 
 function WhatsAppIcon({ size = 24, color = '#57dc96' }: { size?: number; color?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      style={{ width: size, height: size }}
+    >
       <path d="M20.5 11.8a8.5 8.5 0 0 1-12.6 7.5L3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 20.5 11.8z" />
       <path d="M8.8 8.4c.3-.6 1.3-.5 1.5 0l.6 1.4-.7 1a5 5 0 0 0 2.9 2.9l1-.7 1.4.6c.5.2.6 1.2 0 1.5-1.5.8-3.6.2-5.2-1.4s-2.3-3.8-1.5-5.3z" />
     </svg>
@@ -175,7 +183,13 @@ function WhatsAppIcon({ size = 24, color = '#57dc96' }: { size?: number; color?:
 
 function InstagramIcon({ size = 24, color = '#e278be' }: { size?: number; color?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.8}
+      style={{ width: size, height: size }}
+    >
       <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
       <circle cx="12" cy="12" r="4" />
       <circle cx="17" cy="7" r="1.1" fill={color} stroke="none" />
@@ -185,7 +199,13 @@ function InstagramIcon({ size = 24, color = '#e278be' }: { size?: number; color?
 
 function TwitterIcon({ size = 24, color = '#cfe1ee' }: { size?: number; color?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.9} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={1.9}
+      style={{ width: size, height: size }}
+    >
       <path d="M5 5l14 14M19 5L5 19" />
     </svg>
   );
@@ -216,7 +236,13 @@ function CheckTickIcon({
   opacity?: number;
 }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3.2} style={{ width: size, height: size, opacity }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={3.2}
+      style={{ width: size, height: size, opacity }}
+    >
       <path d="M20 6L9 17l-5-5" />
     </svg>
   );
@@ -224,7 +250,13 @@ function CheckTickIcon({
 
 function CloseIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      style={{ width: size, height: size }}
+    >
       <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
@@ -246,7 +278,13 @@ function ShieldIcon({ size = 14, color = '#5c7688' }: { size?: number; color?: s
 
 function ArrowRightIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.4}
+      style={{ width: size, height: size }}
+    >
       <path d="M4 12h14M13 6l6 6-6 6" />
     </svg>
   );
@@ -254,7 +292,13 @@ function ArrowRightIcon({ size = 14 }: { size?: number }) {
 
 function ChevronDownIcon({ size = 10 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.4}
+      style={{ width: size, height: size }}
+    >
       <path d="M6 9l6 6 6-6" />
     </svg>
   );
@@ -262,7 +306,13 @@ function ChevronDownIcon({ size = 10 }: { size?: number }) {
 
 function PencilIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ width: size, height: size }}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      style={{ width: size, height: size }}
+    >
       <path d="M4 20h4l10-10-4-4L4 16z" />
     </svg>
   );
@@ -291,7 +341,9 @@ function ToastBanner({ message }: { message: string }) {
       }}
     >
       <CheckTickIcon size={16} color="#f0c98a" opacity={1} />
-      <div style={{ fontWeight: 700, fontSize: cfs(14), letterSpacing: '.04em', color: '#f5e6c4' }}>{message}</div>
+      <div style={{ fontWeight: 700, fontSize: cfs(14), letterSpacing: '.04em', color: '#f5e6c4' }}>
+        {message}
+      </div>
     </motion.div>
   );
 }
@@ -343,27 +395,87 @@ function AccomplishmentCardPreview({
         <circle cx="286" cy="224" r="3" fill="#f0c98a" />
         <circle cx="330" cy="168" r="4.5" fill="#f0c98a" />
       </svg>
-      <div style={{ position: 'absolute', inset: 0, padding: 28, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          padding: 28,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#f0c98a', boxShadow: '0 0 12px #f0c98a' }} />
-            <div style={{ fontWeight: 700, fontSize: cfs(10), letterSpacing: '.24em', textTransform: 'uppercase', color: '#f0c98a' }}>
+            <div
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: '50%',
+                background: '#f0c98a',
+                boxShadow: '0 0 12px #f0c98a',
+              }}
+            />
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: cfs(10),
+                letterSpacing: '.24em',
+                textTransform: 'uppercase',
+                color: '#f0c98a',
+              }}
+            >
               {kind}
             </div>
           </div>
-          <div style={{ fontWeight: 700, fontSize: cfs(10), letterSpacing: '.16em', textTransform: 'uppercase', color: '#7e97a8' }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: cfs(10),
+              letterSpacing: '.16em',
+              textTransform: 'uppercase',
+              color: '#7e97a8',
+            }}
+          >
             {date}
           </div>
         </div>
         <div>
-          <div style={{ fontWeight: 700, fontSize: cfs(12), letterSpacing: '.2em', textTransform: 'uppercase', color: '#7e97a8' }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: cfs(12),
+              letterSpacing: '.2em',
+              textTransform: 'uppercase',
+              color: '#7e97a8',
+            }}
+          >
             {childName}
             {childAge && ` · Age ${childAge}`}
           </div>
-          <div style={{ marginTop: 10, fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(26), lineHeight: 1.16, color: '#f7fdff' }}>
+          <div
+            style={{
+              marginTop: 10,
+              fontFamily: 'Orbitron, sans-serif',
+              fontWeight: 900,
+              fontSize: cfs(26),
+              lineHeight: 1.16,
+              color: '#f7fdff',
+            }}
+          >
             {title}
           </div>
-          <div style={{ marginTop: 12, fontSize: cfs(15.5), fontWeight: 600, lineHeight: 1.45, color: '#b9cedb' }}>{caption}</div>
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: cfs(15.5),
+              fontWeight: 600,
+              lineHeight: 1.45,
+              color: '#b9cedb',
+            }}
+          >
+            {caption}
+          </div>
         </div>
         <div
           style={{
@@ -375,7 +487,16 @@ function AccomplishmentCardPreview({
             borderTop: '1px solid rgba(240,201,138,.22)',
           }}
         >
-          <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(12), letterSpacing: '.14em', color: '#f7fdff', whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              fontFamily: 'Orbitron, sans-serif',
+              fontWeight: 900,
+              fontSize: cfs(12),
+              letterSpacing: '.14em',
+              color: '#f7fdff',
+              whiteSpace: 'nowrap',
+            }}
+          >
             SUPERPOWER
           </div>
           <div
@@ -431,7 +552,9 @@ function AccomplishmentRow({
         alignItems: 'center',
         borderRadius: 15,
         padding: '15px 17px',
-        background: active ? 'linear-gradient(150deg,rgba(38,54,82,.9),rgba(8,13,24,.8))' : 'rgba(9,13,22,.6)',
+        background: active
+          ? 'linear-gradient(150deg,rgba(38,54,82,.9),rgba(8,13,24,.8))'
+          : 'rgba(9,13,22,.6)',
         border: `1px solid ${active ? 'rgba(240,201,138,.55)' : 'rgba(75,233,255,.12)'}`,
         transition: 'all .22s ease',
       }}
@@ -448,16 +571,33 @@ function AccomplishmentRow({
           border: '1.5px solid rgba(240,201,138,.55)',
         }}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="#f0c98a" strokeWidth={1.8} style={{ width: 18, height: 18 }}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#f0c98a"
+          strokeWidth={1.8}
+          style={{ width: 18, height: 18 }}
+        >
           <path d={item.icon} />
         </svg>
       </div>
       <div>
         <div style={{ fontWeight: 700, fontSize: cfs(15.5), color: '#eafdff' }}>{item.title}</div>
-        <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#8ba1b1' }}>{item.caption}</div>
+        <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#8ba1b1' }}>
+          {item.caption}
+        </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ fontWeight: 700, fontSize: cfs(10), letterSpacing: '.16em', textTransform: 'uppercase', color: '#6f8a9c', whiteSpace: 'nowrap' }}>
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: cfs(10),
+            letterSpacing: '.16em',
+            textTransform: 'uppercase',
+            color: '#6f8a9c',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {item.when}
         </div>
         <div
@@ -519,7 +659,15 @@ function ModalBackdrop({
   );
 }
 
-function ModalCloseButton({ onClick, color, border }: { onClick: () => void; color: string; border: string }) {
+function ModalCloseButton({
+  onClick,
+  color,
+  border,
+}: {
+  onClick: () => void;
+  color: string;
+  border: string;
+}) {
   return (
     <button
       type="button"
@@ -579,10 +727,15 @@ function WhatsAppModal({
 }: WhatsAppModalProps) {
   const disabled = picked.length === 0;
   const count =
-    picked.length === 0 ? 'Choose at least one' : `${picked.length} ${picked.length === 1 ? 'chat selected' : 'chats selected'}`;
+    picked.length === 0
+      ? 'Choose at least one'
+      : `${picked.length} ${picked.length === 1 ? 'chat selected' : 'chats selected'}`;
 
   return (
-    <ModalBackdrop gradient="radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)" onClose={onClose}>
+    <ModalBackdrop
+      gradient="radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)"
+      onClose={onClose}
+    >
       <div
         style={{
           maxWidth: 560,
@@ -615,10 +768,19 @@ function WhatsAppModal({
                 <WhatsAppIcon size={19} />
               </div>
               <div>
-                <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(17), color: '#eafff4' }}>
+                <div
+                  style={{
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontWeight: 700,
+                    fontSize: cfs(17),
+                    color: '#eafff4',
+                  }}
+                >
                   Share on WhatsApp
                 </div>
-                <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#8fbfa8' }}>
+                <div
+                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#8fbfa8' }}
+                >
                   {childName}&rsquo;s card, ready to go
                 </div>
               </div>
@@ -648,18 +810,59 @@ function WhatsAppModal({
                   border: '1px solid rgba(240,201,138,.35)',
                 }}
               >
-                <div style={{ position: 'absolute', inset: 0, padding: 8, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f0c98a', boxShadow: '0 0 7px #f0c98a' }} />
-                  <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(6.5), lineHeight: 1.25, color: '#f7fdff' }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    padding: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      background: '#f0c98a',
+                      boxShadow: '0 0 7px #f0c98a',
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontFamily: 'Orbitron, sans-serif',
+                      fontWeight: 900,
+                      fontSize: cfs(6.5),
+                      lineHeight: 1.25,
+                      color: '#f7fdff',
+                    }}
+                  >
                     {title}
                   </div>
-                  <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(4.5), letterSpacing: '.1em', color: 'rgba(247,253,255,.75)' }}>
+                  <div
+                    style={{
+                      fontFamily: 'Orbitron, sans-serif',
+                      fontWeight: 900,
+                      fontSize: cfs(4.5),
+                      letterSpacing: '.1em',
+                      color: 'rgba(247,253,255,.75)',
+                    }}
+                  >
                     SUPERPOWER
                   </div>
                 </div>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#6f9a86' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#6f9a86',
+                  }}
+                >
                   Message
                 </div>
                 <textarea
@@ -713,8 +916,12 @@ function WhatsAppModal({
                 <LinkIcon color="#57dc96" />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#eafff4' }}>Join Superpower link included</div>
-                <div style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12.5), color: '#7ba894' }}>
+                <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#eafff4' }}>
+                  Join Superpower link included
+                </div>
+                <div
+                  style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12.5), color: '#7ba894' }}
+                >
                   {inviteUrl} · free for any parent
                 </div>
               </div>
@@ -739,7 +946,16 @@ function WhatsAppModal({
               </button>
             </div>
 
-            <div style={{ marginTop: 20, fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#6f9a86' }}>
+            <div
+              style={{
+                marginTop: 20,
+                fontWeight: 700,
+                fontSize: cfs(10.5),
+                letterSpacing: '.18em',
+                textTransform: 'uppercase',
+                color: '#6f9a86',
+              }}
+            >
               Send to
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 11 }}>
@@ -787,8 +1003,19 @@ function WhatsAppModal({
                       {c.initials}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: cfs(14.5), color: '#eafff4' }}>{c.name}</div>
-                      <div style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12.5), color: '#7ba894' }}>{c.meta}</div>
+                      <div style={{ fontWeight: 700, fontSize: cfs(14.5), color: '#eafff4' }}>
+                        {c.name}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 1,
+                          fontWeight: 600,
+                          fontSize: cfs(12.5),
+                          color: '#7ba894',
+                        }}
+                      >
+                        {c.meta}
+                      </div>
                     </div>
                     <div
                       style={{
@@ -810,8 +1037,24 @@ function WhatsAppModal({
               })}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 22 }}>
-              <div style={{ fontWeight: 700, fontSize: cfs(12), letterSpacing: '.1em', textTransform: 'uppercase', color: '#6f9a86' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginTop: 22,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: cfs(12),
+                  letterSpacing: '.1em',
+                  textTransform: 'uppercase',
+                  color: '#6f9a86',
+                }}
+              >
                 {count}
               </div>
               <button
@@ -861,10 +1104,28 @@ function WhatsAppModal({
             >
               <CheckTickIcon size={28} color="#57dc96" opacity={1} />
             </div>
-            <div style={{ marginTop: 18, fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(19), color: '#eafff4' }}>
+            <div
+              style={{
+                marginTop: 18,
+                fontFamily: 'Orbitron, sans-serif',
+                fontWeight: 700,
+                fontSize: cfs(19),
+                color: '#eafff4',
+              }}
+            >
               Sent on WhatsApp
             </div>
-            <div style={{ marginTop: 9, fontSize: cfs(15), fontWeight: 600, color: '#8fbfa8', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div
+              style={{
+                marginTop: 9,
+                fontSize: cfs(15),
+                fontWeight: 600,
+                color: '#8fbfa8',
+                maxWidth: 360,
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            >
               {sentLine}
             </div>
             <button
@@ -952,7 +1213,10 @@ function InstagramModal({
   sentLine,
 }: InstagramModalProps) {
   return (
-    <ModalBackdrop gradient="radial-gradient(ellipse at 50% 40%,rgba(26,12,30,.72),rgba(4,2,8,.94) 72%)" onClose={onClose}>
+    <ModalBackdrop
+      gradient="radial-gradient(ellipse at 50% 40%,rgba(26,12,30,.72),rgba(4,2,8,.94) 72%)"
+      onClose={onClose}
+    >
       <div
         style={{
           maxWidth: 680,
@@ -985,14 +1249,33 @@ function InstagramModal({
                 <InstagramIcon size={19} />
               </div>
               <div>
-                <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(17), color: '#fbe8f5' }}>
+                <div
+                  style={{
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontWeight: 700,
+                    fontSize: cfs(17),
+                    color: '#fbe8f5',
+                  }}
+                >
                   Share to Instagram
                 </div>
-                <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#c691b4' }}>Posting as {handle}</div>
+                <div
+                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#c691b4' }}
+                >
+                  Posting as {handle}
+                </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '214px 1fr', gap: 22, marginTop: 20, alignItems: 'start' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '214px 1fr',
+                gap: 22,
+                marginTop: 20,
+                alignItems: 'start',
+              }}
+            >
               <div>
                 <div
                   style={{
@@ -1005,20 +1288,61 @@ function InstagramModal({
                     border: '1px solid rgba(226,120,190,.3)',
                   }}
                 >
-                  <div style={{ position: 'absolute', top: 12, left: 12, right: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <div style={{ flex: 1, height: 2.5, borderRadius: 2, background: 'rgba(255,255,255,.85)' }} />
-                    <div style={{ flex: 1, height: 2.5, borderRadius: 2, background: 'rgba(255,255,255,.28)' }} />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      left: 12,
+                      right: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 7,
+                    }}
+                  >
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 2.5,
+                        borderRadius: 2,
+                        background: 'rgba(255,255,255,.85)',
+                      }}
+                    />
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 2.5,
+                        borderRadius: 2,
+                        background: 'rgba(255,255,255,.28)',
+                      }}
+                    />
                   </div>
-                  <div style={{ position: 'absolute', top: 26, left: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 26,
+                      left: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 7,
+                    }}
+                  >
                     <div
                       style={{
                         width: 19,
                         height: 19,
                         borderRadius: '50%',
-                        background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
+                        background:
+                          'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
                       }}
                     />
-                    <div style={{ fontWeight: 700, fontSize: cfs(9.5), letterSpacing: '.06em', color: 'rgba(255,255,255,.92)' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: cfs(9.5),
+                        letterSpacing: '.06em',
+                        color: 'rgba(255,255,255,.92)',
+                      }}
+                    >
                       {handle}
                     </div>
                   </div>
@@ -1037,22 +1361,71 @@ function InstagramModal({
                       boxShadow: '0 14px 34px rgba(2,4,12,.6)',
                     }}
                   >
-                    <div style={{ position: 'absolute', inset: 0, padding: 13, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        padding: 13,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                      }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#f0c98a', boxShadow: '0 0 7px #f0c98a' }} />
-                        <div style={{ fontWeight: 700, fontSize: cfs(6), letterSpacing: '.2em', textTransform: 'uppercase', color: '#f0c98a' }}>
+                        <div
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: '50%',
+                            background: '#f0c98a',
+                            boxShadow: '0 0 7px #f0c98a',
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: cfs(6),
+                            letterSpacing: '.2em',
+                            textTransform: 'uppercase',
+                            color: '#f0c98a',
+                          }}
+                        >
                           {cardKind}
                         </div>
                       </div>
                       <div>
-                        <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(11), lineHeight: 1.2, color: '#f7fdff' }}>
+                        <div
+                          style={{
+                            fontFamily: 'Orbitron, sans-serif',
+                            fontWeight: 900,
+                            fontSize: cfs(11),
+                            lineHeight: 1.2,
+                            color: '#f7fdff',
+                          }}
+                        >
                           {cardTitle}
                         </div>
-                        <div style={{ marginTop: 5, fontWeight: 600, fontSize: cfs(7.5), lineHeight: 1.4, color: '#b9cedb' }}>
+                        <div
+                          style={{
+                            marginTop: 5,
+                            fontWeight: 600,
+                            fontSize: cfs(7.5),
+                            lineHeight: 1.4,
+                            color: '#b9cedb',
+                          }}
+                        >
                           {cardCaption}
                         </div>
                       </div>
-                      <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(6), letterSpacing: '.14em', color: '#f7fdff' }}>
+                      <div
+                        style={{
+                          fontFamily: 'Orbitron, sans-serif',
+                          fontWeight: 900,
+                          fontSize: cfs(6),
+                          letterSpacing: '.14em',
+                          color: '#f7fdff',
+                        }}
+                      >
                         SUPERPOWER
                       </div>
                     </div>
@@ -1073,27 +1446,82 @@ function InstagramModal({
                     }}
                   >
                     <LinkIcon size={9} color="rgba(255,255,255,.9)" />
-                    <div style={{ fontWeight: 700, fontSize: cfs(8), letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.95)' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: cfs(8),
+                        letterSpacing: '.12em',
+                        textTransform: 'uppercase',
+                        color: 'rgba(255,255,255,.95)',
+                      }}
+                    >
                       Join Superpower
                     </div>
                   </div>
-                  <div style={{ position: 'absolute', left: 12, right: 12, bottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1, borderRadius: 999, padding: '8px 12px', border: '1px solid rgba(255,255,255,.4)', fontWeight: 600, fontSize: cfs(9.5), color: 'rgba(255,255,255,.75)' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      right: 12,
+                      bottom: 14,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        flex: 1,
+                        borderRadius: 999,
+                        padding: '8px 12px',
+                        border: '1px solid rgba(255,255,255,.4)',
+                        fontWeight: 600,
+                        fontSize: cfs(9.5),
+                        color: 'rgba(255,255,255,.75)',
+                      }}
+                    >
                       Send message
                     </div>
-                    <div style={{ width: 15, height: 15, borderRadius: '50%', border: '1.5px solid rgba(255,255,255,.6)' }} />
+                    <div
+                      style={{
+                        width: 15,
+                        height: 15,
+                        borderRadius: '50%',
+                        border: '1.5px solid rgba(255,255,255,.6)',
+                      }}
+                    />
                   </div>
                 </div>
-                <div style={{ marginTop: 10, textAlign: 'center', fontWeight: 700, fontSize: cfs(10), letterSpacing: '.18em', textTransform: 'uppercase', color: '#9a7590' }}>
+                <div
+                  style={{
+                    marginTop: 10,
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: cfs(10),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#9a7590',
+                  }}
+                >
                   {ratio}
                 </div>
               </div>
 
               <div>
-                <div style={{ fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#a2769a' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#a2769a',
+                  }}
+                >
                   Where it goes
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 11 }}>
+                <div
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 11 }}
+                >
                   {destinations.map((d, i) => {
                     const on = activeDest === i;
                     return (
@@ -1114,14 +1542,40 @@ function InstagramModal({
                           transition: 'all .2s ease',
                         }}
                       >
-                        <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: on ? '#fbe8f5' : '#d7b6cd' }}>{d.name}</div>
-                        <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(11.5), color: '#9a7590' }}>{d.meta}</div>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: cfs(13.5),
+                            color: on ? '#fbe8f5' : '#d7b6cd',
+                          }}
+                        >
+                          {d.name}
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontWeight: 600,
+                            fontSize: cfs(11.5),
+                            color: '#9a7590',
+                          }}
+                        >
+                          {d.meta}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
 
-                <div style={{ marginTop: 18, fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#a2769a' }}>
+                <div
+                  style={{
+                    marginTop: 18,
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#a2769a',
+                  }}
+                >
                   Backdrop
                 </div>
                 <div style={{ display: 'flex', gap: 9, marginTop: 11 }}>
@@ -1147,7 +1601,16 @@ function InstagramModal({
                   ))}
                 </div>
 
-                <div style={{ marginTop: 18, fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#a2769a' }}>
+                <div
+                  style={{
+                    marginTop: 18,
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#a2769a',
+                  }}
+                >
                   {capLabel}
                 </div>
                 <textarea
@@ -1199,8 +1662,17 @@ function InstagramModal({
                     <LinkIcon color="#e278be" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#fbe8f5' }}>{linkLabel}</div>
-                    <div style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12.5), color: '#9a7590' }}>
+                    <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#fbe8f5' }}>
+                      {linkLabel}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 1,
+                        fontWeight: 600,
+                        fontSize: cfs(12.5),
+                        color: '#9a7590',
+                      }}
+                    >
                       {inviteUrl} · free for any parent
                     </div>
                   </div>
@@ -1232,7 +1704,14 @@ function InstagramModal({
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: 20 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    marginTop: 20,
+                  }}
+                >
                   <button
                     type="button"
                     onClick={onShare}
@@ -1279,13 +1758,39 @@ function InstagramModal({
             >
               <CheckTickIcon size={28} color="#e278be" opacity={1} />
             </div>
-            <div style={{ marginTop: 18, fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(19), color: '#fbe8f5' }}>
+            <div
+              style={{
+                marginTop: 18,
+                fontFamily: 'Orbitron, sans-serif',
+                fontWeight: 700,
+                fontSize: cfs(19),
+                color: '#fbe8f5',
+              }}
+            >
               {sentTitle}
             </div>
-            <div style={{ marginTop: 9, fontSize: cfs(15), fontWeight: 600, color: '#c691b4', maxWidth: 380, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div
+              style={{
+                marginTop: 9,
+                fontSize: cfs(15),
+                fontWeight: 600,
+                color: '#c691b4',
+                maxWidth: 380,
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            >
               {sentLine}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 22 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                marginTop: 22,
+              }}
+            >
               <button
                 type="button"
                 onClick={onClose}
@@ -1385,7 +1890,10 @@ function TwitterModal({
   sentLine,
 }: TwitterModalProps) {
   return (
-    <ModalBackdrop gradient="radial-gradient(ellipse at 50% 40%,rgba(12,18,26,.72),rgba(2,4,8,.94) 72%)" onClose={onClose}>
+    <ModalBackdrop
+      gradient="radial-gradient(ellipse at 50% 40%,rgba(12,18,26,.72),rgba(2,4,8,.94) 72%)"
+      onClose={onClose}
+    >
       <div
         style={{
           maxWidth: 580,
@@ -1418,10 +1926,21 @@ function TwitterModal({
                 <TwitterIcon size={18} />
               </div>
               <div>
-                <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(17), color: '#eaf3fa' }}>
+                <div
+                  style={{
+                    fontFamily: 'Orbitron, sans-serif',
+                    fontWeight: 700,
+                    fontSize: cfs(17),
+                    color: '#eaf3fa',
+                  }}
+                >
                   Post on Twitter
                 </div>
-                <div style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#9fb3c4' }}>{handle}</div>
+                <div
+                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#9fb3c4' }}
+                >
+                  {handle}
+                </div>
               </div>
             </div>
 
@@ -1440,7 +1959,8 @@ function TwitterModal({
                     width: 40,
                     height: 40,
                     borderRadius: '50%',
-                    background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
+                    background:
+                      'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
                   }}
                 />
                 <div style={{ minWidth: 0 }}>
@@ -1499,37 +2019,118 @@ function TwitterModal({
                       border: '1px solid rgba(180,205,225,.2)',
                     }}
                   >
-                    <div style={{ position: 'absolute', inset: 0, padding: '16px 18px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        padding: '16px 18px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f0c98a', boxShadow: '0 0 8px #f0c98a' }} />
-                          <div style={{ fontWeight: 700, fontSize: cfs(8.5), letterSpacing: '.2em', textTransform: 'uppercase', color: '#f0c98a' }}>
+                          <div
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              background: '#f0c98a',
+                              boxShadow: '0 0 8px #f0c98a',
+                            }}
+                          />
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              fontSize: cfs(8.5),
+                              letterSpacing: '.2em',
+                              textTransform: 'uppercase',
+                              color: '#f0c98a',
+                            }}
+                          >
                             {cardKind}
                           </div>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: cfs(8.5), letterSpacing: '.16em', textTransform: 'uppercase', color: '#7e97a8' }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: cfs(8.5),
+                            letterSpacing: '.16em',
+                            textTransform: 'uppercase',
+                            color: '#7e97a8',
+                          }}
+                        >
                           {cardDate}
                         </div>
                       </div>
                       <div>
-                        <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(17), lineHeight: 1.18, color: '#f7fdff', maxWidth: '82%' }}>
+                        <div
+                          style={{
+                            fontFamily: 'Orbitron, sans-serif',
+                            fontWeight: 900,
+                            fontSize: cfs(17),
+                            lineHeight: 1.18,
+                            color: '#f7fdff',
+                            maxWidth: '82%',
+                          }}
+                        >
                           {cardTitle}
                         </div>
-                        <div style={{ marginTop: 7, fontWeight: 600, fontSize: cfs(12), lineHeight: 1.4, color: '#b9cedb', maxWidth: '74%' }}>
+                        <div
+                          style={{
+                            marginTop: 7,
+                            fontWeight: 600,
+                            fontSize: cfs(12),
+                            lineHeight: 1.4,
+                            color: '#b9cedb',
+                            maxWidth: '74%',
+                          }}
+                        >
                           {cardCaption}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 900, fontSize: cfs(9.5), letterSpacing: '.14em', color: '#f7fdff' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: 'Orbitron, sans-serif',
+                            fontWeight: 900,
+                            fontSize: cfs(9.5),
+                            letterSpacing: '.14em',
+                            color: '#f7fdff',
+                          }}
+                        >
                           SUPERPOWER
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: cfs(8.5), letterSpacing: '.14em', textTransform: 'uppercase', color: '#7e97a8' }}>
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: cfs(8.5),
+                            letterSpacing: '.14em',
+                            textTransform: 'uppercase',
+                            color: '#7e97a8',
+                          }}
+                        >
                           superpower.app
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div style={{ marginTop: 7, fontWeight: 600, fontSize: cfs(12), color: '#7d92a4' }}>
+                  <div
+                    style={{ marginTop: 7, fontWeight: 600, fontSize: cfs(12), color: '#7d92a4' }}
+                  >
                     Card attached as an image · alt text added automatically
                   </div>
 
@@ -1561,8 +2162,17 @@ function TwitterModal({
                       <LinkIcon size={14} color="#8fd0f5" />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: cfs(13), color: '#eaf3fa' }}>Join Superpower link in the post</div>
-                      <div style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12), color: '#7d92a4' }}>
+                      <div style={{ fontWeight: 700, fontSize: cfs(13), color: '#eaf3fa' }}>
+                        Join Superpower link in the post
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 1,
+                          fontWeight: 600,
+                          fontSize: cfs(12),
+                          color: '#7d92a4',
+                        }}
+                      >
                         {inviteUrl} · free for any parent
                       </div>
                     </div>
@@ -1631,8 +2241,18 @@ function TwitterModal({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
-                  <svg viewBox="0 0 36 36" style={{ width: 26, height: 26, transform: 'rotate(-90deg)' }}>
-                    <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(180,205,225,.2)" strokeWidth={3.4} />
+                  <svg
+                    viewBox="0 0 36 36"
+                    style={{ width: 26, height: 26, transform: 'rotate(-90deg)' }}
+                  >
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15"
+                      fill="none"
+                      stroke="rgba(180,205,225,.2)"
+                      strokeWidth={3.4}
+                    />
                     <circle
                       cx="18"
                       cy="18"
@@ -1694,13 +2314,39 @@ function TwitterModal({
             >
               <CheckTickIcon size={28} color="#cfe1ee" opacity={1} />
             </div>
-            <div style={{ marginTop: 18, fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: cfs(19), color: '#eaf3fa' }}>
+            <div
+              style={{
+                marginTop: 18,
+                fontFamily: 'Orbitron, sans-serif',
+                fontWeight: 700,
+                fontSize: cfs(19),
+                color: '#eaf3fa',
+              }}
+            >
               Posted on Twitter
             </div>
-            <div style={{ marginTop: 9, fontSize: cfs(15), fontWeight: 600, color: '#9fb3c4', maxWidth: 380, marginLeft: 'auto', marginRight: 'auto' }}>
+            <div
+              style={{
+                marginTop: 9,
+                fontSize: cfs(15),
+                fontWeight: 600,
+                color: '#9fb3c4',
+                maxWidth: 380,
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }}
+            >
               {sentLine}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 22 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                marginTop: 22,
+              }}
+            >
               <button
                 type="button"
                 onClick={onClose}
@@ -1786,7 +2432,9 @@ export default function Connect() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
-  const [isNarrow, setIsNarrow] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 860 : false));
+  const [isNarrow, setIsNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 860 : false,
+  );
   useEffect(() => {
     const onResize = () => setIsNarrow(window.innerWidth < 860);
     window.addEventListener('resize', onResize);
@@ -1796,7 +2444,9 @@ export default function Connect() {
   const items = useMemo(
     () =>
       BASE_ITEMS.map((it) =>
-        it.title.includes('{name}') ? { ...it, title: it.title.replace('{name}', childName || 'Your child') } : it,
+        it.title.includes('{name}')
+          ? { ...it, title: it.title.replace('{name}', childName || 'Your child') }
+          : it,
       ),
     [childName],
   );
@@ -1848,7 +2498,8 @@ export default function Connect() {
   };
 
   const cardDate = useMemo(
-    () => new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    () =>
+      new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     [],
   );
 
@@ -1907,7 +2558,8 @@ export default function Connect() {
   const twDefaultBody = `${title}. ${caption}\n\n${inviteLine}`;
   const twBody = twText ?? twDefaultBody;
   const twLeft = TW_MAX - twBody.length;
-  const twRingColor = twBody.length > TW_MAX ? '#ff8189' : twBody.length > TW_MAX - 40 ? '#f0c98a' : '#8fd0f5';
+  const twRingColor =
+    twBody.length > TW_MAX ? '#ff8189' : twBody.length > TW_MAX - 40 ? '#f0c98a' : '#8fd0f5';
   const twRingOffset = TW_RING_CIRCUMFERENCE * (1 - Math.min(twBody.length / TW_MAX, 1));
   const twPostDisabled = twBody.trim().length === 0 || twBody.length > TW_MAX;
   const shareX = () => {
@@ -1935,7 +2587,10 @@ export default function Connect() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ background: '#04060d' }}>
+      <div
+        className="flex min-h-screen items-center justify-center"
+        style={{ background: '#04060d' }}
+      >
         <motion.div
           {...SPINNER}
           className="h-10 w-10 rounded-full border-2 border-t-transparent"
@@ -1977,7 +2632,9 @@ export default function Connect() {
         @keyframes connFadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
       `}</style>
 
-      <main style={{ maxWidth: 'var(--cx-max, 1120px)', margin: '0 auto', padding: '48px 40px 90px' }}>
+      <main
+        style={{ maxWidth: 'var(--cx-max, 1120px)', margin: '0 auto', padding: '48px 40px 90px' }}
+      >
         <section style={{ textAlign: 'center', animation: 'connFadeUp .7s ease both' }}>
           <h1
             style={{
@@ -1991,7 +2648,16 @@ export default function Connect() {
           >
             Share {childName || 'their'}&rsquo;s wins
           </h1>
-          <p style={{ margin: '14px auto 0', maxWidth: 520, fontSize: cfs(17), fontWeight: 600, lineHeight: 1.5, color: '#a8c1d1' }}>
+          <p
+            style={{
+              margin: '14px auto 0',
+              maxWidth: 520,
+              fontSize: cfs(17),
+              fontWeight: 600,
+              lineHeight: 1.5,
+              color: '#a8c1d1',
+            }}
+          >
             Pick a moment, choose where it goes. The card is already made.
           </p>
         </section>
@@ -2022,7 +2688,15 @@ export default function Connect() {
               inviteUrl={inviteUrl}
             />
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginTop: 14,
+              }}
+            >
               <div
                 role="button"
                 tabIndex={0}
@@ -2082,7 +2756,15 @@ export default function Connect() {
                   border: '1px solid rgba(240,201,138,.28)',
                 }}
               >
-                <div style={{ fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#6f8a9c' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#6f8a9c',
+                  }}
+                >
                   Headline
                 </div>
                 <input
@@ -2102,7 +2784,16 @@ export default function Connect() {
                     color: '#eafdff',
                   }}
                 />
-                <div style={{ marginTop: 12, fontWeight: 700, fontSize: cfs(10.5), letterSpacing: '.18em', textTransform: 'uppercase', color: '#6f8a9c' }}>
+                <div
+                  style={{
+                    marginTop: 12,
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.18em',
+                    textTransform: 'uppercase',
+                    color: '#6f8a9c',
+                  }}
+                >
                   Caption
                 </div>
                 <textarea
@@ -2128,7 +2819,14 @@ export default function Connect() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginTop: 16 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3,1fr)',
+                gap: 10,
+                marginTop: 16,
+              }}
+            >
               <div
                 role="button"
                 tabIndex={0}
@@ -2150,7 +2848,15 @@ export default function Connect() {
                 }}
               >
                 <WhatsAppIcon />
-                <div style={{ fontWeight: 700, fontSize: cfs(11.5), letterSpacing: '.1em', textTransform: 'uppercase', color: '#a9ecc8' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(11.5),
+                    letterSpacing: '.1em',
+                    textTransform: 'uppercase',
+                    color: '#a9ecc8',
+                  }}
+                >
                   WhatsApp
                 </div>
               </div>
@@ -2175,7 +2881,15 @@ export default function Connect() {
                 }}
               >
                 <InstagramIcon />
-                <div style={{ fontWeight: 700, fontSize: cfs(11.5), letterSpacing: '.1em', textTransform: 'uppercase', color: '#f0b6dc' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(11.5),
+                    letterSpacing: '.1em',
+                    textTransform: 'uppercase',
+                    color: '#f0b6dc',
+                  }}
+                >
                   Instagram
                 </div>
               </div>
@@ -2200,7 +2914,15 @@ export default function Connect() {
                 }}
               >
                 <TwitterIcon />
-                <div style={{ fontWeight: 700, fontSize: cfs(11.5), letterSpacing: '.1em', textTransform: 'uppercase', color: '#cfe1ee' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(11.5),
+                    letterSpacing: '.1em',
+                    textTransform: 'uppercase',
+                    color: '#cfe1ee',
+                  }}
+                >
                   Twitter
                 </div>
               </div>
@@ -2208,7 +2930,15 @@ export default function Connect() {
           </div>
 
           <div style={{ animation: 'connFadeUp .7s ease .18s both' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 14,
+                flexWrap: 'wrap',
+              }}
+            >
               <div
                 style={{
                   fontFamily: 'Orbitron, sans-serif',
@@ -2221,22 +2951,35 @@ export default function Connect() {
               >
                 {childName || 'Their'}&rsquo;s accomplishments
               </div>
-              <div style={{ fontWeight: 700, fontSize: cfs(11), letterSpacing: '.16em', textTransform: 'uppercase', color: '#6f8a9c' }}>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: cfs(11),
+                  letterSpacing: '.16em',
+                  textTransform: 'uppercase',
+                  color: '#6f8a9c',
+                }}
+              >
                 Tap one to load the card
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
               {items.map((item, index) => (
-                <AccomplishmentRow key={item.title} item={item} active={activeIndex === index} onPick={() => setActiveIndex(index)} />
+                <AccomplishmentRow
+                  key={item.title}
+                  item={item}
+                  active={activeIndex === index}
+                  onPick={() => setActiveIndex(index)}
+                />
               ))}
             </div>
 
             <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 9 }}>
               <ShieldIcon />
               <div style={{ fontSize: cfs(13), fontWeight: 600, color: '#6f8a9c' }}>
-                Nothing leaves Superpower until you tap a channel. {childName || 'Your child'}&rsquo;s answers are never
-                included in a card.
+                Nothing leaves Superpower until you tap a channel. {childName || 'Your child'}
+                &rsquo;s answers are never included in a card.
               </div>
             </div>
           </div>
