@@ -355,10 +355,13 @@ jobs:
         # yarn v1 --json outputs NDJSON; parse it to filter known-acceptable advisories.
         # Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev
         # tooling (eslint, jest), never shipped to the production bundle.
+        # Ignored: 1138808, 1138809 — image-size DoS via Metro's bundler dependency
+        # chain; no patched release exists upstream yet, and image-size only runs at
+        # build time, never shipped to the production bundle.
         run: |
           yarn audit --json 2>/dev/null | python3 -c "
           import json,sys
-          IGNORED_IDS={1124334}
+          IGNORED_IDS={1124334, 1138808, 1138809}
           high=0
           for line in sys.stdin:
               line=line.strip()
@@ -425,6 +428,9 @@ jobs:
           exit-code: '1'
           scanners: vuln
 
+      # trivyignores: image-size (CVE-2025-71329, CVE-2025-71330) has no upstream fix
+      # yet; see frontend-app/.trivyignore for the rationale (same exception as the
+      # yarn audit IGNORED_IDS list above).
       - name: Trivy (frontend-app dependency CVE scan)
         id: trivy_frontend_app_vuln
         continue-on-error: true
@@ -435,6 +441,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: '1'
           scanners: vuln
+          trivyignores: frontend-app/.trivyignore
 
       # ── license compliance (Trivy) ───────────────────────────────────────────
       - name: Trivy (backend license scan)
