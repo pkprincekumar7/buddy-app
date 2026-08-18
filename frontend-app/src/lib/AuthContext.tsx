@@ -92,10 +92,15 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
           // Key was explicitly cleared by clearActiveChildId() after a delete →
           // don't auto-select; the parent must pick or start a new child.
         } else {
-          // Have a stored ID — if it's no longer valid (e.g. deleted from another
-          // device), fall back to the first child. If it's valid, leave it as-is.
+          // Have a stored ID — if still valid, restore it into React state
+          // (useState starts as undefined on every cold start, so we must
+          // explicitly re-hydrate it here). If invalid, fall back to first child.
           const valid = list.some(c => c.id === stored);
-          if (!valid) setActiveChildId(list[0].id);
+          if (valid) {
+            _setActiveChildId(stored); // already in AsyncStorage, no write needed
+          } else {
+            setActiveChildId(list[0].id);
+          }
         }
       } else {
         // No children — clear any stale activeChildId so screens don't try to fetch a deleted child.

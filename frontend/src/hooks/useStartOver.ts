@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
@@ -31,7 +31,7 @@ export function useStartOver(childId: string | undefined) {
     // trigger the "Could not start over" toast when the delete already succeeded.
     await refreshChildren().catch(() => {});
     setIsStartingOver(false);
-    navigate('/Home', { replace: true });
+    void navigate('/Home', { replace: true });
   }, [isStartingOver, childId, navigate, queryClient, refreshChildren]);
 
   return { doStartOver, isStartingOver };

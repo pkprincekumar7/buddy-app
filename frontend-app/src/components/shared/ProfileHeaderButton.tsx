@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, Modal, Pressable, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LogOut, Mail, Home } from 'lucide-react-native';
+import { LogOut, Mail, Home, Sun, Moon } from 'lucide-react-native';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { getInitials } from '@/lib/avatarUtils';
@@ -21,7 +21,7 @@ import { navigateTo } from '@/lib/navigationRef';
  */
 export default function ProfileHeaderButton() {
   const { user, logout } = useAuth();
-  const { colors } = useTheme();
+  const { colors, isDark, toggle: toggleTheme } = useTheme();
   const [visible, setVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const initials = getInitials(user?.full_name ?? user?.email ?? '?');
@@ -210,6 +210,57 @@ export default function ProfileHeaderButton() {
                     }}
                   >
                     Home
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+
+            <View
+              style={{
+                height: 1,
+                marginHorizontal: 16,
+                backgroundColor: colors.border,
+              }}
+            />
+
+            {/* Dark / Light mode toggle */}
+            <View style={{ height: 60, justifyContent: 'center' }}>
+              <Pressable
+                onPress={toggleTheme}
+                accessibilityLabel={
+                  isDark ? 'Switch to light mode' : 'Switch to dark mode'
+                }
+                accessibilityRole="button"
+                style={({ pressed }) => ({
+                  flex: 1,
+                  paddingHorizontal: 16,
+                  borderRadius: 12,
+                  backgroundColor: pressed
+                    ? colors.pressedBackground
+                    : 'transparent',
+                  justifyContent: 'center',
+                })}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  {isDark ? (
+                    <Sun size={20} color={colors.textMuted} />
+                  ) : (
+                    <Moon size={20} color={colors.textMuted} />
+                  )}
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 15,
+                      fontWeight: '500',
+                    }}
+                  >
+                    {isDark ? 'Light mode' : 'Dark mode'}
                   </Text>
                 </View>
               </Pressable>

@@ -5,21 +5,23 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import NavigationTracker from '@/lib/NavigationTracker';
 import { pagesConfig } from './pages.config';
-import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Route,
+  Routes,
+  Navigate,
+  useLocation,
+  useParams,
+} from 'react-router';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { Button } from '@/components/ui/button';
-import { readStoredDarkMode, applyTheme } from '@/lib/theme';
 
-const GrowthAreasActivity = lazy(() => import('./pages/GrowthAreasActivity'));
-const GrowthAreasActivityGame = lazy(() => import('./pages/GrowthAreasActivityGame'));
-const GrowthAreasActivityGreatInsights = lazy(
-  () => import('./pages/GrowthAreasActivityGreatInsights'),
-);
 const AdminAllowedEmails = lazy(() => import('./pages/AdminAllowedEmails'));
 
 interface ErrorBoundaryProps {
@@ -64,6 +66,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return this.props.children;
   }
 }
+
+/** Sends a stale /Activity/:activity link back to the child's Growth Map. */
+const GrowthAreaMapRedirect = () => {
+  const { childId } = useParams();
+  return <Navigate to={childId ? `/GrowthAreas/${childId}` : '/Home'} replace />;
+};
 
 const PUBLIC_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
 
@@ -119,10 +127,10 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
-      path="/PersonalityType/:childId"
+      path="/PersonalityJourney/:childId/DimensionCircles"
       element={
-        <LayoutWrapper currentPageName="PersonalityType">
-          <Pages.PersonalityType />
+        <LayoutWrapper currentPageName="PersonalityJourney">
+          <Pages.PersonalityJourney />
         </LayoutWrapper>
       }
     />
@@ -135,10 +143,34 @@ const ProtectedRoutes = () => (
       }
     />
     <Route
+      path="/PersonalityProfile/:childId"
+      element={
+        <LayoutWrapper currentPageName="PersonalityProfile">
+          <Pages.PersonalityProfile />
+        </LayoutWrapper>
+      }
+    />
+    <Route
       path="/LifePathway/:childId"
       element={
         <LayoutWrapper currentPageName="LifePathway">
           <Pages.LifePathway />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/Observations/:childId"
+      element={
+        <LayoutWrapper currentPageName="Observations">
+          <Pages.Observations />
+        </LayoutWrapper>
+      }
+    />
+    <Route
+      path="/Connect/:childId"
+      element={
+        <LayoutWrapper currentPageName="Connect">
+          <Pages.Connect />
         </LayoutWrapper>
       }
     />
@@ -150,61 +182,25 @@ const ProtectedRoutes = () => (
         </LayoutWrapper>
       }
     />
-    {/* GrowthAreas nested routes (most-specific first) */}
+    {/* The parent's reflections, the handoff, the child's rounds and the result
+        (constellation + recommendations) are all one overlay on the Growth Map
+        now — the old /Activity/:activity page, the image-pick /Game page and
+        the separate /GreatInsights results page are all gone. Redirect stale
+        links (including bookmarks carrying ?q=) back to the map. */}
     <Route
       path="/GrowthAreas/:childId/Activity/:activity/GreatInsights"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGreatInsights />
-        </LayoutWrapper>
-      }
+      element={<GrowthAreaMapRedirect />}
     />
     <Route
       path="/GrowthAreas/:childId/Activity/:activity/Game"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGame />
-        </LayoutWrapper>
-      }
+      element={<GrowthAreaMapRedirect />}
     />
-    <Route
-      path="/GrowthAreas/:childId/Activity/:activity"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivity />
-        </LayoutWrapper>
-      }
-    />
+    <Route path="/GrowthAreas/:childId/Activity/:activity" element={<GrowthAreaMapRedirect />} />
     <Route
       path="/GrowthAreas/:childId"
       element={
         <LayoutWrapper currentPageName="GrowthAreas">
           <Pages.GrowthAreas />
-        </LayoutWrapper>
-      }
-    />
-    {/* Legacy routes without childId */}
-    <Route
-      path="/GrowthAreas/Activity/:activity/GreatInsights"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGreatInsights />
-        </LayoutWrapper>
-      }
-    />
-    <Route
-      path="/GrowthAreas/Activity/:activity/Game"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivityGame />
-        </LayoutWrapper>
-      }
-    />
-    <Route
-      path="/GrowthAreas/Activity/:activity"
-      element={
-        <LayoutWrapper currentPageName="GrowthAreas">
-          <GrowthAreasActivity />
         </LayoutWrapper>
       }
     />
@@ -302,22 +298,17 @@ function AppShell() {
 }
 
 function App() {
-  // Apply theme from localStorage on every React mount (covers all routes, including
-  // Login/Register where Layout doesn't render). The inline script in index.html
-  // handles zero-flash on hard reload; this catches Vite HMR and in-app navigations.
-  useEffect(() => {
-    applyTheme(readStoredDarkMode());
-  }, []);
-
   return (
     <QueryClientProvider client={queryClientInstance}>
       <Router>
         <ScrollToTop />
         <AuthProvider>
           <NavigationTracker />
-          <ErrorBoundary>
-            <AppShell />
-          </ErrorBoundary>
+          <AmbientAudioProvider>
+            <ErrorBoundary>
+              <AppShell />
+            </ErrorBoundary>
+          </AmbientAudioProvider>
         </AuthProvider>
         <SonnerToaster position="bottom-center" />
       </Router>

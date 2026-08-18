@@ -1,126 +1,383 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronRight, Sparkles, X } from 'lucide-react';
+
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useAmbientAudio } from '@/lib/AmbientAudioContext';
+import { useIsMobile, useMediaQuery } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, Sparkles, ChevronRight, Award, Target, CheckCircle, X } from 'lucide-react';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
-import { SPINNER, MODAL_BACKDROP, MODAL_SCALE, slideUp } from '@/lib/animations';
-import PageActions from '@/components/shared/PageActions';
-import StartOverButton from '@/components/shared/StartOverButton';
+import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
+import { SPINNER, MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+  GROWTH_AREAS,
+  copyTokensFor,
+  fillTemplate,
+  normalizeRecommendations,
+} from '@/lib/growthAreaData';
+import type { GrowthArea } from '@/lib/growthAreaData';
+import {
+  AGE_OFFSETS,
+  AREA_HEX,
+  ARCHETYPE_SUPERPOWER,
+  CORE_MILESTONES,
+  COPY,
+  DEFAULT_SUPERPOWER,
+  FALLBACK_MILESTONES,
+  FALLBACK_MONTH_MOVES,
+  MONTHS,
+  NEUTRAL_HUE,
+  NEUTRAL_YS,
+  NODE_LEFT_PCT,
+  TIMELINE,
+  curve,
+  deriveAreaYs,
+  gapPath,
+  mergeMilestones,
+} from '@/lib/lifePathwayData';
+import type { Milestone } from '@/lib/lifePathwayData';
+import type { CompletedArea } from '@/types/api';
 
-import { AREA_LINE_COLORS as areaColors } from '@/lib/gradientColors';
+/**
+ * Multiplies a design-time pixel value by `--lp-type-scale` — 1 on phones, 1.2
+ * from the tablet breakpoint up (see the style block in the component).
+ *
+ * Used for font sizes AND for prose max-widths: a readable measure is a character
+ * count, not a pixel width, so a cap frozen while the text grew 20% would quietly
+ * tighten every paragraph and add wrap lines.
+ *
+ * Everything that sets a size must route through here, including the orbitron()
+ * helper and the clamp()-sized headings — both originally passed raw values and so
+ * silently opted out of the scale, leaving most of the page unchanged.
+ *
+ * The design mockups for this app carry NO media queries — fixed pixel type at
+ * every width. Scaling by viewport is a deliberate departure, matching the
+ * Observations and Connect pages. Do not "restore mockup fidelity" here without
+ * checking that intent first.
+ */
+const lpScale = (px: number) => `calc(${px}px * var(--lp-type-scale, 1))`;
 
-const PRIMARY_CSS = 'hsl(var(--primary))';
-const MUTED_FG_CSS = 'hsl(var(--muted-foreground))';
-const SUCCESS_CSS = 'hsl(var(--success))';
-const CARD_CSS = 'hsl(var(--card))';
+/** Font sizes. */
+const lpfs = lpScale;
 
-// Tailwind bg classes for CSS (non-SVG) elements — avoids inline backgroundColor styles.
-const areaBgTw = {
-  life_ambition: 'bg-personality-alt',
-  self_care: 'bg-accent-pink',
-  critical_thinking: 'bg-info-medium',
-  creativity: 'bg-warning',
-  physical_wellness: 'bg-success',
-  social_skills: 'bg-personality-alt-strong',
-};
+/** Prose line-length caps. */
+const lpProseW = lpScale;
 
-// Milestone events per growth area mapped to journey years
-const areaMilestoneMap = {
-  life_ambition: [
-    { yearOffset: 0, text: 'Life ambition clarified' },
-    { yearOffset: 3, text: 'Career path explored' },
-    { yearOffset: 7, text: 'Purpose solidified' },
-  ],
-  self_care: [
-    { yearOffset: 0, text: 'Self-care habits formed' },
-    { yearOffset: 4, text: 'Emotional resilience built' },
-    { yearOffset: 8, text: 'Lifelong wellness achieved' },
-  ],
-  critical_thinking: [
-    { yearOffset: 0, text: 'Problem-solving enhanced' },
-    { yearOffset: 4, text: 'Analytical thinking mastered' },
-    { yearOffset: 9, text: 'Strategic mindset developed' },
-  ],
-  creativity: [
-    { yearOffset: 0, text: 'Creative confidence unlocked' },
-    { yearOffset: 5, text: 'Artistic expression flourishing' },
-    { yearOffset: 9, text: 'Innovation mindset instilled' },
-  ],
-  physical_wellness: [
-    { yearOffset: 0, text: 'Healthy habits started' },
-    { yearOffset: 3, text: 'Physical goals achieved' },
-    { yearOffset: 7, text: 'Lifelong fitness culture' },
-  ],
-  social_skills: [
-    { yearOffset: 0, text: 'Communication skills built' },
-    { yearOffset: 4, text: 'Leadership emerging' },
-    { yearOffset: 8, text: 'Strong social network' },
-  ],
-};
-
-function getAreaBoost(area: Record<string, unknown>) {
-  const answers = (area['answers'] as Record<string, unknown> | undefined) ?? {};
-  const answerCount = Object.values(answers).filter(Boolean).length;
-  const aiRecs = area['ai_three_month_recommendations'];
-  const recs: unknown[] =
-    Array.isArray(aiRecs) && aiRecs.length > 0
-      ? aiRecs
-      : Array.isArray(area['recommendations'])
-        ? (area['recommendations'] as unknown[])
-        : [];
-  return 5 + answerCount * 0.8 + (recs.length > 0 ? 2 : 0);
+/**
+ * Ensures a fragment can be followed by another sentence. The superpower card
+ * joins the profile description to a second, static sentence, and
+ * personalizedDescriptionOneLiner only trims to the first sentence *if* it finds
+ * a terminator — text without one would otherwise run into the next sentence.
+ * Guarded here rather than in that shared helper, which also feeds the
+ * personality profile.
+ */
+function asSentence(text: string): string {
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
 }
 
-// Defined at module level so React never sees a new component type between renders.
-// milestoneAgeColorMap is passed as a prop because recharts forwards custom props to dot components.
-function CustomDot({
-  cx = 0,
-  cy = 0,
-  payload,
-  milestoneAgeColorMap,
-}: {
-  cx?: number;
-  cy?: number;
-  payload?: Record<string, unknown>;
-  milestoneAgeColorMap: Record<number, string>;
-}) {
-  const color = milestoneAgeColorMap?.[payload?.['age'] as number];
-  return color ? (
-    <circle cx={cx} cy={cy} r={7} fill={color} stroke={CARD_CSS} strokeWidth={2} />
-  ) : (
-    <circle cx={cx} cy={cy} r={4} fill={SUCCESS_CSS} />
-  );
+/**
+ * Breaks the chart's gap caption after its pronoun clause — "everything {he}
+ * never" / "got exposed to" — for narrow screens.
+ *
+ * On one line the caption measures 199px, which on a 320px phone leaves it
+ * straddling the rising curve with nowhere to move; split, the widest line is
+ * 117px, so it keeps its full 13px size and still clears the curve. Splitting
+ * after the third word keeps the pronoun with its verb for every gender token.
+ * Returns null when the copy is too short to split, so callers fall back to a
+ * single line rather than rendering an empty second one.
+ */
+function splitGapCaption(text: string): [string, string] | null {
+  const words = text.split(' ');
+  if (words.length < 4) return null;
+  return [words.slice(0, 3).join(' '), words.slice(3).join(' ')];
 }
+
+const GOLD = '#f0c98a';
+const CYAN = '#4be9ff';
+const INK = '#04060d';
+
+/**
+ * Geometry for the 90-day rail's Day 0/30/60/90 labels.
+ *
+ * The rail is an SVG with a 1000-unit-wide viewBox scaled to its container, so a
+ * fixed unit size does NOT give a fixed rendered size — it renders at
+ * `units × containerWidth / 1000`. A single value therefore reads well at exactly
+ * one width and badly everywhere else: 16 units is ~17.9px in a 1120px box but
+ * ~11.6px at 727px and ~5.4px at 335px.
+ *
+ * So the size is computed from the measured container instead, holding the rendered
+ * size constant at every width. LABEL_TARGET_PX is what the parent actually sees.
+ */
+const LABEL_TARGET_PX = 15;
+
+/**
+ * Larger target once the rail is wide enough to carry it on ONE line.
+ *
+ * The gate is arithmetic, not taste: one line needs units ≤ LABEL_ONE_LINE_MAX_UNITS
+ * (20), and units = target × 1000 / rail, so an 18px target only stays on one line
+ * from a 900px rail up (18000/900 = 20). Applying it below that would flip wide-ish
+ * desktops back to two-line labels, which reads worse than the extra pixel.
+ */
+const LABEL_TARGET_PX_WIDE = 18;
+const LABEL_WIDE_RAIL_MIN = 900;
+
+/**
+ * Above this unit size the one-line form collides and the label must break at its
+ * "·". Measured, not estimated: at a 560px rail the smallest gap between adjacent
+ * one-line labels is 19px at 20 units, 4px at 22, and negative from 24 up.
+ *
+ * Both this and LABEL_MAX_UNITS are scale-invariant, so they work as plain unit
+ * thresholds at any rail width — a label's width and the 307-unit spacing between
+ * slots both scale with the viewBox, so their ratio never changes.
+ */
+const LABEL_ONE_LINE_MAX_UNITS = 20;
+
+/**
+ * Hard ceiling on the unit size, set by geometry rather than taste.
+ *
+ * The four labels sit at fixed x positions (40, 347, 653, 960) with start/middle/
+ * middle/end anchors, so the last one grows leftward into its neighbour. Measured
+ * at a 335px rail, the smallest gap between adjacent labels is 6px at 34 units,
+ * 1px at 36, and NEGATIVE from 38 up — "Day 60 · his own idea" and
+ * "Day 90 · second nature" start overlapping.
+ *
+ * This is what caps a phone at ~11.4px rather than LABEL_TARGET_PX: four labels of
+ * this length simply do not fit a 335px rail any larger, even split across two
+ * lines. Getting to 15px there would mean dropping the Day 30/60 labels on narrow
+ * screens (their dots would remain) or shortening the copy — a design decision,
+ * not something to force here.
+ */
+const LABEL_MAX_UNITS = 34;
 
 export default function LifePathway() {
   const navigate = useNavigate();
   const { childId } = useParams();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+  // Two rows in the 90-day section run out of horizontal room well before the
+  // 768px mobile breakpoint, so they key off their own measured threshold: the
+  // month tabs measure 482px at full scale and stop fitting one line under
+  // ~522px (482 + main's 2×20px padding), and the timeline labels need to break
+  // in two around the same point. Using the real threshold rather than
+  // `isMobile` leaves a 600px tablet the full-size treatment it has room for;
+  // the few px of slack absorb font-loading and sub-pixel variance.
+  const isNarrow = useMediaQuery('(max-width: 535px)');
+
   const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
     useLifePathwayData(childId);
-  const childName = (childData?.['name'] as string | undefined) ?? '';
   const [showSplash, startTimer] = useStageSplash(0);
+  const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
+
+  // Measured width of the 90-day rail, so its labels can hold a constant rendered
+  // size (see LABEL_TARGET_PX). A media query cannot do this: the rail's width
+  // depends on main's max-width AND its breakpoint-dependent padding, so the same
+  // viewport yields different rail widths and the same unit size renders at
+  // different pixel sizes either side of a padding change.
+  const railRef = useRef<SVGSVGElement>(null);
+  const [railWidth, setRailWidth] = useState(0);
+  // Deps are the two gates that decide whether the rail is mounted at all. With an
+  // empty dep list this ran once while isLoading still showed the spinner, found a
+  // null ref, bailed and never retried — leaving the labels on their fallback size
+  // forever. These gates are what make the ref become non-null.
+  useEffect(() => {
+    const el = railRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      if (w > 0) setRailWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLoading, showSplash]);
+
+  // The journey's shared ambient bed (see AmbientAudioContext) plays through
+  // this page automatically — just keep it silent while the splash video's
+  // own unmuted audio plays, so the two don't overlap.
+  useEffect(() => {
+    setAmbientSuppressed(showSplash);
+    return () => setAmbientSuppressed(false);
+  }, [showSplash, setAmbientSuppressed]);
+
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [milestoneIdx, setMilestoneIdx] = useState(0);
+  const [monthIdx, setMonthIdx] = useState(0);
 
   const [showConcernModal, setShowConcernModal] = useState(false);
   const [concernInput, setConcernInput] = useState('');
   const [concernSubmitted, setConcernSubmitted] = useState(false);
+
+  // ── Derived child facts ────────────────────────────────────────────────────
+
+  const childName = typeof childData?.name === 'string' ? childData.name : '';
+  const gender = typeof childData?.gender === 'string' ? childData.gender : null;
+  const currentAge = useMemo(
+    () => Number.parseInt(String(childData?.age ?? ''), 10) || 10,
+    [childData],
+  );
+  const ages = useMemo(() => AGE_OFFSETS.map((o) => currentAge + o), [currentAge]);
+  // Last node's age. Derived rather than re-stated as `currentAge + 10` so the
+  // span stays defined solely by AGE_OFFSETS.
+  const journeyEndAge = ages[ages.length - 1] ?? currentAge;
+  const archetype = profile?.personality_type ?? null;
+  const strengths = useMemo(
+    () => (profile?.top_strengths ?? []).map((s) => String(s)).filter(Boolean),
+    [profile],
+  );
+  const traits = useMemo(() => {
+    const raw = childData?.personality?.view_model?.profile?.traits;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((v) => String(v))
+      .filter(Boolean)
+      .slice(0, 3);
+  }, [childData]);
+
+  /** Voice tokens for this child, for the few places that need one pronoun alone. */
+  const voice = useMemo(() => copyTokensFor(gender), [gender]);
+
+  /** Resolve {name}/{he}/{his}/{s} tokens in design copy. */
+  const t = useCallback(
+    (text: string) => fillTemplate(text, childName, gender),
+    [childName, gender],
+  );
+
+  const superpower = useMemo(
+    () =>
+      archetype ? (ARCHETYPE_SUPERPOWER[archetype] ?? DEFAULT_SUPERPOWER) : DEFAULT_SUPERPOWER,
+    [archetype],
+  );
+
+  // The generated personality description is more specific than the archetype's
+  // stock lead, so it wins where present. Length-checked rather than ??-coalesced
+  // because onboardingProfileFromViewModel returns '' when the view model carries
+  // no description, and an empty string must fall through to the lead.
+  const summaryText = profile?.summary?.trim() ?? '';
+  const superpowerLead = summaryText.length > 0 ? asSentence(summaryText) : t(superpower.lead);
+
+  /** Two-line form of the chart's gap caption; null on wide screens (see splitGapCaption). */
+  const gapCaptionLines = isNarrow ? splitGapCaption(t(COPY.gapSub)) : null;
+
+  /**
+   * Day 0/30/60/90 label geometry, derived from the measured rail width so the
+   * labels render at LABEL_TARGET_PX regardless of viewport.
+   *
+   * Everything downstream is expressed as a multiple of `units` rather than a fixed
+   * number, so the rail, the dots and the viewBox height all follow the type
+   * instead of being re-tuned by hand each time the size changes. The ratios are
+   * the ones the original hand-picked geometry used (y=32, dy=38, rail=96,
+   * height=106 against 32 units).
+   */
+  const railLabel = useMemo(() => {
+    const target = railWidth >= LABEL_WIDE_RAIL_MIN ? LABEL_TARGET_PX_WIDE : LABEL_TARGET_PX;
+    const units =
+      railWidth > 0
+        ? Math.min(LABEL_MAX_UNITS, Math.round((target * 1000) / railWidth))
+        : 16;
+    const split = units > LABEL_ONE_LINE_MAX_UNITS;
+    return {
+      units,
+      split,
+      // First baseline; the one-line form sits a little lower in its shorter box.
+      y: Math.round(units * (split ? 1 : 1.25)),
+      // Second-line offset, only used when split.
+      dy: Math.round(units * 1.19),
+      railY: Math.round(units * (split ? 3 : 2.375)),
+      viewBoxHeight: Math.round(units * (split ? 3.31 : 3.25)),
+    };
+  }, [railWidth]);
+
+  // ── Growth areas offered in the dropdown (completed only) ──────────────────
+
+  const areaOptions = useMemo(() => {
+    const byId = new Map(completedAreas.map((a) => [a.area_id, a]));
+    return GROWTH_AREAS.filter((g) => byId.has(g.id)).map((g) => ({
+      area: g,
+      completed: byId.get(g.id) as CompletedArea,
+    }));
+  }, [completedAreas]);
+
+  const selected = areaOptions[Math.min(selectedIdx, Math.max(0, areaOptions.length - 1))] ?? null;
+  const selectedArea: GrowthArea | null = selected?.area ?? null;
+
+  // ── Milestone content: generated where available, templated otherwise ──────
+
+  const {
+    generated,
+    status: areaStatus,
+    progressMessage,
+  } = useLifePathwayArea({
+    childId,
+    child: childData,
+    area: selectedArea,
+    completedArea: selected?.completed ?? null,
+    areas: completedAreas,
+    archetype,
+    personalityNarrative: profile?.summary ?? null,
+    strengths,
+    ages,
+    enabled: !isLoading && !showSplash,
+  });
+
+  const isAreaLoading = areaStatus === 'loading';
+
+  const milestones: Milestone[] = useMemo(() => {
+    const fallback = selectedArea
+      ? (FALLBACK_MILESTONES[selectedArea.id] ?? CORE_MILESTONES)
+      : CORE_MILESTONES;
+    // Ages come from the child's real age, never from the model — the chart's
+    // node labels and the card heading must agree. Templating runs over the
+    // merged set: fallback copy carries {he}/{his} tokens, generated copy has
+    // none, and fillTemplate leaves token-free text untouched.
+    return mergeMilestones(generated, fallback, ages).map((m) => ({
+      ...m,
+      title: t(m.title),
+      guided: t(m.guided),
+      power: t(m.power),
+      drift: t(m.drift),
+    }));
+  }, [generated, selectedArea, ages, t]);
+
+  const activeMilestone = milestones[Math.min(milestoneIdx, milestones.length - 1)];
+
+  // ── Chart geometry ────────────────────────────────────────────────────────
+
+  const ys = useMemo(() => (selected ? deriveAreaYs(selected.completed) : NEUTRAL_YS), [selected]);
+  const hue = selectedArea?.hue ?? NEUTRAL_HUE;
+
+  // ── 90-day moves, one row per completed area, from stored recommendations ──
+
+  const monthMoves = useMemo(() => {
+    const source = areaOptions.length
+      ? areaOptions
+      : GROWTH_AREAS.map((g) => ({ area: g, completed: null as CompletedArea | null }));
+    return source
+      .map(({ area, completed }) => {
+        const recs = normalizeRecommendations(
+          Array.isArray(completed?.ai_three_month_recommendations) &&
+            completed.ai_three_month_recommendations.length > 0
+            ? completed.ai_three_month_recommendations
+            : (completed?.recommendations ?? []),
+        );
+        const rec = recs[monthIdx];
+        const fallback = FALLBACK_MONTH_MOVES[area.id]?.[monthIdx];
+        const text = rec
+          ? rec.detail
+            ? `${rec.title} — ${rec.detail}`
+            : rec.title
+          : fallback
+            ? t(fallback)
+            : '';
+        return { area, text, color: AREA_HEX[area.id] ?? CYAN };
+      })
+      .filter((r) => r.text);
+  }, [areaOptions, monthIdx, t]);
+
+  // ── Concern modal ─────────────────────────────────────────────────────────
 
   const closeConcernModal = useCallback(() => {
     setShowConcernModal(false);
@@ -128,7 +385,6 @@ export default function LifePathway() {
     setConcernInput('');
   }, []);
 
-  // Escape key to close modal.
   useEffect(() => {
     if (!showConcernModal) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -153,14 +409,14 @@ export default function LifePathway() {
 
   const handleStartJourney = () => {
     if (savedConcern) {
-      navigate(`/GoalsDashboard/${childId}`);
+      void navigate(`/GoalsDashboard/${childId}`);
       return;
     }
     setShowConcernModal(true);
   };
 
   const handleConcernSubmit = useCallback(async () => {
-    const activeChildId = childData?.['id'] as string | undefined;
+    const activeChildId = childData?.id;
     if (!concernInput.trim() || !activeChildId) return;
     try {
       await api.goals.patch(activeChildId, { parent_concern: concernInput.trim() });
@@ -173,129 +429,34 @@ export default function LifePathway() {
 
   const handleProceedToDashboard = () => {
     closeConcernModal();
-    navigate(`/GoalsDashboard/${childId}`);
+    void navigate(`/GoalsDashboard/${childId}`);
   };
 
-  const handleBack = () => navigate(`/GrowthAreas/${childId}`, { state: { fromBack: true } });
+  // ── Shared style fragments ────────────────────────────────────────────────
 
-  const strengths = useMemo(
-    () =>
-      (profile?.top_strengths as string[] | undefined) ?? [
-        'Creative problem solver',
-        'Strong leadership qualities',
-        'Excellent communication skills',
-      ],
-    [profile],
-  );
-
-  const currentAge = useMemo(
-    () => parseInt(String((childData?.['age'] as string | number | null | undefined) ?? '')) || 10,
-    [childData],
-  );
-
-  const journeyData = useMemo(
-    () =>
-      Array.from({ length: 11 }, (_, i) => {
-        const age = currentAge + i;
-        const point: Record<string, number | string> = {
-          age,
-          year: `Age ${age}`,
-          standard: Math.min(40 + i * 4, 100),
-        };
-        if (completedAreas.length > 0) {
-          completedAreas.forEach((area) => {
-            const boost = getAreaBoost(area);
-            const areaId = area['area_id'];
-            if (areaId) point[areaId] = Math.min(Math.round(40 + i * boost + i * i * 0.25), 100);
-          });
-        } else {
-          point['buddy360'] = Math.min(Math.round(40 + i * 6.5 + i * i * 0.3), 100);
-        }
-        return point;
-      }),
-    [completedAreas, currentAge],
-  );
-
-  const standardMilestones = useMemo(
-    () => [
-      { age: currentAge, text: 'Basic education foundation' },
-      { age: currentAge + 3, text: 'Intermediate skills developed' },
-      { age: currentAge + 6, text: 'Advanced academic progress' },
-      { age: currentAge + 10, text: 'College preparation' },
-    ],
-    [currentAge],
-  );
-
-  const buddy360Milestones = useMemo(
-    () =>
-      completedAreas.length > 0
-        ? completedAreas
-            .flatMap((area) => {
-              const areaId = area.area_id;
-              const areaName = area.area_name;
-              const milestones: { yearOffset: number; text: string }[] =
-                (areaId
-                  ? (areaMilestoneMap as Record<string, { yearOffset: number; text: string }[]>)[
-                      areaId
-                    ]
-                  : undefined) ?? [];
-              return milestones.map((m) => ({
-                age: currentAge + m.yearOffset,
-                text: m.text,
-                area: areaName ?? '',
-                color: (areaId ? areaColors[areaId] : undefined) ?? SUCCESS_CSS,
-              }));
-            })
-            .sort((a, b) => a.age - b.age)
-        : [
-            {
-              age: currentAge,
-              text: 'Personalized profile created',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-            {
-              age: currentAge + 1,
-              text: 'Core strengths identified & enhanced',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-            {
-              age: currentAge + 2,
-              text: 'Weekly missions mastered',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-            {
-              age: currentAge + 5,
-              text: 'Multiple talents developed',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-            {
-              age: currentAge + 7,
-              text: 'Character strengths solidified',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-            {
-              age: currentAge + 10,
-              text: 'Ready for exceptional future',
-              area: 'Core',
-              color: SUCCESS_CSS,
-            },
-          ],
-    [completedAreas, currentAge],
-  );
-
-  const milestoneAgeColorMap = useMemo(
-    () =>
-      buddy360Milestones.reduce<Record<number, string>>((acc, m) => {
-        acc[m.age] ??= m.color;
-        return acc;
-      }, {}),
-    [buddy360Milestones],
-  );
+  const eyebrow: React.CSSProperties = {
+    fontWeight: 700,
+    letterSpacing: '.28em',
+    fontSize: lpfs(10.5),
+    textTransform: 'uppercase',
+    color: GOLD,
+  };
+  // size is optional: the three headings that size themselves with clamp() would
+  // otherwise have to pass a throwaway 0 and rely on a later `fontSize` key
+  // overriding it — which works only while the keys stay in that order.
+  // Sizes go through lpfs() here rather than at each call site: this helper carries
+  // most of the page's headings, and passing a raw number would silently opt them
+  // out of --lp-type-scale — which is exactly what happened the first time.
+  const orbitron = (size?: number, weight: 700 | 900 = 900): React.CSSProperties => ({
+    fontFamily: 'Orbitron, sans-serif',
+    fontWeight: weight,
+    ...(size === undefined ? {} : { fontSize: lpfs(size) }),
+  });
+  const twoCol: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+    gap: 18,
+  };
 
   return (
     <>
@@ -312,405 +473,1208 @@ export default function LifePathway() {
             />
           </div>
         ) : (
-          <div key={showSplash ? 'splash' : 'content'} className="min-h-screen bg-background">
-            <div className="mx-auto max-w-6xl px-4 py-12">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
-                className="space-y-8"
+          <div
+            key={showSplash ? 'splash' : 'content'}
+            style={{
+              minHeight: '100vh',
+              background:
+                'radial-gradient(ellipse at 70% -10%,rgba(240,201,138,.13),rgba(4,6,13,0) 52%),radial-gradient(ellipse at 12% 30%,rgba(30,196,232,.14),rgba(4,6,13,0) 50%),radial-gradient(ellipse at 20% 95%,rgba(160,120,255,.10),rgba(4,6,13,0) 45%),#04060d',
+              fontFamily: 'Rajdhani, sans-serif',
+              color: '#e7f5f9',
+            }}
+            className="lp-root"
+          >
+            <style>{`
+              /* Content column widens on large displays; type takes a flat +20%
+                 from the tablet breakpoint up. Unlike Connect there is no fixed
+                 track to grow alongside the container — every section here is
+                 fractional (1fr 1fr, 1.15fr 1fr), so the components absorb the
+                 extra width on their own.
+                 Phones stay at scale 1: the smallest labels are already near the
+                 legibility floor, and isMobile separately drops the padding. */
+              .lp-root { --lp-max: 1200px; --lp-type-scale: 1; }
+              @media (min-width: 768px)  { .lp-root { --lp-type-scale: 1.2; } }
+              @media (min-width: 1440px) { .lp-root { --lp-max: 1400px; } }
+              @media (min-width: 1800px) { .lp-root { --lp-max: 1640px; } }
+              @keyframes lpFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+              @keyframes lpFadeIn { from { opacity: 0; } to { opacity: 1; } }
+              @keyframes lpDrawLine { from { stroke-dashoffset: 1600; } to { stroke-dashoffset: 0; } }
+              @keyframes lpGapIn { from { opacity: 0; } to { opacity: 1; } }
+              @keyframes lpPopNode { 0% { opacity: 0; transform: scale(.3); } 60% { transform: scale(1.25); } 100% { opacity: 1; transform: scale(1); } }
+              @keyframes lpSwap { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+              @keyframes lpGlowText { 0%, 100% { text-shadow: 0 0 26px rgba(240,201,138,.35); } 50% { text-shadow: 0 0 44px rgba(240,201,138,.7); } }
+              @keyframes lpSpin { to { transform: rotate(360deg); } }
+              @keyframes lpShimmer { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+              .lp-select { appearance: none; -webkit-appearance: none; }
+              .lp-select:hover, .lp-select:focus { border-color: rgba(75,233,255,.7) !important; }
+              .lp-cta { transition: transform .2s ease, box-shadow .2s ease; }
+              .lp-cta:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgba(240,201,138,.55) !important; }
+              @media (prefers-reduced-motion: reduce) {
+                [style*="lpFadeUp"], [style*="lpPopNode"], [style*="lpDrawLine"],
+                [style*="lpGapIn"], [style*="lpSwap"], [style*="lpFadeIn"] { animation: none !important; }
+              }
+            `}</style>
+
+            {/*
+              The design's own sticky header (SUPERPOWER · Life Pathway · Back) is
+              deliberately not reproduced: the shared Layout already renders the
+              brand mark and the section label ("Transform"), so repeating it here
+              stacked two near-identical bars. Every other redesigned page
+              (GrowthAreas, Connect, Observations) renders content-only for the
+              same reason, and the Back button was dropped by request.
+            */}
+            <main
+              style={{
+                maxWidth: 'var(--lp-max, 1200px)',
+                margin: '0 auto',
+                padding: isMobile ? '36px 20px 72px' : '52px 40px 96px',
+              }}
+            >
+              {/* ── Hero ─────────────────────────────────────────────────── */}
+              <section style={{ textAlign: 'center', animation: 'lpFadeUp .7s ease both' }}>
+                <div style={{ ...eyebrow, letterSpacing: '.36em' }}>
+                  {[childName, `Age ${String(currentAge)}`, archetype ? `The ${archetype}` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+                <p
+                  style={{
+                    margin: '18px auto 0',
+                    maxWidth: lpProseW(760),
+                    fontSize: lpfs(15),
+                    fontWeight: 700,
+                    lineHeight: 1.5,
+                    color: '#cfe9f2',
+                  }}
+                >
+                  {COPY.intro}
+                </p>
+                <h1
+                  style={{
+                    margin: '16px auto 0',
+                    maxWidth: lpProseW(940),
+                    ...orbitron(),
+                    fontSize: 'calc(clamp(26px,3.8vw,44px) * var(--lp-type-scale, 1))',
+                    lineHeight: 1.06,
+                    letterSpacing: '-.01em',
+                  }}
+                >
+                  {t(COPY.headlineA)}
+                  <br />
+                  <span style={{ color: GOLD, animation: 'lpGlowText 4s ease-in-out infinite' }}>
+                    {t(COPY.headlineB)}
+                  </span>
+                </h1>
+                <p
+                  style={{
+                    margin: '20px auto 0',
+                    maxWidth: lpProseW(640),
+                    fontSize: lpfs(16),
+                    fontWeight: 600,
+                    lineHeight: 1.55,
+                    color: '#a8c1d1',
+                  }}
+                >
+                  A lifelong journey. We begin with the first ten years, age {currentAge} to{' '}
+                  {journeyEndAge}.
+                </p>
+              </section>
+
+              {/* ── Superpower + First 10 ────────────────────────────────── */}
+              <section
+                style={{
+                  marginTop: isMobile ? 48 : 76,
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1.15fr 1fr',
+                  gap: 18,
+                  animation: 'lpFadeUp .7s ease .1s both',
+                }}
               >
-                {/* Header */}
-                <motion.div {...slideUp(0.1)} className="space-y-4 text-center">
-                  <div className="glow-teal-sm mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dark">
-                    <TrendingUp className="h-8 w-8 text-white" />
+                <div
+                  style={{
+                    position: 'relative',
+                    borderRadius: 20,
+                    padding: '24px 26px',
+                    background: 'linear-gradient(150deg,rgba(52,40,18,.85),rgba(12,17,28,.9))',
+                    border: '1px solid rgba(240,201,138,.4)',
+                    overflow: 'hidden',
+                    boxShadow: '0 0 60px rgba(240,201,138,.10) inset',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: -60,
+                      top: -60,
+                      width: 220,
+                      height: 220,
+                      borderRadius: '50%',
+                      background:
+                        'radial-gradient(circle,rgba(240,201,138,.22),rgba(240,201,138,0) 70%)',
+                    }}
+                  />
+                  <div style={{ position: 'relative', ...eyebrow }}>{t(COPY.superpowerLabel)}</div>
+                  <div
+                    style={{
+                      position: 'relative',
+                      marginTop: 10,
+                      ...orbitron(),
+                      fontSize: 'calc(clamp(22px,2.5vw,30px) * var(--lp-type-scale, 1))',
+                      lineHeight: 1.05,
+                      color: '#fff6e2',
+                    }}
+                  >
+                    {superpower.title}
                   </div>
-                  <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-                    Take a look at {childName}'s life journey planned and powered by Buddy360
-                  </h1>
-                  {completedAreas.length > 0 && (
-                    <div className="flex flex-wrap justify-center gap-2 pt-2">
-                      {completedAreas.map((area) => (
-                        <span
-                          key={area.area_id ?? area.area_name}
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-white',
-                            (area.area_id && (areaBgTw as Record<string, string>)[area.area_id]) ??
-                              'bg-success',
-                          )}
+                  <div
+                    style={{
+                      position: 'relative',
+                      marginTop: 10,
+                      fontSize: lpfs(14.5),
+                      fontWeight: 600,
+                      lineHeight: 1.5,
+                      color: '#e0cba8',
+                      maxWidth: lpProseW(460),
+                    }}
+                  >
+                    {superpowerLead} {t(COPY.superpowerTail)}
+                  </div>
+                  {traits.length > 0 && (
+                    <div
+                      style={{
+                        position: 'relative',
+                        display: 'flex',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginTop: 18,
+                      }}
+                    >
+                      {traits.map((trait) => (
+                        <div
+                          key={trait}
+                          style={{
+                            padding: '7px 14px',
+                            borderRadius: 999,
+                            border: '1px solid rgba(240,201,138,.45)',
+                            fontWeight: 700,
+                            fontSize: lpfs(12),
+                            letterSpacing: '.12em',
+                            textTransform: 'uppercase',
+                            color: '#f5e6c4',
+                          }}
                         >
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          {area.area_name}
-                        </span>
+                          {trait}
+                        </div>
                       ))}
                     </div>
                   )}
-                </motion.div>
+                </div>
 
-                {/* Chart */}
-                <motion.div
-                  {...slideUp(0.8)}
-                  className="border-edge rounded-2xl bg-card p-6 md:p-8"
+                <div
+                  style={{
+                    borderRadius: 22,
+                    padding: '26px 28px',
+                    background: 'linear-gradient(150deg,rgba(20,31,50,.8),rgba(8,13,24,.8))',
+                    border: '1px solid rgba(75,233,255,.22)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                  }}
                 >
-                  <div className="mb-6 text-center">
-                    <h2 className="mb-2 text-2xl font-bold tracking-tight text-foreground md:text-3xl">
-                      10-Year Growth Journey Comparison
-                    </h2>
-                    <p className="text-muted-foreground">
-                      See how {childName}'s development accelerates with Buddy360
-                      {completedAreas.length > 0 &&
-                        ` across ${completedAreas.length} growth area${completedAreas.length > 1 ? 's' : ''}`}
-                    </p>
+                  <div style={{ ...orbitron(32), lineHeight: 1, color: CYAN }}>
+                    {COPY.firstTenTitle}
                   </div>
-
-                  <div className="mb-6 h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={journeyData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--edge-rgb) / 0.05)" />
-                        <XAxis
-                          dataKey="year"
-                          stroke="hsl(var(--muted-foreground))"
-                          style={{ fontSize: '12px' }}
-                        />
-                        <YAxis
-                          stroke="hsl(var(--muted-foreground))"
-                          style={{ fontSize: '12px' }}
-                          label={{
-                            value: 'Growth Level',
-                            angle: -90,
-                            position: 'insideLeft',
-                            style: { fontSize: '12px', fill: 'hsl(var(--muted-foreground))' },
-                          }}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '12px',
-                            padding: '12px',
-                            color: 'hsl(var(--foreground))',
-                          }}
-                          formatter={(value, name) => [`${String(value)}%`, name]}
-                        />
-                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                        <Line
-                          type="monotone"
-                          dataKey="standard"
-                          stroke={MUTED_FG_CSS}
-                          strokeWidth={3}
-                          name="Standard Journey"
-                          dot={{ fill: MUTED_FG_CSS, r: 4 }}
-                        />
-                        {completedAreas.length > 0 ? (
-                          completedAreas.map((area) => (
-                            <Line
-                              key={area.area_id ?? area.area_name}
-                              type="monotone"
-                              dataKey={area.area_id ?? ''}
-                              stroke={(area.area_id && areaColors[area.area_id]) ?? SUCCESS_CSS}
-                              strokeWidth={3}
-                              name={`${area.area_name ?? ''} (Buddy360)`}
-                              dot={<CustomDot milestoneAgeColorMap={milestoneAgeColorMap} />}
-                            />
-                          ))
-                        ) : (
-                          <Line
-                            type="monotone"
-                            dataKey="buddy360"
-                            stroke={PRIMARY_CSS}
-                            strokeWidth={3}
-                            name="Buddy360 Journey"
-                            dot={<CustomDot milestoneAgeColorMap={milestoneAgeColorMap} />}
-                          />
-                        )}
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: lpfs(14),
+                      fontWeight: 600,
+                      lineHeight: 1.45,
+                      color: '#93aebe',
+                    }}
+                  >
+                    years of a lifelong journey. Superpower stays with {voice.him} for life; age{' '}
+                    {currentAge} to {journeyEndAge} is simply where we begin.
                   </div>
+                </div>
+              </section>
 
-                  {/* Milestone Legend */}
-                  {buddy360Milestones.length > 0 && (
-                    <div className="border-edge-faint mb-6 rounded-xl bg-surface-elevated p-4">
-                      <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                        ● Milestone markers on the Buddy360 line
-                      </p>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {buddy360Milestones.map((m) => (
-                          <div
-                            key={`${m.age}-${m.text}`}
-                            className="flex items-center gap-2 text-sm text-muted-foreground"
+              {/* ── Chart ────────────────────────────────────────────────── */}
+              <section
+                style={{
+                  marginTop: isMobile ? 40 : 56,
+                  borderRadius: 24,
+                  padding: isMobile ? '22px 18px 20px' : '28px 30px 24px',
+                  background: 'linear-gradient(165deg,rgba(20,31,50,.7),rgba(8,13,24,.72))',
+                  border: '1px solid rgba(75,233,255,.18)',
+                  boxShadow: '0 30px 90px rgba(2,6,15,.7)',
+                  animation: 'lpFadeUp .7s ease .2s both',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'space-between',
+                    gap: 20,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div>
+                    <div style={{ ...orbitron(17), letterSpacing: '.02em', color: '#f2fdff' }}>
+                      {COPY.chartTitle}
+                    </div>
+                    <div
+                      style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}
+                    >
+                      {COPY.chartSub}
+                    </div>
+
+                    {areaOptions.length > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          marginTop: 16,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontWeight: 700,
+                            fontSize: lpfs(10.5),
+                            letterSpacing: '.2em',
+                            textTransform: 'uppercase',
+                            color: '#6f8a9c',
+                          }}
+                        >
+                          {COPY.growthAreaLabel}
+                        </div>
+                        <div
+                          style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+                        >
+                          <select
+                            className="lp-select"
+                            aria-label={COPY.growthAreaLabel}
+                            value={String(selectedIdx)}
+                            onChange={(e) => {
+                              setSelectedIdx(Number(e.target.value));
+                              setMilestoneIdx(0);
+                            }}
+                            style={{
+                              cursor: 'pointer',
+                              padding: '10px 40px 10px 16px',
+                              borderRadius: 999,
+                              background: 'rgba(8,14,26,.9)',
+                              border: '1px solid rgba(75,233,255,.34)',
+                              fontFamily: 'Rajdhani, sans-serif',
+                              fontWeight: 700,
+                              fontSize: lpfs(14),
+                              letterSpacing: '.04em',
+                              color: '#eafdff',
+                              outline: 'none',
+                            }}
                           >
-                            <span
-                              className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                              style={{ backgroundColor: m.color }}
-                            />
-                            <span className="w-14 flex-shrink-0 font-medium text-foreground">
-                              Age {m.age}
-                            </span>
-                            <span className="text-xs">{m.text}</span>
-                            {m.area !== 'Core' && (
-                              <span
-                                className="ml-auto flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs text-white"
-                                style={{ backgroundColor: m.color }}
+                            {areaOptions.map(({ area }, i) => (
+                              <option
+                                key={area.id}
+                                value={String(i)}
+                                style={{ background: '#08101c' }}
                               >
-                                {m.area}
-                              </span>
-                            )}
+                                {area.name}
+                              </option>
+                            ))}
+                          </select>
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke={CYAN}
+                            strokeWidth={2.4}
+                            style={{
+                              position: 'absolute',
+                              right: 15,
+                              width: 13,
+                              height: 13,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div
+                        style={{
+                          width: 22,
+                          height: 3,
+                          borderRadius: 2,
+                          background: `linear-gradient(90deg,${CYAN},${GOLD})`,
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: lpfs(11),
+                          letterSpacing: '.14em',
+                          textTransform: 'uppercase',
+                          color: GOLD,
+                        }}
+                      >
+                        {COPY.legendSuperpower}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 22, height: 2, background: '#3c505f' }} />
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: lpfs(11),
+                          letterSpacing: '.14em',
+                          textTransform: 'uppercase',
+                          color: '#6f8697',
+                        }}
+                      >
+                        {COPY.legendRoutine}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Curve + nodes. Keyed on the area so the draw animation replays. */}
+                <div
+                  key={selectedArea?.id ?? 'core'}
+                  style={{ position: 'relative', marginTop: 20, height: isMobile ? 240 : 330 }}
+                >
+                  <svg
+                    viewBox="0 0 1000 320"
+                    preserveAspectRatio="none"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+                  >
+                    <defs>
+                      <linearGradient id="lpLine" x1="0" y1="1" x2="1" y2="0">
+                        <stop offset="0%" stopColor={`rgba(${hue},.7)`} />
+                        <stop offset="45%" stopColor={`rgb(${hue})`} />
+                        <stop offset="100%" stopColor="#ffd89a" />
+                      </linearGradient>
+                      <linearGradient id="lpGap" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor={`rgba(${hue},0)`} />
+                        <stop offset="45%" stopColor={`rgba(${hue},.13)`} />
+                        <stop offset="100%" stopColor="rgba(240,201,138,.26)" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d={gapPath(ys)}
+                      fill="url(#lpGap)"
+                      style={{ animation: 'lpGapIn 1.4s ease 1.6s both' }}
+                    />
+                    <path
+                      d="M40 300 C160 300 260 302 380 304 C520 306 700 308 940 310"
+                      fill="none"
+                      stroke="#3c505f"
+                      strokeWidth={2}
+                      strokeDasharray="8 8"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <path
+                      d={curve(ys)}
+                      fill="none"
+                      stroke="url(#lpLine)"
+                      strokeWidth={3.4}
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                      strokeDasharray={1600}
+                      style={{
+                        animation: 'lpDrawLine 2.6s cubic-bezier(.35,0,.25,1) .3s both',
+                        filter: `drop-shadow(0 0 10px rgba(${hue},.45))`,
+                      }}
+                    />
+                  </svg>
+
+                  {NODE_LEFT_PCT.map((left, k) => {
+                    const active = k === Math.min(milestoneIdx, milestones.length - 1);
+                    return (
+                      <div
+                        key={`node-${String(k)}`}
+                        style={{
+                          position: 'absolute',
+                          left: `${String(left)}%`,
+                          top: `${(((ys[k + 1] ?? 300) / 320) * 100).toFixed(1)}%`,
+                          transform: 'translate(-50%,-50%)',
+                          animation: `lpPopNode .5s ease ${String(0.95 + k * 0.25)}s both`,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label={`Age ${String(ages[k] ?? '')}`}
+                          onClick={() => setMilestoneIdx(k)}
+                          style={{
+                            display: 'block',
+                            padding: 0,
+                            cursor: 'pointer',
+                            width: 16,
+                            height: 16,
+                            borderRadius: '50%',
+                            background: '#fff3d6',
+                            boxShadow: active
+                              ? '0 0 0 6px rgba(240,201,138,.20), 0 0 26px rgba(255,216,154,1)'
+                              : '0 0 14px rgba(240,201,138,.7)',
+                            border: '2px solid rgba(4,6,13,.9)',
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+
+                  <div
+                    style={{
+                      position: 'absolute',
+                      // An absolutely positioned box with `left` but no width is
+                      // shrink-to-fit *capped at (container − left)* — only 44%
+                      // of the chart here. That is roomy on desktop (~460px) but
+                      // leaves 106px on a 320px phone, which wrapped this caption
+                      // into three cramped lines straddling the curve. Declaring
+                      // the width opts out of that cap so the copy keeps its
+                      // natural single line (204px at full size); maxWidth still
+                      // keeps it inside the chart. The centring transform means
+                      // this does not move the caption on desktop.
+                      width: 'max-content',
+                      maxWidth: '100%',
+                      // Nudged right on narrow screens, where the curve climbs
+                      // through the caption's left edge. Only affordable because
+                      // the two-line split above shrinks the box to ~117px — the
+                      // gap wedge itself ends at 94% of the chart, so the caption
+                      // has to stay left of that.
+                      left: isNarrow ? '66%' : '56%',
+                      top: '72%',
+                      transform: 'translate(-50%,-50%)',
+                      textAlign: 'center',
+                      pointerEvents: 'none',
+                      animation: 'lpFadeIn 1s ease 2.4s both',
+                    }}
+                  >
+                    <div
+                      style={{
+                        ...orbitron(13),
+                        letterSpacing: '.22em',
+                        textTransform: 'uppercase',
+                        color: 'rgba(240,201,138,.75)',
+                      }}
+                    >
+                      {COPY.gapTitle}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 5,
+                        fontWeight: 600,
+                        fontSize: lpfs(13),
+                        // Only meaningful once the caption is two lines, and left
+                        // unset otherwise so the single-line box keeps its
+                        // inherited 19.5px line box on wider screens.
+                        ...(gapCaptionLines === null ? {} : { lineHeight: 1.35 }),
+                        color: 'rgba(200,222,234,.6)',
+                      }}
+                    >
+                      {gapCaptionLines === null ? (
+                        t(COPY.gapSub)
+                      ) : (
+                        <>
+                          {gapCaptionLines[0]}
+                          <br />
+                          {gapCaptionLines[1]}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {NODE_LEFT_PCT.map((left, k) => {
+                    const active = k === Math.min(milestoneIdx, milestones.length - 1);
+                    return (
+                      <button
+                        key={`label-${String(k)}`}
+                        type="button"
+                        onClick={() => setMilestoneIdx(k)}
+                        style={{
+                          position: 'absolute',
+                          left: `${String(left)}%`,
+                          bottom: -2,
+                          transform: 'translateX(-50%)',
+                          cursor: 'pointer',
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          ...orbitron(12.5, 700),
+                          color: active ? '#ffd89a' : '#5f7688',
+                          transition: 'color .25s ease',
+                        }}
+                      >
+                        {ages[k]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected milestone */}
+                <div
+                  style={{
+                    marginTop: 14,
+                    borderTop: '1px solid rgba(75,233,255,.14)',
+                    paddingTop: 22,
+                  }}
+                >
+                  {isAreaLoading ? (
+                    /*
+                     * Deliberately no templated copy while a job is pending: a
+                     * parent reading a milestone and having it silently rewrite
+                     * itself seconds later cannot tell which version was real.
+                     * The age heading stays because it is derived from the child's
+                     * own age, not from the model, so it is already correct.
+                     */
+                    <div
+                      key={`loading-${selectedArea?.id ?? 'core'}`}
+                      style={{ animation: 'lpSwap .4s ease both' }}
+                      aria-busy="true"
+                      aria-live="polite"
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          gap: 14,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}>
+                          AGE {activeMilestone?.age}
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            fontSize: lpfs(14),
+                            fontWeight: 700,
+                            letterSpacing: '.02em',
+                            color: '#89d9ee',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 13,
+                              height: 13,
+                              borderRadius: '50%',
+                              border: '2px solid rgba(75,233,255,.25)',
+                              borderTopColor: CYAN,
+                              animation: 'lpSpin .8s linear infinite',
+                            }}
+                          />
+                          Personalising {selectedArea?.name ?? 'this area'} for{' '}
+                          {childName || voice.him}…
+                        </div>
+                      </div>
+                      <div style={{ ...twoCol, marginTop: 18 }}>
+                        {[
+                          {
+                            label: COPY.msSuperpowerLabel,
+                            accent: CYAN,
+                            bg: 'linear-gradient(150deg,rgba(30,52,80,.55),rgba(8,13,24,.5))',
+                            border: '1px solid rgba(75,233,255,.20)',
+                            bars: [96, 88, 64, 0, 78],
+                          },
+                          {
+                            label: COPY.msRoutineLabel,
+                            accent: '#6f8697',
+                            bg: 'rgba(9,12,19,.45)',
+                            border: '1px solid rgba(120,145,165,.12)',
+                            bars: [92, 70],
+                          },
+                        ].map((panel) => (
+                          <div
+                            key={panel.label}
+                            style={{
+                              borderRadius: 16,
+                              padding: '20px 22px',
+                              background: panel.bg,
+                              border: panel.border,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: lpfs(11),
+                                letterSpacing: '.2em',
+                                textTransform: 'uppercase',
+                                color: panel.accent,
+                                opacity: 0.7,
+                              }}
+                            >
+                              {panel.label}
+                            </div>
+                            <div style={{ marginTop: 14 }}>
+                              {panel.bars.map((w, i) =>
+                                w === 0 ? (
+                                  <div
+                                    key={`gap-${String(i)}`}
+                                    style={{
+                                      height: 1,
+                                      margin: '14px 0',
+                                      borderTop: '1px dashed rgba(75,233,255,.16)',
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    key={`bar-${String(i)}`}
+                                    style={{
+                                      height: 11,
+                                      width: `${String(w)}%`,
+                                      marginBottom: 9,
+                                      borderRadius: 6,
+                                      background:
+                                        'linear-gradient(90deg,rgba(75,233,255,.13),rgba(75,233,255,.05))',
+                                      animation: `lpShimmer 1.5s ease-in-out ${String(i * 0.12)}s infinite`,
+                                    }}
+                                  />
+                                ),
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Journey Details Grid */}
-                  <div className="grid gap-6 md:grid-cols-2">
-                    {/* Standard Journey */}
-                    <div className="space-y-4">
-                      <div className="mb-4 flex items-center gap-2">
-                        <span className="bg-ghost-strong inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold text-foreground">
-                          1
-                        </span>
-                        <h3 className="text-lg font-bold text-foreground">Standard Life Journey</h3>
-                      </div>
-                      <div className="border-edge-faint rounded-xl bg-surface-elevated p-4">
-                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-                          <Sparkles className="h-4 w-4 text-muted-foreground" />
-                          The Analysis
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {profile?.summary ??
-                            `${childName} shows natural growth through standard educational pathways with typical developmental milestones.`}
-                        </p>
-                      </div>
-                      <div className="border-edge-faint rounded-xl bg-surface-elevated p-4">
-                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                          <Target className="h-4 w-4 text-muted-foreground" />
-                          Key Milestones
-                        </h4>
-                        <div className="space-y-2.5">
-                          {standardMilestones.map((milestone) => (
-                            <div key={milestone.text} className="flex items-start gap-3">
-                              <div className="w-14 flex-shrink-0 text-xs font-medium text-muted-foreground">
-                                Age {milestone.age}
-                              </div>
-                              <div className="flex-1 text-xs text-muted-foreground">
-                                {milestone.text}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Buddy360 Journey */}
-                    <div className="space-y-4">
-                      <div className="mb-4 flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-primary-stronger text-sm font-bold text-white">
-                          2
-                        </span>
-                        <h3 className="text-lg font-bold text-foreground">
-                          {childName}'s Journey with Buddy360
-                        </h3>
-                      </div>
-
-                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
-                        <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
-                          <Sparkles className="h-4 w-4" />
-                          Analysis
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {profile?.summary ??
-                            `${childName} experiences accelerated holistic growth through personalized guidance, targeted skill development, and continuous support.`}
-                          {completedAreas.length > 0 &&
-                            ` Development is boosted across ${completedAreas.map((a) => a.area_name).join(', ')}.`}
-                        </p>
-                      </div>
-
-                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
-                        <h4 className="mb-2 text-sm font-semibold text-primary">
-                          Strengths Improvised by Buddy360
-                        </h4>
-                        <ul className="space-y-1.5">
-                          {strengths.map((strength) => (
-                            <li
-                              key={strength}
-                              className="flex items-start gap-2 text-sm text-muted-foreground"
-                            >
-                              <span className="mt-0.5 text-primary">✓</span>
-                              <span>{strength}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="bg-brand-teal rounded-xl border border-primary/20 p-4">
-                        <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
-                          <Award className="h-4 w-4" />
-                          Accomplishments & Milestones
-                        </h4>
-                        <div className="space-y-2.5">
-                          {buddy360Milestones.map((milestone) => (
-                            <div
-                              key={`${milestone.age}-${milestone.text}`}
-                              className="flex items-start gap-3"
-                            >
-                              <div className="w-14 flex-shrink-0 text-xs font-medium text-primary">
-                                Age {milestone.age}
-                              </div>
-                              <div className="flex-1 text-xs font-medium text-foreground">
-                                {milestone.text}
-                              </div>
-                              {milestone.area !== 'Core' && (
-                                <span
-                                  className="flex-shrink-0 self-start rounded-full px-1.5 py-0.5 text-xs text-white"
-                                  style={{ backgroundColor: milestone.color }}
-                                >
-                                  {milestone.area}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* Per-Growth-Area Detail Sections */}
-                {completedAreas.length > 0 && (
-                  <motion.div {...slideUp(1.6)} className="space-y-4">
-                    <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                      Growth Area Insights
-                    </h2>
-                    <p className="text-muted-foreground">
-                      Recommendations for each area for {childName}
-                    </p>
-
-                    {completedAreas.map((area, idx) => {
-                      const bgTw =
-                        (area.area_id && (areaBgTw as Record<string, string>)[area.area_id]) ??
-                        'bg-success';
-                      const recs: unknown[] =
-                        Array.isArray(area.ai_three_month_recommendations) &&
-                        area.ai_three_month_recommendations.length > 0
-                          ? area.ai_three_month_recommendations
-                          : (area.recommendations ?? []);
-                      return (
-                        <motion.div
-                          key={area.area_id ?? idx}
-                          {...slideUp(2.0 + idx * 0.3)}
-                          className="border-edge rounded-2xl bg-card p-6"
+                      {progressMessage && (
+                        <div
+                          style={{
+                            marginTop: 16,
+                            fontSize: lpfs(13.5),
+                            fontWeight: 600,
+                            color: '#7f97a8',
+                            animation: 'lpFadeIn .5s ease both',
+                          }}
                         >
-                          <div className="mb-4 flex items-center gap-3">
-                            <span
-                              className={cn(
-                                'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl font-bold text-white',
-                                bgTw,
-                              )}
-                            >
-                              {idx + 1}
-                            </span>
-                            <h3 className="text-lg font-bold text-foreground">{area.area_name}</h3>
-                            <span
-                              className={cn(
-                                'ml-auto rounded-full px-2 py-0.5 text-xs font-medium text-white',
-                                bgTw,
-                              )}
-                            >
-                              Completed
-                            </span>
-                          </div>
-
-                          {recs.length > 0 ? (
-                            <div>
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                                3-Month Recommendations
-                              </p>
-                              <ul className="space-y-2">
-                                {recs.map((rec, i) => (
-                                  <li
-                                    key={`${area.area_id ?? idx}-${i}`}
-                                    className="flex items-start gap-2 text-sm text-muted-foreground"
-                                  >
-                                    <span
-                                      className={cn(
-                                        'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
-                                        bgTw,
-                                      )}
-                                    >
-                                      {i + 1}
-                                    </span>
-                                    <span>{String(rec)}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : (
-                            <p className="text-sm italic text-muted-foreground">
-                              No recommendations generated for this area yet.
-                            </p>
-                          )}
-                        </motion.div>
-                      );
-                    })}
-                  </motion.div>
-                )}
-
-                {/* CTA */}
-                <motion.div {...slideUp(1.8)} className="space-y-6 pt-8 text-center">
-                  {childName && (
-                    <div className="mx-auto max-w-3xl rounded-2xl border border-warning-medium/20 bg-card p-8">
-                      <div className="mb-4 flex items-center justify-center gap-3">
-                        <Sparkles className="h-6 w-6 text-warning" />
-                        <span className="text-3xl">🎉</span>
-                        <Sparkles className="h-6 w-6 text-warning" />
+                          {progressMessage}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      key={`${selectedArea?.id ?? 'core'}-${String(milestoneIdx)}-${generated ? 'ai' : 'base'}`}
+                      style={{ animation: 'lpSwap .4s ease both' }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          gap: 14,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}>
+                          AGE {activeMilestone?.age}
+                        </div>
+                        <div style={{ ...orbitron(19, 700), color: '#f2fdff' }}>
+                          {activeMilestone?.title}
+                        </div>
                       </div>
-                      <p className="text-xl font-bold leading-relaxed text-foreground md:text-2xl">
-                        Welcome{' '}
-                        <span className="text-primary">
-                          {user?.full_name?.split(' ')[0] ?? 'Parent'}
-                        </span>{' '}
-                        and <span className="text-success-bright">{childName}</span> to Buddy360. We
-                        look forward to powering up your life in all possible dimensions.
-                      </p>
+                      <div style={{ ...twoCol, marginTop: 18 }}>
+                        <div
+                          style={{
+                            borderRadius: 16,
+                            padding: '20px 22px',
+                            background:
+                              'linear-gradient(150deg,rgba(30,52,80,.9),rgba(8,13,24,.7))',
+                            border: '1px solid rgba(75,233,255,.4)',
+                            boxShadow: '0 0 40px rgba(75,233,255,.10)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke={CYAN}
+                              strokeWidth={2}
+                              style={{ width: 15, height: 15 }}
+                            >
+                              <path d="M13 2 5 13h6l-1 9 8-11h-6z" />
+                            </svg>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: lpfs(11),
+                                letterSpacing: '.2em',
+                                textTransform: 'uppercase',
+                                color: CYAN,
+                              }}
+                            >
+                              {COPY.msSuperpowerLabel}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 10,
+                              fontSize: lpfs(15),
+                              fontWeight: 600,
+                              lineHeight: 1.5,
+                              color: '#eafdff',
+                            }}
+                          >
+                            {activeMilestone?.guided}
+                          </div>
+                          {activeMilestone?.power && (
+                            <div
+                              style={{
+                                marginTop: 14,
+                                paddingTop: 12,
+                                borderTop: '1px dashed rgba(75,233,255,.22)',
+                                fontSize: lpfs(13.5),
+                                fontWeight: 700,
+                                letterSpacing: '.02em',
+                                color: '#89d9ee',
+                              }}
+                            >
+                              {activeMilestone.power}
+                            </div>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            borderRadius: 16,
+                            padding: '20px 22px',
+                            background: 'rgba(9,12,19,.6)',
+                            border: '1px solid rgba(120,145,165,.16)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="#6f8697"
+                              strokeWidth={2}
+                              style={{ width: 15, height: 15 }}
+                            >
+                              <path d="M4 12h16" />
+                            </svg>
+                            <div
+                              style={{
+                                fontWeight: 700,
+                                fontSize: lpfs(11),
+                                letterSpacing: '.2em',
+                                textTransform: 'uppercase',
+                                color: '#6f8697',
+                              }}
+                            >
+                              {COPY.msRoutineLabel}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 10,
+                              fontSize: lpfs(15),
+                              fontWeight: 600,
+                              lineHeight: 1.5,
+                              color: '#7f95a5',
+                            }}
+                          >
+                            {activeMilestone?.drift}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
-                  <div className="mx-auto max-w-3xl">
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      Click below to continue this interesting journey with Buddy360.
-                    </p>
-                  </div>
-                  <PageActions
-                    className="pt-4"
-                    left={
-                      <Button
-                        variant="outline"
-                        onClick={handleBack}
-                        className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
-                      >
-                        ← Back
-                      </Button>
-                    }
-                    center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
-                    right={
-                      <Button
-                        onClick={handleStartJourney}
-                        className="btn-primary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
-                      >
-                        Continue Journey
-                        <ChevronRight className="ml-2 h-4 w-4" />
-                      </Button>
-                    }
-                  />
-                </motion.div>
-              </motion.div>
-            </div>
+                </div>
+              </section>
 
-            {/* Concern Modal */}
+              {/* ── Superpower vs routine ────────────────────────────────── */}
+              <section
+                style={{
+                  marginTop: isMobile ? 48 : 72,
+                  animation: 'lpFadeUp .7s ease .3s both',
+                }}
+              >
+                <div style={{ ...twoCol, marginTop: 30 }}>
+                  <div
+                    style={{
+                      position: 'relative',
+                      borderRadius: 22,
+                      padding: '28px 30px',
+                      background: 'linear-gradient(155deg,rgba(28,52,80,.9),rgba(40,32,16,.75))',
+                      border: '1px solid rgba(240,201,138,.45)',
+                      overflow: 'hidden',
+                      boxShadow: '0 20px 70px rgba(75,233,255,.10)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: -40,
+                        bottom: -70,
+                        width: 240,
+                        height: 240,
+                        borderRadius: '50%',
+                        background:
+                          'radial-gradient(circle,rgba(75,233,255,.18),rgba(75,233,255,0) 70%)',
+                      }}
+                    />
+                    <div style={{ position: 'relative', ...orbitron(20), color: '#fff6e2' }}>
+                      {COPY.compareSuperTitle}
+                    </div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        marginTop: 9,
+                        fontSize: lpfs(14),
+                        fontWeight: 700,
+                        letterSpacing: '.02em',
+                        lineHeight: 1.45,
+                        color: GOLD,
+                      }}
+                    >
+                      {t(COPY.compareSuperLead)}
+                    </div>
+                    <div
+                      style={{
+                        position: 'relative',
+                        marginTop: 12,
+                        fontSize: lpfs(14.5),
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: '#eddfc6',
+                      }}
+                    >
+                      {t(COPY.compareSuperBody)}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      borderRadius: 22,
+                      padding: '28px 30px',
+                      background: 'rgba(9,12,19,.55)',
+                      border: '1px solid rgba(120,145,165,.16)',
+                    }}
+                  >
+                    <div style={{ ...orbitron(20, 700), color: '#8ba1b1' }}>
+                      {COPY.compareRoutineTitle}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 9,
+                        fontSize: lpfs(14),
+                        fontWeight: 700,
+                        letterSpacing: '.02em',
+                        lineHeight: 1.45,
+                        color: '#8ba1b1',
+                      }}
+                    >
+                      {t(COPY.compareRoutineLead)}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 12,
+                        fontSize: lpfs(14.5),
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                        color: '#7c91a1',
+                      }}
+                    >
+                      {t(COPY.compareRoutineBody)}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* ── First 90 days ────────────────────────────────────────── */}
+              <section
+                style={{
+                  marginTop: isMobile ? 48 : 76,
+                  animation: 'lpFadeUp .7s ease .35s both',
+                }}
+              >
+                <div>
+                  <div style={{ ...orbitron(17), color: '#f2fdff' }}>{COPY.ninetyTitle}</div>
+                  <div style={{ marginTop: 6, fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
+                    Built for{' '}
+                    {[childName, `age ${String(currentAge)}`, archetype ? `The ${archetype}` : null]
+                      .filter(Boolean)
+                      .join(', ')}{' '}
+                    · one move per growth area, per month
+                  </div>
+                </div>
+
+                {/*
+                  Sized by its viewBox, so text inside scales with the container
+                  rather than holding a CSS px size — see LABEL_TARGET_PX for why
+                  the label size is computed from the measured width instead of
+                  being a fixed number per breakpoint. The whole box (baselines,
+                  rail, dots, height) follows from that one size.
+                */}
+                <svg
+                  ref={railRef}
+                  viewBox={`0 0 1000 ${String(railLabel.viewBoxHeight)}`}
+                  style={{
+                    width: '100%',
+                    height: 'auto',
+                    display: 'block',
+                    marginTop: 18,
+                    fontFamily: 'Rajdhani, sans-serif',
+                  }}
+                >
+                  <defs>
+                    <linearGradient id="lpP90" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="rgba(75,233,255,.55)" />
+                      <stop offset="100%" stopColor={GOLD} />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d={`M40 ${String(railLabel.railY)} L960 ${String(railLabel.railY)}`}
+                    fill="none"
+                    stroke="url(#lpP90)"
+                    strokeWidth={3}
+                    strokeLinecap="round"
+                  />
+                  {TIMELINE.map((m) => (
+                    <circle
+                      key={`dot-${String(m.x)}`}
+                      cx={m.x}
+                      cy={railLabel.railY}
+                      r={m.r}
+                      fill={m.fill}
+                    />
+                  ))}
+                  {TIMELINE.map((m) => {
+                    const label = t(m.label);
+                    // Split on the first separator only, so a label that ever
+                    // carries two keeps the remainder instead of dropping it.
+                    const sep = railLabel.split ? label.indexOf(' · ') : -1;
+                    const head = sep === -1 ? label : label.slice(0, sep);
+                    const tail = sep === -1 ? null : label.slice(sep + 3);
+                    return (
+                      <text
+                        key={`txt-${String(m.x)}`}
+                        x={m.x}
+                        y={railLabel.y}
+                        textAnchor={m.anchor}
+                        fill={m.color}
+                        fontSize={railLabel.units}
+                        fontWeight={700}
+                      >
+                        {tail === null ? (
+                          head
+                        ) : (
+                          <>
+                            <tspan x={m.x}>{head}</tspan>
+                            <tspan x={m.x} dy={railLabel.dy}>
+                              {tail}
+                            </tspan>
+                          </>
+                        )}
+                      </text>
+                    );
+                  })}
+                </svg>
+
+                {/*
+                  Narrow phones get a compact pill so all three month tabs stay on
+                  one line. Tightening the font, letter-spacing, side padding and
+                  gap takes the row from 482px to 307px, which clears the 320px a
+                  360px-wide Android leaves inside `main`'s padding. Under ~347px
+                  (iPhone SE 1st gen) it wraps again — flexWrap keeps that tidy
+                  rather than overflowing the page.
+                */}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: isNarrow ? 6 : lpScale(10),
+                    marginTop: 24,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {MONTHS.map((m, i) => {
+                    const on = i === monthIdx;
+                    return (
+                      <button
+                        key={m.tab}
+                        type="button"
+                        onClick={() => setMonthIdx(i)}
+                        style={{
+                          cursor: 'pointer',
+                          // Padding scales with the type so the pill grows with its
+                          // label rather than the text crowding a fixed box. The
+                          // compact phone form is left alone — it exists to keep all
+                          // three tabs on one line at 320px (see comment above).
+                          padding: isNarrow ? '6px 8px' : `${lpScale(10)} ${lpScale(20)}`,
+                          borderRadius: 999,
+                          border: `1px solid ${on ? 'rgba(240,201,138,.6)' : 'rgba(75,233,255,.2)'}`,
+                          background: on ? 'rgba(240,201,138,.12)' : 'rgba(8,14,26,.7)',
+                          fontFamily: 'Rajdhani, sans-serif',
+                          fontWeight: 700,
+                          // Was a bare ternary, which the page-wide conversion to
+                          // lpfs() did not match — so these tabs were the last text
+                          // on the page still opted out of --lp-type-scale.
+                          fontSize: lpfs(isNarrow ? 9.5 : 11.5),
+                          letterSpacing: isNarrow ? '.06em' : '.14em',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          color: on ? '#f5e6c4' : '#7f97a8',
+                          transition: 'all .25s ease',
+                        }}
+                      >
+                        {m.tab}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div
+                  key={`month-${String(monthIdx)}`}
+                  style={{
+                    marginTop: 18,
+                    borderRadius: 20,
+                    padding: isMobile ? '22px 20px' : '26px 28px',
+                    background: 'linear-gradient(160deg,rgba(20,31,50,.75),rgba(8,13,24,.75))',
+                    border: '1px solid rgba(240,201,138,.24)',
+                    animation: 'lpSwap .4s ease both',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      gap: 16,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ ...orbitron(18, 700), color: '#eafdff' }}>
+                      {MONTHS[monthIdx]?.title}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: lpfs(11),
+                        letterSpacing: '.16em',
+                        textTransform: 'uppercase',
+                        color: '#6f8a9c',
+                      }}
+                    >
+                      {MONTHS[monthIdx]?.days}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      maxWidth: lpProseW(660),
+                      fontSize: lpfs(14),
+                      fontWeight: 600,
+                      lineHeight: 1.45,
+                      color: '#7f97a8',
+                    }}
+                  >
+                    {t((MONTHS[monthIdx]?.sub ?? '').replace('{quality}', superpower.quality))}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 22,
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                      gap: '14px 34px',
+                    }}
+                  >
+                    {monthMoves.map(({ area, text, color }) => (
+                      <div
+                        key={area.id}
+                        style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}
+                      >
+                        <div
+                          style={{
+                            width: 7,
+                            height: 7,
+                            marginTop: 7,
+                            flexShrink: 0,
+                            borderRadius: '50%',
+                            background: color,
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontSize: lpfs(14),
+                            fontWeight: 600,
+                            lineHeight: 1.45,
+                            color: '#c8dae5',
+                          }}
+                        >
+                          <span style={{ color }}>{area.name}</span> · {text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 24,
+                      paddingTop: 16,
+                      borderTop: '1px solid rgba(75,233,255,.14)',
+                      fontSize: lpfs(14),
+                      fontWeight: 700,
+                      color: '#8fd8e8',
+                    }}
+                  >
+                    {t(MONTHS[monthIdx]?.end ?? '')}
+                  </div>
+                </div>
+              </section>
+
+              {/* ── CTA ──────────────────────────────────────────────────── */}
+              <section
+                style={{
+                  marginTop: isMobile ? 56 : 80,
+                  textAlign: 'center',
+                  animation: 'lpFadeUp .7s ease .45s both',
+                }}
+              >
+                <h2
+                  style={{
+                    margin: '0 auto',
+                    maxWidth: lpProseW(760),
+                    ...orbitron(),
+                    fontSize: 'calc(clamp(19px,2.2vw,26px) * var(--lp-type-scale, 1))',
+                    lineHeight: 1.25,
+                  }}
+                >
+                  {t(COPY.ctaHeadlineA)}
+                  <br />
+                  <span style={{ color: GOLD }}>{t(COPY.ctaHeadlineB)}</span>
+                </h2>
+                <button
+                  type="button"
+                  className="lp-cta"
+                  onClick={handleStartJourney}
+                  style={{
+                    cursor: 'pointer',
+                    marginTop: 26,
+                    padding: '15px 38px',
+                    borderRadius: 999,
+                    border: 'none',
+                    background: `linear-gradient(135deg,${CYAN},${GOLD})`,
+                    ...orbitron(13),
+                    letterSpacing: '.16em',
+                    textTransform: 'uppercase',
+                    color: '#05131a',
+                    boxShadow: '0 0 40px rgba(75,233,255,.4)',
+                  }}
+                >
+                  Start {childName ? `${childName}'s` : 'the'} 90 days
+                </button>
+              </section>
+            </main>
+
+            {/* ── Concern modal ────────────────────────────────────────── */}
             <AnimatePresence>
               {showConcernModal && (
                 <motion.div
                   {...MODAL_BACKDROP}
-                  className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+                  style={{ background: 'rgba(4,6,13,.8)' }}
                   onClick={closeConcernModal}
                   role="presentation"
                 >
@@ -719,13 +1683,21 @@ export default function LifePathway() {
                     role="dialog"
                     aria-modal="true"
                     aria-label="Share your concern"
-                    className="border-edge-strong relative w-full max-w-lg rounded-2xl bg-surface-elevated p-8 pt-12"
+                    className="relative w-full max-w-lg rounded-2xl p-8 pt-12"
+                    style={{
+                      background: 'linear-gradient(160deg,rgba(20,31,50,.96),rgba(8,13,24,.98))',
+                      border: '1px solid rgba(240,201,138,.3)',
+                      boxShadow: '0 30px 90px rgba(2,6,15,.8)',
+                      fontFamily: 'Rajdhani, sans-serif',
+                      color: '#e7f5f9',
+                    }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <button
                       type="button"
                       onClick={closeConcernModal}
-                      className="hover:bg-ghost-strong absolute right-4 top-4 rounded-xl p-2 text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+                      className="absolute right-4 top-4 rounded-xl p-2 transition-colors"
+                      style={{ color: '#7f97a8' }}
                       aria-label="Close dialog"
                     >
                       <X className="h-5 w-5" />
@@ -745,36 +1717,61 @@ export default function LifePathway() {
                           className="space-y-5"
                         >
                           <div className="mb-2 flex items-center gap-3">
-                            <div className="glow-teal-sm flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark text-base">
-                              <Sparkles className="h-5 w-5 text-white" />
+                            <div
+                              className="flex h-11 w-11 items-center justify-center rounded-xl"
+                              style={{
+                                background: `linear-gradient(135deg,${CYAN},${GOLD})`,
+                                boxShadow: '0 0 26px rgba(75,233,255,.35)',
+                              }}
+                            >
+                              <Sparkles className="h-5 w-5" style={{ color: INK }} />
                             </div>
                             <div>
-                              <h3 className="text-lg font-bold text-foreground">One last thing!</h3>
-                              <p className="text-sm text-muted-foreground">
-                                Buddy360 wants to know
+                              <h3 style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
+                                One last thing
+                              </h3>
+                              <p style={{ fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}>
+                                Superpower wants to know
                               </p>
                             </div>
                           </div>
-                          <p className="text-base leading-relaxed text-foreground">
+                          <p style={{ fontSize: lpfs(15), fontWeight: 600, lineHeight: 1.55 }}>
                             Hey{' '}
-                            <span className="font-semibold text-primary">
+                            <span style={{ fontWeight: 700, color: CYAN }}>
                               {user?.full_name?.split(' ')[0] ?? 'there'}
                             </span>
-                            , is there anything that you want Buddy360 to work on currently with
-                            respect to{' '}
-                            <span className="font-semibold text-success-bright">{childName}</span>?
+                            , is there anything you want Superpower to work on right now with{' '}
+                            <span style={{ fontWeight: 700, color: GOLD }}>{childName}</span>?
                           </p>
                           <TextareaWithVoice
                             value={concernInput}
                             onChange={(e) => setConcernInput(e.target.value)}
-                            placeholder={`e.g., I want to improve English speaking skills for ${childName}.`}
-                            className="border-edge-strong min-h-[120px] w-full resize-none rounded-xl bg-section-dark p-4 text-foreground placeholder:text-muted-foreground focus:border-primary/50"
+                            placeholder={`e.g., I want to improve English speaking skills for ${childName || 'my child'}.`}
+                            className="min-h-[120px] w-full resize-none rounded-xl p-4"
+                            style={{
+                              background: 'rgba(4,6,13,.7)',
+                              border: '1px solid rgba(75,233,255,.24)',
+                              color: '#e7f5f9',
+                              fontFamily: 'Rajdhani, sans-serif',
+                              fontWeight: 600,
+                            }}
                           />
                           <div className="flex gap-3">
                             <Button
                               variant="outline"
                               onClick={handleProceedToDashboard}
-                              className="border-edge-strong h-11 flex-1 rounded-xl bg-transparent text-base text-foreground hover:bg-subtle"
+                              className="h-11 flex-1 rounded-xl text-base"
+                              style={{
+                                // Explicit opaque fill rather than relying on `bg-transparent`
+                                // to beat the outline variant's own `bg-background`: those are
+                                // both single-class selectors, so which one wins depends on
+                                // Tailwind's emit order rather than on anything stated here.
+                                background: '#0a111e',
+                                border: '1px solid rgba(75,233,255,.3)',
+                                color: '#9db4c4',
+                                fontFamily: 'Rajdhani, sans-serif',
+                                fontWeight: 700,
+                              }}
                             >
                               Skip for now
                             </Button>
@@ -783,7 +1780,16 @@ export default function LifePathway() {
                                 void handleConcernSubmit();
                               }}
                               disabled={!concernInput.trim()}
-                              className="btn-primary h-11 flex-1 rounded-xl text-base disabled:opacity-40"
+                              className="h-11 flex-1 rounded-xl text-base disabled:opacity-40"
+                              style={{
+                                background: `linear-gradient(135deg,${CYAN},${GOLD})`,
+                                color: '#05131a',
+                                fontFamily: 'Orbitron, sans-serif',
+                                fontWeight: 900,
+                                letterSpacing: '.08em',
+                                fontSize: lpfs(12),
+                                textTransform: 'uppercase',
+                              }}
                             >
                               Submit
                               <ChevronRight className="ml-1 h-4 w-4" />
@@ -798,20 +1804,41 @@ export default function LifePathway() {
                           transition={{ duration: 0.5, ease: 'easeOut' }}
                           className="space-y-6 text-center"
                         >
-                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-success-bright to-primary-medium">
+                          <div
+                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
+                            style={{ background: `linear-gradient(135deg,${CYAN},${GOLD})` }}
+                          >
                             <span className="text-2xl">✅</span>
                           </div>
                           <div>
-                            <h3 className="mb-2 text-lg font-bold text-foreground">Got it!</h3>
-                            <p className="leading-relaxed text-muted-foreground">
-                              I got that. We will work with{' '}
-                              <span className="font-semibold text-success-bright">{childName}</span>{' '}
-                              on the same.
+                            <h3 className="mb-2" style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
+                              Got it
+                            </h3>
+                            <p
+                              style={{
+                                fontSize: lpfs(15),
+                                fontWeight: 600,
+                                lineHeight: 1.55,
+                                color: '#a8c1d1',
+                              }}
+                            >
+                              We will work with{' '}
+                              <span style={{ fontWeight: 700, color: GOLD }}>{childName}</span> on
+                              the same.
                             </p>
                           </div>
                           <Button
                             onClick={handleProceedToDashboard}
-                            className="btn-primary h-11 w-full rounded-xl text-base"
+                            className="h-11 w-full rounded-xl text-base"
+                            style={{
+                              background: `linear-gradient(135deg,${CYAN},${GOLD})`,
+                              color: '#05131a',
+                              fontFamily: 'Orbitron, sans-serif',
+                              fontWeight: 900,
+                              letterSpacing: '.08em',
+                              fontSize: lpfs(12),
+                              textTransform: 'uppercase',
+                            }}
                           >
                             Go to Dashboard
                             <ChevronRight className="ml-2 h-4 w-4" />

@@ -32,7 +32,9 @@ export function personalityLlmSchema() {
           type: 'object',
           properties: {
             name: { type: 'string' },
+            caption: { type: 'string', maxLength: 48 },
           },
+          required: ['name', 'caption'],
         },
         minItems: 2,
         maxItems: 2,
@@ -43,6 +45,21 @@ export function personalityLlmSchema() {
         minItems: 6,
         maxItems: 6,
       },
+      trait_scores: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            score: { type: 'number', minimum: 0, maximum: 100 },
+          },
+          required: ['label', 'score'],
+        },
+        minItems: 4,
+        maxItems: 5,
+      },
+      child_quote: { type: 'string', maxLength: 120 },
+      parent_note: { type: 'string', maxLength: 220 },
     },
     required: [
       'dominant_style',
@@ -53,6 +70,9 @@ export function personalityLlmSchema() {
       'personalized_growth_areas',
       'role_models',
       'strength_summary_bullets',
+      'trait_scores',
+      'child_quote',
+      'parent_note',
     ],
   };
 }

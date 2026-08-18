@@ -83,6 +83,12 @@ const dark = {
   personalityAltStrong: '#6b26d9',
   // Accent
   accentPink: '#ec4699',
+  // Tint tokens — 10/20/25% primary, 10/30% success
+  primarySubtle: 'rgba(62,224,207,0.10)',
+  primaryMuted: 'rgba(62,224,207,0.20)',
+  primaryBorder: 'rgba(62,224,207,0.25)',
+  successSubtle: 'rgba(16,183,127,0.10)',
+  successBorder: 'rgba(16,183,127,0.30)',
 };
 
 module.exports = {
@@ -113,6 +119,9 @@ module.exports = {
           dark: dark.primaryDark,
           stronger: dark.primaryStronger,
           xstrong: dark.primaryXStrong,
+          subtle: dark.primarySubtle,
+          muted: dark.primaryMuted,
+          border: dark.primaryBorder,
         },
 
         secondary: {
@@ -166,6 +175,8 @@ module.exports = {
           bright: dark.successBright,
           strong: dark.successStrong,
           xstrong: dark.successXStrong,
+          subtle: dark.successSubtle,
+          border: dark.successBorder,
         },
 
         // Semantic warning scale

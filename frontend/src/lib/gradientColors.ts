@@ -6,29 +6,13 @@
  * All hardcoded hex values must live here — never inline in components.
  */
 
-/**
- * Area key → single line/dot color for recharts strokes and SVG fills.
- *
- * IMPORTANT: Must stay as hardcoded hex. SVG presentation attributes (stroke,
- * fill) do NOT resolve CSS custom properties — only inline styles do. The hex
- * values match the dark-theme token equivalents and are categorical chart colors
- * that intentionally do not invert in light mode.
- *
- *   life_ambition      → --personality-alt        (violet-500  #8b5cf6)
- *   self_care          → --accent-pink             (pink-500    #ec4899)
- *   critical_thinking  → --info-medium             (blue-500    #3b82f6)
- *   creativity         → --warning-medium          (amber-500   #f59e0b)
- *   physical_wellness  → --success                 (emerald-500 #10b981)
- *   social_skills      → --personality-alt-strong  (violet-600  #7c3aed)
+/*
+ * Per-growth-area chart colours used to live here as AREA_LINE_COLORS, for the
+ * recharts LineChart the Life Pathway page used to draw. That page now derives
+ * area colour from GROWTH_AREAS[].hue (see AREA_HEX in lifePathwayData), which
+ * keeps a single source of truth, and nothing else consumed the map — so it was
+ * removed rather than left as a second, drifting palette.
  */
-export const AREA_LINE_COLORS: Record<string, string> = {
-  life_ambition: '#8b5cf6',
-  self_care: '#ec4899',
-  critical_thinking: '#3b82f6',
-  creativity: '#f59e0b',
-  physical_wellness: '#10b981',
-  social_skills: '#7c3aed',
-};
 
 /** Chart background band fill colors for the 3-month progress chart. */
 export const CHART_BAND_COLORS = [

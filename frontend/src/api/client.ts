@@ -6,6 +6,7 @@ import type {
   GoalsRecord,
   GoalMonthsRecord,
   GoalInsightsRecord,
+  ObservationsRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
   EnqueueJobResponse,
@@ -251,6 +252,18 @@ export const api = {
       }) as Promise<void>,
   },
 
+  observations: {
+    get: (childId: string): Promise<ObservationsRecord> =>
+      request(
+        `/user/observations?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<ObservationsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<ObservationsRecord> =>
+      request(`/user/observations?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<ObservationsRecord>,
+  },
+
   goalInsights: {
     get: (childId: string): Promise<GoalInsightsRecord> =>
       request(
@@ -344,6 +357,24 @@ export const api = {
         }) as Promise<ChildRecord>,
       delete: (id: string): Promise<void> =>
         request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
+      uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
+        const contentType = photo.type || 'image/jpeg';
+        const { upload_url, avatar_url } = (await request(
+          `/children/${encodeURIComponent(id)}/avatar/presign`,
+          { method: 'POST', body: { content_type: contentType } },
+        )) as { upload_url: string; avatar_url: string };
+        // Upload directly to S3 — must include the same Content-Type the presigned
+        // URL was signed with, or S3 will reject the request (signature mismatch).
+        const s3Res = await fetch(upload_url, {
+          method: 'PUT',
+          body: photo,
+          headers: { 'Content-Type': contentType },
+        });
+        if (!s3Res.ok) {
+          throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
+        }
+        return { avatar_url };
+      },
     },
   },
 };

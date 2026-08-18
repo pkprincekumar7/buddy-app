@@ -168,3 +168,108 @@ docker compose up --build
 nginx proxies `/app-assets/*` requests directly to S3.
 
 If `ASSETS_BUCKET_NAME` is not set, image requests fall back to the emoji/gradient tile automatically — no error is thrown.
+
+---
+
+## Uploads bucket (user-generated content)
+
+Child profile photos uploaded during onboarding are stored in a **separate uploads bucket**. Like the assets bucket, the local version is a dedicated manually-managed bucket that is never touched by Terraform.
+
+### Upload and display flow
+
+**Upload (all environments):** The backend generates a presigned S3 PUT URL and the final `avatar_url` (`POST /children/{id}/avatar/presign`). The browser PUTs the file directly to S3 using the presigned URL. The frontend then PATCHes the child record with the returned `avatar_url`. `PutObject` never requires public bucket access.
+
+**Display (local dev):** The local bucket has a public `GetObject` policy on `uploads/*`. Photos are served via a direct S3 URL (`https://{bucket}.s3.{region}.amazonaws.com/uploads/...`). All four Block Public Access settings for the two "public bucket policy" categories are unset.
+
+**Display (deployed — dev/stg/prod):** The bucket has **all four Block Public Access settings ON** — no public access whatsoever. Photos are served through CloudFront via a `/uploads/*` behaviour backed by an OAC-signed origin. The `avatar_url` stored in MongoDB is a CloudFront URL (`https://{app-fqdn}/uploads/...`). Terraform in `infra-live-edge` manages the OAC, the `/uploads/*` behaviour, and the bucket policy granting CloudFront SigV4 read access.
+
+### Local dev environment variables
+
+Set the following in your root `.env` and `backend/.env`:
+
+```env
+UPLOADS_BUCKET_NAME=person-local-uploads-bucket-ap-south-1
+AWS_REGION=ap-south-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
+# Leave UPLOADS_CDN_DOMAIN blank — falls back to direct S3 URL for local bucket
+UPLOADS_CDN_DOMAIN=
+```
+
+In ECS (dev/stg/prod) `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left unset — the ECS task role provides credentials automatically via IMDS. `UPLOADS_CDN_DOMAIN` is set automatically by Terraform to the app's CloudFront FQDN (same as `COOKIE_DOMAIN`).
+
+### Create and configure the local uploads bucket (one-time)
+
+#### a. Create the bucket
+
+1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click **Create bucket**
+2. Set **Bucket name** to `person-local-uploads-bucket-ap-south-1`
+3. Set **AWS Region** to `ap-south-1` (Asia Pacific — Mumbai)
+4. Leave all other settings at their defaults and click **Create bucket**
+
+#### b. Relax Block Public Access and add a bucket policy (GetObject only — local only)
+
+The local bucket needs public `GetObject` so browsers can load photos via direct S3 URLs. **This step is for the local bucket only** — deployed buckets keep all Block Public Access settings ON and use CloudFront OAC instead (managed by Terraform).
+
+1. Click the bucket → **Permissions** tab → **Block public access (bucket settings)** → **Edit**
+2. Uncheck only these two settings:
+   - **Block public access to buckets and objects granted through new public bucket or access point policies**
+   - **Block public and cross-account access to buckets and objects through any public bucket or access point policies**
+3. Leave the top two checkboxes checked (block ACL-based public access — not used here)
+4. Click **Save changes** → type `confirm` → **Confirm**
+5. Scroll to **Bucket policy** → **Edit** and paste the following (replace `<your-bucket-name>` with your actual bucket name):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowPublicGetUploads",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::<your-bucket-name>/uploads/*"
+    }
+  ]
+}
+```
+
+6. Click **Save changes**
+
+#### c. Configure CORS
+
+The browser uploads directly to S3 via presigned URL. Without CORS, the browser blocks the cross-origin PUT request.
+
+1. Still on the **Permissions** tab, scroll to **Cross-origin resource sharing (CORS)** → **Edit**
+2. Paste the following:
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["PUT", "GET"],
+    "AllowedOrigins": ["http://localhost:5173"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+3. Click **Save changes**
+
+> **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. The nginx CSP (`connect-src` and `img-src`) already allows all S3 regions via `https://*.s3.amazonaws.com` and `https://*.s3.*.amazonaws.com` — set in `frontend/nginx.conf` and `frontend/nginx.conf.template`.
+
+#### d. Create the uploads folder
+
+1. Click the bucket → **Objects** tab → **Create folder** → name it `uploads` → **Create folder**
+
+Objects are stored as `uploads/<child_id>/<uuid>.<ext>` — the `child_id` subdirectory is created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
+
+### Deployed bucket setup (one-time, per environment)
+
+For deployed environments (dev/stg/prod), the uploads bucket is also created manually but all access control is managed by Terraform — **do not** relax Block Public Access or add a bucket policy manually. After creating the bucket:
+
+1. Create the bucket in `ap-south-1` with all Block Public Access settings **ON** (the default)
+2. Add the bucket name as the `UPLOADS_BUCKET_NAME_AP_SOUTH_1` GitHub environment secret (already used by `terraform-live-backend.yml` and `terraform-live-edge.yml`)
+3. Apply `infra-live-backend` — sets up CORS (for presigned PUT), lifecycle, and IAM (for presigned URL generation)
+4. Apply `infra-live-edge` — creates the CloudFront OAC, `/uploads/*` behaviour, and bucket policy granting CloudFront SigV4 read access

@@ -692,12 +692,12 @@ Environments used: `dev`, `stg`, `prod`. Each environment needs its own copy of 
 
 Add these to **every** environment that will run CI builds.
 
-| Secret                | Description                                     | Example                                          |
-| --------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `SUBDOMAIN`           | CloudFront subdomain prefix                     | `buddy`                                          |
-| `DOMAIN_NAME`         | Root domain                                     | `learning-dev.com`                               |
-| `GOOGLE_CLIENT_ID`    | Web OAuth 2.0 Client ID (same value as `.env`)  | `491922250866-xxx.apps.googleusercontent.com`    |
-| `ROLE_ARN`            | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
+| Secret               | Description                                     | Example                                          |
+| -------------------- | ----------------------------------------------- | ------------------------------------------------ |
+| `SUBDOMAIN`          | CloudFront subdomain prefix                     | `buddy`                                          |
+| `DOMAIN_NAME`        | Root domain                                     | `learning-dev.com`                               |
+| `GOOGLE_CLIENT_ID`   | Web OAuth 2.0 Client ID (same value as `.env`)  | `491922250866-xxx.apps.googleusercontent.com`    |
+| `ROLE_ARN`           | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
 | `ASSETS_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded    | `buddy360-assets-dev`                            |
 
 **How the API URL is derived at build time:**

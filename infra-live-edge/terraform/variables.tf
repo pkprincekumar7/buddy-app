@@ -63,6 +63,11 @@ variable "assets_bucket_name" {
   type        = string
 }
 
+variable "uploads_bucket_name" {
+  description = "Pre-existing S3 uploads bucket name (backend_region) — holds user-generated content under uploads/; served via CloudFront OAC"
+  type        = string
+}
+
 # -- CloudFront ---------------------------------------------------------------
 # -- JWT ----------------------------------------------------------------------
 variable "jwt_public_keys" {

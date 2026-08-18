@@ -1,10 +1,14 @@
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
+import boto3
+import botocore.exceptions
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel, Field
 from pymongo import ASCENDING, DESCENDING
 
 from app import models
@@ -16,6 +20,7 @@ from app.models_api import (
     ChildPatch,
     ChildResponse,
 )
+from app.settings import settings
 
 # Fields returned by the child-card list view. Heavy sub-documents
 # (personality scores/traits, full recommendations blob) are excluded and
@@ -49,6 +54,29 @@ _CHILD_SYSTEM_FIELDS = {
     "is_deleted",
     "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
 }
+
+# Child fields the Life Pathway milestone cache is generated against. A change to
+# any of them invalidates every cached area — the milestones live on the child's
+# growth_areas documents (CompletedGrowthArea.life_pathway_milestones), so
+# invalidating means clearing that field across them, not touching this document.
+#
+# The generated copy bakes these values in as literal text that cannot be
+# re-resolved after the fact:
+#
+#   age    — milestones are keyed by offset slot (y1…y10) relative to the age at
+#            generation time, so a birthday re-points every slot at a different
+#            year: copy written for "age 11" would render under the "age 12" node.
+#   gender — the model is asked to write he/she/they literally, so cached copy
+#            keeps the old pronoun while the page's own templated copy switches
+#            voice around it, leaving both voices on screen at once.
+#
+# Compared by raw stored value rather than by resolved pronoun voice: mapping
+# gender to a voice here would duplicate copyTokensFor() from
+# frontend/src/lib/growthAreaData.ts, and if the two ever drifted the failure would
+# be a *missed* invalidation — stale pronouns, the bug this exists to prevent.
+# Comparing raw values can only ever over-invalidate (e.g. "Other" → ""), which
+# costs a regeneration rather than showing wrong copy.
+_LIFE_PATHWAY_INPUTS = ("age", "gender")
 
 
 # ---------------------------------------------------------------------------
@@ -204,24 +232,70 @@ async def update_child(
     if clear_pending_vm:
         set_fields.pop("pending_personality_vm", None)
 
+    unset_fields: dict[str, str] = {}
+    if clear_pending_vm:
+        unset_fields["pending_personality_vm"] = ""
+
+    owner_filter = {
+        "_id": child_id,
+        "user_id": user["_id"],
+        "location": user["location"],
+        "is_deleted": False,
+    }
+
+    # Drop the Life Pathway cache when any input it was generated against changes,
+    # so it regenerates lazily against the new values (see _LIFE_PATHWAY_INPUTS).
+    # Keyed off a real change rather than mere presence in the patch: callers
+    # re-send the whole fetched record with these fields unchanged (see
+    # useOnboardingComplete), which must not invalidate anything. One read covers
+    # every input, on the primary-key index.
+    #
+    # The cache lives on this child's growth_areas documents, so this is a
+    # cross-collection clear rather than an $unset on the document being patched.
+    # It runs after the child write below, not here: invalidating first and then
+    # failing to apply the change would throw away good copy for nothing.
+    invalidate_pathway = False
+    touched_inputs = [f for f in _LIFE_PATHWAY_INPUTS if f in set_fields]
+    if touched_inputs:
+        prev = await db[models.CHILDREN].find_one(
+            owner_filter, dict.fromkeys(_LIFE_PATHWAY_INPUTS, 1)
+        )
+        invalidate_pathway = prev is not None and any(
+            prev.get(f) != set_fields[f] for f in touched_inputs
+        )
+
     update_op: dict = {"$set": set_fields}
     if add_to_set_tabs:
         update_op["$addToSet"] = {"visited_tabs": {"$each": add_to_set_tabs}}
-    if clear_pending_vm:
-        update_op["$unset"] = {"pending_personality_vm": ""}
+    if unset_fields:
+        update_op["$unset"] = unset_fields
 
     doc = await db[models.CHILDREN].find_one_and_update(
-        {
-            "_id": child_id,
-            "user_id": user["_id"],
-            "location": user["location"],
-            "is_deleted": False,
-        },
+        owner_filter,
         update_op,
         return_document=True,
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    if invalidate_pathway:
+        # Every area at once: the inputs are child-level, so no area's cached copy
+        # survives a change to them. Areas with nothing cached simply match nothing
+        # to unset. Failure here is non-fatal — the patch itself has landed, and the
+        # cost is stale milestone copy rather than a lost edit, so it is logged and
+        # left rather than 500ing a successful profile update.
+        try:
+            await db[models.GROWTH_AREAS].update_many(
+                {
+                    "user_id": user["_id"],
+                    "child_id": child_id,
+                    "location": user["location"],
+                },
+                {"$unset": {"life_pathway_milestones": ""}},
+            )
+        except Exception:
+            log.exception("life pathway cache invalidation failed child_id=%s", child_id)
+
     return _child_to_api(doc)
 
 
@@ -254,3 +328,99 @@ async def delete_child(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Child not found")
+
+
+# ---------------------------------------------------------------------------
+# Avatar presign
+# ---------------------------------------------------------------------------
+
+_ALLOWED_CONTENT_TYPES: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+# Lazily initialised on first presign request (region not available at import time).
+# Reused across requests to avoid creating a new connection pool per call.
+_s3_client: Any | None = None
+
+
+def _get_s3_client(region: str) -> Any:
+    global _s3_client
+    if _s3_client is None:
+        _s3_client = boto3.client("s3", region_name=region)
+    return _s3_client
+
+
+class AvatarPresignRequest(BaseModel):
+    content_type: str = Field(max_length=100)
+
+
+class AvatarPresignResponse(BaseModel):
+    upload_url: str
+    avatar_url: str
+
+
+@router.post(
+    "/children/{child_id}/avatar/presign",
+    response_model=AvatarPresignResponse,
+    description=(
+        "Generate a presigned S3 PUT URL for uploading a child avatar photo. "
+        "The client uploads directly to S3 using this URL, then PATCHes the child "
+        "with the returned avatar_url."
+    ),
+)
+@user_limiter.limit("20/minute")
+async def presign_child_avatar(
+    request: Request,
+    child_id: str = Path(..., min_length=1, max_length=100),
+    payload: AvatarPresignRequest = Body(...),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    if not settings.uploads_bucket_name or not settings.aws_region:
+        raise HTTPException(
+            status_code=503,
+            detail="File upload is not configured on this server (UPLOADS_BUCKET_NAME / AWS_REGION not set).",
+        )
+
+    if payload.content_type not in _ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported image type. Allowed: {', '.join(sorted(_ALLOWED_CONTENT_TYPES))}",
+        )
+
+    doc = await db[models.CHILDREN].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+    ext = _ALLOWED_CONTENT_TYPES[payload.content_type]
+    bucket = settings.uploads_bucket_name
+    region = settings.aws_region
+    key = f"uploads/{child_id}/{uuid.uuid4()}.{ext}"
+
+    try:
+        s3 = _get_s3_client(region)
+        loop = asyncio.get_running_loop()
+        upload_url: str = await loop.run_in_executor(
+            None,
+            lambda: s3.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": bucket, "Key": key, "ContentType": payload.content_type},
+                ExpiresIn=300,
+            ),
+        )
+    except (botocore.exceptions.BotoCoreError, botocore.exceptions.ClientError) as exc:
+        log.warning("avatar.presign.s3_error child=%s: %s", child_id, exc)
+        raise HTTPException(
+            status_code=502, detail="Failed to generate upload URL. Please try again."
+        ) from exc
+
+    cdn = settings.uploads_cdn_domain
+    avatar_url = (
+        f"https://{cdn}/{key}" if cdn else f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+    )
+    return AvatarPresignResponse(upload_url=upload_url, avatar_url=avatar_url)

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 import ChildCard from '@/components/shared/ChildCard';
@@ -109,11 +109,9 @@ export default function Home() {
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
   const handleStartJourney = () => {
-    navigate('/Onboarding');
+    void navigate('/Onboarding');
   };
 
-  // "Continue Your Journey" routes to /Onboarding/:childId so the child is identified
-  // in the URL and survives a page refresh on the Onboarding page.
   // TO ENABLE MULTIPLE CHILDREN: replace children[0] with the child the user selected.
   const firstChild = children[0]?.id ? children[0] : null;
 
@@ -169,12 +167,12 @@ export default function Home() {
               capable individual.
             </p>
 
-            <div className="flex flex-col justify-center gap-4 sm:flex-row">
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               {children.length === 0 ? (
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Start Your Journey
@@ -187,9 +185,9 @@ export default function Home() {
                 <Button
                   size="xl"
                   onClick={() =>
-                    navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
+                    void navigate(firstChild ? `/Onboarding/${firstChild.id}` : '/Onboarding')
                   }
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   Continue Your Journey
@@ -268,7 +266,9 @@ export default function Home() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                    onClick={() => {
+                      void navigate('/Onboarding', { state: { forceNew: true } });
+                    }}
                     disabled={children.length >= 10}
                     className="rounded-xl"
                   >
@@ -286,7 +286,9 @@ export default function Home() {
                   No children yet.{' '}
                   <button
                     className="text-primary underline underline-offset-2"
-                    onClick={() => navigate('/Onboarding', { state: { forceNew: true } })}
+                    onClick={() => {
+                      void navigate('/Onboarding', { state: { forceNew: true } });
+                    }}
                   >
                     Add your first child
                   </button>{' '}
@@ -426,7 +428,7 @@ export default function Home() {
                 <Button
                   size="xl"
                   onClick={handleStartJourney}
-                  className="btn-primary rounded-2xl transition-all duration-200"
+                  className="btn-primary rounded-full transition-all duration-200"
                 >
                   Get Started Free
                   <ArrowRight className="ml-2 h-4 w-4" />

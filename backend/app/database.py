@@ -47,6 +47,15 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
     )
 
+    # observations: single-document-per-child, keyed by child_id — same shape as
+    # goals and goal_insights above, and indexed the same way. There is no
+    # child_id FIELD here because _id IS the child id; a separate field would
+    # duplicate the primary key and could drift from it. The only user_id-scoped
+    # op is delete_many in delete_account, which is rare and acceptable unindexed.
+    await db["observations"].create_index(
+        [("location", ASCENDING), ("_id", ASCENDING)], unique=True
+    )
+
     await db["goal_months"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     # Uniqueness guard for the (child, month) pair, also the primary lookup index
     # for GET /user/goal-months (filters on location + child_id + user_id).

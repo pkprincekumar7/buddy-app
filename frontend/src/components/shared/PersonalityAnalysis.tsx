@@ -39,6 +39,7 @@ export const personalityCategories: Record<string, PersonalityCategory> = {
 interface FamousPerson {
   name: string;
   image?: string;
+  caption?: string;
 }
 
 interface PersonalityTypeEntry {
@@ -60,18 +61,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Goal-oriented', 'Driven', 'Competitive', 'Persistent', 'Forward-thinking'],
     description:
       '{childName} sets high standards, aims big, and is motivated by achieving success. They connect effort today with future goals and are energized by challenges.',
-    famous_people: [
-      {
-        name: 'Serena Williams',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Serena_Williams_2013.jpg/220px-Serena_Williams_2013.jpg',
-      },
-      {
-        name: 'Elon Musk',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Elon_Musk_Royal_Society_%28crop2%29.jpg/220px-Elon_Musk_Royal_Society_%28crop2%29.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Serena Williams' }, { name: 'Elon Musk' }],
     color: 'from-error-medium to-accent-pink',
     strengths: ['Persistence', 'High standards', 'Focus on goals', 'Motivation'],
     growth_areas: ['Patience', 'Managing stress', 'Flexibility in approach'],
@@ -82,18 +72,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Focused', 'Hardworking', 'Resilient', 'Patient', 'Goal-oriented'],
     description:
       '{childName} shows strong persistence, continues even in the face of difficulty, and is motivated to finish what they start.',
-    famous_people: [
-      {
-        name: 'Thomas Edison',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9d/Thomas_Edison2.jpg/220px-Thomas_Edison2.jpg',
-      },
-      {
-        name: 'Malala Yousafzai',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0a/Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg/220px-Malala_Yousafzai_at_Girl_Summit_2014-_cropped.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Thomas Edison' }, { name: 'Malala Yousafzai' }],
     color: 'from-warning-orange-medium to-error-strong',
     strengths: ['Persistence', 'Goal completion', 'Hard work', 'Motivation under pressure'],
     growth_areas: ['Flexibility', 'Handling setbacks calmly', 'Seeking help when needed'],
@@ -104,18 +83,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Friendly', 'Sociable', 'Confident', 'Energetic', 'Engaging'],
     description:
       '{childName} thrives in social settings, enjoys meeting new people, and energizes others through their presence and enthusiasm.',
-    famous_people: [
-      {
-        name: 'Oprah Winfrey',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Oprah_in_2014.jpg/220px-Oprah_in_2014.jpg',
-      },
-      {
-        name: 'Will Smith',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Will_Smith_2011.jpg/220px-Will_Smith_2011.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Oprah Winfrey' }, { name: 'Will Smith' }],
     color: 'from-warning to-warning-orange',
     strengths: ['Networking', 'Communication', 'Confidence', 'Positive energy'],
     growth_areas: ['Listening skills', 'Sensitivity to introverts', 'Managing overstimulation'],
@@ -126,18 +94,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Imaginative', 'Inventive', 'Curious', 'Expressive', 'Resourceful'],
     description:
       '{childName} enjoys creating, imagining new possibilities, and finding unique solutions. They are inspired by self-expression and novel ideas.',
-    famous_people: [
-      {
-        name: 'Leonardo da Vinci',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Leonardo_self.jpg/220px-Leonardo_self.jpg',
-      },
-      {
-        name: 'Frida Kahlo',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg/220px-Frida_Kahlo%2C_by_Guillermo_Kahlo.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Leonardo da Vinci' }, { name: 'Frida Kahlo' }],
     color: 'from-personality-light to-accent-pink',
     strengths: ['Imagination', 'Problem-solving', 'Adaptability', 'Artistic skills'],
     growth_areas: ['Practical implementation', 'Time management', 'Accepting criticism'],
@@ -148,18 +105,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Excitable', 'Optimistic', 'Eager', 'Passionate', 'Energetic'],
     description:
       '{childName} approaches new experiences with eagerness, expresses joy openly, and brings energy to their surroundings.',
-    famous_people: [
-      {
-        name: 'Robin Williams',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg',
-      },
-      {
-        name: 'Ellen DeGeneres',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/Ellen_DeGeneres_2011.jpg/220px-Ellen_DeGeneres_2011.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Robin Williams' }, { name: 'Ellen DeGeneres' }],
     color: 'from-success-bright to-warning-medium',
     strengths: ['Positive energy', 'Motivation', 'Inspiration to others', 'Optimism'],
     growth_areas: ['Focusing energy', 'Patience', 'Managing disappointment'],
@@ -170,18 +116,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Curious', 'Impatient', 'Varied interests', 'Energetic', 'Quick-moving'],
     description:
       '{childName} prefers variety and fast-paced activities, seeks new experiences, and gets bored when things are slow or repetitive.',
-    famous_people: [
-      {
-        name: 'Richard Branson',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0c/Richard_Branson_2011.jpg/220px-Richard_Branson_2011.jpg',
-      },
-      {
-        name: 'Bear Grylls',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Bear_Grylls_at_the_Webby_Awards.jpg/220px-Bear_Grylls_at_the_Webby_Awards.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Richard Branson' }, { name: 'Bear Grylls' }],
     color: 'from-warning-orange to-error-medium',
     strengths: ['Adaptability', 'Energy', 'Variety-seeking', 'Quick learning'],
     growth_areas: ['Patience', 'Long-term focus', 'Consistency'],
@@ -192,18 +127,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Active', 'Vibrant', 'Enthusiastic', 'Persistent', 'Alert'],
     description:
       '{childName} has a high energy level, enjoys being active, and can engage in multiple activities with stamina and vitality.',
-    famous_people: [
-      {
-        name: 'Serena Williams',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Serena_Williams_2013.jpg/220px-Serena_Williams_2013.jpg',
-      },
-      {
-        name: 'Dwayne Johnson',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Dwayne_Johnson_2014.jpg/220px-Dwayne_Johnson_2014.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Serena Williams' }, { name: 'Dwayne Johnson' }],
     color: 'from-error-medium to-warning-medium',
     strengths: ['Stamina', 'Multitasking', 'Enthusiasm', 'Persistence'],
     growth_areas: ['Rest and recovery', 'Focus', 'Patience with slower activities'],
@@ -214,18 +138,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Curious', 'Analytical', 'Observant', 'Thoughtful', 'Problem-solver'],
     description:
       '{childName} enjoys thinking deeply, solving problems, asking questions, and reflecting on experiences.',
-    famous_people: [
-      {
-        name: 'Albert Einstein',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Albert_Einstein_Head.jpg/220px-Albert_Einstein_Head.jpg',
-      },
-      {
-        name: 'Marie Curie',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Marie_Curie_c1920.jpg/220px-Marie_Curie_c1920.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Albert Einstein' }, { name: 'Marie Curie' }],
     color: 'from-info to-personality-alt-strong',
     strengths: ['Analytical thinking', 'Problem-solving', 'Curiosity', 'Reflection'],
     growth_areas: ['Action-taking', 'Practical application', 'Social interaction'],
@@ -236,18 +149,7 @@ export const personalityTypes: Record<string, PersonalityTypeEntry> = {
     traits: ['Joyful', 'Silly', 'Energetic', 'Curious', 'Spontaneous'],
     description:
       '{childName} brings fun and joy to situations, enjoys games and surprises, and approaches life with a light-hearted spirit.',
-    famous_people: [
-      {
-        name: 'Jim Carrey',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Jim_Carrey_2011.jpg/220px-Jim_Carrey_2011.jpg',
-      },
-      {
-        name: 'Robin Williams',
-        image:
-          'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Robin_Williams_2011a_%282%29.jpg/220px-Robin_Williams_2011a_%282%29.jpg',
-      },
-    ],
+    famous_people: [{ name: 'Jim Carrey' }, { name: 'Robin Williams' }],
     color: 'from-accent-pink to-personality',
     strengths: ['Humor', 'Joy', 'Creativity', 'Social engagement'],
     growth_areas: ['Focus', 'Handling serious tasks', 'Patience'],
@@ -388,26 +290,6 @@ export function calculateMBTI(data: CalculateMbtiData) {
 export const PERSONALITY_TYPE_KEYS = Object.keys(personalityTypes);
 const PERSONALITY_CATEGORY_KEYS = ['motivators', 'socializers', 'creatives', 'adventurers'];
 
-interface RoleModel {
-  name?: unknown;
-  [key: string]: unknown;
-}
-
-function roleModelAvatars(roleModels: unknown, fallbackName: string | undefined): FamousPerson[] {
-  const list: RoleModel[] = Array.isArray(roleModels) ? (roleModels as RoleModel[]) : [];
-  const two = [...list.slice(0, 2)];
-  while (two.length < 2) {
-    two.push({ name: two.length === 0 ? (fallbackName ?? 'Role model A') : 'Role model B' });
-  }
-  return two.map((r) => {
-    const nm = typeof r?.name === 'string' && r.name.trim() ? r.name.trim() : 'Guide';
-    return {
-      name: nm,
-      image: generateAvatarDataUri(nm),
-    };
-  });
-}
-
 interface AiPersonalityInput {
   dominant_style?: unknown;
   personality_category?: unknown;
@@ -417,6 +299,9 @@ interface AiPersonalityInput {
   personalized_growth_areas?: unknown;
   role_models?: unknown;
   secondary_styles?: unknown;
+  trait_scores?: unknown;
+  child_quote?: unknown;
+  parent_note?: unknown;
 }
 
 /**
@@ -467,7 +352,7 @@ export function adaptAiPersonalityToViewModel(
       ? (gaRaw as unknown[]).map((t) => String(t)).filter(Boolean)
       : base.growth_areas;
 
-  const famous_people = roleModelAvatars(ai?.role_models, safeName);
+  const famous_people = base.famous_people ?? [];
 
   const scoresBase: Record<string, number> = PERSONALITY_TYPE_KEYS.reduce(
     (acc, key) => {
@@ -488,6 +373,25 @@ export function adaptAiPersonalityToViewModel(
     if (!scoresBase[sty] || (scoresBase[sty] ?? 0) < clamped) scoresBase[sty] = clamped;
   }
 
+  const traitScoresRaw = ai?.trait_scores;
+  const trait_scores =
+    Array.isArray(traitScoresRaw) && traitScoresRaw.length > 0
+      ? (traitScoresRaw as unknown[])
+          .map((t) => {
+            const item = t as Record<string, unknown>;
+            return {
+              label: String((item?.label as string) ?? ''),
+              score: Number(item?.score ?? 0),
+            };
+          })
+          .filter((t) => t.label)
+      : [];
+
+  const child_quote =
+    typeof ai?.child_quote === 'string' && ai.child_quote.trim() ? ai.child_quote.trim() : '';
+  const parent_note =
+    typeof ai?.parent_note === 'string' && ai.parent_note.trim() ? ai.parent_note.trim() : '';
+
   const profile = {
     ...base,
     category: categoryKey,
@@ -497,6 +401,9 @@ export function adaptAiPersonalityToViewModel(
     famous_people,
     strengths,
     growth_areas,
+    trait_scores,
+    child_quote,
+    parent_note,
   };
 
   return {

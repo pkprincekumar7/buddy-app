@@ -1,38 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
-import { EmojiText } from '@/components/ui/EmojiText';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, Pressable } from 'react-native';
 import { ChevronLeft } from 'lucide-react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-} from 'react-native-reanimated';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
-import type { RouteProp } from '@react-navigation/native';
 import type { OnboardingStackParamList } from '@/navigation';
 import { navigateTo } from '@/lib/navigationRef';
-import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTheme } from '@/lib/ThemeContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
-import StartOverButton from '@/components/shared/StartOverButton';
-import PageActions from '@/components/shared/PageActions';
 
-type ConversationalOnboardingNavigationProp = StackNavigationProp<
+// Deep navy background matching web's var(--bg-deep-3)
+const DEEP_NAVY = '#080c18';
+
+type ConversationalOnboardingNavProp = StackNavigationProp<
   OnboardingStackParamList,
   'ConversationalOnboarding'
 >;
-type ConversationalOnboardingRouteProp = RouteProp<
-  OnboardingStackParamList,
-  'ConversationalOnboarding'
->;
+
+const TOTAL_CHAT_STEPS = 8;
 
 export default function ConversationalOnboardingScreen() {
-  const navigation = useNavigation<ConversationalOnboardingNavigationProp>();
-  const _route = useRoute<ConversationalOnboardingRouteProp>();
+  const navigation = useNavigation<ConversationalOnboardingNavProp>();
   const { colors } = useTheme();
   const { activeChildId: childId } = useAuth();
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -41,16 +32,19 @@ export default function ConversationalOnboardingScreen() {
   );
   const [hasPersonality, setHasPersonality] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  // bootKey is a static mount key for the chat component; held as a constant since it never changes.
+  const [chatStep, setChatStep] = useState(0);
   const bootKey = 0;
 
-  const pageOpacity = useSharedValue(1);
-  const pageStyle = useAnimatedStyle(() => ({ opacity: pageOpacity.value }));
+  // phase-1 fill: mirrors web's Math.round((displayStep / TOTAL_CHAT_STEPS) * 100)
+  const phase1Progress = Math.min(
+    100,
+    Math.round(((chatStep + 1) / TOTAL_CHAT_STEPS) * 100),
+  );
 
   useEffect(() => {
     if (isLoading) return;
     if (!isAuthenticated) {
-      navigation.navigate('Onboarding');
+      navigation.navigate('OnboardingWelcome');
       return;
     }
     if (!childId) {
@@ -69,7 +63,6 @@ export default function ConversationalOnboardingScreen() {
           return;
         }
 
-        // Preload existing data — no auto-redirect forward even if personality is ready.
         const viewModel = (child as Record<string, unknown>).personality as
           | Record<string, unknown>
           | undefined;
@@ -102,10 +95,7 @@ export default function ConversationalOnboardingScreen() {
             ...mergedDraft,
             onboarding_phase: 2,
             onboarding_completed: false,
-            ...(!hasPersonality && {
-              personality: null,
-              recommendations: null,
-            }),
+            ...(!hasPersonality && { personality: null }),
           });
         }
       } catch (err) {
@@ -114,8 +104,6 @@ export default function ConversationalOnboardingScreen() {
           err,
         );
       }
-      // Navigate into the Personality tab's PersonalityType screen so the
-      // full onboarding flow mirrors the web (Chat → Personality Analysis → Journey).
       navigateTo('Main', {
         screen: 'Personality',
         params: {
@@ -128,135 +116,201 @@ export default function ConversationalOnboardingScreen() {
   );
 
   return (
-    // Outer wrapper holds both the page and the absolute-positioned splash overlay
-    <View style={{ flex: 1 }}>
-      {/* Page content — opacity 0 while splash shows, fades to 1 when splash is done.
-          Page content wrapper */}
-      <Animated.View style={[{ flex: 1 }, pageStyle]}>
-        {isLoading || !hydrated ? (
+    <View style={{ flex: 1, backgroundColor: DEEP_NAVY }}>
+      {isLoading || !hydrated ? (
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <ActivityIndicator size="large" color="#3c83f6" />
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
+          {/* Progress bar — numbered stepper matching web OnboardingProgressHeader */}
           <View
-            className="flex-1 items-center justify-center"
-            style={{ backgroundColor: colors.background }}
+            style={{
+              borderBottomWidth: 1,
+              borderColor: '#1e293b',
+              backgroundColor: '#0d1525',
+            }}
           >
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <View
-            className="flex-1"
-            style={{ backgroundColor: colors.background }}
-          >
-            {/* Progress indicator — fixed at top */}
-            <View
-              className="border-b px-4 py-3 z-40"
-              style={{
-                borderColor: colors.border,
-                backgroundColor: colors.card,
-              }}
-            >
-              <View className="flex-row items-center justify-between gap-2">
-                {[
-                  { label: 'Getting to Know', icon: '💬', active: true },
-                  { label: 'Personality Analysis', icon: '⭐', active: false },
-                  { label: 'Your Journey', icon: '💡', active: false },
-                ].map(phase => (
-                  <View
-                    key={phase.label}
-                    className={`flex-row items-center gap-2 rounded-xl px-3 py-2 flex-1 border ${
-                      phase.active ? '' : 'opacity-50'
-                    }`}
-                    style={
-                      phase.active
-                        ? {
-                            borderColor: colors.primary + '40',
-                            backgroundColor: colors.primary + '1A',
-                          }
-                        : {
-                            backgroundColor: colors.inactiveSurface,
-                            borderColor: colors.border,
-                          }
-                    }
-                  >
-                    <EmojiText size="base">{phase.icon}</EmojiText>
-                    <Text
-                      className="text-xs font-medium flex-shrink-1"
-                      style={{
-                        color: phase.active ? colors.primary : colors.iconColor,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {phase.label}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* Chat — fills all remaining vertical space so its internal ScrollView
-                is constrained and the "Continue" button stays pinned at the bottom.
-                No outer ScrollView here: scrolling belongs only inside the chat. */}
             <View
               style={{
-                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
                 paddingHorizontal: 16,
-                paddingTop: 16,
+                paddingTop: 12,
                 paddingBottom: 8,
               }}
             >
-              <ConversationalOnboardingChat
-                key={bootKey}
-                user={user}
-                activeChildId={childId}
-                resumeHydrationReady={hydrated}
-                onComplete={handleComplete}
-                onContinueToPersonality={() => {
-                  void handleComplete({});
-                }}
-                onQuestionnairePersisted={slice =>
-                  setChildData(prev =>
-                    mergeChildDraft({ ...(prev ?? {}), ...slice }),
-                  )
-                }
-                onQuestionnaireCleared={() => setChildData(null)}
-              />
-            </View>
-
-            {/* Back + Start Over — fixed at the bottom, never scrolls */}
-            <View
-              className="px-4 pb-6 pt-3 border-t"
-              style={{ borderColor: colors.border }}
-            >
-              <PageActions
-                left={
-                  <Button
-                    size="xl"
-                    variant="outline"
-                    onPress={() =>
-                      navigation.navigate('Onboarding', { fromBack: true })
-                    }
-                    className="w-full rounded-2xl"
+              {[
+                {
+                  num: 1,
+                  label: 'Getting to Know',
+                  active: true,
+                  progress: phase1Progress,
+                },
+                {
+                  num: 2,
+                  label: 'Personality Analysis',
+                  active: false,
+                  progress: 0,
+                },
+                { num: 3, label: 'Your Journey', active: false, progress: 0 },
+              ].map((phase, i, arr) => {
+                const isLast = i === arr.length - 1;
+                return (
+                  <View
+                    key={phase.label}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      ...(isLast
+                        ? { flexGrow: 0, flexShrink: 0 }
+                        : { flex: phase.active ? 2 : 1 }),
+                    }}
                   >
-                    <View className="flex-row items-center gap-1.5">
-                      <ChevronLeft size={16} color={colors.textMuted} />
+                    <View
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        ...(phase.active
+                          ? { backgroundColor: colors.primary }
+                          : {
+                              backgroundColor: 'rgba(255,255,255,0.06)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.12)',
+                            }),
+                      }}
+                    >
                       <Text
-                        className="text-base font-medium"
-                        style={{ color: colors.textMuted }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '700',
+                          color: phase.active
+                            ? colors.primaryForeground
+                            : 'rgba(255,255,255,0.35)',
+                        }}
                       >
-                        Back
+                        {phase.num}
                       </Text>
                     </View>
-                  </Button>
-                }
-                center={
-                  <StartOverButton
-                    childId={childId ?? undefined}
-                    className="w-full"
-                  />
-                }
-              />
+                    {phase.active && (
+                      <Text
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 12,
+                          fontWeight: '500',
+                          color: 'rgba(255,255,255,0.8)',
+                          flexShrink: 1,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {phase.label}
+                      </Text>
+                    )}
+                    {!isLast && (
+                      <View
+                        style={{
+                          flex: 1,
+                          height: 2,
+                          marginHorizontal: 12,
+                          minWidth: 24,
+                          borderRadius: 1,
+                          backgroundColor: 'rgba(255,255,255,0.08)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {phase.active && (
+                          <View
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              bottom: 0,
+                              left: 0,
+                              width: `${Math.max(2, phase.progress)}%`,
+                              backgroundColor: colors.primary,
+                            }}
+                          />
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           </View>
-        )}
-      </Animated.View>
+
+          {/* Step label — mirrors web's "GETTING TO KNOW · STEP X / Y" below the stepper */}
+          <Text
+            style={{
+              fontSize: 10,
+              fontWeight: '600',
+              letterSpacing: 2.5,
+              color: 'rgba(255,255,255,0.4)',
+              textTransform: 'uppercase',
+              paddingHorizontal: 16,
+              paddingTop: 8,
+              paddingBottom: 4,
+            }}
+          >
+            {`GETTING TO KNOW · STEP ${chatStep + 1} / ${TOTAL_CHAT_STEPS}`}
+          </Text>
+
+          {/* Back button — mirrors web's ghost Back button in content area */}
+          <View
+            style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}
+          >
+            <Pressable
+              onPress={() =>
+                navigation.navigate('OnboardingWelcome', { fromBack: true })
+              }
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                opacity: pressed ? 0.6 : 1,
+                alignSelf: 'flex-start',
+              })}
+            >
+              <ChevronLeft size={16} color="rgba(255,255,255,0.5)" />
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: 'rgba(255,255,255,0.5)',
+                  fontWeight: '500',
+                }}
+              >
+                Back
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Chat — fills all remaining space; no outer ScrollView here */}
+          <View style={{ flex: 1 }}>
+            <ConversationalOnboardingChat
+              key={bootKey}
+              user={user}
+              activeChildId={childId}
+              resumeHydrationReady={hydrated}
+              onComplete={handleComplete}
+              onContinueToPersonality={() => {
+                void handleComplete({});
+              }}
+              onQuestionnairePersisted={slice =>
+                setChildData(prev =>
+                  mergeChildDraft({ ...(prev ?? {}), ...slice }),
+                )
+              }
+              onQuestionnaireCleared={() => setChildData(null)}
+              onStepChange={setChatStep}
+            />
+          </View>
+        </View>
+      )}
     </View>
   );
 }

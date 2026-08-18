@@ -114,3 +114,28 @@ export interface CompletedGrowthAreasRecord {
   areas?: CompletedArea[];
   [key: string]: unknown;
 }
+
+export interface AdminUserRecord {
+  id: string;
+  email?: string;
+  full_name?: string;
+  locked: boolean;
+  location?: string;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+export interface AllowedEmailRecord {
+  email: string;
+  added_at: string | null;
+}
+
+export interface AllowedEmailsPage {
+  items: AllowedEmailRecord[];
+  total: number;
+}
+
+export interface AdminUsersPage {
+  items: AdminUserRecord[];
+  total: number;
+}

@@ -46,6 +46,12 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   origin {
+    origin_id                = "s3-backend-uploads"
+    domain_name              = data.aws_s3_bucket.backend_uploads.bucket_regional_domain_name
+    origin_access_control_id = aws_cloudfront_origin_access_control.backend_uploads.id
+  }
+
+  origin {
     origin_id   = "alb-backend"
     domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
 
@@ -84,6 +90,23 @@ resource "aws_cloudfront_distribution" "frontend" {
   ordered_cache_behavior {
     path_pattern           = "/app-assets/*"
     target_origin_id       = "s3-backend-assets"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id            = local.cache_policy_optimized
+    origin_request_policy_id   = local.origin_request_cors_s3
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
+  }
+
+  # -- /uploads/* behaviour: user-generated photos from uploads S3 bucket -----
+  # No Lambda@Edge (no auth check needed — photos are semi-public once uploaded).
+  # Uses the same caching and CORS policy as /app-assets/*.
+
+  ordered_cache_behavior {
+    path_pattern           = "/uploads/*"
+    target_origin_id       = "s3-backend-uploads"
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]

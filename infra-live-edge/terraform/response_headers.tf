@@ -19,7 +19,9 @@
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
-#                                               to the ALB; Google OAuth token exchange.
+#                + uploads bucket (global and    to the ALB; Google OAuth token exchange.
+#                  regional S3 endpoints)       — presigned PUT for child avatar upload;
+#                                               boto3 may emit either endpoint form.
 #   frame-src   accounts.google.com           — GSI "Sign in with Google" button renders
 #                                               as a sandboxed iframe from Google.
 #   frame-ancestors 'none'                    — prevent this SPA from being embedded in
@@ -68,7 +70,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
         "img-src 'self' data: https:",
         "font-src 'self' data:",
-        "connect-src 'self' https://accounts.google.com",
+        "connect-src 'self' https://accounts.google.com https://${var.uploads_bucket_name}.s3.amazonaws.com https://${var.uploads_bucket_name}.s3.${var.backend_region}.amazonaws.com",
         "frame-src https://accounts.google.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",

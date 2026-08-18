@@ -80,6 +80,8 @@ jobs:
       TF_VAR_assets_bucket_name:       ${{ secrets.ASSETS_BUCKET_NAME }}
       TF_VAR_jwt_public_keys:          ${{ secrets.JWT_PUBLIC_KEYS }}
       TF_VAR_global_logging_bucket_name: ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
+      # TF_VAR_uploads_bucket_name is not set here — it is region-specific and
+      # written to GITHUB_ENV by the "Resolve uploads bucket name" step below.
 
     steps:
       - name: Checkout
@@ -96,6 +98,7 @@ jobs:
           ACM_CERTIFICATE_ARN_US_EAST_1: ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
           SPA_BUCKET_NAME:               ${{ secrets.SPA_BUCKET_NAME }}
           ASSETS_BUCKET_NAME:            ${{ secrets.ASSETS_BUCKET_NAME }}
+          UPLOADS_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
           JWT_PUBLIC_KEYS:               ${{ secrets.JWT_PUBLIC_KEYS }}
           GLOBAL_LOGGING_BUCKET_NAME:    ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
         run: |
@@ -109,6 +112,7 @@ jobs:
           [[ -z "$ACM_CERTIFICATE_ARN_US_EAST_1" ]] && missing+=("ACM_CERTIFICATE_ARN_US_EAST_1")
           [[ -z "$SPA_BUCKET_NAME"               ]] && missing+=("SPA_BUCKET_NAME")
           [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
+          [[ "${{ inputs.backend_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
           [[ -z "$JWT_PUBLIC_KEYS"               ]] && missing+=("JWT_PUBLIC_KEYS")
           # GLOBAL_LOGGING_BUCKET_NAME required on prod (CloudTrail us-east-1 + WAF logging)
           if [[ "${{ inputs.environment }}" == "prod" && -z "$GLOBAL_LOGGING_BUCKET_NAME" ]]; then
@@ -126,6 +130,15 @@ jobs:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: terraform-live-edge-${{ inputs.environment }}
           aws-region: us-east-1
+
+      - name: Resolve uploads bucket name
+        env:
+          UPLOADS_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
+        run: |
+          case "${{ inputs.backend_region }}" in
+            ap-south-1) echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_AP_SOUTH_1" >> "$GITHUB_ENV" ;;
+            *) echo "ERROR: No uploads bucket configured for region '${{ inputs.backend_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
+          esac
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4.0.1

@@ -17,14 +17,14 @@ const InputWithVoice = forwardRef<HTMLInputElement, InputWithVoiceProps>(
     };
 
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-1 items-center gap-2">
         <Input
           ref={ref}
           value={value}
           onChange={onChange}
           placeholder={isRecording ? 'Listening...' : placeholder}
           disabled={isRecording}
-          className={className}
+          className={`w-full ${className ?? ''}`}
           {...props}
         />
         <VoiceInput

@@ -86,6 +86,28 @@ class CompletedGrowthArea(BaseModel):
     # Staging field written by the generate_activity worker before the client
     # finalises child_activity on the domain document.
     pending_child_activity: dict | None = None
+    # The two question sets this area was actually presented with, generated once
+    # per child per area and then reused for good. Written only by the
+    # generate_growth_parent_questions / generate_growth_child_rounds workers —
+    # append_completed_growth_area writes an explicit field allowlist, so a client
+    # cannot reach them.
+    #
+    # They sit alongside `answers` and `child_activity.selections` on purpose:
+    # those hold responses keyed by ids derived positionally from these sets, so
+    # splitting the two apart would leave answers whose wording lives elsewhere.
+    # Both must be declared here or _doc_to_growth_area, which constructs this
+    # model field by field, would silently drop them from every response.
+    parent_questions: dict | None = None
+    child_rounds: dict | None = None
+    # Life Pathway milestone narrative for this area, written by the
+    # generate_life_pathway worker. Lives here rather than on the child document
+    # because it is per-area content built from this document's own answers and
+    # recommendations — and because the child document is fetched on nearly every
+    # page, where ~3 KB of milestone prose per area is dead weight.
+    #
+    # Invalidated by update_child when a generation input (age, gender) changes;
+    # see _LIFE_PATHWAY_INPUTS in routers/children.py.
+    life_pathway_milestones: dict | None = None
 
 
 class CompletedGrowthAreasResponse(BaseModel):
@@ -300,6 +322,84 @@ class GoalInsightsPatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# observations — one document per child
+#
+# Its own collection rather than a field on `children`, matching goals and
+# goal_insights: same shape of thing (one per child, LLM-generated, staged then
+# promoted), and it keeps a few KB off the child document, which is read on almost
+# every page and shares a single 64 KB payload budget across all its extra fields.
+# ---------------------------------------------------------------------------
+
+_OBSERVATIONS_MAX_BYTES = 65_536  # 64 KB cap on the serialised item list
+
+# Slightly above what the page shows: the client asks the provider for up to 8
+# candidates and selects 6, so a staged set legitimately arrives larger than the
+# set that ends up rendered.
+_OBSERVATIONS_MAX_ITEMS = 8
+
+
+class ObservationsResponse(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    source: str | None = None
+    # Raw provider objects, validated client-side by normalizeObservations before
+    # they are promoted here — kept as an open list for the same reason
+    # GoalInsightsResponse keeps pending_insights open.
+    items: list = Field(default_factory=list, max_length=_OBSERVATIONS_MAX_ITEMS)
+    # Observation ids the parent ticked, plus the span and start they chose.
+    watching: list[str] = Field(default_factory=list, max_length=_OBSERVATIONS_MAX_ITEMS)
+    span: str | None = None
+    started_at: str | None = None
+    # Staging field: the generate_observations worker writes the full LLM response
+    # here; the client validates it and promotes `items` via PATCH.
+    pending_observations: dict | None = None
+
+    @field_validator("items", "watching", mode="before")
+    @classmethod
+    def truncate_to_cap(cls, v: Any) -> Any:
+        """
+        Truncate rather than reject an over-long stored list.
+
+        Same intent as the legacy-shape unwrapping in get_goal_insights: these
+        fields are populated straight from a stored document, and a plain
+        max_length would make Pydantic raise — turning one oversized document
+        (an older client, a raised client-side limit, a manual edit) into a
+        permanent 500 on every read, with no way for the page to recover.
+        """
+        if isinstance(v, list) and len(v) > _OBSERVATIONS_MAX_ITEMS:
+            return v[:_OBSERVATIONS_MAX_ITEMS]
+        return v
+
+
+class ObservationsPatch(BaseModel):
+    # None means "no update" throughout, so a PATCH that only sets `watching`
+    # cannot blank the generated set.
+    source: str | None = Field(None, max_length=50)
+    items: list | None = Field(None, max_length=_OBSERVATIONS_MAX_ITEMS)
+    watching: list[Annotated[str, Field(max_length=100)]] | None = Field(
+        None, max_length=_OBSERVATIONS_MAX_ITEMS
+    )
+    span: str | None = Field(None, max_length=50)
+    started_at: str | None = Field(None, max_length=64)
+
+    @model_validator(mode="after")
+    def limit_observations_size(self) -> ObservationsPatch:
+        if self.items is None:
+            return self
+        try:
+            size = len(json.dumps(self.items))
+        except (RecursionError, ValueError, TypeError):
+            raise ValueError(
+                "Observations payload contains an invalid or too-deeply nested structure"
+            ) from None
+        if size > _OBSERVATIONS_MAX_BYTES:
+            raise ValueError(
+                f"Observations payload exceeds maximum allowed size ({_OBSERVATIONS_MAX_BYTES // 1024} KB)"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
 # Children
 # ---------------------------------------------------------------------------
 
@@ -330,6 +430,9 @@ class ChildResponse(BaseModel):
     # Staging field written by the generate_personality_analysis worker before the
     # client transforms and finalises the canonical personality.view_model.
     pending_personality_vm: dict | None = None
+    # Avatar / profile photo — set during onboarding step 2.
+    avatar_id: str | None = None  # emoji avatar selection (e.g. "capper-boy")
+    avatar_url: str | None = None  # S3 URL of an uploaded profile photo
     # Soft-delete fields — present on all documents; False by default.
     # deleted_at is set when is_deleted is set to True.
     is_deleted: bool = False
@@ -364,6 +467,8 @@ class ChildCreate(BaseModel):
         return _parse_age(v)  # type: ignore[arg-type]
 
     school: str | None = Field(None, max_length=300)
+    avatar_id: str | None = Field(None, max_length=100)
+    avatar_url: str | None = Field(None, max_length=2048)
     onboarding_phase: int = 0
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
@@ -376,6 +481,19 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("avatar_url")
+    @classmethod
+    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("avatar_url must be an HTTPS URL")
+        return v
+
+    @model_validator(mode="after")
+    def avatar_fields_are_exclusive(self) -> ChildCreate:
+        if self.avatar_id is not None and self.avatar_url is not None:
+            raise ValueError("Provide either avatar_id or avatar_url, not both")
+        return self
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildCreate:
@@ -412,6 +530,8 @@ class ChildPatch(BaseModel):
         return _parse_age(v)  # type: ignore[arg-type]
 
     school: str | None = Field(None, max_length=300)
+    avatar_id: str | None = Field(None, max_length=100)
+    avatar_url: str | None = Field(None, max_length=2048)
     onboarding_phase: int | None = None
     onboarding_completed: bool | None = None
     current_phase: str | None = Field(None, max_length=100)
@@ -424,6 +544,19 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+
+    @field_validator("avatar_url")
+    @classmethod
+    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("avatar_url must be an HTTPS URL")
+        return v
+
+    @model_validator(mode="after")
+    def avatar_fields_are_exclusive(self) -> ChildPatch:
+        if self.avatar_id is not None and self.avatar_url is not None:
+            raise ValueError("Provide either avatar_id or avatar_url, not both")
+        return self
 
     @model_validator(mode="after")
     def reject_unsafe_extra_keys(self) -> ChildPatch:
@@ -457,6 +590,10 @@ JobType = Literal[
     "generate_activity",
     "generate_personality_analysis",
     "generate_journey_insights",
+    "generate_life_pathway",
+    "generate_growth_parent_questions",
+    "generate_growth_child_rounds",
+    "generate_observations",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
@@ -465,6 +602,7 @@ _ALLOWED_WRITE_BACK_COLLECTIONS = {
     "goals",
     "goal_months",
     "goal_insights",
+    "observations",
     "children",
 }
 
@@ -501,6 +639,42 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # insights written to the goal_insights staging field; finalizeInsights promotes
     # it to insight_items via PATCH after the job completes.
     "generate_journey_insights": {"pending_insights"},
+    # Life Pathway milestone narrative, generated lazily one growth area at a time
+    # and cached on that area's growth_areas document — alongside the answers and
+    # recommendations the milestone prompt is built from. Written straight to the
+    # canonical field with no staging step: the client shows a loading state for an
+    # area it has no content for, so a partially-populated set is always a valid
+    # state and there is nothing for a promote step to do.
+    #
+    # A flat field name, not a dot-path, because the area is identified by
+    # write_back.filter.area_id. Same reasoning as the two growth-question job
+    # types below.
+    "generate_life_pathway": {"life_pathway_milestones"},
+    # The two Growth Areas question sets, generated lazily per area on first click
+    # and cached on that area's growth_areas document — the same document that
+    # already holds the answers to them, the child's picks and the resulting
+    # recommendations. Written straight to the canonical field with no staging
+    # step: the client shows a loading state for an area it has no questions for,
+    # so a partially-populated set is always a valid state.
+    #
+    # Flat field names, not dot-paths, because the area is identified by
+    # write_back.filter.area_id rather than baked into the path. That keeps this
+    # allowlist independent of GROWTH_AREAS, and takes the whole class of "cannot
+    # create field 'x' in element {y: null}" write failures off the table — there
+    # is no nullable ancestor for MongoDB to trip over.
+    #
+    # Split across two job types rather than one so the parent-questions job
+    # structurally cannot write into the child-rounds field, and each stage gets
+    # its own active_jobs slot and in-flight budget.
+    "generate_growth_parent_questions": {"parent_questions"},
+    "generate_growth_child_rounds": {"child_rounds"},
+    # Observation patterns for the Release page, clustered from the parent's own
+    # onboarding answers, growth-area answers and stated concern. Staged, then
+    # promoted to the canonical `observations` field by the client — same shape of
+    # handoff as pending_personality_vm, and for the same reason: the client
+    # validates the icon/source enums and drops any item the provider returned
+    # malformed before it becomes the thing the page renders.
+    "generate_observations": {"pending_observations"},
 }
 
 _FILTER_MAX_KEYS = 20

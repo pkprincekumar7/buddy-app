@@ -9,6 +9,10 @@ import type {
   EnqueueJobPayload,
   EnqueueJobResponse,
   JobStatusRecord,
+  AdminUserRecord,
+  AllowedEmailRecord,
+  AllowedEmailsPage,
+  AdminUsersPage,
 } from '@/types/api';
 import { env } from '@/lib/env';
 import { navigateTo } from '@/lib/navigationRef';
@@ -329,6 +333,51 @@ export const api = {
     },
   },
 
+  admin: {
+    listAllowedEmails: (
+      skip: number,
+      limit: number,
+    ): Promise<AllowedEmailsPage> =>
+      request(
+        `/admin/allowed-emails?skip=${skip}&limit=${limit}`,
+      ) as Promise<AllowedEmailsPage>,
+    getAllowedEmail: (email: string): Promise<AllowedEmailRecord> =>
+      request(
+        `/admin/allowed-emails/${encodeURIComponent(email)}`,
+      ) as Promise<AllowedEmailRecord>,
+    addAllowedEmail: (email: string): Promise<AllowedEmailRecord> =>
+      request('/admin/allowed-emails', {
+        method: 'POST',
+        body: { email },
+      }) as Promise<AllowedEmailRecord>,
+    removeAllowedEmail: (email: string): Promise<void> =>
+      request(`/admin/allowed-emails/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+      }) as Promise<void>,
+    listUsers: (skip: number, limit: number): Promise<AdminUsersPage> =>
+      request(
+        `/admin/users?skip=${skip}&limit=${limit}`,
+      ) as Promise<AdminUsersPage>,
+    getUserByEmail: (email: string): Promise<AdminUserRecord> =>
+      request(
+        `/admin/users/by-email/${encodeURIComponent(email)}`,
+      ) as Promise<AdminUserRecord>,
+    lockUser: (userId: string, location: string): Promise<AdminUserRecord> =>
+      request(
+        `/admin/users/${encodeURIComponent(
+          userId,
+        )}/lock?location=${encodeURIComponent(location)}`,
+        { method: 'PATCH' },
+      ) as Promise<AdminUserRecord>,
+    unlockUser: (userId: string, location: string): Promise<AdminUserRecord> =>
+      request(
+        `/admin/users/${encodeURIComponent(
+          userId,
+        )}/unlock?location=${encodeURIComponent(location)}`,
+        { method: 'PATCH' },
+      ) as Promise<AdminUserRecord>,
+  },
+
   preferences: {
     get: (): Promise<PreferencesRecord> =>
       request('/user/preferences') as Promise<PreferencesRecord>,
@@ -422,6 +471,29 @@ export const api = {
         request(`/children/${encodeURIComponent(id)}`, {
           method: 'DELETE',
         }) as Promise<void>,
+      uploadAvatar: async (
+        id: string,
+        uri: string,
+        contentType: string = 'image/jpeg',
+      ): Promise<{ avatar_url: string }> => {
+        const { upload_url, avatar_url } = (await request(
+          `/children/${encodeURIComponent(id)}/avatar/presign`,
+          { method: 'POST', body: { content_type: contentType } },
+        )) as { upload_url: string; avatar_url: string };
+        const blobRes = await fetch(uri);
+        const blob = await blobRes.blob();
+        const s3Res = await fetch(upload_url, {
+          method: 'PUT',
+          body: blob,
+          headers: { 'Content-Type': contentType },
+        });
+        if (!s3Res.ok) {
+          throw new Error(
+            `S3 upload failed: ${s3Res.status} ${s3Res.statusText}`,
+          );
+        }
+        return { avatar_url };
+      },
     },
   },
 };

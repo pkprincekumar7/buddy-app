@@ -70,13 +70,18 @@ export interface ChildRecord {
   [key: string]: unknown;
 }
 
+// Must stay in sync with JobType in backend/app/models_api.py — the backend
+// rejects any value it does not declare.
 export type JobType =
   | 'generate_recommendations'
   | 'generate_goals_plan'
   | 'generate_activity'
   | 'generate_personality_analysis'
-  | 'generate_journey_recommendations'
-  | 'generate_journey_insights';
+  | 'generate_journey_insights'
+  | 'generate_life_pathway'
+  | 'generate_growth_parent_questions'
+  | 'generate_growth_child_rounds'
+  | 'generate_observations';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 
@@ -96,7 +101,13 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'goals' | 'goal_months' | 'goal_insights';
+    collection:
+      | 'growth_areas'
+      | 'children'
+      | 'goals'
+      | 'goal_months'
+      | 'goal_insights'
+      | 'observations';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -108,7 +119,6 @@ export interface EnqueueJobResponse {
 
 export interface PreferencesRecord {
   tts_enabled?: boolean;
-  dark_mode?: boolean;
   last_visited_path?: string;
   [key: string]: unknown;
 }
@@ -167,18 +177,67 @@ export interface GoalInsightsRecord {
   [key: string]: unknown;
 }
 
+/**
+ * The Release page's observations document — its own collection keyed by child_id,
+ * alongside goals and goal_insights rather than embedded on the child.
+ */
+export interface ObservationsRecord {
+  source?: string | null;
+  /**
+   * Raw provider objects. Always read through normalizeObservations in
+   * `@/lib/observationsData` rather than trusting the shape.
+   */
+  items?: unknown;
+  /** Observation ids the parent ticked. */
+  watching?: string[];
+  /** SPANS label the parent chose, e.g. "3 months". */
+  span?: string | null;
+  /** When Start tracking was last pressed. Written but not yet read by anything. */
+  started_at?: string | null;
+  /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
+  pending_observations?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+/**
+ * A stored recommendation. Areas completed before the Growth Areas redesign —
+ * and anything the onboarding RecommendationsPhase writes — hold plain strings;
+ * the redesigned flow writes { title, detail }. Both shapes coexist and neither
+ * is migrated, so always read through normalizeRecommendations() in
+ * `@/lib/growthAreaData` rather than touching these values directly.
+ */
+export type StoredRecommendation = string | { title?: string; detail?: string };
+
 export interface CompletedArea {
   status?: string;
   area_id?: string;
   area_name?: string;
   area_color?: string;
   step?: string;
+  /** Written only by the onboarding flow — always plain strings. */
   recommendations?: string[];
-  ai_three_month_recommendations?: string[];
+  ai_three_month_recommendations?: StoredRecommendation[];
   answers?: Record<string, unknown>;
   interactive_answers?: Record<string, unknown>;
   child_activity?: Record<string, unknown>;
   child_activity_selections?: string[];
+  /**
+   * The two question sets this area was presented with, generated once per child
+   * per area by the generate_growth_parent_questions / generate_growth_child_rounds
+   * jobs. Raw provider output — always read through normalizeGeneratedQuestions /
+   * normalizeGeneratedRounds in `@/lib/growthAreaData` rather than trusting the
+   * shape. `answers` and `child_activity.selections` above are keyed by ids
+   * derived from these, so the three belong together on one document.
+   */
+  parent_questions?: Record<string, unknown>;
+  child_rounds?: Record<string, unknown>;
+  /**
+   * Life Pathway milestone narrative for this area, written by the
+   * generate_life_pathway job and grounded in this document's own answers and
+   * recommendations. Raw provider output — read it through
+   * normalizeLifePathwayArea in `@/lib/lifePathwayData`.
+   */
+  life_pathway_milestones?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

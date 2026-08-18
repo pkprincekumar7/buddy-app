@@ -578,7 +578,7 @@ export default function ActivityModal({
               </div>
               <div className="bg-ghost-xl h-1.5 overflow-hidden rounded-full">
                 <motion.div
-                  className="h-full rounded-full bg-white"
+                  className="h-full rounded-full bg-primary"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ duration: 0.45 }}

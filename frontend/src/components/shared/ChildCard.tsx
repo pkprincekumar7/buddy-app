@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { Eye, Trash2, CheckCircle, Clock } from 'lucide-react';
 import type { ChildRecord } from '@/types/api';
 import { Button } from '@/components/ui/button';
@@ -88,7 +88,9 @@ export default function ChildCard({ child }: ChildCardProps) {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(`/Onboarding/${child.id}`)}
+              onClick={() => {
+                void navigate(`/Onboarding/${child.id}`);
+              }}
               aria-label="View journey"
               title="View journey"
             >

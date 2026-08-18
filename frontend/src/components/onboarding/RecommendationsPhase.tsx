@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { ComponentType } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { debounce } from 'lodash';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,6 +27,7 @@ import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
 import ChildActivityGame, { normalizeChildGameRecommendations } from './ChildActivityGame';
+import { normalizeRecommendations } from '@/lib/growthAreaData';
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { normalizeAge } from '@/lib/insightsUtils';
 import { createPageUrl } from '@/utils';
@@ -1115,7 +1116,7 @@ export default function RecommendationsPhase({
       await saveCompletedGrowthArea(selectedArea, interactiveAnswers, recs, childActivity);
     }
     if (onFinish) await onFinish();
-    else navigate(createPageUrl('LifePathway'), { replace: true });
+    else void navigate(createPageUrl('LifePathway'), { replace: true });
   };
 
   /** Fetch area doc from DB and restore child game UI state. */
@@ -1281,7 +1282,9 @@ export default function RecommendationsPhase({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate(createPageUrl('Home'))}
+                onClick={() => {
+                  void navigate(createPageUrl('Home'));
+                }}
                 className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 <Clock className="mr-2 h-4 w-4" />
@@ -1703,7 +1706,9 @@ export default function RecommendationsPhase({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate(createPageUrl('Home'))}
+                onClick={() => {
+                  void navigate(createPageUrl('Home'));
+                }}
                 className="border-edge-strong h-12 rounded-2xl bg-transparent px-8 text-base text-foreground hover:bg-subtle"
               >
                 Catch Up Later
@@ -2451,7 +2456,10 @@ export default function RecommendationsPhase({
 
               {Array.isArray(aiRecommendations) && aiRecommendations.length > 0 && (
                 <ul className="space-y-3">
-                  {aiRecommendations.map((rec, i) => (
+                  {/* This phase writes plain strings, but the same field can already
+                      hold { title, detail } objects from the Growth Areas flow —
+                      normalize so those render instead of collapsing to blank. */}
+                  {normalizeRecommendations(aiRecommendations).map((rec, i) => (
                     <motion.li
                       key={i}
                       initial={{ opacity: 0, x: -16 }}
@@ -2462,7 +2470,17 @@ export default function RecommendationsPhase({
                       <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-success text-xs font-bold text-white">
                         {i + 1}
                       </span>
-                      <span>{typeof rec === 'string' ? rec : ''}</span>
+                      <span>
+                        {rec.detail ? (
+                          <>
+                            <span className="font-semibold">{rec.title}</span>
+                            {' — '}
+                            {rec.detail}
+                          </>
+                        ) : (
+                          rec.title
+                        )}
+                      </span>
                     </motion.li>
                   ))}
                 </ul>
@@ -2494,7 +2512,7 @@ export default function RecommendationsPhase({
                       setAiRecommendations(null);
                       setParentLiked(null);
                     } else {
-                      navigate(createPageUrl('LifePathway'), { replace: true });
+                      void navigate(createPageUrl('LifePathway'), { replace: true });
                     }
                   })();
                 }}
@@ -2538,7 +2556,7 @@ export default function RecommendationsPhase({
         </p>
         <Button
           onClick={() => {
-            navigate(createPageUrl('LifePathway'), { replace: true });
+            void navigate(createPageUrl('LifePathway'), { replace: true });
           }}
           className="h-12 rounded-2xl bg-gradient-to-r from-success to-primary-dark px-8 text-base"
         >

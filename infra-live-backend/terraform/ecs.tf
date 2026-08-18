@@ -75,6 +75,11 @@ resource "aws_ecs_task_definition" "backend" {
           { name = "DEFAULT_LOCATION", value = var.default_location },
           { name = "DEFAULT_REGION", value = var.default_region },
           { name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name },
+          { name = "UPLOADS_BUCKET_NAME", value = var.uploads_bucket_name },
+          { name = "AWS_REGION", value = var.aws_region },
+          # Intentionally reuses cookie_domain — uploaded photos are served via the
+          # same CloudFront distribution as the app (via the /uploads/* behaviour).
+          { name = "UPLOADS_CDN_DOMAIN", value = var.cookie_domain },
           { name = "JWT_KEY_ID", value = var.jwt_key_id },
           { name = "CORS_ORIGINS", value = var.cors_origins },
           { name = "COOKIE_DOMAIN", value = var.cookie_domain },
@@ -224,7 +229,7 @@ resource "aws_ecs_task_definition" "worker" {
           { name = "APP_ENV", value = var.environment },
           { name = "DEFAULT_LOCATION", value = var.default_location },
           { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
-          { name = "AWS_DEFAULT_REGION", value = var.aws_region },
+          { name = "AWS_REGION", value = var.aws_region },
           { name = "WORKER_CONCURRENCY", value = tostring(var.worker_concurrency) },
           { name = "WORKER_POLL_INTERVAL_SECONDS", value = tostring(var.worker_poll_interval_seconds) },
           # CORS_ORIGINS and COOKIE_* not needed — worker has no HTTP server
