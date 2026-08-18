@@ -8,13 +8,12 @@ import {
   useMemo,
 } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import { applyTheme } from '@/lib/theme';
 import type { UserRecord, ChildRecord } from '@/types/api';
 
 type UserData = UserRecord;
@@ -41,6 +40,8 @@ interface AuthContextValue {
   logout: (shouldRedirect?: boolean) => Promise<void>;
   navigateToLogin: () => void;
   checkAppState: (options?: { withLoading?: boolean }) => Promise<void>;
+  ttsEnabled: boolean;
+  toggleTts: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -55,8 +56,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([]);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
-  const [lastVisitedPath, setLastVisitedPath] = useState<string | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const ttsEnabledRef = useRef(true);
 
   const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
     const withLoading = options.withLoading !== false;
@@ -66,22 +68,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
       const currentUser = await api.auth.me();
-      const [children, prefs] = await Promise.all([
-        currentUser.role === 'admin'
-          ? Promise.resolve([])
-          : api.entities.Child.list('-created_date'),
-        api.preferences.get(),
-      ]);
+      const children =
+        currentUser.role === 'admin' ? [] : await api.entities.Child.list('-created_date');
       setUser(currentUser);
       setChildProfiles(children);
-      setLastVisitedPath(
-        typeof prefs.last_visited_path === 'string' ? prefs.last_visited_path : null,
-      );
-      // Sync DB dark_mode → localStorage + <html> class so ALL pages (including
-      // Login/Register) pick up the correct theme on next load via the inline script.
-      if (typeof prefs.dark_mode === 'boolean') {
-        applyTheme(prefs.dark_mode);
-      }
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -90,13 +80,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
-        setLastVisitedPath(null);
         setAuthError(null);
       } else {
         setUser(null);
         setIsAuthenticated(false);
         setChildProfiles([]);
-        setLastVisitedPath(null);
         const msg =
           (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
         setAuthError({ type: 'unknown', message: msg });
@@ -119,7 +107,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(false);
       setChildProfiles([]);
       setAuthError(null);
-      navigate('/Login', { replace: true });
+      void navigate('/Login', { replace: true });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('buddy360:auth-expired', onExpired);
@@ -169,16 +157,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => clearTimeout(timer);
   }, [location.pathname, location.search, isAuthenticated]);
 
+  // Keep ref in sync so toggleTts never captures a stale value
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  // Load tts_enabled from DB after login; reset to true on logout
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setTtsEnabled(true);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const prefs = (await api.preferences.get()) as { tts_enabled?: boolean };
+        if (!cancelled && typeof prefs.tts_enabled === 'boolean') setTtsEnabled(prefs.tts_enabled);
+      } catch (err) {
+        console.warn('[AuthContext] Could not load TTS preference:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  const toggleTts = useCallback(() => {
+    const next = !ttsEnabledRef.current;
+    setTtsEnabled(next);
+    api.preferences.patch({ tts_enabled: next }).catch((err) => {
+      console.warn('[AuthContext] Could not persist TTS toggle:', err);
+    });
+  }, []);
+
   const logout = useCallback(
     async (shouldRedirect = true) => {
       await api.auth.logout();
       setUser(null);
       setIsAuthenticated(false);
       setChildProfiles([]);
-      setLastVisitedPath(null);
       setAuthError(null);
       if (shouldRedirect) {
-        navigate('/Login', { replace: true });
+        void navigate('/Login', { replace: true });
       }
     },
     [navigate],
@@ -205,26 +225,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!publicPaths.includes(location.pathname)) return;
     if (isAuthenticated) {
       if (user?.role === 'admin') {
-        navigate('/Admin', { replace: true });
+        void navigate('/Admin', { replace: true });
         return;
       }
-      const destination =
-        lastVisitedPath &&
-        lastVisitedPath.startsWith('/') &&
-        !BLOCKED_REDIRECT_PATHS.includes(lastVisitedPath)
-          ? lastVisitedPath
-          : mainPath;
-      navigate(destination, { replace: true });
+      void navigate(mainPath, { replace: true });
     }
-  }, [
-    isLoadingAuth,
-    isAuthenticated,
-    user?.role,
-    location.pathname,
-    navigate,
-    mainPath,
-    lastVisitedPath,
-  ]);
+  }, [isLoadingAuth, isAuthenticated, user?.role, location.pathname, navigate, mainPath]);
 
   const contextValue = useMemo(
     () => ({
@@ -237,6 +243,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       navigateToLogin,
       checkAppState,
+      ttsEnabled,
+      toggleTts,
     }),
     [
       user,
@@ -248,6 +256,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       navigateToLogin,
       checkAppState,
+      ttsEnabled,
+      toggleTts,
     ],
   );
 

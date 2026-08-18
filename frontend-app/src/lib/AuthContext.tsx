@@ -58,7 +58,10 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
 
   const clearActiveChildId = useCallback(async () => {
     _setActiveChildId(undefined);
-    await AsyncStorage.removeItem(ACTIVE_CHILD_KEY).catch(() => {});
+    // Set to '' (empty string) rather than removing the key entirely.
+    // This distinguishes "explicitly cleared after a delete" from "never set"
+    // (null), so refetchChildren can skip auto-select only in the delete case.
+    await AsyncStorage.setItem(ACTIVE_CHILD_KEY, '').catch(() => {});
   }, []);
 
   const refetchUser = useCallback(async () => {
@@ -82,8 +85,23 @@ export function AuthProvider({ children: node }: { children: ReactNode }) {
         const stored = await AsyncStorage.getItem(ACTIVE_CHILD_KEY).catch(
           () => null,
         );
-        const valid = stored && list.some(c => c.id === stored);
-        if (!valid) setActiveChildId(list[0].id);
+        if (stored === null) {
+          // Key was never written (fresh install / first run) → auto-select first.
+          setActiveChildId(list[0].id);
+        } else if (stored === '') {
+          // Key was explicitly cleared by clearActiveChildId() after a delete →
+          // don't auto-select; the parent must pick or start a new child.
+        } else {
+          // Have a stored ID — if still valid, restore it into React state
+          // (useState starts as undefined on every cold start, so we must
+          // explicitly re-hydrate it here). If invalid, fall back to first child.
+          const valid = list.some(c => c.id === stored);
+          if (valid) {
+            _setActiveChildId(stored); // already in AsyncStorage, no write needed
+          } else {
+            setActiveChildId(list[0].id);
+          }
+        }
       } else {
         // No children — clear any stale activeChildId so screens don't try to fetch a deleted child.
         await AsyncStorage.removeItem(ACTIVE_CHILD_KEY).catch(() => {});

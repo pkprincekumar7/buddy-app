@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { readStoredDarkMode } from '@/lib/theme';
 
 /**
  * Full-screen stage splash — image for most stages, video for stages 1, 2, 4, and 7.
@@ -25,17 +24,7 @@ interface StageSplashProps {
 export default function StageSplash({ stage, onReady }: StageSplashProps) {
   const padded = String(stage).padStart(2, '0');
   const isVideo = VIDEO_STAGES.has(stage);
-  const [isDark, setIsDark] = useState(readStoredDarkMode);
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(!document.documentElement.classList.contains('light'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  const theme = isDark ? 'dark' : 'light';
+  const theme = 'dark';
 
   return (
     <motion.div

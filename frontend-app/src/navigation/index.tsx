@@ -1,12 +1,17 @@
 import React, { useCallback, useContext, useRef, useState } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import Svg, { Path as SvgPath, Line as SvgLine } from 'react-native-svg';
 import {
   NavigationContainer,
   DarkTheme,
   DefaultTheme,
   getStateFromPath as defaultGetStateFromPath,
 } from '@react-navigation/native';
-import type { LinkingOptions, Theme } from '@react-navigation/native';
+import type {
+  LinkingOptions,
+  NavigatorScreenParams,
+  Theme,
+} from '@react-navigation/native';
 import { ThemeProvider, useTheme } from '../lib/ThemeContext';
 import { darkColors, lightColors } from '../lib/themeColors';
 import { navigationRef } from '../lib/navigationRef';
@@ -41,7 +46,7 @@ export type AuthStackParamList = {
 };
 
 export type OnboardingStackParamList = {
-  Onboarding: { fromBack?: boolean } | undefined;
+  OnboardingWelcome: { fromBack?: boolean; childId?: string } | undefined;
   ConversationalOnboarding: { fromBack?: boolean } | undefined;
 };
 
@@ -67,7 +72,7 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
-  Onboarding: undefined;
+  Onboarding: NavigatorScreenParams<OnboardingStackParamList> | undefined;
   Main: undefined;
   Admin: undefined;
 };
@@ -194,23 +199,68 @@ const LightAppTheme: Theme = {
   },
 };
 
-function HeaderTitle({ children }: { children?: React.ReactNode }) {
+/** Buddy360 sprout logo + wordmark — replaces per-screen title text to match web header. */
+function HeaderLogo() {
   const { colors } = useTheme();
   return (
-    <Text
-      style={{
-        fontSize: 17,
-        fontWeight: '700',
-        letterSpacing: 0.6,
-        color: colors.text,
-        textShadowColor: colors.headerShadowColor,
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: colors.headerShadowRadius,
-      }}
-      numberOfLines={1}
-    >
-      {children}
-    </Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          backgroundColor: colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Svg width={14} height={15} viewBox="0 0 20 22">
+          <SvgLine
+            x1="10"
+            y1="21"
+            x2="10"
+            y2="14"
+            stroke="white"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+          <SvgPath
+            d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
+            fill="white"
+          />
+          <SvgPath
+            d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
+            fill="white"
+          />
+        </Svg>
+      </View>
+      <View>
+        <Text
+          style={{
+            fontSize: 15,
+            fontWeight: '700',
+            letterSpacing: -0.3,
+            color: colors.text,
+          }}
+          numberOfLines={1}
+        >
+          Buddy<Text style={{ color: colors.primary }}>360</Text>
+        </Text>
+        <Text
+          style={{
+            fontSize: 8,
+            fontWeight: '600',
+            textTransform: 'uppercase',
+            letterSpacing: 2,
+            color: colors.textMuted,
+            opacity: 0.6,
+            marginTop: 1,
+          }}
+        >
+          Children's Development
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -220,10 +270,8 @@ function useHeaderOptions() {
   return {
     headerStyle: { backgroundColor: colors.card },
     headerTintColor: colors.text,
-    headerTitleStyle: { color: colors.text },
-    headerTitle: (props: { children?: React.ReactNode }) => (
-      <HeaderTitle {...props} />
-    ),
+    headerTitleAlign: 'left' as const,
+    headerTitle: () => <HeaderLogo />,
     headerLeft: () => null,
     headerRight: () => <HeaderRight />,
   };
@@ -244,7 +292,7 @@ function OnboardingNavigator() {
     <OnboardingStack.Navigator screenOptions={headerOptions}>
       {/* headerLeft: null removes the back arrow on the root screen (nothing to go back to) */}
       <OnboardingStack.Screen
-        name="Onboarding"
+        name="OnboardingWelcome"
         component={OnboardingScreen}
         options={{ title: 'Welcome', headerLeft: () => null }}
       />
@@ -438,7 +486,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       },
       Onboarding: {
         screens: {
-          Onboarding: 'onboarding',
+          OnboardingWelcome: 'onboarding',
           ConversationalOnboarding: 'onboarding/chat',
         },
       },
@@ -463,15 +511,8 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 function RootNavigator() {
-  const {
-    isAuthenticated,
-    isLoading,
-    activeChild,
-    authError,
-    checkAppState,
-    logout,
-    user,
-  } = useAuth();
+  const { isAuthenticated, isLoading, authError, checkAppState, logout, user } =
+    useAuth();
   const { colors } = useTheme();
 
   if (isLoading) {
@@ -546,19 +587,14 @@ function RootNavigator() {
         />
       ) : (
         /*
-         * Authenticated — always render Main first so it sits at the bottom of the
-         * stack. When onboarding is not yet complete, Onboarding is pushed on top.
-         * This lets the Back button on any onboarding screen pop back to the main
-         * app (mirroring the web where /Home is always reachable).
+         * Authenticated — always render Main first (bottom of the stack) and
+         * Onboarding unconditionally so that navigate('Onboarding') always
+         * works from any screen. HomeScreen's useEffect handles pushing
+         * Onboarding on top for new / incomplete users.
          */
         <>
           <RootStack.Screen name="Main" component={MainTabNavigator} />
-          {!activeChild?.onboarding_completed && (
-            <RootStack.Screen
-              name="Onboarding"
-              component={OnboardingNavigator}
-            />
-          )}
+          <RootStack.Screen name="Onboarding" component={OnboardingNavigator} />
         </>
       )}
     </RootStack.Navigator>

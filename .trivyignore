@@ -2,3 +2,14 @@
 # This is a Windows-platform NuGet dependency inside node_modules.
 # The app targets Android and iOS only — the Windows code path is never compiled or shipped.
 CVE-2024-21907
+
+# GHSA-qwww-vcr4-c8h2: react-router RSC Mode CSRF Bypass (react-router 7.x, fixed in 8.3.0)
+# This CVE only affects React Server Components (RSC) mode, which requires a file-based
+# router (@react-router/fs-routes / Remix-style). This app is a client-side Vite SPA —
+# RSC mode is not used, so the attack surface does not exist.
+GHSA-qwww-vcr4-c8h2
+
+# CVE-2026-14257 / GHSA-mh99-v99m-4gvg: brace-expansion DoS (< 5.0.8)
+# Transitive dependency of eslint and @stoplight/spectral-cli — build/lint tooling only.
+# Neither package is included in the production bundle shipped to users.
+CVE-2026-14257

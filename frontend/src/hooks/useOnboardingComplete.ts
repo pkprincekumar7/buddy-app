@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { createPageUrl } from '@/utils';
@@ -43,7 +43,7 @@ export function useOnboardingComplete({
 
       if (!childId) throw new Error('No child ID available to save journey');
 
-      navigate(createPageUrl('LifePathway'), { replace: true });
+      void navigate(createPageUrl('LifePathway'), { replace: true });
     } catch (err) {
       console.error('[Onboarding] Failed to save journey:', err);
       toast.error('Something went wrong saving your journey. Please try again.');

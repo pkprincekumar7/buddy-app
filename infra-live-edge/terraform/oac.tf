@@ -21,3 +21,11 @@ resource "aws_cloudfront_origin_access_control" "backend_assets" {
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
 }
+
+resource "aws_cloudfront_origin_access_control" "backend_uploads" {
+  name                              = "${var.app_name}-backend-uploads-oac-${var.environment}"
+  description                       = "OAC for ${var.app_name} uploads S3 bucket (${var.environment})"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}

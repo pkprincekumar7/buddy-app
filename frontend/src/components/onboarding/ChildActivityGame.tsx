@@ -3,15 +3,13 @@ import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
-import { readStoredDarkMode } from '@/lib/theme';
-
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts, StrictMode double-invocations,
 // and HMR restarts — preventing any failed image from ever being retried in the session.
 const _failedAssetPaths = new Set<string>();
 
-function themedImagePath(path: string, isDark: boolean): string {
-  return path.replace(/\.jpg$/, isDark ? '_vg_dark.png' : '_vg_light.png');
+function themedImagePath(path: string): string {
+  return path.replace(/\.jpg$/, '_vg_dark.png');
 }
 
 // Fallback gradient palette shown when an image fails to load.
@@ -374,14 +372,6 @@ export default function ChildActivityGame({
 }: ChildActivityGameProps) {
   const game = areaGames[areaId] ?? areaGames['life_ambition']!;
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDark, setIsDark] = useState(readStoredDarkMode);
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setIsDark(!document.documentElement.classList.contains('light'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
   const [failedImages, setFailedImages] = useState<Set<string>>(
     () => new Set(game.options.filter((o) => _failedAssetPaths.has(o.image)).map((o) => o.id)),
   );
@@ -508,7 +498,7 @@ export default function ChildActivityGame({
             {option.image && !failedImages.has(option.id) ? (
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
-                  src={`/app-assets/${themedImagePath(option.image, isDark)}`}
+                  src={`/app-assets/${themedImagePath(option.image)}`}
                   alt={option.label}
                   className="h-full w-full object-cover"
                   onError={() => {

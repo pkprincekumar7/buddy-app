@@ -1,5 +1,12 @@
-import React from 'react';
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  ActivityIndicator,
+  Pressable,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
@@ -8,9 +15,11 @@ import { api } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { EmojiText } from '@/components/ui/EmojiText';
 import { useFadeIn, useSlideUp } from '@/lib/animations';
-import StartOverButton from '@/components/shared/StartOverButton';
 import { useTheme } from '@/lib/ThemeContext';
 import { PILLAR_BG_COLORS } from '@/lib/gradientColors';
+import ChildCard from '@/components/shared/ChildCard';
+import { useAuth } from '@/lib/AuthContext';
+import { navigateTo } from '@/lib/navigationRef';
 import type { RootStackParamList } from '@/navigation';
 
 type HomeNavProp = StackNavigationProp<RootStackParamList>;
@@ -120,6 +129,25 @@ function PillarCard({ pillar }: { pillar: PillarItem }) {
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNavProp>();
   const { colors } = useTheme();
+  const { activeChild, isLoading: isLoadingAuth } = useAuth();
+
+  // Replace the old RootNavigator conditional — push Onboarding once for
+  // new or incomplete users. The ref prevents re-triggering on re-renders.
+  const onboardingGuardFiredRef = useRef(false);
+  useEffect(() => {
+    if (isLoadingAuth || onboardingGuardFiredRef.current) return;
+    if (!activeChild?.onboarding_completed) {
+      onboardingGuardFiredRef.current = true;
+      navigation.navigate('Onboarding');
+    }
+  }, [isLoadingAuth, activeChild, navigation]);
+
+  const handleAddChild = useCallback(async () => {
+    await AsyncStorage.setItem('buddy360:forceNewOnboarding', '1').catch(
+      () => {},
+    );
+    navigation.navigate('Onboarding');
+  }, [navigation]);
 
   const { data: childrenRaw = [], isLoading } = useQuery({
     queryKey: ['children'],
@@ -127,19 +155,26 @@ export default function HomeScreen() {
   });
   const children = Array.isArray(childrenRaw) ? childrenRaw : [];
 
-  const onboardingInProgress = children.some(c => !c.onboarding_completed);
-  // Mirrors web: derive active child from the same React Query source, not a separate AuthContext read.
-  const activeChild =
-    children.find(c => !c.onboarding_completed) ?? children[0];
-
   const heroAnim = useSlideUp(0.0, 1000);
-  const pillarsAnim = useSlideUp(0.2, 900);
-  const howAnim = useSlideUp(0.35, 900);
-  const ctaAnim = useSlideUp(0.5, 900);
+  const childrenAnim = useSlideUp(0.15, 900);
+  const pillarsAnim = useSlideUp(0.3, 900);
+  const howAnim = useSlideUp(0.45, 900);
+  const ctaAnim = useSlideUp(0.6, 900);
 
   const handleStartJourney = () => {
     navigation.navigate('Onboarding');
   };
+
+  const handleContinueJourney = useCallback(() => {
+    if (activeChild?.onboarding_completed) {
+      navigateTo('Main', {
+        screen: 'Personality',
+        params: { screen: 'PersonalityJourney' },
+      });
+    } else {
+      navigation.navigate('Onboarding');
+    }
+  }, [activeChild, navigation]);
 
   if (isLoading) {
     return (
@@ -159,13 +194,13 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 40 }}
     >
       {/* Hero */}
-      <Animated.View style={heroAnim} className="px-5 pt-16 pb-10 items-center">
+      <Animated.View style={heroAnim} className="px-5 items-center pt-16 pb-10">
         {/* Badge */}
         <View
           className="flex-row items-center gap-2 rounded-full border px-4 py-2 mb-8"
           style={{
-            borderColor: colors.primary + '33',
-            backgroundColor: colors.primary + '1A',
+            borderColor: colors.primaryMuted,
+            backgroundColor: colors.primarySubtle,
           }}
         >
           <Text
@@ -197,29 +232,7 @@ export default function HomeScreen() {
           a thoughtful, capable individual.
         </Text>
 
-        {onboardingInProgress ? (
-          <View className="w-full gap-3">
-            <Button
-              size="xl"
-              onPress={() => navigation.navigate('Onboarding')}
-              className="rounded-2xl"
-            >
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: '600',
-                  color: colors.primaryForeground,
-                }}
-              >
-                ✨ Continue Journey →
-              </Text>
-            </Button>
-            {/* Mirror the web: offer Start Over alongside Continue */}
-            {activeChild?.id ? (
-              <StartOverButton childId={activeChild.id} className="w-full" />
-            ) : null}
-          </View>
-        ) : (
+        {children.length === 0 ? (
           <Button
             size="xl"
             onPress={handleStartJourney}
@@ -235,8 +248,89 @@ export default function HomeScreen() {
               ✨ Start Your Journey →
             </Text>
           </Button>
+        ) : (
+          // "Continue Your Journey" shown because the children management section
+          // below is hidden. When that section is re-enabled, remove this else-branch
+          // so the hero goes back to showing no button when children exist.
+          <Button
+            size="xl"
+            onPress={handleContinueJourney}
+            className="rounded-2xl"
+          >
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: '600',
+                color: colors.primaryForeground,
+              }}
+            >
+              ✨ Continue Your Journey →
+            </Text>
+          </Button>
         )}
       </Animated.View>
+
+      {/* FEATURE HIDDEN: Children management section (add child, child cards, delete child).
+          To re-enable: remove the `{false && ( ... )}` wrapper below, remove firstChild
+          and the "Continue Your Journey" else-branch in the hero above, and restore the
+          hero padding conditional. The underlying API and hooks are untouched. */}
+      {false && (
+        <Animated.View style={childrenAnim} className="px-5 pb-6">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text
+              className="text-base font-semibold"
+              style={{ color: colors.text }}
+            >
+              Your Children
+            </Text>
+            <View className="items-end gap-1">
+              <Pressable
+                onPress={() => void handleAddChild()}
+                disabled={children.length >= 10}
+                className="flex-row items-center gap-1 rounded-xl border px-3 py-1.5"
+                style={{
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceElevated,
+                  opacity: children.length >= 10 ? 0.45 : 1,
+                }}
+              >
+                <Text
+                  className="text-xs font-medium"
+                  style={{ color: colors.text }}
+                >
+                  + Add Child
+                </Text>
+              </Pressable>
+              {children.length >= 10 && (
+                <Text
+                  className="text-[10px]"
+                  style={{ color: colors.textMuted }}
+                >
+                  Maximum of 10 children reached.
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {children.length === 0 ? (
+            <Pressable
+              onPress={() => void handleAddChild()}
+              className="rounded-2xl border border-dashed py-6 items-center"
+              style={{ borderColor: colors.border }}
+            >
+              <Text className="text-sm" style={{ color: colors.textMuted }}>
+                No children yet. Tap to add your first child.
+              </Text>
+            </Pressable>
+          ) : (
+            <View className="gap-3">
+              {children.map(child => (
+                <ChildCard key={child.id} child={child} />
+              ))}
+            </View>
+          )}
+        </Animated.View>
+      )}
 
       {/* 6 Pillars */}
       <Animated.View style={pillarsAnim} className="px-3 pb-10">
@@ -295,7 +389,7 @@ export default function HomeScreen() {
               </Text>
               <Text
                 className="text-sm leading-relaxed text-center"
-                style={{ color: colors.iconColor }}
+                style={{ color: colors.textMuted }}
               >
                 {item.description}
               </Text>
@@ -304,45 +398,47 @@ export default function HomeScreen() {
         </View>
       </Animated.View>
 
-      {/* CTA */}
-      <Animated.View style={ctaAnim} className="px-5 py-10">
-        <View
-          className="rounded-3xl border p-8 items-center"
-          style={{
-            backgroundColor: colors.background,
-            borderColor: colors.border,
-          }}
-        >
-          <Text
-            className="text-2xl font-bold tracking-tight text-center mb-3"
-            style={{ color: colors.text }}
-          >
-            Begin Your Child's Journey Today
-          </Text>
-          <Text
-            className="text-sm leading-relaxed text-center mb-6 max-w-xs"
-            style={{ color: colors.textMuted }}
-          >
-            No pressure. No comparisons. Just guided, consistent growth towards
-            becoming their best self.
-          </Text>
-          <Button
-            size="xl"
-            onPress={handleStartJourney}
-            className="rounded-2xl"
+      {/* CTA — only shown to first-time visitors with no children yet */}
+      {children.length === 0 && (
+        <Animated.View style={ctaAnim} className="px-5 py-10">
+          <View
+            className="rounded-3xl border p-8 items-center"
+            style={{
+              backgroundColor: colors.background,
+              borderColor: colors.border,
+            }}
           >
             <Text
-              style={{
-                fontSize: 16,
-                fontWeight: '600',
-                color: colors.primaryForeground,
-              }}
+              className="text-2xl font-bold tracking-tight text-center mb-3"
+              style={{ color: colors.text }}
             >
-              Get Started Free →
+              Begin Your Child's Journey Today
             </Text>
-          </Button>
-        </View>
-      </Animated.View>
+            <Text
+              className="text-sm leading-relaxed text-center mb-6 max-w-xs"
+              style={{ color: colors.textMuted }}
+            >
+              No pressure. No comparisons. Just guided, consistent growth
+              towards becoming their best self.
+            </Text>
+            <Button
+              size="xl"
+              onPress={handleStartJourney}
+              className="rounded-2xl"
+            >
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: '600',
+                  color: colors.primaryForeground,
+                }}
+              >
+                Get Started Free →
+              </Text>
+            </Button>
+          </View>
+        </Animated.View>
+      )}
 
       {/* Footer */}
       <View

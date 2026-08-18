@@ -67,7 +67,6 @@ interface ProgressInsightsModalProps {
   childAge?: string | number | null;
   childGender?: string | null;
   activeJobs?: Record<string, string>;
-  onPlanUpdate?: (plan: GoalPlan) => void;
   onClose: () => void;
 }
 
@@ -238,7 +237,6 @@ export default function ProgressInsightsModal({
   childAge,
   childGender,
   activeJobs,
-  onPlanUpdate,
   onClose,
 }: ProgressInsightsModalProps) {
   const [activeTab, setActiveTab] = useState('progress');
@@ -286,25 +284,27 @@ export default function ProgressInsightsModal({
   const CustomTooltip = useMemo(() => buildCustomTooltip(chartData), [chartData]);
 
   const finalizeInsights = useCallback(async () => {
+    if (!childId) return;
     const plan = goalPlanRef.current;
     const currentCount = completedCount(plan);
     try {
-      const goalsData = await api.goals.get(childId ?? '');
-      const rawPlan = goalsData.plan;
-      const rawInsights = rawPlan?.insights as Record<string, unknown> | undefined;
-      const items = Array.isArray(rawInsights?.insight_items)
-        ? (rawInsights.insight_items as unknown[])
-        : [];
+      const insightsDoc = await api.goalInsights.get(childId);
+      // pending_insights is the staging field written by the worker (full LLM response dict).
+      // Prefer it over insight_items when present — it means the job just completed.
+      const pendingRaw = insightsDoc?.pending_insights;
+      const items: InsightItem[] = Array.isArray(pendingRaw?.insight_items)
+        ? pendingRaw.insight_items
+        : Array.isArray(insightsDoc?.insight_items)
+          ? insightsDoc.insight_items
+          : [];
       const finalInsights = { schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items };
       if (items.length > 0) {
-        const updatedPlan: GoalPlan = {
-          ...plan,
-          insights: finalInsights,
-          insights_signature: currentCount,
-        };
         try {
-          await api.goals.patch(childId ?? '', { plan: updatedPlan });
-          onPlanUpdate?.(updatedPlan);
+          await api.goalInsights.patch(childId, {
+            schema_version: INSIGHTS_SCHEMA_VERSION,
+            insight_items: items,
+            insights_signature: currentCount,
+          });
         } catch (err) {
           console.warn('[ProgressInsightsModal] Insight save failed (non-fatal):', err);
         }
@@ -317,7 +317,7 @@ export default function ProgressInsightsModal({
       setInsightsError(true);
     }
     setInsightsLoading(false);
-  }, [childId, onPlanUpdate]);
+  }, [childId]);
 
   const insightsJob = useJob({
     activeJobs,
@@ -335,20 +335,11 @@ export default function ProgressInsightsModal({
     const gender = childGenderRef.current;
     const currentCount = completedCount(plan);
 
-    // Valid cache: same schema version, generated after the last completed activity,
-    // and actually contains insights (don't serve a previously-saved empty result).
-    if (
-      plan?.insights?.schema_version === INSIGHTS_SCHEMA_VERSION &&
-      plan?.insights_signature === currentCount &&
-      Array.isArray(plan.insights.insight_items) &&
-      plan.insights.insight_items.length > 0
-    ) {
-      setInsightsData(plan.insights);
-      return;
-    }
-
-    // Stale or missing — enqueue via jobs queue, finalize in finalizeInsights.
+    // Fetch stored insights from the dedicated goal_insights collection.
+    // If cached (same schema_version + insights_signature === completedCount), serve directly.
+    // Otherwise enqueue the LLM job.
     const generate = async () => {
+      if (!childId) return;
       const { prompt, schema } = buildInsightsPayload(name, plan, age, gender);
       if (!prompt) {
         // No completed activities yet — nothing to generate.
@@ -358,11 +349,22 @@ export default function ProgressInsightsModal({
       setInsightsLoading(true);
       setInsightsError(false);
       try {
+        const stored = await api.goalInsights.get(childId);
+        const items = Array.isArray(stored?.insight_items) ? stored.insight_items : [];
+        const isCached =
+          stored?.schema_version === INSIGHTS_SCHEMA_VERSION &&
+          stored?.insights_signature === currentCount &&
+          items.length > 0;
+        if (isCached) {
+          setInsightsData({ schema_version: INSIGHTS_SCHEMA_VERSION, insight_items: items });
+          setInsightsLoading(false);
+          return;
+        }
         await enqueueInsightsJob({
           type: 'generate_journey_insights',
-          child_id: childId ?? '',
+          child_id: childId,
           payload: { prompt, response_json_schema: schema },
-          write_back: { collection: 'goals', filter: {}, field: 'goals_plan.insights' },
+          write_back: { collection: 'goal_insights', filter: {}, field: 'pending_insights' },
         });
       } catch (err) {
         console.error('[ProgressInsightsModal] Failed to enqueue insights job:', err);
@@ -701,7 +703,7 @@ export default function ProgressInsightsModal({
 
                 {/* Insights list */}
                 {insightsData && !insightsLoading && insightsData.insight_items.length > 0 && (
-                  <div className="border-edge-faint divide-y divide-white/[0.04] overflow-hidden rounded-2xl">
+                  <div className="border-edge-faint divide-edge-xs divide-y overflow-hidden rounded-2xl">
                     {(insightsData.insight_items || []).map((itemRaw, idx) => {
                       const item = itemRaw as InsightItem;
                       const isAnomaly = item.type === 'anomaly';

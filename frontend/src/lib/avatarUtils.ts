@@ -70,9 +70,7 @@ export function sanitizeViewModelAvatars(vm: Record<string, unknown>): Record<st
     if (!person || typeof person !== 'object') return person;
     const p = person as Record<string, unknown>;
     const img = p.image;
-    const isSafe =
-      (typeof img === 'string' && img.startsWith('data:image/')) ||
-      (typeof img === 'string' && img.startsWith('https://upload.wikimedia.org/'));
+    const isSafe = typeof img === 'string' && img.startsWith('data:image/');
     if (isSafe) return p;
     const name = typeof p.name === 'string' ? p.name : 'Guide';
     return { ...p, image: generateAvatarDataUri(name) };

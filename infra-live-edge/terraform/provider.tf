@@ -50,3 +50,20 @@ provider "aws" {
     }
   }
 }
+
+# Backend region provider — used to manage the uploads S3 bucket policy.
+# The alias is named after the only active backend region today. The region value
+# comes from var.backend_region so it is not hardcoded — if a new region is added,
+# update the alias name and the multi-region expansion checklist in variables.tf.
+provider "aws" {
+  alias  = "ap_south_1"
+  region = var.backend_region
+
+  default_tags {
+    tags = {
+      Project     = var.app_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}

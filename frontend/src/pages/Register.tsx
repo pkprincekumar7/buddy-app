@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,10 @@ export default function Register() {
       setError(
         httpErrorMessage(e as Error | undefined, {
           fallback: 'Registration failed.',
-          statusMessages: { 409: 'That email is already registered.' },
+          statusMessages: {
+            409: 'This email is already registered.',
+            403: 'This email address is not authorized to register. Please contact support.',
+          },
         }),
       );
     } finally {

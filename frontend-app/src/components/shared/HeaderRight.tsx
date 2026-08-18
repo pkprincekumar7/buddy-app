@@ -2,16 +2,17 @@
  * HeaderRight — TTS toggle + Profile avatar (mirrors web Layout.tsx right-side controls)
  *
  * Web order: [Volume2/VolumeX]  [Profile avatar]
+ * Note: dark/light mode toggle is in the profile dropdown (not the header) to match web.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Pressable } from 'react-native';
-import { Volume2, VolumeX, Sun, Moon } from 'lucide-react-native';
+import { Volume2, VolumeX } from 'lucide-react-native';
 import { api } from '@/api/client';
 import { useTheme } from '@/lib/ThemeContext';
 import ProfileHeaderButton from './ProfileHeaderButton';
 
 export default function HeaderRight() {
-  const { isDark, colors, toggle: toggleTheme } = useTheme();
+  const { colors } = useTheme();
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const ttsEnabledRef = useRef(true);
 
@@ -52,29 +53,6 @@ export default function HeaderRight() {
         marginRight: 4,
       }}
     >
-      {/* Dark / Light mode toggle */}
-      <Pressable
-        onPress={toggleTheme}
-        accessibilityLabel={
-          isDark ? 'Switch to light mode' : 'Switch to dark mode'
-        }
-        accessibilityRole="button"
-        style={({ pressed }) => ({
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: pressed ? colors.pressedBackground : 'transparent',
-        })}
-      >
-        {isDark ? (
-          <Sun size={18} color={colors.iconColor} />
-        ) : (
-          <Moon size={18} color={colors.iconColor} />
-        )}
-      </Pressable>
-
       {/* TTS toggle — mirrors web's Volume2/VolumeX button */}
       <Pressable
         onPress={handleToggle}

@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import type { CompletedArea } from '@/types/api';
+import type { ChildRecord, CompletedArea } from '@/types/api';
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
 export function useLifePathwayData(childId: string | undefined) {
-  const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
+  const [childData, setChildData] = useState<ChildRecord | null>(null);
   const [profile, setProfile] = useState<ProfileType>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [completedAreas, setCompletedAreas] = useState<CompletedArea[]>([]);
@@ -28,7 +28,7 @@ export function useLifePathwayData(childId: string | undefined) {
         ]);
 
         const vm = child.personality?.view_model;
-        if (vm?.type && vm?.profile) setProfile(onboardingProfileFromViewModel(vm));
+        if (vm?.profile?.name) setProfile(onboardingProfileFromViewModel(vm));
 
         // Filter to finalised areas — matches the same 3-way OR used in GrowthAreas.tsx for green ticks.
         // status may have been reset to 'in_progress' if the user re-entered the area after completing it,

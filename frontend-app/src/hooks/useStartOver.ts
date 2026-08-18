@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/AuthContext';
 export function useStartOver(childId: string | undefined) {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
   const queryClient = useQueryClient();
-  const { refetchChildren, clearActiveChildId } = useAuth();
+  const { clearActiveChildId, refetchChildren } = useAuth();
   const [isStartingOver, setIsStartingOver] = useState(false);
 
   const doStartOver = useCallback(async () => {
@@ -33,9 +33,12 @@ export function useStartOver(childId: string | undefined) {
         return;
       }
     }
-    // Sync AuthContext so activeChildId is cleared before navigation.
-    // Fall back to a direct clear if the network call fails.
-    await refetchChildren().catch(() => clearActiveChildId());
+    // Clear first (wipes AsyncStorage key) so refetchChildren won't auto-select
+    // list[0]. The tab bar resets to Home-only because activeChild becomes null.
+    await clearActiveChildId();
+    // Refresh the list so childList in AuthContext reflects the deletion.
+    // Failure here is non-fatal — the next mount will refetch anyway.
+    await refetchChildren().catch(() => {});
     setIsStartingOver(false);
     navigation.replace('Main');
   }, [
@@ -43,8 +46,8 @@ export function useStartOver(childId: string | undefined) {
     childId,
     navigation,
     queryClient,
-    refetchChildren,
     clearActiveChildId,
+    refetchChildren,
   ]);
 
   return { doStartOver, isStartingOver };

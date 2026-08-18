@@ -2,6 +2,15 @@
   "name": "BuddyApp",
   "displayName": "BuddyApp",
   "expo": {
-    "userInterfaceStyle": "automatic"
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you set a profile picture for your child.",
+          "cameraPermission": "The app accesses your camera to let you take a photo for your child's profile."
+        }
+      ]
+    ]
   }
 }

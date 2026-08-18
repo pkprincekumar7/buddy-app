@@ -4,6 +4,9 @@ import type {
   ChildRecord,
   PreferencesRecord,
   GoalsRecord,
+  GoalMonthsRecord,
+  GoalInsightsRecord,
+  ObservationsRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
   EnqueueJobResponse,
@@ -207,11 +210,11 @@ export const api = {
       request(
         `/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`,
       ) as Promise<CompletedGrowthAreasRecord>,
-    append: (childId: string, body: Record<string, unknown>): Promise<CompletedGrowthAreasRecord> =>
+    append: (childId: string, body: Record<string, unknown>): Promise<void> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'POST',
         body,
-      }) as Promise<CompletedGrowthAreasRecord>,
+      }) as Promise<void>,
     clear: (childId: string): Promise<void> =>
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'DELETE',
@@ -226,6 +229,51 @@ export const api = {
         method: 'PATCH',
         body,
       }) as Promise<GoalsRecord>,
+  },
+
+  goalMonths: {
+    get: (childId: string): Promise<GoalMonthsRecord> =>
+      request(
+        `/user/goal-months?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<GoalMonthsRecord>,
+    patchOne: (
+      childId: string,
+      monthNumber: number,
+      body: Record<string, unknown>,
+    ): Promise<void> =>
+      request(`/user/goal-months/${monthNumber}?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<void>,
+    patchAll: (childId: string, body: Record<string, unknown>): Promise<void> =>
+      request(`/user/goal-months?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<void>,
+  },
+
+  observations: {
+    get: (childId: string): Promise<ObservationsRecord> =>
+      request(
+        `/user/observations?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<ObservationsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<ObservationsRecord> =>
+      request(`/user/observations?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<ObservationsRecord>,
+  },
+
+  goalInsights: {
+    get: (childId: string): Promise<GoalInsightsRecord> =>
+      request(
+        `/user/goal-insights?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<GoalInsightsRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<GoalInsightsRecord> =>
+      request(`/user/goal-insights?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<GoalInsightsRecord>,
   },
 
   jobs: {
@@ -309,6 +357,24 @@ export const api = {
         }) as Promise<ChildRecord>,
       delete: (id: string): Promise<void> =>
         request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
+      uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
+        const contentType = photo.type || 'image/jpeg';
+        const { upload_url, avatar_url } = (await request(
+          `/children/${encodeURIComponent(id)}/avatar/presign`,
+          { method: 'POST', body: { content_type: contentType } },
+        )) as { upload_url: string; avatar_url: string };
+        // Upload directly to S3 — must include the same Content-Type the presigned
+        // URL was signed with, or S3 will reject the request (signature mismatch).
+        const s3Res = await fetch(upload_url, {
+          method: 'PUT',
+          body: photo,
+          headers: { 'Content-Type': contentType },
+        });
+        if (!s3Res.ok) {
+          throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
+        }
+        return { avatar_url };
+      },
     },
   },
 };

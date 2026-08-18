@@ -19,6 +19,7 @@ import type { AdminUserRecord } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -121,9 +122,7 @@ export default function AdminAllowedEmails() {
     onSuccess: (result) => {
       toast.success(result.locked ? 'User locked' : 'User unlocked');
       setLockTarget(null);
-      // refresh the paginated list
       void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
-      // patch only the locked field so the search card keeps its full record
       setUserSearchResult((prev) =>
         prev && prev !== 'not_found' && prev.id === result.id
           ? { ...prev, locked: result.locked }
@@ -211,335 +210,367 @@ export default function AdminAllowedEmails() {
           <Shield className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Allowed Emails</h1>
+          <h1 className="text-xl font-semibold text-foreground">Admin</h1>
           <p className="text-sm text-muted-foreground">
-            Only these emails can register for the application.
+            Manage allowed emails and registered users.
           </p>
         </div>
-        <Button
-          className="ml-auto bg-primary-action hover:bg-primary-action/80"
-          size="sm"
-          onClick={() => setAddOpen(true)}
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          Add email
-        </Button>
       </div>
 
-      {/* Search */}
-      <Card className="border-edge bg-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-foreground">Look up an email</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              className="form-input flex-1"
-              placeholder="user@example.com"
-              value={searchEmail}
-              onChange={(e) => {
-                setSearchEmail(e.target.value);
-                setSearchResult(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleSearch();
-              }}
-            />
-            <Button
-              variant="outline"
-              className="border-edge"
-              onClick={() => void handleSearch()}
-              disabled={searching || !searchEmail.trim()}
-            >
-              {searching ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-          {searchResult === 'not_found' && (
-            <p className="mt-2 text-sm text-muted-foreground">Not found in allowlist.</p>
-          )}
-          {searchResult && searchResult !== 'not_found' && (
-            <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-primary" />
-                <span className="text-sm text-foreground">{searchResult.email}</span>
-                <span className="text-xs text-muted-foreground">
-                  Added {formatDate(searchResult.added_at)}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
-                disabled={deleteMutation.isPending}
-                onClick={() => setDeleteTarget(searchResult.email)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <Tabs defaultValue="allowed-emails">
+        <TabsList className="w-full">
+          <TabsTrigger value="allowed-emails" className="flex-1 gap-2">
+            <Mail className="h-4 w-4" />
+            Allowed Emails
+          </TabsTrigger>
+          <TabsTrigger value="registered-users" className="flex-1 gap-2">
+            <Users className="h-4 w-4" />
+            Registered Users
+          </TabsTrigger>
+        </TabsList>
 
-      {/* List */}
-      <Card className="border-edge bg-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between text-sm font-medium text-foreground">
-            <span>All allowed emails</span>
-            {data && (
-              <span className="text-xs font-normal text-muted-foreground">{data.total} total</span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-10">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          ) : !data?.items.length ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">
-              No emails in allowlist yet.
+        {/* Allowed Emails Tab */}
+        <TabsContent value="allowed-emails" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Only these emails can register for the application.
             </p>
-          ) : (
-            <ul className="divide-edge divide-y">
-              {data.items.map((item) => (
-                <li
-                  key={item.email}
-                  className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Mail className="h-4 w-4 shrink-0 text-primary" />
-                    <span className="truncate text-sm text-foreground">{item.email}</span>
-                  </div>
-                  <div className="ml-4 flex shrink-0 items-center gap-3">
-                    <span className="hidden text-xs text-muted-foreground sm:block">
-                      {formatDate(item.added_at)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
-                      disabled={deleteMutation.isPending}
-                      onClick={() => setDeleteTarget(item.email)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="border-edge flex items-center justify-between border-t px-5 py-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Page {page + 1} of {totalPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* User search */}
-      <Card className="border-edge bg-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-foreground">Look up a user</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            <Input
-              className="form-input flex-1"
-              placeholder="user@example.com"
-              value={userSearchEmail}
-              onChange={(e) => {
-                setUserSearchEmail(e.target.value);
-                setUserSearchResult(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleUserSearch();
-              }}
-            />
             <Button
-              variant="outline"
-              className="border-edge"
-              onClick={() => void handleUserSearch()}
-              disabled={userSearching || !userSearchEmail.trim()}
+              className="bg-primary-action hover:bg-primary-action/80"
+              size="sm"
+              onClick={() => setAddOpen(true)}
             >
-              {userSearching ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add email
             </Button>
           </div>
-          {userSearchResult === 'not_found' && (
-            <p className="mt-2 text-sm text-muted-foreground">No registered user found.</p>
-          )}
-          {userSearchResult && userSearchResult !== 'not_found' && (
-            <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate text-sm font-medium text-foreground">
-                  {userSearchResult.full_name ?? '—'}
-                </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {userSearchResult.email ?? '—'}
-                </span>
-              </div>
-              <div className="ml-4 flex shrink-0 items-center gap-3">
-                {userSearchResult.locked && (
-                  <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
-                    Locked
-                  </span>
-                )}
+
+          {/* Search */}
+          <Card className="border-edge bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-foreground">
+                Look up an email
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <Input
+                  className="form-input flex-1"
+                  placeholder="user@example.com"
+                  value={searchEmail}
+                  onChange={(e) => {
+                    setSearchEmail(e.target.value);
+                    setSearchResult(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleSearch();
+                  }}
+                />
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className={
-                    userSearchResult.locked
-                      ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
-                      : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
-                  }
-                  disabled={lockMutation.isPending}
-                  onClick={() => setLockTarget(userSearchResult)}
-                  title={userSearchResult.locked ? 'Unlock user' : 'Lock user'}
+                  variant="outline"
+                  className="border-edge"
+                  onClick={() => void handleSearch()}
+                  disabled={searching || !searchEmail.trim()}
                 >
-                  {userSearchResult.locked ? (
-                    <LockOpen className="h-3.5 w-3.5" />
+                  {searching ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   ) : (
-                    <Lock className="h-3.5 w-3.5" />
+                    <Search className="h-4 w-4" />
                   )}
                 </Button>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              {searchResult === 'not_found' && (
+                <p className="mt-2 text-sm text-muted-foreground">Not found in allowlist.</p>
+              )}
+              {searchResult && searchResult !== 'not_found' && (
+                <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-primary" />
+                    <span className="text-sm text-foreground">{searchResult.email}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Added {formatDate(searchResult.added_at)}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => setDeleteTarget(searchResult.email)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Registered Users */}
-      <Card className="border-edge bg-card">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center justify-between text-sm font-medium text-foreground">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              <span>Registered Users</span>
-            </div>
-            {usersData && (
-              <span className="text-xs font-normal text-muted-foreground">
-                {usersData.total} total
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {usersLoading ? (
-            <div className="flex items-center justify-center py-10">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          ) : !usersData?.items.length ? (
-            <p className="py-10 text-center text-sm text-muted-foreground">No registered users.</p>
-          ) : (
-            <ul className="divide-edge divide-y">
-              {usersData.items.map((user) => (
-                <li
-                  key={user.id}
-                  className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
+          {/* List */}
+          <Card className="border-edge bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-sm font-medium text-foreground">
+                <span>All allowed emails</span>
+                {data && (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {data.total} total
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              ) : !data?.items.length ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No emails in allowlist yet.
+                </p>
+              ) : (
+                <ul className="divide-edge divide-y">
+                  {data.items.map((item) => (
+                    <li
+                      key={item.email}
+                      className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Mail className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="truncate text-sm text-foreground">{item.email}</span>
+                      </div>
+                      <div className="ml-4 flex shrink-0 items-center gap-3">
+                        <span className="hidden text-xs text-muted-foreground sm:block">
+                          {formatDate(item.added_at)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-error hover:bg-error/10 hover:text-error"
+                          disabled={deleteMutation.isPending}
+                          onClick={() => setDeleteTarget(item.email)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {totalPages > 1 && (
+                <div className="border-edge flex items-center justify-between border-t px-5 py-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-muted-foreground"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {page + 1} of {totalPages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-muted-foreground"
+                    disabled={page >= totalPages - 1}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Registered Users Tab */}
+        <TabsContent value="registered-users" className="mt-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            View and manage accounts that have registered for the application.
+          </p>
+
+          {/* User search */}
+          <Card className="border-edge bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-foreground">Look up a user</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <Input
+                  className="form-input flex-1"
+                  placeholder="user@example.com"
+                  value={userSearchEmail}
+                  onChange={(e) => {
+                    setUserSearchEmail(e.target.value);
+                    setUserSearchResult(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleUserSearch();
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  className="border-edge"
+                  onClick={() => void handleUserSearch()}
+                  disabled={userSearching || !userSearchEmail.trim()}
                 >
+                  {userSearching ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {userSearchResult === 'not_found' && (
+                <p className="mt-2 text-sm text-muted-foreground">No registered user found.</p>
+              )}
+              {userSearchResult && userSearchResult !== 'not_found' && (
+                <div className="border-edge bg-ghost mt-3 flex items-center justify-between rounded-lg border px-3 py-2">
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-medium text-foreground">
-                      {user.full_name ?? '—'}
+                      {userSearchResult.full_name ?? '—'}
                     </span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {user.email ?? '—'}
+                      {userSearchResult.email ?? '—'}
                     </span>
                   </div>
                   <div className="ml-4 flex shrink-0 items-center gap-3">
-                    {user.locked && (
+                    {userSearchResult.locked && (
                       <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
                         Locked
                       </span>
                     )}
-                    <span className="hidden text-xs text-muted-foreground sm:block">
-                      {formatDate(user.created_at)}
-                    </span>
                     <Button
                       variant="ghost"
                       size="icon"
                       className={
-                        user.locked
+                        userSearchResult.locked
                           ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
                           : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
                       }
                       disabled={lockMutation.isPending}
-                      onClick={() => setLockTarget(user)}
-                      title={user.locked ? 'Unlock user' : 'Lock user'}
+                      onClick={() => setLockTarget(userSearchResult)}
+                      title={userSearchResult.locked ? 'Unlock user' : 'Lock user'}
                     >
-                      {user.locked ? (
+                      {userSearchResult.locked ? (
                         <LockOpen className="h-3.5 w-3.5" />
                       ) : (
                         <Lock className="h-3.5 w-3.5" />
                       )}
                     </Button>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-          {usersTotalPages > 1 && (
-            <div className="border-edge flex items-center justify-between border-t px-5 py-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                disabled={usersPage === 0}
-                onClick={() => setUsersPage((p) => p - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Page {usersPage + 1} of {usersTotalPages}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-muted-foreground"
-                disabled={usersPage >= usersTotalPages - 1}
-                onClick={() => setUsersPage((p) => p + 1)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          {/* Registered Users list */}
+          <Card className="border-edge bg-card">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between text-sm font-medium text-foreground">
+                <span>All registered users</span>
+                {usersData && (
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {usersData.total} total
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {usersLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              ) : !usersData?.items.length ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No registered users.
+                </p>
+              ) : (
+                <ul className="divide-edge divide-y">
+                  {usersData.items.map((user) => (
+                    <li
+                      key={user.id}
+                      className="hover:bg-ghost flex items-center justify-between px-5 py-3 transition-colors"
+                    >
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {user.full_name ?? '—'}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {user.email ?? '—'}
+                        </span>
+                      </div>
+                      <div className="ml-4 flex shrink-0 items-center gap-3">
+                        {user.locked && (
+                          <span className="rounded-full bg-error/10 px-2 py-0.5 text-xs font-medium text-error">
+                            Locked
+                          </span>
+                        )}
+                        <span className="hidden text-xs text-muted-foreground sm:block">
+                          {formatDate(user.created_at)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={
+                            user.locked
+                              ? 'hover:bg-ghost h-7 w-7 text-muted-foreground hover:text-foreground'
+                              : 'h-7 w-7 text-error hover:bg-error/10 hover:text-error'
+                          }
+                          disabled={lockMutation.isPending}
+                          onClick={() => setLockTarget(user)}
+                          title={user.locked ? 'Unlock user' : 'Lock user'}
+                        >
+                          {user.locked ? (
+                            <LockOpen className="h-3.5 w-3.5" />
+                          ) : (
+                            <Lock className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-      {/* Add dialog */}
+              {usersTotalPages > 1 && (
+                <div className="border-edge flex items-center justify-between border-t px-5 py-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-muted-foreground"
+                    disabled={usersPage === 0}
+                    onClick={() => setUsersPage((p) => p - 1)}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {usersPage + 1} of {usersTotalPages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-muted-foreground"
+                    disabled={usersPage >= usersTotalPages - 1}
+                    onClick={() => setUsersPage((p) => p + 1)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Add email dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="border-edge bg-card sm:max-w-md">
           <DialogHeader>
@@ -592,6 +623,7 @@ export default function AdminAllowedEmails() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
       {/* Lock / unlock confirm */}
       <AlertDialog open={!!lockTarget} onOpenChange={(o) => !o && setLockTarget(null)}>
         <AlertDialogContent className="border-edge bg-card">

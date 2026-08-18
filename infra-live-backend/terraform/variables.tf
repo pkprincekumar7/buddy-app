@@ -277,7 +277,7 @@ variable "worker_max_capacity" {
 # -- S3 (managed externally — Terraform configures, does not create) ----------
 
 variable "uploads_bucket_name" {
-  description = "Pre-existing S3 bucket for user uploads (ap-south-1); Terraform manages CORS, lifecycle, and IAM only"
+  description = "Pre-existing S3 bucket for user uploads (backend region); Terraform manages CORS, lifecycle, and IAM only"
   type        = string
 }
 

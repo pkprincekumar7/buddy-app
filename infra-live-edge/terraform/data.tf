@@ -11,3 +11,10 @@ data "aws_s3_bucket" "backend" {
   provider = aws.us_east_1
   bucket   = var.assets_bucket_name
 }
+
+# Uploads S3 bucket — holds user-generated content (child profile photos) under
+# uploads/; served via CloudFront OAC so no public S3 access is required.
+data "aws_s3_bucket" "backend_uploads" {
+  provider = aws.ap_south_1
+  bucket   = var.uploads_bucket_name
+}

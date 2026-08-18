@@ -234,7 +234,7 @@ export default function LoginScreen() {
                 <View>
                   <Text
                     className="mb-1 text-sm font-medium"
-                    style={{ color: colors.textMuted }}
+                    style={{ color: colors.text }}
                   >
                     Username (email)
                   </Text>
@@ -260,7 +260,7 @@ export default function LoginScreen() {
                 <View>
                   <Text
                     className="mb-1 text-sm font-medium"
-                    style={{ color: colors.textMuted }}
+                    style={{ color: colors.text }}
                   >
                     Password
                   </Text>
@@ -326,7 +326,7 @@ export default function LoginScreen() {
                 className="mt-6 rounded-xl border p-4"
                 style={{
                   backgroundColor: colors.card,
-                  borderColor: colors.primary + '40',
+                  borderColor: colors.primaryBorder,
                 }}
               >
                 <Text
@@ -397,7 +397,7 @@ export default function LoginScreen() {
                           key={code}
                           variant="ghost"
                           className="w-full justify-start rounded-none border-b px-4"
-                          style={{ borderBottomColor: colors.border + '4D' }}
+                          style={{ borderBottomColor: colors.ghostLight }}
                           onPress={() => {
                             setGoogleCountry(code);
                             setShowCountryPicker(false);
@@ -473,13 +473,13 @@ export default function LoginScreen() {
       >
         <View
           className="flex-1 items-center justify-center gap-8"
-          style={{ backgroundColor: colors.background, opacity: 0.97 }}
+          style={{ backgroundColor: colors.background + 'f7' }}
         >
           {/* Dual-ring spinner */}
           <View className="relative h-20 w-20 items-center justify-center">
             <View
               className="absolute inset-0 rounded-full border-4"
-              style={{ borderColor: colors.primary + '33' }}
+              style={{ borderColor: colors.primaryMuted }}
             />
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
@@ -490,7 +490,7 @@ export default function LoginScreen() {
             >
               {loadingMessage}
             </Text>
-            <Text className="text-sm" style={{ color: colors.iconColor }}>
+            <Text className="text-sm" style={{ color: colors.textMuted }}>
               Please wait a moment…
             </Text>
           </View>

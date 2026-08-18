@@ -13,7 +13,7 @@ interface ConfirmModalProps {
   isStartingOver: boolean;
 }
 
-function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps) {
+export function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmModalProps) {
   // Close on Escape key
   const handleKey = useCallback(
     (e: globalThis.KeyboardEvent) => {

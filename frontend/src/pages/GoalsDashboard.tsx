@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { ReactNode, ErrorInfo } from 'react';
 import { cn } from '@/lib/utils';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Target, ChevronDown, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'lucide-react';
@@ -19,7 +19,6 @@ import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
 import type { Dispatch, SetStateAction } from 'react';
 import { SPINNER, slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
-import StartOverButton from '@/components/shared/StartOverButton';
 
 interface DashActivity {
   completed?: boolean;
@@ -369,7 +368,6 @@ export default function GoalsDashboard() {
     childData,
     concern,
     goalPlan,
-    setGoalPlan,
     isLoading,
     saveActivityCompletion,
     handleActivityReset,
@@ -479,15 +477,14 @@ export default function GoalsDashboard() {
                     left={
                       <Button
                         variant="outline"
-                        onClick={() =>
-                          navigate(`/LifePathway/${childId}`, { state: { fromBack: true } })
-                        }
+                        onClick={() => {
+                          void navigate(`/LifePathway/${childId}`, { state: { fromBack: true } });
+                        }}
                         className="btn-secondary h-11 w-full rounded-2xl px-6 text-base sm:w-auto"
                       >
                         ← Back
                       </Button>
                     }
-                    center={<StartOverButton childId={childId} className="w-full sm:w-auto" />}
                     right={
                       <Button
                         variant="outline"
@@ -534,7 +531,6 @@ export default function GoalsDashboard() {
                     childAge={childData?.['age'] as string | number | undefined}
                     childGender={childData?.['gender'] as string | undefined}
                     activeJobs={childData?.['active_jobs'] as Record<string, string> | undefined}
-                    onPlanUpdate={(plan) => setGoalPlan(plan)}
                     onClose={() => setShowProgress(false)}
                   />
                 )}

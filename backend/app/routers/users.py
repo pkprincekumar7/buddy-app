@@ -1,9 +1,11 @@
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import ValidationError
 
 from app import models
 from app.database import get_db
@@ -14,7 +16,13 @@ from app.models_api import (
     ChildActivity,
     CompletedGrowthArea,
     CompletedGrowthAreasResponse,
-    GoalsPlan,
+    GoalInsightsPatch,
+    GoalInsightsResponse,
+    GoalMonthsPatch,
+    GoalMonthsResponse,
+    GoalsMonth,
+    ObservationsPatch,
+    ObservationsResponse,
     UserGoals,
     UserGoalsPatch,
     UserPreferences,
@@ -51,7 +59,7 @@ _GROWTH_AREA_OPTIONAL_FIELDS = (
 async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> None:
     """Raise 404 if child_id does not belong to the authenticated user."""
     child = await db[models.CHILDREN].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
@@ -77,7 +85,7 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
     return CompletedGrowthArea(
         area_id=doc["area_id"],
         area_name=doc["area_name"],
-        area_color=doc["area_color"],
+        area_color=doc.get("area_color"),
         answers=doc.get("answers") or {},
         recommendations=doc.get("recommendations"),
         child_activity=child_activity,
@@ -96,6 +104,9 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
         ai_three_month_recommendations=doc.get("ai_three_month_recommendations"),
         pending_recommendations=doc.get("pending_recommendations"),
         pending_child_activity=doc.get("pending_child_activity"),
+        parent_questions=doc.get("parent_questions"),
+        child_rounds=doc.get("child_rounds"),
+        life_pathway_milestones=doc.get("life_pathway_milestones"),
     )
 
 
@@ -154,7 +165,7 @@ async def patch_preferences(
 @router.get(
     "/user/completed-growth-areas",
     response_model=CompletedGrowthAreasResponse,
-    description="List completed growth areas for a given child, with pagination.",
+    description="List completed growth areas for a given child, with pagination. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
@@ -165,7 +176,9 @@ async def list_completed_growth_areas(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    # Read-only: query is already scoped by user_id + location so an unknown
+    # child_id returns an empty list rather than leaking data. Skip _require_child
+    # to save one round-trip on M0's shared-cluster I/O.
     docs = await (
         db[models.GROWTH_AREAS]
         .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
@@ -178,8 +191,8 @@ async def list_completed_growth_areas(
 
 @router.post(
     "/user/completed-growth-areas",
-    response_model=CompletedGrowthAreasResponse,
-    description="Record a growth area as completed for a given child.",
+    status_code=204,
+    description="Upsert a growth area document for a given child.",
 )
 @user_limiter.limit("60/minute")
 async def append_completed_growth_area(
@@ -191,10 +204,9 @@ async def append_completed_growth_area(
 ):
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
-    # Always write the required fields (area_name, area_color, answers).
+    # Always write the required fields (area_name, answers).
     set_fields: dict = {
         "area_name": body.area_name,
-        "area_color": body.area_color,
         "answers": body.answers,
         "updated_at": now,
     }
@@ -208,6 +220,28 @@ async def append_completed_growth_area(
         set_fields["child_activity"] = body.child_activity.model_dump()
     # user_id, child_id, area_id, location are equality conditions in the filter.
     set_on_insert: dict = {"_id": str(uuid.uuid4()), "created_at": now}
+
+    # When the area is finalised, remove all transient wizard and staging fields.
+    # These fields must also be removed from set_fields: MongoDB raises a conflict
+    # error if the same path appears in both $set and $unset.
+    unset_fields: dict = {}
+    if body.status == "completed":
+        unset_fields = {
+            "pending_child_activity": "",
+            "pending_recommendations": "",
+            "child_activity_selections": "",
+            "interactive_step": "",
+            "interactive_answers": "",
+            "interactive_draft": "",
+            "step": "",
+        }
+        for transient in unset_fields:
+            set_fields.pop(transient, None)
+
+    update_doc: dict = {"$set": set_fields, "$setOnInsert": set_on_insert}
+    if unset_fields:
+        update_doc["$unset"] = unset_fields
+
     await db[models.GROWTH_AREAS].update_one(
         {
             "user_id": user["_id"],
@@ -215,23 +249,9 @@ async def append_completed_growth_area(
             "area_id": body.area_id,
             "location": user["location"],
         },
-        {"$set": set_fields, "$setOnInsert": set_on_insert},
+        update_doc,
         upsert=True,
     )
-    docs = await (
-        db[models.GROWTH_AREAS]
-        .find({"user_id": user["_id"], "child_id": child_id, "location": user["location"]})
-        .sort("created_at", 1)
-        .to_list(_GROWTH_AREAS_MAX)
-    )
-    if len(docs) == _GROWTH_AREAS_MAX:
-        log.warning(
-            "append_completed_growth_area: hit _GROWTH_AREAS_MAX cap (%d) for user=%s child=%s",
-            _GROWTH_AREAS_MAX,
-            user["_id"],
-            child_id,
-        )
-    return CompletedGrowthAreasResponse(areas=[_doc_to_growth_area(d) for d in docs])
 
 
 @router.delete(
@@ -260,7 +280,7 @@ async def clear_completed_growth_areas(
 @router.get(
     "/user/goals",
     response_model=UserGoals,
-    description="Retrieve the goals plan for a given child.",
+    description="Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
 )
 @user_limiter.limit("60/minute")
 async def get_goals(
@@ -269,20 +289,22 @@ async def get_goals(
     user: dict = Depends(get_current_parent),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.GOALS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )
     if not doc:
         return UserGoals()
-    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc.get("goals_plan") else None
-    return UserGoals(parent_concern=doc.get("parent_concern"), plan=plan)
+    return UserGoals(
+        parent_concern=doc.get("parent_concern"),
+        goals_plan=doc.get("goals_plan"),
+    )
 
 
 @router.patch(
     "/user/goals",
     response_model=UserGoals,
-    description="Update the parent concern or goals plan for a given child.",
+    description="Update the parent concern for a given child.",
 )
 @user_limiter.limit("20/minute")
 async def patch_goals(
@@ -295,17 +317,15 @@ async def patch_goals(
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
-    set_on_insert: dict = {"created_at": now, "user_id": user["_id"]}
+    set_on_insert: dict = {"created_at": now, "user_id": user["_id"], "location": user["location"]}
 
     if body.clear_concern:
         set_fields["parent_concern"] = None
     elif body.parent_concern is not None:
         set_fields["parent_concern"] = body.parent_concern
 
-    if body.clear_plan:
+    if body.clear_goals_plan:
         set_fields["goals_plan"] = None
-    elif body.plan is not None:
-        set_fields["goals_plan"] = body.plan.model_dump()
 
     doc = await db[models.GOALS].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
@@ -313,5 +333,367 @@ async def patch_goals(
         upsert=True,
         return_document=True,
     )
-    plan = GoalsPlan.model_validate(doc["goals_plan"]) if doc and doc.get("goals_plan") else None
-    return UserGoals(parent_concern=doc.get("parent_concern") if doc else None, plan=plan)
+    return UserGoals(
+        parent_concern=doc.get("parent_concern") if doc else None,
+        goals_plan=doc.get("goals_plan") if doc else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Goal months — one document per month per child
+# ---------------------------------------------------------------------------
+
+
+def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
+    try:
+        # Pass raw values without defaults so Pydantic raises ValidationError on
+        # missing required fields (goal, objective). Pre-filling "" would silently
+        # hide schema drift — e.g. a worker writing "title" instead of "goal".
+        # periods defaults to [] because an empty periods list is valid.
+        return GoalsMonth.model_validate(
+            {
+                "month": doc.get("month"),
+                "goal": doc.get("goal"),
+                "objective": doc.get("objective"),
+                "periods": doc.get("periods", []),
+            }
+        )
+    except (ValidationError, KeyError, TypeError):
+        log.warning(
+            "_month_doc_to_api: skipping invalid month doc _id=%s month=%s",
+            doc.get("_id"),
+            doc.get("month"),
+            exc_info=True,
+        )
+        return None
+
+
+@router.get(
+    "/user/goal-months",
+    response_model=GoalMonthsResponse,
+    description="Retrieve all month plan documents for a given child. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
+)
+@user_limiter.limit("60/minute")
+async def get_goal_months(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
+    docs = await (
+        db[models.GOAL_MONTHS]
+        .find({"child_id": child_id, "user_id": user["_id"], "location": user["location"]})
+        .sort("month", 1)
+        .to_list(12)
+    )
+    months = [m for m in (_month_doc_to_api(d) for d in docs) if m is not None]
+    return GoalMonthsResponse(months=months)
+
+
+@router.patch(
+    "/user/goal-months/{month_number}",
+    status_code=204,
+    description="Upsert a single month plan document for a given child.",
+)
+@user_limiter.limit("30/minute")
+async def patch_goal_month_single(
+    request: Request,
+    month_number: int = Path(..., ge=1, le=12),
+    body: GoalsMonth = Body(...),
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    if body.month != month_number:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Path month_number ({month_number}) does not match body month ({body.month})",
+        )
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields = {
+        "goal": body.goal,
+        "objective": body.objective,
+        "periods": [p.model_dump() for p in body.periods],
+        "updated_at": now,
+    }
+    await db[models.GOAL_MONTHS].update_one(
+        {
+            "child_id": child_id,
+            "user_id": user["_id"],
+            "month": month_number,
+            "location": user["location"],
+        },
+        {
+            "$set": set_fields,
+            "$setOnInsert": {
+                "_id": str(uuid.uuid4()),
+                "created_at": now,
+                "user_id": user["_id"],
+                "child_id": child_id,
+                "location": user["location"],
+            },
+        },
+        upsert=True,
+    )
+
+
+@router.patch(
+    "/user/goal-months",
+    status_code=204,
+    description="Replace all month plan documents for a given child in one operation.",
+)
+@user_limiter.limit("20/minute")
+async def patch_goal_months(
+    request: Request,
+    body: GoalMonthsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    filter_key = {"child_id": child_id, "user_id": user["_id"], "location": user["location"]}
+
+    # TODO(M10+): Replace upsert-then-delete below with an atomic transaction once the
+    # cluster is upgraded to Atlas M10 or higher.
+    #
+    # Why upsert-per-month instead of insert_many + delete_many:
+    # goal_months has a unique index on (location, child_id, user_id, month). This
+    # index is intentionally kept — it enforces data integrity (no duplicate month
+    # docs per child) and satisfies the Atlas sharding requirement that every unique
+    # index must have the shard key (location) as its leading field (required on M10+).
+    # insert_many would fail with DuplicateKeyError on every call after the first
+    # because old docs still hold the index entries at insert time. Upserting each
+    # month individually is compatible with the unique index: update_one matches the
+    # existing doc by (filter_key + month) and overwrites it in-place, or inserts a
+    # new doc if none exists — no duplicate key violation in either case.
+    #
+    # Crash safety with this approach:
+    #   - Crash mid-upsert loop → partial update; each upsert is idempotent so a
+    #     retry converges to the correct state (no data loss).
+    #   - Crash after upserts but before delete_many → stale month docs for months
+    #     that were removed from the plan remain; the next successful call will
+    #     clean them up (no data loss).
+    # On M10+ wrap both the upsert loop and the delete in a session transaction to
+    # make the replace fully atomic.
+    submitted_months: list[int] = [m.month for m in body.months]
+
+    async def _upsert_month(month: GoalsMonth) -> None:
+        await db[models.GOAL_MONTHS].update_one(
+            {**filter_key, "month": month.month},
+            {
+                "$set": {
+                    "goal": month.goal,
+                    "objective": month.objective,
+                    "periods": [p.model_dump() for p in month.periods],
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "_id": str(uuid.uuid4()),
+                    "created_at": now,
+                    "user_id": user["_id"],
+                    "child_id": child_id,
+                    "location": user["location"],
+                },
+            },
+            upsert=True,
+        )
+
+    # Run all per-month upserts concurrently — each is independent and idempotent.
+    # asyncio.gather preserves crash-safety: a partial failure leaves some months
+    # updated and some not, but a retry converges to the correct state.
+    await asyncio.gather(*[_upsert_month(m) for m in body.months])
+
+    # Delete any month docs whose month number was not included in this submission
+    # (i.e. months that were removed from the plan). $nin: [] means "delete all",
+    # which is the correct behaviour when body.months is empty (clearing the plan).
+    await db[models.GOAL_MONTHS].delete_many({**filter_key, "month": {"$nin": submitted_months}})
+
+
+# ---------------------------------------------------------------------------
+# Goal insights — one document per child
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/user/goal-insights",
+    response_model=GoalInsightsResponse,
+    description="Retrieve the insights document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+)
+@user_limiter.limit("60/minute")
+async def get_goal_insights(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
+    doc = await db[models.GOAL_INSIGHTS].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
+    if not doc:
+        return GoalInsightsResponse()
+    raw_items = doc.get("insight_items", [])
+    # Resilience: before the pending_insights staging-field pattern was introduced,
+    # the worker wrote the full LLM response dict to insight_items directly.
+    # Extract the inner list so old documents don't cause a 500 on GET.
+    if isinstance(raw_items, dict):
+        raw_items = raw_items.get("insight_items", [])
+    if not isinstance(raw_items, list):
+        raw_items = []
+    return GoalInsightsResponse(
+        schema_version=doc.get("schema_version"),
+        insight_items=raw_items,
+        insights_signature=doc.get("insights_signature"),
+        pending_insights=doc.get("pending_insights"),
+    )
+
+
+@router.patch(
+    "/user/goal-insights",
+    response_model=GoalInsightsResponse,
+    description="Update the insights document for a given child.",
+)
+@user_limiter.limit("20/minute")
+async def patch_goal_insights(
+    request: Request,
+    body: GoalInsightsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields: dict = {"updated_at": now}
+    # clear_* takes precedence over the value field — mirrors UserGoalsPatch pattern.
+    if body.clear_schema_version:
+        set_fields["schema_version"] = None
+    elif body.schema_version is not None:
+        set_fields["schema_version"] = body.schema_version
+    unset_fields: dict = {}
+    if body.insight_items is not None:
+        set_fields["insight_items"] = [item.model_dump() for item in body.insight_items]
+        # Committing insight_items means the staging field has been promoted — clear it.
+        unset_fields["pending_insights"] = ""
+    if body.clear_insights_signature:
+        set_fields["insights_signature"] = None
+    elif body.insights_signature is not None:
+        set_fields["insights_signature"] = body.insights_signature
+
+    update_op: dict = {
+        "$set": set_fields,
+        "$setOnInsert": {
+            "created_at": now,
+            "user_id": user["_id"],
+            "location": user["location"],
+        },
+    }
+    if unset_fields:
+        update_op["$unset"] = unset_fields
+
+    doc = await db[models.GOAL_INSIGHTS].find_one_and_update(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        update_op,
+        upsert=True,
+        return_document=True,
+    )
+    return GoalInsightsResponse(
+        schema_version=doc.get("schema_version") if doc else None,
+        insight_items=doc.get("insight_items", []) if doc else [],
+        insights_signature=doc.get("insights_signature") if doc else None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# observations — one document per child
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/user/observations",
+    response_model=ObservationsResponse,
+    description="Retrieve the observations document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+)
+@user_limiter.limit("60/minute")
+async def get_observations(
+    request: Request,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
+    doc = await db[models.OBSERVATIONS].find_one(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
+    )
+    if not doc:
+        return ObservationsResponse()
+    # Shape coercion only — ObservationsResponse truncates over-long lists itself,
+    # so a document that outgrew the cap cannot 500 this endpoint.
+    raw_watching = doc.get("watching", [])
+    if not isinstance(raw_watching, list):
+        raw_watching = []
+    return ObservationsResponse(
+        source=doc.get("source"),
+        items=doc.get("items", []),
+        watching=[w for w in raw_watching if isinstance(w, str)],
+        span=doc.get("span"),
+        started_at=doc.get("started_at"),
+        pending_observations=doc.get("pending_observations"),
+    )
+
+
+@router.patch(
+    "/user/observations",
+    response_model=ObservationsResponse,
+    description="Update the observations document for a given child.",
+)
+@user_limiter.limit("20/minute")
+async def patch_observations(
+    request: Request,
+    body: ObservationsPatch,
+    child_id: str = Query(..., min_length=1, max_length=100),
+    user: dict = Depends(get_current_parent),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    await _require_child(db, child_id, user)
+    now = datetime.now(UTC)
+    set_fields: dict = {"updated_at": now}
+    unset_fields: dict = {}
+
+    # exclude_unset so a PATCH carrying only `watching` cannot blank the generated
+    # set — the old shape stored everything in one field and had to rewrite it whole.
+    updates = body.model_dump(exclude_unset=True)
+    for key in ("source", "items", "watching", "span", "started_at"):
+        if key in updates and updates[key] is not None:
+            set_fields[key] = updates[key]
+
+    # Committing items means the staging field has been promoted — clear it.
+    if "items" in set_fields:
+        unset_fields["pending_observations"] = ""
+
+    update_op: dict = {
+        "$set": set_fields,
+        "$setOnInsert": {
+            "created_at": now,
+            "user_id": user["_id"],
+            "location": user["location"],
+        },
+    }
+    if unset_fields:
+        update_op["$unset"] = unset_fields
+
+    doc = await db[models.OBSERVATIONS].find_one_and_update(
+        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
+        update_op,
+        upsert=True,
+        return_document=True,
+    )
+    return ObservationsResponse(
+        source=doc.get("source") if doc else None,
+        items=doc.get("items", []) if doc else [],
+        watching=doc.get("watching", []) if doc else [],
+        span=doc.get("span") if doc else None,
+        started_at=doc.get("started_at") if doc else None,
+    )
