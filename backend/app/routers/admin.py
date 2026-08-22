@@ -5,16 +5,20 @@ from datetime import UTC, datetime
 from email_validator import EmailNotValidError
 from email_validator import validate_email as _validate_email
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_admin
+from app.deps import CurrentAdmin, Db, get_current_admin
 from app.limiter import user_limiter
 
-router = APIRouter(tags=["admin"])
+# Every route in this router requires an authenticated admin. Declaring the
+# dependency here (rather than on each function) enforces it even if a future
+# route is added without remembering to add the check locally. Handlers that
+# also need the admin's own user document still declare it as a parameter
+# (e.g. lock_user) — FastAPI caches the dependency result per-request, so it
+# does not run get_current_admin twice.
+router = APIRouter(tags=["admin"], dependencies=[Depends(get_current_admin)])
 log = logging.getLogger(__name__)
 
 
@@ -35,6 +39,39 @@ class AllowedEmailBody(BaseModel):
             raise ValueError(str(exc)) from exc
 
 
+class AllowedEmailResponse(BaseModel):
+    email: str
+    added_at: datetime | None = None
+
+
+class AllowedEmailListResponse(BaseModel):
+    items: list[AllowedEmailResponse]
+    total: int
+    skip: int
+    limit: int
+
+
+class AdminUserSummary(BaseModel):
+    id: str
+    email: str | None = None
+    full_name: str | None = None
+    location: str | None = None
+    created_at: datetime | None = None
+    locked: bool = False
+
+
+class AdminUserListResponse(BaseModel):
+    items: list[AdminUserSummary]
+    total: int
+    skip: int
+    limit: int
+
+
+class LockUserResponse(BaseModel):
+    id: str
+    locked: bool
+
+
 def _normalize_email_param(email: str) -> str:
     try:
         return _validate_email(email.strip(), check_deliverability=False).normalized.lower()
@@ -44,15 +81,15 @@ def _normalize_email_param(email: str) -> str:
 
 @router.get(
     "/admin/allowed-emails",
+    response_model=AllowedEmailListResponse,
     description="List allowed emails with pagination. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def list_allowed_emails(
     request: Request,
+    db: Db,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     pipeline = [
         {
@@ -65,34 +102,37 @@ async def list_allowed_emails(
     result = await db[models.ALLOWED_EMAILS].aggregate(pipeline).to_list(1)
     facet = result[0] if result else {"items": [], "total": []}
     total = facet["total"][0]["n"] if facet["total"] else 0
-    return {
-        "items": [{"email": d["_id"], "added_at": d.get("added_at")} for d in facet["items"]],
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+    return AllowedEmailListResponse(
+        items=[
+            AllowedEmailResponse(email=d["_id"], added_at=d.get("added_at")) for d in facet["items"]
+        ],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
     "/admin/allowed-emails/{email:path}",
+    response_model=AllowedEmailResponse,
     description="Fetch a single allowed email record. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def get_allowed_email(
     request: Request,
     email: str,
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
 ):
     normalized = _normalize_email_param(email)
     doc = await db[models.ALLOWED_EMAILS].find_one({"_id": normalized})
     if not doc:
         raise HTTPException(status_code=404, detail="Email not found in allowlist")
-    return {"email": doc["_id"], "added_at": doc.get("added_at")}
+    return AllowedEmailResponse(email=doc["_id"], added_at=doc.get("added_at"))
 
 
 @router.post(
     "/admin/allowed-emails",
+    response_model=AllowedEmailResponse,
     status_code=201,
     description="Add an email to the allowlist. Admin only.",
 )
@@ -100,8 +140,7 @@ async def get_allowed_email(
 async def add_allowed_email(
     request: Request,
     body: AllowedEmailBody,
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
 ):
     now = datetime.now(UTC)
     try:
@@ -112,7 +151,7 @@ async def add_allowed_email(
         "admin.allowed_emails.add email_hash=%s",
         hashlib.sha256(body.email.encode()).hexdigest()[:16],
     )
-    return {"email": body.email, "added_at": now}
+    return AllowedEmailResponse(email=body.email, added_at=now)
 
 
 @router.delete(
@@ -124,8 +163,7 @@ async def add_allowed_email(
 async def remove_allowed_email(
     request: Request,
     email: str,
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
 ):
     normalized = _normalize_email_param(email)
     result = await db[models.ALLOWED_EMAILS].delete_one({"_id": normalized})
@@ -142,15 +180,15 @@ async def remove_allowed_email(
 
 @router.get(
     "/admin/users",
+    response_model=AdminUserListResponse,
     description="List registered users with pagination. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def list_users(
     request: Request,
+    db: Db,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     pipeline = [
         {
@@ -177,34 +215,34 @@ async def list_users(
     result = await db[models.USERS].aggregate(pipeline).to_list(1)
     facet = result[0] if result else {"items": [], "total": []}
     total = facet["total"][0]["n"] if facet["total"] else 0
-    return {
-        "items": [
-            {
-                "id": str(d["_id"]),
-                "email": d.get("email"),
-                "full_name": d.get("full_name"),
-                "location": d.get("location"),
-                "created_at": d.get("created_at"),
-                "locked": bool(d.get("is_locked")),
-            }
+    return AdminUserListResponse(
+        items=[
+            AdminUserSummary(
+                id=str(d["_id"]),
+                email=d.get("email"),
+                full_name=d.get("full_name"),
+                location=d.get("location"),
+                created_at=d.get("created_at"),
+                locked=bool(d.get("is_locked")),
+            )
             for d in facet["items"]
         ],
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
     "/admin/users/by-email/{email:path}",
+    response_model=AdminUserSummary,
     description="Look up a registered user by email address. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def get_user_by_email(
     request: Request,
     email: str,
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
 ):
     normalized = _normalize_email_param(email)
     email_doc = await db[models.EMAIL_INDEX].find_one({"_id": normalized})
@@ -216,29 +254,30 @@ async def get_user_by_email(
     )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return {
-        "id": str(user["_id"]),
-        "email": user.get("email"),
-        "full_name": user.get("full_name"),
-        "location": user.get("location"),
-        "created_at": user.get("created_at"),
-        "locked": bool(user.get("is_locked")),
-    }
+    return AdminUserSummary(
+        id=str(user["_id"]),
+        email=user.get("email"),
+        full_name=user.get("full_name"),
+        location=user.get("location"),
+        created_at=user.get("created_at"),
+        locked=bool(user.get("is_locked")),
+    )
 
 
 @router.patch(
     "/admin/users/{user_id}/lock",
+    response_model=LockUserResponse,
     description="Lock a user account — revokes all tokens and blocks login. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def lock_user(
     request: Request,
     user_id: str,
+    admin: CurrentAdmin,
+    db: Db,
     location: str = Query(..., description="User's location shard (returned by /admin/users)"),
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    if user_id == str(_user["_id"]):
+    if user_id == str(admin["_id"]):
         raise HTTPException(status_code=400, detail="Cannot lock your own account")
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
@@ -250,20 +289,20 @@ async def lock_user(
     safe_user_id = user_id.replace("\r", "").replace("\n", "")
     safe_location = location.replace("\r", "").replace("\n", "")
     log.info("admin.users.lock user_id=%s location=%s", safe_user_id, safe_location)
-    return {"id": user_id, "locked": True}
+    return LockUserResponse(id=user_id, locked=True)
 
 
 @router.patch(
     "/admin/users/{user_id}/unlock",
+    response_model=LockUserResponse,
     description="Unlock a previously locked user account. Admin only.",
 )
 @user_limiter.limit("60/minute")
 async def unlock_user(
     request: Request,
     user_id: str,
+    db: Db,
     location: str = Query(..., description="User's location shard (returned by /admin/users)"),
-    _user: dict = Depends(get_current_admin),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
     result = await db[models.USERS].update_one(
@@ -275,4 +314,4 @@ async def unlock_user(
     safe_user_id = _sanitize_for_log(user_id)
     safe_location = _sanitize_for_log(location)
     log.info("admin.users.unlock user_id=%s location=%s", safe_user_id, safe_location)
-    return {"id": user_id, "locked": False}
+    return LockUserResponse(id=user_id, locked=False)

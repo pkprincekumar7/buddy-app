@@ -5,15 +5,17 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
-from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_parent
+from app.deps import CurrentParent, Db, get_current_parent
 from app.limiter import user_limiter
-from app.models_api import EnqueueJobRequest, EnqueueJobResponse, JobStatusResponse
+from app.schemas.jobs import EnqueueJobRequest, EnqueueJobResponse, JobStatusResponse
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+# Every route needs an authenticated parent whose id/location scope the query —
+# declared at the router level as a safety net, and again per-function (below)
+# since the handlers need the returned user document. FastAPI caches the
+# dependency result per request, so it only runs once.
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(get_current_parent)])
 log = logging.getLogger(__name__)
 
 _MAX_IN_FLIGHT_PER_TYPE = 2
@@ -67,8 +69,8 @@ def _sanitize_for_log(value: object) -> str:
 async def enqueue_job(
     request: Request,
     body: EnqueueJobRequest,
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: CurrentParent,
+    db: Db,
 ):
     user_id = user["_id"]
 
@@ -206,9 +208,9 @@ async def enqueue_job(
 @user_limiter.limit("60/minute")
 async def get_job_status(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     job_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Field order matches the index (location, job_id, user_id) so the query
     # hits the index prefix and avoids a scatter-gather on a sharded cluster.

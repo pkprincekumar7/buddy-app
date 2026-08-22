@@ -7,13 +7,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
-from app.deps import get_current_parent
+from app.deps import CurrentParent, get_current_parent
 from app.limiter import user_limiter
 from app.llm_rate_limiter import enforce as _enforce_user_rate_limit
 from app.services import llm_service
 from app.services.llm_service import LLMConfigError, ProviderName
 
-router = APIRouter(prefix="/llm", tags=["llm"])
+# Every route needs an authenticated parent; list_providers doesn't use the
+# returned user document, so the check is declared once here rather than
+# per-function.
+router = APIRouter(prefix="/llm", tags=["llm"], dependencies=[Depends(get_current_parent)])
 log = logging.getLogger(__name__)
 
 
@@ -44,9 +47,7 @@ class LLMInvokeBody(BaseModel):
     description="Send a prompt to the configured LLM provider and return the structured response.",
 )
 @user_limiter.limit("30/minute")
-async def invoke_llm(
-    request: Request, body: LLMInvokeBody, user: dict = Depends(get_current_parent)
-):
+async def invoke_llm(request: Request, body: LLMInvokeBody, user: CurrentParent):
     await asyncio.to_thread(_enforce_user_rate_limit, user["_id"])
     try:
         return await llm_service.invoke(
@@ -73,7 +74,7 @@ async def invoke_llm(
 
 @router.get("/providers")
 @user_limiter.limit("60/minute")
-async def list_providers(request: Request, user: dict = Depends(get_current_parent)):
+async def list_providers(request: Request):
     """Return which providers have a key configured and which would be auto-selected."""
     av = llm_service.available()
     default = next((p for p in llm_service.PRIORITY if av[p]), None)

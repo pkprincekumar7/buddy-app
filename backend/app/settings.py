@@ -1,5 +1,6 @@
 import logging
 import re
+from functools import lru_cache
 
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -274,3 +275,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]  # pydantic-settings loads required fields from env
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """FastAPI dependency wrapper around the module-level `settings` singleton.
+
+    Returns the same instance on every call (cached) so it's cheap to inject via
+    Depends(get_settings) in request handlers. Tests can override it per-case with
+    app.dependency_overrides[get_settings] without touching the module singleton
+    that non-request code (validators, auth_utils, worker.py) imports directly.
+    """
+    return settings

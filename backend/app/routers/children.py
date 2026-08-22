@@ -7,20 +7,17 @@ from typing import Any, Literal
 import boto3
 import botocore.exceptions
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 from pymongo import ASCENDING, DESCENDING
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_parent
+from app.deps import CurrentParent, Db, SettingsDep, get_current_parent
 from app.limiter import user_limiter
-from app.models_api import (
+from app.schemas.children import (
     ChildCreate,
     ChildPatch,
     ChildResponse,
 )
-from app.settings import settings
 
 # Fields returned by the child-card list view. Heavy sub-documents
 # (personality scores/traits, full recommendations blob) are excluded and
@@ -36,7 +33,11 @@ _LIST_PROJECTION = {
     "created_at": 1,
 }
 
-router = APIRouter(tags=["children"])
+# Every route needs an authenticated parent whose id/location scope the query —
+# declared at the router level as a safety net, and again per-function since
+# the handlers need the returned user document (FastAPI caches the dependency
+# result per request, so it only runs once).
+router = APIRouter(tags=["children"], dependencies=[Depends(get_current_parent)])
 log = logging.getLogger(__name__)
 
 # Fields that the server assigns — must never be accepted from client input.
@@ -108,12 +109,12 @@ def _child_to_api(doc: dict) -> dict:
 @user_limiter.limit("60/minute")
 async def list_children(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     sort: Literal["created_date", "-created_date", "name", "-name"] | None = Query(
         default="-created_date"
     ),
     limit: int = Query(default=50, ge=1, le=200),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     _sort = sort or "-created_date"
     if _sort in ("name", "-name"):
@@ -143,8 +144,8 @@ async def list_children(
 async def create_child(
     request: Request,
     payload: ChildCreate,
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: CurrentParent,
+    db: Db,
 ):
     count = await db[models.CHILDREN].count_documents(
         {"user_id": user["_id"], "location": user["location"], "is_deleted": False}
@@ -182,9 +183,9 @@ async def create_child(
 @user_limiter.limit("60/minute")
 async def get_child(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     doc = await db[models.CHILDREN].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
@@ -202,10 +203,10 @@ async def get_child(
 @user_limiter.limit("30/minute")
 async def update_child(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
     patch: ChildPatch = Body(...),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     updates = patch.model_dump(exclude_unset=True)
     set_fields: dict = {"updated_at": datetime.now(UTC)}
@@ -312,9 +313,9 @@ async def update_child(
 @user_limiter.limit("10/minute")
 async def delete_child(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     now = datetime.now(UTC)
     result = await db[models.CHILDREN].update_one(
@@ -374,10 +375,11 @@ class AvatarPresignResponse(BaseModel):
 @user_limiter.limit("20/minute")
 async def presign_child_avatar(
     request: Request,
+    user: CurrentParent,
+    db: Db,
+    settings: SettingsDep,
     child_id: str = Path(..., min_length=1, max_length=100),
     payload: AvatarPresignRequest = Body(...),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     if not settings.uploads_bucket_name or not settings.aws_region:
         raise HTTPException(

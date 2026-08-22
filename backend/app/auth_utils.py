@@ -5,9 +5,30 @@ from typing import Any, Literal
 
 import bcrypt as _bcrypt
 import jwt
+from fastapi import Request, Response
 from jwt.exceptions import PyJWTError
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel
 
+from app import models
+from app.constants import API_V1_PREFIX
 from app.settings import settings
+
+
+def extract_token(request: Request, cookie_name: str) -> str | None:
+    """Extract an auth token from an HttpOnly cookie or an Authorization: Bearer header.
+
+    Cookie takes priority (web clients). React Native's fetch polyfill has no
+    cookie jar, so mobile clients store tokens in AsyncStorage and send them as
+    a Bearer header instead — used as a fallback when no cookie is present.
+    """
+    token = request.cookies.get(cookie_name)
+    if token:
+        return token
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[len("Bearer ") :]
+    return None
 
 
 def hash_password(password: str) -> str:
@@ -99,3 +120,66 @@ def decode_access_token_ignore_exp(token: str) -> dict[str, Any] | None:
     if payload.get("type") != "access":
         return None
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Auth cookies
+# ---------------------------------------------------------------------------
+
+REFRESH_COOKIE_PATH = f"{API_V1_PREFIX}/auth/"
+
+
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+
+
+def cookie_kwargs() -> dict:
+    return {
+        "httponly": True,
+        "secure": settings.cookie_secure,
+        "samesite": settings.cookie_samesite,
+        "domain": settings.cookie_domain or None,
+    }
+
+
+async def set_auth_cookies(
+    response: Response,
+    user_id: str,
+    location: str,
+    db: AsyncIOMotorDatabase,
+) -> TokenPair:
+    """Set HttpOnly auth cookies (for web) and return tokens for mobile clients."""
+    kw = cookie_kwargs()
+    access_token = create_access_token(user_id, location=location)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.jwt_access_expire_minutes * 60,
+        path="/",
+        **kw,
+    )
+    refresh_token, jti = create_refresh_token(user_id, location=location)
+    expires_at = datetime.now(UTC) + timedelta(hours=settings.jwt_refresh_expire_hours)
+    await db[models.SESSIONS].insert_one(
+        {
+            "_id": jti,
+            "user_id": user_id,
+            "location": location,
+            "expires_at": expires_at,
+        }
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.jwt_refresh_expire_hours * 3600,
+        path=REFRESH_COOKIE_PATH,
+        **kw,
+    )
+    return TokenPair(access_token=access_token, refresh_token=refresh_token)
+
+
+def clear_auth_cookies(response: Response) -> None:
+    kw = cookie_kwargs()
+    response.delete_cookie("access_token", path="/", **kw)
+    response.delete_cookie("refresh_token", path=REFRESH_COOKIE_PATH, **kw)

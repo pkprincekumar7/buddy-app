@@ -206,3 +206,12 @@ async def invoke(
     sys_msg = system_message(schema)
     log.debug("llm_service.invoke provider=%s", _sanitize_for_log(resolved))
     return await _INVOKERS[resolved](prompt, sys_msg)
+
+
+async def aclose_clients() -> None:
+    """Close provider HTTP clients. Call once during app shutdown to release
+    connections cleanly rather than leaving them for GC."""
+    if _openai_client is not None:
+        await _openai_client.close()
+    if _anthropic_client is not None:
+        await _anthropic_client.close()
