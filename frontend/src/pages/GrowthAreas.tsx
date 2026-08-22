@@ -24,7 +24,7 @@ import {
 import type { GrowthArea, GrowthRecommendation } from '@/lib/growthAreaData';
 import type { CompletedArea, StoredRecommendation } from '@/types/api';
 import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
-import { SPINNER } from '@/lib/animations';
+import PageLoader from '@/components/shared/PageLoader';
 import Starfield from '@/components/shared/Starfield';
 import GrowthAreaSheet from '@/components/growth/GrowthAreaSheet';
 
@@ -89,8 +89,8 @@ const checkBadge = (size: number): React.CSSProperties => ({
   width: size,
   height: size,
   borderRadius: '50%',
-  background: '#05070f',
-  border: '1.5px solid rgba(240,201,138,.8)',
+  background: 'rgb(var(--constellation-navy-deep-rgb))',
+  border: '1.5px solid rgb(var(--constellation-gold-rgb) / .8)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -594,12 +594,7 @@ export default function GrowthAreas() {
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
         {isLoadingAuth || !hydrated ? (
-          <div className="flex min-h-screen items-center justify-center bg-background">
-            <motion.div
-              {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
-            />
-          </div>
+          <PageLoader />
         ) : (
           <div
             key={showSplash ? 'splash' : 'content'}
@@ -607,7 +602,7 @@ export default function GrowthAreas() {
             // app's sticky nav is h-16, so subtract it rather than using
             // min-h-screen — otherwise the arc pushes the actions past the fold.
             className="ga-root relative min-h-[calc(100vh-4rem)] overflow-hidden"
-            style={{ background: '#05070f' }}
+            style={{ background: 'rgb(var(--constellation-navy-deep-rgb))' }}
           >
             <style>{`
               /* A flat +20% from the tablet breakpoint up, matching Connect,
@@ -627,7 +622,7 @@ export default function GrowthAreas() {
               className="pointer-events-none absolute inset-0 z-[1]"
               style={{
                 background:
-                  'radial-gradient(ellipse at 50% 45%,rgba(30,196,232,.13),rgba(5,7,15,0) 58%),radial-gradient(circle at 50% 50%,rgba(5,7,15,0) 42%,rgba(2,3,9,.82) 100%)',
+                  'radial-gradient(ellipse at 50% 45%,rgb(var(--constellation-cyan-bright-rgb) / .13),rgb(var(--constellation-navy-deep-rgb) / 0) 58%),radial-gradient(circle at 50% 50%,rgb(var(--constellation-navy-deep-rgb) / 0) 42%,rgba(2,3,9,.82) 100%)',
               }}
             />
 
@@ -642,7 +637,11 @@ export default function GrowthAreas() {
               >
                 <div
                   className="mb-2 font-bold uppercase"
-                  style={{ fontSize: gafs(10.5), letterSpacing: '.4em', color: '#1ec4e8' }}
+                  style={{
+                    fontSize: gafs(10.5),
+                    letterSpacing: '.4em',
+                    color: 'rgb(var(--constellation-cyan-bright-rgb))',
+                  }}
                 >
                   {childName ? `${childName} · Growth Map` : 'Growth Map'}
                 </div>
@@ -655,14 +654,18 @@ export default function GrowthAreas() {
                     // on the page out of --ga-type-scale.
                     fontSize: 'calc(clamp(22px,2.6vw,32px) * var(--ga-type-scale, 1))',
                     fontFamily: 'Orbitron, sans-serif',
-                    color: '#eafdff',
+                    color: 'rgb(var(--constellation-cyan-pale-rgb))',
                   }}
                 >
                   Growth Areas
                 </h1>
                 <div
                   className="mt-1.5 font-semibold"
-                  style={{ fontSize: gafs(14), letterSpacing: '.05em', color: '#84a0b2' }}
+                  style={{
+                    fontSize: gafs(14),
+                    letterSpacing: '.05em',
+                    color: 'rgb(var(--constellation-slate-dark-rgb))',
+                  }}
                 >
                   Choose an area to explore
                 </div>
@@ -694,14 +697,14 @@ export default function GrowthAreas() {
                       <path
                         d="M27 8 C27 15 73 15 73 22 C73 29 27 29 27 36 C27 43 73 43 73 50 C73 57 27 57 27 64 C27 71 73 71 73 78"
                         fill="none"
-                        stroke="rgba(75,233,255,.22)"
+                        stroke="rgb(var(--constellation-cyan-rgb) / .22)"
                         strokeWidth="1"
                         vectorEffect="non-scaling-stroke"
                       />
                       <path
                         d="M33 8 C33 15 67 15 67 22 C67 29 33 29 33 36 C33 43 67 43 67 50 C67 57 33 57 33 64 C33 71 67 71 67 78"
                         fill="none"
-                        stroke="rgba(75,233,255,.08)"
+                        stroke="rgb(var(--constellation-cyan-rgb) / .08)"
                         strokeWidth="1"
                         strokeDasharray="3 10"
                         vectorEffect="non-scaling-stroke"
@@ -717,14 +720,14 @@ export default function GrowthAreas() {
                       <path
                         d="M80 124 Q 500 -4 920 124"
                         fill="none"
-                        stroke="rgba(75,233,255,.22)"
+                        stroke="rgb(var(--constellation-cyan-rgb) / .22)"
                         strokeWidth="1"
                         vectorEffect="non-scaling-stroke"
                       />
                       <path
                         d="M80 152 Q 500 24 920 152"
                         fill="none"
-                        stroke="rgba(75,233,255,.08)"
+                        stroke="rgb(var(--constellation-cyan-rgb) / .08)"
                         strokeWidth="1"
                         strokeDasharray="3 10"
                         vectorEffect="non-scaling-stroke"
@@ -774,7 +777,7 @@ export default function GrowthAreas() {
                               width: size,
                               height: size,
                               background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
-                              border: `1.5px solid ${done ? 'rgba(240,201,138,.95)' : 'rgba(240,201,138,.75)'}`,
+                              border: `1.5px solid ${done ? 'rgb(var(--constellation-gold-rgb) / .95)' : 'rgb(var(--constellation-gold-rgb) / .75)'}`,
                               boxShadow: done
                                 ? `0 0 0 2px rgba(${area.hue},.5), 0 0 30px rgba(${area.hue},.45)`
                                 : `0 0 18px rgba(${area.hue},.18)`,
@@ -797,7 +800,7 @@ export default function GrowthAreas() {
                               <svg
                                 viewBox="0 0 24 24"
                                 fill="none"
-                                stroke="#f0c98a"
+                                stroke="rgb(var(--constellation-gold-rgb))"
                                 strokeWidth="3"
                                 // The mockup's 12-in-22 tick, held as a ratio so
                                 // the larger badge keeps the same proportion.
@@ -811,7 +814,14 @@ export default function GrowthAreas() {
                             </span>
                           )}
 
-                          <span style={{ ...LABEL, color: done ? '#f2fdff' : '#84a0b2' }}>
+                          <span
+                            style={{
+                              ...LABEL,
+                              color: done
+                                ? 'rgb(var(--constellation-cyan-paler-rgb))'
+                                : 'rgb(var(--constellation-slate-dark-rgb))',
+                            }}
+                          >
                             {area.name}
                           </span>
                         </motion.button>
@@ -835,14 +845,18 @@ export default function GrowthAreas() {
                 area={activeArea}
                 childName={childName}
                 childGender={childGender}
-                questions={generated.questions}
-                questionsStatus={generated.parent.status}
-                questionsProgress={generated.parent.progressMessage}
-                onRetryQuestions={generated.parent.retry}
-                rounds={generated.rounds}
-                roundsStatus={generated.child.status}
-                roundsProgress={generated.child.progressMessage}
-                onRetryRounds={generated.child.retry}
+                parentQuestions={{
+                  data: generated.questions,
+                  status: generated.parent.status,
+                  progress: generated.parent.progressMessage,
+                  onRetry: generated.parent.retry,
+                }}
+                childRounds={{
+                  data: generated.rounds,
+                  status: generated.child.status,
+                  progress: generated.child.progressMessage,
+                  onRetry: generated.child.retry,
+                }}
                 initialAnswers={savedAnswers[activeArea.id]}
                 initialPhase={cached ? 'result' : 'questions'}
                 initialPicks={cached?.picks}

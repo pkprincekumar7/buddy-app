@@ -3,11 +3,13 @@ import { createPageUrl } from '@/utils';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { useTts } from '@/lib/TtsContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
 import { Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
 import { useStartOver } from '@/hooks/useStartOver';
@@ -35,14 +37,8 @@ function useNavChildId() {
 }
 
 export default function Layout({ children, currentPageName }: LayoutProps) {
-  const {
-    user,
-    isAuthenticated,
-    childProfiles: _childProfiles,
-    logout,
-    ttsEnabled,
-    toggleTts,
-  } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
+  const { ttsEnabled, toggleTts } = useTts();
   const navChildId = useNavChildId();
   const { doStartOver, isStartingOver } = useStartOver(navChildId ?? undefined);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
@@ -126,8 +122,9 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
               <div
                 className="h-8 w-8 flex-shrink-0 rounded-full"
                 style={{
-                  background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
-                  boxShadow: '0 0 16px rgba(75,233,255,.7)',
+                  background:
+                    'radial-gradient(circle at 35% 30%,rgb(var(--constellation-cyan-pale-rgb)),rgb(var(--constellation-cyan-rgb)) 45%,#0a5b74 100%)',
+                  boxShadow: '0 0 16px rgb(var(--constellation-cyan-rgb) / .7)',
                 }}
               />
               {/*
@@ -153,7 +150,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     {/* Row-only separator — a vertical rule reads as noise once stacked. */}
                     <span
                       className="hidden h-4 w-px sm:block"
-                      style={{ background: 'rgba(75,233,255,.25)' }}
+                      style={{ background: 'rgb(var(--constellation-cyan-rgb) / .25)' }}
                     />
                     <span
                       className="whitespace-nowrap leading-none"
@@ -168,7 +165,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                         fontSize: 11,
                         letterSpacing: '.22em',
                         textTransform: 'uppercase',
-                        color: '#4be9ff',
+                        color: 'rgb(var(--constellation-cyan-rgb))',
                       }}
                     >
                       {circleLabel}
@@ -255,9 +252,10 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                         <Link
                           to={createPageUrl('Home')}
                           onClick={() => setProfileOpen(false)}
-                          className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent ${
-                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground'
-                          }`}
+                          className={cn(
+                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
+                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground',
+                          )}
                         >
                           <Home className="h-4 w-4" />
                           Home

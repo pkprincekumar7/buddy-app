@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Circle } from 'lucide-react';
 import { api } from '@/api/client';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 // Module-level cache of asset paths that have previously failed to load.
 // Lives outside the component so it survives remounts, StrictMode double-invocations,
@@ -489,11 +490,12 @@ export default function ChildActivityGame({
             key={option.id}
             type="button"
             onClick={() => toggleSelection(option.id)}
-            className={`relative overflow-hidden rounded-2xl border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98] ${
+            className={cn(
+              'relative overflow-hidden rounded-2xl border-4 text-left transition-[border-color,box-shadow,transform] duration-150 ease-out active:scale-[0.98]',
               ids.includes(option.id)
                 ? 'border-success shadow-lg'
-                : 'border-c-edge hover:border-success/50'
-            }`}
+                : 'border-c-edge hover:border-success/50',
+            )}
           >
             {option.image && !failedImages.has(option.id) ? (
               <div className="relative aspect-[4/3] overflow-hidden">
@@ -509,7 +511,11 @@ export default function ChildActivityGame({
               </div>
             ) : (
               <div
-                className={`aspect-[4/3] bg-gradient-to-br ${TILE_GRADIENTS[index % TILE_GRADIENTS.length]} flex items-center justify-center`}
+                className={cn(
+                  'aspect-[4/3] bg-gradient-to-br',
+                  TILE_GRADIENTS[index % TILE_GRADIENTS.length],
+                  'flex items-center justify-center',
+                )}
               >
                 <span className="select-none text-5xl">{option.emoji}</span>
               </div>

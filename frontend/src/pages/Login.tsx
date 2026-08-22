@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { COUNTRIES } from '@/lib/countries';
 import { httpErrorMessage } from '@/lib/apiError';
 import { MODAL_BACKDROP } from '@/lib/animations';
@@ -162,12 +163,9 @@ export default function Login() {
               className="space-y-4"
             >
               <div>
-                <label
-                  htmlFor="login-email"
-                  className="mb-1 block text-sm font-medium text-foreground"
-                >
+                <Label htmlFor="login-email" className="mb-1 block text-foreground">
                   Username (email)
-                </label>
+                </Label>
                 <input
                   id="login-email"
                   type="email"
@@ -179,12 +177,9 @@ export default function Login() {
                 />
               </div>
               <div>
-                <label
-                  htmlFor="login-password"
-                  className="mb-1 block text-sm font-medium text-foreground"
-                >
+                <Label htmlFor="login-password" className="mb-1 block text-foreground">
                   Password
-                </label>
+                </Label>
                 <input
                   id="login-password"
                   type="password"
@@ -196,11 +191,7 @@ export default function Login() {
                 />
               </div>
               {error ? <p className="text-sm text-error-strong">{error}</p> : null}
-              <Button
-                type="submit"
-                className="w-full bg-primary-action hover:bg-primary-action/80"
-                disabled={busy}
-              >
+              <Button type="submit" variant="action" className="w-full" disabled={busy}>
                 {busy ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>

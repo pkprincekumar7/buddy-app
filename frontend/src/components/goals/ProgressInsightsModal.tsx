@@ -25,6 +25,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { api } from '@/api/client';
+import { cn } from '@/lib/utils';
 import {
   INSIGHTS_SCHEMA_VERSION,
   NON_SCORABLE_DELTA_PTS,
@@ -107,7 +108,7 @@ const ObsBadge = ({ obs }: { obs: Observation }) => {
   const entry = cfg[obs.type] ?? cfg['notStarted'];
   const { cls, icon } = entry!;
   return (
-    <span className={`flex items-center gap-1.5 text-sm font-medium ${cls}`}>
+    <span className={cn('flex items-center gap-1.5 text-sm font-medium', cls)}>
       {icon}
       {obs.label}
     </span>
@@ -223,7 +224,7 @@ const buildCustomTooltip = (_chartData: ChartEntry[]) =>
         <p className="text-xs text-muted-foreground">
           Month {entry.monthNum} · Activity {entry.actIdx + 1}
         </p>
-        <p className={`mt-1 font-medium ${obsColor}`}>{entry.obsLabel}</p>
+        <p className={cn('mt-1 font-medium', obsColor)}>{entry.obsLabel}</p>
       </div>
     );
   };
@@ -424,11 +425,12 @@ export default function ProgressInsightsModal({
               type="button"
               key={key}
               onClick={() => setActiveTab(key!)}
-              className={`border-b-2 px-5 pb-3 text-sm font-semibold transition-colors ${
+              className={cn(
+                'border-b-2 px-5 pb-3 text-sm font-semibold transition-colors',
                 activeTab === key
                   ? 'border-primary-medium text-primary-light'
-                  : 'border-transparent text-subtle hover:text-dim'
-              }`}
+                  : 'border-transparent text-subtle hover:text-dim',
+              )}
             >
               {label}
             </button>
@@ -456,11 +458,12 @@ export default function ProgressInsightsModal({
                       type="button"
                       key={key}
                       onClick={() => setProgressTab(key!)}
-                      className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                      className={cn(
+                        'rounded-xl px-4 py-2 text-sm font-semibold transition-colors',
                         progressTab === key
                           ? 'bg-primary-action text-white shadow-sm'
-                          : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
-                      }`}
+                          : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground',
+                      )}
                     >
                       {label}
                     </button>
@@ -726,9 +729,10 @@ export default function ProgressInsightsModal({
                               )}
                             </div>
                             <p
-                              className={`flex-1 text-sm font-medium leading-snug ${
-                                isAnomaly ? 'text-warning-light' : 'text-foreground'
-                              }`}
+                              className={cn(
+                                'flex-1 text-sm font-medium leading-snug',
+                                isAnomaly ? 'text-warning-light' : 'text-foreground',
+                              )}
                             >
                               {item.text}
                             </p>
@@ -737,11 +741,12 @@ export default function ProgressInsightsModal({
                               onClick={() =>
                                 setExpandedInsight((prev) => (prev === idx ? null : idx))
                               }
-                              className={`ml-2 flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              className={cn(
+                                'ml-2 flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                                 isAnomaly
                                   ? 'bg-warning-medium/10 text-warning-light hover:bg-warning-medium/20'
-                                  : 'bg-primary-medium/10 text-primary-light hover:bg-primary-medium/20'
-                              }`}
+                                  : 'bg-primary-medium/10 text-primary-light hover:bg-primary-medium/20',
+                              )}
                             >
                               {isExpanded ? 'Hide Details' : 'View Details'}
                             </button>
@@ -769,11 +774,12 @@ export default function ProgressInsightsModal({
                                     opacity: { duration: 0.2 },
                                   },
                                 }}
-                                className={`overflow-hidden border-t px-5 pb-5 ${
+                                className={cn(
+                                  'overflow-hidden border-t px-5 pb-5',
                                   isAnomaly
                                     ? 'border-warning-medium/15 bg-warning-medium/[0.05]'
-                                    : 'border-c-xs bg-ghost'
-                                }`}
+                                    : 'border-c-xs bg-ghost',
+                                )}
                               >
                                 <p className="pb-4 pt-4 text-sm leading-relaxed text-muted-foreground">
                                   {item.details}

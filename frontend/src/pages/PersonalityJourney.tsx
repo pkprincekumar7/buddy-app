@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
+import { useTts } from '@/lib/TtsContext';
 import { api } from '@/api/client';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -16,6 +17,8 @@ import { maybeClampStoredPersonalityDescription } from '@/lib/personalizedDescri
 import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { useJob } from '@/hooks/useJob';
+import { useMediaQuery } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
 import StageSplash from '@/components/shared/StageSplash';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 
@@ -60,7 +63,11 @@ function BuddyOrbScreen({
                   textWrap: 'pretty',
                 }}
               >
-                Preparing <span style={{ color: '#4be9ff' }}>{childName}&apos;s</span> profile
+                Preparing{' '}
+                <span style={{ color: 'rgb(var(--constellation-cyan-rgb))' }}>
+                  {childName}&apos;s
+                </span>{' '}
+                profile
               </h1>
               <div className="flex gap-2">
                 {[0, 0.15, 0.3].map((delay, i) => (
@@ -69,7 +76,7 @@ function BuddyOrbScreen({
                     animate={{ y: [0, -7, 0] }}
                     transition={{ duration: 0.7, repeat: Infinity, delay, ease: 'easeInOut' }}
                     className="block h-2 w-2 rounded-full"
-                    style={{ background: '#1ec4e8' }}
+                    style={{ background: 'rgb(var(--constellation-cyan-bright-rgb))' }}
                   />
                 ))}
               </div>
@@ -87,7 +94,7 @@ function BuddyOrbScreen({
               }}
             >
               Click here to begin your child&apos;s{' '}
-              <span style={{ color: '#4be9ff' }}>transformation</span>
+              <span style={{ color: 'rgb(var(--constellation-cyan-rgb))' }}>transformation</span>
             </h1>
           )}
         </motion.div>
@@ -105,7 +112,10 @@ function BuddyOrbScreen({
         <motion.button
           onClick={isAnalyzing ? undefined : onTap}
           whileTap={isAnalyzing ? undefined : { scale: 0.94 }}
-          className={`relative focus:outline-none ${isAnalyzing ? 'cursor-default' : 'cursor-pointer'}`}
+          className={cn(
+            'relative focus:outline-none',
+            isAnalyzing ? 'cursor-default' : 'cursor-pointer',
+          )}
           initial={{ opacity: 0, scale: 0.7 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
@@ -144,7 +154,7 @@ function BuddyOrbScreen({
               <radialGradient id="buddyCoreGrad" cx="50%" cy="42%" r="60%">
                 <stop offset="0%" stopColor="#fff6dc" />
                 <stop offset="22%" stopColor="#ffd98a" />
-                <stop offset="52%" stopColor="#4be9ff" />
+                <stop offset="52%" stopColor="rgb(var(--constellation-cyan-rgb))" />
                 <stop offset="100%" stopColor="#0a5b74" />
               </radialGradient>
               {/* Soft gold halo between rings */}
@@ -164,7 +174,7 @@ function BuddyOrbScreen({
                 cy="175"
                 r="150"
                 fill="none"
-                stroke="#1ec4e8"
+                stroke="rgb(var(--constellation-cyan-bright-rgb))"
                 strokeWidth="3"
                 strokeDasharray="4 8"
                 opacity="0.65"
@@ -194,7 +204,7 @@ function BuddyOrbScreen({
                 cy="175"
                 r="124"
                 fill="none"
-                stroke="#1ec4e8"
+                stroke="rgb(var(--constellation-cyan-bright-rgb))"
                 strokeWidth="11"
                 strokeDasharray="20 12 46 12 20 70"
                 opacity="0.9"
@@ -256,7 +266,7 @@ function BuddyOrbScreen({
             {/* ⑦ Lightning bolt (polygon from clip-path in HTML, converted to SVG path) */}
             <path
               d="M175 152.5 L155 185 L170 185 L160 210 L195 172.5 L177.5 172.5 Z"
-              fill="#05131a"
+              fill="rgb(var(--constellation-navy-rgb))"
               opacity="0.9"
             />
           </svg>
@@ -280,7 +290,7 @@ function BuddyOrbScreen({
             fontSize: '12.5px',
             letterSpacing: '0.22em',
             textTransform: 'uppercase',
-            color: '#84a0b2',
+            color: 'rgb(var(--constellation-slate-dark-rgb))',
           }}
         >
           Tap the core to enter the zone
@@ -307,7 +317,8 @@ const ACTIVE_INNER: React.CSSProperties = {
   width: 54,
   height: 54,
   borderRadius: '50%',
-  background: 'radial-gradient(circle at 38% 32%,#eafdff,#4be9ff 42%,#0a5b74 100%)',
+  background:
+    'radial-gradient(circle at 38% 32%,rgb(var(--constellation-cyan-pale-rgb)),rgb(var(--constellation-cyan-rgb)) 42%,#0a5b74 100%)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -350,7 +361,7 @@ const CHECK_BADGE: React.CSSProperties = {
   width: 22,
   height: 22,
   borderRadius: '50%',
-  background: '#05070f',
+  background: 'rgb(var(--constellation-navy-deep-rgb))',
   border: '1.5px solid #5b6b78',
   display: 'flex',
   alignItems: 'center',
@@ -377,18 +388,20 @@ function DimensionCirclesScreen({
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  const isMobile = useMediaQuery('(max-width: 639px)');
 
-  // Exact match to HTML's watchRing: scale ring to fit available space
+  // Exact match to HTML's watchRing: scale ring to fit available space.
+  // Depends on isMobile (from the shared media-query hook) rather than
+  // re-deriving it from window.innerWidth here, so this effect and the
+  // breakpoint state can't disagree with each other or with any other
+  // consumer of the same breakpoint elsewhere in the app.
   useEffect(() => {
     const measure = () => {
       const el = ringAreaRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) return;
-      const mobile = window.innerWidth < 640;
-      setIsMobile(mobile);
-      const s = mobile
+      const s = isMobile
         ? Math.min(r.width / 488, r.height / 560, 1)
         : Math.min(r.width / 730, r.height / 730, 1);
       setRingScale((prev) => (Math.abs(s - prev) > 0.005 ? s : prev));
@@ -400,7 +413,7 @@ function DimensionCirclesScreen({
       clearInterval(id);
       window.removeEventListener('resize', measure);
     };
-  }, []);
+  }, [isMobile]);
 
   const SK = isMobile ? 'spokeDrawSm' : 'spokeDraw';
   const SD = isMobile ? '200' : '260';
@@ -474,8 +487,8 @@ function DimensionCirclesScreen({
           to   { stroke-dashoffset: 0; }
         }
         @keyframes lineGlow {
-          0%,100% { opacity:.45; filter: drop-shadow(0 0 3px rgba(75,233,255,.75)); }
-          50%     { opacity:.85; filter: drop-shadow(0 0 8px rgba(75,233,255,1)); }
+          0%,100% { opacity:.45; filter: drop-shadow(0 0 3px rgb(var(--constellation-cyan-rgb) / .75)); }
+          50%     { opacity:.85; filter: drop-shadow(0 0 8px rgb(var(--constellation-cyan-rgb) / 1)); }
         }
         @keyframes hubIn {
           0%   { opacity: 0; transform: translate(-50%,-50%) scale(.1) rotate(-90deg); }
@@ -495,16 +508,16 @@ function DimensionCirclesScreen({
         @keyframes buddySpin    { to { transform: rotate(360deg); } }
         @keyframes buddySpinRev { to { transform: rotate(-360deg); } }
         @keyframes buddyGoldBreathe {
-          0%,100% { filter: drop-shadow(0 0 14px rgba(255,206,110,.65)) drop-shadow(0 0 30px rgba(75,233,255,.45)); }
-          50%     { filter: drop-shadow(0 0 26px rgba(255,214,130,.95)) drop-shadow(0 0 54px rgba(75,233,255,.55)); }
+          0%,100% { filter: drop-shadow(0 0 14px rgba(255,206,110,.65)) drop-shadow(0 0 30px rgb(var(--constellation-cyan-rgb) / .45)); }
+          50%     { filter: drop-shadow(0 0 26px rgba(255,214,130,.95)) drop-shadow(0 0 54px rgb(var(--constellation-cyan-rgb) / .55)); }
         }
         @keyframes buddyGoldPulse {
           0%,100% { opacity: .55; }
           50%     { opacity: 1; }
         }
         @keyframes ctaGlow {
-          0%,100% { box-shadow: 0 0 22px rgba(75,233,255,.9),0 0 46px rgba(30,196,232,.55); }
-          50%     { box-shadow: 0 0 36px rgba(75,233,255,1),0 0 74px rgba(30,196,232,.9); }
+          0%,100% { box-shadow: 0 0 22px rgb(var(--constellation-cyan-rgb) / .9),0 0 46px rgb(var(--constellation-cyan-bright-rgb) / .55); }
+          50%     { box-shadow: 0 0 36px rgb(var(--constellation-cyan-rgb) / 1),0 0 74px rgb(var(--constellation-cyan-bright-rgb) / .9); }
         }
       `}</style>
 
@@ -538,7 +551,7 @@ function DimensionCirclesScreen({
             <path
               d={SP.connect}
               fill="none"
-              stroke="#1ec4e8"
+              stroke="rgb(var(--constellation-cyan-bright-rgb))"
               strokeWidth="1.6"
               strokeDasharray={SD}
               style={{ opacity: 0.4, animation: `${SK} .8s ease .35s both` }}
@@ -546,7 +559,7 @@ function DimensionCirclesScreen({
             <path
               d={SP.transform}
               fill="none"
-              stroke="#1ec4e8"
+              stroke="rgb(var(--constellation-cyan-bright-rgb))"
               strokeWidth="1.6"
               strokeDasharray={SD}
               style={{ opacity: 0.4, animation: `${SK} .8s ease .45s both` }}
@@ -554,7 +567,7 @@ function DimensionCirclesScreen({
             <path
               d={SP.release}
               fill="none"
-              stroke="#1ec4e8"
+              stroke="rgb(var(--constellation-cyan-bright-rgb))"
               strokeWidth="1.6"
               strokeDasharray={SD}
               style={{ opacity: 0.4, animation: `${SK} .8s ease .55s both` }}
@@ -562,7 +575,7 @@ function DimensionCirclesScreen({
             <path
               d={SP.grow}
               fill="none"
-              stroke="#1ec4e8"
+              stroke="rgb(var(--constellation-cyan-bright-rgb))"
               strokeWidth="1.6"
               strokeDasharray={SD}
               style={{ opacity: 0.4, animation: `${SK} .8s ease .5s both` }}
@@ -578,7 +591,7 @@ function DimensionCirclesScreen({
             <path
               d={SP.discover}
               fill="none"
-              stroke="#1ec4e8"
+              stroke="rgb(var(--constellation-cyan-bright-rgb))"
               strokeWidth="3.4"
               strokeDasharray={SD}
               style={{
@@ -587,8 +600,8 @@ function DimensionCirclesScreen({
             />
             <circle
               r="3.2"
-              fill="#eafdff"
-              style={{ filter: 'drop-shadow(0 0 4px rgba(75,233,255,1))' }}
+              fill="rgb(var(--constellation-cyan-pale-rgb))"
+              style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
             >
               <animateMotion dur="1.7s" repeatCount="indefinite" begin="1.2s">
                 <mpath href="#p-hub-disc" />
@@ -596,8 +609,8 @@ function DimensionCirclesScreen({
             </circle>
             <circle
               r="2.8"
-              fill="#eafdff"
-              style={{ filter: 'drop-shadow(0 0 4px rgba(75,233,255,1))' }}
+              fill="rgb(var(--constellation-cyan-pale-rgb))"
+              style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
             >
               <animateMotion dur="1.7s" repeatCount="indefinite" begin="2.05s">
                 <mpath href="#p-hub-disc" />
@@ -634,7 +647,7 @@ function DimensionCirclesScreen({
                 <radialGradient id="coreGradHub" cx="50%" cy="42%" r="60%">
                   <stop offset="0%" stopColor="#fff6dc" />
                   <stop offset="22%" stopColor="#ffd98a" />
-                  <stop offset="52%" stopColor="#4be9ff" />
+                  <stop offset="52%" stopColor="rgb(var(--constellation-cyan-rgb))" />
                   <stop offset="100%" stopColor="#0a5b74" />
                 </radialGradient>
                 <radialGradient id="goldHaloHub" cx="50%" cy="50%" r="50%">
@@ -651,7 +664,7 @@ function DimensionCirclesScreen({
                   cy="95"
                   r="86"
                   fill="none"
-                  stroke="#1ec4e8"
+                  stroke="rgb(var(--constellation-cyan-bright-rgb))"
                   strokeWidth="2.4"
                   strokeDasharray="3.5 6.5"
                   opacity="0.65"
@@ -677,7 +690,7 @@ function DimensionCirclesScreen({
                   cy="95"
                   r="71"
                   fill="none"
-                  stroke="#1ec4e8"
+                  stroke="rgb(var(--constellation-cyan-bright-rgb))"
                   strokeWidth="8"
                   strokeDasharray="13 8 30 8 13 46"
                   opacity="0.9"
@@ -729,7 +742,7 @@ function DimensionCirclesScreen({
               />
               <path
                 d="M95 80 L83 100 L92 100 L86 116 L108 92 L97 92 Z"
-                fill="#05131a"
+                fill="rgb(var(--constellation-navy-rgb))"
                 opacity="0.9"
               />
               <g
@@ -741,7 +754,7 @@ function DimensionCirclesScreen({
                     fontWeight: 700,
                     fontSize: '8.5px',
                     letterSpacing: '.13em',
-                    fill: '#4be9ff',
+                    fill: 'rgb(var(--constellation-cyan-rgb))',
                   }}
                 >
                   <textPath href="#hubTextPath" startOffset="0%">
@@ -767,7 +780,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
                 opacity: 0.5,
               }}
             />
@@ -776,14 +789,25 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
                 animation: 'nodePulse 2.6s ease-out infinite',
               }}
             />
-            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+            <div
+              style={{
+                ...ACTIVE_INNER,
+                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
               </svg>
@@ -807,8 +831,9 @@ function DimensionCirclesScreen({
                 left: '50%',
                 top: -14,
                 transform: 'translate(-50%, -100%)',
-                background: 'linear-gradient(135deg,#4be9ff,#1ec4e8)',
-                color: '#05070f',
+                background:
+                  'linear-gradient(135deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-cyan-bright-rgb)))',
+                color: 'rgb(var(--constellation-navy-deep-rgb))',
                 fontFamily: 'Rajdhani, sans-serif',
                 fontWeight: 700,
                 fontSize: 10.5,
@@ -817,7 +842,7 @@ function DimensionCirclesScreen({
                 padding: '5px 11px',
                 borderRadius: 999,
                 whiteSpace: 'nowrap',
-                boxShadow: '0 0 14px rgba(75,233,255,.6)',
+                boxShadow: '0 0 14px rgb(var(--constellation-cyan-rgb) / .6)',
                 animation: 'tagBob 1.7s ease-in-out infinite',
               }}
             >
@@ -828,7 +853,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
                 opacity: 0.5,
               }}
             />
@@ -837,7 +862,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '2px solid #f2fdff',
+                border: '2px solid rgb(var(--constellation-cyan-paler-rgb))',
                 animation: 'nodePulse 1.7s ease-out infinite',
               }}
             />
@@ -846,28 +871,47 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
                 animation: 'nodePulse 1.7s ease-out .85s infinite',
               }}
             />
             <div style={{ ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }}>
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <circle cx="12" cy="8.5" r="3.2" />
                 <path d="M5 20c1.5-4 4-6 7-6s5.5 2 7 6" />
               </svg>
             </div>
-            <div style={{ ...CHECK_BADGE, border: '1.5px solid #1ec4e8' }}>
+            <div
+              style={{
+                ...CHECK_BADGE,
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 11, height: 11, stroke: '#4be9ff', fill: 'none', strokeWidth: 2.6 }}
+                style={{
+                  width: 11,
+                  height: 11,
+                  stroke: 'rgb(var(--constellation-cyan-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.6,
+                }}
               >
                 <path d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <div style={{ ...NODE_LABEL, color: '#f2fdff' }}>Discover</div>
+            <div style={{ ...NODE_LABEL, color: 'rgb(var(--constellation-cyan-paler-rgb))' }}>
+              Discover
+            </div>
           </div>
 
           {/* Transform — top-right */}
@@ -885,7 +929,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
                 opacity: 0.5,
               }}
             />
@@ -894,14 +938,25 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
                 animation: 'nodePulse 2.6s ease-out infinite',
               }}
             />
-            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+            <div
+              style={{
+                ...ACTIVE_INNER,
+                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <circle cx="11" cy="11" r="7" />
                 <path d="M20 20l-4-4" />
@@ -925,7 +980,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
                 opacity: 0.5,
               }}
             />
@@ -934,14 +989,25 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
                 animation: 'nodePulse 2.6s ease-out infinite',
               }}
             />
-            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+            <div
+              style={{
+                ...ACTIVE_INNER,
+                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <circle cx="12" cy="8" r="3.4" />
                 <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" />
@@ -965,7 +1031,7 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #1ec4e8',
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
                 opacity: 0.5,
               }}
             />
@@ -974,14 +1040,25 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid #4be9ff',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
                 animation: 'nodePulse 2.6s ease-out infinite',
               }}
             />
-            <div style={{ ...ACTIVE_INNER, boxShadow: '0 0 20px rgba(75,233,255,.5)' }}>
+            <div
+              style={{
+                ...ACTIVE_INNER,
+                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#05131a', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <path d="M4 20V10M11 20V4M18 20v-7" />
               </svg>
@@ -1015,7 +1092,9 @@ function DimensionCirclesScreen({
                 <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
               </svg>
             </div>
-            <div style={{ ...NODE_LABEL, color: '#84a0b2' }}>Start Again</div>
+            <div style={{ ...NODE_LABEL, color: 'rgb(var(--constellation-slate-dark-rgb))' }}>
+              Start Again
+            </div>
           </div>
         </div>
       </div>
@@ -1030,7 +1109,7 @@ function DimensionCirclesScreen({
           fontSize: 12,
           letterSpacing: '.18em',
           textTransform: 'uppercase',
-          color: '#84a0b2',
+          color: 'rgb(var(--constellation-slate-dark-rgb))',
           animation: 'fadeIn .8s ease 1.2s both',
         }}
       >
@@ -1063,7 +1142,7 @@ export default function PersonalityJourney() {
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
-  const { ttsEnabled: soundOn } = useAuth();
+  const { ttsEnabled: soundOn } = useTts();
   const [isEntering, setIsEntering] = useState(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const warpCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1400,12 +1479,15 @@ export default function PersonalityJourney() {
     return (
       <div
         className="flex min-h-screen items-center justify-center"
-        style={{ background: '#05070f' }}
+        style={{ background: 'rgb(var(--constellation-navy-deep-rgb))' }}
       >
         <motion.div
           {...SPINNER}
           className="h-10 w-10 rounded-full border-2 border-t-transparent"
-          style={{ borderColor: 'rgba(30,196,232,0.6)', borderTopColor: 'transparent' }}
+          style={{
+            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+            borderTopColor: 'transparent',
+          }}
         />
       </div>
     );
@@ -1423,7 +1505,10 @@ export default function PersonalityJourney() {
   }
 
   return (
-    <div className="min-h-screen overflow-hidden" style={{ background: '#05070f' }}>
+    <div
+      className="min-h-screen overflow-hidden"
+      style={{ background: 'rgb(var(--constellation-navy-deep-rgb))' }}
+    >
       {/* Global warp keyframes */}
       <style>{`
         @keyframes scopeDolly {
@@ -1470,7 +1555,7 @@ export default function PersonalityJourney() {
               inset: 0,
               zIndex: 51,
               pointerEvents: 'none',
-              background: '#05070f',
+              background: 'rgb(var(--constellation-navy-deep-rgb))',
               animation: 'voidVeil 5.6s ease forwards',
             }}
           />
@@ -1485,7 +1570,7 @@ export default function PersonalityJourney() {
               height: 520,
               borderRadius: '50%',
               background:
-                'radial-gradient(circle, rgba(14,58,74,0.9) 0%, rgba(30,196,232,0.35) 38%, transparent 70%)',
+                'radial-gradient(circle, rgba(14,58,74,0.9) 0%, rgb(var(--constellation-cyan-bright-rgb) / 0.35) 38%, transparent 70%)',
               pointerEvents: 'none',
               animation: 'nebulaDrift 5.6s cubic-bezier(.4,0,.35,1) forwards',
             }}

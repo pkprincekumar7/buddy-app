@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import ConversationalOnboardingChat from '@/components/onboarding/ConversationalOnboarding';
-import { SPINNER } from '@/lib/animations';
+import PageLoader from '@/components/shared/PageLoader';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
 import {
@@ -204,12 +204,7 @@ export default function ConversationalOnboarding() {
         transition={{ duration: 0.8, ease: 'easeOut' }}
       >
         {isLoadingAuth || !hydrated ? (
-          <div className="flex min-h-screen items-center justify-center bg-background">
-            <motion.div
-              {...SPINNER}
-              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
-            />
-          </div>
+          <PageLoader />
         ) : (
           <div className="relative flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
             {/* Chat fills remaining height */}

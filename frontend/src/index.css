@@ -72,7 +72,8 @@
 /*
  * ─── CENTRALIZED THEME TOKENS ───────────────────────────────────────────────
  * All colors are defined here as CSS custom properties (HSL channels).
- * Both dark (default) and light (`.light` class on <html>) are declared below.
+ * Only the dark palette is declared below — it is the unclassed default in
+ * `:root`, applied unconditionally.
  *
  * DO NOT use hardcoded Tailwind colors (slate-*, gray-*, zinc-*) in components.
  * Always use the semantic tokens below via Tailwind classes:
@@ -91,7 +92,15 @@
  *  bg-subtle                           — faintest tinted overlay (5 % tint)
  *  bg-na-dim                           — N/A / disabled dim overlay (15 % tint)
  *
- * Light mode is activated by adding the `.light` class to <html> (see Layout.tsx).
+ * Light mode is intentionally not implemented yet — the palette below hasn't
+ * been finalised for a light background. The app is wired to next-themes
+ * (see src/lib/theme.tsx) with `forcedTheme="dark"`, so it always renders
+ * dark and exposes no toggle. When light-mode colors are ready:
+ *   1. Add a `.light { ... }` override block below with the light values for
+ *      every variable declared here (next-themes applies a `class="light"`
+ *      to <html> for that theme, matching this selector as-is).
+ *   2. Remove `forcedTheme="dark"` in src/lib/theme.tsx and add a UI control
+ *      that calls `setTheme()` from next-themes' own `useTheme()`.
  * ────────────────────────────────────────────────────────────────────────────
  */
 
@@ -256,6 +265,40 @@
     --orb-purple-rgb: 141 115 255;
     --orb-ring-rgb: 120 220 255;
     --orb-crescent-rgb: 126 243 255;
+
+    /*
+     * ─── CONSTELLATION / SUPERPOWER EXPERIENCE PALETTE ───────────────────────
+     * A deliberate second, un-tokenized-until-now palette used across the
+     * immersive "Superpower" screens (Connect, GrowthAreas, LifePathway,
+     * Observations, PersonalityJourney, PersonalityProfile, GrowthAreaSheet,
+     * Layout). It is intentionally NOT part of the semantic theme tokens
+     * above — these are fixed illustration/glow colors for that specific
+     * visual language, not colors that should ever flip with a future light
+     * theme. Stored as RGB channels (no alpha) so call sites can use either
+     * `rgb(var(--constellation-x-rgb))` for a solid color or
+     * `rgb(var(--constellation-x-rgb) / 0.N)` for a translucent one, matching
+     * the --glow-*-rgb / --orb-*-rgb convention above.
+     *
+     * Only colors reused 9+ times (verified via grep) are tokenized here —
+     * the long tail of colors used once or twice is one-off SVG/gradient
+     * detail (avatar art, badge accents) where a named variable would add
+     * indirection with no dedup benefit.
+     */
+    --constellation-cyan-rgb: 75 233 255; /* #4be9ff */
+    --constellation-cyan-bright-rgb: 30 196 232; /* #1ec4e8 */
+    --constellation-cyan-pale-rgb: 234 253 255; /* #eafdff */
+    --constellation-cyan-paler-rgb: 242 253 255; /* #f2fdff */
+    --constellation-cyan-palest-rgb: 247 253 255; /* #f7fdff */
+    --constellation-blue-rgb: 143 202 255; /* #8fcaff — PersonalityProfile only */
+    --constellation-gold-rgb: 240 201 138; /* #f0c98a */
+    --constellation-gold-light-rgb: 242 207 125; /* #f2cf7d — PersonalityProfile only */
+    --constellation-gold-pale-rgb: 245 230 196; /* #f5e6c4 */
+    --constellation-slate-rgb: 111 138 156; /* #6f8a9c */
+    --constellation-slate-light-rgb: 139 161 177; /* #8ba1b1 */
+    --constellation-slate-dark-rgb: 132 160 178; /* #84a0b2 */
+    --constellation-navy-rgb: 5 19 26; /* #05131a */
+    --constellation-navy-deep-rgb: 5 7 15; /* #05070f */
+    --constellation-navy-deepest-rgb: 4 6 13; /* #04060d */
   }
 }
 
@@ -811,6 +854,11 @@
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
     @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-foreground outline-none ring-primary-medium focus:border-primary-medium/50 focus:ring-2;
+  }
+
+  /* Card-style content surface — use instead of repeating the same classes on every panel */
+  .card-surface {
+    @apply border-edge rounded-2xl bg-card p-6;
   }
 
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */

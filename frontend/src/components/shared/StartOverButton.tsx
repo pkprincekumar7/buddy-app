@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useStartOver } from '@/hooks/useStartOver';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
+import { cn } from '@/lib/utils';
 
 interface ConfirmModalProps {
   onCancel: () => void;
@@ -114,7 +115,7 @@ export default function StartOverButton({ childId, className = '' }: StartOverBu
         variant="outline"
         onClick={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`btn-start-over rounded-2xl ${className}`}
+        className={cn('btn-start-over rounded-2xl', className)}
       >
         <RotateCcw className="mr-1 h-4 w-4" />
         {isStartingOver ? 'Resetting…' : 'Start Over'}

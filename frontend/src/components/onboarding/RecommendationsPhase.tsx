@@ -25,6 +25,8 @@ import {
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
+import { useTts } from '@/lib/TtsContext';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import ChildActivityGame, { normalizeChildGameRecommendations } from './ChildActivityGame';
 import { normalizeRecommendations } from '@/lib/growthAreaData';
@@ -786,6 +788,16 @@ export default function RecommendationsPhase({
   onPhaseBack,
 }: RecommendationsPhaseProps) {
   const navigate = useNavigate();
+  // Read from the shared TtsContext (see task 18) rather than fetching and
+  // tracking tts_enabled locally — this used to duplicate that global state
+  // with its own api.preferences.get() call inside the resume-hydration
+  // effect below.
+  const { ttsEnabled } = useTts();
+  const voiceEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    voiceEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
   // voiceEnabledRef is a stable ref — safe to use with empty deps
   const speak = useCallback((text: string) => {
     if (typeof window === 'undefined' || !voiceEnabledRef.current) return;
@@ -824,8 +836,6 @@ export default function RecommendationsPhase({
   const [showGame, setShowGame] = useState(false);
   const [childGameResults, setChildGameResults] = useState<ChildGameResults | null>(null);
   const [childActivitySelections, setChildActivitySelections] = useState<string[]>([]);
-  const [_voiceEnabled, setVoiceEnabled] = useState(true);
-  const voiceEnabledRef = useRef(true);
   const [aiRecommendations, setAiRecommendations] = useState<unknown[] | null>(null);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
   const [resumeLoaded, setResumeLoaded] = useState(false);
@@ -835,7 +845,13 @@ export default function RecommendationsPhase({
   const debouncedSaveAreaProgress = useMemo(
     () =>
       debounce((payload: Record<string, unknown>) => {
-        api.completedGrowthAreas.append(activeChildId ?? '', payload).catch(() => {});
+        api.completedGrowthAreas.append(activeChildId ?? '', payload).catch((err: unknown) => {
+          // Swallowing this previously meant a failed autosave was invisible —
+          // the parent's answers for the current step silently never
+          // persisted, only surfacing later as "my answers disappeared".
+          console.error('[RecommendationsPhase] Failed to save progress:', err);
+          toast.error('Could not save your progress. Check your connection and try again.');
+        });
       }, 400),
     [activeChildId],
   );
@@ -846,18 +862,11 @@ export default function RecommendationsPhase({
     void (async () => {
       try {
         debouncedSaveAreaProgress.cancel();
-        const [_childFresh, completedDataRaw, prefsRaw] = await Promise.all([
+        const [_childFresh, completedDataRaw] = await Promise.all([
           api.entities.Child.get(activeChildId ?? ''),
           api.completedGrowthAreas.list(activeChildId ?? ''),
-          api.preferences.get(),
         ]);
         if (cancelled) return;
-
-        const prefs = prefsRaw as Record<string, unknown>;
-        if (typeof prefs['tts_enabled'] === 'boolean') {
-          voiceEnabledRef.current = prefs['tts_enabled'];
-          setVoiceEnabled(prefs['tts_enabled']);
-        }
 
         const completedData = completedDataRaw as Record<string, unknown>;
         const allDocsRaw = Array.isArray(completedData['areas']) ? completedData['areas'] : [];
@@ -1203,7 +1212,7 @@ export default function RecommendationsPhase({
 
         {/* Section 2 — Profile Summary Card */}
         {profile && (
-          <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
+          <motion.div {...sectionAnim(0.8)} className="card-surface">
             <div className="mb-4 flex items-start gap-4">
               <div className="glow-teal-sm flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-dark">
                 <Star className="h-6 w-6 text-white" />
@@ -1465,7 +1474,11 @@ export default function RecommendationsPhase({
                 className="border-edge hover:border-c-bright rounded-2xl bg-card p-4 text-left transition-colors hover:bg-surface-elevated"
               >
                 <div
-                  className={`h-11 w-11 rounded-xl bg-gradient-to-br text-base ${area.color} mb-3 flex items-center justify-center`}
+                  className={cn(
+                    'h-11 w-11 rounded-xl bg-gradient-to-br text-base',
+                    area.color,
+                    'mb-3 flex items-center justify-center',
+                  )}
                 >
                   <Icon className="h-5 w-5 text-white" />
                 </div>
@@ -1492,7 +1505,11 @@ export default function RecommendationsPhase({
           className="text-center"
         >
           <div
-            className={`mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br ${selectedArea?.color} mb-4 flex items-center justify-center`}
+            className={cn(
+              'mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br',
+              selectedArea?.color,
+              'mb-4 flex items-center justify-center',
+            )}
           >
             <Icon className="h-8 w-8 text-white" />
           </div>
@@ -1519,11 +1536,12 @@ export default function RecommendationsPhase({
                 setSelectedActivity(activity);
                 setStep('parent_activity');
               }}
-              className={`w-full rounded-2xl border p-4 text-left transition-all duration-150 ${
+              className={cn(
+                'w-full rounded-2xl border p-4 text-left transition-all duration-150',
                 selectedActivity?.title === activity.title
                   ? 'border-personality/50 bg-personality/10'
-                  : 'border-c-edge hover:border-c-bright bg-card hover:bg-surface-elevated'
-              }`}
+                  : 'border-c-edge hover:border-c-bright bg-card hover:bg-surface-elevated',
+              )}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
@@ -1564,7 +1582,7 @@ export default function RecommendationsPhase({
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1.0, delay: 0.1, ease: 'easeOut' }}
-          className={`bg-gradient-to-br ${selectedArea?.color} rounded-2xl p-6 text-white`}
+          className={cn('bg-gradient-to-br', selectedArea?.color, 'rounded-2xl p-6 text-white')}
         >
           <div className="space-y-3 text-center">
             <Award className="mx-auto h-10 w-10" />
@@ -1824,13 +1842,14 @@ export default function RecommendationsPhase({
             {questions.map((_: unknown, i: number) => (
               <div
                 key={i}
-                className={`h-1.5 w-8 rounded-full transition-all ${
+                className={cn(
+                  'h-1.5 w-8 rounded-full transition-all',
                   i === interactiveStep
                     ? 'bg-primary'
                     : i < interactiveStep
                       ? 'bg-success'
-                      : 'bg-ghost-strong'
-                }`}
+                      : 'bg-ghost-strong',
+                )}
               />
             ))}
           </div>
@@ -1849,7 +1868,7 @@ export default function RecommendationsPhase({
               opacity: { duration: 1.0, ease: 'easeOut' },
               y: { duration: 0.9, ease: 'easeOut' },
             }}
-            className="border-edge rounded-2xl bg-card p-6"
+            className="card-surface"
           >
             {/* Question */}
             <div className="mb-5">
@@ -1886,11 +1905,12 @@ export default function RecommendationsPhase({
                               [currentQuestion.id]: option,
                             });
                           }}
-                          className={`w-full rounded-xl border p-3.5 text-left text-sm transition-all ${
+                          className={cn(
+                            'w-full rounded-xl border p-3.5 text-left text-sm transition-all',
                             selected
                               ? 'border-primary-medium/50 bg-primary-medium/10 text-primary-light'
-                              : 'border-c-edge bg-surface-input text-foreground hover:border-primary/30 hover:bg-primary/5'
-                          }`}
+                              : 'border-c-edge bg-surface-input text-foreground hover:border-primary/30 hover:bg-primary/5',
+                          )}
                         >
                           <span className="font-medium">{option}</span>
                         </button>
@@ -1927,7 +1947,10 @@ export default function RecommendationsPhase({
                         !currentQuestion ||
                         !answerLooksFilled(interactiveAnswers[currentQuestion.id])
                       }
-                      className={`h-11 w-full rounded-2xl bg-gradient-to-r from-primary-medium to-primary text-base font-semibold text-primary-foreground hover:from-primary hover:to-primary-light disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
+                      className={cn(
+                        'h-11 w-full rounded-2xl bg-gradient-to-r from-primary-medium to-primary text-base font-semibold text-primary-foreground hover:from-primary hover:to-primary-light disabled:opacity-40',
+                        !isFirstQuestion && 'sm:ml-auto sm:w-auto',
+                      )}
                     >
                       {isLastQuestion ? 'See Summary' : 'Next Question'}
                       <ChevronRight className="ml-1 h-4 w-4" />
@@ -1966,7 +1989,10 @@ export default function RecommendationsPhase({
                       }
                     }}
                     disabled={!currentAnswer.trim()}
-                    className={`h-11 w-full rounded-2xl bg-gradient-to-r from-primary-medium to-primary text-base font-semibold text-primary-foreground hover:from-primary hover:to-primary-light disabled:opacity-40 ${!isFirstQuestion ? 'sm:ml-auto sm:w-auto' : ''}`}
+                    className={cn(
+                      'h-11 w-full rounded-2xl bg-gradient-to-r from-primary-medium to-primary text-base font-semibold text-primary-foreground hover:from-primary hover:to-primary-light disabled:opacity-40',
+                      !isFirstQuestion && 'sm:ml-auto sm:w-auto',
+                    )}
                   >
                     {isLastQuestion ? 'See Summary' : 'Next Question'}
                     <ChevronRight className="ml-1 h-4 w-4" />
@@ -2076,7 +2102,11 @@ export default function RecommendationsPhase({
       <div className="space-y-6">
         <motion.div {...sectionAnim(0.1)} className="text-center">
           <div
-            className={`mx-auto mb-4 h-20 w-20 rounded-2xl bg-gradient-to-br ${selectedArea?.color ?? 'from-success-bright to-primary-medium'} flex items-center justify-center`}
+            className={cn(
+              'mx-auto mb-4 h-20 w-20 rounded-2xl bg-gradient-to-br',
+              selectedArea?.color ?? 'from-success-bright to-primary-medium',
+              'flex items-center justify-center',
+            )}
           >
             <AreaIcon className="h-10 w-10 text-white" />
           </div>

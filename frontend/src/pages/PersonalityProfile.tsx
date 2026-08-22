@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
+import { useMediaQuery } from '@/hooks/use-mobile';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
 import { normalizeOnboardingChildDataBlob } from '@/lib/onboardingChildData';
 import { mergeChildDraft } from '@/lib/onboardingHelpers';
@@ -34,27 +35,44 @@ const SEC_LABEL: CSSProperties = {
 function TraitIcon({ index, containerSize = 46 }: { index: number; containerSize?: number }) {
   const innerScale = containerSize / 46;
   const shapes: CSSProperties[] = [
-    { width: 16, height: 16, border: '2px solid #8fcaff', borderRadius: '50%' },
-    { width: 14, height: 14, background: '#8fcaff', transform: 'rotate(45deg)' },
+    {
+      width: 16,
+      height: 16,
+      border: '2px solid rgb(var(--constellation-blue-rgb))',
+      borderRadius: '50%',
+    },
+    {
+      width: 14,
+      height: 14,
+      background: 'rgb(var(--constellation-blue-rgb))',
+      transform: 'rotate(45deg)',
+    },
     {
       width: 18,
       height: 2,
-      background: '#8fcaff',
-      boxShadow: '0 6px 0 #8fcaff, 0 -6px 0 rgba(143,202,255,.5)',
+      background: 'rgb(var(--constellation-blue-rgb))',
+      boxShadow:
+        '0 6px 0 rgb(var(--constellation-blue-rgb)), 0 -6px 0 rgb(var(--constellation-blue-rgb) / .5)',
     },
-    { width: 16, height: 16, border: '2px solid #8fcaff', borderRadius: 3 },
+    {
+      width: 16,
+      height: 16,
+      border: '2px solid rgb(var(--constellation-blue-rgb))',
+      borderRadius: 3,
+    },
     {
       width: 6,
       height: 6,
       borderRadius: '50%',
-      background: '#8fcaff',
-      boxShadow: '-10px 0 0 rgba(143,202,255,.45), 10px 0 0 rgba(143,202,255,.45)',
+      background: 'rgb(var(--constellation-blue-rgb))',
+      boxShadow:
+        '-10px 0 0 rgb(var(--constellation-blue-rgb) / .45), 10px 0 0 rgb(var(--constellation-blue-rgb) / .45)',
     },
     {
       width: 16,
       height: 16,
       borderRadius: '50%',
-      border: '2px solid #8fcaff',
+      border: '2px solid rgb(var(--constellation-blue-rgb))',
       borderRightColor: 'transparent',
       borderBottomColor: 'transparent',
       transform: 'rotate(45deg)',
@@ -90,7 +108,7 @@ function StrengthIcon({ index }: { index: number }) {
         style={{
           width: 34,
           height: 34,
-          border: '2px solid #f2cf7d',
+          border: '2px solid rgb(var(--constellation-gold-light-rgb))',
           borderRadius: 4,
           transform: 'rotate(45deg)',
         }}
@@ -102,26 +120,36 @@ function StrengthIcon({ index }: { index: number }) {
         style={{
           width: 34,
           height: 34,
-          border: '2px solid #8fcaff',
+          border: '2px solid rgb(var(--constellation-blue-rgb))',
           borderRadius: '50%',
           position: 'relative',
         }}
       >
         <div
-          style={{ position: 'absolute', inset: 9, borderRadius: '50%', background: '#f2cf7d' }}
+          style={{
+            position: 'absolute',
+            inset: 9,
+            borderRadius: '50%',
+            background: 'rgb(var(--constellation-gold-light-rgb))',
+          }}
         />
       </div>
     );
-  if (index === 2) return <div style={{ width: 34, height: 34, border: '2px solid #8fcaff' }} />;
+  if (index === 2)
+    return (
+      <div
+        style={{ width: 34, height: 34, border: '2px solid rgb(var(--constellation-blue-rgb))' }}
+      />
+    );
   return (
     <div
       style={{
         width: 34,
         height: 34,
         borderRadius: '50%',
-        border: '2px solid #8fcaff',
-        borderTopColor: '#f2cf7d',
-        borderRightColor: '#f2cf7d',
+        border: '2px solid rgb(var(--constellation-blue-rgb))',
+        borderTopColor: 'rgb(var(--constellation-gold-light-rgb))',
+        borderRightColor: 'rgb(var(--constellation-gold-light-rgb))',
       }}
     />
   );
@@ -309,8 +337,8 @@ const SPARKS = [
     left: '20%',
     delay: '.9s',
     size: 6,
-    color: '#f2cf7d',
-    glow: 'rgba(242,207,125,.8)',
+    color: 'rgb(var(--constellation-gold-light-rgb))',
+    glow: 'rgb(var(--constellation-gold-light-rgb) / .8)',
     dur: '4.2s',
   },
   {
@@ -318,7 +346,7 @@ const SPARKS = [
     delay: '1.6s',
     size: 8,
     color: '#f7dfa4',
-    glow: 'rgba(242,207,125,.9)',
+    glow: 'rgb(var(--constellation-gold-light-rgb) / .9)',
     dur: '3.8s',
   },
   {
@@ -342,7 +370,7 @@ const SPARKS = [
     delay: '2.1s',
     size: 7,
     color: '#f7dfa4',
-    glow: 'rgba(242,207,125,.85)',
+    glow: 'rgb(var(--constellation-gold-light-rgb) / .85)',
     dur: '4.4s',
   },
   {
@@ -357,8 +385,8 @@ const SPARKS = [
     left: '94%',
     delay: '1.9s',
     size: 5,
-    color: '#f2cf7d',
-    glow: 'rgba(242,207,125,.9)',
+    color: 'rgb(var(--constellation-gold-light-rgb))',
+    glow: 'rgb(var(--constellation-gold-light-rgb) / .9)',
     dur: '4.0s',
   },
 ];
@@ -377,15 +405,9 @@ export default function PersonalityProfile() {
   const [avatarId, setAvatarId] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [displayPhase, setDisplayPhase] = useState<'reveal' | 'profile'>('reveal');
-  const [isWide, setIsWide] = useState(() => window.innerWidth >= 700);
+  const isWide = useMediaQuery('(min-width: 700px)');
   const [diagAvailW, setDiagAvailW] = useState(() => Math.min(window.innerWidth - 68, 748));
   const diagramRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const check = () => setIsWide(window.innerWidth >= 700);
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   useEffect(() => {
     const el = diagramRef.current;
@@ -471,7 +493,7 @@ export default function PersonalityProfile() {
             width: 36,
             height: 36,
             borderRadius: '50%',
-            border: '2px solid rgba(242,207,125,0.55)',
+            border: '2px solid rgb(var(--constellation-gold-light-rgb) / 0.55)',
             borderTopColor: 'transparent',
           }}
         />
@@ -500,7 +522,7 @@ export default function PersonalityProfile() {
           style={{
             padding: '10px 32px',
             borderRadius: 100,
-            border: '1px solid rgba(242,207,125,.6)',
+            border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
             background: 'rgba(20,60,140,.45)',
             color: '#f7e6bd',
             cursor: 'pointer',
@@ -622,7 +644,7 @@ export default function PersonalityProfile() {
               border:
                 i === 0
                   ? '2px solid rgba(140,205,255,.7)'
-                  : `1px solid ${i === 1 ? 'rgba(242,207,125,.45)' : 'rgba(140,205,255,.35)'}`,
+                  : `1px solid ${i === 1 ? 'rgb(var(--constellation-gold-light-rgb) / .45)' : 'rgba(140,205,255,.35)'}`,
               animation: `ppRingOut 2.6s ease-out ${delay}s infinite`,
             }}
           />
@@ -674,8 +696,8 @@ export default function PersonalityProfile() {
             style={{
               fontSize: 'clamp(16px, 5vw, 22px)',
               letterSpacing: '.06em',
-              color: '#f2cf7d',
-              textShadow: '0 0 24px rgba(242,207,125,.5)',
+              color: 'rgb(var(--constellation-gold-light-rgb))',
+              textShadow: '0 0 24px rgb(var(--constellation-gold-light-rgb) / .5)',
               animation: 'ppRiseIn .9s ease-out .25s both',
             }}
           >
@@ -687,11 +709,12 @@ export default function PersonalityProfile() {
             style={{
               position: 'relative',
               padding: 'clamp(16px, 4vw, 26px) clamp(20px, 6vw, 54px)',
-              border: '1px solid rgba(242,207,125,.55)',
+              border: '1px solid rgb(var(--constellation-gold-light-rgb) / .55)',
               borderRadius: 18,
               overflow: 'hidden',
               background: 'linear-gradient(180deg, rgba(14,44,104,.7), rgba(6,18,48,.5))',
-              boxShadow: '0 0 60px rgba(50,130,240,.45), 0 0 34px rgba(242,207,125,.3)',
+              boxShadow:
+                '0 0 60px rgba(50,130,240,.45), 0 0 34px rgb(var(--constellation-gold-light-rgb) / .3)',
               animation: 'ppBadgePop .8s cubic-bezier(.2,.9,.2,1) .7s both',
             }}
           >
@@ -741,7 +764,7 @@ export default function PersonalityProfile() {
               marginTop: 6,
               padding: 'clamp(10px, 3vw, 14px) clamp(20px, 6vw, 30px)',
               borderRadius: 999,
-              border: '1px solid rgba(242,207,125,.7)',
+              border: '1px solid rgb(var(--constellation-gold-light-rgb) / .7)',
               background: 'rgba(20,60,140,.55)',
               color: '#f7e6bd',
               fontSize: 'clamp(13px, 3.5vw, 16px)',
@@ -813,14 +836,14 @@ export default function PersonalityProfile() {
                 cursor: 'pointer',
                 padding: isWide ? '9px 16px' : '9px 12px',
                 borderRadius: 999,
-                border: '1px solid rgba(242,207,125,.6)',
+                border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
                 background: 'rgba(20,60,140,.45)',
                 color: '#f7e6bd',
                 fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
                 letterSpacing: '.16em',
                 textTransform: 'uppercase',
-                boxShadow: '0 0 18px rgba(242,207,125,.16)',
+                boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
               }}
             >
               <svg
@@ -848,14 +871,14 @@ export default function PersonalityProfile() {
                 cursor: 'pointer',
                 padding: isWide ? '9px 16px' : '9px 12px',
                 borderRadius: 999,
-                border: '1px solid rgba(242,207,125,.6)',
+                border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
                 background: 'rgba(20,60,140,.45)',
                 color: '#f7e6bd',
                 fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
                 letterSpacing: '.16em',
                 textTransform: 'uppercase',
-                boxShadow: '0 0 18px rgba(242,207,125,.16)',
+                boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
               }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
@@ -912,10 +935,10 @@ export default function PersonalityProfile() {
                 style={{
                   width: 14,
                   height: 14,
-                  background: '#f2cf7d',
+                  background: 'rgb(var(--constellation-gold-light-rgb))',
                   borderRadius: 2,
                   transform: 'rotate(45deg)',
-                  boxShadow: '0 0 18px 5px rgba(242,207,125,.65)',
+                  boxShadow: '0 0 18px 5px rgb(var(--constellation-gold-light-rgb) / .65)',
                   flexShrink: 0,
                 }}
               />
@@ -925,7 +948,7 @@ export default function PersonalityProfile() {
                 width: 120,
                 height: 1,
                 background:
-                  'linear-gradient(90deg, transparent, rgba(242,207,125,.85), transparent)',
+                  'linear-gradient(90deg, transparent, rgb(var(--constellation-gold-light-rgb) / .85), transparent)',
                 margin: '4px 0 2px',
               }}
             />
@@ -1109,7 +1132,13 @@ export default function PersonalityProfile() {
                         }}
                       />
                     </div>
-                    <div style={{ fontSize: 15, textAlign: 'right', color: '#f2cf7d' }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        textAlign: 'right',
+                        color: 'rgb(var(--constellation-gold-light-rgb))',
+                      }}
+                    >
                       {ts.score}%
                     </div>
                   </div>

@@ -304,7 +304,11 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
               <img src={photoPreview} alt="Profile photo" className="h-full w-full object-cover" />
             ) : selected ? (
               <div
-                className={`flex h-full w-full items-center justify-center ${selected.bg} select-none text-4xl`}
+                className={cn(
+                  'flex h-full w-full items-center justify-center',
+                  selected.bg,
+                  'select-none text-4xl',
+                )}
               >
                 {selected.emoji}
               </div>
@@ -349,11 +353,12 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                   key={g}
                   type="button"
                   onClick={() => setAvatarTab(g)}
-                  className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  className={cn(
+                    'px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors',
                     avatarTab === g
                       ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
                 >
                   {g}
                 </button>
@@ -381,7 +386,11 @@ export default function ChildProfileStep({ onContinue, initialData, isLoading }:
                 )}
               >
                 <div
-                  className={`relative flex h-14 w-14 items-center justify-center rounded-full ${av.bg} select-none text-2xl`}
+                  className={cn(
+                    'relative flex h-14 w-14 items-center justify-center rounded-full',
+                    av.bg,
+                    'select-none text-2xl',
+                  )}
                 >
                   {av.emoji}
                   {form.avatarId === av.id && (

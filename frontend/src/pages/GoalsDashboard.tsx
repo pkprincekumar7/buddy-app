@@ -17,8 +17,9 @@ import { Target, ChevronDown, RefreshCw, CheckCircle2, RotateCcw, Lock } from 'l
 import { Button } from '@/components/ui/button';
 import { useGoalPlan, buildGoalPlanIndex } from '@/hooks/useGoalPlan';
 import type { Dispatch, SetStateAction } from 'react';
-import { SPINNER, slideUp } from '@/lib/animations';
+import { slideUp } from '@/lib/animations';
 import PageActions from '@/components/shared/PageActions';
+import Spinner from '@/components/shared/Spinner';
 
 interface DashActivity {
   completed?: boolean;
@@ -109,7 +110,11 @@ function ActivityCardIcon({
     );
   return (
     <div
-      className={`h-5 w-5 rounded-full ${colorDot} mt-0.5 flex flex-shrink-0 items-center justify-center`}
+      className={cn(
+        'h-5 w-5 rounded-full',
+        colorDot,
+        'mt-0.5 flex flex-shrink-0 items-center justify-center',
+      )}
     >
       <span className="text-[10px] font-bold text-white">{index + 1}</span>
     </div>
@@ -164,7 +169,11 @@ function MonthCard({
     >
       <button onClick={onToggle} className="w-full text-left">
         <div
-          className={`bg-gradient-to-r ${color.bg} flex items-center justify-between rounded-t-2xl px-6 py-4`}
+          className={cn(
+            'bg-gradient-to-r',
+            color.bg,
+            'flex items-center justify-between rounded-t-2xl px-6 py-4',
+          )}
         >
           <div className="flex items-center gap-3">
             <div className="bg-ghost-xl flex h-10 w-10 items-center justify-center rounded-xl">
@@ -185,8 +194,8 @@ function MonthCard({
           </motion.div>
         </div>
         {month.objective && (
-          <div className={`px-6 py-2.5 ${color.light} border-b-edge-faint`}>
-            <p className={`text-sm font-medium ${color.text}`}>
+          <div className={cn('px-6 py-2.5', color.light, 'border-b-edge-faint')}>
+            <p className={cn('text-sm font-medium', color.text)}>
               <span aria-hidden="true">🎯</span> {month.objective}
             </p>
           </div>
@@ -206,7 +215,7 @@ function MonthCard({
             <div className="space-y-5 px-5 py-5">
               {month.periods?.map((period, pIdx) => (
                 <div key={`${idx}-${pIdx}`}>
-                  <p className={`mb-3 text-xs font-bold uppercase tracking-widest ${color.text}`}>
+                  <p className={cn('mb-3 text-xs font-bold uppercase tracking-widest', color.text)}>
                     {period.label}
                   </p>
                   <div className="space-y-2.5">
@@ -230,7 +239,10 @@ function MonthCard({
                           />
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`text-sm font-semibold ${isLocked ? 'text-muted-foreground' : 'text-foreground'}`}
+                              className={cn(
+                                'text-sm font-semibold',
+                                isLocked ? 'text-muted-foreground' : 'text-foreground',
+                              )}
                             >
                               {act.title}
                             </p>
@@ -309,7 +321,11 @@ function MonthCard({
                                     monthObjective: String(month.objective ?? ''),
                                   });
                                 }}
-                                className={`mt-1.5 text-xs font-medium ${color.text} hover:underline`}
+                                className={cn(
+                                  'mt-1.5 text-xs font-medium',
+                                  color.text,
+                                  'hover:underline',
+                                )}
                               >
                                 Tap to start activity →
                               </button>
@@ -442,11 +458,7 @@ export default function GoalsDashboard() {
                 aria-live="polite"
                 aria-busy="true"
               >
-                <motion.div
-                  {...SPINNER}
-                  className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
-                  aria-hidden="true"
-                />
+                <Spinner aria-hidden="true" />
                 <p className="text-muted-foreground">Building your 3-month plan...</p>
               </div>
             ) : (

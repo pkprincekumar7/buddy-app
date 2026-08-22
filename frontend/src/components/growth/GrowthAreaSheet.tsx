@@ -74,9 +74,9 @@ const CLOSE_BTN: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   cursor: 'pointer',
-  border: '1px solid rgba(75,233,255,.28)',
+  border: '1px solid rgb(var(--constellation-cyan-rgb) / .28)',
   background: 'transparent',
-  color: '#84a0b2',
+  color: 'rgb(var(--constellation-slate-dark-rgb))',
   transition: 'color .2s ease,border-color .2s ease',
 };
 
@@ -101,9 +101,10 @@ const PILL: React.CSSProperties = {
 
 const CTA: React.CSSProperties = {
   border: 'none',
-  background: 'linear-gradient(135deg,#4be9ff,#1ec4e8)',
-  color: '#05131a',
-  boxShadow: '0 0 24px rgba(75,233,255,.45)',
+  background:
+    'linear-gradient(135deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-cyan-bright-rgb)))',
+  color: 'rgb(var(--constellation-navy-rgb))',
+  boxShadow: '0 0 24px rgb(var(--constellation-cyan-rgb) / .45)',
 };
 
 const CHOICE_TILE: React.CSSProperties = {
@@ -111,7 +112,7 @@ const CHOICE_TILE: React.CSSProperties = {
   borderRadius: 16,
   padding: '18px 16px',
   background: 'linear-gradient(160deg,rgba(30,45,72,.9),rgba(8,13,24,.9))',
-  border: '1px solid rgba(75,233,255,.26)',
+  border: '1px solid rgb(var(--constellation-cyan-rgb) / .26)',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
@@ -126,8 +127,9 @@ const CHOICE_TILE: React.CSSProperties = {
 // like" rather than a blank round with no memory of the earlier answer.
 const CHOICE_TILE_PICKED: React.CSSProperties = {
   ...CHOICE_TILE,
-  border: '1px solid rgba(240,201,138,.85)',
-  boxShadow: '0 0 0 1px rgba(240,201,138,.35),0 0 22px rgba(240,201,138,.25)',
+  border: '1px solid rgb(var(--constellation-gold-rgb) / .85)',
+  boxShadow:
+    '0 0 0 1px rgb(var(--constellation-gold-rgb) / .35),0 0 22px rgb(var(--constellation-gold-rgb) / .25)',
 };
 
 /** Generation state of one question set, as reported by the caller's hook. */
@@ -165,7 +167,7 @@ function SetGate({
         <svg
           viewBox="0 0 24 24"
           fill="none"
-          stroke="#f0c98a"
+          stroke="rgb(var(--constellation-gold-rgb))"
           strokeWidth="1.7"
           style={{ width: 30, height: 30, margin: '0 auto' }}
         >
@@ -179,8 +181,8 @@ function SetGate({
             height: 34,
             margin: '0 auto',
             borderRadius: '50%',
-            border: '2px solid rgba(75,233,255,.28)',
-            borderTopColor: '#4be9ff',
+            border: '2px solid rgb(var(--constellation-cyan-rgb) / .28)',
+            borderTopColor: 'rgb(var(--constellation-cyan-rgb))',
           }}
         />
       )}
@@ -191,7 +193,7 @@ function SetGate({
           fontWeight: 500,
           fontSize: 15.5,
           lineHeight: 1.45,
-          color: '#eafdff',
+          color: 'rgb(var(--constellation-cyan-pale-rgb))',
         }}
       >
         {failed ? 'We couldn’t write these questions just now.' : waiting}
@@ -201,7 +203,7 @@ function SetGate({
           marginTop: 9,
           fontSize: 13.5,
           fontWeight: 600,
-          color: '#84a0b2',
+          color: 'rgb(var(--constellation-slate-dark-rgb))',
           maxWidth: 400,
           marginLeft: 'auto',
           marginRight: 'auto',
@@ -227,17 +229,23 @@ interface GrowthAreaSheetProps {
   area: GrowthArea;
   childName: string;
   childGender: string;
-  /** The parent's five reflections for this area; null until generated. */
-  questions: Question[] | null;
-  questionsStatus: SetStatus;
-  /** Elapsed-time note shown while the reflections generate; '' when there is none. */
-  questionsProgress?: string;
-  onRetryQuestions: () => void;
-  /** The child's six either/or rounds for this area; null until generated. */
-  rounds: GameRound[] | null;
-  roundsStatus: SetStatus;
-  roundsProgress?: string;
-  onRetryRounds: () => void;
+  /** The parent's five reflections for this area — data, generation status,
+   *  progress note, and retry, grouped since they're one stage's state. */
+  parentQuestions: {
+    data: Question[] | null;
+    status: SetStatus;
+    /** Elapsed-time note shown while the reflections generate; '' when there is none. */
+    progress?: string;
+    onRetry: () => void;
+  };
+  /** The child's six either/or rounds for this area — same shape as
+   *  parentQuestions, for the child-rounds generation stage. */
+  childRounds: {
+    data: GameRound[] | null;
+    status: SetStatus;
+    progress?: string;
+    onRetry: () => void;
+  };
   /** Previously saved answers for this area, used to prefill a redo. */
   initialAnswers?: Record<string, unknown>;
   /** Mount straight into the result view for an already-finished area, skipping
@@ -266,14 +274,8 @@ export default function GrowthAreaSheet({
   area,
   childName,
   childGender,
-  questions: generatedQuestions,
-  questionsStatus,
-  questionsProgress = '',
-  onRetryQuestions,
-  rounds: generatedRounds,
-  roundsStatus,
-  roundsProgress = '',
-  onRetryRounds,
+  parentQuestions,
+  childRounds,
   initialAnswers,
   initialPhase = 'questions',
   initialPicks,
@@ -285,6 +287,18 @@ export default function GrowthAreaSheet({
   recsPhase = 'idle',
   recommendations = [],
 }: GrowthAreaSheetProps) {
+  const {
+    data: generatedQuestions,
+    status: questionsStatus,
+    progress: questionsProgress = '',
+    onRetry: onRetryQuestions,
+  } = parentQuestions;
+  const {
+    data: generatedRounds,
+    status: roundsStatus,
+    progress: roundsProgress = '',
+    onRetry: onRetryRounds,
+  } = childRounds;
   // Stable empty arrays, so an area still waiting on its sets does not hand every
   // downstream memo and effect a fresh reference on each render.
   const questions: Question[] = useMemo(() => generatedQuestions ?? [], [generatedQuestions]);
@@ -448,8 +462,8 @@ export default function GrowthAreaSheet({
           borderRadius: 20,
           padding: '26px 30px 24px',
           background: 'linear-gradient(165deg,rgba(20,31,50,.96),rgba(8,13,24,.98))',
-          border: '1px solid rgba(240,201,138,.42)',
-          boxShadow: '0 26px 70px rgba(0,0,0,.6),0 0 44px rgba(75,233,255,.12)',
+          border: '1px solid rgb(var(--constellation-gold-rgb) / .42)',
+          boxShadow: '0 26px 70px rgba(0,0,0,.6),0 0 44px rgb(var(--constellation-cyan-rgb) / .12)',
         }}
       >
         <button type="button" aria-label="Close" onClick={onClose} style={CLOSE_BTN}>
@@ -474,8 +488,8 @@ export default function GrowthAreaSheet({
                 width: 38,
                 height: 38,
                 background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
-                border: '1.5px solid rgba(240,201,138,.75)',
-                boxShadow: '0 0 22px rgba(75,233,255,.22)',
+                border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
+                boxShadow: '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
               }}
             >
               <svg
@@ -491,7 +505,11 @@ export default function GrowthAreaSheet({
             <div>
               <div
                 className="font-bold uppercase"
-                style={{ letterSpacing: '.34em', fontSize: 9.5, color: '#1ec4e8' }}
+                style={{
+                  letterSpacing: '.34em',
+                  fontSize: 9.5,
+                  color: 'rgb(var(--constellation-cyan-bright-rgb))',
+                }}
               >
                 Guided Reflection
               </div>
@@ -500,7 +518,7 @@ export default function GrowthAreaSheet({
                   fontFamily: ORBITRON,
                   fontWeight: 700,
                   fontSize: 17,
-                  color: '#f2fdff',
+                  color: 'rgb(var(--constellation-cyan-paler-rgb))',
                   marginTop: 3,
                 }}
               >
@@ -533,16 +551,21 @@ export default function GrowthAreaSheet({
                     ...PIP,
                     background:
                       i === qIdx
-                        ? 'linear-gradient(90deg,#4be9ff,#1ec4e8)'
+                        ? 'linear-gradient(90deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-cyan-bright-rgb)))'
                         : i < qIdx
-                          ? 'rgba(240,201,138,.7)'
-                          : 'rgba(75,233,255,.16)',
+                          ? 'rgb(var(--constellation-gold-rgb) / .7)'
+                          : 'rgb(var(--constellation-cyan-rgb) / .16)',
                   }}
                 />
               ))}
               <div
                 className="whitespace-nowrap font-bold"
-                style={{ fontSize: 11, letterSpacing: '.16em', color: '#84a0b2', marginLeft: 6 }}
+                style={{
+                  fontSize: 11,
+                  letterSpacing: '.16em',
+                  color: 'rgb(var(--constellation-slate-dark-rgb))',
+                  marginLeft: 6,
+                }}
               >
                 {qIdx + 1} / {questions.length}
               </div>
@@ -564,7 +587,7 @@ export default function GrowthAreaSheet({
                     fontWeight: 700,
                     fontSize: 26,
                     lineHeight: 1,
-                    color: 'rgba(240,201,138,.55)',
+                    color: 'rgb(var(--constellation-gold-rgb) / .55)',
                   }}
                 >
                   {String(qIdx + 1).padStart(2, '0')}
@@ -576,12 +599,19 @@ export default function GrowthAreaSheet({
                       fontWeight: 500,
                       fontSize: 17,
                       lineHeight: 1.45,
-                      color: '#eafdff',
+                      color: 'rgb(var(--constellation-cyan-pale-rgb))',
                     }}
                   >
                     {fillTemplate(currentQuestion.question, childName, childGender)}
                   </div>
-                  <div style={{ marginTop: 8, fontSize: 13.5, fontWeight: 600, color: '#84a0b2' }}>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-dark-rgb))',
+                    }}
+                  >
                     {fillTemplate(currentQuestion.hint, childName, childGender)}
                   </div>
                   <TextareaWithVoice
@@ -600,12 +630,12 @@ export default function GrowthAreaSheet({
                       padding: '12px 14px',
                       paddingRight: 44,
                       background: 'rgba(5,9,18,.85)',
-                      border: '1px solid rgba(75,233,255,.24)',
+                      border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
                       outline: 'none',
                       fontWeight: 600,
                       fontSize: 15,
                       lineHeight: 1.5,
-                      color: '#eafdff',
+                      color: 'rgb(var(--constellation-cyan-pale-rgb))',
                     }}
                   />
                 </div>
@@ -620,7 +650,7 @@ export default function GrowthAreaSheet({
                   ...PILL,
                   padding: '10px 20px',
                   background: 'rgba(8,14,26,.85)',
-                  border: '1px solid rgba(75,233,255,.28)',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .28)',
                   color: '#9db4c4',
                   opacity: qIdx === 0 ? 0.35 : 1,
                   pointerEvents: qIdx === 0 ? 'none' : 'auto',
@@ -680,14 +710,14 @@ export default function GrowthAreaSheet({
                 height: 64,
                 margin: '0 auto',
                 background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
-                border: '1.5px solid rgba(240,201,138,.75)',
-                boxShadow: '0 0 30px rgba(75,233,255,.28)',
+                border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
+                boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .28)',
               }}
             >
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#f0c98a"
+                stroke="rgb(var(--constellation-gold-rgb))"
                 strokeWidth="1.7"
                 style={{ width: 28, height: 28 }}
               >
@@ -700,7 +730,7 @@ export default function GrowthAreaSheet({
                 fontFamily: ORBITRON,
                 fontWeight: 700,
                 fontSize: 18,
-                color: '#f2fdff',
+                color: 'rgb(var(--constellation-cyan-paler-rgb))',
               }}
             >
               {fillTemplate('Thank you. Now {name}’s turn.', childName, childGender)}
@@ -781,13 +811,22 @@ export default function GrowthAreaSheet({
           >
             <div className="flex items-baseline justify-between">
               <div
-                style={{ fontFamily: ORBITRON, fontWeight: 500, fontSize: 16, color: '#eafdff' }}
+                style={{
+                  fontFamily: ORBITRON,
+                  fontWeight: 500,
+                  fontSize: 16,
+                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                }}
               >
                 Which would you rather do?
               </div>
               <div
                 className="whitespace-nowrap font-bold"
-                style={{ fontSize: 11, letterSpacing: '.16em', color: '#84a0b2' }}
+                style={{
+                  fontSize: 11,
+                  letterSpacing: '.16em',
+                  color: 'rgb(var(--constellation-slate-dark-rgb))',
+                }}
               >
                 Round {rIdx + 1} of {rounds.length}
               </div>
@@ -811,14 +850,23 @@ export default function GrowthAreaSheet({
                     <svg
                       viewBox="0 0 24 24"
                       fill="none"
-                      stroke={side === 0 ? '#4be9ff' : '#f0c98a'}
+                      stroke={
+                        side === 0
+                          ? 'rgb(var(--constellation-cyan-rgb))'
+                          : 'rgb(var(--constellation-gold-rgb))'
+                      }
                       strokeWidth="1.7"
                       style={{ width: 30, height: 30 }}
                     >
                       <path d={option.icon} />
                     </svg>
                     <div
-                      style={{ fontWeight: 700, fontSize: 14.5, lineHeight: 1.4, color: '#eafdff' }}
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 14.5,
+                        lineHeight: 1.4,
+                        color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                      }}
                     >
                       {option.text}
                     </div>
@@ -828,7 +876,7 @@ export default function GrowthAreaSheet({
                         style={{
                           fontSize: 9.5,
                           letterSpacing: '.12em',
-                          color: 'rgba(240,201,138,.9)',
+                          color: 'rgb(var(--constellation-gold-rgb) / .9)',
                         }}
                       >
                         Picked last time
@@ -851,7 +899,11 @@ export default function GrowthAreaSheet({
           >
             <div
               className="font-bold uppercase"
-              style={{ letterSpacing: '.3em', fontSize: 9.5, color: '#1ec4e8' }}
+              style={{
+                letterSpacing: '.3em',
+                fontSize: 9.5,
+                color: 'rgb(var(--constellation-cyan-bright-rgb))',
+              }}
             >
               {fillTemplate('{name}’s ' + area.name + ' Constellation', childName, childGender)}
             </div>
@@ -861,7 +913,7 @@ export default function GrowthAreaSheet({
                 fontFamily: ORBITRON,
                 fontWeight: 700,
                 fontSize: 22,
-                color: '#f2fdff',
+                color: 'rgb(var(--constellation-cyan-paler-rgb))',
               }}
             >
               {archetype?.title ?? ''}
@@ -888,7 +940,7 @@ export default function GrowthAreaSheet({
                 <path
                   d={CONSTELLATION_PATH}
                   fill="none"
-                  stroke="rgba(240,201,138,.35)"
+                  stroke="rgb(var(--constellation-gold-rgb) / .35)"
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -909,8 +961,8 @@ export default function GrowthAreaSheet({
                       width: 11,
                       height: 11,
                       borderRadius: '50%',
-                      background: '#f5e6c4',
-                      boxShadow: '0 0 14px rgba(240,201,138,.9)',
+                      background: 'rgb(var(--constellation-gold-pale-rgb))',
+                      boxShadow: '0 0 14px rgb(var(--constellation-gold-rgb) / .9)',
                     }}
                   />
                   <div
@@ -927,7 +979,7 @@ export default function GrowthAreaSheet({
               style={{
                 marginTop: 4,
                 textAlign: 'left',
-                borderTop: '1px solid rgba(240,201,138,.22)',
+                borderTop: '1px solid rgb(var(--constellation-gold-rgb) / .22)',
                 paddingTop: 18,
               }}
             >
@@ -938,14 +990,18 @@ export default function GrowthAreaSheet({
                     fontFamily: ORBITRON,
                     fontSize: 13.5,
                     letterSpacing: '.14em',
-                    color: '#f0c98a',
+                    color: 'rgb(var(--constellation-gold-rgb))',
                   }}
                 >
                   Recommendations
                 </div>
                 <div
                   className="font-semibold uppercase"
-                  style={{ fontSize: 10.5, letterSpacing: '.14em', color: '#6f8a9c' }}
+                  style={{
+                    fontSize: 10.5,
+                    letterSpacing: '.14em',
+                    color: 'rgb(var(--constellation-slate-rgb))',
+                  }}
                 >
                   {fillTemplate(
                     'From your five answers and {name}’s six choices',
@@ -959,8 +1015,8 @@ export default function GrowthAreaSheet({
                 {recsPhase === 'loading' && (
                   <div className="flex flex-col items-center gap-3 py-6">
                     <div className="relative h-10 w-10">
-                      <div className="absolute inset-0 rounded-full border-[3px] border-[rgba(240,201,138,.2)]" />
-                      <div className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-[#f0c98a]" />
+                      <div className="border-[rgb(var(--constellation-gold-rgb)_/_.2)] absolute inset-0 rounded-full border-[3px]" />
+                      <div className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-[rgb(var(--constellation-gold-rgb))]" />
                     </div>
                     <div
                       className="text-center"
@@ -993,7 +1049,7 @@ export default function GrowthAreaSheet({
                           padding: '12px 14px',
                           background:
                             'linear-gradient(120deg,rgba(30,45,72,.55),rgba(8,13,24,.55))',
-                          border: '1px solid rgba(240,201,138,.18)',
+                          border: '1px solid rgb(var(--constellation-gold-rgb) / .18)',
                         }}
                       >
                         <div
@@ -1005,8 +1061,8 @@ export default function GrowthAreaSheet({
                               width: 7,
                               height: 7,
                               borderRadius: '50%',
-                              background: '#f5e6c4',
-                              boxShadow: '0 0 10px rgba(240,201,138,.9)',
+                              background: 'rgb(var(--constellation-gold-pale-rgb))',
+                              boxShadow: '0 0 10px rgb(var(--constellation-gold-rgb) / .9)',
                             }}
                           />
                           <div
@@ -1014,7 +1070,7 @@ export default function GrowthAreaSheet({
                               fontFamily: ORBITRON,
                               fontWeight: 700,
                               fontSize: 10,
-                              color: 'rgba(240,201,138,.6)',
+                              color: 'rgb(var(--constellation-gold-rgb) / .6)',
                             }}
                           >
                             {String(i + 1).padStart(2, '0')}
@@ -1026,7 +1082,7 @@ export default function GrowthAreaSheet({
                               fontWeight: 700,
                               fontSize: 14.5,
                               lineHeight: 1.35,
-                              color: '#eafdff',
+                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
                             }}
                           >
                             {rec.title}

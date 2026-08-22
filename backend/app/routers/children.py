@@ -23,10 +23,21 @@ from app.schemas.children import (
 # (personality scores/traits, full recommendations blob) are excluded and
 # fetched in full by GET /children/{child_id} when a specific child loads.
 # current_phase is intentionally excluded from the list view.
+#
+# gender/avatar_id/avatar_url are small scalars, not heavy sub-documents, but
+# must stay in this projection: the frontend's Onboarding page also calls this
+# endpoint (sorted, limit=1) to auto-resume the most recently created child
+# when no child id is in the URL, and reuses the same prefill path as
+# GET /children/{child_id}. Dropping them here silently blanks out the saved
+# gender and avatar/photo on that resume path while name/age/school still
+# prefill correctly, since only those are covered by this projection.
 _LIST_PROJECTION = {
     "name": 1,
     "age": 1,
+    "gender": 1,
     "school": 1,
+    "avatar_id": 1,
+    "avatar_url": 1,
     "onboarding_completed": 1,
     "recommendations.pathway_overview": 1,
     "personality.view_model.profile.name": 1,
