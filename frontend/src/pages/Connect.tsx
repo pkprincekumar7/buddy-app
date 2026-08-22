@@ -121,7 +121,7 @@ export default function Connect() {
 
   const nameSlug = (childName || 'friend').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'friend';
   const inviteUrl = `superpower.app/join/${nameSlug}`;
-  const inviteLine = `Join Superpower and see your own child’s growth: https://${inviteUrl}`;
+  const inviteLine = `Join Superpower for free and see your child's transformation: https://${inviteUrl}`;
   const handle = `@${nameSlug}.parent`;
 
   const copyInvite = () => {
@@ -137,22 +137,18 @@ export default function Connect() {
 
   // WhatsApp share flow
   const [wa, setWa] = useState<'compose' | 'sent' | null>(null);
-  const [waMsg, setWaMsg] = useState<string | null>(null);
   const [waPicked, setWaPicked] = useState<number[]>([0]);
   const waDefaultMsg = `${title} — ${caption}\n\n${inviteLine}`;
-  const waMsgValue = waMsg ?? waDefaultMsg;
   const waSentLine = `${waPicked
     .map((i) => WA_CONTACTS[i]?.name)
     .filter(Boolean)
     .join(', ')} will see it in a moment.`;
   const shareWa = () => {
     setWa('compose');
-    setWaMsg(null);
     setWaPicked([0]);
   };
   const waClose = () => {
     setWa(null);
-    setWaMsg(null);
   };
   const toggleWaPicked = (i: number) =>
     setWaPicked((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
@@ -161,9 +157,7 @@ export default function Connect() {
   const [ig, setIg] = useState<'compose' | 'sent' | null>(null);
   const [igDest, setIgDest] = useState(0);
   const [igBg, setIgBg] = useState(0);
-  const [igCap, setIgCap] = useState<string | null>(null);
   const igDefaultCap = `${caption}\n\n${title}. Proud of them.\n\n${inviteLine}`;
-  const igCapValue = igCap ?? igDefaultCap;
   const igCapLabel = igDest === 3 ? 'Message' : 'Caption';
   const igLinkLabel =
     igDest < 2
@@ -171,16 +165,10 @@ export default function Connect() {
       : igDest === 3
         ? 'Join link included in the message'
         : 'Join link included in the caption';
-  const shareIg = () => {
-    setIg('compose');
-    setIgCap(null);
-  };
+  const shareIg = () => setIg('compose');
   const igShare = () => setIg('sent');
   const igBack = () => setIg('compose');
-  const igClose = () => {
-    setIg(null);
-    setIgCap(null);
-  };
+  const igClose = () => setIg(null);
 
   // Twitter / X share flow
   const [tw, setTw] = useState<'compose' | 'sent' | null>(null);
@@ -639,8 +627,7 @@ export default function Connect() {
             mode={wa}
             childName={childName || 'Your child'}
             title={title}
-            message={waMsgValue}
-            onMessageChange={setWaMsg}
+            message={waDefaultMsg}
             contacts={WA_CONTACTS}
             picked={waPicked}
             onTogglePicked={toggleWaPicked}
@@ -663,7 +650,7 @@ export default function Connect() {
             backdrop={IG_BGS[igBg] ?? IG_BGS[0]!}
             background={{ options: IG_BGS, active: igBg, onPick: setIgBg }}
             destination={{ options: IG_DESTS, active: igDest, onPick: setIgDest }}
-            captionInput={{ label: igCapLabel, value: igCapValue, onChange: setIgCap }}
+            captionInput={{ label: igCapLabel, value: igDefaultCap }}
             inviteLink={{ label: igLinkLabel, url: inviteUrl, onCopy: copyInvite }}
             cta={IG_DESTS[igDest]?.cta ?? ''}
             ratio={IG_DESTS[igDest]?.ratio ?? ''}
@@ -682,7 +669,7 @@ export default function Connect() {
           <TwitterModal
             mode={tw}
             handle={handle}
-            composer={{ text: twBody, onChange: setTwText }}
+            composer={{ text: twBody }}
             audienceControl={{
               value: TW_AUDIENCES[twAud] ?? TW_AUDIENCES[0]!,
               onToggle: () => setTwAud((a) => (a === 0 ? 1 : 0)),

@@ -18,8 +18,8 @@ interface TwitterTagOption {
 interface TwitterModalProps {
   mode: 'compose' | 'sent';
   handle: string;
-  /** The tweet text field itself. */
-  composer: { text: string; onChange: (v: string) => void };
+  /** The composed tweet text — mutated only by toggling `tags`, not typed directly. */
+  composer: { text: string };
   /** Reply-audience selector (Everyone / Mentioned only, etc.). */
   audienceControl: { value: string; onToggle: () => void };
   tags: TwitterTagOption[];
@@ -47,7 +47,7 @@ export default function TwitterModal({
   chrome,
   sentLine,
 }: TwitterModalProps) {
-  const { text, onChange: onTextChange } = composer;
+  const { text } = composer;
   const { value: audience, onToggle: onToggleAudience } = audienceControl;
   const { kind: cardKind, title: cardTitle, caption: cardCaption, date: cardDate } = card;
   const { url: inviteUrl, onCopy: onCopyInvite } = inviteLink;
@@ -155,24 +155,20 @@ export default function TwitterModal({
                     {audience}
                     <ChevronDownIcon />
                   </div>
-                  <textarea
-                    value={text}
-                    onChange={(e) => onTextChange(e.target.value)}
-                    rows={4}
+                  <div
                     style={{
                       marginTop: 11,
                       width: '100%',
-                      resize: 'none',
-                      border: 'none',
-                      background: 'transparent',
-                      outline: 'none',
                       fontFamily: 'Rajdhani, sans-serif',
                       fontWeight: 600,
                       fontSize: cfs(17),
                       lineHeight: 1.45,
                       color: '#eaf3fa',
+                      whiteSpace: 'pre-wrap',
                     }}
-                  />
+                  >
+                    {text}
+                  </div>
 
                   <div
                     style={{

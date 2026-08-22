@@ -21,8 +21,8 @@ interface InstagramModalProps {
   background: { options: string[]; active: number; onPick: (i: number) => void };
   /** Where the post is being shared to (Story, Feed, etc.). */
   destination: { options: IgDest[]; active: number; onPick: (i: number) => void };
-  /** The user-editable caption text field — distinct from `card.caption`. */
-  captionInput: { label: string; value: string; onChange: (v: string) => void };
+  /** The composed caption text field — distinct from `card.caption`. */
+  captionInput: { label: string; value: string };
   inviteLink: { label: string; url: string; onCopy: () => void };
   cta: string;
   ratio: string;
@@ -52,7 +52,7 @@ export default function InstagramModal({
   const { kind: cardKind, title: cardTitle, caption: cardCaption } = card;
   const { options: backgrounds, active: activeBg, onPick: onPickBg } = background;
   const { options: destinations, active: activeDest, onPick: onPickDest } = destination;
-  const { label: capLabel, value: capValue, onChange: onCapChange } = captionInput;
+  const { label: capLabel, value: capValue } = captionInput;
   const { label: linkLabel, url: inviteUrl, onCopy: onCopyInvite } = inviteLink;
   const { onClose, onBack } = chrome;
   const { title: sentTitle, line: sentLine } = sent;
@@ -458,26 +458,24 @@ export default function InstagramModal({
                 >
                   {capLabel}
                 </div>
-                <textarea
-                  value={capValue}
-                  onChange={(e) => onCapChange(e.target.value)}
-                  rows={3}
+                <div
                   style={{
                     marginTop: 7,
                     width: '100%',
-                    resize: 'none',
                     borderRadius: 11,
                     padding: '11px 13px',
                     background: 'rgba(10,5,12,.85)',
                     border: '1px solid rgba(226,120,190,.24)',
-                    outline: 'none',
                     fontFamily: 'Rajdhani, sans-serif',
                     fontWeight: 600,
                     fontSize: cfs(14.5),
                     lineHeight: 1.5,
                     color: '#fbe8f5',
+                    whiteSpace: 'pre-wrap',
                   }}
-                />
+                >
+                  {capValue}
+                </div>
 
                 <div
                   style={{

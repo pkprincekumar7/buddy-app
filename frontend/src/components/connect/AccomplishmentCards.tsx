@@ -169,7 +169,7 @@ export function AccomplishmentCardPreview({
               overflowWrap: 'anywhere',
             }}
           >
-            Join free
+            Join for free
             <br />
             {inviteUrl}
           </div>

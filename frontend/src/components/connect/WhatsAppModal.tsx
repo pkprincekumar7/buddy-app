@@ -14,7 +14,6 @@ interface WhatsAppModalProps {
   childName: string;
   title: string;
   message: string;
-  onMessageChange: (v: string) => void;
   contacts: WaContact[];
   picked: number[];
   onTogglePicked: (i: number) => void;
@@ -30,7 +29,6 @@ export default function WhatsAppModal({
   childName,
   title,
   message,
-  onMessageChange,
   contacts,
   picked,
   onTogglePicked,
@@ -180,26 +178,24 @@ export default function WhatsAppModal({
                 >
                   Message
                 </div>
-                <textarea
-                  value={message}
-                  onChange={(e) => onMessageChange(e.target.value)}
-                  rows={4}
+                <div
                   style={{
                     marginTop: 7,
                     width: '100%',
-                    resize: 'none',
                     borderRadius: 11,
                     padding: '11px 13px',
                     background: 'rgba(4,10,8,.85)',
                     border: '1px solid rgba(80,220,150,.24)',
-                    outline: 'none',
                     fontFamily: 'Rajdhani, sans-serif',
                     fontWeight: 600,
                     fontSize: cfs(14.5),
                     lineHeight: 1.5,
                     color: '#eafff4',
+                    whiteSpace: 'pre-wrap',
                   }}
-                />
+                >
+                  {message}
+                </div>
               </div>
             </div>
 
