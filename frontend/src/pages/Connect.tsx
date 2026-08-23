@@ -62,6 +62,11 @@ export default function Connect() {
         }
         setChildName(child.name ?? '');
         setChildAge(child.age != null ? String(child.age) : '');
+        // Mark Connect as visited — this advances which circle the
+        // DimensionCircles hub points to next (there is none left after this).
+        if (!child.connect_visited) {
+          api.entities.Child.update(childId, { connect_visited: true }).catch(console.error);
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }

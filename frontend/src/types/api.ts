@@ -53,6 +53,12 @@ export interface ChildRecord {
   current_phase?: string;
   onboarding_completed?: boolean;
   onboarding_phase?: number;
+  /** Personality Journey dimension-circle unlock flags (DimensionCircles page). */
+  discover_completed?: boolean;
+  grow_completed?: boolean;
+  transform_visited?: boolean;
+  release_visited?: boolean;
+  connect_visited?: boolean;
   personality?: {
     source?: string;
     view_model?: {

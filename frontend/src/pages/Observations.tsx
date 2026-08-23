@@ -628,6 +628,13 @@ export default function Observations() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
+  // Once this page's content has loaded for the child, mark Release as visited
+  // — this advances which circle the DimensionCircles hub points to next.
+  useEffect(() => {
+    if (!childId || !childData?.id || childData.release_visited) return;
+    api.entities.Child.update(childId, { release_visited: true }).catch(console.error);
+  }, [childId, childData?.id, childData?.release_visited]);
+
   // Kick off generation once, and only once there is something to ground it in.
   // A job already in flight (from another device, or a reload mid-run) is picked
   // up by useJob from active_jobs instead — enqueueing again would just burn a

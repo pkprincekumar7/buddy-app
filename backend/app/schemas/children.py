@@ -32,6 +32,16 @@ class ChildResponse(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] = Field(default_factory=list)
+    # Personality Journey dimension-circle unlock flags (DimensionCircles page).
+    # discover_completed gates the Grow circle; grow_completed gates Transform
+    # (checked together with a live query of the growth_areas collection);
+    # transform_visited gates Release/Connect; release_visited/connect_visited
+    # advance which circle the hub's spoke points to next.
+    discover_completed: bool = False
+    grow_completed: bool = False
+    transform_visited: bool = False
+    release_visited: bool = False
+    connect_visited: bool = False
     # job_type → job_id; empty dict on existing documents (field absent in MongoDB)
     active_jobs: dict[str, str] = Field(default_factory=dict)
     # Staging field written by the generate_personality_analysis worker before the
@@ -88,6 +98,11 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+    discover_completed: bool = False
+    grow_completed: bool = False
+    transform_visited: bool = False
+    release_visited: bool = False
+    connect_visited: bool = False
 
     @field_validator("avatar_url")
     @classmethod
@@ -151,6 +166,11 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
+    discover_completed: bool | None = None
+    grow_completed: bool | None = None
+    transform_visited: bool | None = None
+    release_visited: bool | None = None
+    connect_visited: bool | None = None
 
     @field_validator("avatar_url")
     @classmethod

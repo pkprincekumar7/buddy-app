@@ -20,6 +20,22 @@ log = logging.getLogger(__name__)
 
 _MAX_IN_FLIGHT_PER_TYPE = 2
 
+# Journey-progression dependency per job type — mirrors the circle unlock order
+# on the DimensionCircles page (Discover → Grow → Transform → Release/Connect),
+# enforced here so it can't be bypassed by enqueuing the job directly. Each job
+# type here is exclusive to its stage (verified against every frontend call site
+# before adding this), so gating it can't block an unrelated feature.
+_PROGRESSION_REQUIREMENTS: dict[str, tuple[str, str]] = {
+    "generate_life_pathway": (
+        "grow_completed",
+        "Complete a growth area before generating the Life Pathway.",
+    ),
+    "generate_observations": (
+        "transform_visited",
+        "Visit Transform (Life Pathway) before generating Observations.",
+    ),
+}
+
 # In-process lock per (user_id, child_id, job_type) to close the TOCTOU window
 # between count_documents and insert_one on M0/M2/M5 (no transaction support).
 # This prevents two concurrent requests from the same user+child+type from both
@@ -85,6 +101,12 @@ async def enqueue_job(
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    requirement = _PROGRESSION_REQUIREMENTS.get(body.type)
+    if requirement:
+        flag, message = requirement
+        if not child.get(flag):
+            raise HTTPException(status_code=403, detail=message)
 
     now = datetime.now(UTC)
     job_id = str(uuid.uuid4())

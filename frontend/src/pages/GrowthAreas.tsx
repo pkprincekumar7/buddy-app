@@ -362,6 +362,12 @@ export default function GrowthAreas() {
           ai_three_month_recommendations: pending,
         });
         setCompletedAreaIds((prev) => new Set(prev).add(area.id));
+        // Once the first growth area ever completes, persist grow_completed on
+        // the child — this gates the Transform circle on the DimensionCircles
+        // page (checked together with a live growth_areas query there).
+        if (childId && childData?.grow_completed !== true) {
+          api.entities.Child.update(childId, { grow_completed: true }).catch(console.error);
+        }
         // Lets this area open straight into its result if reopened later in
         // the same visit — `recsPicksRef` still holds the picks this exact
         // generation ran for.
@@ -382,7 +388,7 @@ export default function GrowthAreas() {
       setRecsStatus('error');
       toast.error('Recommendations could not be saved. Please try again.');
     }
-  }, [childId]);
+  }, [childId, childData]);
 
   const job = useJob({
     activeJobs: childData?.active_jobs as Record<string, string> | undefined,

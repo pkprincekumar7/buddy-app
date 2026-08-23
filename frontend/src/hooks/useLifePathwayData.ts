@@ -74,6 +74,13 @@ export function useLifePathwayData(childId: string | undefined) {
     }
   }, [isError]);
 
+  // Once Life Pathway content has loaded for this child, mark Transform as visited
+  // — this unlocks the Release/Connect circles on the DimensionCircles page.
+  useEffect(() => {
+    if (!childId || !data?.childData?.id || data.childData.transform_visited) return;
+    api.entities.Child.update(childId, { transform_visited: true }).catch(console.error);
+  }, [childId, data?.childData?.id, data?.childData?.transform_visited]);
+
   return {
     childData: data?.childData ?? null,
     profile: data?.profile ?? null,

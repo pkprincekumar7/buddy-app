@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
@@ -18,11 +19,20 @@ import { personalityLlmSchema } from '@/lib/llmSchemas';
 import { buildPersonalityAnalysisPrompt } from '@/lib/prompts';
 import { useJob } from '@/hooks/useJob';
 import { useMediaQuery } from '@/hooks/use-mobile';
+import { useStartOver } from '@/hooks/useStartOver';
 import { cn } from '@/lib/utils';
 import StageSplash from '@/components/shared/StageSplash';
+import { ConfirmModal as StartOverConfirmModal } from '@/components/shared/StartOverButton';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 
 type Phase = 1 | 2;
+
+// The circle the hub's glowing spoke + traveling dots point to — the next
+// step in the Discover → Grow → Transform → Release → Connect flow the user
+// hasn't reached yet, so the animation always leads toward the frontier
+// circle instead of staying pinned on Discover. null once every step —
+// including Connect — has been visited, so nothing is pointed at.
+type ActiveDimension = 'discover' | 'grow' | 'transform' | 'release' | 'connect' | null;
 
 // ── Phase 1: Buddy 360 Orb ────────────────────────────────────────────────────
 
@@ -351,20 +361,120 @@ const NODE_LABEL: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-const CHECK_BADGE: React.CSSProperties = {
-  position: 'absolute',
-  top: -4,
-  right: -4,
-  width: 22,
-  height: 22,
-  borderRadius: '50%',
-  background: 'rgb(var(--constellation-navy-deep-rgb))',
-  border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 3,
-};
+// A dimension circle that is either fully active (cyan, pulsing ring, clickable) or
+// locked (dim slate, static ring, non-interactive) depending on journey progress.
+function DimensionNode({
+  position,
+  animationDelay,
+  onClick,
+  locked,
+  highlighted,
+  iconPaths,
+  label,
+}: {
+  position: React.CSSProperties;
+  animationDelay: string;
+  onClick: () => void;
+  locked: boolean;
+  // True when this is the frontier circle the hub's spoke/dots point to —
+  // gets the faster double-ring pulse + animated glow instead of the
+  // standard single-ring look every other unlocked circle uses.
+  highlighted: boolean;
+  iconPaths: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={locked ? -1 : 0}
+      aria-disabled={locked}
+      onClick={locked ? undefined : onClick}
+      onKeyDown={
+        locked
+          ? undefined
+          : (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+      }
+      style={{
+        ...NODE_STYLE,
+        ...position,
+        animation: `nodeIn .75s cubic-bezier(.16,1,.3,1) ${animationDelay} both`,
+        cursor: locked ? 'not-allowed' : 'pointer',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '50%',
+          border: locked
+            ? '1.5px solid rgb(var(--constellation-slate-deep-rgb))'
+            : '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
+          opacity: locked ? 0.4 : 0.5,
+        }}
+      />
+      {!locked && highlighted && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: '2px solid rgb(var(--constellation-cyan-paler-rgb))',
+            animation: 'nodePulse 1.7s ease-out infinite',
+          }}
+        />
+      )}
+      {!locked && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
+            animation: highlighted
+              ? 'nodePulse 1.7s ease-out .85s infinite'
+              : 'nodePulse 2.6s ease-out infinite',
+          }}
+        />
+      )}
+      <div
+        style={
+          locked
+            ? INACTIVE_INNER
+            : highlighted
+              ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+              : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
+        }
+      >
+        <svg
+          viewBox="0 0 24 24"
+          style={{
+            width: 23,
+            height: 23,
+            stroke: locked ? '#1b232b' : 'rgb(var(--constellation-navy-rgb))',
+            fill: 'none',
+            strokeWidth: 2.2,
+          }}
+        >
+          {iconPaths}
+        </svg>
+      </div>
+      <div
+        className="font-rajdhani"
+        style={{
+          ...NODE_LABEL,
+          ...(locked ? { color: 'rgb(var(--constellation-slate-dark-rgb))' } : {}),
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
 
 function DimensionCirclesScreen({
   onConnect,
@@ -373,6 +483,9 @@ function DimensionCirclesScreen({
   onGrow,
   onTransform,
   onRelease,
+  onStartAgain,
+  enabled,
+  current,
 }: {
   childName: string;
   mergedData: Record<string, unknown>;
@@ -382,6 +495,14 @@ function DimensionCirclesScreen({
   onGrow: () => void;
   onTransform: () => void;
   onRelease: () => void;
+  onStartAgain: () => void;
+  enabled: {
+    grow: boolean;
+    transform: boolean;
+    release: boolean;
+    connect: boolean;
+  };
+  current: ActiveDimension;
 }) {
   const ringAreaRef = useRef<HTMLDivElement>(null);
   const [ringScale, setRingScale] = useState(1);
@@ -416,7 +537,6 @@ function DimensionCirclesScreen({
   const SD = isMobile ? '200' : '260';
   const SP = isMobile
     ? {
-        disc: 'M350 350 L350 150',
         connect: 'M350 350 L177 250',
         transform: 'M350 350 L523 250',
         release: 'M350 350 L523 450',
@@ -425,7 +545,6 @@ function DimensionCirclesScreen({
         discover: 'M350 350 L350 150',
       }
     : {
-        disc: 'M350 350 L350 90',
         connect: 'M350 350 L125 220',
         transform: 'M350 350 L575 220',
         release: 'M350 350 L575 480',
@@ -542,40 +661,58 @@ function DimensionCirclesScreen({
               overflow: 'visible',
             }}
           >
-            <defs>
-              <path id="p-hub-disc" d={SP.disc} />
-            </defs>
+            {current && (
+              <defs>
+                <path id="p-hub-disc" d={SP[current]} />
+              </defs>
+            )}
             <path
               d={SP.connect}
               fill="none"
               stroke="rgb(var(--constellation-cyan-bright-rgb))"
-              strokeWidth="1.6"
+              strokeWidth={current === 'connect' ? 3.4 : 1.6}
               strokeDasharray={SD}
-              style={{ opacity: 0.4, animation: `${SK} .8s ease .35s both` }}
+              style={
+                current === 'connect'
+                  ? { animation: `${SK} .8s ease .35s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  : { opacity: 0.4, animation: `${SK} .8s ease .35s both` }
+              }
             />
             <path
               d={SP.transform}
               fill="none"
               stroke="rgb(var(--constellation-cyan-bright-rgb))"
-              strokeWidth="1.6"
+              strokeWidth={current === 'transform' ? 3.4 : 1.6}
               strokeDasharray={SD}
-              style={{ opacity: 0.4, animation: `${SK} .8s ease .45s both` }}
+              style={
+                current === 'transform'
+                  ? { animation: `${SK} .8s ease .45s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  : { opacity: 0.4, animation: `${SK} .8s ease .45s both` }
+              }
             />
             <path
               d={SP.release}
               fill="none"
               stroke="rgb(var(--constellation-cyan-bright-rgb))"
-              strokeWidth="1.6"
+              strokeWidth={current === 'release' ? 3.4 : 1.6}
               strokeDasharray={SD}
-              style={{ opacity: 0.4, animation: `${SK} .8s ease .55s both` }}
+              style={
+                current === 'release'
+                  ? { animation: `${SK} .8s ease .55s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  : { opacity: 0.4, animation: `${SK} .8s ease .55s both` }
+              }
             />
             <path
               d={SP.grow}
               fill="none"
               stroke="rgb(var(--constellation-cyan-bright-rgb))"
-              strokeWidth="1.6"
+              strokeWidth={current === 'grow' ? 3.4 : 1.6}
               strokeDasharray={SD}
-              style={{ opacity: 0.4, animation: `${SK} .8s ease .5s both` }}
+              style={
+                current === 'grow'
+                  ? { animation: `${SK} .8s ease .5s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  : { opacity: 0.4, animation: `${SK} .8s ease .5s both` }
+              }
             />
             <path
               d={SP.startAgain}
@@ -589,30 +726,36 @@ function DimensionCirclesScreen({
               d={SP.discover}
               fill="none"
               stroke="rgb(var(--constellation-cyan-bright-rgb))"
-              strokeWidth="3.4"
+              strokeWidth={current === 'discover' ? 3.4 : 1.6}
               strokeDasharray={SD}
-              style={{
-                animation: `${SK} .8s ease .3s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
-              }}
+              style={
+                current === 'discover'
+                  ? { animation: `${SK} .8s ease .3s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  : { opacity: 0.4, animation: `${SK} .8s ease .3s both` }
+              }
             />
-            <circle
-              r="3.2"
-              fill="rgb(var(--constellation-cyan-pale-rgb))"
-              style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
-            >
-              <animateMotion dur="1.7s" repeatCount="indefinite" begin="1.2s">
-                <mpath href="#p-hub-disc" />
-              </animateMotion>
-            </circle>
-            <circle
-              r="2.8"
-              fill="rgb(var(--constellation-cyan-pale-rgb))"
-              style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
-            >
-              <animateMotion dur="1.7s" repeatCount="indefinite" begin="2.05s">
-                <mpath href="#p-hub-disc" />
-              </animateMotion>
-            </circle>
+            {current && (
+              <>
+                <circle
+                  r="3.2"
+                  fill="rgb(var(--constellation-cyan-pale-rgb))"
+                  style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
+                >
+                  <animateMotion dur="1.7s" repeatCount="indefinite" begin="1.2s">
+                    <mpath href="#p-hub-disc" />
+                  </animateMotion>
+                </circle>
+                <circle
+                  r="2.8"
+                  fill="rgb(var(--constellation-cyan-pale-rgb))"
+                  style={{ filter: 'drop-shadow(0 0 4px rgb(var(--constellation-cyan-rgb) / 1))' }}
+                >
+                  <animateMotion dur="1.7s" repeatCount="indefinite" begin="2.05s">
+                    <mpath href="#p-hub-disc" />
+                  </animateMotion>
+                </circle>
+              </>
+            )}
           </svg>
 
           {/* Center Hub */}
@@ -763,56 +906,15 @@ function DimensionCirclesScreen({
           </div>
 
           {/* Connect — top-left */}
-          <div
+          <DimensionNode
+            position={NP.connect}
+            animationDelay=".55s"
             onClick={onConnect}
-            style={{
-              ...NODE_STYLE,
-              ...NP.connect,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .55s both',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
-                }}
-              >
-                <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />
-              </svg>
-            </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Connect
-            </div>
-          </div>
+            locked={!enabled.connect}
+            highlighted={current === 'connect'}
+            label="Connect"
+            iconPaths={<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />}
+          />
 
           {/* Discover — top-center (CTA) */}
           <div
@@ -855,25 +957,36 @@ function DimensionCirclesScreen({
                 opacity: 0.5,
               }}
             />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '2px solid rgb(var(--constellation-cyan-paler-rgb))',
-                animation: 'nodePulse 1.7s ease-out infinite',
-              }}
-            />
+            {current === 'discover' && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  border: '2px solid rgb(var(--constellation-cyan-paler-rgb))',
+                  animation: 'nodePulse 1.7s ease-out infinite',
+                }}
+              />
+            )}
             <div
               style={{
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
                 border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 1.7s ease-out .85s infinite',
+                animation:
+                  current === 'discover'
+                    ? 'nodePulse 1.7s ease-out .85s infinite'
+                    : 'nodePulse 2.6s ease-out infinite',
               }}
             />
-            <div style={{ ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }}>
+            <div
+              style={
+                current === 'discover'
+                  ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
+                  : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
+              }
+            >
               <svg
                 viewBox="0 0 24 24"
                 style={{
@@ -889,25 +1002,6 @@ function DimensionCirclesScreen({
               </svg>
             </div>
             <div
-              style={{
-                ...CHECK_BADGE,
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                style={{
-                  width: 11,
-                  height: 11,
-                  stroke: 'rgb(var(--constellation-cyan-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.6,
-                }}
-              >
-                <path d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <div
               className="font-rajdhani"
               style={{ ...NODE_LABEL, color: 'rgb(var(--constellation-cyan-paler-rgb))' }}
             >
@@ -916,169 +1010,64 @@ function DimensionCirclesScreen({
           </div>
 
           {/* Transform — top-right */}
-          <div
+          <DimensionNode
+            position={NP.transform}
+            animationDelay=".65s"
             onClick={onTransform}
-            style={{
-              ...NODE_STYLE,
-              ...NP.transform,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .65s both',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
-                }}
-              >
+            locked={!enabled.transform}
+            highlighted={current === 'transform'}
+            label="Transform"
+            iconPaths={
+              <>
                 <circle cx="11" cy="11" r="7" />
                 <path d="M20 20l-4-4" />
-              </svg>
-            </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Transform
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Release — bottom-right */}
-          <div
+          <DimensionNode
+            position={NP.release}
+            animationDelay=".75s"
             onClick={onRelease}
-            style={{
-              ...NODE_STYLE,
-              ...NP.release,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .75s both',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
-                }}
-              >
+            locked={!enabled.release}
+            highlighted={current === 'release'}
+            label="Release"
+            iconPaths={
+              <>
                 <circle cx="12" cy="8" r="3.4" />
                 <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" />
-              </svg>
-            </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Release
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Grow — bottom-left */}
-          <div
+          <DimensionNode
+            position={NP.grow}
+            animationDelay=".8s"
             onClick={onGrow}
-            style={{
-              ...NODE_STYLE,
-              ...NP.grow,
-              animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .8s both',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
-                opacity: 0.5,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
-                animation: 'nodePulse 2.6s ease-out infinite',
-              }}
-            />
-            <div
-              style={{
-                ...ACTIVE_INNER,
-                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                style={{
-                  width: 23,
-                  height: 23,
-                  stroke: 'rgb(var(--constellation-navy-rgb))',
-                  fill: 'none',
-                  strokeWidth: 2.2,
-                }}
-              >
-                <path d="M4 20V10M11 20V4M18 20v-7" />
-              </svg>
-            </div>
-            <div className="font-rajdhani" style={NODE_LABEL}>
-              Grow
-            </div>
-          </div>
+            locked={!enabled.grow}
+            highlighted={current === 'grow'}
+            label="Grow"
+            iconPaths={<path d="M4 20V10M11 20V4M18 20v-7" />}
+          />
 
-          {/* Start Again — bottom-center (inactive) */}
+          {/* Start Again — bottom-center (always enabled) */}
           <div
+            role="button"
+            tabIndex={0}
+            onClick={onStartAgain}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onStartAgain();
+              }
+            }}
             style={{
               ...NODE_STYLE,
               ...NP.startAgain,
               animation: 'nodeIn .75s cubic-bezier(.16,1,.3,1) .85s both',
+              cursor: 'pointer',
             }}
           >
             <div
@@ -1086,23 +1075,40 @@ function DimensionCirclesScreen({
                 position: 'absolute',
                 inset: 0,
                 borderRadius: '50%',
-                border: '1.5px solid rgb(var(--constellation-slate-deep-rgb))',
-                opacity: 0.4,
+                border: '1.5px solid rgb(var(--constellation-cyan-bright-rgb))',
+                opacity: 0.5,
               }}
             />
-            <div style={INACTIVE_INNER}>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '1.5px solid rgb(var(--constellation-cyan-rgb))',
+                animation: 'nodePulse 2.6s ease-out infinite',
+              }}
+            />
+            <div
+              style={{
+                ...ACTIVE_INNER,
+                boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+              }}
+            >
               <svg
                 viewBox="0 0 24 24"
-                style={{ width: 23, height: 23, stroke: '#1b232b', fill: 'none', strokeWidth: 2.2 }}
+                style={{
+                  width: 23,
+                  height: 23,
+                  stroke: 'rgb(var(--constellation-navy-rgb))',
+                  fill: 'none',
+                  strokeWidth: 2.2,
+                }}
               >
                 <path d="M4 4v6h6M20 20v-6h-6" />
                 <path d="M5 15a8 8 0 0013.5 3.5M19 9A8 8 0 005.5 5.5" />
               </svg>
             </div>
-            <div
-              className="font-rajdhani"
-              style={{ ...NODE_LABEL, color: 'rgb(var(--constellation-slate-dark-rgb))' }}
-            >
+            <div className="font-rajdhani" style={NODE_LABEL}>
               Start Again
             </div>
           </div>
@@ -1143,13 +1149,53 @@ export default function PersonalityJourney() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [initError, setInitError] = useState(false);
   const [showDiscoverSplash, setShowDiscoverSplash] = useState(false);
+  const [discoverCompleted, setDiscoverCompleted] = useState(false);
+  const [growCompleted, setGrowCompleted] = useState(false);
+  const [transformVisited, setTransformVisited] = useState(false);
+  const [releaseVisited, setReleaseVisited] = useState(false);
+  const [connectVisited, setConnectVisited] = useState(false);
+  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
+  const { doStartOver, isStartingOver } = useStartOver(childId);
 
   const handleDiscoverSplashReady = useCallback(() => {
     setShowDiscoverSplash(false);
+    if (childId && !discoverCompleted) {
+      setDiscoverCompleted(true);
+      api.entities.Child.update(childId, { discover_completed: true }).catch(console.error);
+    }
     void navigate(`/PersonalityProfile/${childId ?? ''}`);
-  }, [navigate, childId]);
+  }, [navigate, childId, discoverCompleted]);
   const [childData, setChildData] = useState<Record<string, unknown> | null>(null);
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
+
+  // Grow unlocks Transform once at least one of the six growth areas is completed.
+  // Checked two ways and both must pass: the persisted grow_completed flag on the
+  // child (set once, in GrowthAreas.tsx, the moment an area is first completed) and
+  // a live query of the growth_areas collection — the flag alone could go stale if
+  // that collection were ever cleared/reset independently of the child document.
+  const { data: completedGrowthAreasData } = useQuery({
+    queryKey: ['completedGrowthAreas', childId],
+    queryFn: () => api.completedGrowthAreas.list(childId!),
+    enabled: phase === 2 && Boolean(childId),
+  });
+  const hasCompletedGrowthArea =
+    completedGrowthAreasData?.areas?.some((a) => a.status === 'completed') ?? false;
+  const growUnlocksTransform = growCompleted && hasCompletedGrowthArea;
+
+  // The frontier circle the hub's glow/dots should point to: the next step the
+  // user hasn't reached yet in Discover → Grow → Transform → Release → Connect.
+  // null once Connect has been visited too — nothing left to point at.
+  const currentDimension: ActiveDimension = !discoverCompleted
+    ? 'discover'
+    : !growUnlocksTransform
+      ? 'grow'
+      : !transformVisited
+        ? 'transform'
+        : !releaseVisited
+          ? 'release'
+          : !connectVisited
+            ? 'connect'
+            : null;
 
   // ── Sound + warp-enter ────────────────────────────────────────────────────────
   const { ttsEnabled: soundOn } = useTts();
@@ -1415,6 +1461,11 @@ export default function PersonalityJourney() {
         mergedDataRef.current = merged;
         setChildName(merged.name || '');
         setMergedData(merged);
+        setDiscoverCompleted(Boolean(child.discover_completed));
+        setGrowCompleted(Boolean(child.grow_completed));
+        setTransformVisited(Boolean(child.transform_visited));
+        setReleaseVisited(Boolean(child.release_visited));
+        setConnectVisited(Boolean(child.connect_visited));
 
         if (vm?.profile?.name) {
           // Personality already analysed — show orb immediately, fully interactive
@@ -1633,6 +1684,14 @@ export default function PersonalityJourney() {
                 onGrow={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
                 onTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
                 onRelease={() => void navigate(`/Observations/${childId ?? ''}`)}
+                onStartAgain={() => setConfirmingStartOver(true)}
+                enabled={{
+                  grow: discoverCompleted,
+                  transform: growUnlocksTransform,
+                  release: transformVisited,
+                  connect: transformVisited,
+                }}
+                current={currentDimension}
               />
             </motion.div>
           )}
@@ -1641,6 +1700,19 @@ export default function PersonalityJourney() {
 
       <AnimatePresence>
         {showDiscoverSplash && <StageSplash stage={2} onReady={handleDiscoverSplashReady} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmingStartOver && (
+          <StartOverConfirmModal
+            onCancel={() => setConfirmingStartOver(false)}
+            onConfirm={() => {
+              setConfirmingStartOver(false);
+              void doStartOver();
+            }}
+            isStartingOver={isStartingOver}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

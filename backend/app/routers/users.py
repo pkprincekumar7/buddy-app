@@ -55,13 +55,14 @@ _GROWTH_AREA_OPTIONAL_FIELDS = (
 )
 
 
-async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> None:
-    """Raise 404 if child_id does not belong to the authenticated user."""
+async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> dict:
+    """Raise 404 if child_id does not belong to the authenticated user; return the child doc."""
     child = await db[models.CHILDREN].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+    return child
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +202,14 @@ async def append_completed_growth_area(
     db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
 ):
-    await _require_child(db, child_id, user)
+    child = await _require_child(db, child_id, user)
+    # Grow only unlocks on the DimensionCircles page once Discover has been
+    # completed — enforce the same dependency server-side so it can't be
+    # bypassed by writing straight to this endpoint.
+    if not child.get("discover_completed"):
+        raise HTTPException(
+            status_code=403, detail="Complete Discover before starting a growth area."
+        )
     now = datetime.now(UTC)
     # Always write the required fields (area_name, answers).
     set_fields: dict = {
@@ -656,7 +664,14 @@ async def patch_observations(
     db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
 ):
-    await _require_child(db, child_id, user)
+    child = await _require_child(db, child_id, user)
+    # Release/Connect only unlock on the DimensionCircles page once Transform has
+    # been visited — enforce the same dependency server-side so it can't be
+    # bypassed by writing straight to this endpoint.
+    if not child.get("transform_visited"):
+        raise HTTPException(
+            status_code=403, detail="Visit Transform (Life Pathway) before recording Observations."
+        )
     now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
     unset_fields: dict = {}
