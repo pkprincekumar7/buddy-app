@@ -69,11 +69,15 @@ export default function InstagramModal({
           borderRadius: 22,
           padding: '26px 28px 24px',
           background: 'linear-gradient(165deg,rgba(34,18,40,.97),rgba(11,7,14,.97))',
-          border: '1px solid rgba(226,120,190,.35)',
+          border: '1px solid rgb(var(--instagram-pink-rgb) / .35)',
           boxShadow: '0 30px 90px rgba(8,2,10,.8)',
         }}
       >
-        <ModalCloseButton onClick={onClose} color="#c691b4" border="rgba(226,120,190,.28)" />
+        <ModalCloseButton
+          onClick={onClose}
+          color="rgb(var(--instagram-muted-rgb))"
+          border="rgb(var(--instagram-pink-rgb) / .28)"
+        />
 
         {mode === 'compose' ? (
           <div>
@@ -87,25 +91,31 @@ export default function InstagramModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'linear-gradient(150deg,rgba(58,26,62,.95),rgba(16,10,20,.95))',
-                  border: '1.5px solid rgba(226,120,190,.5)',
+                  background:
+                    'linear-gradient(150deg,rgba(58,26,62,.95),rgb(var(--instagram-badge-b-rgb) / .95))',
+                  border: '1.5px solid rgb(var(--instagram-pink-rgb) / .5)',
                 }}
               >
                 <InstagramIcon size={19} />
               </div>
               <div>
                 <div
+                  className="font-orbitron"
                   style={{
-                    fontFamily: 'Orbitron, sans-serif',
                     fontWeight: 700,
                     fontSize: cfs(17),
-                    color: '#fbe8f5',
+                    color: 'rgb(var(--instagram-bright-rgb))',
                   }}
                 >
                   Share to Instagram
                 </div>
                 <div
-                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#c691b4' }}
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    fontSize: cfs(13.5),
+                    color: 'rgb(var(--instagram-muted-rgb))',
+                  }}
                 >
                   Posting as {handle}
                 </div>
@@ -130,7 +140,7 @@ export default function InstagramModal({
                     borderRadius: 18,
                     overflow: 'hidden',
                     background: backdrop,
-                    border: '1px solid rgba(226,120,190,.3)',
+                    border: '1px solid rgb(var(--instagram-pink-rgb) / .3)',
                   }}
                 >
                   <div
@@ -172,13 +182,8 @@ export default function InstagramModal({
                     }}
                   >
                     <div
-                      style={{
-                        width: 19,
-                        height: 19,
-                        borderRadius: '50%',
-                        background:
-                          'radial-gradient(circle at 35% 30%,rgb(var(--constellation-cyan-pale-rgb)),rgb(var(--constellation-cyan-rgb)) 45%,#0a5b74 100%)',
-                      }}
+                      className="orb-cyan-gradient"
+                      style={{ width: 19, height: 19, borderRadius: '50%' }}
                     />
                     <div
                       style={{
@@ -201,7 +206,8 @@ export default function InstagramModal({
                       borderRadius: 13,
                       overflow: 'hidden',
                       aspectRatio: '4/5',
-                      background: 'linear-gradient(165deg,#16233b,#070b15)',
+                      background:
+                        'linear-gradient(165deg,rgb(var(--constellation-panel-a-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
                       border: '1px solid rgb(var(--constellation-gold-rgb) / .45)',
                       boxShadow: '0 14px 34px rgba(2,4,12,.6)',
                     }}
@@ -240,8 +246,8 @@ export default function InstagramModal({
                       </div>
                       <div>
                         <div
+                          className="font-orbitron"
                           style={{
-                            fontFamily: 'Orbitron, sans-serif',
                             fontWeight: 900,
                             fontSize: cfs(11),
                             lineHeight: 1.2,
@@ -256,15 +262,15 @@ export default function InstagramModal({
                             fontWeight: 600,
                             fontSize: cfs(7.5),
                             lineHeight: 1.4,
-                            color: '#b9cedb',
+                            color: 'rgb(var(--constellation-caption-rgb))',
                           }}
                         >
                           {cardCaption}
                         </div>
                       </div>
                       <div
+                        className="font-orbitron"
                         style={{
-                          fontFamily: 'Orbitron, sans-serif',
                           fontWeight: 900,
                           fontSize: cfs(6),
                           letterSpacing: '.14em',
@@ -345,7 +351,7 @@ export default function InstagramModal({
                     fontSize: cfs(10),
                     letterSpacing: '.18em',
                     textTransform: 'uppercase',
-                    color: '#9a7590',
+                    color: 'rgb(var(--instagram-meta-rgb))',
                   }}
                 >
                   {ratio}
@@ -359,7 +365,7 @@ export default function InstagramModal({
                     fontSize: cfs(10.5),
                     letterSpacing: '.18em',
                     textTransform: 'uppercase',
-                    color: '#a2769a',
+                    color: 'rgb(var(--instagram-label-rgb))',
                   }}
                 >
                   Where it goes
@@ -382,8 +388,10 @@ export default function InstagramModal({
                           cursor: 'pointer',
                           borderRadius: 13,
                           padding: '12px 13px',
-                          background: on ? 'rgba(226,120,190,.14)' : 'rgba(10,5,12,.6)',
-                          border: `1px solid ${on ? 'rgba(226,120,190,.6)' : 'rgba(226,120,190,.14)'}`,
+                          background: on
+                            ? 'rgb(var(--instagram-pink-rgb) / .14)'
+                            : 'rgb(var(--instagram-surface-rgb) / .6)',
+                          border: `1px solid ${on ? 'rgb(var(--instagram-pink-rgb) / .6)' : 'rgb(var(--instagram-pink-rgb) / .14)'}`,
                           transition: 'all .2s ease',
                         }}
                       >
@@ -391,7 +399,9 @@ export default function InstagramModal({
                           style={{
                             fontWeight: 700,
                             fontSize: cfs(13.5),
-                            color: on ? '#fbe8f5' : '#d7b6cd',
+                            color: on
+                              ? 'rgb(var(--instagram-bright-rgb))'
+                              : 'rgb(var(--instagram-inactive-rgb))',
                           }}
                         >
                           {d.name}
@@ -401,7 +411,7 @@ export default function InstagramModal({
                             marginTop: 2,
                             fontWeight: 600,
                             fontSize: cfs(11.5),
-                            color: '#9a7590',
+                            color: 'rgb(var(--instagram-meta-rgb))',
                           }}
                         >
                           {d.meta}
@@ -418,7 +428,7 @@ export default function InstagramModal({
                     fontSize: cfs(10.5),
                     letterSpacing: '.18em',
                     textTransform: 'uppercase',
-                    color: '#a2769a',
+                    color: 'rgb(var(--instagram-label-rgb))',
                   }}
                 >
                   Backdrop
@@ -439,7 +449,7 @@ export default function InstagramModal({
                         height: 42,
                         borderRadius: 12,
                         background: swatch,
-                        border: `2px solid ${activeBg === i ? '#e278be' : 'rgba(226,120,190,.2)'}`,
+                        border: `2px solid ${activeBg === i ? 'rgb(var(--instagram-pink-rgb))' : 'rgb(var(--instagram-pink-rgb) / .2)'}`,
                         transition: 'all .2s ease',
                       }}
                     />
@@ -453,24 +463,24 @@ export default function InstagramModal({
                     fontSize: cfs(10.5),
                     letterSpacing: '.18em',
                     textTransform: 'uppercase',
-                    color: '#a2769a',
+                    color: 'rgb(var(--instagram-label-rgb))',
                   }}
                 >
                   {capLabel}
                 </div>
                 <div
+                  className="font-rajdhani"
                   style={{
                     marginTop: 7,
                     width: '100%',
                     borderRadius: 11,
                     padding: '11px 13px',
-                    background: 'rgba(10,5,12,.85)',
-                    border: '1px solid rgba(226,120,190,.24)',
-                    fontFamily: 'Rajdhani, sans-serif',
+                    background: 'rgb(var(--instagram-surface-rgb) / .85)',
+                    border: '1px solid rgb(var(--instagram-pink-rgb) / .24)',
                     fontWeight: 600,
                     fontSize: cfs(14.5),
                     lineHeight: 1.5,
-                    color: '#fbe8f5',
+                    color: 'rgb(var(--instagram-bright-rgb))',
                     whiteSpace: 'pre-wrap',
                   }}
                 >
@@ -485,8 +495,8 @@ export default function InstagramModal({
                     marginTop: 12,
                     borderRadius: 14,
                     padding: '13px 15px',
-                    background: 'rgba(226,120,190,.07)',
-                    border: '1px dashed rgba(226,120,190,.35)',
+                    background: 'rgb(var(--instagram-pink-rgb) / .07)',
+                    border: '1px dashed rgb(var(--instagram-pink-rgb) / .35)',
                   }}
                 >
                   <div
@@ -498,14 +508,20 @@ export default function InstagramModal({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      background: 'rgba(226,120,190,.14)',
-                      border: '1px solid rgba(226,120,190,.3)',
+                      background: 'rgb(var(--instagram-pink-rgb) / .14)',
+                      border: '1px solid rgb(var(--instagram-pink-rgb) / .3)',
                     }}
                   >
-                    <LinkIcon color="#e278be" />
+                    <LinkIcon color="rgb(var(--instagram-pink-rgb))" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#fbe8f5' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: cfs(13.5),
+                        color: 'rgb(var(--instagram-bright-rgb))',
+                      }}
+                    >
                       {linkLabel}
                     </div>
                     <div
@@ -513,7 +529,7 @@ export default function InstagramModal({
                         marginTop: 1,
                         fontWeight: 600,
                         fontSize: cfs(12.5),
-                        color: '#9a7590',
+                        color: 'rgb(var(--instagram-meta-rgb))',
                       }}
                     >
                       {inviteUrl} · free for any parent
@@ -527,13 +543,13 @@ export default function InstagramModal({
                       flexShrink: 0,
                       padding: '8px 15px',
                       borderRadius: 999,
-                      border: '1px solid rgba(226,120,190,.45)',
+                      border: '1px solid rgb(var(--instagram-pink-rgb) / .45)',
                       background: 'transparent',
                       fontWeight: 700,
                       fontSize: cfs(10.5),
                       letterSpacing: '.14em',
                       textTransform: 'uppercase',
-                      color: '#f0b6dc',
+                      color: 'rgb(var(--instagram-cta-rgb))',
                     }}
                   >
                     Copy
@@ -541,8 +557,14 @@ export default function InstagramModal({
                 </div>
 
                 <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <ShieldIcon size={13} color="#8a6a82" />
-                  <div style={{ fontWeight: 600, fontSize: cfs(12), color: '#8a6a82' }}>
+                  <ShieldIcon size={13} color="rgb(var(--instagram-note-rgb))" />
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: cfs(12),
+                      color: 'rgb(var(--instagram-note-rgb))',
+                    }}
+                  >
                     {childName}&rsquo;s face and full name stay off the card.
                   </div>
                 </div>
@@ -558,6 +580,7 @@ export default function InstagramModal({
                   <button
                     type="button"
                     onClick={onShare}
+                    className="font-rajdhani"
                     style={{
                       cursor: 'pointer',
                       display: 'flex',
@@ -566,14 +589,14 @@ export default function InstagramModal({
                       padding: '13px 28px',
                       borderRadius: 999,
                       border: 'none',
-                      background: 'linear-gradient(135deg,#f0a4d4,#c2429a 55%,#8a3fd0)',
-                      fontFamily: 'Rajdhani, sans-serif',
+                      background:
+                        'linear-gradient(135deg,rgb(var(--instagram-violet-rgb)),#c2429a 55%,rgb(var(--instagram-violet-deep-rgb)))',
                       fontWeight: 700,
                       fontSize: cfs(13),
                       letterSpacing: '.16em',
                       textTransform: 'uppercase',
-                      color: '#1a0715',
-                      boxShadow: '0 0 26px rgba(226,120,190,.38)',
+                      color: 'rgb(var(--instagram-ink-rgb))',
+                      boxShadow: '0 0 26px rgb(var(--instagram-pink-rgb) / .38)',
                     }}
                   >
                     {cta}
@@ -594,20 +617,20 @@ export default function InstagramModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(226,120,190,.14)',
-                border: '1.5px solid rgba(226,120,190,.55)',
-                boxShadow: '0 0 30px rgba(226,120,190,.25)',
+                background: 'rgb(var(--instagram-pink-rgb) / .14)',
+                border: '1.5px solid rgb(var(--instagram-pink-rgb) / .55)',
+                boxShadow: '0 0 30px rgb(var(--instagram-pink-rgb) / .25)',
               }}
             >
-              <CheckTickIcon size={28} color="#e278be" opacity={1} />
+              <CheckTickIcon size={28} color="rgb(var(--instagram-pink-rgb))" opacity={1} />
             </div>
             <div
+              className="font-orbitron"
               style={{
                 marginTop: 18,
-                fontFamily: 'Orbitron, sans-serif',
                 fontWeight: 700,
                 fontSize: cfs(19),
-                color: '#fbe8f5',
+                color: 'rgb(var(--instagram-bright-rgb))',
               }}
             >
               {sentTitle}
@@ -617,7 +640,7 @@ export default function InstagramModal({
                 marginTop: 9,
                 fontSize: cfs(15),
                 fontWeight: 600,
-                color: '#c691b4',
+                color: 'rgb(var(--instagram-muted-rgb))',
                 maxWidth: 380,
                 marginLeft: 'auto',
                 marginRight: 'auto',
@@ -637,18 +660,18 @@ export default function InstagramModal({
               <button
                 type="button"
                 onClick={onClose}
+                className="font-rajdhani"
                 style={{
                   cursor: 'pointer',
                   padding: '12px 30px',
                   borderRadius: 999,
-                  border: '1px solid rgba(226,120,190,.45)',
+                  border: '1px solid rgb(var(--instagram-pink-rgb) / .45)',
                   background: 'rgba(18,8,16,.8)',
-                  fontFamily: 'Rajdhani, sans-serif',
                   fontWeight: 700,
                   fontSize: cfs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#f0b6dc',
+                  color: 'rgb(var(--instagram-cta-rgb))',
                 }}
               >
                 Done
@@ -656,17 +679,17 @@ export default function InstagramModal({
               <button
                 type="button"
                 onClick={onBack}
+                className="font-rajdhani"
                 style={{
                   cursor: 'pointer',
                   padding: '12px 22px',
                   border: 'none',
                   background: 'transparent',
-                  fontFamily: 'Rajdhani, sans-serif',
                   fontWeight: 700,
                   fontSize: cfs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#9a7590',
+                  color: 'rgb(var(--instagram-meta-rgb))',
                 }}
               >
                 Share again

@@ -120,12 +120,8 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
               <div
-                className="h-8 w-8 flex-shrink-0 rounded-full"
-                style={{
-                  background:
-                    'radial-gradient(circle at 35% 30%,rgb(var(--constellation-cyan-pale-rgb)),rgb(var(--constellation-cyan-rgb)) 45%,#0a5b74 100%)',
-                  boxShadow: '0 0 16px rgb(var(--constellation-cyan-rgb) / .7)',
-                }}
+                className="orb-cyan-gradient h-8 w-8 flex-shrink-0 rounded-full"
+                style={{ boxShadow: '0 0 16px rgb(var(--constellation-cyan-rgb) / .7)' }}
               />
               {/*
                 Stacks below the sm breakpoint: the wordmark and the circle chip
@@ -134,15 +130,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 block being hidden.
               */}
               <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
-                <span
-                  className="whitespace-nowrap leading-none text-sidebar-foreground"
-                  style={{
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontWeight: 900,
-                    fontSize: 14,
-                    letterSpacing: '.06em',
-                  }}
-                >
+                <span className="whitespace-nowrap font-orbitron font-black leading-none tracking-[0.06em] text-sidebar-foreground text-sm">
                   SUPERPOWER
                 </span>
                 {circleLabel && (
@@ -153,14 +141,13 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                       style={{ background: 'rgb(var(--constellation-cyan-rgb) / .25)' }}
                     />
                     <span
-                      className="whitespace-nowrap leading-none"
+                      // Explicit font-rajdhani, not inherited: in the design mockups
+                      // the page root sets Rajdhani and the header picks it up, but
+                      // here the header sits outside each page's root element, so
+                      // without this it falls back to the Tailwind sans stack and
+                      // this chip alone renders in the wrong typeface.
+                      className="whitespace-nowrap font-rajdhani leading-none"
                       style={{
-                        // Explicit, not inherited: in the design mockups the page
-                        // root sets Rajdhani and the header picks it up, but here
-                        // the header sits outside each page's root element, so
-                        // without this it falls back to the Tailwind sans stack
-                        // and this chip alone renders in the wrong typeface.
-                        fontFamily: 'Rajdhani, sans-serif',
                         fontWeight: 700,
                         fontSize: 11,
                         letterSpacing: '.22em',

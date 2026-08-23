@@ -131,7 +131,7 @@ const ArrowLabel = ({ x = 0, y = 0, width = 0, height = 0, value }: ArrowLabelPr
         x={x + width / 2}
         y={y - 8}
         textAnchor="middle"
-        style={{ fill: 'hsl(var(--muted-foreground))' }}
+        fill="hsl(var(--muted-foreground))"
         fontSize={18}
         fontWeight="bold"
       >
@@ -175,7 +175,7 @@ const buildCustomTick = (chartData: ChartEntry[]) =>
           x={0}
           dy={14}
           textAnchor="middle"
-          style={{ fill: 'hsl(var(--muted-foreground))' }}
+          fill="hsl(var(--muted-foreground))"
           fontSize={11}
         >
           A{entry.actIdx + 1}
@@ -185,7 +185,7 @@ const buildCustomTick = (chartData: ChartEntry[]) =>
             x={48}
             dy={28}
             textAnchor="middle"
-            style={{ fill: 'hsl(var(--muted-foreground))' }}
+            fill="hsl(var(--muted-foreground))"
             fontSize={10}
             fontWeight={700}
           >
@@ -382,7 +382,7 @@ export default function ProgressInsightsModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      className="modal-overlay"
     >
       <motion.div
         role="dialog"

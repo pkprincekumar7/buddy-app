@@ -49,14 +49,13 @@ export default function ChatInputBar({
 
   return (
     <div
-      className={cn('chat-bar-panel', className)}
-      style={{ padding: 35, paddingBottom: 'max(35px, env(safe-area-inset-bottom))' }}
+      className={cn(
+        'chat-bar-panel p-[35px] pb-[max(35px,_env(safe-area-inset-bottom))]',
+        className,
+      )}
     >
       {/* VoiceInput off-screen — logic only, triggered programmatically via voiceButtonRef */}
-      <div
-        aria-hidden="true"
-        style={{ position: 'fixed', top: -9999, left: -9999, width: 1, height: 1 }}
-      >
+      <div aria-hidden="true" className="fixed -left-[9999px] -top-[9999px] h-px w-px">
         <VoiceInput
           isRecording={isRecording}
           setIsRecording={setIsRecording}
@@ -106,16 +105,15 @@ export default function ChatInputBar({
               onClick={() => voiceButtonRef.current?.click()}
               aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
               className={cn(
-                'flex shrink-0 cursor-pointer items-end border-none bg-transparent p-0',
+                'flex shrink-0 cursor-pointer items-end gap-1 border-none bg-transparent p-0',
                 isRecording && 'voice-wave-active',
               )}
-              style={{ gap: 4 }}
             >
               {([12, 18, 24, 18, 12] as const).map((h, i) => (
                 <span
                   key={i}
-                  className={cn(isRecording ? 'bg-error-medium' : 'bg-white/85')}
-                  style={{ width: 3, height: h, borderRadius: 3, display: 'block' }}
+                  className={cn('block w-[3px] rounded-[3px]', isRecording ? 'bg-error-medium' : 'bg-white/85')}
+                  style={{ height: h }}
                 />
               ))}
             </button>

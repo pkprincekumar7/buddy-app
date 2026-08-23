@@ -46,7 +46,7 @@ export default function WhatsAppModal({
 
   return (
     <ModalBackdrop
-      gradient="radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)"
+      gradient="radial-gradient(ellipse at 50% 40%,rgb(var(--constellation-overlay-rgb) / .72),rgb(var(--constellation-void-rgb) / .94) 72%)"
       onClose={onClose}
     >
       <div
@@ -56,11 +56,15 @@ export default function WhatsAppModal({
           borderRadius: 22,
           padding: '26px 28px 24px',
           background: 'linear-gradient(165deg,rgba(16,32,26,.97),rgba(7,12,14,.97))',
-          border: '1px solid rgba(80,220,150,.35)',
+          border: '1px solid rgb(var(--whatsapp-green-rgb) / .35)',
           boxShadow: '0 30px 90px rgba(2,8,6,.8)',
         }}
       >
-        <ModalCloseButton onClick={onClose} color="#8fbfa8" border="rgba(80,220,150,.28)" />
+        <ModalCloseButton
+          onClick={onClose}
+          color="rgb(var(--whatsapp-muted-rgb))"
+          border="rgb(var(--whatsapp-green-rgb) / .28)"
+        />
 
         {mode === 'compose' ? (
           <div>
@@ -74,25 +78,31 @@ export default function WhatsAppModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'linear-gradient(150deg,rgba(18,42,32,.95),rgba(8,16,14,.95))',
-                  border: '1.5px solid rgba(80,220,150,.5)',
+                  background:
+                    'linear-gradient(150deg,rgb(var(--whatsapp-badge-a-rgb) / .95),rgb(var(--whatsapp-badge-b-rgb) / .95))',
+                  border: '1.5px solid rgb(var(--whatsapp-green-rgb) / .5)',
                 }}
               >
                 <WhatsAppIcon size={19} />
               </div>
               <div>
                 <div
+                  className="font-orbitron"
                   style={{
-                    fontFamily: 'Orbitron, sans-serif',
                     fontWeight: 700,
                     fontSize: cfs(17),
-                    color: '#eafff4',
+                    color: 'rgb(var(--whatsapp-text-rgb))',
                   }}
                 >
                   Share on WhatsApp
                 </div>
                 <div
-                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#8fbfa8' }}
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    fontSize: cfs(13.5),
+                    color: 'rgb(var(--whatsapp-muted-rgb))',
+                  }}
                 >
                   {childName}&rsquo;s card, ready to go
                 </div>
@@ -107,8 +117,8 @@ export default function WhatsAppModal({
                 marginTop: 20,
                 borderRadius: 16,
                 padding: 14,
-                background: 'rgba(5,12,10,.6)',
-                border: '1px solid rgba(80,220,150,.16)',
+                background: 'rgb(var(--whatsapp-surface-rgb) / .6)',
+                border: '1px solid rgb(var(--whatsapp-green-rgb) / .16)',
               }}
             >
               <div
@@ -119,7 +129,8 @@ export default function WhatsAppModal({
                   borderRadius: 10,
                   overflow: 'hidden',
                   position: 'relative',
-                  background: 'linear-gradient(165deg,#16233b,#070b15)',
+                  background:
+                    'linear-gradient(165deg,rgb(var(--constellation-panel-a-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
                   border: '1px solid rgb(var(--constellation-gold-rgb) / .35)',
                 }}
               >
@@ -143,8 +154,8 @@ export default function WhatsAppModal({
                     }}
                   />
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: 'Orbitron, sans-serif',
                       fontWeight: 900,
                       fontSize: cfs(6.5),
                       lineHeight: 1.25,
@@ -154,8 +165,8 @@ export default function WhatsAppModal({
                     {title}
                   </div>
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: 'Orbitron, sans-serif',
                       fontWeight: 900,
                       fontSize: cfs(4.5),
                       letterSpacing: '.1em',
@@ -173,24 +184,24 @@ export default function WhatsAppModal({
                     fontSize: cfs(10.5),
                     letterSpacing: '.18em',
                     textTransform: 'uppercase',
-                    color: '#6f9a86',
+                    color: 'rgb(var(--whatsapp-label-rgb))',
                   }}
                 >
                   Message
                 </div>
                 <div
+                  className="font-rajdhani"
                   style={{
                     marginTop: 7,
                     width: '100%',
                     borderRadius: 11,
                     padding: '11px 13px',
-                    background: 'rgba(4,10,8,.85)',
-                    border: '1px solid rgba(80,220,150,.24)',
-                    fontFamily: 'Rajdhani, sans-serif',
+                    background: 'rgb(var(--whatsapp-surface-rgb) / .85)',
+                    border: '1px solid rgb(var(--whatsapp-green-rgb) / .24)',
                     fontWeight: 600,
                     fontSize: cfs(14.5),
                     lineHeight: 1.5,
-                    color: '#eafff4',
+                    color: 'rgb(var(--whatsapp-text-rgb))',
                     whiteSpace: 'pre-wrap',
                   }}
                 >
@@ -207,8 +218,8 @@ export default function WhatsAppModal({
                 marginTop: 12,
                 borderRadius: 14,
                 padding: '13px 15px',
-                background: 'rgba(80,220,150,.07)',
-                border: '1px dashed rgba(80,220,150,.35)',
+                background: 'rgb(var(--whatsapp-green-rgb) / .07)',
+                border: '1px dashed rgb(var(--whatsapp-green-rgb) / .35)',
               }}
             >
               <div
@@ -220,18 +231,29 @@ export default function WhatsAppModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'rgba(80,220,150,.14)',
-                  border: '1px solid rgba(80,220,150,.3)',
+                  background: 'rgb(var(--whatsapp-green-rgb) / .14)',
+                  border: '1px solid rgb(var(--whatsapp-green-rgb) / .3)',
                 }}
               >
-                <LinkIcon color="#57dc96" />
+                <LinkIcon color="rgb(var(--whatsapp-bright-rgb))" />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: cfs(13.5), color: '#eafff4' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: cfs(13.5),
+                    color: 'rgb(var(--whatsapp-text-rgb))',
+                  }}
+                >
                   Join Superpower link included
                 </div>
                 <div
-                  style={{ marginTop: 1, fontWeight: 600, fontSize: cfs(12.5), color: '#7ba894' }}
+                  style={{
+                    marginTop: 1,
+                    fontWeight: 600,
+                    fontSize: cfs(12.5),
+                    color: 'rgb(var(--whatsapp-meta-rgb))',
+                  }}
                 >
                   {inviteUrl} · free for any parent
                 </div>
@@ -244,13 +266,13 @@ export default function WhatsAppModal({
                   flexShrink: 0,
                   padding: '8px 15px',
                   borderRadius: 999,
-                  border: '1px solid rgba(80,220,150,.45)',
+                  border: '1px solid rgb(var(--whatsapp-green-rgb) / .45)',
                   background: 'transparent',
                   fontWeight: 700,
                   fontSize: cfs(10.5),
                   letterSpacing: '.14em',
                   textTransform: 'uppercase',
-                  color: '#a9ecc8',
+                  color: 'rgb(var(--whatsapp-cta-rgb))',
                 }}
               >
                 Copy
@@ -264,7 +286,7 @@ export default function WhatsAppModal({
                 fontSize: cfs(10.5),
                 letterSpacing: '.18em',
                 textTransform: 'uppercase',
-                color: '#6f9a86',
+                color: 'rgb(var(--whatsapp-label-rgb))',
               }}
             >
               Send to
@@ -290,12 +312,15 @@ export default function WhatsAppModal({
                       alignItems: 'center',
                       borderRadius: 13,
                       padding: '11px 14px',
-                      background: on ? 'rgba(80,220,150,.10)' : 'rgba(5,12,10,.6)',
-                      border: `1px solid ${on ? 'rgba(80,220,150,.5)' : 'rgba(80,220,150,.14)'}`,
+                      background: on
+                        ? 'rgb(var(--whatsapp-green-rgb) / .10)'
+                        : 'rgb(var(--whatsapp-surface-rgb) / .6)',
+                      border: `1px solid ${on ? 'rgb(var(--whatsapp-green-rgb) / .5)' : 'rgb(var(--whatsapp-green-rgb) / .14)'}`,
                       transition: 'all .2s ease',
                     }}
                   >
                     <div
+                      className="font-orbitron"
                       style={{
                         width: 34,
                         height: 34,
@@ -303,18 +328,23 @@ export default function WhatsAppModal({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(80,220,150,.12)',
-                        border: '1px solid rgba(80,220,150,.3)',
-                        fontFamily: 'Orbitron, sans-serif',
+                        background: 'rgb(var(--whatsapp-green-rgb) / .12)',
+                        border: '1px solid rgb(var(--whatsapp-green-rgb) / .3)',
                         fontWeight: 700,
                         fontSize: cfs(12),
-                        color: '#8fe3b8',
+                        color: 'rgb(var(--whatsapp-initials-rgb))',
                       }}
                     >
                       {c.initials}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: cfs(14.5), color: '#eafff4' }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: cfs(14.5),
+                          color: 'rgb(var(--whatsapp-text-rgb))',
+                        }}
+                      >
                         {c.name}
                       </div>
                       <div
@@ -322,7 +352,7 @@ export default function WhatsAppModal({
                           marginTop: 1,
                           fontWeight: 600,
                           fontSize: cfs(12.5),
-                          color: '#7ba894',
+                          color: 'rgb(var(--whatsapp-meta-rgb))',
                         }}
                       >
                         {c.meta}
@@ -336,12 +366,16 @@ export default function WhatsAppModal({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        border: `1.5px solid ${on ? '#57dc96' : 'rgba(140,180,165,.4)'}`,
-                        background: on ? '#57dc96' : 'transparent',
+                        border: `1.5px solid ${on ? 'rgb(var(--whatsapp-bright-rgb))' : 'rgb(var(--whatsapp-faint-rgb) / .4)'}`,
+                        background: on ? 'rgb(var(--whatsapp-bright-rgb))' : 'transparent',
                         transition: 'all .2s ease',
                       }}
                     >
-                      <CheckTickIcon size={11} color="#052015" opacity={on ? 1 : 0} />
+                      <CheckTickIcon
+                        size={11}
+                        color="rgb(var(--whatsapp-ink-deep-rgb))"
+                        opacity={on ? 1 : 0}
+                      />
                     </div>
                   </div>
                 );
@@ -363,7 +397,7 @@ export default function WhatsAppModal({
                   fontSize: cfs(12),
                   letterSpacing: '.1em',
                   textTransform: 'uppercase',
-                  color: '#6f9a86',
+                  color: 'rgb(var(--whatsapp-label-rgb))',
                 }}
               >
                 {count}
@@ -372,6 +406,7 @@ export default function WhatsAppModal({
                 type="button"
                 onClick={onSend}
                 disabled={disabled}
+                className="font-rajdhani"
                 style={{
                   cursor: disabled ? 'default' : 'pointer',
                   display: 'flex',
@@ -380,14 +415,14 @@ export default function WhatsAppModal({
                   padding: '13px 28px',
                   borderRadius: 999,
                   border: 'none',
-                  background: 'linear-gradient(135deg,#57dc96,#2aa96f)',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  background:
+                    'linear-gradient(135deg,rgb(var(--whatsapp-bright-rgb)),rgb(var(--whatsapp-dark-rgb)))',
                   fontWeight: 700,
                   fontSize: cfs(13),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#04140d',
-                  boxShadow: '0 0 26px rgba(80,220,150,.4)',
+                  color: 'rgb(var(--whatsapp-ink-rgb))',
+                  boxShadow: '0 0 26px rgb(var(--whatsapp-green-rgb) / .4)',
                   opacity: disabled ? 0.4 : 1,
                   pointerEvents: disabled ? 'none' : 'auto',
                 }}
@@ -408,20 +443,20 @@ export default function WhatsAppModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(80,220,150,.14)',
-                border: '1.5px solid rgba(80,220,150,.55)',
-                boxShadow: '0 0 30px rgba(80,220,150,.25)',
+                background: 'rgb(var(--whatsapp-green-rgb) / .14)',
+                border: '1.5px solid rgb(var(--whatsapp-green-rgb) / .55)',
+                boxShadow: '0 0 30px rgb(var(--whatsapp-green-rgb) / .25)',
               }}
             >
-              <CheckTickIcon size={28} color="#57dc96" opacity={1} />
+              <CheckTickIcon size={28} color="rgb(var(--whatsapp-bright-rgb))" opacity={1} />
             </div>
             <div
+              className="font-orbitron"
               style={{
                 marginTop: 18,
-                fontFamily: 'Orbitron, sans-serif',
                 fontWeight: 700,
                 fontSize: cfs(19),
-                color: '#eafff4',
+                color: 'rgb(var(--whatsapp-text-rgb))',
               }}
             >
               Sent on WhatsApp
@@ -431,7 +466,7 @@ export default function WhatsAppModal({
                 marginTop: 9,
                 fontSize: cfs(15),
                 fontWeight: 600,
-                color: '#8fbfa8',
+                color: 'rgb(var(--whatsapp-muted-rgb))',
                 maxWidth: 360,
                 marginLeft: 'auto',
                 marginRight: 'auto',
@@ -442,19 +477,19 @@ export default function WhatsAppModal({
             <button
               type="button"
               onClick={onClose}
+              className="font-rajdhani"
               style={{
                 cursor: 'pointer',
                 marginTop: 22,
                 padding: '12px 30px',
                 borderRadius: 999,
-                border: '1px solid rgba(80,220,150,.45)',
+                border: '1px solid rgb(var(--whatsapp-green-rgb) / .45)',
                 background: 'rgba(6,16,12,.8)',
-                fontFamily: 'Rajdhani, sans-serif',
                 fontWeight: 700,
                 fontSize: cfs(12.5),
                 letterSpacing: '.16em',
                 textTransform: 'uppercase',
-                color: '#a9ecc8',
+                color: 'rgb(var(--whatsapp-cta-rgb))',
               }}
             >
               Done

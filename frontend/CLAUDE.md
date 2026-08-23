@@ -20,6 +20,13 @@ this same list.
 - When the same combination of Tailwind classes (or the same block of markup) repeats across a
   file or multiple files, extract it into a shared `@layer components` class (see `.card-surface`
   in `index.css`) or a shared component — don't copy-paste it.
+- A value that belongs in Tailwind's theme (a font family, etc.) is registered once in
+  `tailwind.config.ts`'s `theme.extend` and applied via `className`, not repeated as a raw inline
+  `style={{...}}` value at every call site. `fontFamily: 'Orbitron, sans-serif'` /
+  `'Rajdhani, sans-serif'` were `@font-face`-declared in `index.css` but never added to
+  `tailwind.config.ts`, so the raw string got repeated as an inline style 84 times across 12 files
+  before `fontFamily: { orbitron: [...], rajdhani: [...] }` was added and every site converted to
+  `className="font-orbitron"`/`"font-rajdhani"`.
 
 ## Components & props
 

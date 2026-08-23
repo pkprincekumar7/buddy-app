@@ -2,7 +2,12 @@
 
 1. **`cn()` for composed classNames** — no manual template-literal class concatenation.
 2. **No hardcoded colors** — raw hex/`rgba(...)` values replaced with the centralized
-   CSS custom-property tokens in `src/index.css`.
+   CSS custom-property tokens in `src/index.css`. Two documented exceptions, not violations:
+   `AVATAR_TEXT_COLOR` in `lib/gradientColors.ts` stays a plain literal because it's baked into a
+   standalone `data:image/svg+xml` document (`lib/avatarUtils.ts`) that has no access to the parent
+   page's CSS custom properties; each growth area's `hue` in `lib/growthAreaData.ts` stays raw
+   because it's parsed numerically by `hueToHex()` and spliced into `rgba(${hue},N)` template
+   strings, not read as a CSS value. Both have an explanatory comment at their definition.
 3. **Tailwind arbitrary-value spaces escaped as `_`** — a literal space inside `[...]` silently
    breaks the utility with no build or type error. Grep for this specifically:
    `grep -rnoE 'className="[^"]*-\[[^]"]* [^]"]*\][^"]*"' src` and confirm any hit is intentional
@@ -57,3 +62,11 @@
     empty); catch-block `unknown` values are narrowed with `instanceof` (as in `apiError.ts`)
     rather than blindly cast with `as`; no non-null assertion (`!`) used to silence
     `noUncheckedIndexedAccess` — handle the `undefined` case instead.
+20. **Design-system values registered in `tailwind.config.ts`, not repeated inline** — a value
+    that belongs in the Tailwind theme (a font family, etc.) is added to `theme.extend` once and
+    applied via `className`, not repeated as a raw `style={{...}}` value at every call site.
+    `fontFamily: 'Orbitron, sans-serif'` / `'Rajdhani, sans-serif'` were both `@font-face`-declared
+    in `index.css` but never added to `tailwind.config.ts`'s `theme.fontFamily` — so 84 call sites
+    across 12 files repeated the raw string as an inline style instead of
+    `className="font-orbitron"`/`"font-rajdhani"`. Check for a repeated non-color inline style
+    value the same way item 2 checks for repeated raw colors: `grep -rn "fontFamily:" src`.

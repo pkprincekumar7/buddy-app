@@ -46,7 +46,6 @@ type Phase = 'questions' | 'handoff' | 'rounds' | 'result';
 export type RecsPhase = 'idle' | 'loading' | 'ready' | 'error';
 
 const PANEL_MAX = 620;
-const ORBITRON = 'Orbitron, sans-serif';
 
 /** Star, shown on the handoff beat. */
 const HANDOFF_STAR_PATH = 'M12 3l2.2 5.6L20 9.4l-4 4 1 6-5-2.9-5 2.9 1-6-4-4 5.8-.8z';
@@ -111,7 +110,8 @@ const CHOICE_TILE: React.CSSProperties = {
   cursor: 'pointer',
   borderRadius: 16,
   padding: '18px 16px',
-  background: 'linear-gradient(160deg,rgba(30,45,72,.9),rgba(8,13,24,.9))',
+  background:
+    'linear-gradient(160deg,rgb(var(--constellation-navy-soft-rgb) / .9),rgb(var(--constellation-ink-navy-rgb) / .9))',
   border: '1px solid rgb(var(--constellation-cyan-rgb) / .26)',
   display: 'flex',
   flexDirection: 'column',
@@ -187,9 +187,9 @@ function SetGate({
         />
       )}
       <div
+        className="font-orbitron"
         style={{
           marginTop: 16,
-          fontFamily: ORBITRON,
           fontWeight: 500,
           fontSize: 15.5,
           lineHeight: 1.45,
@@ -442,7 +442,8 @@ export default function GrowthAreaSheet({
       className="fixed inset-0 z-[60] flex items-center justify-center"
       style={{
         padding: 22,
-        background: 'radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.93) 70%)',
+        background:
+          'radial-gradient(ellipse at 50% 40%,rgb(var(--constellation-overlay-rgb) / .72),rgb(var(--constellation-void-rgb) / .93) 70%)',
         backdropFilter: 'blur(7px)',
       }}
       onClick={(e) => {
@@ -461,7 +462,8 @@ export default function GrowthAreaSheet({
           overflow: 'auto',
           borderRadius: 20,
           padding: '26px 30px 24px',
-          background: 'linear-gradient(165deg,rgba(20,31,50,.96),rgba(8,13,24,.98))',
+          background:
+            'linear-gradient(165deg,rgb(var(--constellation-navy-panel3-rgb) / .96),rgb(var(--constellation-ink-navy-rgb) / .98))',
           border: '1px solid rgb(var(--constellation-gold-rgb) / .42)',
           boxShadow: '0 26px 70px rgba(0,0,0,.6),0 0 44px rgb(var(--constellation-cyan-rgb) / .12)',
         }}
@@ -487,7 +489,7 @@ export default function GrowthAreaSheet({
               style={{
                 width: 38,
                 height: 38,
-                background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
+                background: 'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                 border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
                 boxShadow: '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
               }}
@@ -514,8 +516,8 @@ export default function GrowthAreaSheet({
                 Guided Reflection
               </div>
               <div
+                className="font-orbitron"
                 style={{
-                  fontFamily: ORBITRON,
                   fontWeight: 700,
                   fontSize: 17,
                   color: 'rgb(var(--constellation-cyan-paler-rgb))',
@@ -581,9 +583,8 @@ export default function GrowthAreaSheet({
                 style={{ gap: 14 }}
               >
                 <div
-                  className="flex-shrink-0"
+                  className="flex-shrink-0 font-orbitron"
                   style={{
-                    fontFamily: ORBITRON,
                     fontWeight: 700,
                     fontSize: 26,
                     lineHeight: 1,
@@ -594,8 +595,8 @@ export default function GrowthAreaSheet({
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: ORBITRON,
                       fontWeight: 500,
                       fontSize: 17,
                       lineHeight: 1.45,
@@ -629,7 +630,7 @@ export default function GrowthAreaSheet({
                       borderRadius: 12,
                       padding: '12px 14px',
                       paddingRight: 44,
-                      background: 'rgba(5,9,18,.85)',
+                      background: 'rgb(var(--constellation-surface-rgb) / .85)',
                       border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
                       outline: 'none',
                       fontWeight: 600,
@@ -649,9 +650,9 @@ export default function GrowthAreaSheet({
                 style={{
                   ...PILL,
                   padding: '10px 20px',
-                  background: 'rgba(8,14,26,.85)',
+                  background: 'rgb(var(--constellation-overlay-rgb) / .85)',
                   border: '1px solid rgb(var(--constellation-cyan-rgb) / .28)',
-                  color: '#9db4c4',
+                  color: 'rgb(var(--constellation-slate-soft-rgb))',
                   opacity: qIdx === 0 ? 0.35 : 1,
                   pointerEvents: qIdx === 0 ? 'none' : 'auto',
                 }}
@@ -709,7 +710,7 @@ export default function GrowthAreaSheet({
                 width: 64,
                 height: 64,
                 margin: '0 auto',
-                background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
+                background: 'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                 border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
                 boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .28)',
               }}
@@ -725,9 +726,9 @@ export default function GrowthAreaSheet({
               </svg>
             </div>
             <div
+              className="font-orbitron"
               style={{
                 marginTop: 16,
-                fontFamily: ORBITRON,
                 fontWeight: 700,
                 fontSize: 18,
                 color: 'rgb(var(--constellation-cyan-paler-rgb))',
@@ -740,7 +741,7 @@ export default function GrowthAreaSheet({
                 marginTop: 9,
                 fontSize: 14.5,
                 fontWeight: 600,
-                color: '#9db4c4',
+                color: 'rgb(var(--constellation-slate-soft-rgb))',
                 maxWidth: 400,
                 marginLeft: 'auto',
                 marginRight: 'auto',
@@ -811,8 +812,8 @@ export default function GrowthAreaSheet({
           >
             <div className="flex items-baseline justify-between">
               <div
+                className="font-orbitron"
                 style={{
-                  fontFamily: ORBITRON,
                   fontWeight: 500,
                   fontSize: 16,
                   color: 'rgb(var(--constellation-cyan-pale-rgb))',
@@ -908,9 +909,9 @@ export default function GrowthAreaSheet({
               {fillTemplate('{name}’s ' + area.name + ' Constellation', childName, childGender)}
             </div>
             <div
+              className="font-orbitron"
               style={{
                 marginTop: 8,
-                fontFamily: ORBITRON,
                 fontWeight: 700,
                 fontSize: 22,
                 color: 'rgb(var(--constellation-cyan-paler-rgb))',
@@ -923,7 +924,7 @@ export default function GrowthAreaSheet({
                 marginTop: 8,
                 fontSize: 14.5,
                 fontWeight: 600,
-                color: '#9db4c4',
+                color: 'rgb(var(--constellation-slate-soft-rgb))',
                 maxWidth: 430,
                 margin: '8px auto 0',
               }}
@@ -967,7 +968,7 @@ export default function GrowthAreaSheet({
                   />
                   <div
                     className="whitespace-nowrap font-bold"
-                    style={{ fontSize: 11, letterSpacing: '.06em', color: '#cfe9f2' }}
+                    style={{ fontSize: 11, letterSpacing: '.06em', color: 'rgb(var(--constellation-cyan-frost-rgb))' }}
                   >
                     {pickedStars[i] ?? ''}
                   </div>
@@ -985,9 +986,8 @@ export default function GrowthAreaSheet({
             >
               <div className="flex flex-wrap items-baseline justify-between" style={{ gap: 14 }}>
                 <div
-                  className="font-bold uppercase"
+                  className="font-bold uppercase font-orbitron"
                   style={{
-                    fontFamily: ORBITRON,
                     fontSize: 13.5,
                     letterSpacing: '.14em',
                     color: 'rgb(var(--constellation-gold-rgb))',
@@ -1020,7 +1020,7 @@ export default function GrowthAreaSheet({
                     </div>
                     <div
                       className="text-center"
-                      style={{ fontSize: 12.5, fontWeight: 600, color: '#9db4c4' }}
+                      style={{ fontSize: 12.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))' }}
                     >
                       {fillTemplate('Building {his} 3-month plan…', childName, childGender)}
                     </div>
@@ -1030,7 +1030,7 @@ export default function GrowthAreaSheet({
                 {recsPhase === 'error' && (
                   <div
                     className="text-center"
-                    style={{ fontSize: 13, fontWeight: 600, color: '#9db4c4', padding: '12px 0' }}
+                    style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))', padding: '12px 0' }}
                   >
                     Could not generate recommendations. Play again to retry.
                   </div>
@@ -1048,7 +1048,7 @@ export default function GrowthAreaSheet({
                           borderRadius: 13,
                           padding: '12px 14px',
                           background:
-                            'linear-gradient(120deg,rgba(30,45,72,.55),rgba(8,13,24,.55))',
+                            'linear-gradient(120deg,rgb(var(--constellation-navy-soft-rgb) / .55),rgb(var(--constellation-ink-navy-rgb) / .55))',
                           border: '1px solid rgb(var(--constellation-gold-rgb) / .18)',
                         }}
                       >
@@ -1066,8 +1066,8 @@ export default function GrowthAreaSheet({
                             }}
                           />
                           <div
+                            className="font-orbitron"
                             style={{
-                              fontFamily: ORBITRON,
                               fontWeight: 700,
                               fontSize: 10,
                               color: 'rgb(var(--constellation-gold-rgb) / .6)',
@@ -1094,7 +1094,7 @@ export default function GrowthAreaSheet({
                                 fontWeight: 600,
                                 fontSize: 13,
                                 lineHeight: 1.45,
-                                color: '#93aebe',
+                                color: 'rgb(var(--constellation-slate-cool-rgb))',
                               }}
                             >
                               {rec.detail}
@@ -1106,7 +1106,7 @@ export default function GrowthAreaSheet({
                   ) : (
                     <div
                       className="text-center"
-                      style={{ fontSize: 13, fontWeight: 600, color: '#9db4c4', padding: '12px 0' }}
+                      style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))', padding: '12px 0' }}
                     >
                       No recommendations generated for this area yet.
                     </div>
@@ -1121,9 +1121,9 @@ export default function GrowthAreaSheet({
                 style={{
                   ...PILL,
                   padding: '10px 22px',
-                  background: 'rgba(8,14,26,.85)',
-                  border: '1px solid rgba(255,201,120,.35)',
-                  color: '#ffc978',
+                  background: 'rgb(var(--constellation-overlay-rgb) / .85)',
+                  border: '1px solid rgb(var(--constellation-amber-rgb) / .35)',
+                  color: 'rgb(var(--constellation-amber-rgb))',
                 }}
               >
                 Play again

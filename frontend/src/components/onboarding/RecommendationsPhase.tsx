@@ -34,6 +34,7 @@ import { buildGrowthAreaRecommendationsPrompt } from '@/lib/prompts';
 import { normalizeAge } from '@/lib/insightsUtils';
 import { createPageUrl } from '@/utils';
 import { pickPreferredVoice } from '@/lib/tts';
+import DualRingSpinner from '@/components/shared/DualRingSpinner';
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -2464,14 +2465,13 @@ export default function RecommendationsPhase({
 
               {loadingRecommendations && (
                 <div className="flex flex-col items-center justify-center gap-5 py-10">
-                  <div className="relative h-16 w-16">
-                    <div className="absolute inset-0 rounded-full border-4 border-success/20" />
-                    <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-success" />
-                    <div
-                      className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-primary"
-                      style={{ animationDuration: '0.7s', animationDirection: 'reverse' }}
-                    />
-                  </div>
+                  <DualRingSpinner
+                    size="h-16 w-16"
+                    trackClassName="border-success/20"
+                    outerClassName="border-t-success"
+                    innerClassName="border-t-primary"
+                    innerDurationSeconds={0.7}
+                  />
                   <div className="space-y-1 text-center">
                     <p className="text-sm font-semibold text-foreground">
                       Building your 3-Month Plan

@@ -67,11 +67,15 @@ export default function TwitterModal({
           borderRadius: 22,
           padding: '26px 28px 24px',
           background: 'linear-gradient(165deg,rgba(19,25,35,.97),rgba(7,9,14,.97))',
-          border: '1px solid rgba(180,205,225,.3)',
+          border: '1px solid rgb(var(--twitter-slate-rgb) / .3)',
           boxShadow: '0 30px 90px rgba(2,5,10,.8)',
         }}
       >
-        <ModalCloseButton onClick={onClose} color="#9fb3c4" border="rgba(180,205,225,.24)" />
+        <ModalCloseButton
+          onClick={onClose}
+          color="rgb(var(--twitter-muted-rgb))"
+          border="rgb(var(--twitter-slate-rgb) / .24)"
+        />
 
         {mode === 'compose' ? (
           <div>
@@ -85,25 +89,31 @@ export default function TwitterModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'linear-gradient(150deg,rgba(28,38,52,.95),rgba(8,11,17,.95))',
-                  border: '1.5px solid rgba(180,205,225,.45)',
+                  background:
+                    'linear-gradient(150deg,rgba(28,38,52,.95),rgb(var(--twitter-badge-b-rgb) / .95))',
+                  border: '1.5px solid rgb(var(--twitter-slate-rgb) / .45)',
                 }}
               >
                 <TwitterIcon size={18} />
               </div>
               <div>
                 <div
+                  className="font-orbitron"
                   style={{
-                    fontFamily: 'Orbitron, sans-serif',
                     fontWeight: 700,
                     fontSize: cfs(17),
-                    color: '#eaf3fa',
+                    color: 'rgb(var(--twitter-bright-rgb))',
                   }}
                 >
                   Post on Twitter
                 </div>
                 <div
-                  style={{ marginTop: 2, fontWeight: 600, fontSize: cfs(13.5), color: '#9fb3c4' }}
+                  style={{
+                    marginTop: 2,
+                    fontWeight: 600,
+                    fontSize: cfs(13.5),
+                    color: 'rgb(var(--twitter-muted-rgb))',
+                  }}
                 >
                   {handle}
                 </div>
@@ -115,19 +125,14 @@ export default function TwitterModal({
                 marginTop: 20,
                 borderRadius: 16,
                 padding: '16px 17px',
-                background: 'rgba(6,9,14,.7)',
-                border: '1px solid rgba(180,205,225,.14)',
+                background: 'rgb(var(--twitter-surface-rgb) / .7)',
+                border: '1px solid rgb(var(--twitter-slate-rgb) / .14)',
               }}
             >
               <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr', gap: 13 }}>
                 <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    background:
-                      'radial-gradient(circle at 35% 30%,rgb(var(--constellation-cyan-pale-rgb)),rgb(var(--constellation-cyan-rgb)) 45%,#0a5b74 100%)',
-                  }}
+                  className="orb-cyan-gradient"
+                  style={{ width: 40, height: 40, borderRadius: '50%' }}
                 />
                 <div style={{ minWidth: 0 }}>
                   <div
@@ -144,26 +149,26 @@ export default function TwitterModal({
                       gap: 7,
                       padding: '5px 13px',
                       borderRadius: 999,
-                      border: '1px solid rgba(120,190,235,.5)',
+                      border: '1px solid rgb(var(--twitter-sky-rgb) / .5)',
                       fontWeight: 700,
                       fontSize: cfs(10.5),
                       letterSpacing: '.14em',
                       textTransform: 'uppercase',
-                      color: '#8fd0f5',
+                      color: 'rgb(var(--twitter-sky-rgb))',
                     }}
                   >
                     {audience}
                     <ChevronDownIcon />
                   </div>
                   <div
+                    className="font-rajdhani"
                     style={{
                       marginTop: 11,
                       width: '100%',
-                      fontFamily: 'Rajdhani, sans-serif',
                       fontWeight: 600,
                       fontSize: cfs(17),
                       lineHeight: 1.45,
-                      color: '#eaf3fa',
+                      color: 'rgb(var(--twitter-bright-rgb))',
                       whiteSpace: 'pre-wrap',
                     }}
                   >
@@ -177,8 +182,9 @@ export default function TwitterModal({
                       borderRadius: 14,
                       overflow: 'hidden',
                       aspectRatio: '16/9',
-                      background: 'linear-gradient(120deg,#0e1626,#070b15)',
-                      border: '1px solid rgba(180,205,225,.2)',
+                      background:
+                        'linear-gradient(120deg,rgb(var(--constellation-panel-b-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
+                      border: '1px solid rgb(var(--twitter-slate-rgb) / .2)',
                     }}
                   >
                     <div
@@ -226,7 +232,7 @@ export default function TwitterModal({
                             fontSize: cfs(8.5),
                             letterSpacing: '.16em',
                             textTransform: 'uppercase',
-                            color: '#7e97a8',
+                            color: 'rgb(var(--constellation-slate-mid-rgb))',
                           }}
                         >
                           {cardDate}
@@ -234,8 +240,8 @@ export default function TwitterModal({
                       </div>
                       <div>
                         <div
+                          className="font-orbitron"
                           style={{
-                            fontFamily: 'Orbitron, sans-serif',
                             fontWeight: 900,
                             fontSize: cfs(17),
                             lineHeight: 1.18,
@@ -251,7 +257,7 @@ export default function TwitterModal({
                             fontWeight: 600,
                             fontSize: cfs(12),
                             lineHeight: 1.4,
-                            color: '#b9cedb',
+                            color: 'rgb(var(--constellation-caption-rgb))',
                             maxWidth: '74%',
                           }}
                         >
@@ -266,8 +272,8 @@ export default function TwitterModal({
                         }}
                       >
                         <div
+                          className="font-orbitron"
                           style={{
-                            fontFamily: 'Orbitron, sans-serif',
                             fontWeight: 900,
                             fontSize: cfs(9.5),
                             letterSpacing: '.14em',
@@ -282,7 +288,7 @@ export default function TwitterModal({
                             fontSize: cfs(8.5),
                             letterSpacing: '.14em',
                             textTransform: 'uppercase',
-                            color: '#7e97a8',
+                            color: 'rgb(var(--constellation-slate-mid-rgb))',
                           }}
                         >
                           superpower.app
@@ -291,7 +297,12 @@ export default function TwitterModal({
                     </div>
                   </div>
                   <div
-                    style={{ marginTop: 7, fontWeight: 600, fontSize: cfs(12), color: '#7d92a4' }}
+                    style={{
+                      marginTop: 7,
+                      fontWeight: 600,
+                      fontSize: cfs(12),
+                      color: 'rgb(var(--twitter-meta-rgb))',
+                    }}
                   >
                     Card attached as an image · alt text added automatically
                   </div>
@@ -304,8 +315,8 @@ export default function TwitterModal({
                       marginTop: 11,
                       borderRadius: 13,
                       padding: '12px 14px',
-                      background: 'rgba(143,208,245,.06)',
-                      border: '1px dashed rgba(143,208,245,.32)',
+                      background: 'rgb(var(--twitter-sky-rgb) / .06)',
+                      border: '1px dashed rgb(var(--twitter-sky-rgb) / .32)',
                     }}
                   >
                     <div
@@ -317,14 +328,20 @@ export default function TwitterModal({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        background: 'rgba(143,208,245,.12)',
-                        border: '1px solid rgba(143,208,245,.28)',
+                        background: 'rgb(var(--twitter-sky-rgb) / .12)',
+                        border: '1px solid rgb(var(--twitter-sky-rgb) / .28)',
                       }}
                     >
-                      <LinkIcon size={14} color="#8fd0f5" />
+                      <LinkIcon size={14} color="rgb(var(--twitter-sky-rgb))" />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: cfs(13), color: '#eaf3fa' }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: cfs(13),
+                          color: 'rgb(var(--twitter-bright-rgb))',
+                        }}
+                      >
                         Join Superpower link in the post
                       </div>
                       <div
@@ -332,7 +349,7 @@ export default function TwitterModal({
                           marginTop: 1,
                           fontWeight: 600,
                           fontSize: cfs(12),
-                          color: '#7d92a4',
+                          color: 'rgb(var(--twitter-meta-rgb))',
                         }}
                       >
                         {inviteUrl} · free for any parent
@@ -346,13 +363,13 @@ export default function TwitterModal({
                         flexShrink: 0,
                         padding: '7px 14px',
                         borderRadius: 999,
-                        border: '1px solid rgba(143,208,245,.42)',
+                        border: '1px solid rgb(var(--twitter-sky-rgb) / .42)',
                         background: 'transparent',
                         fontWeight: 700,
                         fontSize: cfs(10.5),
                         letterSpacing: '.14em',
                         textTransform: 'uppercase',
-                        color: '#bfe3fa',
+                        color: 'rgb(var(--twitter-sky-light-rgb))',
                       }}
                     >
                       Copy
@@ -376,12 +393,16 @@ export default function TwitterModal({
                     cursor: 'pointer',
                     padding: '8px 14px',
                     borderRadius: 999,
-                    background: t.active ? 'rgba(143,208,245,.14)' : 'rgba(6,9,14,.7)',
-                    border: `1px solid ${t.active ? 'rgba(143,208,245,.55)' : 'rgba(180,205,225,.16)'}`,
+                    background: t.active
+                      ? 'rgb(var(--twitter-sky-rgb) / .14)'
+                      : 'rgb(var(--twitter-surface-rgb) / .7)',
+                    border: `1px solid ${t.active ? 'rgb(var(--twitter-sky-rgb) / .55)' : 'rgb(var(--twitter-slate-rgb) / .16)'}`,
                     fontWeight: 700,
                     fontSize: cfs(12),
                     letterSpacing: '.04em',
-                    color: t.active ? '#bfe3fa' : '#8fa5b6',
+                    color: t.active
+                      ? 'rgb(var(--twitter-sky-light-rgb))'
+                      : 'rgb(var(--twitter-inactive-rgb))',
                     transition: 'all .2s ease',
                   }}
                 >
@@ -398,7 +419,7 @@ export default function TwitterModal({
                 gap: 14,
                 marginTop: 20,
                 paddingTop: 16,
-                borderTop: '1px solid rgba(180,205,225,.14)',
+                borderTop: '1px solid rgb(var(--twitter-slate-rgb) / .14)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -412,7 +433,7 @@ export default function TwitterModal({
                       cy="18"
                       r="15"
                       fill="none"
-                      stroke="rgba(180,205,225,.2)"
+                      stroke="rgb(var(--twitter-slate-rgb) / .2)"
                       strokeWidth={3.4}
                     />
                     <circle
@@ -442,14 +463,14 @@ export default function TwitterModal({
                   padding: '13px 30px',
                   borderRadius: 999,
                   border: 'none',
-                  background: 'linear-gradient(135deg,#eaf3fa,#a9c4d8)',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  background:
+                    'linear-gradient(135deg,rgb(var(--twitter-bright-rgb)),rgb(var(--twitter-cta-deep-rgb)))',
                   fontWeight: 700,
                   fontSize: cfs(13),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#0a1017',
-                  boxShadow: '0 0 26px rgba(180,205,225,.25)',
+                  color: 'rgb(var(--twitter-ink-rgb))',
+                  boxShadow: '0 0 26px rgb(var(--twitter-slate-rgb) / .25)',
                   opacity: postDisabled ? 0.4 : 1,
                   pointerEvents: postDisabled ? 'none' : 'auto',
                 }}
@@ -469,20 +490,20 @@ export default function TwitterModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'rgba(180,205,225,.12)',
-                border: '1.5px solid rgba(180,205,225,.5)',
-                boxShadow: '0 0 30px rgba(180,205,225,.2)',
+                background: 'rgb(var(--twitter-slate-rgb) / .12)',
+                border: '1.5px solid rgb(var(--twitter-slate-rgb) / .5)',
+                boxShadow: '0 0 30px rgb(var(--twitter-slate-rgb) / .2)',
               }}
             >
-              <CheckTickIcon size={28} color="#cfe1ee" opacity={1} />
+              <CheckTickIcon size={28} color="rgb(var(--twitter-sent-rgb))" opacity={1} />
             </div>
             <div
+              className="font-orbitron"
               style={{
                 marginTop: 18,
-                fontFamily: 'Orbitron, sans-serif',
                 fontWeight: 700,
                 fontSize: cfs(19),
-                color: '#eaf3fa',
+                color: 'rgb(var(--twitter-bright-rgb))',
               }}
             >
               Posted on Twitter
@@ -492,7 +513,7 @@ export default function TwitterModal({
                 marginTop: 9,
                 fontSize: cfs(15),
                 fontWeight: 600,
-                color: '#9fb3c4',
+                color: 'rgb(var(--twitter-muted-rgb))',
                 maxWidth: 380,
                 marginLeft: 'auto',
                 marginRight: 'auto',
@@ -512,18 +533,18 @@ export default function TwitterModal({
               <button
                 type="button"
                 onClick={onClose}
+                className="font-rajdhani"
                 style={{
                   cursor: 'pointer',
                   padding: '12px 30px',
                   borderRadius: 999,
-                  border: '1px solid rgba(180,205,225,.4)',
+                  border: '1px solid rgb(var(--twitter-slate-rgb) / .4)',
                   background: 'rgba(10,14,20,.8)',
-                  fontFamily: 'Rajdhani, sans-serif',
                   fontWeight: 700,
                   fontSize: cfs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#cfe1ee',
+                  color: 'rgb(var(--twitter-sent-rgb))',
                 }}
               >
                 Done
@@ -531,17 +552,17 @@ export default function TwitterModal({
               <button
                 type="button"
                 onClick={onBack}
+                className="font-rajdhani"
                 style={{
                   cursor: 'pointer',
                   padding: '12px 22px',
                   border: 'none',
                   background: 'transparent',
-                  fontFamily: 'Rajdhani, sans-serif',
                   fontWeight: 700,
                   fontSize: cfs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#7d92a4',
+                  color: 'rgb(var(--twitter-meta-rgb))',
                 }}
               >
                 Edit and repost

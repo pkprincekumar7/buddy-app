@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { COUNTRIES } from '@/lib/countries';
 import { httpErrorMessage } from '@/lib/apiError';
 import { MODAL_BACKDROP } from '@/lib/animations';
+import DualRingSpinner from '@/components/shared/DualRingSpinner';
 
 export default function Login() {
   const { checkAppState } = useAuth();
@@ -273,15 +274,7 @@ export default function Login() {
             {...MODAL_BACKDROP}
             className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 bg-background/95 backdrop-blur-sm"
           >
-            {/* Dual-ring spinner */}
-            <div className="relative h-20 w-20">
-              <div className="absolute inset-0 rounded-full border-4 border-primary/20" />
-              <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-primary-medium" />
-              <div
-                className="absolute inset-2 animate-spin rounded-full border-4 border-transparent border-t-success-bright"
-                style={{ animationDuration: '0.75s', animationDirection: 'reverse' }}
-              />
-            </div>
+            <DualRingSpinner />
 
             <motion.div
               initial={{ opacity: 0, y: 8 }}

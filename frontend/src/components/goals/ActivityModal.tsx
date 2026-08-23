@@ -535,7 +535,7 @@ export default function ActivityModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      className="modal-overlay"
     >
       <motion.div
         role="dialog"

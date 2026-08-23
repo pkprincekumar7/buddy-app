@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
-import { SPINNER } from '@/lib/animations';
 import { useMediaQuery } from '@/hooks/use-mobile';
+import Spinner from '@/components/shared/Spinner';
 
 import {
   cfs,
@@ -183,7 +183,7 @@ export default function Connect() {
       ? '#ff8189'
       : twBody.length > TW_MAX - 40
         ? 'rgb(var(--constellation-gold-rgb))'
-        : '#8fd0f5';
+        : 'rgb(var(--twitter-sky-rgb))';
   const twRingOffset = TW_RING_CIRCUMFERENCE * (1 - Math.min(twBody.length / TW_MAX, 1));
   const twPostDisabled = twBody.trim().length === 0 || twBody.length > TW_MAX;
   const shareX = () => {
@@ -215,9 +215,7 @@ export default function Connect() {
         className="flex min-h-screen items-center justify-center"
         style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
       >
-        <motion.div
-          {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-t-transparent"
+        <Spinner
           style={{
             borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
             borderTopColor: 'transparent',
@@ -233,10 +231,9 @@ export default function Connect() {
         minHeight: '100vh',
         background:
           'radial-gradient(ellipse at 80% -5%,rgb(var(--constellation-cyan-rgb) / .12),rgb(var(--constellation-navy-deepest-rgb) / 0) 50%),radial-gradient(ellipse at 10% 65%,rgb(var(--constellation-gold-rgb) / .08),rgb(var(--constellation-navy-deepest-rgb) / 0) 45%),rgb(var(--constellation-navy-deepest-rgb))',
-        fontFamily: 'Rajdhani, sans-serif',
-        color: '#e7f5f9',
+        color: 'rgb(var(--constellation-text-frost-rgb))',
       }}
-      className="conn-root"
+      className="conn-root font-rajdhani"
     >
       <style>{`
         /* Two knobs, stepped together on large displays: the content column and
@@ -264,10 +261,10 @@ export default function Connect() {
       >
         <section style={{ textAlign: 'center', animation: 'connFadeUp .7s ease both' }}>
           <h1
+            className="font-orbitron"
             style={{
               margin: '0 auto',
               maxWidth: 720,
-              fontFamily: 'Orbitron, sans-serif',
               fontWeight: 900,
               fontSize: 'calc(clamp(28px,4vw,44px) * var(--cx-type-scale, 1))',
               lineHeight: 1.12,
@@ -282,7 +279,7 @@ export default function Connect() {
               fontSize: cfs(17),
               fontWeight: 600,
               lineHeight: 1.5,
-              color: '#a8c1d1',
+              color: 'rgb(var(--constellation-slate-pale-rgb))',
             }}
           >
             Pick a moment, choose where it goes. The card is already made.
@@ -338,7 +335,7 @@ export default function Connect() {
                   gap: 8,
                   padding: '9px 16px',
                   borderRadius: 999,
-                  background: 'rgba(9,13,22,.7)',
+                  background: 'rgb(var(--constellation-card-rgb) / .7)',
                   border: `1px solid ${editing ? 'rgb(var(--constellation-gold-rgb) / .6)' : 'rgb(var(--constellation-cyan-rgb) / .2)'}`,
                   fontWeight: 700,
                   fontSize: cfs(11),
@@ -366,7 +363,7 @@ export default function Connect() {
                   fontSize: cfs(11),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#5c7688',
+                  color: 'rgb(var(--constellation-slate-dim-rgb))',
                   opacity: touched ? 1 : 0.25,
                   transition: 'opacity .2s ease',
                 }}
@@ -381,7 +378,7 @@ export default function Connect() {
                   marginTop: 12,
                   borderRadius: 16,
                   padding: '16px 18px',
-                  background: 'rgba(9,13,22,.75)',
+                  background: 'rgb(var(--constellation-card-rgb) / .75)',
                   border: '1px solid rgb(var(--constellation-gold-rgb) / .28)',
                 }}
               >
@@ -399,15 +396,15 @@ export default function Connect() {
                 <input
                   value={title}
                   onChange={(e) => editField('title', e.target.value)}
+                  className="font-rajdhani"
                   style={{
                     marginTop: 7,
                     width: '100%',
                     borderRadius: 11,
                     padding: '11px 13px',
-                    background: 'rgba(5,9,18,.85)',
+                    background: 'rgb(var(--constellation-surface-rgb) / .85)',
                     border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
                     outline: 'none',
-                    fontFamily: 'Rajdhani, sans-serif',
                     fontWeight: 700,
                     fontSize: cfs(15),
                     color: 'rgb(var(--constellation-cyan-pale-rgb))',
@@ -429,16 +426,16 @@ export default function Connect() {
                   value={caption}
                   onChange={(e) => editField('caption', e.target.value)}
                   rows={3}
+                  className="font-rajdhani"
                   style={{
                     marginTop: 7,
                     width: '100%',
                     resize: 'none',
                     borderRadius: 11,
                     padding: '11px 13px',
-                    background: 'rgba(5,9,18,.85)',
+                    background: 'rgb(var(--constellation-surface-rgb) / .85)',
                     border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
                     outline: 'none',
-                    fontFamily: 'Rajdhani, sans-serif',
                     fontWeight: 600,
                     fontSize: cfs(14.5),
                     lineHeight: 1.5,
@@ -471,8 +468,9 @@ export default function Connect() {
                   gap: 8,
                   padding: '16px 8px',
                   borderRadius: 15,
-                  background: 'linear-gradient(160deg,rgba(18,42,32,.85),rgba(8,16,14,.85))',
-                  border: '1px solid rgba(80,220,150,.28)',
+                  background:
+                    'linear-gradient(160deg,rgb(var(--whatsapp-badge-a-rgb) / .85),rgb(var(--whatsapp-badge-b-rgb) / .85))',
+                  border: '1px solid rgb(var(--whatsapp-green-rgb) / .28)',
                   transition: 'all .22s ease',
                 }}
               >
@@ -483,7 +481,7 @@ export default function Connect() {
                     fontSize: cfs(11.5),
                     letterSpacing: '.1em',
                     textTransform: 'uppercase',
-                    color: '#a9ecc8',
+                    color: 'rgb(var(--whatsapp-cta-rgb))',
                   }}
                 >
                   WhatsApp
@@ -504,8 +502,9 @@ export default function Connect() {
                   gap: 8,
                   padding: '16px 8px',
                   borderRadius: 15,
-                  background: 'linear-gradient(160deg,rgba(48,24,54,.85),rgba(16,10,20,.85))',
-                  border: '1px solid rgba(226,120,190,.28)',
+                  background:
+                    'linear-gradient(160deg,rgba(48,24,54,.85),rgb(var(--instagram-badge-b-rgb) / .85))',
+                  border: '1px solid rgb(var(--instagram-pink-rgb) / .28)',
                   transition: 'all .22s ease',
                 }}
               >
@@ -516,7 +515,7 @@ export default function Connect() {
                     fontSize: cfs(11.5),
                     letterSpacing: '.1em',
                     textTransform: 'uppercase',
-                    color: '#f0b6dc',
+                    color: 'rgb(var(--instagram-cta-rgb))',
                   }}
                 >
                   Instagram
@@ -537,8 +536,9 @@ export default function Connect() {
                   gap: 8,
                   padding: '16px 8px',
                   borderRadius: 15,
-                  background: 'linear-gradient(160deg,rgba(24,32,44,.85),rgba(8,11,17,.85))',
-                  border: '1px solid rgba(180,205,225,.24)',
+                  background:
+                    'linear-gradient(160deg,rgba(24,32,44,.85),rgb(var(--twitter-badge-b-rgb) / .85))',
+                  border: '1px solid rgb(var(--twitter-slate-rgb) / .24)',
                   transition: 'all .22s ease',
                 }}
               >
@@ -549,7 +549,7 @@ export default function Connect() {
                     fontSize: cfs(11.5),
                     letterSpacing: '.1em',
                     textTransform: 'uppercase',
-                    color: '#cfe1ee',
+                    color: 'rgb(var(--twitter-sent-rgb))',
                   }}
                 >
                   Twitter
@@ -569,8 +569,8 @@ export default function Connect() {
               }}
             >
               <div
+                className="font-orbitron"
                 style={{
-                  fontFamily: 'Orbitron, sans-serif',
                   fontWeight: 700,
                   fontSize: cfs(14),
                   letterSpacing: '.1em',

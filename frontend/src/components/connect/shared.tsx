@@ -157,7 +157,7 @@ export const IG_DESTS: IgDest[] = [
 // eslint-disable-next-line react-refresh/only-export-components
 export const IG_BGS = [
   'linear-gradient(160deg,#2a1236,#0b0710)',
-  'linear-gradient(160deg,#f0a4d4,#8a3fd0)',
+  'linear-gradient(160deg,rgb(var(--instagram-violet-rgb)),rgb(var(--instagram-violet-deep-rgb)))',
   'linear-gradient(160deg,#0f2a3a,#04121c)',
   'linear-gradient(160deg,rgb(var(--constellation-gold-rgb)),#8a5a1f)',
 ];
@@ -169,7 +169,13 @@ export const TW_AUDIENCES = ['Everyone', 'Circle only'];
 export const TW_MAX = 280;
 export const TW_RING_CIRCUMFERENCE = 94.2;
 
-export function WhatsAppIcon({ size = 24, color = '#57dc96' }: { size?: number; color?: string }) {
+export function WhatsAppIcon({
+  size = 24,
+  color = 'rgb(var(--whatsapp-bright-rgb))',
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -184,7 +190,13 @@ export function WhatsAppIcon({ size = 24, color = '#57dc96' }: { size?: number; 
   );
 }
 
-export function InstagramIcon({ size = 24, color = '#e278be' }: { size?: number; color?: string }) {
+export function InstagramIcon({
+  size = 24,
+  color = 'rgb(var(--instagram-pink-rgb))',
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -200,7 +212,13 @@ export function InstagramIcon({ size = 24, color = '#e278be' }: { size?: number;
   );
 }
 
-export function TwitterIcon({ size = 24, color = '#cfe1ee' }: { size?: number; color?: string }) {
+export function TwitterIcon({
+  size = 24,
+  color = 'rgb(var(--twitter-sent-rgb))',
+}: {
+  size?: number;
+  color?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -231,7 +249,7 @@ export function LinkIcon({ size = 15, color }: { size?: number; color: string })
 
 export function CheckTickIcon({
   size = 11,
-  color = '#08131f',
+  color = 'rgb(var(--constellation-ink-rgb))',
   opacity = 1,
 }: {
   size?: number;

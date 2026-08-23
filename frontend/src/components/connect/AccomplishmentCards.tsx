@@ -24,7 +24,8 @@ export function AccomplishmentCardPreview({
         borderRadius: 24,
         overflow: 'hidden',
         aspectRatio: '4/5',
-        background: 'linear-gradient(165deg,#16233b,#070b15)',
+        background:
+          'linear-gradient(165deg,rgb(var(--constellation-panel-a-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
         border: '1px solid rgb(var(--constellation-gold-rgb) / .38)',
         boxShadow: '0 30px 80px rgba(2,6,15,.75)',
       }}
@@ -86,7 +87,7 @@ export function AccomplishmentCardPreview({
               fontSize: cfs(10),
               letterSpacing: '.16em',
               textTransform: 'uppercase',
-              color: '#7e97a8',
+              color: 'rgb(var(--constellation-slate-mid-rgb))',
             }}
           >
             {date}
@@ -99,16 +100,16 @@ export function AccomplishmentCardPreview({
               fontSize: cfs(12),
               letterSpacing: '.2em',
               textTransform: 'uppercase',
-              color: '#7e97a8',
+              color: 'rgb(var(--constellation-slate-mid-rgb))',
             }}
           >
             {childName}
             {childAge && ` · Age ${childAge}`}
           </div>
           <div
+            className="font-orbitron"
             style={{
               marginTop: 10,
-              fontFamily: 'Orbitron, sans-serif',
               fontWeight: 900,
               fontSize: cfs(26),
               lineHeight: 1.16,
@@ -123,7 +124,7 @@ export function AccomplishmentCardPreview({
               fontSize: cfs(15.5),
               fontWeight: 600,
               lineHeight: 1.45,
-              color: '#b9cedb',
+              color: 'rgb(var(--constellation-caption-rgb))',
             }}
           >
             {caption}
@@ -140,8 +141,8 @@ export function AccomplishmentCardPreview({
           }}
         >
           <div
+            className="font-orbitron"
             style={{
-              fontFamily: 'Orbitron, sans-serif',
               fontWeight: 900,
               fontSize: cfs(12),
               letterSpacing: '.14em',
@@ -206,7 +207,7 @@ export function AccomplishmentRow({
         padding: '15px 17px',
         background: active
           ? 'linear-gradient(150deg,rgba(38,54,82,.9),rgba(8,13,24,.8))'
-          : 'rgba(9,13,22,.6)',
+          : 'rgb(var(--constellation-card-rgb) / .6)',
         border: `1px solid ${active ? 'rgb(var(--constellation-gold-rgb) / .55)' : 'rgb(var(--constellation-cyan-rgb) / .12)'}`,
         transition: 'all .22s ease',
       }}
@@ -219,7 +220,8 @@ export function AccomplishmentRow({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
+          background:
+            'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
           border: '1.5px solid rgb(var(--constellation-gold-rgb) / .55)',
         }}
       >
@@ -272,7 +274,7 @@ export function AccomplishmentRow({
             width: 14,
             height: 14,
             borderRadius: '50%',
-            border: `1.5px solid ${active ? 'rgb(var(--constellation-gold-rgb))' : 'rgba(120,145,165,.4)'}`,
+            border: `1.5px solid ${active ? 'rgb(var(--constellation-gold-rgb))' : 'rgb(var(--constellation-ring-faint-rgb) / .4)'}`,
             background: active ? 'rgb(var(--constellation-gold-rgb))' : 'transparent',
             transition: 'all .2s ease',
           }}

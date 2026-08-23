@@ -20,8 +20,8 @@ interface FamousPerson {
 }
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
-const CARD_BG = 'linear-gradient(180deg, rgba(10,34,84,.55), rgba(6,18,48,.35))';
-const CARD_BORDER = '1px solid rgba(92,166,255,.16)';
+const CARD_BG = 'linear-gradient(180deg, rgba(10,34,84,.55), rgb(var(--constellation-navy-card-rgb) / .35))';
+const CARD_BORDER = '1px solid rgb(var(--constellation-blue-line-rgb) / .16)';
 const SEC_LABEL: CSSProperties = {
   fontSize: 13,
   letterSpacing: '.34em',
@@ -329,8 +329,8 @@ const SPARKS = [
     left: '8%',
     delay: '.1s',
     size: 9,
-    color: '#9fd4ff',
-    glow: 'rgba(120,190,255,.9)',
+    color: 'rgb(var(--constellation-blue-bright-rgb))',
+    glow: 'rgb(var(--constellation-blue-sky-rgb) / .9)',
     dur: '3.4s',
   },
   {
@@ -345,7 +345,7 @@ const SPARKS = [
     left: '33%',
     delay: '1.6s',
     size: 8,
-    color: '#f7dfa4',
+    color: 'rgb(var(--constellation-gold-soft-rgb))',
     glow: 'rgb(var(--constellation-gold-light-rgb) / .9)',
     dur: '3.8s',
   },
@@ -353,23 +353,23 @@ const SPARKS = [
     left: '47%',
     delay: '.4s',
     size: 5,
-    color: '#7fc6ff',
-    glow: 'rgba(120,190,255,.8)',
+    color: 'rgb(var(--constellation-blue-vivid-rgb))',
+    glow: 'rgb(var(--constellation-blue-sky-rgb) / .8)',
     dur: '4.6s',
   },
   {
     left: '62%',
     delay: '1.2s',
     size: 9,
-    color: '#9fd4ff',
-    glow: 'rgba(120,190,255,.9)',
+    color: 'rgb(var(--constellation-blue-bright-rgb))',
+    glow: 'rgb(var(--constellation-blue-sky-rgb) / .9)',
     dur: '3.2s',
   },
   {
     left: '74%',
     delay: '2.1s',
     size: 7,
-    color: '#f7dfa4',
+    color: 'rgb(var(--constellation-gold-soft-rgb))',
     glow: 'rgb(var(--constellation-gold-light-rgb) / .85)',
     dur: '4.4s',
   },
@@ -377,8 +377,8 @@ const SPARKS = [
     left: '86%',
     delay: '.7s',
     size: 8,
-    color: '#7fc6ff',
-    glow: 'rgba(120,190,255,.8)',
+    color: 'rgb(var(--constellation-blue-vivid-rgb))',
+    glow: 'rgb(var(--constellation-blue-sky-rgb) / .8)',
     dur: '3.6s',
   },
   {
@@ -483,7 +483,7 @@ export default function PersonalityProfile() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#03081a',
+          background: 'rgb(var(--constellation-navy-black-rgb))',
         }}
       >
         <motion.div
@@ -512,19 +512,19 @@ export default function PersonalityProfile() {
           alignItems: 'center',
           justifyContent: 'center',
           gap: 16,
-          background: '#03081a',
+          background: 'rgb(var(--constellation-navy-black-rgb))',
           padding: 24,
         }}
       >
-        <p style={{ color: '#8fb6e6' }}>Something went wrong. Please try again.</p>
+        <p style={{ color: 'rgb(var(--constellation-blue-mid-rgb))' }}>Something went wrong. Please try again.</p>
         <button
           onClick={() => void navigate('/Home')}
           style={{
             padding: '10px 32px',
             borderRadius: 100,
             border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
-            background: 'rgba(20,60,140,.45)',
-            color: '#f7e6bd',
+            background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
+            color: 'rgb(var(--constellation-gold-hazy-rgb))',
             cursor: 'pointer',
             fontSize: 14,
             fontFamily: 'Barlow, sans-serif',
@@ -612,9 +612,9 @@ export default function PersonalityProfile() {
           inset: 0,
           overflow: 'hidden',
           fontFamily: 'Barlow, sans-serif',
-          color: '#dbeaff',
+          color: 'rgb(var(--constellation-blue-frost-rgb))',
           background:
-            'radial-gradient(80% 60% at 50% 45%, rgba(30,100,220,.55) 0%, rgba(3,10,32,0) 70%), linear-gradient(180deg,#03081a,#01040e)',
+            'radial-gradient(80% 60% at 50% 45%, rgba(30,100,220,.55) 0%, rgba(3,10,32,0) 70%), linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)),#01040e)',
         }}
       >
         {/* Dot grid */}
@@ -623,7 +623,7 @@ export default function PersonalityProfile() {
             position: 'absolute',
             inset: 0,
             opacity: 0.4,
-            backgroundImage: 'radial-gradient(rgba(120,190,255,.4) 1px, transparent 1px)',
+            backgroundImage: 'radial-gradient(rgb(var(--constellation-blue-sky-rgb) / .4) 1px, transparent 1px)',
             backgroundSize: '28px 28px',
             maskImage: 'radial-gradient(50% 45% at 50% 45%, #000, transparent 80%)',
           }}
@@ -643,8 +643,8 @@ export default function PersonalityProfile() {
               borderRadius: '50%',
               border:
                 i === 0
-                  ? '2px solid rgba(140,205,255,.7)'
-                  : `1px solid ${i === 1 ? 'rgb(var(--constellation-gold-light-rgb) / .45)' : 'rgba(140,205,255,.35)'}`,
+                  ? '2px solid rgb(var(--constellation-blue-pastel-rgb) / .7)'
+                  : `1px solid ${i === 1 ? 'rgb(var(--constellation-gold-light-rgb) / .45)' : 'rgb(var(--constellation-blue-pastel-rgb) / .35)'}`,
               animation: `ppRingOut 2.6s ease-out ${delay}s infinite`,
             }}
           />
@@ -686,7 +686,7 @@ export default function PersonalityProfile() {
               fontSize: 13,
               letterSpacing: '.5em',
               textTransform: 'uppercase',
-              color: '#79b6ff',
+              color: 'rgb(var(--constellation-blue-strong-rgb))',
               animation: 'ppRiseIn .8s ease-out both',
             }}
           >
@@ -712,7 +712,7 @@ export default function PersonalityProfile() {
               border: '1px solid rgb(var(--constellation-gold-light-rgb) / .55)',
               borderRadius: 18,
               overflow: 'hidden',
-              background: 'linear-gradient(180deg, rgba(14,44,104,.7), rgba(6,18,48,.5))',
+              background: 'linear-gradient(180deg, rgba(14,44,104,.7), rgb(var(--constellation-navy-card-rgb) / .5))',
               boxShadow:
                 '0 0 60px rgba(50,130,240,.45), 0 0 34px rgb(var(--constellation-gold-light-rgb) / .3)',
               animation: 'ppBadgePop .8s cubic-bezier(.2,.9,.2,1) .7s both',
@@ -736,19 +736,19 @@ export default function PersonalityProfile() {
                 fontFamily: "'Playfair Display', serif",
                 fontSize: 'clamp(26px, 7vw, 64px)',
                 lineHeight: 1.05,
-                color: '#eaf4ff',
+                color: 'rgb(var(--constellation-blue-pale-rgb))',
                 textShadow: '0 0 34px rgba(80,160,255,.9)',
               }}
             >
               {childName} is a<br />
-              <span style={{ fontStyle: 'italic', color: '#6db3ff' }}>{typeTitle}</span>
+              <span style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}>{typeTitle}</span>
             </div>
           </div>
 
           <div
             style={{
               fontSize: 'clamp(14px, 4vw, 17px)',
-              color: '#8fb6e6',
+              color: 'rgb(var(--constellation-blue-mid-rgb))',
               maxWidth: 420,
               lineHeight: 1.55,
               animation: 'ppRiseIn .9s ease-out 1.2s both',
@@ -765,12 +765,12 @@ export default function PersonalityProfile() {
               padding: 'clamp(10px, 3vw, 14px) clamp(20px, 6vw, 30px)',
               borderRadius: 999,
               border: '1px solid rgb(var(--constellation-gold-light-rgb) / .7)',
-              background: 'rgba(20,60,140,.55)',
-              color: '#f7e6bd',
+              background: 'rgb(var(--constellation-blue-royal-rgb) / .55)',
+              color: 'rgb(var(--constellation-gold-hazy-rgb))',
               fontSize: 'clamp(13px, 3.5vw, 16px)',
               letterSpacing: '.12em',
               textTransform: 'uppercase',
-              boxShadow: '0 0 28px rgba(60,150,255,.4)',
+              boxShadow: '0 0 28px rgb(var(--constellation-blue-electric-rgb) / .4)',
               cursor: 'pointer',
               animation: 'ppRiseIn .8s ease-out 1.6s both',
               fontFamily: 'Barlow, sans-serif',
@@ -790,10 +790,10 @@ export default function PersonalityProfile() {
     <div
       style={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg,#03081a 0%, #020617 50%, #010410 100%)',
+        background: 'linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
         padding: `40px 16px 80px`,
         fontFamily: 'Barlow, sans-serif',
-        color: '#dbeaff',
+        color: 'rgb(var(--constellation-blue-frost-rgb))',
       }}
     >
       <div
@@ -802,8 +802,8 @@ export default function PersonalityProfile() {
           margin: '0 auto',
           padding: pad,
           background:
-            'radial-gradient(120% 80% at 50% -10%, rgba(24,86,190,.55) 0%, rgba(4,14,40,0) 60%), radial-gradient(90% 60% at 50% 108%, rgba(20,72,170,.45) 0%, rgba(4,14,40,0) 65%), linear-gradient(180deg,#03081a 0%, #020617 50%, #010410 100%)',
-          border: '1px solid rgba(92,166,255,.28)',
+            'radial-gradient(120% 80% at 50% -10%, rgba(24,86,190,.55) 0%, rgb(var(--constellation-navy-glow-rgb) / 0) 60%), radial-gradient(90% 60% at 50% 108%, rgba(20,72,170,.45) 0%, rgb(var(--constellation-navy-glow-rgb) / 0) 65%), linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
+          border: '1px solid rgb(var(--constellation-blue-line-rgb) / .28)',
           borderRadius: isWide ? 22 : 14,
           boxShadow: '0 24px 80px rgba(0,0,0,.5)',
           animation: 'ppPageIn .7s ease-out both',
@@ -821,7 +821,7 @@ export default function PersonalityProfile() {
                 fontSize: 11,
                 letterSpacing: '.22em',
                 textTransform: 'uppercase',
-                color: '#8fb6e6',
+                color: 'rgb(var(--constellation-blue-mid-rgb))',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -837,8 +837,8 @@ export default function PersonalityProfile() {
                 padding: isWide ? '9px 16px' : '9px 12px',
                 borderRadius: 999,
                 border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
-                background: 'rgba(20,60,140,.45)',
-                color: '#f7e6bd',
+                background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
+                color: 'rgb(var(--constellation-gold-hazy-rgb))',
                 fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
                 letterSpacing: '.16em',
@@ -872,8 +872,8 @@ export default function PersonalityProfile() {
                 padding: isWide ? '9px 16px' : '9px 12px',
                 borderRadius: 999,
                 border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
-                background: 'rgba(20,60,140,.45)',
-                color: '#f7e6bd',
+                background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
+                color: 'rgb(var(--constellation-gold-hazy-rgb))',
                 fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
                 letterSpacing: '.16em',
@@ -904,7 +904,7 @@ export default function PersonalityProfile() {
                 fontSize: 13,
                 letterSpacing: '.42em',
                 textTransform: 'uppercase',
-                color: '#79b6ff',
+                color: 'rgb(var(--constellation-blue-strong-rgb))',
               }}
             >
               Personality Analysis
@@ -923,13 +923,13 @@ export default function PersonalityProfile() {
                   fontFamily: "'Playfair Display', serif",
                   fontSize: isWide ? 54 : 32,
                   lineHeight: 1,
-                  color: '#eaf4ff',
+                  color: 'rgb(var(--constellation-blue-pale-rgb))',
                   textShadow: '0 0 26px rgba(70,150,255,.75)',
                   textAlign: 'center',
                 }}
               >
                 {childName} the{' '}
-                <span style={{ fontStyle: 'italic', color: '#6db3ff' }}>{typeTitle}</span>
+                <span style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}>{typeTitle}</span>
               </div>
               <div
                 style={{
@@ -979,7 +979,7 @@ export default function PersonalityProfile() {
                   width: ringD,
                   height: ringD,
                   margin: `${-ringD / 2}px 0 0 ${-ringD / 2}px`,
-                  border: '1px solid rgba(110,180,255,.16)',
+                  border: '1px solid rgb(var(--constellation-blue-haze-rgb) / .16)',
                   borderRadius: '50%',
                 }}
               />
@@ -995,7 +995,7 @@ export default function PersonalityProfile() {
                   borderRadius: '50%',
                   padding: Math.max(3, Math.round(7 * dScale)),
                   background: 'linear-gradient(150deg, #4aa0ff, #f7e0a3 55%, #2b76e0)',
-                  boxShadow: '0 0 34px rgba(60,150,255,.4)',
+                  boxShadow: '0 0 34px rgb(var(--constellation-blue-electric-rgb) / .4)',
                 }}
               >
                 {avatarUrl ? (
@@ -1036,7 +1036,7 @@ export default function PersonalityProfile() {
                       height: '100%',
                       borderRadius: '50%',
                       background:
-                        'radial-gradient(circle at 38% 32%, rgba(60,120,200,0.5), rgba(4,14,40,0.96))',
+                        'radial-gradient(circle at 38% 32%, rgba(60,120,200,0.5), rgb(var(--constellation-navy-glow-rgb) / 0.96))',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1047,7 +1047,7 @@ export default function PersonalityProfile() {
                         fontFamily: "'Playfair Display', serif",
                         fontSize: Math.max(24, Math.round(72 * dScale)),
                         fontWeight: 700,
-                        color: '#eaf4ff',
+                        color: 'rgb(var(--constellation-blue-pale-rgb))',
                       }}
                     >
                       {initials}
@@ -1077,7 +1077,7 @@ export default function PersonalityProfile() {
                       fontSize: traitFontSize,
                       lineHeight: 1.3,
                       textAlign: 'center',
-                      color: '#cfe6ff',
+                      color: 'rgb(var(--constellation-blue-soft-rgb))',
                     }}
                   >
                     {trait}
@@ -1112,7 +1112,7 @@ export default function PersonalityProfile() {
                       gap: 14,
                     }}
                   >
-                    <div style={{ fontSize: 15, color: '#cfe6ff' }}>{ts.label}</div>
+                    <div style={{ fontSize: 15, color: 'rgb(var(--constellation-blue-soft-rgb))' }}>{ts.label}</div>
                     <div
                       style={{
                         height: 12,
@@ -1171,7 +1171,7 @@ export default function PersonalityProfile() {
                     style={{
                       position: 'relative',
                       height: 150,
-                      border: '1px solid rgba(110,180,255,.22)',
+                      border: '1px solid rgb(var(--constellation-blue-haze-rgb) / .22)',
                       borderRadius: 12,
                       overflow: 'hidden',
                       background: 'rgba(4,16,44,.7)',
@@ -1196,7 +1196,7 @@ export default function PersonalityProfile() {
                         position: 'absolute',
                         inset: 0,
                         background:
-                          'linear-gradient(0deg, rgba(3,12,36,.92) 0%, rgba(3,12,36,.25) 55%, rgba(3,12,36,0) 100%)',
+                          'linear-gradient(0deg, rgb(var(--constellation-void-panel-rgb) / .92) 0%, rgb(var(--constellation-void-panel-rgb) / .25) 55%, rgb(var(--constellation-void-panel-rgb) / 0) 100%)',
                       }}
                     />
                     <div
@@ -1256,7 +1256,7 @@ export default function PersonalityProfile() {
                       <div
                         style={{
                           fontSize: 14,
-                          color: '#cfe6ff',
+                          color: 'rgb(var(--constellation-blue-soft-rgb))',
                           textAlign: 'center',
                           lineHeight: 1.3,
                         }}
@@ -1293,7 +1293,7 @@ export default function PersonalityProfile() {
                     fontFamily: "'Playfair Display', serif",
                     fontSize: 48,
                     lineHeight: 0.6,
-                    color: '#e6c37c',
+                    color: 'rgb(var(--constellation-gold-dark-rgb))',
                     opacity: 0.9,
                     flexShrink: 0,
                   }}
@@ -1319,7 +1319,7 @@ export default function PersonalityProfile() {
                     fontSize: 48,
                     lineHeight: 0.6,
                     alignSelf: 'flex-end',
-                    color: '#e6c37c',
+                    color: 'rgb(var(--constellation-gold-dark-rgb))',
                     opacity: 0.9,
                     flexShrink: 0,
                   }}

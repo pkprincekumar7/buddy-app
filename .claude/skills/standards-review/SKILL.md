@@ -31,7 +31,7 @@ The full checklists live in separate reference files — load only the one(s) ma
 backend-only run doesn't pull frontend items (or vice versa) into context:
 
 - Backend (FastAPI / MongoDB / Redis), 16 items: `references/backend-checklist.md`
-- Frontend (React / TypeScript / Tailwind), 19 items: `references/frontend-checklist.md`
+- Frontend (React / TypeScript / Tailwind), 20 items: `references/frontend-checklist.md`
 
 ## How to run the audit
 

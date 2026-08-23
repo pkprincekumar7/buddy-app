@@ -646,14 +646,13 @@ export default function GrowthAreas() {
                   {childName ? `${childName} · Growth Map` : 'Growth Map'}
                 </div>
                 <h1
-                  className="m-0 font-bold"
+                  className="m-0 font-bold font-orbitron"
                   style={{
                     // The clamp is wrapped rather than replaced: it still does the
                     // fluid work between 22 and 32px, the scale then lifts the
                     // whole range. Passing the clamp raw would opt the one heading
                     // on the page out of --ga-type-scale.
                     fontSize: 'calc(clamp(22px,2.6vw,32px) * var(--ga-type-scale, 1))',
-                    fontFamily: 'Orbitron, sans-serif',
                     color: 'rgb(var(--constellation-cyan-pale-rgb))',
                   }}
                 >
@@ -776,7 +775,8 @@ export default function GrowthAreas() {
                             style={{
                               width: size,
                               height: size,
-                              background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
+                              background:
+                                'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                               border: `1.5px solid ${done ? 'rgb(var(--constellation-gold-rgb) / .95)' : 'rgb(var(--constellation-gold-rgb) / .75)'}`,
                               boxShadow: done
                                 ? `0 0 0 2px rgba(${area.hue},.5), 0 0 30px rgba(${area.hue},.45)`
