@@ -32,11 +32,30 @@ class ChildResponse(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] = Field(default_factory=list)
-    # Personality Journey dimension-circle unlock flags (DimensionCircles page).
-    # discover_completed gates the Grow circle; grow_completed gates Transform
-    # (checked together with a live query of the growth_areas collection);
-    # transform_visited gates Release/Connect; release_visited/connect_visited
-    # advance which circle the hub's spoke points to next.
+    # Personality Journey progression flags — the full chain, in order:
+    #   onboarding_profile_completed → conversational_onboarding_completed →
+    #   discover_completed → grow_completed → transform_visited →
+    #   release_visited → connect_visited
+    # Each step (except the first) requires the previous one to already be
+    # true — enforced centrally in app/routers/children.py's
+    # mark_journey_progress / update_child, not scattered per call site.
+    #
+    # None of these seven are declared on ChildCreate/ChildPatch below — a
+    # client can never set them via POST/PATCH /children (see
+    # _CHILD_SYSTEM_FIELDS in app/routers/children.py).
+    #   - grow_completed is computed live from the growth_areas collection,
+    #     never stored (app/services/journey_progress.py).
+    #   - conversational_onboarding_completed is set as a server-side side
+    #     effect, inside update_child, the moment a patch legitimately
+    #     transitions onboarding_completed to true — not from a dedicated
+    #     client call, since that transition happens from more than one
+    #     frontend call site (ConversationalOnboarding.tsx,
+    #     PersonalityJourney.tsx) and hooking the one shared backend path
+    #     covers all of them without each needing to remember a second call.
+    #   - the remaining five are one-way (false→true), writable only via
+    #     POST /children/{id}/progress/{flag}.
+    onboarding_profile_completed: bool = False
+    conversational_onboarding_completed: bool = False
     discover_completed: bool = False
     grow_completed: bool = False
     transform_visited: bool = False
@@ -98,11 +117,11 @@ class ChildCreate(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
-    discover_completed: bool = False
-    grow_completed: bool = False
-    transform_visited: bool = False
-    release_visited: bool = False
-    connect_visited: bool = False
+    # Journey progress flags (onboarding_profile_completed,
+    # conversational_onboarding_completed, discover_completed,
+    # grow_completed, transform_visited, release_visited, connect_visited)
+    # are deliberately NOT declared here — see the comment on ChildResponse
+    # above.
 
     @field_validator("avatar_url")
     @classmethod
@@ -166,11 +185,11 @@ class ChildPatch(BaseModel):
     social_behaviour: str | None = None
     emotional_behaviour: str | None = None
     visited_tabs: list[str] | None = None
-    discover_completed: bool | None = None
-    grow_completed: bool | None = None
-    transform_visited: bool | None = None
-    release_visited: bool | None = None
-    connect_visited: bool | None = None
+    # Journey progress flags (onboarding_profile_completed,
+    # conversational_onboarding_completed, discover_completed,
+    # grow_completed, transform_visited, release_visited, connect_visited)
+    # are deliberately NOT declared here — see the comment on ChildResponse
+    # above.
 
     @field_validator("avatar_url")
     @classmethod

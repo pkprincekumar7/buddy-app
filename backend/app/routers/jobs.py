@@ -10,6 +10,7 @@ from app import models
 from app.deps import CurrentParent, Db, get_current_parent
 from app.limiter import user_limiter
 from app.schemas.jobs import EnqueueJobRequest, EnqueueJobResponse, JobStatusResponse
+from app.services.journey_progress import has_completed_growth_area
 
 # Every route needs an authenticated parent whose id/location scope the query —
 # declared at the router level as a safety net, and again per-function (below)
@@ -25,10 +26,39 @@ _MAX_IN_FLIGHT_PER_TYPE = 2
 # enforced here so it can't be bypassed by enqueuing the job directly. Each job
 # type here is exclusive to its stage (verified against every frontend call site
 # before adding this), so gating it can't block an unrelated feature.
+#
+# generate_life_pathway is handled separately below, not through this dict —
+# its dependency (grow_completed) is computed live from the growth_areas
+# collection (app/services/journey_progress.py), never trusted from a stored
+# field, since a plain boolean here could be set directly by the client.
+# Every other entry's dependency IS read straight off the child document below:
+# unlike grow_completed, these flags have no independent data footprint to
+# derive from, so they stay stored flags — hardened instead by only being
+# writable one-way through POST /children/{id}/progress/{flag}.
+#
+# generate_growth_parent_questions/generate_growth_child_rounds/
+# generate_recommendations/generate_activity are all exclusive to the Growth
+# Areas flow (verified against every frontend call site: only
+# GrowthAreas.tsx/useGrowthAreaQuestions.ts enqueue them; generate_activity
+# currently has no caller anywhere, so gating it is a no-op today) — same
+# discover_completed dependency as the growth-areas save endpoint itself
+# (POST /user/completed-growth-areas in app/routers/users.py).
 _PROGRESSION_REQUIREMENTS: dict[str, tuple[str, str]] = {
-    "generate_life_pathway": (
-        "grow_completed",
-        "Complete a growth area before generating the Life Pathway.",
+    "generate_growth_parent_questions": (
+        "discover_completed",
+        "Complete Discover before starting a growth area.",
+    ),
+    "generate_growth_child_rounds": (
+        "discover_completed",
+        "Complete Discover before starting a growth area.",
+    ),
+    "generate_recommendations": (
+        "discover_completed",
+        "Complete Discover before starting a growth area.",
+    ),
+    "generate_activity": (
+        "discover_completed",
+        "Complete Discover before starting a growth area.",
     ),
     "generate_observations": (
         "transform_visited",
@@ -101,6 +131,14 @@ async def enqueue_job(
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    if body.type == "generate_life_pathway" and not await has_completed_growth_area(
+        db, user_id, body.child_id, user["location"]
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Complete a growth area before generating the Life Pathway.",
+        )
 
     requirement = _PROGRESSION_REQUIREMENTS.get(body.type)
     if requirement:

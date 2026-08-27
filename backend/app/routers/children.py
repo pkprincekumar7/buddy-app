@@ -1,12 +1,14 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 import boto3
 import botocore.exceptions
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
 from pymongo import ASCENDING, DESCENDING
 
@@ -18,6 +20,7 @@ from app.schemas.children import (
     ChildPatch,
     ChildResponse,
 )
+from app.services.journey_progress import has_completed_growth_area
 
 # Fields returned by the child-card list view. Heavy sub-documents
 # (personality scores/traits, full recommendations blob) are excluded and
@@ -65,6 +68,19 @@ _CHILD_SYSTEM_FIELDS = {
     "updated_at",  # server-managed timestamps
     "is_deleted",
     "deleted_at",  # soft-delete — only writable via DELETE /children/{id}
+    # Personality Journey progression flags — never settable via this generic
+    # PATCH. grow_completed is derived live (see app/services/journey_progress.py)
+    # rather than stored at all. conversational_onboarding_completed is set as
+    # a side effect inside update_child below, not from client input directly.
+    # The rest have no independent data footprint to derive from, so they're
+    # only writable one-way (false→true) through POST /children/{id}/progress/{flag}.
+    "onboarding_profile_completed",
+    "conversational_onboarding_completed",
+    "discover_completed",
+    "grow_completed",
+    "transform_visited",
+    "release_visited",
+    "connect_visited",
 }
 
 # Child fields the Life Pathway milestone cache is generated against. A change to
@@ -104,6 +120,19 @@ def _child_to_api(doc: dict) -> dict:
     }
     out["id"] = doc["_id"]
     out["created_date"] = doc["created_at"].isoformat() if doc.get("created_at") else ""
+    return out
+
+
+async def _child_to_api_with_progress(
+    doc: dict, db: AsyncIOMotorDatabase, user: dict
+) -> dict:
+    """_child_to_api, plus grow_completed recomputed live from the growth_areas
+    collection — never trusted from the stored document. See
+    app/services/journey_progress.py for why."""
+    out = _child_to_api(doc)
+    out["grow_completed"] = await has_completed_growth_area(
+        db, user["_id"], doc["_id"], user["location"]
+    )
     return out
 
 
@@ -203,7 +232,7 @@ async def get_child(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
-    return _child_to_api(doc)
+    return await _child_to_api_with_progress(doc, db, user)
 
 
 @router.patch(
@@ -254,6 +283,23 @@ async def update_child(
         "location": user["location"],
         "is_deleted": False,
     }
+
+    # Auto-derive conversational_onboarding_completed as a side effect of the
+    # client legitimately committing onboarding_completed=true — this is the
+    # one shared backend path both ConversationalOnboarding.tsx and
+    # PersonalityJourney.tsx's finalize-personality logic funnel through, so
+    # hooking it here covers every current and future call site without each
+    # one needing to remember a second API call (see the comment on
+    # ChildResponse in app/schemas/children.py for the full chain).
+    # Requires onboarding_profile_completed to already be true; if it isn't,
+    # this patch still succeeds (onboarding_completed itself is not blocked)
+    # but the marker is simply left unset.
+    if set_fields.get("onboarding_completed"):
+        prev_profile = await db[models.CHILDREN].find_one(
+            owner_filter, {"onboarding_profile_completed": 1}
+        )
+        if prev_profile and prev_profile.get("onboarding_profile_completed"):
+            set_fields["conversational_onboarding_completed"] = True
 
     # Drop the Life Pathway cache when any input it was generated against changes,
     # so it regenerates lazily against the new values (see _LIFE_PATHWAY_INPUTS).
@@ -308,7 +354,106 @@ async def update_child(
         except Exception:
             log.exception("life pathway cache invalidation failed child_id=%s", child_id)
 
-    return _child_to_api(doc)
+    return await _child_to_api_with_progress(doc, db, user)
+
+
+async def _always_true(child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str) -> bool:
+    return True
+
+
+async def _requires_conversational_onboarding(
+    child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str
+) -> bool:
+    return bool(child.get("conversational_onboarding_completed"))
+
+
+async def _requires_grow_completed(
+    child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str
+) -> bool:
+    return await has_completed_growth_area(db, user["_id"], child_id, user["location"])
+
+
+async def _requires_transform_visited(
+    child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str
+) -> bool:
+    return bool(child.get("transform_visited"))
+
+
+async def _requires_release_visited(
+    child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str
+) -> bool:
+    return bool(child.get("release_visited"))
+
+
+# Ordered Personality Journey progression chain — one entry per flag settable
+# through POST /children/{id}/progress/{flag}, mapped to the async check that
+# must pass before it can flip to true, and the 403 detail on failure.
+# Centralised here rather than duplicated per call site: the whole chain
+# reads top-to-bottom in one place instead of scattered ad hoc conditions.
+# grow_completed and conversational_onboarding_completed aren't in this dict
+# because neither is settable through this endpoint at all — see the
+# ChildResponse comment in app/schemas/children.py for why.
+_PROGRESS_PRECONDITIONS: dict[str, tuple[Callable[..., Awaitable[bool]], str]] = {
+    "onboarding_profile_completed": (_always_true, ""),
+    "discover_completed": (
+        _requires_conversational_onboarding,
+        "Complete onboarding before Discover.",
+    ),
+    "transform_visited": (
+        _requires_grow_completed,
+        "Complete a growth area before visiting Transform.",
+    ),
+    "release_visited": (_requires_transform_visited, "Visit Transform before Release."),
+    "connect_visited": (_requires_release_visited, "Visit Release before Connect."),
+}
+
+
+@router.post(
+    "/children/{child_id}/progress/{flag}",
+    response_model=ChildResponse,
+    description=(
+        "Mark a Personality Journey progression flag as done. One-way "
+        "(false→true), one flag per call, gated on the previous step in the "
+        "chain already being true — this is the only way to set these flags; "
+        "PATCH /children/{child_id} silently ignores them."
+    ),
+)
+@user_limiter.limit("30/minute")
+async def mark_journey_progress(
+    request: Request,
+    user: CurrentParent,
+    db: Db,
+    child_id: str = Path(..., min_length=1, max_length=100),
+    flag: Literal[
+        "onboarding_profile_completed",
+        "discover_completed",
+        "transform_visited",
+        "release_visited",
+        "connect_visited",
+    ] = Path(...),
+):
+    owner_filter = {
+        "_id": child_id,
+        "user_id": user["_id"],
+        "location": user["location"],
+        "is_deleted": False,
+    }
+    child = await db[models.CHILDREN].find_one(owner_filter)
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+    check, message = _PROGRESS_PRECONDITIONS[flag]
+    if not await check(child, db, user, child_id):
+        raise HTTPException(status_code=403, detail=message)
+
+    doc = await db[models.CHILDREN].find_one_and_update(
+        owner_filter,
+        {"$set": {flag: True, "updated_at": datetime.now(UTC)}},
+        return_document=True,
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Child not found")
+    return await _child_to_api_with_progress(doc, db, user)
 
 
 @router.delete(

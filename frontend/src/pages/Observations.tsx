@@ -632,7 +632,7 @@ export default function Observations() {
   // — this advances which circle the DimensionCircles hub points to next.
   useEffect(() => {
     if (!childId || !childData?.id || childData.release_visited) return;
-    api.entities.Child.update(childId, { release_visited: true }).catch(console.error);
+    api.entities.Child.markProgress(childId, 'release_visited').catch(console.error);
   }, [childId, childData?.id, childData?.release_visited]);
 
   // Kick off generation once, and only once there is something to ground it in.

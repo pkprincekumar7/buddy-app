@@ -78,7 +78,7 @@ export function useLifePathwayData(childId: string | undefined) {
   // — this unlocks the Release/Connect circles on the DimensionCircles page.
   useEffect(() => {
     if (!childId || !data?.childData?.id || data.childData.transform_visited) return;
-    api.entities.Child.update(childId, { transform_visited: true }).catch(console.error);
+    api.entities.Child.markProgress(childId, 'transform_visited').catch(console.error);
   }, [childId, data?.childData?.id, data?.childData?.transform_visited]);
 
   return {

@@ -79,6 +79,7 @@ jobs:
       TF_VAR_spa_bucket_name:          ${{ secrets.SPA_BUCKET_NAME }}
       TF_VAR_assets_bucket_name:       ${{ secrets.ASSETS_BUCKET_NAME }}
       TF_VAR_jwt_public_keys:          ${{ secrets.JWT_PUBLIC_KEYS }}
+      TF_VAR_origin_verify_secret:     ${{ secrets.ORIGIN_VERIFY_SECRET }}
       TF_VAR_global_logging_bucket_name: ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
       # TF_VAR_uploads_bucket_name is not set here — it is region-specific and
       # written to GITHUB_ENV by the "Resolve uploads bucket name" step below.
@@ -101,6 +102,7 @@ jobs:
           UPLOADS_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
           JWT_PUBLIC_KEYS:               ${{ secrets.JWT_PUBLIC_KEYS }}
           GLOBAL_LOGGING_BUCKET_NAME:    ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
+          ORIGIN_VERIFY_SECRET:          ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                      ]] && missing+=("ROLE_ARN")
@@ -114,6 +116,7 @@ jobs:
           [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ "${{ inputs.backend_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
           [[ -z "$JWT_PUBLIC_KEYS"               ]] && missing+=("JWT_PUBLIC_KEYS")
+          [[ -z "$ORIGIN_VERIFY_SECRET"          ]] && missing+=("ORIGIN_VERIFY_SECRET")
           # GLOBAL_LOGGING_BUCKET_NAME required on prod (CloudTrail us-east-1 + WAF logging)
           if [[ "${{ inputs.environment }}" == "prod" && -z "$GLOBAL_LOGGING_BUCKET_NAME" ]]; then
             missing+=("GLOBAL_LOGGING_BUCKET_NAME")

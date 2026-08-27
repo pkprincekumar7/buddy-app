@@ -53,7 +53,9 @@ export interface ChildRecord {
   current_phase?: string;
   onboarding_completed?: boolean;
   onboarding_phase?: number;
-  /** Personality Journey dimension-circle unlock flags (DimensionCircles page). */
+  /** Personality Journey progression flags — see the comment on ChildResponse in backend/app/schemas/children.py for the full ordered chain. */
+  onboarding_profile_completed?: boolean;
+  conversational_onboarding_completed?: boolean;
   discover_completed?: boolean;
   grow_completed?: boolean;
   transform_visited?: boolean;

@@ -52,6 +52,10 @@ function unauthorized() {
     statusDescription: 'Unauthorized',
     headers: {
       'content-type': [{ key: 'Content-Type', value: 'application/json' }],
+      // /api/* already uses cache_policy_disabled so this would never be
+      // cached anyway, but pin it explicitly — a failed auth check must
+      // never be servable to a different, legitimately authenticated user.
+      'cache-control': [{ key: 'Cache-Control', value: 'no-store' }],
     },
     body: JSON.stringify({ message: 'Unauthorized' }),
   }

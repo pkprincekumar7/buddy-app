@@ -55,6 +55,16 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_id   = "alb-backend"
     domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
 
+    # Lets the ALB's listener rule (infra-live-backend's aws_lb_listener_rule.
+    # from_cloudfront) tell requests that came through this distribution apart
+    # from requests sent straight to the ALB's DNS name via some other
+    # CloudFront distribution — both would otherwise pass the ALB security
+    # group's CloudFront-prefix-list check equally.
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = var.origin_verify_secret
+    }
+
     custom_origin_config {
       http_port              = 80
       https_port             = 443

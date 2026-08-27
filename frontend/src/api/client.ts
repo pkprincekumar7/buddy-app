@@ -357,6 +357,22 @@ export const api = {
         }) as Promise<ChildRecord>,
       delete: (id: string): Promise<void> =>
         request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
+      // One-way (false→true) Personality Journey progression flags, gated on
+      // the previous step in the chain already being true. PATCH /children/{id}
+      // silently ignores these fields — this is the only way to set them
+      // (see backend/app/routers/children.py).
+      markProgress: (
+        id: string,
+        flag:
+          | 'onboarding_profile_completed'
+          | 'discover_completed'
+          | 'transform_visited'
+          | 'release_visited'
+          | 'connect_visited',
+      ): Promise<ChildRecord> =>
+        request(`/children/${encodeURIComponent(id)}/progress/${flag}`, {
+          method: 'POST',
+        }) as Promise<ChildRecord>,
       uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
         const contentType = photo.type || 'image/jpeg';
         const { upload_url, avatar_url } = (await request(

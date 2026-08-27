@@ -918,7 +918,15 @@ function DimensionCirclesScreen({
 
           {/* Discover — top-center (CTA) */}
           <div
+            role="button"
+            tabIndex={0}
             onClick={onDiscover}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onDiscover();
+              }
+            }}
             style={{
               ...NODE_STYLE,
               ...NP.discover,
@@ -1161,7 +1169,7 @@ export default function PersonalityJourney() {
     setShowDiscoverSplash(false);
     if (childId && !discoverCompleted) {
       setDiscoverCompleted(true);
-      api.entities.Child.update(childId, { discover_completed: true }).catch(console.error);
+      api.entities.Child.markProgress(childId, 'discover_completed').catch(console.error);
     }
     void navigate(`/PersonalityProfile/${childId ?? ''}`);
   }, [navigate, childId, discoverCompleted]);
@@ -1169,10 +1177,11 @@ export default function PersonalityJourney() {
   const mergedDataRef = useRef<Record<string, unknown> | null>(null);
 
   // Grow unlocks Transform once at least one of the six growth areas is completed.
-  // Checked two ways and both must pass: the persisted grow_completed flag on the
-  // child (set once, in GrowthAreas.tsx, the moment an area is first completed) and
-  // a live query of the growth_areas collection — the flag alone could go stale if
-  // that collection were ever cleared/reset independently of the child document.
+  // `growCompleted` (child.grow_completed) is itself computed live server-side
+  // from the growth_areas collection (backend/app/services/journey_progress.py) —
+  // it can no longer go stale or be forged. `hasCompletedGrowthArea` re-runs the
+  // same check client-side via completedGrowthAreas.list; the two are redundant
+  // today (kept as belt-and-suspenders) rather than each independently necessary.
   const { data: completedGrowthAreasData } = useQuery({
     queryKey: ['completedGrowthAreas', childId],
     queryFn: () => api.completedGrowthAreas.list(childId!),

@@ -163,6 +163,12 @@ export default function Onboarding() {
                   ? { avatar_id: null } // keeping existing photo — clean up any stale avatar_id
                   : {}), // upload was attempted but failed — leave DB untouched
           });
+          // Marks the first step of the Personality Journey progression chain —
+          // required before conversational_onboarding_completed can be set
+          // (see backend/app/schemas/children.py's ChildResponse comment).
+          api.entities.Child.markProgress(targetId, 'onboarding_profile_completed').catch(
+            console.error,
+          );
           void navigate(`/ConversationalOnboarding/${targetId}`);
         }
       } catch (err) {

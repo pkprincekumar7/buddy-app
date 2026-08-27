@@ -65,7 +65,7 @@ export default function Connect() {
         // Mark Connect as visited — this advances which circle the
         // DimensionCircles hub points to next (there is none left after this).
         if (!child.connect_visited) {
-          api.entities.Child.update(childId, { connect_visited: true }).catch(console.error);
+          api.entities.Child.markProgress(childId, 'connect_visited').catch(console.error);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
