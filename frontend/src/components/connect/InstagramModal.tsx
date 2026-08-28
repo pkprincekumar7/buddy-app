@@ -442,7 +442,9 @@ export default function InstagramModal({
                     border: '1px dashed rgb(var(--instagram-pink-rgb) / .35)',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 13, flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 13, flex: 1, minWidth: 0 }}
+                  >
                     <div
                       style={{
                         width: 30,

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
@@ -1303,7 +1310,12 @@ export default function PersonalityProfile() {
                       transition={{ delay: 0.7 + i * 0.07 }}
                       style={
                         isWide
-                          ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }
+                          ? {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 10,
+                            }
                           : { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 14 }
                       }
                     >
