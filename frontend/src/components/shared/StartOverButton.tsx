@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useStartOver } from '@/hooks/useStartOver';
 import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
+import { cn } from '@/lib/utils';
 
 interface ConfirmModalProps {
   onCancel: () => void;
@@ -30,7 +31,7 @@ export function ConfirmModal({ onCancel, onConfirm, isStartingOver }: ConfirmMod
   return createPortal(
     <motion.div
       {...MODAL_BACKDROP}
-      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      className="modal-overlay"
       onClick={onCancel}
       role="presentation"
     >
@@ -114,7 +115,7 @@ export default function StartOverButton({ childId, className = '' }: StartOverBu
         variant="outline"
         onClick={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`btn-start-over rounded-2xl ${className}`}
+        className={cn('btn-start-over rounded-2xl', className)}
       >
         <RotateCcw className="mr-1 h-4 w-4" />
         {isStartingOver ? 'Resetting…' : 'Start Over'}

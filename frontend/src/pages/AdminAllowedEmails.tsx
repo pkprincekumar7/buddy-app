@@ -236,11 +236,7 @@ export default function AdminAllowedEmails() {
             <p className="text-sm text-muted-foreground">
               Only these emails can register for the application.
             </p>
-            <Button
-              className="bg-primary-action hover:bg-primary-action/80"
-              size="sm"
-              onClick={() => setAddOpen(true)}
-            >
+            <Button variant="action" size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
               Add email
             </Button>
@@ -591,7 +587,7 @@ export default function AdminAllowedEmails() {
               Cancel
             </Button>
             <Button
-              className="bg-primary-action hover:bg-primary-action/80"
+              variant="action"
               disabled={!addEmail.trim() || addMutation.isPending}
               onClick={() => addMutation.mutate(addEmail.trim())}
             >

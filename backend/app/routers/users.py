@@ -3,31 +3,30 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Body, HTTPException, Path, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
 from app import models
-from app.database import get_db
-from app.deps import get_current_parent, get_current_user
+from app.deps import CurrentParent, CurrentUser, Db
 from app.limiter import user_limiter
-from app.models_api import (
-    AppendGrowthAreaRequest,
-    ChildActivity,
-    CompletedGrowthArea,
-    CompletedGrowthAreasResponse,
+from app.schemas.goals import (
     GoalInsightsPatch,
     GoalInsightsResponse,
     GoalMonthsPatch,
     GoalMonthsResponse,
     GoalsMonth,
-    ObservationsPatch,
-    ObservationsResponse,
     UserGoals,
     UserGoalsPatch,
-    UserPreferences,
-    UserPreferencesPatch,
 )
+from app.schemas.growth_areas import (
+    AppendGrowthAreaRequest,
+    ChildActivity,
+    CompletedGrowthArea,
+    CompletedGrowthAreasResponse,
+)
+from app.schemas.observations import ObservationsPatch, ObservationsResponse
+from app.schemas.preferences import UserPreferences, UserPreferencesPatch
 
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
@@ -56,13 +55,14 @@ _GROWTH_AREA_OPTIONAL_FIELDS = (
 )
 
 
-async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> None:
-    """Raise 404 if child_id does not belong to the authenticated user."""
+async def _require_child(db: AsyncIOMotorDatabase, child_id: str, user: dict) -> dict:
+    """Raise 404 if child_id does not belong to the authenticated user; return the child doc."""
     child = await db[models.CHILDREN].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+    return child
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +123,8 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
 @user_limiter.limit("60/minute")
 async def get_preferences(
     request: Request,
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: CurrentUser,
+    db: Db,
 ):
     return _doc_to_preferences(user)
 
@@ -138,8 +138,8 @@ async def get_preferences(
 async def patch_preferences(
     request: Request,
     body: UserPreferencesPatch,
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: CurrentUser,
+    db: Db,
 ):
     set_fields: dict = {"updated_at": datetime.now(UTC)}
     if "tts_enabled" in body.model_fields_set:
@@ -170,11 +170,11 @@ async def patch_preferences(
 @user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Read-only: query is already scoped by user_id + location so an unknown
     # child_id returns an empty list rather than leaking data. Skip _require_child
@@ -198,11 +198,18 @@ async def list_completed_growth_areas(
 async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    child = await _require_child(db, child_id, user)
+    # Grow only unlocks on the DimensionCircles page once Discover has been
+    # completed — enforce the same dependency server-side so it can't be
+    # bypassed by writing straight to this endpoint.
+    if not child.get("discover_completed"):
+        raise HTTPException(
+            status_code=403, detail="Complete Discover before starting a growth area."
+        )
     now = datetime.now(UTC)
     # Always write the required fields (area_name, answers).
     set_fields: dict = {
@@ -262,9 +269,9 @@ async def append_completed_growth_area(
 @user_limiter.limit("10/minute")
 async def clear_completed_growth_areas(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
     await db[models.GROWTH_AREAS].delete_many(
@@ -285,9 +292,9 @@ async def clear_completed_growth_areas(
 @user_limiter.limit("60/minute")
 async def get_goals(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.GOALS].find_one(
@@ -310,9 +317,9 @@ async def get_goals(
 async def patch_goals(
     request: Request,
     body: UserGoalsPatch,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
@@ -376,9 +383,9 @@ def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
 @user_limiter.limit("60/minute")
 async def get_goal_months(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     docs = await (
@@ -399,11 +406,11 @@ async def get_goal_months(
 @user_limiter.limit("30/minute")
 async def patch_goal_month_single(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     month_number: int = Path(..., ge=1, le=12),
     body: GoalsMonth = Body(...),
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     if body.month != month_number:
         raise HTTPException(
@@ -448,9 +455,9 @@ async def patch_goal_month_single(
 async def patch_goal_months(
     request: Request,
     body: GoalMonthsPatch,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
@@ -525,9 +532,9 @@ async def patch_goal_months(
 @user_limiter.limit("60/minute")
 async def get_goal_insights(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.GOAL_INSIGHTS].find_one(
@@ -560,9 +567,9 @@ async def get_goal_insights(
 async def patch_goal_insights(
     request: Request,
     body: GoalInsightsPatch,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     await _require_child(db, child_id, user)
     now = datetime.now(UTC)
@@ -619,9 +626,9 @@ async def patch_goal_insights(
 @user_limiter.limit("60/minute")
 async def get_observations(
     request: Request,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
     doc = await db[models.OBSERVATIONS].find_one(
@@ -653,11 +660,18 @@ async def get_observations(
 async def patch_observations(
     request: Request,
     body: ObservationsPatch,
+    user: CurrentParent,
+    db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_parent),
-    db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    await _require_child(db, child_id, user)
+    child = await _require_child(db, child_id, user)
+    # Release/Connect only unlock on the DimensionCircles page once Transform has
+    # been visited — enforce the same dependency server-side so it can't be
+    # bypassed by writing straight to this endpoint.
+    if not child.get("transform_visited"):
+        raise HTTPException(
+            status_code=403, detail="Visit Transform (Life Pathway) before recording Observations."
+        )
     now = datetime.now(UTC)
     set_fields: dict = {"updated_at": now}
     unset_fields: dict = {}

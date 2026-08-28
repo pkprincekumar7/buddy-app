@@ -30,6 +30,7 @@ from app.routers.downloads import router as downloads_router
 from app.routers.jobs import router as jobs_router
 from app.routers.llm import router as llm_router
 from app.routers.users import router as users_router
+from app.services import llm_service
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -139,6 +140,8 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(cleanup_task, return_exceptions=True)
         client.close()
         log.info("mongodb: connection closed")
+        await llm_service.aclose_clients()
+        log.info("llm_service: provider clients closed")
 
 
 _OPENAPI_TAGS = [

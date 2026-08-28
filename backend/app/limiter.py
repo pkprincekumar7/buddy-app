@@ -4,6 +4,7 @@ import jwt
 from fastapi import Request
 from slowapi import Limiter
 
+from app.auth_utils import extract_token
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -30,9 +31,11 @@ def _get_user_id(request: Request) -> str:
     token.  Falls back to IP so unauthenticated requests still get a bucket.
 
     Using the user ID prevents a single authenticated user from bypassing
-    per-endpoint limits by rotating IPs (VPN, proxies, etc.).
+    per-endpoint limits by rotating IPs (VPN, proxies, etc.). Reads the token
+    from either the cookie (web) or Authorization header (mobile) so both
+    client types are bucketed by user rather than only web falling back to IP.
     """
-    token = request.cookies.get("access_token")
+    token = extract_token(request, "access_token")
     if token:
         try:
             payload = jwt.decode(

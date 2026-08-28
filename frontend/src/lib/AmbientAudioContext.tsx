@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
-import { useAuth } from '@/lib/AuthContext';
+import { useTts } from '@/lib/TtsContext';
 
 const AMBIENT_SRC = '/growth-ambient.mp3';
 const AMBIENT_VOLUME = 0.5;
@@ -36,7 +36,7 @@ interface AmbientAudioContextValue {
 const AmbientAudioContext = createContext<AmbientAudioContextValue | null>(null);
 
 export function AmbientAudioProvider({ children }: { children: ReactNode }) {
-  const { ttsEnabled } = useAuth();
+  const { ttsEnabled } = useTts();
   const location = useLocation();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [suppressed, setSuppressed] = useState(false);

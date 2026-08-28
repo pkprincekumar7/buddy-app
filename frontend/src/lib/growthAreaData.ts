@@ -149,6 +149,7 @@ export interface GrowthArea {
   hue: string;
   /** inline SVG path for the growth-map node */
   iconPath: string;
+  /** `rgb(var(--growth-*-icon-rgb))` token — see index.css's "GROWTH AREA ICON COLORS" */
   iconColor: string;
   /** node position on the growth-map arc, in percent of the container */
   pos: { left: number; top: number };
@@ -170,7 +171,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     hue: '160,120,255',
     iconPath:
       'M11.5 15.5 8.5 12.5c0-5.5 3.5-9.5 9-10.5.5 5.5-3 9.5-9 10.5zM8.5 12.5 6 13l-.8 3 3-.5M11.5 15.5 12 18l3 .8-.5-3',
-    iconColor: '#c3a6ff',
+    iconColor: 'rgb(var(--growth-life-ambition-icon-rgb))',
     pos: { left: 8.0, top: 62.0 },
   },
   {
@@ -182,7 +183,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     description: 'Building healthy habits and emotional wellness',
     hue: '255,120,170',
     iconPath: 'M12 20s-7-4.4-7-9.3A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.7C19 15.6 12 20 12 20z',
-    iconColor: '#ff9ec2',
+    iconColor: 'rgb(var(--growth-self-care-icon-rgb))',
     pos: { left: 24.8, top: 41.5 },
   },
   {
@@ -195,7 +196,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     hue: '90,170,255',
     iconPath:
       'M12 5a3 3 0 0 0-3 3 2.6 2.6 0 0 0-1.6 4.6A2.8 2.8 0 0 0 9 18h3zM12 5a3 3 0 0 1 3 3 2.6 2.6 0 0 1 1.6 4.6A2.8 2.8 0 0 1 15 18h-3zM12 5v13',
-    iconColor: '#8fc4ff',
+    iconColor: 'rgb(var(--growth-critical-thinking-icon-rgb))',
     pos: { left: 41.6, top: 31.3 },
   },
   {
@@ -208,7 +209,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     hue: '255,180,90',
     iconPath:
       'M12 4a8 8 0 0 0 0 16c1.4 0 1.8-1 1.4-2-.5-1.3.3-2.4 1.7-2.4H18a2.6 2.6 0 0 0 2-4.3C18.6 6.4 15.6 4 12 4z',
-    iconColor: '#ffc978',
+    iconColor: 'rgb(var(--constellation-amber-rgb))',
     pos: { left: 58.4, top: 31.3 },
   },
   {
@@ -220,7 +221,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     description: 'Body awareness and physical health',
     hue: '60,225,190',
     iconPath: 'M4 9v6M7 7v10M17 7v10M20 9v6M7 12h10',
-    iconColor: '#5fe8c4',
+    iconColor: 'rgb(var(--growth-physical-wellness-icon-rgb))',
     pos: { left: 75.2, top: 41.5 },
   },
   {
@@ -232,7 +233,7 @@ export const GROWTH_AREAS: GrowthArea[] = [
     description: 'Communication and relationship building',
     hue: '150,140,255',
     iconPath: 'M20 12a7 7 0 0 1-7 7H9l-4 3 1-4.2A7 7 0 0 1 13 5a7 7 0 0 1 7 7z',
-    iconColor: '#b3aaff',
+    iconColor: 'rgb(var(--growth-social-skills-icon-rgb))',
     pos: { left: 92.0, top: 62.0 },
   },
 ];

@@ -5,6 +5,7 @@ import { X, ChevronLeft, ChevronRight, Trophy, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
+import { cn } from '@/lib/utils';
 import { unwrapLLM } from '@/lib/llmUtils';
 import { activityQuestionsSchema } from '@/lib/llmSchemas';
 import {
@@ -534,7 +535,7 @@ export default function ActivityModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+      className="modal-overlay"
     >
       <motion.div
         role="dialog"
@@ -635,11 +636,12 @@ export default function ActivityModal({
                         key={option}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => handleChoiceSelect(option)}
-                        className={`w-full rounded-2xl border-2 p-4 text-left transition-all ${
+                        className={cn(
+                          'w-full rounded-2xl border-2 p-4 text-left transition-all',
                           currentAnswer === option
                             ? 'border-primary-medium bg-primary-medium/10'
-                            : 'border-c-edge hover:border-c-bright bg-surface-input'
-                        }`}
+                            : 'border-c-edge hover:border-c-bright bg-surface-input',
+                        )}
                       >
                         <span className="font-medium text-foreground">{option}</span>
                       </motion.button>
@@ -701,11 +703,12 @@ export default function ActivityModal({
                           onClick={() =>
                             dispatch({ type: 'SET_CURRENT_ANSWER', value: value.toString() })
                           }
-                          className={`h-16 flex-1 rounded-2xl text-xl font-bold transition-all ${
+                          className={cn(
+                            'h-16 flex-1 rounded-2xl text-xl font-bold transition-all',
                             currentAnswer === value.toString()
                               ? 'bg-primary-action text-white shadow-lg'
-                              : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground'
-                          }`}
+                              : 'bg-ghost-light hover:bg-ghost-strong text-muted-foreground',
+                          )}
                         >
                           {value}
                         </motion.button>
@@ -732,11 +735,12 @@ export default function ActivityModal({
                       <Button
                         onClick={handleAnswerQuestion}
                         disabled={!currentAnswer}
-                        className={`h-12 rounded-2xl text-base font-semibold transition-all ${
+                        className={cn(
+                          'h-12 rounded-2xl text-base font-semibold transition-all',
                           currentAnswer
                             ? 'bg-primary-action text-white hover:bg-primary-action/90'
-                            : 'cursor-not-allowed bg-primary-action/30 text-white'
-                        }`}
+                            : 'cursor-not-allowed bg-primary-action/30 text-white',
+                        )}
                       >
                         Next <ChevronRight className="ml-1 h-5 w-5" />
                       </Button>

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { personalizedDescriptionOneLiner } from '@/lib/personalizedDescriptionOneLiner';
 import { generateAvatarDataUri } from '@/lib/avatarUtils';
+import { cn } from '@/lib/utils';
 import { pickPreferredVoice } from '@/lib/tts';
 
 interface PersonalityCategory {
@@ -495,7 +496,7 @@ export default function PersonalityAnalysis({
   return (
     <div className="space-y-6">
       {/* Section 2 — Main Type Card */}
-      <motion.div {...sectionAnim(0.8)} className="border-edge rounded-2xl bg-card p-6">
+      <motion.div {...sectionAnim(0.8)} className="card-surface">
         <div className="mb-4 text-center">
           <div className="mb-3 flex items-center justify-center gap-2">
             <Sparkles className="h-6 w-6 text-primary" />
@@ -524,7 +525,7 @@ export default function PersonalityAnalysis({
       </motion.div>
 
       {/* Section 3 — Personality Profile Breakdown */}
-      <motion.div {...sectionAnim(1.6)} className="border-edge rounded-2xl bg-card p-6">
+      <motion.div {...sectionAnim(1.6)} className="card-surface">
         <h4 className="mb-4 text-sm font-semibold text-foreground">
           Personality Profile Breakdown
         </h4>
@@ -554,7 +555,7 @@ export default function PersonalityAnalysis({
                       delay: ANIM_BAR_W_BASE + index * ANIM_BAR_W_STEP,
                       ease: 'easeInOut',
                     }}
-                    className={`h-full bg-gradient-to-r ${itemProfile.color} rounded-full`}
+                    className={cn('h-full bg-gradient-to-r', itemProfile.color, 'rounded-full')}
                   />
                 </div>
               </motion.div>

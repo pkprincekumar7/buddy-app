@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { COUNTRIES } from '@/lib/countries';
 import { httpErrorMessage } from '@/lib/apiError';
 
@@ -76,9 +77,9 @@ export default function Register() {
           className="space-y-4"
         >
           <div>
-            <label htmlFor="reg-name" className="mb-1 block text-sm font-medium text-foreground">
+            <Label htmlFor="reg-name" className="mb-1 block text-foreground">
               Full name
-            </label>
+            </Label>
             <input
               id="reg-name"
               type="text"
@@ -92,9 +93,9 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-email" className="mb-1 block text-sm font-medium text-foreground">
+            <Label htmlFor="reg-email" className="mb-1 block text-foreground">
               Username (email)
-            </label>
+            </Label>
             <input
               id="reg-email"
               type="email"
@@ -106,9 +107,9 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-country" className="mb-1 block text-sm font-medium text-foreground">
+            <Label htmlFor="reg-country" className="mb-1 block text-foreground">
               Country
-            </label>
+            </Label>
             <select
               id="reg-country"
               required
@@ -130,12 +131,9 @@ export default function Register() {
             </p>
           </div>
           <div>
-            <label
-              htmlFor="reg-password"
-              className="mb-1 block text-sm font-medium text-foreground"
-            >
+            <Label htmlFor="reg-password" className="mb-1 block text-foreground">
               Password
-            </label>
+            </Label>
             <input
               id="reg-password"
               type="password"
@@ -147,9 +145,9 @@ export default function Register() {
             />
           </div>
           <div>
-            <label htmlFor="reg-confirm" className="mb-1 block text-sm font-medium text-foreground">
+            <Label htmlFor="reg-confirm" className="mb-1 block text-foreground">
               Confirm password
-            </label>
+            </Label>
             <input
               id="reg-confirm"
               type="password"
@@ -161,11 +159,7 @@ export default function Register() {
             />
           </div>
           {error ? <p className="text-sm text-error-strong">{error}</p> : null}
-          <Button
-            type="submit"
-            className="w-full bg-primary-action hover:bg-primary-action/80"
-            disabled={busy}
-          >
+          <Button type="submit" variant="action" className="w-full" disabled={busy}>
             {busy ? 'Creating account…' : 'Register'}
           </Button>
         </form>

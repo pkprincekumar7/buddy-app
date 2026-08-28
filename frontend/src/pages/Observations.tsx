@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
-import { SPINNER } from '@/lib/animations';
 import { useJob, jobProgressMessage } from '@/hooks/useJob';
+import Spinner from '@/components/shared/Spinner';
 import { NO_QUESTIONNAIRE, buildObservationsPrompt, questionnaireMarkdown } from '@/lib/prompts';
 import {
   OBSERVATION_ICONS,
@@ -91,25 +91,25 @@ const SPANS: ObservationSpan[] = [
         when: 'Week 1',
         title: 'Same questions, no changes',
         body: 'Answer as things are. Change nothing yet.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 2',
         title: 'Note the setting',
         body: 'Where it happened and what came before.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 3',
         title: 'Note the exceptions',
         body: 'The days it did not happen matter too.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
       {
         when: 'Week 4',
         title: 'First look back',
         body: 'Your notes side by side, to see what repeated.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
     ],
   },
@@ -123,25 +123,25 @@ const SPANS: ObservationSpan[] = [
         when: 'Week 5',
         title: 'Bring in a second observer',
         body: 'A teacher or coach answers the same questions.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 6',
         title: 'Try one small change',
         body: 'One only. Movement before homework, say.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 7',
         title: 'Keep the change steady',
         body: 'Long enough to tell it from a good week.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
       {
         when: 'Week 8',
         title: 'Compare the two views',
         body: 'Where both views agree is the sturdiest part.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
     ],
   },
@@ -155,25 +155,25 @@ const SPANS: ObservationSpan[] = [
         when: 'Week 9',
         title: 'Hold the routine',
         body: 'No new changes. Keep conditions steady.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 10',
         title: 'Note what {he} say{s}',
         body: '{His} own words about {his} day, kept verbatim.',
-        dot: '#4be9ff',
+        dot: 'rgb(var(--constellation-cyan-rgb))',
       },
       {
         when: 'Week 11',
         title: 'Build the summary',
         body: 'A one page record of the ninety days.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
       {
         when: 'Week 12',
         title: 'Choose what happens next',
         body: 'Keep watching, close the note, or share the page.',
-        dot: '#f0c98a',
+        dot: 'rgb(var(--constellation-gold-rgb))',
       },
     ],
   },
@@ -316,7 +316,7 @@ function CheckIcon({ opacity }: { opacity: number }) {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#08131f"
+      stroke="rgb(var(--constellation-ink-rgb))"
       strokeWidth={3.2}
       style={{ width: 12, height: 12, opacity }}
     >
@@ -330,7 +330,7 @@ function ShieldIcon() {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#5c7688"
+      stroke="rgb(var(--constellation-slate-dim-rgb))"
       strokeWidth={1.9}
       style={{ width: 15, height: 15, flexShrink: 0, marginTop: 2 }}
     >
@@ -344,7 +344,7 @@ function ClockIcon() {
     <svg
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#4be9ff"
+      stroke="rgb(var(--constellation-cyan-rgb))"
       strokeWidth={2.2}
       style={{ width: 28, height: 28 }}
     >
@@ -355,19 +355,18 @@ function ClockIcon() {
 }
 
 const SECTION_LABEL: CSSProperties = {
-  fontFamily: 'Orbitron, sans-serif',
   fontWeight: 700,
   fontSize: fs(14),
   letterSpacing: '.1em',
   textTransform: 'uppercase',
-  color: '#eafdff',
+  color: 'rgb(var(--constellation-cyan-pale-rgb))',
 };
 
 const CARD_SHELL: CSSProperties = {
   borderRadius: 18,
   padding: '20px 21px',
-  background: 'rgba(9,13,22,.6)',
-  border: '1px solid rgba(75,233,255,.12)',
+  background: 'rgb(var(--constellation-card-rgb) / .6)',
+  border: '1px solid rgb(var(--constellation-cyan-rgb) / .12)',
 };
 
 /** Placeholder cards shown while the set generates — same footprint as the real ones. */
@@ -381,7 +380,7 @@ function ObservationSkeleton() {
             height: 38,
             flexShrink: 0,
             borderRadius: '50%',
-            background: 'rgba(75,233,255,.07)',
+            background: 'rgb(var(--constellation-cyan-rgb) / .07)',
             animation: 'obsShimmer 1.4s ease-in-out infinite',
           }}
         />
@@ -391,7 +390,7 @@ function ObservationSkeleton() {
               height: 13,
               width: '62%',
               borderRadius: 5,
-              background: 'rgba(75,233,255,.09)',
+              background: 'rgb(var(--constellation-cyan-rgb) / .09)',
               animation: 'obsShimmer 1.4s ease-in-out infinite',
             }}
           />
@@ -400,7 +399,7 @@ function ObservationSkeleton() {
               height: 9,
               width: '36%',
               borderRadius: 5,
-              background: 'rgba(75,233,255,.06)',
+              background: 'rgb(var(--constellation-cyan-rgb) / .06)',
               animation: 'obsShimmer 1.4s ease-in-out .2s infinite',
             }}
           />
@@ -413,7 +412,7 @@ function ObservationSkeleton() {
             height: 10,
             width: `${w}%`,
             borderRadius: 5,
-            background: 'rgba(75,233,255,.06)',
+            background: 'rgb(var(--constellation-cyan-rgb) / .06)',
             animation: `obsShimmer 1.4s ease-in-out ${0.1 * (i + 1)}s infinite`,
           }}
         />
@@ -629,6 +628,13 @@ export default function Observations() {
     };
   }, [isLoadingAuth, isAuthenticated, childId, navigate]);
 
+  // Once this page's content has loaded for the child, mark Release as visited
+  // — this advances which circle the DimensionCircles hub points to next.
+  useEffect(() => {
+    if (!childId || !childData?.id || childData.release_visited) return;
+    api.entities.Child.markProgress(childId, 'release_visited').catch(console.error);
+  }, [childId, childData?.id, childData?.release_visited]);
+
   // Kick off generation once, and only once there is something to ground it in.
   // A job already in flight (from another device, or a reload mid-run) is picked
   // up by useJob from active_jobs instead — enqueueing again would just burn a
@@ -710,12 +716,13 @@ export default function Observations() {
     return (
       <div
         className="flex min-h-screen items-center justify-center"
-        style={{ background: '#04060d' }}
+        style={{ background: 'rgb(var(--constellation-navy-deepest-rgb))' }}
       >
-        <motion.div
-          {...SPINNER}
-          className="h-10 w-10 rounded-full border-2 border-t-transparent"
-          style={{ borderColor: 'rgba(30,196,232,0.6)', borderTopColor: 'transparent' }}
+        <Spinner
+          style={{
+            borderColor: 'rgb(var(--constellation-cyan-bright-rgb) / 0.6)',
+            borderTopColor: 'transparent',
+          }}
         />
       </div>
     );
@@ -723,13 +730,12 @@ export default function Observations() {
 
   return (
     <div
-      className="obs-root"
+      className="obs-root font-rajdhani"
       style={{
         minHeight: '100vh',
         background:
-          'radial-gradient(ellipse at 82% -5%,rgba(75,233,255,.12),rgba(4,6,13,0) 50%),radial-gradient(ellipse at 8% 60%,rgba(240,201,138,.07),rgba(4,6,13,0) 45%),#04060d',
-        fontFamily: 'Rajdhani, sans-serif',
-        color: '#e7f5f9',
+          'radial-gradient(ellipse at 82% -5%,rgb(var(--constellation-cyan-rgb) / .12),rgb(var(--constellation-navy-deepest-rgb) / 0) 50%),radial-gradient(ellipse at 8% 60%,rgb(var(--constellation-gold-rgb) / .07),rgb(var(--constellation-navy-deepest-rgb) / 0) 45%),rgb(var(--constellation-navy-deepest-rgb))',
+        color: 'rgb(var(--constellation-text-frost-rgb))',
       }}
     >
       <style>{`
@@ -786,17 +792,17 @@ export default function Observations() {
               letterSpacing: '.4em',
               fontSize: fs(11),
               textTransform: 'uppercase',
-              color: '#f0c98a',
+              color: 'rgb(var(--constellation-gold-rgb))',
             }}
           >
             {childName || 'Your child'}
             {childAge && ` · Age ${childAge}`} · Observations
           </div>
           <h1
+            className="font-orbitron"
             style={{
               margin: '16px auto 0',
               maxWidth: proseW(780),
-              fontFamily: 'Orbitron, sans-serif',
               fontWeight: 900,
               fontSize: 'calc(clamp(28px,4vw,44px) * var(--obs-type-scale, 1))',
               lineHeight: 1.12,
@@ -811,7 +817,7 @@ export default function Observations() {
               fontSize: fs(17),
               fontWeight: 600,
               lineHeight: 1.55,
-              color: '#a8c1d1',
+              color: 'rgb(var(--constellation-slate-pale-rgb))',
             }}
           >
             Patterns that came up more than once. Pick the ones to keep an eye on.
@@ -829,14 +835,16 @@ export default function Observations() {
               flexWrap: 'wrap',
             }}
           >
-            <div style={SECTION_LABEL}>Observations</div>
+            <div className="font-orbitron" style={SECTION_LABEL}>
+              Observations
+            </div>
             <div
               style={{
                 fontWeight: 700,
                 fontSize: fs(11),
                 letterSpacing: '.16em',
                 textTransform: 'uppercase',
-                color: '#6f8a9c',
+                color: 'rgb(var(--constellation-slate-rgb))',
               }}
             >
               {isGenerating ? progressMessage : trackedLabel}
@@ -861,7 +869,13 @@ export default function Observations() {
             <div
               style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '30px 24px' }}
             >
-              <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: fs(16),
+                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                }}
+              >
                 We could not group your answers just now
               </div>
               <div
@@ -871,7 +885,7 @@ export default function Observations() {
                   fontSize: fs(14),
                   fontWeight: 600,
                   lineHeight: 1.5,
-                  color: '#8ba1b1',
+                  color: 'rgb(var(--constellation-slate-light-rgb))',
                 }}
               >
                 {genError ??
@@ -890,15 +904,15 @@ export default function Observations() {
                   marginTop: 18,
                   padding: '11px 26px',
                   borderRadius: 999,
-                  border: '1px solid rgba(75,233,255,.45)',
-                  background: 'rgba(6,12,20,.8)',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
+                  background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
                   fontWeight: 700,
                   fontSize: fs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#bfe8f5',
+                  color: 'rgb(var(--constellation-cyan-soft-rgb))',
                 }}
+                className="font-rajdhani"
               >
                 Try again
               </button>
@@ -907,7 +921,13 @@ export default function Observations() {
             <div
               style={{ ...CARD_SHELL, marginTop: 16, textAlign: 'center', padding: '34px 24px' }}
             >
-              <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: fs(16),
+                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                }}
+              >
                 Nothing to group yet
               </div>
               <div
@@ -917,7 +937,7 @@ export default function Observations() {
                   fontSize: fs(14),
                   fontWeight: 600,
                   lineHeight: 1.5,
-                  color: '#8ba1b1',
+                  color: 'rgb(var(--constellation-slate-light-rgb))',
                 }}
               >
                 This page reads back what you have already told us. Answer a Grow area or finish the
@@ -931,15 +951,15 @@ export default function Observations() {
                   marginTop: 18,
                   padding: '11px 26px',
                   borderRadius: 999,
-                  border: '1px solid rgba(75,233,255,.45)',
-                  background: 'rgba(6,12,20,.8)',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
+                  background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
                   fontWeight: 700,
                   fontSize: fs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#bfe8f5',
+                  color: 'rgb(var(--constellation-cyan-soft-rgb))',
                 }}
+                className="font-rajdhani"
               >
                 Go to Grow
               </button>
@@ -963,9 +983,9 @@ export default function Observations() {
                     style={{
                       ...CARD_SHELL,
                       background: on
-                        ? 'linear-gradient(150deg,rgba(30,46,72,.85),rgba(8,13,24,.8))'
-                        : 'rgba(9,13,22,.6)',
-                      border: `1px solid ${on ? 'rgba(75,233,255,.45)' : 'rgba(75,233,255,.12)'}`,
+                        ? 'linear-gradient(150deg,rgb(var(--constellation-navy-soft2-rgb) / .85),rgb(var(--constellation-ink-navy-rgb) / .8))'
+                        : 'rgb(var(--constellation-card-rgb) / .6)',
+                      border: `1px solid ${on ? 'rgb(var(--constellation-cyan-rgb) / .45)' : 'rgb(var(--constellation-cyan-rgb) / .12)'}`,
                       transition: 'all .22s ease',
                       display: 'flex',
                       flexDirection: 'column',
@@ -990,14 +1010,15 @@ export default function Observations() {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            background: 'linear-gradient(150deg,#1c2b46,#0a1220)',
-                            border: '1.5px solid rgba(240,201,138,.5)',
+                            background:
+                              'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+                            border: '1.5px solid rgb(var(--constellation-gold-rgb) / .5)',
                           }}
                         >
                           <svg
                             viewBox="0 0 24 24"
                             fill="none"
-                            stroke="#f0c98a"
+                            stroke="rgb(var(--constellation-gold-rgb))"
                             strokeWidth={1.8}
                             style={{ width: 18, height: 18 }}
                           >
@@ -1005,7 +1026,13 @@ export default function Observations() {
                           </svg>
                         </div>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: fs(16), color: '#eafdff' }}>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              fontSize: fs(16),
+                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                            }}
+                          >
                             {obs.title}
                           </div>
                           <div
@@ -1015,7 +1042,7 @@ export default function Observations() {
                               fontSize: fs(10.5),
                               letterSpacing: '.16em',
                               textTransform: 'uppercase',
-                              color: '#6f8a9c',
+                              color: 'rgb(var(--constellation-slate-rgb))',
                             }}
                           >
                             {provenance}
@@ -1040,8 +1067,8 @@ export default function Observations() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          border: `1.5px solid ${on ? '#4be9ff' : 'rgba(120,145,165,.4)'}`,
-                          background: on ? '#4be9ff' : 'transparent',
+                          border: `1.5px solid ${on ? 'rgb(var(--constellation-cyan-rgb))' : 'rgb(var(--constellation-ring-faint-rgb) / .4)'}`,
+                          background: on ? 'rgb(var(--constellation-cyan-rgb))' : 'transparent',
                           transition: 'all .2s ease',
                         }}
                       >
@@ -1054,7 +1081,7 @@ export default function Observations() {
                         fontSize: fs(14.5),
                         fontWeight: 600,
                         lineHeight: 1.5,
-                        color: '#b9cedb',
+                        color: 'rgb(var(--constellation-caption-rgb))',
                       }}
                     >
                       {obs.summary}
@@ -1080,7 +1107,7 @@ export default function Observations() {
                               marginTop: 8,
                               marginLeft: 4,
                               borderRadius: '50%',
-                              background: '#4be9ff',
+                              background: 'rgb(var(--constellation-cyan-rgb))',
                             }}
                           />
                           <div
@@ -1088,7 +1115,7 @@ export default function Observations() {
                               fontSize: fs(13.5),
                               fontWeight: 600,
                               lineHeight: 1.45,
-                              color: '#8ba1b1',
+                              color: 'rgb(var(--constellation-slate-light-rgb))',
                             }}
                           >
                             {note}
@@ -1106,7 +1133,9 @@ export default function Observations() {
         {/* Watch it over time */}
         <section style={{ marginTop: 52, animation: 'obsFadeUp .7s ease .2s both' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={SECTION_LABEL}>A way to watch it over time</div>
+            <div className="font-orbitron" style={SECTION_LABEL}>
+              A way to watch it over time
+            </div>
             <p
               style={{
                 margin: '12px auto 0',
@@ -1114,7 +1143,7 @@ export default function Observations() {
                 fontSize: fs(15.5),
                 fontWeight: 600,
                 lineHeight: 1.5,
-                color: '#8ba1b1',
+                color: 'rgb(var(--constellation-slate-light-rgb))',
               }}
             >
               Choose how long to watch. Superpower asks the same few questions on a rhythm.
@@ -1148,24 +1177,31 @@ export default function Observations() {
                     borderRadius: 15,
                     padding: '14px 22px',
                     background: selected
-                      ? 'linear-gradient(150deg,rgba(30,46,72,.9),rgba(8,13,24,.85))'
-                      : 'rgba(9,13,22,.6)',
-                    border: `1px solid ${selected ? 'rgba(240,201,138,.55)' : 'rgba(75,233,255,.14)'}`,
+                      ? 'linear-gradient(150deg,rgb(var(--constellation-navy-soft2-rgb) / .9),rgb(var(--constellation-ink-navy-rgb) / .85))'
+                      : 'rgb(var(--constellation-card-rgb) / .6)',
+                    border: `1px solid ${selected ? 'rgb(var(--constellation-gold-rgb) / .55)' : 'rgb(var(--constellation-cyan-rgb) / .14)'}`,
                     transition: 'all .2s ease',
                   }}
                 >
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: 'Orbitron, sans-serif',
                       fontWeight: 700,
                       fontSize: fs(17),
-                      color: selected ? '#f7fdff' : '#a8c1d1',
+                      color: selected
+                        ? 'rgb(var(--constellation-cyan-palest-rgb))'
+                        : 'rgb(var(--constellation-slate-pale-rgb))',
                     }}
                   >
                     {s.label}
                   </div>
                   <div
-                    style={{ marginTop: 3, fontWeight: 600, fontSize: fs(12.5), color: '#7e97a8' }}
+                    style={{
+                      marginTop: 3,
+                      fontWeight: 600,
+                      fontSize: fs(12.5),
+                      color: 'rgb(var(--constellation-slate-mid-rgb))',
+                    }}
                   >
                     {s.tag}
                   </div>
@@ -1184,8 +1220,9 @@ export default function Observations() {
                 style={{
                   borderRadius: 22,
                   padding: '26px 28px',
-                  background: 'linear-gradient(165deg,rgba(14,22,38,.9),rgba(6,9,17,.9))',
-                  border: '1px solid rgba(75,233,255,.18)',
+                  background:
+                    'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .9),rgb(var(--constellation-navy-panel2-rgb) / .9))',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .18)',
                 }}
               >
                 <div
@@ -1198,11 +1235,11 @@ export default function Observations() {
                   }}
                 >
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: 'Orbitron, sans-serif',
                       fontWeight: 900,
                       fontSize: fs(20),
-                      color: '#f7fdff',
+                      color: 'rgb(var(--constellation-cyan-palest-rgb))',
                     }}
                   >
                     {activeSpan.title}
@@ -1214,13 +1251,18 @@ export default function Observations() {
                         fontSize: fs(10.5),
                         letterSpacing: '.16em',
                         textTransform: 'uppercase',
-                        color: '#6f8a9c',
+                        color: 'rgb(var(--constellation-slate-rgb))',
                       }}
                     >
                       Check-in rhythm
                     </div>
                     <div
-                      style={{ marginTop: 3, fontWeight: 700, fontSize: fs(15), color: '#f0c98a' }}
+                      style={{
+                        marginTop: 3,
+                        fontWeight: 700,
+                        fontSize: fs(15),
+                        color: 'rgb(var(--constellation-gold-rgb))',
+                      }}
                     >
                       {activeSpan.cadence}
                     </div>
@@ -1243,7 +1285,7 @@ export default function Observations() {
                         borderRadius: 15,
                         padding: '17px 18px',
                         background: 'rgba(6,10,18,.7)',
-                        border: '1px solid rgba(75,233,255,.14)',
+                        border: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -1262,7 +1304,7 @@ export default function Observations() {
                             fontSize: fs(10.5),
                             letterSpacing: '.18em',
                             textTransform: 'uppercase',
-                            color: '#7e97a8',
+                            color: 'rgb(var(--constellation-slate-mid-rgb))',
                           }}
                         >
                           {step.when}
@@ -1273,7 +1315,7 @@ export default function Observations() {
                           marginTop: 10,
                           fontWeight: 700,
                           fontSize: fs(15),
-                          color: '#eafdff',
+                          color: 'rgb(var(--constellation-cyan-pale-rgb))',
                         }}
                       >
                         {fillTemplate(step.title, childName, childGender)}
@@ -1284,7 +1326,7 @@ export default function Observations() {
                           fontSize: fs(13.5),
                           fontWeight: 600,
                           lineHeight: 1.45,
-                          color: '#8ba1b1',
+                          color: 'rgb(var(--constellation-slate-light-rgb))',
                         }}
                       >
                         {fillTemplate(step.body, childName, childGender)}
@@ -1305,17 +1347,17 @@ export default function Observations() {
                 borderRadius: 22,
                 padding: '26px 28px',
                 background: 'linear-gradient(165deg,rgba(10,16,28,.92),rgba(5,8,15,.92))',
-                border: '1px solid rgba(240,201,138,.28)',
+                border: '1px solid rgb(var(--constellation-gold-rgb) / .28)',
               }}
             >
               <div className="obs-cta">
                 <div>
                   <div
+                    className="font-orbitron"
                     style={{
-                      fontFamily: 'Orbitron, sans-serif',
                       fontWeight: 700,
                       fontSize: fs(18),
-                      color: '#f7fdff',
+                      color: 'rgb(var(--constellation-cyan-palest-rgb))',
                     }}
                   >
                     {startTitle}
@@ -1326,7 +1368,7 @@ export default function Observations() {
                       fontSize: fs(15),
                       fontWeight: 600,
                       lineHeight: 1.5,
-                      color: '#a8c1d1',
+                      color: 'rgb(var(--constellation-slate-pale-rgb))',
                       maxWidth: proseW(620),
                     }}
                   >
@@ -1340,11 +1382,11 @@ export default function Observations() {
                           style={{
                             padding: '7px 14px',
                             borderRadius: 999,
-                            background: 'rgba(75,233,255,.08)',
-                            border: '1px solid rgba(75,233,255,.28)',
+                            background: 'rgb(var(--constellation-cyan-rgb) / .08)',
+                            border: '1px solid rgb(var(--constellation-cyan-rgb) / .28)',
                             fontWeight: 700,
                             fontSize: fs(12),
-                            color: '#bfe8f5',
+                            color: 'rgb(var(--constellation-cyan-soft-rgb))',
                           }}
                         >
                           {obs.title}
@@ -1364,14 +1406,14 @@ export default function Observations() {
                     padding: '15px 34px',
                     borderRadius: 999,
                     border: 'none',
-                    background: 'linear-gradient(135deg,#4be9ff,#f0c98a)',
-                    fontFamily: 'Orbitron, sans-serif',
+                    background:
+                      'linear-gradient(135deg,rgb(var(--constellation-cyan-rgb)),rgb(var(--constellation-gold-rgb)))',
                     fontWeight: 700,
                     fontSize: fs(13),
                     letterSpacing: '.14em',
                     textTransform: 'uppercase',
                     color: '#04121a',
-                    boxShadow: '0 0 30px rgba(75,233,255,.3)',
+                    boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .3)',
                     opacity: tracked.length === 0 || isSaving ? 0.4 : 1,
                     pointerEvents: tracked.length === 0 || isSaving ? 'none' : 'auto',
                     transition: 'all .2s ease',
@@ -1386,7 +1428,9 @@ export default function Observations() {
 
         {/* What you can do with this */}
         <section style={{ marginTop: 44, animation: 'obsFadeUp .7s ease .32s both' }}>
-          <div style={SECTION_LABEL}>What you can do with this</div>
+          <div className="font-orbitron" style={SECTION_LABEL}>
+            What you can do with this
+          </div>
           <div
             style={{
               display: 'grid',
@@ -1401,11 +1445,17 @@ export default function Observations() {
                 style={{
                   borderRadius: 16,
                   padding: '19px 20px',
-                  background: 'rgba(9,13,22,.6)',
-                  border: '1px solid rgba(75,233,255,.12)',
+                  background: 'rgb(var(--constellation-card-rgb) / .6)',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .12)',
                 }}
               >
-                <div style={{ fontWeight: 700, fontSize: fs(15.5), color: '#eafdff' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: fs(15.5),
+                    color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                  }}
+                >
                   {fillTemplate(next.title, childName, childGender)}
                 </div>
                 <div
@@ -1414,7 +1464,7 @@ export default function Observations() {
                     fontSize: fs(14),
                     fontWeight: 600,
                     lineHeight: 1.5,
-                    color: '#8ba1b1',
+                    color: 'rgb(var(--constellation-slate-light-rgb))',
                   }}
                 >
                   {fillTemplate(next.body, childName, childGender)}
@@ -1432,7 +1482,14 @@ export default function Observations() {
             }}
           >
             <ShieldIcon />
-            <div style={{ fontSize: fs(13), fontWeight: 600, lineHeight: 1.5, color: '#6f8a9c' }}>
+            <div
+              style={{
+                fontSize: fs(13),
+                fontWeight: 600,
+                lineHeight: 1.5,
+                color: 'rgb(var(--constellation-slate-rgb))',
+              }}
+            >
               Notes stay in your account and are never shared unless you share them. Superpower
               records what you notice. It draws no conclusions and labels nothing.
             </div>
@@ -1459,7 +1516,7 @@ export default function Observations() {
               justifyContent: 'center',
               padding: 26,
               background:
-                'radial-gradient(ellipse at 50% 40%,rgba(8,14,26,.72),rgba(2,3,9,.94) 72%)',
+                'radial-gradient(ellipse at 50% 40%,rgb(var(--constellation-overlay-rgb) / .72),rgb(var(--constellation-void-rgb) / .94) 72%)',
             }}
           >
             <motion.div
@@ -1477,9 +1534,10 @@ export default function Observations() {
                 borderRadius: 22,
                 padding: '30px 30px 26px',
                 textAlign: 'center',
-                background: 'linear-gradient(165deg,rgba(14,22,38,.97),rgba(6,9,17,.97))',
-                border: '1px solid rgba(75,233,255,.32)',
-                boxShadow: '0 30px 90px rgba(2,6,15,.8)',
+                background:
+                  'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .97),rgb(var(--constellation-navy-panel2-rgb) / .97))',
+                border: '1px solid rgb(var(--constellation-cyan-rgb) / .32)',
+                boxShadow: '0 30px 90px rgb(var(--constellation-void-deep-rgb) / .8)',
               }}
             >
               <div
@@ -1491,20 +1549,20 @@ export default function Observations() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: 'rgba(75,233,255,.12)',
-                  border: '1.5px solid rgba(75,233,255,.5)',
-                  boxShadow: '0 0 30px rgba(75,233,255,.22)',
+                  background: 'rgb(var(--constellation-cyan-rgb) / .12)',
+                  border: '1.5px solid rgb(var(--constellation-cyan-rgb) / .5)',
+                  boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .22)',
                 }}
               >
                 <ClockIcon />
               </div>
               <div
+                className="font-orbitron"
                 style={{
                   marginTop: 18,
-                  fontFamily: 'Orbitron, sans-serif',
                   fontWeight: 700,
                   fontSize: fs(19),
-                  color: '#eafdff',
+                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
                 }}
               >
                 Tracking started
@@ -1515,7 +1573,7 @@ export default function Observations() {
                   fontSize: fs(15),
                   fontWeight: 600,
                   lineHeight: 1.5,
-                  color: '#a8c1d1',
+                  color: 'rgb(var(--constellation-slate-pale-rgb))',
                 }}
               >
                 {startedLine}
@@ -1528,15 +1586,15 @@ export default function Observations() {
                   marginTop: 22,
                   padding: '12px 30px',
                   borderRadius: 999,
-                  border: '1px solid rgba(75,233,255,.45)',
-                  background: 'rgba(6,12,20,.8)',
-                  fontFamily: 'Rajdhani, sans-serif',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .45)',
+                  background: 'rgb(var(--constellation-navy-dusk-rgb) / .8)',
                   fontWeight: 700,
                   fontSize: fs(12.5),
                   letterSpacing: '.16em',
                   textTransform: 'uppercase',
-                  color: '#bfe8f5',
+                  color: 'rgb(var(--constellation-cyan-soft-rgb))',
                 }}
+                className="font-rajdhani"
               >
                 Done
               </button>

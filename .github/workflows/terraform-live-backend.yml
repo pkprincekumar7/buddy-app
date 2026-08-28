@@ -76,6 +76,7 @@ jobs:
       TF_VAR_domain_name:         ${{ secrets.DOMAIN_NAME }}
       TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
       TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
+      TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
       # TF_VAR_acm_certificate_arn is resolved per-region in the
       # "Resolve ACM certificate ARN" step below and exported to GITHUB_ENV.
       # TF_VAR_subdomain_internal, TF_VAR_cookie_domain, and TF_VAR_cors_origins
@@ -115,6 +116,7 @@ jobs:
           GEMINI_MODEL:                        ${{ secrets.GEMINI_MODEL }}
           REDIS_AUTH_TOKEN:                    ${{ secrets.REDIS_AUTH_TOKEN }}
           OPS_EMAIL:                           ${{ secrets.OPS_EMAIL }}
+          ORIGIN_VERIFY_SECRET:                ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
@@ -136,6 +138,7 @@ jobs:
           [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
           [[ -z "$REDIS_AUTH_TOKEN"               ]] && missing+=("REDIS_AUTH_TOKEN")
           [[ -z "$OPS_EMAIL"                      ]] && missing+=("OPS_EMAIL")
+          [[ -z "$ORIGIN_VERIFY_SECRET"           ]] && missing+=("ORIGIN_VERIFY_SECRET")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."

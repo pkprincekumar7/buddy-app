@@ -26,6 +26,7 @@ import {
   Check,
 } from 'lucide-react';
 import { api } from '@/api/client';
+import { useTts } from '@/lib/TtsContext';
 import {
   CHATBOT_CAPTURED_FIELDS,
   questionnaireFieldHasValue,
@@ -209,7 +210,10 @@ function PhaseSplashScreen({ splash }: { splash: PhaseSplash }) {
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 70, damping: 12, delay: 0.15 }}
-          className={`flex h-24 w-24 items-center justify-center rounded-full text-5xl ring-4 ${splash.iconColor}`}
+          className={cn(
+            'flex h-24 w-24 items-center justify-center rounded-full text-5xl ring-4',
+            splash.iconColor,
+          )}
         >
           {splash.icon}
         </motion.div>
@@ -284,7 +288,15 @@ export default function ConversationalOnboarding({
   const [currentStep, setCurrentStep] = useState(0);
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>({});
   const [isTyping, setIsTyping] = useState(false);
-  const voiceEnabledRef = useRef(true);
+  // Sourced from the shared TtsContext (see task 18) rather than a local
+  // default + one-off DB fetch — that copy never learned about a toggle
+  // made elsewhere in the app, and the Ivy intro below never checked it
+  // at all.
+  const { ttsEnabled } = useTts();
+  const voiceEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    voiceEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
   const [waitingForResponse, setWaitingForResponse] = useState(false);
   const [analyzingState, setAnalyzingState] = useState<AnalyzingState>(ANALYZING_INITIAL);
   const [allAnswered, setAllAnswered] = useState(false);
@@ -334,7 +346,7 @@ export default function ConversationalOnboarding({
     }, 10000);
 
     const speakIntro = () => {
-      if (typeof window === 'undefined' || !window.speechSynthesis) {
+      if (typeof window === 'undefined' || !window.speechSynthesis || !voiceEnabledRef.current) {
         clearTimeout(fallback);
         setTimeout(() => {
           showIntroRef.current = false;
@@ -532,17 +544,10 @@ export default function ConversationalOnboarding({
 
     void (async () => {
       try {
-        let slim: Record<string, unknown> = {};
-        const [child, prefs] = await Promise.all([
-          childId ? api.entities.Child.get(childId) : Promise.resolve(null),
-          api.preferences.get(),
-        ]);
-        slim = child
+        const child = childId ? await api.entities.Child.get(childId) : null;
+        const slim = child
           ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) ?? {})
           : {};
-        if (typeof prefs.tts_enabled === 'boolean') {
-          voiceEnabledRef.current = prefs.tts_enabled;
-        }
         if (cancelled) return;
 
         const flow = conversationFlowRef.current;

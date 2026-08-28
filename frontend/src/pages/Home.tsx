@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { api } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 import ChildCard from '@/components/shared/ChildCard';
+import PageLoader from '@/components/shared/PageLoader';
 import {
   Sparkles,
   ArrowRight,
@@ -21,6 +22,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // Web app only — the React Native app (frontend-app/) has its own update flow.
@@ -116,15 +118,7 @@ export default function Home() {
   const firstChild = children[0]?.id ? children[0] : null;
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
-        />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (
@@ -336,7 +330,11 @@ export default function Home() {
                 className="border-edge-faint hover:border-edge group rounded-2xl bg-card p-6 transition-all duration-300"
               >
                 <div
-                  className={`h-12 w-12 rounded-xl bg-gradient-to-br ${pillar.color} glow-pillar mb-4 flex items-center justify-center transition-all duration-300 group-hover:scale-110`}
+                  className={cn(
+                    'h-12 w-12 rounded-xl bg-gradient-to-br',
+                    pillar.color,
+                    'glow-pillar mb-4 flex items-center justify-center transition-all duration-300 group-hover:scale-110',
+                  )}
                   style={{ '--pillar-glow': pillar.glow } as CSSProperties}
                 >
                   <pillar.icon className="h-6 w-6 text-white" />

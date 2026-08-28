@@ -87,6 +87,12 @@ variable "redis_auth_token" {
   sensitive   = true
 }
 
+variable "origin_verify_secret" {
+  description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate by updating that secret and re-applying both infra-live-backend and infra-live-edge."
+  type        = string
+  sensitive   = true
+}
+
 variable "elasticache_replica_count" {
   description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica; 2 = primary + 2 replicas). dev/sbx/stg: 0, prod: 2."
   type        = number

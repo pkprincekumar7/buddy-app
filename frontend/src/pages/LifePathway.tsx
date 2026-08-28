@@ -13,7 +13,8 @@ import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
 import { api } from '@/api/client';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
-import { SPINNER, MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
+import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
+import Spinner from '@/components/shared/Spinner';
 import {
   GROWTH_AREAS,
   copyTokensFor,
@@ -97,9 +98,9 @@ function splitGapCaption(text: string): [string, string] | null {
   return [words.slice(0, 3).join(' '), words.slice(3).join(' ')];
 }
 
-const GOLD = '#f0c98a';
-const CYAN = '#4be9ff';
-const INK = '#04060d';
+const GOLD = 'rgb(var(--constellation-gold-rgb))';
+const CYAN = 'rgb(var(--constellation-cyan-rgb))';
+const INK = 'rgb(var(--constellation-navy-deepest-rgb))';
 
 /**
  * Geometry for the 90-day rail's Day 0/30/60/90 labels.
@@ -446,7 +447,6 @@ export default function LifePathway() {
   // most of the page's headings, and passing a raw number would silently opt them
   // out of --lp-type-scale — which is exactly what happened the first time.
   const orbitron = (size?: number, weight: 700 | 900 = 900): React.CSSProperties => ({
-    fontFamily: 'Orbitron, sans-serif',
     fontWeight: weight,
     ...(size === undefined ? {} : { fontSize: lpfs(size) }),
   });
@@ -465,10 +465,7 @@ export default function LifePathway() {
       >
         {isLoading ? (
           <div className="flex min-h-screen items-center justify-center bg-background">
-            <motion.div
-              {...SPINNER}
-              className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent"
-            />
+            <Spinner className="h-12 w-12 border-4" />
           </div>
         ) : (
           <div
@@ -476,11 +473,10 @@ export default function LifePathway() {
             style={{
               minHeight: '100vh',
               background:
-                'radial-gradient(ellipse at 70% -10%,rgba(240,201,138,.13),rgba(4,6,13,0) 52%),radial-gradient(ellipse at 12% 30%,rgba(30,196,232,.14),rgba(4,6,13,0) 50%),radial-gradient(ellipse at 20% 95%,rgba(160,120,255,.10),rgba(4,6,13,0) 45%),#04060d',
-              fontFamily: 'Rajdhani, sans-serif',
-              color: '#e7f5f9',
+                'radial-gradient(ellipse at 70% -10%,rgb(var(--constellation-gold-rgb) / .13),rgb(var(--constellation-navy-deepest-rgb) / 0) 52%),radial-gradient(ellipse at 12% 30%,rgb(var(--constellation-cyan-bright-rgb) / .14),rgb(var(--constellation-navy-deepest-rgb) / 0) 50%),radial-gradient(ellipse at 20% 95%,rgba(160,120,255,.10),rgb(var(--constellation-navy-deepest-rgb) / 0) 45%),rgb(var(--constellation-navy-deepest-rgb))',
+              color: 'rgb(var(--constellation-text-frost-rgb))',
             }}
-            className="lp-root"
+            className="lp-root font-rajdhani"
           >
             <style>{`
               /* Content column widens on large displays; type takes a flat +20%
@@ -500,13 +496,13 @@ export default function LifePathway() {
               @keyframes lpGapIn { from { opacity: 0; } to { opacity: 1; } }
               @keyframes lpPopNode { 0% { opacity: 0; transform: scale(.3); } 60% { transform: scale(1.25); } 100% { opacity: 1; transform: scale(1); } }
               @keyframes lpSwap { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-              @keyframes lpGlowText { 0%, 100% { text-shadow: 0 0 26px rgba(240,201,138,.35); } 50% { text-shadow: 0 0 44px rgba(240,201,138,.7); } }
+              @keyframes lpGlowText { 0%, 100% { text-shadow: 0 0 26px rgb(var(--constellation-gold-rgb) / .35); } 50% { text-shadow: 0 0 44px rgb(var(--constellation-gold-rgb) / .7); } }
               @keyframes lpSpin { to { transform: rotate(360deg); } }
               @keyframes lpShimmer { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
               .lp-select { appearance: none; -webkit-appearance: none; }
-              .lp-select:hover, .lp-select:focus { border-color: rgba(75,233,255,.7) !important; }
+              .lp-select:hover, .lp-select:focus { border-color: rgb(var(--constellation-cyan-rgb) / .7) !important; }
               .lp-cta { transition: transform .2s ease, box-shadow .2s ease; }
-              .lp-cta:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgba(240,201,138,.55) !important; }
+              .lp-cta:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgb(var(--constellation-gold-rgb) / .55) !important; }
               @media (prefers-reduced-motion: reduce) {
                 [style*="lpFadeUp"], [style*="lpPopNode"], [style*="lpDrawLine"],
                 [style*="lpGapIn"], [style*="lpSwap"], [style*="lpFadeIn"] { animation: none !important; }
@@ -542,12 +538,13 @@ export default function LifePathway() {
                     fontSize: lpfs(15),
                     fontWeight: 700,
                     lineHeight: 1.5,
-                    color: '#cfe9f2',
+                    color: 'rgb(var(--constellation-cyan-frost-rgb))',
                   }}
                 >
                   {COPY.intro}
                 </p>
                 <h1
+                  className="font-orbitron"
                   style={{
                     margin: '16px auto 0',
                     maxWidth: lpProseW(940),
@@ -570,7 +567,7 @@ export default function LifePathway() {
                     fontSize: lpfs(16),
                     fontWeight: 600,
                     lineHeight: 1.55,
-                    color: '#a8c1d1',
+                    color: 'rgb(var(--constellation-slate-pale-rgb))',
                   }}
                 >
                   A lifelong journey. We begin with the first ten years, age {currentAge} to{' '}
@@ -594,9 +591,9 @@ export default function LifePathway() {
                     borderRadius: 20,
                     padding: '24px 26px',
                     background: 'linear-gradient(150deg,rgba(52,40,18,.85),rgba(12,17,28,.9))',
-                    border: '1px solid rgba(240,201,138,.4)',
+                    border: '1px solid rgb(var(--constellation-gold-rgb) / .4)',
                     overflow: 'hidden',
-                    boxShadow: '0 0 60px rgba(240,201,138,.10) inset',
+                    boxShadow: '0 0 60px rgb(var(--constellation-gold-rgb) / .10) inset',
                   }}
                 >
                   <div
@@ -608,18 +605,19 @@ export default function LifePathway() {
                       height: 220,
                       borderRadius: '50%',
                       background:
-                        'radial-gradient(circle,rgba(240,201,138,.22),rgba(240,201,138,0) 70%)',
+                        'radial-gradient(circle,rgb(var(--constellation-gold-rgb) / .22),rgb(var(--constellation-gold-rgb) / 0) 70%)',
                     }}
                   />
                   <div style={{ position: 'relative', ...eyebrow }}>{t(COPY.superpowerLabel)}</div>
                   <div
+                    className="font-orbitron"
                     style={{
                       position: 'relative',
                       marginTop: 10,
                       ...orbitron(),
                       fontSize: 'calc(clamp(22px,2.5vw,30px) * var(--lp-type-scale, 1))',
                       lineHeight: 1.05,
-                      color: '#fff6e2',
+                      color: 'rgb(var(--constellation-gold-cream2-rgb))',
                     }}
                   >
                     {superpower.title}
@@ -653,12 +651,12 @@ export default function LifePathway() {
                           style={{
                             padding: '7px 14px',
                             borderRadius: 999,
-                            border: '1px solid rgba(240,201,138,.45)',
+                            border: '1px solid rgb(var(--constellation-gold-rgb) / .45)',
                             fontWeight: 700,
                             fontSize: lpfs(12),
                             letterSpacing: '.12em',
                             textTransform: 'uppercase',
-                            color: '#f5e6c4',
+                            color: 'rgb(var(--constellation-gold-pale-rgb))',
                           }}
                         >
                           {trait}
@@ -672,14 +670,18 @@ export default function LifePathway() {
                   style={{
                     borderRadius: 22,
                     padding: '26px 28px',
-                    background: 'linear-gradient(150deg,rgba(20,31,50,.8),rgba(8,13,24,.8))',
-                    border: '1px solid rgba(75,233,255,.22)',
+                    background:
+                      'linear-gradient(150deg,rgb(var(--constellation-navy-panel3-rgb) / .8),rgb(var(--constellation-ink-navy-rgb) / .8))',
+                    border: '1px solid rgb(var(--constellation-cyan-rgb) / .22)',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'center',
                   }}
                 >
-                  <div style={{ ...orbitron(32), lineHeight: 1, color: CYAN }}>
+                  <div
+                    className="font-orbitron"
+                    style={{ ...orbitron(32), lineHeight: 1, color: CYAN }}
+                  >
                     {COPY.firstTenTitle}
                   </div>
                   <div
@@ -688,7 +690,7 @@ export default function LifePathway() {
                       fontSize: lpfs(14),
                       fontWeight: 600,
                       lineHeight: 1.45,
-                      color: '#93aebe',
+                      color: 'rgb(var(--constellation-slate-cool-rgb))',
                     }}
                   >
                     years of a lifelong journey. Superpower stays with {voice.him} for life; age{' '}
@@ -703,9 +705,10 @@ export default function LifePathway() {
                   marginTop: isMobile ? 40 : 56,
                   borderRadius: 24,
                   padding: isMobile ? '22px 18px 20px' : '28px 30px 24px',
-                  background: 'linear-gradient(165deg,rgba(20,31,50,.7),rgba(8,13,24,.72))',
-                  border: '1px solid rgba(75,233,255,.18)',
-                  boxShadow: '0 30px 90px rgba(2,6,15,.7)',
+                  background:
+                    'linear-gradient(165deg,rgb(var(--constellation-navy-panel3-rgb) / .7),rgb(var(--constellation-ink-navy-rgb) / .72))',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .18)',
+                  boxShadow: '0 30px 90px rgb(var(--constellation-void-deep-rgb) / .7)',
                   animation: 'lpFadeUp .7s ease .2s both',
                 }}
               >
@@ -719,7 +722,14 @@ export default function LifePathway() {
                   }}
                 >
                   <div>
-                    <div style={{ ...orbitron(17), letterSpacing: '.02em', color: '#f2fdff' }}>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        ...orbitron(17),
+                        letterSpacing: '.02em',
+                        color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                      }}
+                    >
                       {COPY.chartTitle}
                     </div>
                     <div
@@ -727,7 +737,7 @@ export default function LifePathway() {
                         marginTop: 6,
                         fontSize: lpfs(13.5),
                         fontWeight: 600,
-                        color: '#7f97a8',
+                        color: 'rgb(var(--constellation-slate-warm-rgb))',
                       }}
                     >
                       {COPY.chartSub}
@@ -749,7 +759,7 @@ export default function LifePathway() {
                             fontSize: lpfs(10.5),
                             letterSpacing: '.2em',
                             textTransform: 'uppercase',
-                            color: '#6f8a9c',
+                            color: 'rgb(var(--constellation-slate-rgb))',
                           }}
                         >
                           {COPY.growthAreaLabel}
@@ -758,7 +768,7 @@ export default function LifePathway() {
                           style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
                         >
                           <select
-                            className="lp-select"
+                            className="lp-select font-rajdhani"
                             aria-label={COPY.growthAreaLabel}
                             value={String(selectedIdx)}
                             onChange={(e) => {
@@ -769,13 +779,12 @@ export default function LifePathway() {
                               cursor: 'pointer',
                               padding: '10px 40px 10px 16px',
                               borderRadius: 999,
-                              background: 'rgba(8,14,26,.9)',
-                              border: '1px solid rgba(75,233,255,.34)',
-                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'rgb(var(--constellation-overlay-rgb) / .9)',
+                              border: '1px solid rgb(var(--constellation-cyan-rgb) / .34)',
                               fontWeight: 700,
                               fontSize: lpfs(14),
                               letterSpacing: '.04em',
-                              color: '#eafdff',
+                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
                               outline: 'none',
                             }}
                           >
@@ -832,14 +841,20 @@ export default function LifePathway() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 22, height: 2, background: '#3c505f' }} />
+                      <div
+                        style={{
+                          width: 22,
+                          height: 2,
+                          background: 'rgb(var(--constellation-slate-navy2-rgb))',
+                        }}
+                      />
                       <div
                         style={{
                           fontWeight: 700,
                           fontSize: lpfs(11),
                           letterSpacing: '.14em',
                           textTransform: 'uppercase',
-                          color: '#6f8697',
+                          color: 'rgb(var(--constellation-slate-mute-rgb))',
                         }}
                       >
                         {COPY.legendRoutine}
@@ -862,12 +877,12 @@ export default function LifePathway() {
                       <linearGradient id="lpLine" x1="0" y1="1" x2="1" y2="0">
                         <stop offset="0%" stopColor={`rgba(${hue},.7)`} />
                         <stop offset="45%" stopColor={`rgb(${hue})`} />
-                        <stop offset="100%" stopColor="#ffd89a" />
+                        <stop offset="100%" stopColor="rgb(var(--constellation-gold-warm-rgb))" />
                       </linearGradient>
                       <linearGradient id="lpGap" x1="0" y1="0" x2="1" y2="0">
                         <stop offset="0%" stopColor={`rgba(${hue},0)`} />
                         <stop offset="45%" stopColor={`rgba(${hue},.13)`} />
-                        <stop offset="100%" stopColor="rgba(240,201,138,.26)" />
+                        <stop offset="100%" stopColor="rgb(var(--constellation-gold-rgb) / .26)" />
                       </linearGradient>
                     </defs>
                     <path
@@ -878,7 +893,7 @@ export default function LifePathway() {
                     <path
                       d="M40 300 C160 300 260 302 380 304 C520 306 700 308 940 310"
                       fill="none"
-                      stroke="#3c505f"
+                      stroke="rgb(var(--constellation-slate-navy2-rgb))"
                       strokeWidth={2}
                       strokeDasharray="8 8"
                       vectorEffect="non-scaling-stroke"
@@ -924,9 +939,9 @@ export default function LifePathway() {
                             borderRadius: '50%',
                             background: '#fff3d6',
                             boxShadow: active
-                              ? '0 0 0 6px rgba(240,201,138,.20), 0 0 26px rgba(255,216,154,1)'
-                              : '0 0 14px rgba(240,201,138,.7)',
-                            border: '2px solid rgba(4,6,13,.9)',
+                              ? '0 0 0 6px rgb(var(--constellation-gold-rgb) / .20), 0 0 26px rgb(var(--constellation-gold-warm-rgb))'
+                              : '0 0 14px rgb(var(--constellation-gold-rgb) / .7)',
+                            border: '2px solid rgb(var(--constellation-navy-deepest-rgb) / .9)',
                           }}
                         />
                       </div>
@@ -961,11 +976,12 @@ export default function LifePathway() {
                     }}
                   >
                     <div
+                      className="font-orbitron"
                       style={{
                         ...orbitron(13),
                         letterSpacing: '.22em',
                         textTransform: 'uppercase',
-                        color: 'rgba(240,201,138,.75)',
+                        color: 'rgb(var(--constellation-gold-rgb) / .75)',
                       }}
                     >
                       {COPY.gapTitle}
@@ -1011,9 +1027,10 @@ export default function LifePathway() {
                           border: 'none',
                           padding: 0,
                           ...orbitron(12.5, 700),
-                          color: active ? '#ffd89a' : '#5f7688',
+                          color: active ? 'rgb(var(--constellation-gold-warm-rgb))' : '#5f7688',
                           transition: 'color .25s ease',
                         }}
+                        className="font-orbitron"
                       >
                         {ages[k]}
                       </button>
@@ -1025,7 +1042,7 @@ export default function LifePathway() {
                 <div
                   style={{
                     marginTop: 14,
-                    borderTop: '1px solid rgba(75,233,255,.14)',
+                    borderTop: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
                     paddingTop: 22,
                   }}
                 >
@@ -1051,7 +1068,10 @@ export default function LifePathway() {
                           flexWrap: 'wrap',
                         }}
                       >
-                        <div style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}>
+                        <div
+                          className="font-orbitron"
+                          style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}
+                        >
                           AGE {activeMilestone?.age}
                         </div>
                         <div
@@ -1062,7 +1082,7 @@ export default function LifePathway() {
                             fontSize: lpfs(14),
                             fontWeight: 700,
                             letterSpacing: '.02em',
-                            color: '#89d9ee',
+                            color: 'rgb(var(--constellation-cyan-mid-rgb))',
                           }}
                         >
                           <span
@@ -1070,7 +1090,7 @@ export default function LifePathway() {
                               width: 13,
                               height: 13,
                               borderRadius: '50%',
-                              border: '2px solid rgba(75,233,255,.25)',
+                              border: '2px solid rgb(var(--constellation-cyan-rgb) / .25)',
                               borderTopColor: CYAN,
                               animation: 'lpSpin .8s linear infinite',
                             }}
@@ -1084,15 +1104,15 @@ export default function LifePathway() {
                           {
                             label: COPY.msSuperpowerLabel,
                             accent: CYAN,
-                            bg: 'linear-gradient(150deg,rgba(30,52,80,.55),rgba(8,13,24,.5))',
-                            border: '1px solid rgba(75,233,255,.20)',
+                            bg: 'linear-gradient(150deg,rgb(var(--constellation-navy-royal-rgb) / .55),rgb(var(--constellation-ink-navy-rgb) / .5))',
+                            border: '1px solid rgb(var(--constellation-cyan-rgb) / .20)',
                             bars: [96, 88, 64, 0, 78],
                           },
                           {
                             label: COPY.msRoutineLabel,
-                            accent: '#6f8697',
-                            bg: 'rgba(9,12,19,.45)',
-                            border: '1px solid rgba(120,145,165,.12)',
+                            accent: 'rgb(var(--constellation-slate-mute-rgb))',
+                            bg: 'rgb(var(--constellation-void-soft-rgb) / .45)',
+                            border: '1px solid rgb(var(--constellation-ring-faint-rgb) / .12)',
                             bars: [92, 70],
                           },
                         ].map((panel) => (
@@ -1125,7 +1145,8 @@ export default function LifePathway() {
                                     style={{
                                       height: 1,
                                       margin: '14px 0',
-                                      borderTop: '1px dashed rgba(75,233,255,.16)',
+                                      borderTop:
+                                        '1px dashed rgb(var(--constellation-cyan-rgb) / .16)',
                                     }}
                                   />
                                 ) : (
@@ -1137,7 +1158,7 @@ export default function LifePathway() {
                                       marginBottom: 9,
                                       borderRadius: 6,
                                       background:
-                                        'linear-gradient(90deg,rgba(75,233,255,.13),rgba(75,233,255,.05))',
+                                        'linear-gradient(90deg,rgb(var(--constellation-cyan-rgb) / .13),rgb(var(--constellation-cyan-rgb) / .05))',
                                       animation: `lpShimmer 1.5s ease-in-out ${String(i * 0.12)}s infinite`,
                                     }}
                                   />
@@ -1153,7 +1174,7 @@ export default function LifePathway() {
                             marginTop: 16,
                             fontSize: lpfs(13.5),
                             fontWeight: 600,
-                            color: '#7f97a8',
+                            color: 'rgb(var(--constellation-slate-warm-rgb))',
                             animation: 'lpFadeIn .5s ease both',
                           }}
                         >
@@ -1174,10 +1195,19 @@ export default function LifePathway() {
                           flexWrap: 'wrap',
                         }}
                       >
-                        <div style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}>
+                        <div
+                          className="font-orbitron"
+                          style={{ ...orbitron(12), letterSpacing: '.22em', color: GOLD }}
+                        >
                           AGE {activeMilestone?.age}
                         </div>
-                        <div style={{ ...orbitron(19, 700), color: '#f2fdff' }}>
+                        <div
+                          className="font-orbitron"
+                          style={{
+                            ...orbitron(19, 700),
+                            color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                          }}
+                        >
                           {activeMilestone?.title}
                         </div>
                       </div>
@@ -1187,9 +1217,9 @@ export default function LifePathway() {
                             borderRadius: 16,
                             padding: '20px 22px',
                             background:
-                              'linear-gradient(150deg,rgba(30,52,80,.9),rgba(8,13,24,.7))',
-                            border: '1px solid rgba(75,233,255,.4)',
-                            boxShadow: '0 0 40px rgba(75,233,255,.10)',
+                              'linear-gradient(150deg,rgb(var(--constellation-navy-royal-rgb) / .9),rgb(var(--constellation-ink-navy-rgb) / .7))',
+                            border: '1px solid rgb(var(--constellation-cyan-rgb) / .4)',
+                            boxShadow: '0 0 40px rgb(var(--constellation-cyan-rgb) / .10)',
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1220,7 +1250,7 @@ export default function LifePathway() {
                               fontSize: lpfs(15),
                               fontWeight: 600,
                               lineHeight: 1.5,
-                              color: '#eafdff',
+                              color: 'rgb(var(--constellation-cyan-pale-rgb))',
                             }}
                           >
                             {activeMilestone?.guided}
@@ -1230,11 +1260,11 @@ export default function LifePathway() {
                               style={{
                                 marginTop: 14,
                                 paddingTop: 12,
-                                borderTop: '1px dashed rgba(75,233,255,.22)',
+                                borderTop: '1px dashed rgb(var(--constellation-cyan-rgb) / .22)',
                                 fontSize: lpfs(13.5),
                                 fontWeight: 700,
                                 letterSpacing: '.02em',
-                                color: '#89d9ee',
+                                color: 'rgb(var(--constellation-cyan-mid-rgb))',
                               }}
                             >
                               {activeMilestone.power}
@@ -1245,15 +1275,15 @@ export default function LifePathway() {
                           style={{
                             borderRadius: 16,
                             padding: '20px 22px',
-                            background: 'rgba(9,12,19,.6)',
-                            border: '1px solid rgba(120,145,165,.16)',
+                            background: 'rgb(var(--constellation-void-soft-rgb) / .6)',
+                            border: '1px solid rgb(var(--constellation-ring-faint-rgb) / .16)',
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <svg
                               viewBox="0 0 24 24"
                               fill="none"
-                              stroke="#6f8697"
+                              stroke="rgb(var(--constellation-slate-mute-rgb))"
                               strokeWidth={2}
                               style={{ width: 15, height: 15 }}
                             >
@@ -1265,7 +1295,7 @@ export default function LifePathway() {
                                 fontSize: lpfs(11),
                                 letterSpacing: '.2em',
                                 textTransform: 'uppercase',
-                                color: '#6f8697',
+                                color: 'rgb(var(--constellation-slate-mute-rgb))',
                               }}
                             >
                               {COPY.msRoutineLabel}
@@ -1303,9 +1333,9 @@ export default function LifePathway() {
                       borderRadius: 22,
                       padding: '28px 30px',
                       background: 'linear-gradient(155deg,rgba(28,52,80,.9),rgba(40,32,16,.75))',
-                      border: '1px solid rgba(240,201,138,.45)',
+                      border: '1px solid rgb(var(--constellation-gold-rgb) / .45)',
                       overflow: 'hidden',
-                      boxShadow: '0 20px 70px rgba(75,233,255,.10)',
+                      boxShadow: '0 20px 70px rgb(var(--constellation-cyan-rgb) / .10)',
                     }}
                   >
                     <div
@@ -1317,10 +1347,17 @@ export default function LifePathway() {
                         height: 240,
                         borderRadius: '50%',
                         background:
-                          'radial-gradient(circle,rgba(75,233,255,.18),rgba(75,233,255,0) 70%)',
+                          'radial-gradient(circle,rgb(var(--constellation-cyan-rgb) / .18),rgb(var(--constellation-cyan-rgb) / 0) 70%)',
                       }}
                     />
-                    <div style={{ position: 'relative', ...orbitron(20), color: '#fff6e2' }}>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        position: 'relative',
+                        ...orbitron(20),
+                        color: 'rgb(var(--constellation-gold-cream2-rgb))',
+                      }}
+                    >
                       {COPY.compareSuperTitle}
                     </div>
                     <div
@@ -1353,11 +1390,17 @@ export default function LifePathway() {
                     style={{
                       borderRadius: 22,
                       padding: '28px 30px',
-                      background: 'rgba(9,12,19,.55)',
-                      border: '1px solid rgba(120,145,165,.16)',
+                      background: 'rgb(var(--constellation-void-soft-rgb) / .55)',
+                      border: '1px solid rgb(var(--constellation-ring-faint-rgb) / .16)',
                     }}
                   >
-                    <div style={{ ...orbitron(20, 700), color: '#8ba1b1' }}>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        ...orbitron(20, 700),
+                        color: 'rgb(var(--constellation-slate-light-rgb))',
+                      }}
+                    >
                       {COPY.compareRoutineTitle}
                     </div>
                     <div
@@ -1367,7 +1410,7 @@ export default function LifePathway() {
                         fontWeight: 700,
                         letterSpacing: '.02em',
                         lineHeight: 1.45,
-                        color: '#8ba1b1',
+                        color: 'rgb(var(--constellation-slate-light-rgb))',
                       }}
                     >
                       {t(COPY.compareRoutineLead)}
@@ -1395,13 +1438,18 @@ export default function LifePathway() {
                 }}
               >
                 <div>
-                  <div style={{ ...orbitron(17), color: '#f2fdff' }}>{COPY.ninetyTitle}</div>
+                  <div
+                    className="font-orbitron"
+                    style={{ ...orbitron(17), color: 'rgb(var(--constellation-cyan-paler-rgb))' }}
+                  >
+                    {COPY.ninetyTitle}
+                  </div>
                   <div
                     style={{
                       marginTop: 6,
                       fontSize: lpfs(13.5),
                       fontWeight: 600,
-                      color: '#7f97a8',
+                      color: 'rgb(var(--constellation-slate-warm-rgb))',
                     }}
                   >
                     Built for{' '}
@@ -1422,17 +1470,17 @@ export default function LifePathway() {
                 <svg
                   ref={railRef}
                   viewBox={`0 0 1000 ${String(railLabel.viewBoxHeight)}`}
+                  className="font-rajdhani"
                   style={{
                     width: '100%',
                     height: 'auto',
                     display: 'block',
                     marginTop: 18,
-                    fontFamily: 'Rajdhani, sans-serif',
                   }}
                 >
                   <defs>
                     <linearGradient id="lpP90" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="rgba(75,233,255,.55)" />
+                      <stop offset="0%" stopColor="rgb(var(--constellation-cyan-rgb) / .55)" />
                       <stop offset="100%" stopColor={GOLD} />
                     </linearGradient>
                   </defs>
@@ -1507,6 +1555,7 @@ export default function LifePathway() {
                         key={m.tab}
                         type="button"
                         onClick={() => setMonthIdx(i)}
+                        className="font-rajdhani"
                         style={{
                           cursor: 'pointer',
                           // Padding scales with the type so the pill grows with its
@@ -1515,9 +1564,10 @@ export default function LifePathway() {
                           // three tabs on one line at 320px (see comment above).
                           padding: isNarrow ? '6px 8px' : `${lpScale(10)} ${lpScale(20)}`,
                           borderRadius: 999,
-                          border: `1px solid ${on ? 'rgba(240,201,138,.6)' : 'rgba(75,233,255,.2)'}`,
-                          background: on ? 'rgba(240,201,138,.12)' : 'rgba(8,14,26,.7)',
-                          fontFamily: 'Rajdhani, sans-serif',
+                          border: `1px solid ${on ? 'rgb(var(--constellation-gold-rgb) / .6)' : 'rgb(var(--constellation-cyan-rgb) / .2)'}`,
+                          background: on
+                            ? 'rgb(var(--constellation-gold-rgb) / .12)'
+                            : 'rgb(var(--constellation-overlay-rgb) / .7)',
                           fontWeight: 700,
                           // Was a bare ternary, which the page-wide conversion to
                           // lpfs() did not match — so these tabs were the last text
@@ -1526,7 +1576,9 @@ export default function LifePathway() {
                           letterSpacing: isNarrow ? '.06em' : '.14em',
                           textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
-                          color: on ? '#f5e6c4' : '#7f97a8',
+                          color: on
+                            ? 'rgb(var(--constellation-gold-pale-rgb))'
+                            : 'rgb(var(--constellation-slate-warm-rgb))',
                           transition: 'all .25s ease',
                         }}
                       >
@@ -1542,8 +1594,9 @@ export default function LifePathway() {
                     marginTop: 18,
                     borderRadius: 20,
                     padding: isMobile ? '22px 20px' : '26px 28px',
-                    background: 'linear-gradient(160deg,rgba(20,31,50,.75),rgba(8,13,24,.75))',
-                    border: '1px solid rgba(240,201,138,.24)',
+                    background:
+                      'linear-gradient(160deg,rgb(var(--constellation-navy-panel3-rgb) / .75),rgb(var(--constellation-ink-navy-rgb) / .75))',
+                    border: '1px solid rgb(var(--constellation-gold-rgb) / .24)',
                     animation: 'lpSwap .4s ease both',
                   }}
                 >
@@ -1556,7 +1609,13 @@ export default function LifePathway() {
                       flexWrap: 'wrap',
                     }}
                   >
-                    <div style={{ ...orbitron(18, 700), color: '#eafdff' }}>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        ...orbitron(18, 700),
+                        color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                      }}
+                    >
                       {MONTHS[monthIdx]?.title}
                     </div>
                     <div
@@ -1565,7 +1624,7 @@ export default function LifePathway() {
                         fontSize: lpfs(11),
                         letterSpacing: '.16em',
                         textTransform: 'uppercase',
-                        color: '#6f8a9c',
+                        color: 'rgb(var(--constellation-slate-rgb))',
                       }}
                     >
                       {MONTHS[monthIdx]?.days}
@@ -1578,7 +1637,7 @@ export default function LifePathway() {
                       fontSize: lpfs(14),
                       fontWeight: 600,
                       lineHeight: 1.45,
-                      color: '#7f97a8',
+                      color: 'rgb(var(--constellation-slate-warm-rgb))',
                     }}
                   >
                     {t((MONTHS[monthIdx]?.sub ?? '').replace('{quality}', superpower.quality))}
@@ -1623,10 +1682,10 @@ export default function LifePathway() {
                     style={{
                       marginTop: 24,
                       paddingTop: 16,
-                      borderTop: '1px solid rgba(75,233,255,.14)',
+                      borderTop: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
                       fontSize: lpfs(14),
                       fontWeight: 700,
-                      color: '#8fd8e8',
+                      color: 'rgb(var(--constellation-cyan-bright2-rgb))',
                     }}
                   >
                     {t(MONTHS[monthIdx]?.end ?? '')}
@@ -1643,6 +1702,7 @@ export default function LifePathway() {
                 }}
               >
                 <h2
+                  className="font-orbitron"
                   style={{
                     margin: '0 auto',
                     maxWidth: lpProseW(760),
@@ -1657,7 +1717,7 @@ export default function LifePathway() {
                 </h2>
                 <button
                   type="button"
-                  className="lp-cta"
+                  className="lp-cta font-orbitron"
                   onClick={handleStartJourney}
                   style={{
                     cursor: 'pointer',
@@ -1669,8 +1729,8 @@ export default function LifePathway() {
                     ...orbitron(13),
                     letterSpacing: '.16em',
                     textTransform: 'uppercase',
-                    color: '#05131a',
-                    boxShadow: '0 0 40px rgba(75,233,255,.4)',
+                    color: 'rgb(var(--constellation-navy-rgb))',
+                    boxShadow: '0 0 40px rgb(var(--constellation-cyan-rgb) / .4)',
                   }}
                 >
                   Start {childName ? `${childName}'s` : 'the'} 90 days
@@ -1684,7 +1744,7 @@ export default function LifePathway() {
                 <motion.div
                   {...MODAL_BACKDROP}
                   className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-                  style={{ background: 'rgba(4,6,13,.8)' }}
+                  style={{ background: 'rgb(var(--constellation-navy-deepest-rgb) / .8)' }}
                   onClick={closeConcernModal}
                   role="presentation"
                 >
@@ -1693,13 +1753,13 @@ export default function LifePathway() {
                     role="dialog"
                     aria-modal="true"
                     aria-label="Share your concern"
-                    className="relative w-full max-w-lg rounded-2xl p-8 pt-12"
+                    className="relative w-full max-w-lg rounded-2xl p-8 pt-12 font-rajdhani"
                     style={{
-                      background: 'linear-gradient(160deg,rgba(20,31,50,.96),rgba(8,13,24,.98))',
-                      border: '1px solid rgba(240,201,138,.3)',
-                      boxShadow: '0 30px 90px rgba(2,6,15,.8)',
-                      fontFamily: 'Rajdhani, sans-serif',
-                      color: '#e7f5f9',
+                      background:
+                        'linear-gradient(160deg,rgb(var(--constellation-navy-panel3-rgb) / .96),rgb(var(--constellation-ink-navy-rgb) / .98))',
+                      border: '1px solid rgb(var(--constellation-gold-rgb) / .3)',
+                      boxShadow: '0 30px 90px rgb(var(--constellation-void-deep-rgb) / .8)',
+                      color: 'rgb(var(--constellation-text-frost-rgb))',
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -1707,7 +1767,7 @@ export default function LifePathway() {
                       type="button"
                       onClick={closeConcernModal}
                       className="absolute right-4 top-4 rounded-xl p-2 transition-colors"
-                      style={{ color: '#7f97a8' }}
+                      style={{ color: 'rgb(var(--constellation-slate-warm-rgb))' }}
                       aria-label="Close dialog"
                     >
                       <X className="h-5 w-5" />
@@ -1731,17 +1791,27 @@ export default function LifePathway() {
                               className="flex h-11 w-11 items-center justify-center rounded-xl"
                               style={{
                                 background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                                boxShadow: '0 0 26px rgba(75,233,255,.35)',
+                                boxShadow: '0 0 26px rgb(var(--constellation-cyan-rgb) / .35)',
                               }}
                             >
                               <Sparkles className="h-5 w-5" style={{ color: INK }} />
                             </div>
                             <div>
-                              <h3 style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
+                              <h3
+                                className="font-orbitron"
+                                style={{
+                                  ...orbitron(16, 700),
+                                  color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                                }}
+                              >
                                 One last thing
                               </h3>
                               <p
-                                style={{ fontSize: lpfs(13.5), fontWeight: 600, color: '#7f97a8' }}
+                                style={{
+                                  fontSize: lpfs(13.5),
+                                  fontWeight: 600,
+                                  color: 'rgb(var(--constellation-slate-warm-rgb))',
+                                }}
                               >
                                 Superpower wants to know
                               </p>
@@ -1759,12 +1829,11 @@ export default function LifePathway() {
                             value={concernInput}
                             onChange={(e) => setConcernInput(e.target.value)}
                             placeholder={`e.g., I want to improve English speaking skills for ${childName || 'my child'}.`}
-                            className="min-h-[120px] w-full resize-none rounded-xl p-4"
+                            className="min-h-[120px] w-full resize-none rounded-xl p-4 font-rajdhani"
                             style={{
-                              background: 'rgba(4,6,13,.7)',
-                              border: '1px solid rgba(75,233,255,.24)',
-                              color: '#e7f5f9',
-                              fontFamily: 'Rajdhani, sans-serif',
+                              background: 'rgb(var(--constellation-navy-deepest-rgb) / .7)',
+                              border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
+                              color: 'rgb(var(--constellation-text-frost-rgb))',
                               fontWeight: 600,
                             }}
                           />
@@ -1772,16 +1841,15 @@ export default function LifePathway() {
                             <Button
                               variant="outline"
                               onClick={handleProceedToDashboard}
-                              className="h-11 flex-1 rounded-xl text-base"
+                              className="h-11 flex-1 rounded-xl font-rajdhani text-base"
                               style={{
                                 // Explicit opaque fill rather than relying on `bg-transparent`
                                 // to beat the outline variant's own `bg-background`: those are
                                 // both single-class selectors, so which one wins depends on
                                 // Tailwind's emit order rather than on anything stated here.
                                 background: '#0a111e',
-                                border: '1px solid rgba(75,233,255,.3)',
-                                color: '#9db4c4',
-                                fontFamily: 'Rajdhani, sans-serif',
+                                border: '1px solid rgb(var(--constellation-cyan-rgb) / .3)',
+                                color: 'rgb(var(--constellation-slate-soft-rgb))',
                                 fontWeight: 700,
                               }}
                             >
@@ -1792,11 +1860,10 @@ export default function LifePathway() {
                                 void handleConcernSubmit();
                               }}
                               disabled={!concernInput.trim()}
-                              className="h-11 flex-1 rounded-xl text-base disabled:opacity-40"
+                              className="h-11 flex-1 rounded-xl font-orbitron text-base disabled:opacity-40"
                               style={{
                                 background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                                color: '#05131a',
-                                fontFamily: 'Orbitron, sans-serif',
+                                color: 'rgb(var(--constellation-navy-rgb))',
                                 fontWeight: 900,
                                 letterSpacing: '.08em',
                                 fontSize: lpfs(12),
@@ -1823,7 +1890,13 @@ export default function LifePathway() {
                             <span className="text-2xl">✅</span>
                           </div>
                           <div>
-                            <h3 className="mb-2" style={{ ...orbitron(16, 700), color: '#f2fdff' }}>
+                            <h3
+                              className="mb-2 font-orbitron"
+                              style={{
+                                ...orbitron(16, 700),
+                                color: 'rgb(var(--constellation-cyan-paler-rgb))',
+                              }}
+                            >
                               Got it
                             </h3>
                             <p
@@ -1831,7 +1904,7 @@ export default function LifePathway() {
                                 fontSize: lpfs(15),
                                 fontWeight: 600,
                                 lineHeight: 1.55,
-                                color: '#a8c1d1',
+                                color: 'rgb(var(--constellation-slate-pale-rgb))',
                               }}
                             >
                               We will work with{' '}
@@ -1841,11 +1914,10 @@ export default function LifePathway() {
                           </div>
                           <Button
                             onClick={handleProceedToDashboard}
-                            className="h-11 w-full rounded-xl text-base"
+                            className="h-11 w-full rounded-xl font-orbitron text-base"
                             style={{
                               background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                              color: '#05131a',
-                              fontFamily: 'Orbitron, sans-serif',
+                              color: 'rgb(var(--constellation-navy-rgb))',
                               fontWeight: 900,
                               letterSpacing: '.08em',
                               fontSize: lpfs(12),

@@ -9,15 +9,15 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import { api } from '@/api/client';
+import { toast } from 'sonner';
+import { api, dispatchAuthExpired, resolveAuthExpiry } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import type { UserRecord, ChildRecord } from '@/types/api';
+import type { UserRecord } from '@/types/api';
 
 type UserData = UserRecord;
-type ChildProfile = ChildRecord;
 
 interface AuthErrorUnknown {
   type: 'unknown';
@@ -35,13 +35,8 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
   authError: AuthErrorValue | null;
-  childProfiles: ChildProfile[];
-  refreshChildren: () => Promise<void>;
   logout: (shouldRedirect?: boolean) => Promise<void>;
-  navigateToLogin: () => void;
   checkAppState: (options?: { withLoading?: boolean }) => Promise<void>;
-  ttsEnabled: boolean;
-  toggleTts: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -54,11 +49,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([]);
   const [authError, setAuthError] = useState<AuthErrorValue | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [ttsEnabled, setTtsEnabled] = useState(true);
-  const ttsEnabledRef = useRef(true);
 
   const checkAppState = useCallback(async (options: { withLoading?: boolean } = {}) => {
     const withLoading = options.withLoading !== false;
@@ -68,10 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
       const currentUser = await api.auth.me();
-      const children =
-        currentUser.role === 'admin' ? [] : await api.entities.Child.list('-created_date');
       setUser(currentUser);
-      setChildProfiles(children);
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -79,12 +68,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         void api.auth.logout();
         setUser(null);
         setIsAuthenticated(false);
-        setChildProfiles([]);
         setAuthError(null);
       } else {
         setUser(null);
         setIsAuthenticated(false);
-        setChildProfiles([]);
         const msg =
           (error as Error)?.message ?? 'Service temporarily unavailable. Please try again later.';
         setAuthError({ type: 'unknown', message: msg });
@@ -101,11 +88,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [checkAppState]);
 
   useEffect(() => {
-    const onExpired = () => {
+    const onExpired = (event: Event) => {
+      // Session expiry is silent (expected/routine); a locked account carries
+      // a specific reason (see client.ts's request()) worth surfacing.
+      const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+      const rawMessage =
+        detail && typeof detail === 'object'
+          ? (detail as { message?: unknown }).message
+          : undefined;
+      const message = typeof rawMessage === 'string' ? rawMessage : null;
+      if (message && message !== 'Session expired') {
+        toast.error(message);
+      }
       void api.auth.logout().catch(() => {});
       setUser(null);
       setIsAuthenticated(false);
-      setChildProfiles([]);
       setAuthError(null);
       void navigate('/Login', { replace: true });
     };
@@ -129,8 +126,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             await api.auth.silentRefresh();
             schedule();
           } catch (err) {
-            if (err instanceof ApiError && err.status === 401) {
-              window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+              const { status, message } = resolveAuthExpiry(err);
+              dispatchAuthExpired(status, message);
             } else {
               silentRefreshTimerRef.current = setTimeout(schedule, 30_000);
             }
@@ -157,45 +155,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => clearTimeout(timer);
   }, [location.pathname, location.search, isAuthenticated]);
 
-  // Keep ref in sync so toggleTts never captures a stale value
-  useEffect(() => {
-    ttsEnabledRef.current = ttsEnabled;
-  }, [ttsEnabled]);
-
-  // Load tts_enabled from DB after login; reset to true on logout
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setTtsEnabled(true);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const prefs = (await api.preferences.get()) as { tts_enabled?: boolean };
-        if (!cancelled && typeof prefs.tts_enabled === 'boolean') setTtsEnabled(prefs.tts_enabled);
-      } catch (err) {
-        console.warn('[AuthContext] Could not load TTS preference:', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
-
-  const toggleTts = useCallback(() => {
-    const next = !ttsEnabledRef.current;
-    setTtsEnabled(next);
-    api.preferences.patch({ tts_enabled: next }).catch((err) => {
-      console.warn('[AuthContext] Could not persist TTS toggle:', err);
-    });
-  }, []);
-
   const logout = useCallback(
     async (shouldRedirect = true) => {
       await api.auth.logout();
       setUser(null);
       setIsAuthenticated(false);
-      setChildProfiles([]);
       setAuthError(null);
       if (shouldRedirect) {
         void navigate('/Login', { replace: true });
@@ -203,19 +167,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     },
     [navigate],
   );
-
-  const navigateToLogin = useCallback(() => {
-    void logout(true);
-  }, [logout]);
-
-  const refreshChildren = useCallback(async () => {
-    try {
-      const children = await api.entities.Child.list('-created_date');
-      setChildProfiles(children);
-    } catch (err) {
-      console.warn('[AuthContext] Could not refresh children list:', err);
-    }
-  }, []);
 
   const mainPath = createPageUrl(pagesConfig.mainPage ?? 'Home');
 
@@ -238,27 +189,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isAuthenticated,
       isLoadingAuth,
       authError,
-      childProfiles,
-      refreshChildren,
       logout,
-      navigateToLogin,
       checkAppState,
-      ttsEnabled,
-      toggleTts,
     }),
-    [
-      user,
-      isAuthenticated,
-      isLoadingAuth,
-      authError,
-      childProfiles,
-      refreshChildren,
-      logout,
-      navigateToLogin,
-      checkAppState,
-      ttsEnabled,
-      toggleTts,
-    ],
+    [user, isAuthenticated, isLoadingAuth, authError, logout, checkAppState],
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

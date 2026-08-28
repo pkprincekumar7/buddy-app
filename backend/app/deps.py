@@ -1,27 +1,35 @@
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
-from app.auth_utils import decode_token
+from app.auth_utils import decode_token, extract_token
 from app.database import get_db
 from app.routing import LOCATION_RE
-from app.settings import settings
+from app.settings import Settings, get_settings
+
+# These two schemes exist solely so FastAPI advertises the auth requirement in
+# the OpenAPI schema (Swagger UI's padlocks / "Authorize" dialog). auto_error=False
+# means neither raises on its own — get_current_user below does the real
+# extraction and verification via extract_token(), which accepts either form.
+_cookie_scheme = APIKeyCookie(name="access_token", auto_error=False)
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+Db = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 async def get_current_user(
     request: Request,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
+    settings: SettingsDep,
+    _cookie: Annotated[str | None, Depends(_cookie_scheme)] = None,
+    _bearer: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
 ) -> dict:
-    # Accept either an HttpOnly cookie (web) or an Authorization: Bearer header
-    # (React Native — the JS fetch polyfill has no cookie jar, so mobile clients
-    # store the access token in AsyncStorage and send it as a Bearer token instead).
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[len("Bearer ") :]
+    token = extract_token(request, "access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_token(token)
@@ -60,7 +68,7 @@ async def get_current_user(
 
 
 async def get_current_admin(
-    user: dict = Depends(get_current_user),
+    user: Annotated[dict, Depends(get_current_user)],
 ) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -68,8 +76,18 @@ async def get_current_admin(
 
 
 async def get_current_parent(
-    user: dict = Depends(get_current_user),
+    user: Annotated[dict, Depends(get_current_user)],
 ) -> dict:
     if user.get("role") == "admin":
         raise HTTPException(status_code=403, detail="Not available for admin accounts")
     return user
+
+
+# Reusable Annotated aliases — import these in routers instead of repeating
+# `= Depends(get_current_user)` / `= Depends(get_current_parent)` / etc. FastAPI
+# caches each dependency's result per-request, so using the same alias in a
+# router-level `dependencies=[...]` and again as a function parameter does not
+# re-run the check twice.
+CurrentUser = Annotated[dict, Depends(get_current_user)]
+CurrentParent = Annotated[dict, Depends(get_current_parent)]
+CurrentAdmin = Annotated[dict, Depends(get_current_admin)]

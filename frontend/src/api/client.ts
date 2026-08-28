@@ -35,6 +35,25 @@ function ensureRefreshed(): Promise<void> {
 
 type RequestBody = Record<string, unknown> | FormData | undefined;
 
+// A failed refresh is normally a plain expired session (401, generic message).
+// A locked account fails with 403 and a specific reason (see backend's
+// refresh_tokens) — resolved once here so every caller that reacts to a failed
+// refresh (the request() retry below, and AuthContext's silent-refresh timer)
+// surfaces the same status/message instead of each re-deriving it.
+export function resolveAuthExpiry(err: unknown): { status: 401 | 403; message: string } {
+  if (err instanceof ApiError && err.status === 403 && typeof err.detail === 'string') {
+    return { status: 403, message: err.detail };
+  }
+  return { status: 401, message: 'Session expired' };
+}
+
+export function dispatchAuthExpired(status: number, message: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent('buddy360:auth-expired', { detail: status === 403 ? { message } : undefined }),
+  );
+}
+
 async function request(
   path: string,
   { method = 'GET', body }: { method?: string; body?: RequestBody } = {},
@@ -56,11 +75,10 @@ async function request(
     try {
       await ensureRefreshed();
       return await request(path, { method, body }, true);
-    } catch {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
-      }
-      throw new ApiError(401, 'Session expired');
+    } catch (err) {
+      const { status, message } = resolveAuthExpiry(err);
+      dispatchAuthExpired(status, message);
+      throw new ApiError(status, message);
     }
   }
 
@@ -357,6 +375,22 @@ export const api = {
         }) as Promise<ChildRecord>,
       delete: (id: string): Promise<void> =>
         request(`/children/${encodeURIComponent(id)}`, { method: 'DELETE' }) as Promise<void>,
+      // One-way (false→true) Personality Journey progression flags, gated on
+      // the previous step in the chain already being true. PATCH /children/{id}
+      // silently ignores these fields — this is the only way to set them
+      // (see backend/app/routers/children.py).
+      markProgress: (
+        id: string,
+        flag:
+          | 'onboarding_profile_completed'
+          | 'discover_completed'
+          | 'transform_visited'
+          | 'release_visited'
+          | 'connect_visited',
+      ): Promise<ChildRecord> =>
+        request(`/children/${encodeURIComponent(id)}/progress/${flag}`, {
+          method: 'POST',
+        }) as Promise<ChildRecord>,
       uploadAvatar: async (id: string, photo: File): Promise<{ avatar_url: string }> => {
         const contentType = photo.type || 'image/jpeg';
         const { upload_url, avatar_url } = (await request(

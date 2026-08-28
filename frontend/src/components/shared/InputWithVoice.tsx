@@ -1,6 +1,7 @@
 import { useState, forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import VoiceInput from './VoiceInput';
 
 type InputWithVoiceProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
@@ -24,7 +25,7 @@ const InputWithVoice = forwardRef<HTMLInputElement, InputWithVoiceProps>(
           onChange={onChange}
           placeholder={isRecording ? 'Listening...' : placeholder}
           disabled={isRecording}
-          className={`w-full ${className ?? ''}`}
+          className={cn('w-full', className)}
           {...props}
         />
         <VoiceInput

@@ -81,6 +81,14 @@ variable "jwt_key_id" {
   default     = "key-v1"
 }
 
+# -- Origin verify --------------------------------------------------------------
+
+variable "origin_verify_secret" {
+  description = "Shared secret sent as the X-Origin-Verify custom header on every CloudFront→ALB origin request (see the alb-backend origin in cloudfront.tf). Must equal infra-live-backend's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret."
+  type        = string
+  sensitive   = true
+}
+
 variable "cloudfront_price_class" {
   description = "CloudFront price class controlling which edge locations serve traffic. PriceClass_100 = US/EU only; PriceClass_200 = US/EU/Asia/ME/Africa; PriceClass_All = all edge locations."
   type        = string
