@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
@@ -408,16 +408,24 @@ export default function PersonalityProfile() {
   const [displayPhase, setDisplayPhase] = useState<'reveal' | 'profile'>('reveal');
   const isWide = useMediaQuery('(min-width: 700px)');
   const [diagAvailW, setDiagAvailW] = useState(() => Math.min(window.innerWidth - 68, 748));
-  const diagramRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = diagramRef.current;
+  // Callback ref, not a plain useRef + one-shot mount effect: the diagram div
+  // only renders once `traits.length > 0`, which requires the async
+  // Child.get() below to resolve first. A `useEffect(..., [])` runs once,
+  // immediately on mount — before that fetch resolves — so diagramRef.current
+  // would still be null when it ran, the ResizeObserver would never attach,
+  // and diagAvailW would stay frozen forever at its initial value (this is
+  // what made resizing not work at all, not just "not smooth"). A callback
+  // ref fires exactly when React actually attaches the node, whenever that is.
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const diagramRefCallback = useCallback((el: HTMLDivElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
     if (!el) return;
     const ro = new ResizeObserver(([e]) => {
       if (e) setDiagAvailW(e.contentRect.width);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    resizeObserverRef.current = ro;
   }, []);
 
   useEffect(() => {
@@ -564,32 +572,52 @@ export default function PersonalityProfile() {
 
   // Diagram scale — proportional to available container width (748px = design width)
   const dScale = Math.min(1, diagAvailW / 748);
-  const circleD = Math.round(272 * dScale);
+  // The orb shrinks faster than the rest of the diagram on narrow screens: trait
+  // icons/text have their own size floors below (iconContainerSize, traitFontSize)
+  // and stop shrinking past a point, while trait positions keep scaling down with
+  // dScale unbounded — below that point the orb needs to shrink more than dScale
+  // alone would, or the (now fixed-size) trait items end up crowding it. At
+  // dScale=1 this is unchanged (orbShrink=1), so wide screens are unaffected.
+  const orbShrink = Math.pow(dScale, 1.5);
+  const circleD = Math.round(272 * orbShrink);
+  // Ring scales with dScale, not orbShrink — it needs to stay in lockstep with
+  // the trait items' own orbit radius below (both derived from ringD), not
+  // with the orb's extra shrink. Only the orb needs the faster shrink for
+  // breathing room; the ring/trait relationship should stay proportionally
+  // identical at every screen size.
   const ringD = Math.round(432 * dScale);
   const diagH = Math.round(520 * dScale);
   const iconContainerSize = Math.max(28, Math.round(46 * dScale));
   const traitFontSize = Math.max(11, Math.round(14 * dScale));
   const traitGap = Math.max(4, Math.round(8 * dScale));
-  const traitPosScaled: CSSProperties[] = [
-    { left: `calc(50% - ${Math.round(90 * dScale)}px)`, top: 0, width: Math.round(180 * dScale) },
-    { left: 0, top: Math.round(120 * dScale), width: Math.round(190 * dScale) },
-    { right: 0, top: Math.round(120 * dScale), width: Math.round(190 * dScale) },
-    {
-      left: Math.round(6 * dScale),
-      bottom: Math.round(96 * dScale),
-      width: Math.round(190 * dScale),
-    },
-    {
-      right: Math.round(6 * dScale),
-      bottom: Math.round(96 * dScale),
-      width: Math.round(190 * dScale),
-    },
-    {
-      left: `calc(50% - ${Math.round(100 * dScale)}px)`,
-      bottom: 0,
-      width: Math.round(200 * dScale),
-    },
-  ];
+  // Six items, evenly spaced 60° apart in a hexagon (top, upper-left,
+  // upper-right, lower-left, lower-right, bottom — matching the previous
+  // hand-tuned layout's intent). Orbit radius = ring radius + icon radius,
+  // so each icon sits just OUTSIDE the ring with its inner edge touching the
+  // circumference (rather than straddling it) — the old per-position pixel
+  // offsets only happened to roughly line up at the top/bottom, leaving the
+  // four diagonal items floating short of the ring. Driven by the same ringD
+  // (and therefore the same dScale) as the ring itself, so this stays
+  // correct at every screen size, not just the design width.
+  const traitOrbitR = ringD / 2 + iconContainerSize / 2;
+  const traitWidth = Math.round(180 * dScale);
+  const TRAIT_ANGLES_DEG = [0, -60, 60, -120, 120, 180];
+  const traitPosScaled: CSSProperties[] = TRAIT_ANGLES_DEG.map((deg) => {
+    const rad = (deg * Math.PI) / 180;
+    const dx = traitOrbitR * Math.sin(rad);
+    const dy = -traitOrbitR * Math.cos(rad);
+    return {
+      // Half the width subtracted directly in the `left` calc (not a
+      // `transform: translateX(-50%)`) — these items are motion.div's that
+      // already animate `scale`, and framer-motion manages its own
+      // `transform` string for that; a raw transform in `style` would fight
+      // it. calc() sidesteps the conflict entirely, matching how the
+      // previous top/bottom-center positions in this same array did it.
+      left: `calc(50% + ${(dx - traitWidth / 2).toFixed(1)}px)`,
+      top: `calc(50% + ${(dy - iconContainerSize / 2).toFixed(1)}px)`,
+      width: traitWidth,
+    };
+  });
 
   function handleShare(platform: 'instagram' | 'whatsapp') {
     const text = `${childName}'s personality analysis is in — ${typeTitle}!`;
@@ -793,7 +821,13 @@ export default function PersonalityProfile() {
   }
 
   // ── PROFILE PHASE ──────────────────────────────────────────────────────────
-  const pad = isWide ? 36 : 18;
+  // Continuous, not a 700px breakpoint jump: this wrapper's rendered width feeds
+  // diagAvailW → dScale below (the orb's size), so a discrete isWide-based value
+  // here caused a sudden jump in the orb's size right at that crossing point,
+  // breaking the smooth laptop → tablet → mobile resize. 375/852 match the
+  // existing mobile floor and the width where the maxWidth:820 wrapper already
+  // hits its own ceiling, so this only changes the transition, not either end.
+  const pad = 'clamp(18px, calc(18px + (100vw - 375px) * 18 / 477), 36px)';
 
   return (
     <div
@@ -983,7 +1017,7 @@ export default function PersonalityProfile() {
 
           {/* ── Trait diagram — scales proportionally to available width ──────── */}
           {traits.length > 0 && (
-            <div ref={diagramRef} style={{ position: 'relative', height: diagH }}>
+            <div ref={diagramRefCallback} style={{ position: 'relative', height: diagH }}>
               {/* Outer ring */}
               <div
                 style={{
@@ -1251,7 +1285,13 @@ export default function PersonalityProfile() {
               }}
             >
               <div style={{ ...SEC_LABEL, marginBottom: 16 }}>Strengths</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div
+                style={
+                  isWide
+                    ? { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }
+                    : { display: 'flex', flexDirection: 'column', gap: 16 }
+                }
+              >
                 {strengths.slice(0, 4).map((strength, i) => {
                   const sep = strength.match(/[:—–-](.+)/);
                   const title = sep ? strength.slice(0, strength.indexOf(sep[0])).trim() : strength;
@@ -1261,19 +1301,20 @@ export default function PersonalityProfile() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.7 + i * 0.07 }}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 10,
-                      }}
+                      style={
+                        isWide
+                          ? { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }
+                          : { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 14 }
+                      }
                     >
-                      <StrengthIcon index={i} />
+                      <div style={{ flexShrink: 0 }}>
+                        <StrengthIcon index={i} />
+                      </div>
                       <div
                         style={{
                           fontSize: 14,
                           color: 'rgb(var(--constellation-blue-soft-rgb))',
-                          textAlign: 'center',
+                          textAlign: isWide ? 'center' : 'left',
                           lineHeight: 1.3,
                         }}
                       >
