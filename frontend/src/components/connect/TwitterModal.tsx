@@ -66,6 +66,7 @@ export default function TwitterModal({
     >
       <div
         style={{
+          position: 'relative',
           maxWidth: 580,
           margin: '0 auto',
           borderRadius: 22,

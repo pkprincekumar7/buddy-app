@@ -69,6 +69,7 @@ export default function InstagramModal({
     >
       <div
         style={{
+          position: 'relative',
           maxWidth: 680,
           margin: '0 auto',
           borderRadius: 22,

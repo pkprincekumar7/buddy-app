@@ -57,6 +57,7 @@ export default function WhatsAppModal({
     >
       <div
         style={{
+          position: 'relative',
           maxWidth: 560,
           margin: '0 auto',
           borderRadius: 22,

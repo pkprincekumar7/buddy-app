@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { createPageUrl } from '@/utils';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
@@ -7,7 +7,7 @@ import { useTts } from '@/lib/TtsContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
@@ -37,6 +37,7 @@ function useNavChildId() {
 }
 
 export default function Layout({ children, currentPageName }: LayoutProps) {
+  const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuth();
   const { ttsEnabled, toggleTts } = useTts();
   const navChildId = useNavChildId();
@@ -280,6 +281,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
           </div>
         </div>
       </nav>
+
+      {/* Back — below the header, navigates to the previous route */}
+      <div className="px-4 pt-4 sm:px-6 lg:px-10">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void navigate(-1)}
+          className="text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+      </div>
 
       {/* Page Content */}
       {children}
