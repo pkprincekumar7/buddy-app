@@ -171,13 +171,7 @@ const buildCustomTick = (chartData: ChartEntry[]) =>
     if (!entry) return null;
     return (
       <g transform={`translate(${x},${y})`}>
-        <text
-          x={0}
-          dy={14}
-          textAnchor="middle"
-          fill="hsl(var(--muted-foreground))"
-          fontSize={11}
-        >
+        <text x={0} dy={14} textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize={11}>
           A{entry.actIdx + 1}
         </text>
         {entry.actIdx === 0 && (

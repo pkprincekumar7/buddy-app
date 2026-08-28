@@ -30,6 +30,8 @@ resource "aws_lb" "backend" {
 }
 
 resource "aws_lb_target_group" "backend" {
+  #checkov:skip=CKV_AWS_378:Intentional — ALB→ECS traffic stays within the VPC on plain HTTP (see the file header comment above); CloudFront terminates TLS for end users and the ALB HTTPS listener re-encrypts CloudFront→ALB, so this HTTP hop never leaves the VPC. Switching it to HTTPS would require ECS to terminate TLS itself, a separate, unrelated change.
+
   name        = "${var.app_name}-backend-tg-${var.environment}"
   port        = 8000
   protocol    = "HTTP"

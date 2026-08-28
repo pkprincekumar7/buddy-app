@@ -489,7 +489,8 @@ export default function GrowthAreaSheet({
               style={{
                 width: 38,
                 height: 38,
-                background: 'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+                background:
+                  'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                 border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
                 boxShadow: '0 0 22px rgb(var(--constellation-cyan-rgb) / .22)',
               }}
@@ -710,7 +711,8 @@ export default function GrowthAreaSheet({
                 width: 64,
                 height: 64,
                 margin: '0 auto',
-                background: 'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+                background:
+                  'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                 border: '1.5px solid rgb(var(--constellation-gold-rgb) / .75)',
                 boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .28)',
               }}
@@ -968,7 +970,11 @@ export default function GrowthAreaSheet({
                   />
                   <div
                     className="whitespace-nowrap font-bold"
-                    style={{ fontSize: 11, letterSpacing: '.06em', color: 'rgb(var(--constellation-cyan-frost-rgb))' }}
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: '.06em',
+                      color: 'rgb(var(--constellation-cyan-frost-rgb))',
+                    }}
                   >
                     {pickedStars[i] ?? ''}
                   </div>
@@ -986,7 +992,7 @@ export default function GrowthAreaSheet({
             >
               <div className="flex flex-wrap items-baseline justify-between" style={{ gap: 14 }}>
                 <div
-                  className="font-bold uppercase font-orbitron"
+                  className="font-orbitron font-bold uppercase"
                   style={{
                     fontSize: 13.5,
                     letterSpacing: '.14em',
@@ -1015,12 +1021,16 @@ export default function GrowthAreaSheet({
                 {recsPhase === 'loading' && (
                   <div className="flex flex-col items-center gap-3 py-6">
                     <div className="relative h-10 w-10">
-                      <div className="border-[rgb(var(--constellation-gold-rgb)_/_.2)] absolute inset-0 rounded-full border-[3px]" />
+                      <div className="absolute inset-0 rounded-full border-[3px] border-[rgb(var(--constellation-gold-rgb)_/_.2)]" />
                       <div className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-[rgb(var(--constellation-gold-rgb))]" />
                     </div>
                     <div
                       className="text-center"
-                      style={{ fontSize: 12.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))' }}
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: 'rgb(var(--constellation-slate-soft-rgb))',
+                      }}
                     >
                       {fillTemplate('Building {his} 3-month plan…', childName, childGender)}
                     </div>
@@ -1030,7 +1040,12 @@ export default function GrowthAreaSheet({
                 {recsPhase === 'error' && (
                   <div
                     className="text-center"
-                    style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))', padding: '12px 0' }}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-soft-rgb))',
+                      padding: '12px 0',
+                    }}
                   >
                     Could not generate recommendations. Play again to retry.
                   </div>
@@ -1106,7 +1121,12 @@ export default function GrowthAreaSheet({
                   ) : (
                     <div
                       className="text-center"
-                      style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--constellation-slate-soft-rgb))', padding: '12px 0' }}
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: 'rgb(var(--constellation-slate-soft-rgb))',
+                        padding: '12px 0',
+                      }}
                     >
                       No recommendations generated for this area yet.
                     </div>

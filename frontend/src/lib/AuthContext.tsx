@@ -9,7 +9,8 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router';
-import { api } from '@/api/client';
+import { toast } from 'sonner';
+import { api, dispatchAuthExpired, resolveAuthExpiry } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
@@ -87,7 +88,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [checkAppState]);
 
   useEffect(() => {
-    const onExpired = () => {
+    const onExpired = (event: Event) => {
+      // Session expiry is silent (expected/routine); a locked account carries
+      // a specific reason (see client.ts's request()) worth surfacing.
+      const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+      const rawMessage =
+        detail && typeof detail === 'object'
+          ? (detail as { message?: unknown }).message
+          : undefined;
+      const message = typeof rawMessage === 'string' ? rawMessage : null;
+      if (message && message !== 'Session expired') {
+        toast.error(message);
+      }
       void api.auth.logout().catch(() => {});
       setUser(null);
       setIsAuthenticated(false);
@@ -114,8 +126,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             await api.auth.silentRefresh();
             schedule();
           } catch (err) {
-            if (err instanceof ApiError && err.status === 401) {
-              window.dispatchEvent(new CustomEvent('buddy360:auth-expired'));
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+              const { status, message } = resolveAuthExpiry(err);
+              dispatchAuthExpired(status, message);
             } else {
               silentRefreshTimerRef.current = setTimeout(schedule, 30_000);
             }

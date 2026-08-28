@@ -130,7 +130,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 block being hidden.
               */}
               <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
-                <span className="whitespace-nowrap font-orbitron font-black leading-none tracking-[0.06em] text-sidebar-foreground text-sm">
+                <span className="whitespace-nowrap font-orbitron text-sm font-black leading-none tracking-[0.06em] text-sidebar-foreground">
                   SUPERPOWER
                 </span>
                 {circleLabel && (

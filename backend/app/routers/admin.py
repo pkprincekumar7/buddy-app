@@ -305,9 +305,12 @@ async def unlock_user(
     location: str = Query(..., description="User's location shard (returned by /admin/users)"),
 ):
     now = datetime.now(UTC)
+    # Clear tokens_revoked_at, not just is_locked — refresh_tokens (auth.py) checks
+    # tokens_revoked_at directly, so leaving it set would keep every refresh for this
+    # user permanently rejected as "Session revoked" even after unlocking.
     result = await db[models.USERS].update_one(
         {"_id": user_id, "location": location},
-        {"$set": {"is_locked": False, "updated_at": now}},
+        {"$set": {"is_locked": False, "tokens_revoked_at": None, "updated_at": now}},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")

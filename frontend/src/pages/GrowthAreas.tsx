@@ -649,7 +649,7 @@ export default function GrowthAreas() {
                   {childName ? `${childName} · Growth Map` : 'Growth Map'}
                 </div>
                 <h1
-                  className="m-0 font-bold font-orbitron"
+                  className="m-0 font-orbitron font-bold"
                   style={{
                     // The clamp is wrapped rather than replaced: it still does the
                     // fluid work between 22 and 32px, the scale then lifts the

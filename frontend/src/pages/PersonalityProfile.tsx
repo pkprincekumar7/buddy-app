@@ -20,7 +20,8 @@ interface FamousPerson {
 }
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
-const CARD_BG = 'linear-gradient(180deg, rgba(10,34,84,.55), rgb(var(--constellation-navy-card-rgb) / .35))';
+const CARD_BG =
+  'linear-gradient(180deg, rgba(10,34,84,.55), rgb(var(--constellation-navy-card-rgb) / .35))';
 const CARD_BORDER = '1px solid rgb(var(--constellation-blue-line-rgb) / .16)';
 const SEC_LABEL: CSSProperties = {
   fontSize: 13,
@@ -516,7 +517,9 @@ export default function PersonalityProfile() {
           padding: 24,
         }}
       >
-        <p style={{ color: 'rgb(var(--constellation-blue-mid-rgb))' }}>Something went wrong. Please try again.</p>
+        <p style={{ color: 'rgb(var(--constellation-blue-mid-rgb))' }}>
+          Something went wrong. Please try again.
+        </p>
         <button
           onClick={() => void navigate('/Home')}
           style={{
@@ -623,7 +626,8 @@ export default function PersonalityProfile() {
             position: 'absolute',
             inset: 0,
             opacity: 0.4,
-            backgroundImage: 'radial-gradient(rgb(var(--constellation-blue-sky-rgb) / .4) 1px, transparent 1px)',
+            backgroundImage:
+              'radial-gradient(rgb(var(--constellation-blue-sky-rgb) / .4) 1px, transparent 1px)',
             backgroundSize: '28px 28px',
             maskImage: 'radial-gradient(50% 45% at 50% 45%, #000, transparent 80%)',
           }}
@@ -712,7 +716,8 @@ export default function PersonalityProfile() {
               border: '1px solid rgb(var(--constellation-gold-light-rgb) / .55)',
               borderRadius: 18,
               overflow: 'hidden',
-              background: 'linear-gradient(180deg, rgba(14,44,104,.7), rgb(var(--constellation-navy-card-rgb) / .5))',
+              background:
+                'linear-gradient(180deg, rgba(14,44,104,.7), rgb(var(--constellation-navy-card-rgb) / .5))',
               boxShadow:
                 '0 0 60px rgba(50,130,240,.45), 0 0 34px rgb(var(--constellation-gold-light-rgb) / .3)',
               animation: 'ppBadgePop .8s cubic-bezier(.2,.9,.2,1) .7s both',
@@ -741,7 +746,11 @@ export default function PersonalityProfile() {
               }}
             >
               {childName} is a<br />
-              <span style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}>{typeTitle}</span>
+              <span
+                style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}
+              >
+                {typeTitle}
+              </span>
             </div>
           </div>
 
@@ -790,7 +799,8 @@ export default function PersonalityProfile() {
     <div
       style={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
+        background:
+          'linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
         padding: `40px 16px 80px`,
         fontFamily: 'Barlow, sans-serif',
         color: 'rgb(var(--constellation-blue-frost-rgb))',
@@ -929,7 +939,11 @@ export default function PersonalityProfile() {
                 }}
               >
                 {childName} the{' '}
-                <span style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}>{typeTitle}</span>
+                <span
+                  style={{ fontStyle: 'italic', color: 'rgb(var(--constellation-blue-deep-rgb))' }}
+                >
+                  {typeTitle}
+                </span>
               </div>
               <div
                 style={{
@@ -1112,7 +1126,9 @@ export default function PersonalityProfile() {
                       gap: 14,
                     }}
                   >
-                    <div style={{ fontSize: 15, color: 'rgb(var(--constellation-blue-soft-rgb))' }}>{ts.label}</div>
+                    <div style={{ fontSize: 15, color: 'rgb(var(--constellation-blue-soft-rgb))' }}>
+                      {ts.label}
+                    </div>
                     <div
                       style={{
                         height: 12,

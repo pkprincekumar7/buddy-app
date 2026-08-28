@@ -385,6 +385,16 @@ async def refresh_tokens(
         log.warning("auth.refresh.failed reason=user_not_found sub=%s", uid)
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Checked before tokens_revoked_at (same order as get_current_user) so a locked
+    # account gets this clearer message instead of the generic "Session revoked".
+    if refresh_user.get("is_locked"):
+        await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
+        clear_auth_cookies(response)
+        log.warning("auth.refresh.failed reason=account_locked sub=%s", uid)
+        raise HTTPException(
+            status_code=403, detail="Your account has been locked. Please contact support."
+        )
+
     if refresh_user.get("tokens_revoked_at") is not None:
         iat = refresh_payload.get("iat")
         if iat is None:

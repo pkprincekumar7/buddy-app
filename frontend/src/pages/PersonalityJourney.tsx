@@ -267,7 +267,9 @@ function BuddyOrbScreen({
                 strokeWidth="1.6"
                 strokeDasharray="14 206"
                 opacity="0.85"
-                style={{ filter: 'drop-shadow(0 0 6px rgb(var(--constellation-gold-glow2-rgb) / 0.9))' }}
+                style={{
+                  filter: 'drop-shadow(0 0 6px rgb(var(--constellation-gold-glow2-rgb) / 0.9))',
+                }}
               />
             </g>
 
@@ -339,7 +341,8 @@ const INACTIVE_INNER: React.CSSProperties = {
   width: 54,
   height: 54,
   borderRadius: '50%',
-  background: 'radial-gradient(circle at 38% 32%,#cbd6dd,rgb(var(--constellation-slate-deep-rgb)) 55%,#2a333c 100%)',
+  background:
+    'radial-gradient(circle at 38% 32%,#cbd6dd,rgb(var(--constellation-slate-deep-rgb)) 55%,#2a333c 100%)',
   boxShadow: '0 0 10px rgb(var(--constellation-slate-deep-rgb) / .4)',
   display: 'flex',
   alignItems: 'center',
@@ -674,7 +677,9 @@ function DimensionCirclesScreen({
               strokeDasharray={SD}
               style={
                 current === 'connect'
-                  ? { animation: `${SK} .8s ease .35s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  ? {
+                      animation: `${SK} .8s ease .35s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
+                    }
                   : { opacity: 0.4, animation: `${SK} .8s ease .35s both` }
               }
             />
@@ -686,7 +691,9 @@ function DimensionCirclesScreen({
               strokeDasharray={SD}
               style={
                 current === 'transform'
-                  ? { animation: `${SK} .8s ease .45s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  ? {
+                      animation: `${SK} .8s ease .45s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
+                    }
                   : { opacity: 0.4, animation: `${SK} .8s ease .45s both` }
               }
             />
@@ -698,7 +705,9 @@ function DimensionCirclesScreen({
               strokeDasharray={SD}
               style={
                 current === 'release'
-                  ? { animation: `${SK} .8s ease .55s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  ? {
+                      animation: `${SK} .8s ease .55s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
+                    }
                   : { opacity: 0.4, animation: `${SK} .8s ease .55s both` }
               }
             />
@@ -710,7 +719,9 @@ function DimensionCirclesScreen({
               strokeDasharray={SD}
               style={
                 current === 'grow'
-                  ? { animation: `${SK} .8s ease .5s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  ? {
+                      animation: `${SK} .8s ease .5s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
+                    }
                   : { opacity: 0.4, animation: `${SK} .8s ease .5s both` }
               }
             />
@@ -730,7 +741,9 @@ function DimensionCirclesScreen({
               strokeDasharray={SD}
               style={
                 current === 'discover'
-                  ? { animation: `${SK} .8s ease .3s both, lineGlow 3.4s ease-in-out 1.1s infinite` }
+                  ? {
+                      animation: `${SK} .8s ease .3s both, lineGlow 3.4s ease-in-out 1.1s infinite`,
+                    }
                   : { opacity: 0.4, animation: `${SK} .8s ease .3s both` }
               }
             />
@@ -992,7 +1005,10 @@ function DimensionCirclesScreen({
               style={
                 current === 'discover'
                   ? { ...ACTIVE_INNER, animation: 'ctaGlow 1.7s ease-in-out infinite' }
-                  : { ...ACTIVE_INNER, boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)' }
+                  : {
+                      ...ACTIVE_INNER,
+                      boxShadow: '0 0 20px rgb(var(--constellation-cyan-rgb) / .5)',
+                    }
               }
             >
               <svg
@@ -1650,7 +1666,10 @@ export default function PersonalityJourney() {
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
         <div
           className="absolute left-1/2 top-1/2 h-[700px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{ background: 'radial-gradient(circle, rgb(var(--constellation-teal-deep-rgb) / 0.35) 0%, transparent 60%)' }}
+          style={{
+            background:
+              'radial-gradient(circle, rgb(var(--constellation-teal-deep-rgb) / 0.35) 0%, transparent 60%)',
+          }}
         />
       </div>
 

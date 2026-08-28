@@ -112,7 +112,10 @@ export default function ChatInputBar({
               {([12, 18, 24, 18, 12] as const).map((h, i) => (
                 <span
                   key={i}
-                  className={cn('block w-[3px] rounded-[3px]', isRecording ? 'bg-error-medium' : 'bg-white/85')}
+                  className={cn(
+                    'block w-[3px] rounded-[3px]',
+                    isRecording ? 'bg-error-medium' : 'bg-white/85',
+                  )}
                   style={{ height: h }}
                 />
               ))}

@@ -346,11 +346,7 @@ export default function ConversationalOnboarding({
     }, 10000);
 
     const speakIntro = () => {
-      if (
-        typeof window === 'undefined' ||
-        !window.speechSynthesis ||
-        !voiceEnabledRef.current
-      ) {
+      if (typeof window === 'undefined' || !window.speechSynthesis || !voiceEnabledRef.current) {
         clearTimeout(fallback);
         setTimeout(() => {
           showIntroRef.current = false;

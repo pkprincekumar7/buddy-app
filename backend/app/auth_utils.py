@@ -84,9 +84,17 @@ def create_access_token(
 
 def create_refresh_token(sub: str, location: str = settings.default_location) -> tuple[str, str]:
     jti = str(uuid.uuid4())
-    expire = datetime.now(UTC) + timedelta(hours=settings.jwt_refresh_expire_hours)
+    now = datetime.now(UTC)
+    expire = now + timedelta(hours=settings.jwt_refresh_expire_hours)
     token = _encode(
-        {"sub": sub, "exp": expire, "type": "refresh", "jti": jti, "location": location}
+        {
+            "sub": sub,
+            "iat": now,
+            "exp": expire,
+            "type": "refresh",
+            "jti": jti,
+            "location": location,
+        }
     )
     return token, jti
 

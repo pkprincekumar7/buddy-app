@@ -123,9 +123,7 @@ def _child_to_api(doc: dict) -> dict:
     return out
 
 
-async def _child_to_api_with_progress(
-    doc: dict, db: AsyncIOMotorDatabase, user: dict
-) -> dict:
+async def _child_to_api_with_progress(doc: dict, db: AsyncIOMotorDatabase, user: dict) -> dict:
     """_child_to_api, plus grow_completed recomputed live from the growth_areas
     collection — never trusted from the stored document. See
     app/services/journey_progress.py for why."""

@@ -1010,7 +1010,8 @@ export default function Observations() {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            background: 'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
+                            background:
+                              'linear-gradient(150deg,rgb(var(--constellation-badge-a-rgb)),rgb(var(--constellation-badge-b-rgb)))',
                             border: '1.5px solid rgb(var(--constellation-gold-rgb) / .5)',
                           }}
                         >
@@ -1187,13 +1188,20 @@ export default function Observations() {
                     style={{
                       fontWeight: 700,
                       fontSize: fs(17),
-                      color: selected ? 'rgb(var(--constellation-cyan-palest-rgb))' : 'rgb(var(--constellation-slate-pale-rgb))',
+                      color: selected
+                        ? 'rgb(var(--constellation-cyan-palest-rgb))'
+                        : 'rgb(var(--constellation-slate-pale-rgb))',
                     }}
                   >
                     {s.label}
                   </div>
                   <div
-                    style={{ marginTop: 3, fontWeight: 600, fontSize: fs(12.5), color: 'rgb(var(--constellation-slate-mid-rgb))' }}
+                    style={{
+                      marginTop: 3,
+                      fontWeight: 600,
+                      fontSize: fs(12.5),
+                      color: 'rgb(var(--constellation-slate-mid-rgb))',
+                    }}
                   >
                     {s.tag}
                   </div>
@@ -1212,7 +1220,8 @@ export default function Observations() {
                 style={{
                   borderRadius: 22,
                   padding: '26px 28px',
-                  background: 'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .9),rgb(var(--constellation-navy-panel2-rgb) / .9))',
+                  background:
+                    'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .9),rgb(var(--constellation-navy-panel2-rgb) / .9))',
                   border: '1px solid rgb(var(--constellation-cyan-rgb) / .18)',
                 }}
               >
@@ -1525,7 +1534,8 @@ export default function Observations() {
                 borderRadius: 22,
                 padding: '30px 30px 26px',
                 textAlign: 'center',
-                background: 'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .97),rgb(var(--constellation-navy-panel2-rgb) / .97))',
+                background:
+                  'linear-gradient(165deg,rgb(var(--constellation-panel-b-rgb) / .97),rgb(var(--constellation-navy-panel2-rgb) / .97))',
                 border: '1px solid rgb(var(--constellation-cyan-rgb) / .32)',
                 boxShadow: '0 30px 90px rgb(var(--constellation-void-deep-rgb) / .8)',
               }}
