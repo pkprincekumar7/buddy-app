@@ -72,7 +72,8 @@
 /*
  * ─── CENTRALIZED THEME TOKENS ───────────────────────────────────────────────
  * All colors are defined here as CSS custom properties (HSL channels).
- * Both dark (default) and light (`.light` class on <html>) are declared below.
+ * Only the dark palette is declared below — it is the unclassed default in
+ * `:root`, applied unconditionally.
  *
  * DO NOT use hardcoded Tailwind colors (slate-*, gray-*, zinc-*) in components.
  * Always use the semantic tokens below via Tailwind classes:
@@ -91,7 +92,15 @@
  *  bg-subtle                           — faintest tinted overlay (5 % tint)
  *  bg-na-dim                           — N/A / disabled dim overlay (15 % tint)
  *
- * Light mode is activated by adding the `.light` class to <html> (see Layout.tsx).
+ * Light mode is intentionally not implemented yet — the palette below hasn't
+ * been finalised for a light background. The app is wired to next-themes
+ * (see src/lib/theme.tsx) with `forcedTheme="dark"`, so it always renders
+ * dark and exposes no toggle. When light-mode colors are ready:
+ *   1. Add a `.light { ... }` override block below with the light values for
+ *      every variable declared here (next-themes applies a `class="light"`
+ *      to <html> for that theme, matching this selector as-is).
+ *   2. Remove `forcedTheme="dark"` in src/lib/theme.tsx and add a UI control
+ *      that calls `setTheme()` from next-themes' own `useTheme()`.
  * ────────────────────────────────────────────────────────────────────────────
  */
 
@@ -256,6 +265,194 @@
     --orb-purple-rgb: 141 115 255;
     --orb-ring-rgb: 120 220 255;
     --orb-crescent-rgb: 126 243 255;
+
+    /*
+     * ─── CONSTELLATION / SUPERPOWER EXPERIENCE PALETTE ───────────────────────
+     * A deliberate second, un-tokenized-until-now palette used across the
+     * immersive "Superpower" screens (Connect, GrowthAreas, LifePathway,
+     * Observations, PersonalityJourney, PersonalityProfile, GrowthAreaSheet,
+     * Layout). It is intentionally NOT part of the semantic theme tokens
+     * above — these are fixed illustration/glow colors for that specific
+     * visual language, not colors that should ever flip with a future light
+     * theme. Stored as RGB channels (no alpha) so call sites can use either
+     * `rgb(var(--constellation-x-rgb))` for a solid color or
+     * `rgb(var(--constellation-x-rgb) / 0.N)` for a translucent one, matching
+     * the --glow-*-rgb / --orb-*-rgb convention above.
+     *
+     * Only colors reused 9+ times (verified via grep) are tokenized here —
+     * the long tail of colors used once or twice is one-off SVG/gradient
+     * detail (avatar art, badge accents) where a named variable would add
+     * indirection with no dedup benefit.
+     */
+    --constellation-cyan-rgb: 75 233 255; /* #4be9ff */
+    --constellation-cyan-bright-rgb: 30 196 232; /* #1ec4e8 */
+    --constellation-cyan-pale-rgb: 234 253 255; /* #eafdff */
+    --constellation-cyan-paler-rgb: 242 253 255; /* #f2fdff */
+    --constellation-cyan-palest-rgb: 247 253 255; /* #f7fdff */
+    --constellation-blue-rgb: 143 202 255; /* #8fcaff — PersonalityProfile only */
+    --constellation-gold-rgb: 240 201 138; /* #f0c98a */
+    --constellation-gold-light-rgb: 242 207 125; /* #f2cf7d — PersonalityProfile only */
+    --constellation-gold-pale-rgb: 245 230 196; /* #f5e6c4 */
+    --constellation-slate-rgb: 111 138 156; /* #6f8a9c */
+    --constellation-slate-light-rgb: 139 161 177; /* #8ba1b1 */
+    --constellation-slate-dark-rgb: 132 160 178; /* #84a0b2 */
+    --constellation-navy-rgb: 5 19 26; /* #05131a */
+    --constellation-navy-deep-rgb: 5 7 15; /* #05070f */
+    --constellation-navy-deepest-rgb: 4 6 13; /* #04060d */
+    --constellation-slate-mid-rgb: 126 151 168; /* #7e97a8 — AccomplishmentCards + TwitterModal */
+    --constellation-caption-rgb: 185 206 219; /* #b9cedb — shared card-preview caption text */
+    --constellation-cyan-deep-rgb: 10 91 116; /* #0a5b74 — avatar-ring gradient terminal stop */
+    --constellation-panel-a-rgb: 22 35 59; /* #16233b — card-thumbnail panel gradient start */
+    --constellation-panel-b-rgb: 14 22 38; /* #0e1626 — tweet-card panel gradient start */
+    --constellation-panel-deep-rgb: 7 11 21; /* #070b15 — shared panel gradient end */
+    --constellation-badge-a-rgb: 28 43 70; /* #1c2b46 — icon-badge gradient start */
+    --constellation-badge-b-rgb: 10 18 32; /* #0a1220 — icon-badge gradient end */
+    --constellation-slate-pale-rgb: 168 193 209; /* #a8c1d1 — Connect/LifePathway/Observations */
+    --constellation-card-rgb: 9 13 22; /* Connect.tsx + AccomplishmentRow surface */
+    --constellation-surface-rgb: 5 9 18; /* Connect.tsx panel surface */
+    --constellation-slate-soft-rgb: 157 180 196; /* #9db4c4 — GrowthAreaSheet + LifePathway */
+    --constellation-cyan-frost-rgb: 207 233 242; /* #cfe9f2 — GrowthAreaSheet + LifePathway */
+    --constellation-slate-cool-rgb: 147 174 190; /* #93aebe — GrowthAreaSheet + LifePathway */
+    --constellation-overlay-rgb: 8 14 26; /* GrowthAreaSheet sheet backdrop + WhatsAppModal backdrop */
+    --constellation-void-rgb: 2 3 9; /* GrowthAreaSheet + WhatsAppModal backdrop terminal stop */
+    --constellation-ink-navy-rgb: 8 13 24; /* GrowthAreaSheet chrome + AccomplishmentRow active state */
+    --constellation-navy-soft-rgb: 30 45 72; /* GrowthAreaSheet chrome gradient partner */
+    --constellation-amber-rgb: 255 201 120; /* #ffc978 — GrowthAreaSheet quiz-progress accent */
+    --constellation-cyan-soft-rgb: 191 232 245; /* #bfe8f5 — Observations */
+    --constellation-text-frost-rgb: 231 245 249; /* #e7f5f9 — Connect + Observations page text */
+    --constellation-slate-dim-rgb: 92 118 136; /* #5c7688 — Connect + Observations */
+    --constellation-ink-rgb: 8 19 31; /* #08131f — default check-tick ink */
+    --constellation-navy-soft2-rgb: 30 46 72; /* Observations chrome gradient partner */
+    --constellation-navy-dusk-rgb: 6 12 20; /* Observations recurring surface tint */
+    --constellation-navy-panel2-rgb: 6 9 17; /* Observations panel gradient start */
+    --constellation-ring-faint-rgb: 120 145 165; /* AccomplishmentRow + Observations unchecked ring */
+    --constellation-gold-bright-rgb: 255 217 138; /* #ffd98a — PersonalityJourney ring gradient */
+    --constellation-gold-cream-rgb: 255 246 220; /* #fff6dc — PersonalityJourney ring gradient */
+    --constellation-teal-deep-rgb: 14 58 74; /* #0e3a4a — PersonalityJourney stroke */
+    --constellation-slate-navy-rgb: 60 85 104; /* #3c5568 — PersonalityJourney stroke */
+    --constellation-slate-deep-rgb: 91 107 120; /* #5b6b78 — PersonalityJourney stroke/border */
+    --constellation-gold-glow-rgb: 255 206 110; /* PersonalityJourney ring glow gradient */
+    --constellation-gold-glow2-rgb: 255 214 130; /* PersonalityJourney ring glow accent */
+    --constellation-slate-warm-rgb: 127 151 168; /* #7f97a8 — LifePathway body text */
+    --constellation-slate-mute-rgb: 111 134 151; /* #6f8697 — LifePathway label text */
+    --constellation-gold-cream2-rgb: 255 246 226; /* #fff6e2 — LifePathway gradient stop */
+    --constellation-gold-warm-rgb: 255 216 154; /* #ffd89a — LifePathway gradient stop */
+    --constellation-cyan-mid-rgb: 137 217 238; /* #89d9ee — LifePathway accent */
+    --constellation-slate-navy2-rgb: 60 80 95; /* #3c505f — LifePathway divider/border */
+    --constellation-navy-panel3-rgb: 20 31 50; /* LifePathway + GrowthAreaSheet panel gradient */
+    --constellation-void-soft-rgb: 9 12 19; /* LifePathway recurring surface tint */
+    --constellation-navy-royal-rgb: 30 52 80; /* LifePathway chrome gradient partner */
+    --constellation-void-deep-rgb: 2 6 15; /* LifePathway + Observations deep shadow */
+    --constellation-navy-black-rgb: 3 8 26; /* #03081a — PersonalityProfile backdrop */
+    --constellation-gold-hazy-rgb: 247 230 189; /* #f7e6bd — PersonalityProfile */
+    --constellation-blue-pale-rgb: 234 244 255; /* #eaf4ff — PersonalityProfile */
+    --constellation-blue-soft-rgb: 207 230 255; /* #cfe6ff — PersonalityProfile */
+    --constellation-blue-mid-rgb: 143 182 230; /* #8fb6e6 — PersonalityProfile */
+    --constellation-gold-soft-rgb: 247 223 164; /* #f7dfa4 — PersonalityProfile */
+    --constellation-gold-dark-rgb: 230 195 124; /* #e6c37c — PersonalityProfile */
+    --constellation-blue-frost-rgb: 219 234 255; /* #dbeaff — PersonalityProfile */
+    --constellation-blue-bright-rgb: 159 212 255; /* #9fd4ff — PersonalityProfile */
+    --constellation-blue-vivid-rgb: 127 198 255; /* #7fc6ff — PersonalityProfile */
+    --constellation-blue-strong-rgb: 121 182 255; /* #79b6ff — PersonalityProfile */
+    --constellation-blue-deep-rgb: 109 179 255; /* #6db3ff — PersonalityProfile */
+    --constellation-black-navy-rgb: 2 6 23; /* #020617 — PersonalityProfile */
+    --constellation-black-navy2-rgb: 1 4 16; /* #010410 — PersonalityProfile */
+    --constellation-navy-glow-rgb: 4 14 40; /* PersonalityProfile glow gradient */
+    --constellation-blue-electric-rgb: 60 150 255; /* PersonalityProfile accent glow */
+    --constellation-blue-royal-rgb: 20 60 140; /* PersonalityProfile card border/glow */
+    --constellation-blue-sky-rgb: 120 190 255; /* PersonalityProfile ring/glow accent */
+    --constellation-void-panel-rgb: 3 12 36; /* PersonalityProfile panel gradient */
+    --constellation-blue-haze-rgb: 110 180 255; /* PersonalityProfile soft glow */
+    --constellation-blue-line-rgb: 92 166 255; /* PersonalityProfile card border */
+    --constellation-navy-card-rgb: 6 18 48; /* PersonalityProfile card background */
+    --constellation-blue-pastel-rgb: 140 205 255; /* PersonalityProfile pastel accent */
+    --constellation-cyan-bright2-rgb: 143 216 232; /* #8fd8e8 — LifePathway + lifePathwayData */
+
+    /*
+     * ─── SOCIAL SHARE BRAND PALETTE (WhatsApp / Instagram / Twitter) ─────────
+     * Per-brand accent colors for the connect/*Modal.tsx share sheets. Same
+     * convention as the constellation palette above: RGB channels only, used
+     * as `rgb(var(--x-rgb))` solid or `rgb(var(--x-rgb) / .N)` translucent.
+     * Only colors reused across a modal (2+ call sites) are tokenized here;
+     * one-off shell/backdrop gradient tints unique to a single call site are
+     * left inline, matching the constellation section's own precedent.
+     */
+    --whatsapp-green-rgb: 80 220 150; /* translucent utility base */
+    --whatsapp-bright-rgb: 87 220 150; /* #57dc96 solid accent */
+    --whatsapp-dark-rgb: 42 169 111; /* #2aa96f CTA gradient end */
+    --whatsapp-ink-rgb: 4 20 13; /* #04140d text-on-bright */
+    --whatsapp-ink-deep-rgb: 5 32 21; /* #052015 check-tick on solid checkbox */
+    --whatsapp-text-rgb: 234 255 244; /* #eafff4 headline/body text */
+    --whatsapp-muted-rgb: 143 191 168; /* #8fbfa8 subtext */
+    --whatsapp-label-rgb: 111 154 134; /* #6f9a86 uppercase eyebrow labels */
+    --whatsapp-meta-rgb: 123 168 148; /* #7ba894 secondary meta text */
+    --whatsapp-initials-rgb: 143 227 184; /* #8fe3b8 avatar initials */
+    --whatsapp-cta-rgb: 169 236 200; /* #a9ecc8 outline-button label text */
+    --whatsapp-faint-rgb: 140 180 165; /* unchecked checkbox ring */
+    --whatsapp-surface-rgb: 5 12 10; /* unselected-row / message-preview surface */
+    --whatsapp-badge-a-rgb: 18 42 32; /* icon-badge gradient start — modal + Connect channel button */
+    --whatsapp-badge-b-rgb: 8 16 14; /* icon-badge gradient end — modal + Connect channel button */
+
+    --instagram-pink-rgb: 226 120 190; /* #e278be — translucent base and solid accent */
+    --instagram-bright-rgb: 251 232 245; /* #fbe8f5 headline/body text */
+    --instagram-muted-rgb: 198 145 180; /* #c691b4 subtext */
+    --instagram-label-rgb: 162 118 154; /* #a2769a uppercase eyebrow labels */
+    --instagram-meta-rgb: 154 117 144; /* #9a7590 secondary meta text */
+    --instagram-inactive-rgb: 215 182 205; /* #d7b6cd unselected destination text */
+    --instagram-cta-rgb: 240 182 220; /* #f0b6dc outline-button label text */
+    --instagram-note-rgb: 138 106 130; /* #8a6a82 privacy note text */
+    --instagram-ink-rgb: 26 7 21; /* #1a0715 text-on-bright */
+    --instagram-violet-rgb: 240 164 212; /* #f0a4d4 backdrop swatch + CTA gradient stop */
+    --instagram-violet-deep-rgb: 138 63 208; /* #8a3fd0 backdrop swatch + CTA gradient stop */
+    --instagram-surface-rgb: 10 5 12; /* unselected-card / caption-input surface */
+    --instagram-badge-b-rgb: 16 10 20; /* icon-badge gradient end — modal + Connect channel button */
+
+    --twitter-slate-rgb: 180 205 225; /* translucent chrome base */
+    --twitter-bright-rgb: 234 243 250; /* #eaf3fa headline/body text + CTA gradient start */
+    --twitter-muted-rgb: 159 179 196; /* #9fb3c4 subtext */
+    --twitter-meta-rgb: 125 146 164; /* #7d92a4 secondary meta text */
+    --twitter-sky-rgb: 143 208 245; /* #8fd0f5 — translucent + solid link/tag accent */
+    --twitter-sky-light-rgb: 191 227 250; /* #bfe3fa active tag/CTA text */
+    --twitter-inactive-rgb: 143 165 182; /* #8fa5b6 inactive tag text */
+    --twitter-ink-rgb: 10 16 23; /* #0a1017 text-on-bright */
+    --twitter-cta-deep-rgb: 169 196 216; /* #a9c4d8 Post button gradient end */
+    --twitter-sent-rgb: 207 225 238; /* #cfe1ee sent-state icon / Done text / icon default */
+    --twitter-surface-rgb: 6 9 14; /* compose-box / inactive-tag surface */
+    --twitter-badge-b-rgb: 8 11 17; /* icon-badge gradient end — modal + Connect channel button */
+
+    /*
+     * ─── CATEGORICAL / CHART COLORS (folded from lib/gradientColors.ts) ──────
+     * Fixed semantic colors tied to specific categories (chart bands, pillar
+     * glows) that don't vary with dark/light theme — same spirit as the
+     * constellation palette above, kept in its own section since it's unrelated
+     * visual language (standard dashboard pages, not the Superpower screens).
+     * All render into live DOM/SVG, so a CSS custom property resolves fine.
+     */
+    --chart-band-a-rgb: 20 255 160; /* #14ffa0 */
+    --chart-band-b-rgb: 60 120 255; /* #3c78ff */
+    --chart-band-c-rgb: 160 60 255; /* #a03cff */
+    --pillar-mind-rgb: 59 130 246; /* #3b82f6 — Tailwind blue-500 */
+    --pillar-heart-rgb: 244 63 94; /* #f43f5e — Tailwind rose-500 */
+    --pillar-body-rgb: 16 185 129; /* #10b981 — Tailwind emerald-500 */
+    --pillar-talents-rgb: 168 85 247; /* #a855f7 — Tailwind purple-500 */
+    --pillar-character-rgb: 245 158 11; /* #f59e0b — Tailwind amber-500 */
+    --pillar-future-rgb: 20 184 166; /* #14b8a6 — Tailwind teal-500 */
+
+    /*
+     * ─── GROWTH AREA ICON COLORS (folded from lib/growthAreaData.ts) ─────────
+     * Each growth area's `iconColor` — a lighter accent distinct from its
+     * `hue` field (verified: the two are different values, not duplicates).
+     * `hue` itself stays in growthAreaData.ts: it's parsed numerically by
+     * `hueToHex()` in lifePathwayData.ts and composed into `rgba(${hue},N)`
+     * at several call sites, so it's a single already-centralized source of
+     * truth for a derived value, not a hardcoded-in-multiple-places color —
+     * moving it here would either break that parsing or duplicate the data.
+     */
+    --growth-life-ambition-icon-rgb: 195 166 255; /* #c3a6ff */
+    --growth-self-care-icon-rgb: 255 158 194; /* #ff9ec2 */
+    --growth-critical-thinking-icon-rgb: 143 196 255; /* #8fc4ff */
+    --growth-physical-wellness-icon-rgb: 95 232 196; /* #5fe8c4 */
+    --growth-social-skills-icon-rgb: 179 170 255; /* #b3aaff */
   }
 }
 
@@ -808,9 +1005,31 @@
     padding-bottom: max(2rem, env(safe-area-inset-bottom));
   }
 
+  /* Shared full-screen backdrop for the hand-rolled modals (ActivityModal,
+     ProgressInsightsModal, StartOverButton) — same dim/blur treatment. */
+  .modal-overlay {
+    @apply bg-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm;
+  }
+
+  /* Shared cyan orb gradient — the site wordmark chip and the avatar-ring
+     preview in the Instagram/Twitter share cards all draw the same circle. */
+  .orb-cyan-gradient {
+    background: radial-gradient(
+      circle at 35% 30%,
+      rgb(var(--constellation-cyan-pale-rgb)),
+      rgb(var(--constellation-cyan-rgb)) 45%,
+      rgb(var(--constellation-cyan-deep-rgb)) 100%
+    );
+  }
+
   /* Shared form input style — use instead of repeating the same classes on every input/select */
   .form-input {
     @apply border-edge-md w-full rounded-lg bg-surface-input px-3 py-2 text-foreground outline-none ring-primary-medium focus:border-primary-medium/50 focus:ring-2;
+  }
+
+  /* Card-style content surface — use instead of repeating the same classes on every panel */
+  .card-surface {
+    @apply border-edge rounded-2xl bg-card p-6;
   }
 
   /* Primary gradient CTA button — apply alongside layout classes (height, padding, border-radius) */

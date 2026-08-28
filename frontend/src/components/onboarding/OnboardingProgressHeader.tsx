@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export interface PhaseEntry {
   num: number;
@@ -22,36 +23,38 @@ export default function OnboardingProgressHeader({ phases, stepLabel, rightLabel
         {phases.map((phase, i) => (
           <div
             key={phase.label}
-            className={`flex items-center ${
+            className={cn(
+              'flex items-center',
               i < phases.length - 1
-                ? `min-w-0 ${phase.status === 'active' ? 'flex-[2]' : 'flex-1'}`
-                : 'shrink-0'
-            }`}
+                ? ['min-w-0', phase.status === 'active' ? 'flex-[2]' : 'flex-1']
+                : 'shrink-0',
+            )}
           >
             {/* Circle badge */}
             <div
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all duration-500 ${
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all duration-500',
                 phase.status === 'done'
                   ? 'border border-success/40 bg-success/20 text-success-bright'
                   : phase.status === 'active'
                     ? 'glow-teal-sm bg-primary text-primary-foreground'
-                    : 'border-edge bg-surface-elevated text-muted-foreground/40'
-              }`}
+                    : 'border-edge bg-surface-elevated text-muted-foreground/40',
+              )}
             >
               {phase.status === 'done' ? <Check className="h-3.5 w-3.5" /> : phase.num}
             </div>
 
             {/* Label — always visible on sm+; on mobile only the active phase shows its label */}
             <span
-              className={`ml-2 shrink-0 whitespace-nowrap text-xs font-medium transition-colors duration-500 ${
-                phase.status !== 'active' ? 'hidden sm:inline' : ''
-              } ${
+              className={cn(
+                'ml-2 shrink-0 whitespace-nowrap text-xs font-medium transition-colors duration-500',
+                phase.status !== 'active' && 'hidden sm:inline',
                 phase.status === 'done'
                   ? 'text-success-bright'
                   : phase.status === 'active'
                     ? 'text-foreground'
-                    : 'text-muted-foreground/35'
-              }`}
+                    : 'text-muted-foreground/35',
+              )}
             >
               {phase.label}
             </span>

@@ -14,6 +14,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useStartOver } from '@/hooks/useStartOver';
+import { cn } from '@/lib/utils';
 
 interface ChildCardProps {
   child: ChildRecord;
@@ -25,6 +26,11 @@ export default function ChildCard({ child }: ChildCardProps) {
 
   const displayName = child.name ?? 'Unnamed child';
   const completed = !!child.onboarding_completed;
+  // Shared by both status-badge spans below — one shown on mobile, one on
+  // sm+ — so the completed/in-progress styling can't drift between them.
+  const statusBadgeClass = completed
+    ? 'bg-success/10 text-success'
+    : 'bg-warning-medium/10 text-warning-medium';
 
   return (
     <>
@@ -45,11 +51,10 @@ export default function ChildCard({ child }: ChildCardProps) {
               </p>
               {/* Status badge — shown below name on small screens, hidden on sm+ (shown inline there) */}
               <span
-                className={`mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium sm:hidden ${
-                  completed
-                    ? 'bg-success/10 text-success'
-                    : 'bg-warning-medium/10 text-warning-medium'
-                }`}
+                className={cn(
+                  'mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium sm:hidden',
+                  statusBadgeClass,
+                )}
               >
                 {completed ? (
                   <>
@@ -67,11 +72,10 @@ export default function ChildCard({ child }: ChildCardProps) {
           <div className="flex shrink-0 items-center gap-2">
             {/* Status badge — inline on sm+, hidden on smaller screens (shown below name there) */}
             <span
-              className={`hidden items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium sm:flex ${
-                completed
-                  ? 'bg-success/10 text-success'
-                  : 'bg-warning-medium/10 text-warning-medium'
-              }`}
+              className={cn(
+                'hidden items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium sm:flex',
+                statusBadgeClass,
+              )}
             >
               {completed ? (
                 <>

@@ -4,49 +4,34 @@ import logging
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from email_validator import EmailNotValidError
 from email_validator import validate_email as _validate_email
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
-
-try:
-    from google.auth.transport import requests as _google_requests
-    from google.oauth2 import id_token as _google_id_token
-except ImportError:
-    _google_id_token = None  # type: ignore[assignment]
-    _google_requests = None  # type: ignore[assignment]
-    logging.getLogger(__name__).warning(
-        "google-auth package is not installed — Google sign-in endpoints will "
-        "return 503.  Install with: pip install 'google-auth[requests]'"
-    )
 
 from app import models
 from app.auth_utils import (
     async_hash_password,
     async_verify_password,
-    create_access_token,
-    create_refresh_token,
+    clear_auth_cookies,
     decode_access_token_ignore_exp,
     decode_token_of_type,
+    extract_token,
     hash_password,
+    set_auth_cookies,
 )
-from app.constants import API_V1_PREFIX
-from app.database import get_db
-from app.deps import get_current_user
+from app.deps import CurrentUser, Db, SettingsDep
 from app.limiter import limiter, user_limiter
 from app.routing import LOCATION_RE, resolve_region
-from app.settings import settings
+from app.services.google_auth import verify_google_token
 
 router = APIRouter(tags=["auth"])
 log = logging.getLogger(__name__)
 
 _DUMMY_HASH: str = hash_password("__dummy_constant_time__")
-
-_REFRESH_COOKIE_PATH = f"{API_V1_PREFIX}/auth/"
 
 
 # ---------------------------------------------------------------------------
@@ -134,98 +119,10 @@ class MeResponse(BaseModel):
     role: str
 
 
-# ---------------------------------------------------------------------------
-# Cookie helpers
-# ---------------------------------------------------------------------------
-
-
-def _cookie_kwargs() -> dict:
-    return {
-        "httponly": True,
-        "secure": settings.cookie_secure,
-        "samesite": settings.cookie_samesite,
-        "domain": settings.cookie_domain or None,
-    }
-
-
-class TokenPair(BaseModel):
+class AuthTokenResponse(BaseModel):
+    status: str = "ok"
     access_token: str
     refresh_token: str
-
-
-async def _set_auth_cookies(
-    response: Response,
-    user_id: str,
-    location: str,
-    db: AsyncIOMotorDatabase,
-) -> TokenPair:
-    """Set HttpOnly auth cookies (for web) and return tokens for mobile clients."""
-    kw = _cookie_kwargs()
-    access_token = create_access_token(user_id, location=location)
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        max_age=settings.jwt_access_expire_minutes * 60,
-        path="/",
-        **kw,
-    )
-    refresh_token, jti = create_refresh_token(user_id, location=location)
-    expires_at = datetime.now(UTC) + timedelta(hours=settings.jwt_refresh_expire_hours)
-    await db[models.SESSIONS].insert_one(
-        {
-            "_id": jti,
-            "user_id": user_id,
-            "location": location,
-            "expires_at": expires_at,
-        }
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        max_age=settings.jwt_refresh_expire_hours * 3600,
-        path=_REFRESH_COOKIE_PATH,
-        **kw,
-    )
-    return TokenPair(access_token=access_token, refresh_token=refresh_token)
-
-
-def _clear_auth_cookies(response: Response) -> None:
-    kw = _cookie_kwargs()
-    response.delete_cookie("access_token", path="/", **kw)
-    response.delete_cookie("refresh_token", path=_REFRESH_COOKIE_PATH, **kw)
-
-
-# ---------------------------------------------------------------------------
-# Google token verification helper
-# ---------------------------------------------------------------------------
-
-
-def _verify_google_token(id_token_str: str) -> dict:
-    if not settings.google_client_id:
-        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
-    if _google_id_token is None:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Server cannot verify Google tokens: the `google-auth[requests]` package "
-                "is not installed.  Contact the server administrator."
-            ),
-        )
-    try:
-        return _google_id_token.verify_oauth2_token(
-            id_token_str,
-            _google_requests.Request(),
-            settings.google_client_id,
-            clock_skew_in_seconds=60,
-        )
-    except Exception as exc:
-        log.warning(
-            "Google ID token verification failed: %s: %s",
-            type(exc).__name__,
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(status_code=401, detail="Invalid Google credential.") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +132,7 @@ def _verify_google_token(id_token_str: str) -> dict:
 
 @router.post(
     "/auth/register",
+    response_model=AuthTokenResponse,
     status_code=201,
     description="Create a new user account. Sets access and refresh token cookies on success.",
 )
@@ -243,7 +141,7 @@ async def register(
     request: Request,
     body: RegisterBody,
     response: Response,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
 ):
     # Registration uses a two-step compensating pattern instead of a transaction.
     # Reason: email_index is an unsharded collection (global uniqueness guard) and
@@ -348,16 +246,13 @@ async def register(
         ) from None
 
     log.info("user.register id=%s location=%s", new_user_id, location)
-    tokens = await _set_auth_cookies(response, new_user_id, location, db)
-    return {
-        "status": "ok",
-        "access_token": tokens.access_token,
-        "refresh_token": tokens.refresh_token,
-    }
+    tokens = await set_auth_cookies(response, new_user_id, location, db)
+    return AuthTokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
 @router.post(
     "/auth/login",
+    response_model=AuthTokenResponse,
     status_code=200,
     description="Authenticate with email and password. Sets access and refresh token cookies on success.",
 )
@@ -366,7 +261,8 @@ async def login(
     request: Request,
     body: LoginBody,
     response: Response,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
+    settings: SettingsDep,
 ):
     # Two-phase lookup: resolve email → (user_id, location) via the global
     # email_index (unsharded), then fetch the full user document from the
@@ -408,16 +304,13 @@ async def login(
 
     location = user.get("location", settings.default_location)
     log.info("auth.login.ok id=%s location=%s", user["_id"], location)
-    tokens = await _set_auth_cookies(response, user["_id"], location, db)
-    return {
-        "status": "ok",
-        "access_token": tokens.access_token,
-        "refresh_token": tokens.refresh_token,
-    }
+    tokens = await set_auth_cookies(response, user["_id"], location, db)
+    return AuthTokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
 @router.post(
     "/auth/refresh",
+    response_model=AuthTokenResponse,
     status_code=200,
     description="Exchange a valid refresh token cookie for a new access/refresh token pair.",
 )
@@ -425,31 +318,27 @@ async def login(
 async def refresh_tokens(
     request: Request,
     response: Response,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
+    settings: SettingsDep,
 ):
-    # Accept refresh token from cookie (web) or Authorization: Bearer header (mobile).
-    refresh_token_val = request.cookies.get("refresh_token")
-    if not refresh_token_val:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            refresh_token_val = auth_header[len("Bearer ") :]
+    refresh_token_val = extract_token(request, "refresh_token")
     if not refresh_token_val:
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
     refresh_payload = decode_token_of_type(refresh_token_val, "refresh")
     if not refresh_payload:
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=invalid_refresh_token")
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Access token is optional — the browser deletes it when it expires (max_age),
     # so it may be absent even when the refresh token is still valid. If present,
     # validate that both tokens belong to the same user as a defence-in-depth check.
-    access_token = request.cookies.get("access_token")
+    access_token = extract_token(request, "access_token")
     if access_token:
         access_payload = decode_access_token_ignore_exp(access_token)
         if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
-            _clear_auth_cookies(response)
+            clear_auth_cookies(response)
             log.warning(
                 "auth.refresh.failed reason=subject_mismatch sub=%s", refresh_payload.get("sub")
             )
@@ -457,12 +346,12 @@ async def refresh_tokens(
 
     jti = refresh_payload.get("jti")
     if not jti:
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="Invalid token")
 
     uid = refresh_payload.get("sub")
     if not uid:
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="Invalid token")
     # Derive location from the refresh token — the access token may be absent.
     raw_location = refresh_payload.get("location", settings.default_location)
@@ -474,7 +363,7 @@ async def refresh_tokens(
 
     session = await db[models.SESSIONS].find_one({"_id": jti, "user_id": uid, "location": location})
     if not session:
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=jti_not_found sub=%s", uid)
         raise HTTPException(status_code=401, detail="Session expired or already logged out")
 
@@ -483,7 +372,7 @@ async def refresh_tokens(
         expires_at = expires_at.replace(tzinfo=UTC)
     if expires_at < datetime.now(UTC):
         await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=db_expiry sub=%s", uid)
         raise HTTPException(status_code=401, detail="Session expired")
 
@@ -492,15 +381,25 @@ async def refresh_tokens(
     # prevents an attacker from minting new access tokens with a stolen refresh cookie.
     refresh_user = await db[models.USERS].find_one({"_id": uid, "location": location})
     if not refresh_user:
-        _clear_auth_cookies(response)
+        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=user_not_found sub=%s", uid)
         raise HTTPException(status_code=401, detail="User not found")
+
+    # Checked before tokens_revoked_at (same order as get_current_user) so a locked
+    # account gets this clearer message instead of the generic "Session revoked".
+    if refresh_user.get("is_locked"):
+        await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
+        clear_auth_cookies(response)
+        log.warning("auth.refresh.failed reason=account_locked sub=%s", uid)
+        raise HTTPException(
+            status_code=403, detail="Your account has been locked. Please contact support."
+        )
 
     if refresh_user.get("tokens_revoked_at") is not None:
         iat = refresh_payload.get("iat")
         if iat is None:
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-            _clear_auth_cookies(response)
+            clear_auth_cookies(response)
             raise HTTPException(status_code=401, detail="Session revoked")
         token_issued_at = datetime.fromtimestamp(iat, tz=UTC)
         revoked_at = refresh_user["tokens_revoked_at"]
@@ -508,20 +407,16 @@ async def refresh_tokens(
             revoked_at = revoked_at.replace(tzinfo=UTC)
         if token_issued_at <= revoked_at:
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-            _clear_auth_cookies(response)
+            clear_auth_cookies(response)
             log.warning("auth.refresh.revoked sub=%s", uid)
             raise HTTPException(status_code=401, detail="Session revoked")
 
     # Insert new session before deleting old: if the process crashes after the insert
     # but before the HTTP response is sent, the client retries with the old cookies
     # (old session still present) and succeeds. The orphaned new session expires naturally.
-    tokens = await _set_auth_cookies(response, uid, location, db)
+    tokens = await set_auth_cookies(response, uid, location, db)
     await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-    return {
-        "status": "ok",
-        "access_token": tokens.access_token,
-        "refresh_token": tokens.refresh_token,
-    }
+    return AuthTokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
 @router.post(
@@ -533,17 +428,18 @@ async def refresh_tokens(
 async def logout(
     request: Request,
     response: Response,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
+    settings: SettingsDep,
 ):
-    refresh_token_val = request.cookies.get("refresh_token")
+    refresh_token_val = extract_token(request, "refresh_token")
     if refresh_token_val:
         refresh_payload = decode_token_of_type(refresh_token_val, "refresh")
         if refresh_payload and (jti := refresh_payload.get("jti")):
-            access_token = request.cookies.get("access_token")
+            access_token = extract_token(request, "access_token")
             if access_token:
                 access_payload = decode_access_token_ignore_exp(access_token)
                 if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
-                    _clear_auth_cookies(response)
+                    clear_auth_cookies(response)
                     raise HTTPException(status_code=401, detail="Token mismatch")
             raw_loc = refresh_payload.get("location", "")
             location = (
@@ -552,11 +448,12 @@ async def logout(
                 else settings.default_location
             )
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-    _clear_auth_cookies(response)
+    clear_auth_cookies(response)
 
 
 @router.post(
     "/auth/google",
+    response_model=AuthTokenResponse,
     status_code=200,
     description="Sign in or register using a Google ID token. Creates the account on first use.",
 )
@@ -565,9 +462,10 @@ async def google_auth(
     request: Request,
     body: GoogleAuthBody,
     response: Response,
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    db: Db,
+    settings: SettingsDep,
 ):
-    info = _verify_google_token(body.id_token)
+    info = verify_google_token(body.id_token)
 
     raw_email = (info.get("email") or "").strip()
     if not raw_email:
@@ -602,7 +500,7 @@ async def google_auth(
                 detail="Your account has been locked. Please contact support.",
             )
         location = existing.get("location", settings.default_location)
-        tokens = await _set_auth_cookies(response, existing["_id"], location, db)
+        tokens = await set_auth_cookies(response, existing["_id"], location, db)
     else:
         if not await db[models.ALLOWED_EMAILS].find_one({"_id": email.lower()}):
             raise HTTPException(status_code=403, detail="Registration is not open.")
@@ -699,17 +597,15 @@ async def google_auth(
                         status_code=403,
                         detail="Your account has been locked. Please contact support.",
                     ) from None
-                tokens = await _set_auth_cookies(
+                tokens = await set_auth_cookies(
                     response,
                     race_user["_id"],
                     race_user.get("location", settings.default_location),
                     db,
                 )
-                return {
-                    "status": "ok",
-                    "access_token": tokens.access_token,
-                    "refresh_token": tokens.refresh_token,
-                }
+                return AuthTokenResponse(
+                    access_token=tokens.access_token, refresh_token=tokens.refresh_token
+                )
 
         try:
             await db[models.USERS].insert_one(user_doc)
@@ -724,13 +620,9 @@ async def google_auth(
             ) from None
 
         log.info("google_auth.register id=%s location=%s", new_user_id, location)
-        tokens = await _set_auth_cookies(response, new_user_id, location, db)
+        tokens = await set_auth_cookies(response, new_user_id, location, db)
 
-    return {
-        "status": "ok",
-        "access_token": tokens.access_token,
-        "refresh_token": tokens.refresh_token,
-    }
+    return AuthTokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
 
 
 @router.get(
@@ -739,7 +631,7 @@ async def google_auth(
     description="Return the authenticated user's profile (id, email, full name, role).",
 )
 @user_limiter.limit("60/minute")
-async def auth_me(request: Request, user: dict = Depends(get_current_user)):
+async def auth_me(request: Request, user: CurrentUser):
     return MeResponse(
         id=user["_id"],
         email=user["email"],
@@ -758,8 +650,9 @@ async def delete_account(
     request: Request,
     body: DeleteAccountBody,
     response: Response,
-    user: dict = Depends(get_current_user),
-    db: AsyncIOMotorDatabase = Depends(get_db),
+    user: CurrentUser,
+    db: Db,
+    settings: SettingsDep,
 ):
     try:
         normalized_confirm = _validate_email(
@@ -819,4 +712,4 @@ async def delete_account(
             user_id,
         )
 
-    _clear_auth_cookies(response)
+    clear_auth_cookies(response)

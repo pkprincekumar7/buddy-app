@@ -5,6 +5,7 @@ import { ApiError } from '@/api/errors';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
 import { api } from '@/api/client';
+import Spinner from '@/components/shared/Spinner';
 import WelcomePhase from '@/components/onboarding/WelcomePhase';
 import ChildProfileStep from '@/components/onboarding/ChildProfileStep';
 import type { ChildFormData } from '@/components/onboarding/ChildProfileStep';
@@ -162,6 +163,12 @@ export default function Onboarding() {
                   ? { avatar_id: null } // keeping existing photo — clean up any stale avatar_id
                   : {}), // upload was attempted but failed — leave DB untouched
           });
+          // Marks the first step of the Personality Journey progression chain —
+          // required before conversational_onboarding_completed can be set
+          // (see backend/app/schemas/children.py's ChildResponse comment).
+          api.entities.Child.markProgress(targetId, 'onboarding_profile_completed').catch(
+            console.error,
+          );
           void navigate(`/ConversationalOnboarding/${targetId}`);
         }
       } catch (err) {
@@ -183,11 +190,7 @@ export default function Onboarding() {
       <div className="mx-auto max-w-3xl px-4 py-8 md:py-12">
         {isLoadingAuth || checking ? (
           <div className="flex min-h-[60vh] items-center justify-center">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              className="h-10 w-10 rounded-full border-2 border-primary border-t-transparent"
-            />
+            <Spinner durationSeconds={1} />
           </div>
         ) : (
           <AnimatePresence mode="wait">

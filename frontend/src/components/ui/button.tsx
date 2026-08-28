@@ -17,6 +17,12 @@ const buttonVariants = cva(
         secondary: 'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
+        // Solid brand-teal CTA — auth forms, admin dialogs, error-state retries.
+        // Distinct from `default` (which uses the --primary token, a lighter
+        // teal meant for text/borders/rings) — this one uses --primary-action,
+        // the darker teal reserved for filled buttons. text/shadow match
+        // `default` exactly — only the background token differs.
+        action: 'bg-primary-action text-primary-foreground shadow hover:bg-primary-action/80',
       },
       size: {
         default: 'h-9 px-4 py-2 text-sm',

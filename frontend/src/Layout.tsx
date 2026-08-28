@@ -1,13 +1,15 @@
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { createPageUrl } from '@/utils';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { useTts } from '@/lib/TtsContext';
 import { api } from '@/api/client';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
 import { ConfirmModal } from '@/components/shared/StartOverButton';
 import { useStartOver } from '@/hooks/useStartOver';
@@ -35,14 +37,9 @@ function useNavChildId() {
 }
 
 export default function Layout({ children, currentPageName }: LayoutProps) {
-  const {
-    user,
-    isAuthenticated,
-    childProfiles: _childProfiles,
-    logout,
-    ttsEnabled,
-    toggleTts,
-  } = useAuth();
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+  const { ttsEnabled, toggleTts } = useTts();
   const navChildId = useNavChildId();
   const { doStartOver, isStartingOver } = useStartOver(navChildId ?? undefined);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
@@ -124,11 +121,8 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
             {/* Logo */}
             <Link to={createPageUrl('Home')} className="flex items-center gap-2.5">
               <div
-                className="h-8 w-8 flex-shrink-0 rounded-full"
-                style={{
-                  background: 'radial-gradient(circle at 35% 30%,#eafdff,#4be9ff 45%,#0a5b74 100%)',
-                  boxShadow: '0 0 16px rgba(75,233,255,.7)',
-                }}
+                className="orb-cyan-gradient h-8 w-8 flex-shrink-0 rounded-full"
+                style={{ boxShadow: '0 0 16px rgb(var(--constellation-cyan-rgb) / .7)' }}
               />
               {/*
                 Stacks below the sm breakpoint: the wordmark and the circle chip
@@ -137,15 +131,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                 block being hidden.
               */}
               <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:items-center sm:gap-2.5">
-                <span
-                  className="whitespace-nowrap leading-none text-sidebar-foreground"
-                  style={{
-                    fontFamily: 'Orbitron, sans-serif',
-                    fontWeight: 900,
-                    fontSize: 14,
-                    letterSpacing: '.06em',
-                  }}
-                >
+                <span className="whitespace-nowrap font-orbitron text-sm font-black leading-none tracking-[0.06em] text-sidebar-foreground">
                   SUPERPOWER
                 </span>
                 {circleLabel && (
@@ -153,22 +139,21 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     {/* Row-only separator — a vertical rule reads as noise once stacked. */}
                     <span
                       className="hidden h-4 w-px sm:block"
-                      style={{ background: 'rgba(75,233,255,.25)' }}
+                      style={{ background: 'rgb(var(--constellation-cyan-rgb) / .25)' }}
                     />
                     <span
-                      className="whitespace-nowrap leading-none"
+                      // Explicit font-rajdhani, not inherited: in the design mockups
+                      // the page root sets Rajdhani and the header picks it up, but
+                      // here the header sits outside each page's root element, so
+                      // without this it falls back to the Tailwind sans stack and
+                      // this chip alone renders in the wrong typeface.
+                      className="whitespace-nowrap font-rajdhani leading-none"
                       style={{
-                        // Explicit, not inherited: in the design mockups the page
-                        // root sets Rajdhani and the header picks it up, but here
-                        // the header sits outside each page's root element, so
-                        // without this it falls back to the Tailwind sans stack
-                        // and this chip alone renders in the wrong typeface.
-                        fontFamily: 'Rajdhani, sans-serif',
                         fontWeight: 700,
                         fontSize: 11,
                         letterSpacing: '.22em',
                         textTransform: 'uppercase',
-                        color: '#4be9ff',
+                        color: 'rgb(var(--constellation-cyan-rgb))',
                       }}
                     >
                       {circleLabel}
@@ -255,9 +240,10 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                         <Link
                           to={createPageUrl('Home')}
                           onClick={() => setProfileOpen(false)}
-                          className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent ${
-                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground'
-                          }`}
+                          className={cn(
+                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
+                            currentPageName === 'Home' ? 'text-primary' : 'text-muted-foreground',
+                          )}
                         >
                           <Home className="h-4 w-4" />
                           Home
@@ -295,6 +281,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
           </div>
         </div>
       </nav>
+
+      {/* Back — below the header, navigates to the previous route */}
+      <div className="px-4 pt-4 sm:px-6 lg:px-10">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void navigate(-1)}
+          className="text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+      </div>
 
       {/* Page Content */}
       {children}

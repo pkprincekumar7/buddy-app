@@ -30,6 +30,8 @@ resource "aws_lb" "backend" {
 }
 
 resource "aws_lb_target_group" "backend" {
+  #checkov:skip=CKV_AWS_378:Intentional — ALB→ECS traffic stays within the VPC on plain HTTP (see the file header comment above); CloudFront terminates TLS for end users and the ALB HTTPS listener re-encrypts CloudFront→ALB, so this HTTP hop never leaves the VPC. Switching it to HTTPS would require ECS to terminate TLS itself, a separate, unrelated change.
+
   name        = "${var.app_name}-backend-tg-${var.environment}"
   port        = 8000
   protocol    = "HTTP"
@@ -58,8 +60,47 @@ resource "aws_lb_listener" "https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.acm_certificate_arn
 
+  # Default action rejects everything. Only the listener rule below (matching
+  # the CloudFront origin-verify header) forwards to ECS — see
+  # aws_lb_listener_rule.from_cloudfront and var.origin_verify_secret.
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Origin-verify listener rule
+#
+# The ALB security group (see security_groups.tf) already restricts inbound
+# traffic to the AWS-managed CloudFront prefix list, but that list is shared
+# by every CloudFront distribution on AWS — not just this app's. Without this
+# rule, anyone could point their own CloudFront distribution's origin at this
+# ALB's public DNS name and reach ECS directly, bypassing this app's
+# distribution and therefore its Lambda@Edge JWT check entirely.
+#
+# infra-live-edge sets the same secret as a custom_header on the alb-backend
+# origin, so only requests that actually passed through this app's
+# CloudFront distribution carry a matching header.
+# ---------------------------------------------------------------------------
+resource "aws_lb_listener_rule" "from_cloudfront" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [var.origin_verify_secret]
+    }
   }
 }

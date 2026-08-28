@@ -15,7 +15,9 @@ import {
 } from 'react-router';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { TtsProvider } from '@/lib/TtsContext';
 import { AmbientAudioProvider } from '@/lib/AmbientAudioContext';
+import { AppThemeProvider } from '@/lib/theme';
 import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from './pages/Login';
@@ -53,11 +55,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <p className="max-w-lg text-center text-foreground">
             Something went wrong. Please refresh the page.
           </p>
-          <Button
-            type="button"
-            className="bg-primary-action hover:bg-primary-action/80"
-            onClick={() => this.setState({ hasError: false })}
-          >
+          <Button type="button" variant="action" onClick={() => this.setState({ hasError: false })}>
             Try again
           </Button>
         </div>
@@ -259,7 +257,7 @@ function AppShell() {
         <p className="max-w-lg text-center text-foreground">{authError.message}</p>
         <Button
           type="button"
-          className="bg-primary-action hover:bg-primary-action/80"
+          variant="action"
           onClick={() => {
             void checkAppState();
           }}
@@ -299,20 +297,24 @@ function AppShell() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClientInstance}>
-      <Router>
-        <ScrollToTop />
-        <AuthProvider>
-          <NavigationTracker />
-          <AmbientAudioProvider>
-            <ErrorBoundary>
-              <AppShell />
-            </ErrorBoundary>
-          </AmbientAudioProvider>
-        </AuthProvider>
-        <SonnerToaster position="bottom-center" />
-      </Router>
-    </QueryClientProvider>
+    <AppThemeProvider>
+      <QueryClientProvider client={queryClientInstance}>
+        <Router>
+          <ScrollToTop />
+          <AuthProvider>
+            <NavigationTracker />
+            <TtsProvider>
+              <AmbientAudioProvider>
+                <ErrorBoundary>
+                  <AppShell />
+                </ErrorBoundary>
+              </AmbientAudioProvider>
+            </TtsProvider>
+          </AuthProvider>
+          <SonnerToaster position="bottom-center" />
+        </Router>
+      </QueryClientProvider>
+    </AppThemeProvider>
   );
 }
 

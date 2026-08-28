@@ -5,14 +5,15 @@ import re
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from app.deps import get_current_parent
+from app.deps import SettingsDep, get_current_parent
 from app.limiter import user_limiter
 from app.services.llm_service import _openai_client, _openai_init_error
-from app.settings import settings
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/audio", tags=["audio"])
+# Every route needs an authenticated parent; none of them use the returned
+# user document, so the check is declared once here rather than per-function.
+router = APIRouter(prefix="/audio", tags=["audio"], dependencies=[Depends(get_current_parent)])
 
 _ALLOWED_AUDIO_EXTS = {"webm", "mp3", "wav", "m4a", "ogg", "mp4"}
 _MIME_MAP = {
@@ -37,8 +38,8 @@ class TranscribeResponse(BaseModel):
 @user_limiter.limit("10/minute")
 async def transcribe_audio(
     request: Request,
+    settings: SettingsDep,
     audio: UploadFile = File(...),
-    user: dict = Depends(get_current_parent),
 ):
     if _openai_client is None:
         if not settings.openai_api_key:

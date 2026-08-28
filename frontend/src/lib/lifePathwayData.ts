@@ -108,7 +108,8 @@ export const NEUTRAL_HUE = '75,233,255';
  */
 function hueToHex(hue: string): string {
   const parts = hue.split(',').map((n) => Number(n.trim()));
-  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return '#4be9ff';
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n)))
+    return 'rgb(var(--constellation-cyan-rgb))';
   return `#${parts.map((n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('')}`;
 }
 
@@ -213,14 +214,21 @@ export const COPY = {
 
 /** Day 0/30/60/90 markers — x positions are the design's. */
 export const TIMELINE = [
-  { x: 40, r: 6, fill: '#4be9ff', label: 'Day 0 · start', anchor: 'start', color: '#7f97a8' },
+  {
+    x: 40,
+    r: 6,
+    fill: 'rgb(var(--constellation-cyan-rgb))',
+    label: 'Day 0 · start',
+    anchor: 'start',
+    color: 'rgb(var(--constellation-slate-warm-rgb))',
+  },
   {
     x: 347,
     r: 6,
-    fill: '#8fd8e8',
+    fill: 'rgb(var(--constellation-cyan-bright2-rgb))',
     label: 'Day 30 · no reminders',
     anchor: 'middle',
-    color: '#7f97a8',
+    color: 'rgb(var(--constellation-slate-warm-rgb))',
   },
   {
     x: 653,
@@ -233,10 +241,10 @@ export const TIMELINE = [
   {
     x: 960,
     r: 7,
-    fill: '#ffd89a',
+    fill: 'rgb(var(--constellation-gold-warm-rgb))',
     label: 'Day 90 · second nature',
     anchor: 'end',
-    color: '#f0c98a',
+    color: 'rgb(var(--constellation-gold-rgb))',
   },
 ] as const;
 
