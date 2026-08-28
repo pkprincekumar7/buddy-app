@@ -631,7 +631,7 @@ export default function Connect() {
           <WhatsAppModal
             mode={wa}
             childName={childName || 'Your child'}
-            title={title}
+            card={{ kind: currentItem.kind, title, caption, date: cardDate }}
             message={waDefaultMsg}
             contacts={WA_CONTACTS}
             picked={waPicked}
@@ -651,7 +651,7 @@ export default function Connect() {
             mode={ig}
             handle={handle}
             childName={childName || 'Your child'}
-            card={{ kind: currentItem.kind, title, caption }}
+            card={{ kind: currentItem.kind, title, caption, date: cardDate }}
             backdrop={IG_BGS[igBg] ?? IG_BGS[0]!}
             background={{ options: IG_BGS, active: igBg, onPick: setIgBg }}
             destination={{ options: IG_DESTS, active: igDest, onPick: setIgDest }}

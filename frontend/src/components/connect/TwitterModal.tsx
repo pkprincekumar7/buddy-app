@@ -1,5 +1,7 @@
+import { useMediaQuery } from '@/hooks/use-mobile';
 import {
   cfs,
+  linkifyUrl,
   TW_RING_CIRCUMFERENCE,
   TwitterIcon,
   LinkIcon,
@@ -54,6 +56,8 @@ export default function TwitterModal({
   const { charsLeft: left, color: ringColor, offset: ringOffset } = ring;
   const { disabled: postDisabled, onPost } = post;
   const { onClose, onBack } = chrome;
+  const isSmall = useMediaQuery('(max-width: 480px)');
+  const fullInviteUrl = `https://${inviteUrl}`;
 
   return (
     <ModalBackdrop
@@ -129,195 +133,178 @@ export default function TwitterModal({
                 border: '1px solid rgb(var(--twitter-slate-rgb) / .14)',
               }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr', gap: 13 }}>
+              <div style={{ minWidth: 0 }}>
                 <div
-                  className="orb-cyan-gradient"
-                  style={{ width: 40, height: 40, borderRadius: '50%' }}
-                />
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={onToggleAudience}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') onToggleAudience();
-                    }}
-                    style={{
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 7,
-                      padding: '5px 13px',
-                      borderRadius: 999,
-                      border: '1px solid rgb(var(--twitter-sky-rgb) / .5)',
-                      fontWeight: 700,
-                      fontSize: cfs(10.5),
-                      letterSpacing: '.14em',
-                      textTransform: 'uppercase',
-                      color: 'rgb(var(--twitter-sky-rgb))',
-                    }}
-                  >
-                    {audience}
-                    <ChevronDownIcon />
-                  </div>
-                  <div
-                    className="font-rajdhani"
-                    style={{
-                      marginTop: 11,
-                      width: '100%',
-                      fontWeight: 600,
-                      fontSize: cfs(17),
-                      lineHeight: 1.45,
-                      color: 'rgb(var(--twitter-bright-rgb))',
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    {text}
-                  </div>
+                  role="button"
+                  tabIndex={0}
+                  onClick={onToggleAudience}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') onToggleAudience();
+                  }}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '5px 13px',
+                    borderRadius: 999,
+                    border: '1px solid rgb(var(--twitter-sky-rgb) / .5)',
+                    fontWeight: 700,
+                    fontSize: cfs(10.5),
+                    letterSpacing: '.14em',
+                    textTransform: 'uppercase',
+                    color: 'rgb(var(--twitter-sky-rgb))',
+                  }}
+                >
+                  {audience}
+                  <ChevronDownIcon />
+                </div>
+                <div
+                  className="font-rajdhani"
+                  style={{
+                    marginTop: 11,
+                    width: '100%',
+                    fontWeight: 600,
+                    fontSize: cfs(17),
+                    lineHeight: 1.45,
+                    color: 'rgb(var(--twitter-bright-rgb))',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {linkifyUrl(text, fullInviteUrl)}
+                </div>
 
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: 'flex',
+                    width: '100%',
+                    minWidth: 0,
+                    borderRadius: 14,
+                    aspectRatio: '16/9',
+                    minHeight: 200,
+                    background:
+                      'linear-gradient(120deg,rgb(var(--constellation-panel-b-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
+                    border: '1px solid rgb(var(--twitter-slate-rgb) / .2)',
+                  }}
+                >
                   <div
                     style={{
-                      marginTop: 6,
-                      position: 'relative',
-                      borderRadius: 14,
-                      overflow: 'hidden',
-                      aspectRatio: '16/9',
-                      background:
-                        'linear-gradient(120deg,rgb(var(--constellation-panel-b-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
-                      border: '1px solid rgb(var(--twitter-slate-rgb) / .2)',
+                      flex: 1,
+                      minWidth: 0,
+                      padding: '16px 18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
                     }}
                   >
                     <div
                       style={{
-                        position: 'absolute',
-                        inset: 0,
-                        padding: '16px 18px',
                         display: 'flex',
-                        flexDirection: 'column',
+                        alignItems: 'center',
                         justifyContent: 'space-between',
                       }}
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <div
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: '50%',
-                              background: 'rgb(var(--constellation-gold-rgb))',
-                              boxShadow: '0 0 8px rgb(var(--constellation-gold-rgb))',
-                            }}
-                          />
-                          <div
-                            style={{
-                              fontWeight: 700,
-                              fontSize: cfs(8.5),
-                              letterSpacing: '.2em',
-                              textTransform: 'uppercase',
-                              color: 'rgb(var(--constellation-gold-rgb))',
-                            }}
-                          >
-                            {cardKind}
-                          </div>
-                        </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <div
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: 'rgb(var(--constellation-gold-rgb))',
+                            boxShadow: '0 0 8px rgb(var(--constellation-gold-rgb))',
+                          }}
+                        />
                         <div
                           style={{
                             fontWeight: 700,
                             fontSize: cfs(8.5),
-                            letterSpacing: '.16em',
+                            letterSpacing: '.2em',
                             textTransform: 'uppercase',
-                            color: 'rgb(var(--constellation-slate-mid-rgb))',
+                            color: 'rgb(var(--constellation-gold-rgb))',
                           }}
                         >
-                          {cardDate}
-                        </div>
-                      </div>
-                      <div>
-                        <div
-                          className="font-orbitron"
-                          style={{
-                            fontWeight: 900,
-                            fontSize: cfs(17),
-                            lineHeight: 1.18,
-                            color: 'rgb(var(--constellation-cyan-palest-rgb))',
-                            maxWidth: '82%',
-                          }}
-                        >
-                          {cardTitle}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 7,
-                            fontWeight: 600,
-                            fontSize: cfs(12),
-                            lineHeight: 1.4,
-                            color: 'rgb(var(--constellation-caption-rgb))',
-                            maxWidth: '74%',
-                          }}
-                        >
-                          {cardCaption}
+                          {cardKind}
                         </div>
                       </div>
                       <div
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
+                          fontWeight: 700,
+                          fontSize: cfs(8.5),
+                          letterSpacing: '.16em',
+                          textTransform: 'uppercase',
+                          color: 'rgb(var(--constellation-slate-mid-rgb))',
                         }}
                       >
-                        <div
-                          className="font-orbitron"
-                          style={{
-                            fontWeight: 900,
-                            fontSize: cfs(9.5),
-                            letterSpacing: '.14em',
-                            color: 'rgb(var(--constellation-cyan-palest-rgb))',
-                          }}
-                        >
-                          SUPERPOWER
-                        </div>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            fontSize: cfs(8.5),
-                            letterSpacing: '.14em',
-                            textTransform: 'uppercase',
-                            color: 'rgb(var(--constellation-slate-mid-rgb))',
-                          }}
-                        >
-                          superpower.app
-                        </div>
+                        {cardDate}
                       </div>
                     </div>
+                    <div>
+                      <div
+                        className="font-orbitron"
+                        style={{
+                          fontWeight: 900,
+                          fontSize: cfs(17),
+                          lineHeight: 1.18,
+                          color: 'rgb(var(--constellation-cyan-palest-rgb))',
+                          maxWidth: '82%',
+                        }}
+                      >
+                        {cardTitle}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 7,
+                          fontWeight: 600,
+                          fontSize: cfs(12),
+                          lineHeight: 1.4,
+                          color: 'rgb(var(--constellation-caption-rgb))',
+                          maxWidth: '74%',
+                        }}
+                      >
+                        {cardCaption}
+                      </div>
+                    </div>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        fontWeight: 900,
+                        fontSize: cfs(9.5),
+                        letterSpacing: '.14em',
+                        color: 'rgb(var(--constellation-cyan-palest-rgb))',
+                      }}
+                    >
+                      SUPERPOWER
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      marginTop: 7,
-                      fontWeight: 600,
-                      fontSize: cfs(12),
-                      color: 'rgb(var(--twitter-meta-rgb))',
-                    }}
-                  >
-                    Card attached as an image · alt text added automatically
-                  </div>
+                </div>
+                <div
+                  style={{
+                    marginTop: 7,
+                    fontWeight: 600,
+                    fontSize: cfs(12),
+                    color: 'rgb(var(--twitter-meta-rgb))',
+                  }}
+                >
+                  Card attached as an image · alt text added automatically
+                </div>
 
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: isSmall ? 'column' : 'row',
+                    alignItems: isSmall ? 'stretch' : 'center',
+                    gap: 12,
+                    marginTop: 11,
+                    borderRadius: 13,
+                    padding: '12px 14px',
+                    background: 'rgb(var(--twitter-sky-rgb) / .06)',
+                    border: '1px dashed rgb(var(--twitter-sky-rgb) / .32)',
+                  }}
+                >
                   <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      marginTop: 11,
-                      borderRadius: 13,
-                      padding: '12px 14px',
-                      background: 'rgb(var(--twitter-sky-rgb) / .06)',
-                      border: '1px dashed rgb(var(--twitter-sky-rgb) / .32)',
-                    }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}
                   >
                     <div
                       style={{
@@ -350,31 +337,41 @@ export default function TwitterModal({
                           fontWeight: 600,
                           fontSize: cfs(12),
                           color: 'rgb(var(--twitter-meta-rgb))',
+                          overflowWrap: 'anywhere',
                         }}
                       >
-                        {inviteUrl} · free for any parent
+                        <a
+                          href={fullInviteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'underline' }}
+                        >
+                          {inviteUrl}
+                        </a>{' '}
+                        · free for any parent
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={onCopyInvite}
-                      style={{
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        padding: '7px 14px',
-                        borderRadius: 999,
-                        border: '1px solid rgb(var(--twitter-sky-rgb) / .42)',
-                        background: 'transparent',
-                        fontWeight: 700,
-                        fontSize: cfs(10.5),
-                        letterSpacing: '.14em',
-                        textTransform: 'uppercase',
-                        color: 'rgb(var(--twitter-sky-light-rgb))',
-                      }}
-                    >
-                      Copy
-                    </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={onCopyInvite}
+                    style={{
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      alignSelf: isSmall ? 'flex-end' : 'center',
+                      padding: '7px 14px',
+                      borderRadius: 999,
+                      border: '1px solid rgb(var(--twitter-sky-rgb) / .42)',
+                      background: 'transparent',
+                      fontWeight: 700,
+                      fontSize: cfs(10.5),
+                      letterSpacing: '.14em',
+                      textTransform: 'uppercase',
+                      color: 'rgb(var(--twitter-sky-light-rgb))',
+                    }}
+                  >
+                    Copy
+                  </button>
                 </div>
               </div>
             </div>

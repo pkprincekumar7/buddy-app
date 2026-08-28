@@ -1,5 +1,7 @@
+import { useMediaQuery } from '@/hooks/use-mobile';
 import {
   cfs,
+  linkifyUrl,
   type WaContact,
   WhatsAppIcon,
   LinkIcon,
@@ -12,7 +14,8 @@ import {
 interface WhatsAppModalProps {
   mode: 'compose' | 'sent';
   childName: string;
-  title: string;
+  /** The shared card being posted — same content shown across every destination. */
+  card: { kind: string; title: string; caption: string; date: string };
   message: string;
   contacts: WaContact[];
   picked: number[];
@@ -27,7 +30,7 @@ interface WhatsAppModalProps {
 export default function WhatsAppModal({
   mode,
   childName,
-  title,
+  card,
   message,
   contacts,
   picked,
@@ -38,6 +41,9 @@ export default function WhatsAppModal({
   onClose,
   sentLine,
 }: WhatsAppModalProps) {
+  const { kind: cardKind, title: cardTitle, caption: cardCaption, date: cardDate } = card;
+  const isSmall = useMediaQuery('(max-width: 480px)');
+  const fullInviteUrl = `https://${inviteUrl}`;
   const disabled = picked.length === 0;
   const count =
     picked.length === 0
@@ -111,24 +117,53 @@ export default function WhatsAppModal({
 
             <div
               style={{
-                display: 'flex',
-                gap: 14,
-                alignItems: 'flex-start',
                 marginTop: 20,
                 borderRadius: 16,
-                padding: 14,
+                padding: '16px 17px',
                 background: 'rgb(var(--whatsapp-surface-rgb) / .6)',
                 border: '1px solid rgb(var(--whatsapp-green-rgb) / .16)',
               }}
             >
               <div
                 style={{
-                  width: 74,
-                  height: 92,
-                  flexShrink: 0,
-                  borderRadius: 10,
-                  overflow: 'hidden',
-                  position: 'relative',
+                  fontWeight: 700,
+                  fontSize: cfs(10.5),
+                  letterSpacing: '.18em',
+                  textTransform: 'uppercase',
+                  color: 'rgb(var(--whatsapp-label-rgb))',
+                }}
+              >
+                Message
+              </div>
+              <div
+                className="font-rajdhani"
+                style={{
+                  marginTop: 7,
+                  width: '100%',
+                  borderRadius: 11,
+                  padding: '11px 13px',
+                  background: 'rgb(var(--whatsapp-surface-rgb) / .85)',
+                  border: '1px solid rgb(var(--whatsapp-green-rgb) / .24)',
+                  fontWeight: 600,
+                  fontSize: cfs(14.5),
+                  lineHeight: 1.5,
+                  color: 'rgb(var(--whatsapp-text-rgb))',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {linkifyUrl(message, fullInviteUrl)}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 12,
+                  display: 'flex',
+                  width: '100%',
+                  minWidth: 0,
+                  borderRadius: 14,
+                  aspectRatio: '16/9',
+                  minHeight: 200,
                   background:
                     'linear-gradient(165deg,rgb(var(--constellation-panel-a-rgb)),rgb(var(--constellation-panel-deep-rgb)))',
                   border: '1px solid rgb(var(--constellation-gold-rgb) / .35)',
@@ -136,9 +171,9 @@ export default function WhatsAppModal({
               >
                 <div
                   style={{
-                    position: 'absolute',
-                    inset: 0,
-                    padding: 8,
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '16px 18px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
@@ -146,66 +181,80 @@ export default function WhatsAppModal({
                 >
                   <div
                     style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: '50%',
-                      background: 'rgb(var(--constellation-gold-rgb))',
-                      boxShadow: '0 0 7px rgb(var(--constellation-gold-rgb))',
-                    }}
-                  />
-                  <div
-                    className="font-orbitron"
-                    style={{
-                      fontWeight: 900,
-                      fontSize: cfs(6.5),
-                      lineHeight: 1.25,
-                      color: 'rgb(var(--constellation-cyan-palest-rgb))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
                     }}
                   >
-                    {title}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: 'rgb(var(--constellation-gold-rgb))',
+                          boxShadow: '0 0 8px rgb(var(--constellation-gold-rgb))',
+                        }}
+                      />
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: cfs(8.5),
+                          letterSpacing: '.2em',
+                          textTransform: 'uppercase',
+                          color: 'rgb(var(--constellation-gold-rgb))',
+                        }}
+                      >
+                        {cardKind}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: cfs(8.5),
+                        letterSpacing: '.16em',
+                        textTransform: 'uppercase',
+                        color: 'rgb(var(--constellation-slate-mid-rgb))',
+                      }}
+                    >
+                      {cardDate}
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        fontWeight: 900,
+                        fontSize: cfs(17),
+                        lineHeight: 1.18,
+                        color: 'rgb(var(--constellation-cyan-palest-rgb))',
+                      }}
+                    >
+                      {cardTitle}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 7,
+                        fontWeight: 600,
+                        fontSize: cfs(12),
+                        lineHeight: 1.4,
+                        color: 'rgb(var(--constellation-caption-rgb))',
+                      }}
+                    >
+                      {cardCaption}
+                    </div>
                   </div>
                   <div
                     className="font-orbitron"
                     style={{
                       fontWeight: 900,
-                      fontSize: cfs(4.5),
-                      letterSpacing: '.1em',
-                      color: 'rgb(var(--constellation-cyan-palest-rgb) / .75)',
+                      fontSize: cfs(9.5),
+                      letterSpacing: '.14em',
+                      color: 'rgb(var(--constellation-cyan-palest-rgb))',
                     }}
                   >
                     SUPERPOWER
                   </div>
-                </div>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: cfs(10.5),
-                    letterSpacing: '.18em',
-                    textTransform: 'uppercase',
-                    color: 'rgb(var(--whatsapp-label-rgb))',
-                  }}
-                >
-                  Message
-                </div>
-                <div
-                  className="font-rajdhani"
-                  style={{
-                    marginTop: 7,
-                    width: '100%',
-                    borderRadius: 11,
-                    padding: '11px 13px',
-                    background: 'rgb(var(--whatsapp-surface-rgb) / .85)',
-                    border: '1px solid rgb(var(--whatsapp-green-rgb) / .24)',
-                    fontWeight: 600,
-                    fontSize: cfs(14.5),
-                    lineHeight: 1.5,
-                    color: 'rgb(var(--whatsapp-text-rgb))',
-                    whiteSpace: 'pre-wrap',
-                  }}
-                >
-                  {message}
                 </div>
               </div>
             </div>
@@ -213,7 +262,12 @@ export default function WhatsAppModal({
             <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
+                // Stacked on small devices only — "icon + text" stays a row
+                // (its own nested flex below) and the Copy button drops onto
+                // its own line beneath it, instead of squeezing into the same
+                // row as the title/subtext.
+                flexDirection: isSmall ? 'column' : 'row',
+                alignItems: isSmall ? 'stretch' : 'center',
                 gap: 13,
                 marginTop: 12,
                 borderRadius: 14,
@@ -222,40 +276,51 @@ export default function WhatsAppModal({
                 border: '1px dashed rgb(var(--whatsapp-green-rgb) / .35)',
               }}
             >
-              <div
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 9,
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'rgb(var(--whatsapp-green-rgb) / .14)',
-                  border: '1px solid rgb(var(--whatsapp-green-rgb) / .3)',
-                }}
-              >
-                <LinkIcon color="rgb(var(--whatsapp-bright-rgb))" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 13, flex: 1, minWidth: 0 }}>
                 <div
                   style={{
-                    fontWeight: 700,
-                    fontSize: cfs(13.5),
-                    color: 'rgb(var(--whatsapp-text-rgb))',
+                    width: 30,
+                    height: 30,
+                    borderRadius: 9,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgb(var(--whatsapp-green-rgb) / .14)',
+                    border: '1px solid rgb(var(--whatsapp-green-rgb) / .3)',
                   }}
                 >
-                  Join Superpower link included
+                  <LinkIcon color="rgb(var(--whatsapp-bright-rgb))" />
                 </div>
-                <div
-                  style={{
-                    marginTop: 1,
-                    fontWeight: 600,
-                    fontSize: cfs(12.5),
-                    color: 'rgb(var(--whatsapp-meta-rgb))',
-                  }}
-                >
-                  {inviteUrl} · free for any parent
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: cfs(13.5),
+                      color: 'rgb(var(--whatsapp-text-rgb))',
+                    }}
+                  >
+                    Join Superpower link included
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 1,
+                      fontWeight: 600,
+                      fontSize: cfs(12.5),
+                      color: 'rgb(var(--whatsapp-meta-rgb))',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    <a
+                      href={fullInviteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'inherit', textDecoration: 'underline' }}
+                    >
+                      {inviteUrl}
+                    </a>{' '}
+                    · free for any parent
+                  </div>
                 </div>
               </div>
               <button
@@ -264,6 +329,7 @@ export default function WhatsAppModal({
                 style={{
                   cursor: 'pointer',
                   flexShrink: 0,
+                  alignSelf: isSmall ? 'flex-end' : 'center',
                   padding: '8px 15px',
                   borderRadius: 999,
                   border: '1px solid rgb(var(--whatsapp-green-rgb) / .45)',

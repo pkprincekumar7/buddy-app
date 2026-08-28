@@ -1,5 +1,7 @@
+import { useMediaQuery } from '@/hooks/use-mobile';
 import {
   cfs,
+  linkifyUrl,
   type IgDest,
   InstagramIcon,
   LinkIcon,
@@ -15,7 +17,7 @@ interface InstagramModalProps {
   handle: string;
   childName: string;
   /** The shared card being posted — same content shown across every destination. */
-  card: { kind: string; title: string; caption: string };
+  card: { kind: string; title: string; caption: string; date: string };
   backdrop: string;
   /** Background-swatch picker for the share card. */
   background: { options: string[]; active: number; onPick: (i: number) => void };
@@ -49,13 +51,16 @@ export default function InstagramModal({
   chrome,
   sent,
 }: InstagramModalProps) {
-  const { kind: cardKind, title: cardTitle, caption: cardCaption } = card;
+  const { kind: cardKind, title: cardTitle, caption: cardCaption, date: cardDate } = card;
   const { options: backgrounds, active: activeBg, onPick: onPickBg } = background;
   const { options: destinations, active: activeDest, onPick: onPickDest } = destination;
   const { label: capLabel, value: capValue } = captionInput;
   const { label: linkLabel, url: inviteUrl, onCopy: onCopyInvite } = inviteLink;
   const { onClose, onBack } = chrome;
   const { title: sentTitle, line: sentLine } = sent;
+  const isNarrowGrid = useMediaQuery('(max-width: 620px)');
+  const isSmall = useMediaQuery('(max-width: 480px)');
+  const fullInviteUrl = `https://${inviteUrl}`;
 
   return (
     <ModalBackdrop
@@ -125,35 +130,24 @@ export default function InstagramModal({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '214px 1fr',
+                gridTemplateColumns: isNarrowGrid ? '1fr' : '214px 1fr',
                 gap: 22,
                 marginTop: 20,
                 alignItems: 'start',
               }}
             >
-              <div>
+              <div style={isNarrowGrid ? { justifySelf: 'center' } : undefined}>
                 <div
                   style={{
-                    position: 'relative',
                     width: 214,
-                    aspectRatio: '9/16',
                     borderRadius: 18,
                     overflow: 'hidden',
                     background: backdrop,
                     border: '1px solid rgb(var(--instagram-pink-rgb) / .3)',
+                    padding: '12px 16px 16px',
                   }}
                 >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 12,
-                      left: 12,
-                      right: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 7,
-                    }}
-                  >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <div
                       style={{
                         flex: 1,
@@ -171,16 +165,7 @@ export default function InstagramModal({
                       }}
                     />
                   </div>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 26,
-                      left: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 7,
-                    }}
-                  >
+                  <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 7 }}>
                     <div
                       className="orb-cyan-gradient"
                       style={{ width: 19, height: 19, borderRadius: '50%' }}
@@ -198,11 +183,8 @@ export default function InstagramModal({
                   </div>
                   <div
                     style={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
+                      marginTop: 14,
+                      position: 'relative',
                       borderRadius: 13,
                       overflow: 'hidden',
                       aspectRatio: '4/5',
@@ -222,26 +204,45 @@ export default function InstagramModal({
                         justifyContent: 'space-between',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: '50%',
-                            background: 'rgb(var(--constellation-gold-rgb))',
-                            boxShadow: '0 0 7px rgb(var(--constellation-gold-rgb))',
-                          }}
-                        />
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <div
+                            style={{
+                              width: 5,
+                              height: 5,
+                              borderRadius: '50%',
+                              background: 'rgb(var(--constellation-gold-rgb))',
+                              boxShadow: '0 0 7px rgb(var(--constellation-gold-rgb))',
+                            }}
+                          />
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              fontSize: cfs(6),
+                              letterSpacing: '.2em',
+                              textTransform: 'uppercase',
+                              color: 'rgb(var(--constellation-gold-rgb))',
+                            }}
+                          >
+                            {cardKind}
+                          </div>
+                        </div>
                         <div
                           style={{
                             fontWeight: 700,
                             fontSize: cfs(6),
-                            letterSpacing: '.2em',
+                            letterSpacing: '.16em',
                             textTransform: 'uppercase',
-                            color: 'rgb(var(--constellation-gold-rgb))',
+                            color: 'rgb(var(--constellation-slate-mid-rgb))',
                           }}
                         >
-                          {cardKind}
+                          {cardDate}
                         </div>
                       </div>
                       <div>
@@ -280,67 +281,6 @@ export default function InstagramModal({
                         SUPERPOWER
                       </div>
                     </div>
-                  </div>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 16,
-                      right: 16,
-                      bottom: 50,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '6px 10px',
-                      borderRadius: 9,
-                      background: 'rgba(10,6,12,.78)',
-                      border: '1px solid rgba(255,255,255,.35)',
-                    }}
-                  >
-                    <LinkIcon size={9} color="rgba(255,255,255,.9)" />
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        fontSize: cfs(8),
-                        letterSpacing: '.12em',
-                        textTransform: 'uppercase',
-                        color: 'rgba(255,255,255,.95)',
-                      }}
-                    >
-                      Join Superpower
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: 12,
-                      right: 12,
-                      bottom: 14,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        flex: 1,
-                        borderRadius: 999,
-                        padding: '8px 12px',
-                        border: '1px solid rgba(255,255,255,.4)',
-                        fontWeight: 600,
-                        fontSize: cfs(9.5),
-                        color: 'rgba(255,255,255,.75)',
-                      }}
-                    >
-                      Send message
-                    </div>
-                    <div
-                      style={{
-                        width: 15,
-                        height: 15,
-                        borderRadius: '50%',
-                        border: '1.5px solid rgba(255,255,255,.6)',
-                      }}
-                    />
                   </div>
                 </div>
                 <div
@@ -482,15 +422,17 @@ export default function InstagramModal({
                     lineHeight: 1.5,
                     color: 'rgb(var(--instagram-bright-rgb))',
                     whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
                   }}
                 >
-                  {capValue}
+                  {linkifyUrl(capValue, fullInviteUrl)}
                 </div>
 
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    flexDirection: isSmall ? 'column' : 'row',
+                    alignItems: isSmall ? 'stretch' : 'center',
                     gap: 13,
                     marginTop: 12,
                     borderRadius: 14,
@@ -499,40 +441,51 @@ export default function InstagramModal({
                     border: '1px dashed rgb(var(--instagram-pink-rgb) / .35)',
                   }}
                 >
-                  <div
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 9,
-                      flexShrink: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: 'rgb(var(--instagram-pink-rgb) / .14)',
-                      border: '1px solid rgb(var(--instagram-pink-rgb) / .3)',
-                    }}
-                  >
-                    <LinkIcon color="rgb(var(--instagram-pink-rgb))" />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 13, flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontWeight: 700,
-                        fontSize: cfs(13.5),
-                        color: 'rgb(var(--instagram-bright-rgb))',
+                        width: 30,
+                        height: 30,
+                        borderRadius: 9,
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgb(var(--instagram-pink-rgb) / .14)',
+                        border: '1px solid rgb(var(--instagram-pink-rgb) / .3)',
                       }}
                     >
-                      {linkLabel}
+                      <LinkIcon color="rgb(var(--instagram-pink-rgb))" />
                     </div>
-                    <div
-                      style={{
-                        marginTop: 1,
-                        fontWeight: 600,
-                        fontSize: cfs(12.5),
-                        color: 'rgb(var(--instagram-meta-rgb))',
-                      }}
-                    >
-                      {inviteUrl} · free for any parent
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: cfs(13.5),
+                          color: 'rgb(var(--instagram-bright-rgb))',
+                        }}
+                      >
+                        {linkLabel}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 1,
+                          fontWeight: 600,
+                          fontSize: cfs(12.5),
+                          color: 'rgb(var(--instagram-meta-rgb))',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        <a
+                          href={fullInviteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'inherit', textDecoration: 'underline' }}
+                        >
+                          {inviteUrl}
+                        </a>{' '}
+                        · free for any parent
+                      </div>
                     </div>
                   </div>
                   <button
@@ -541,6 +494,7 @@ export default function InstagramModal({
                     style={{
                       cursor: 'pointer',
                       flexShrink: 0,
+                      alignSelf: isSmall ? 'flex-end' : 'center',
                       padding: '8px 15px',
                       borderRadius: 999,
                       border: '1px solid rgb(var(--instagram-pink-rgb) / .45)',

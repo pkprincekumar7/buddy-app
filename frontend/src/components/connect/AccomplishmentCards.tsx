@@ -152,7 +152,10 @@ export function AccomplishmentCardPreview({
           >
             SUPERPOWER
           </div>
-          <div
+          <a
+            href={`https://${inviteUrl}`}
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
               fontWeight: 700,
               fontSize: cfs(9.5),
@@ -168,12 +171,13 @@ export function AccomplishmentCardPreview({
               // a truncated join link is a broken feature, not a cosmetic issue.
               minWidth: 0,
               overflowWrap: 'anywhere',
+              textDecoration: 'none',
             }}
           >
             Join for free
             <br />
             {inviteUrl}
-          </div>
+          </a>
         </div>
       </div>
     </div>

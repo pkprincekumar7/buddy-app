@@ -13,6 +13,35 @@ import type { ReactNode } from 'react';
 // eslint-disable-next-line react-refresh/only-export-components
 export const cfs = (px: number) => `calc(${px}px * var(--cx-type-scale, 1))`;
 
+/**
+ * Splits `text` on the first occurrence of `url` and renders that piece as a
+ * real, clickable link — the rest stays plain text. Shared by every share
+ * modal (WhatsApp, Instagram, ...) whose preview text embeds the invite URL
+ * inside a longer message/caption, so only that substring should be a link.
+ * `text` is a preview of a message the user is about to send elsewhere, not
+ * something this app navigates internally, so it opens in a new tab rather
+ * than leaving the share flow.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function linkifyUrl(text: string, url: string): ReactNode {
+  const idx = text.indexOf(url);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'inherit', textDecoration: 'underline', overflowWrap: 'anywhere' }}
+      >
+        {url}
+      </a>
+      {text.slice(idx + url.length)}
+    </>
+  );
+}
+
 const IC = {
   star: 'M12 3l2.2 5.6L20 9.4l-4 4 1 6-5-2.9-5 2.9 1-6-4-4 5.8-.8z',
   build: 'M15 4a4 4 0 0 0 5 5l-9 9a3 3 0 1 1-4-4z',
