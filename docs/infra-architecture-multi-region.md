@@ -201,6 +201,12 @@ unauthenticated public paths (login, register, health).
 └────────────────────────────────────────────────────────┘
 ```
 
+This whole diagram is the **target** state, not what's running today. Only ap-south-1
+is live currently (single region, no PrivateLink); the eu-west-1/us-east-1 columns in
+the backend VPC layout and the entire MongoDB Atlas Global Cluster box are all
+bootstrap work — see the Deployment Order and Required Changes sections below for
+exactly what's missing and in what order it needs to be built.
+
 **TLS chain:**
 ```
 Browser ──HTTPS──▶ CloudFront ──[L@E origin-request: JWT auth + geo-route]──▶ ALB (443) ──HTTP/8000──▶ ECS task
@@ -229,13 +235,23 @@ defaults to `ap-south-1` (current single active region during rollout).
 
 ## Deployment Order
 
-The full sequence interleaves `terraform-atlas` runs (Atlas PrivateLink initiation + handshake)
-with `infra-live-backend` runs, following the same 6-phase pattern documented in
-`docs/infra-architecture-v1.md`. `infra-live-edge` runs last once all three backends have
-published their ALB FQDNs to SSM.
+The full sequence interleaves `terraform-atlas` runs (Atlas PrivateLink initiation +
+handshake) with `infra-live-backend` runs across a 6-phase pattern (each phase fully
+specified below). `infra-live-edge` runs last once all three backends have published
+their ALB FQDNs to SSM.
 
 ```
-Phase 1a — terraform-atlas (ap-south-1, Phase 1 run)   ← already done (or pending)
+Phase 0  — Atlas tier upgrade + terraform-atlas bootstrap   ← not started
+           Today's cluster is Atlas M0 (free tier), managed manually, single region
+           (ap-south-1) — there is no Atlas Terraform module in this repo at all yet.
+           M0 does not support Global Clusters, custom zone sharding, or PrivateLink;
+           all three require upgrading to a paid, dedicated tier first. This is a real
+           cost decision to make explicitly, not a config toggle — see Change 10d.
+           Only after the tier upgrade does `infra-live-atlas` get created (from
+           scratch) and `terraform-atlas.yml` get written (also from scratch — it does
+           not exist yet either; see the note under Change 10d).
+
+Phase 1a — terraform-atlas (ap-south-1, Phase 1 run)   ← blocked on Phase 0
            Registers ap-south-1 PrivateLink with Atlas; writes endpoint_service_name to SSM.
 
 Phase 1b — terraform-atlas (eu-west-1,  Phase 1 run)
@@ -243,7 +259,7 @@ Phase 1c — terraform-atlas (us-east-1,  Phase 1 run)
            Same as 1a for each new region (adds mongodbatlas_privatelink_endpoint per region).
            Each writes /{app}/{env}/atlas/{region}/endpoint_service_name to SSM.
 
-Phase 2a — terraform-live-backend (ap-south-1)         ← already done (or pending)
+Phase 2a — terraform-live-backend (ap-south-1)         ← blocked on Phase 1a
 Phase 2b — terraform-live-backend (eu-west-1)
 Phase 2c — terraform-live-backend (us-east-1)
            Each reads atlas/{region}/endpoint_service_name from SSM, creates aws_vpc_endpoint,
@@ -256,7 +272,7 @@ Phase 3  — terraform-live-edge
 
 Phase 4  — deploy-live-backend + deploy-live-frontend  (per region)
 
-Phase 5a — terraform-atlas (ap-south-1, Phase 5 run)   ← already done (or pending)
+Phase 5a — terraform-atlas (ap-south-1, Phase 5 run)   ← blocked on Phase 2a
 Phase 5b — terraform-atlas (eu-west-1,  Phase 5 run)
 Phase 5c — terraform-atlas (us-east-1,  Phase 5 run)
            Each reads atlas_vpc_endpoint_id from SSM (written by Phase 2), completes the
@@ -266,9 +282,20 @@ Phase 6  — restart-live-backend (per region, both services)
            Force-restarts ECS tasks so they pick up the private MONGODB_URI.
 ```
 
-> **ap-south-1 prerequisite:** phases 1a, 2a, 5a, and 6 for ap-south-1 must be completed
-> before expanding to new regions. The PrivateLink and SG egress changes in ap-south-1
-> are currently still **pending** (marked missing in `docs/infra-architecture-v1.md`).
+> **ap-south-1 prerequisite:** phase 0 (Atlas tier upgrade + Terraform bootstrap) and
+> phases 1a, 2a, 5a, and 6 for ap-south-1 must all be completed before expanding to new
+> regions — none of these have started. Confirmed by checking the actual repo state:
+> there is no `infra-live-atlas` directory, no `terraform-atlas.yml` workflow, and no
+> `aws_vpc_endpoint`/PrivateLink resources anywhere in `infra-live-backend`. The existing
+> MongoDB setup is a manually-managed Atlas **M0 (free tier)** cluster, single region —
+> not yet sharded or multi-region at the database layer, and M0 cannot support Global
+> Clusters, sharding, or PrivateLink until upgraded (see Change 10d). A broader
+> zone-sharding scheme exists elsewhere spanning up to 8 zones across roughly 10 AWS
+> regions; that is wider than the 3-region target here and out of scope for this doc —
+> the zones this doc uses are capped at exactly ap-south-1/eu-west-1/us-east-1 (see
+> Change 10d). The application layer is ahead of the database layer here: `location` is
+> already captured on every token and user record (Change 9), specifically so this
+> future infra work is the only piece left to do — see Change 10d for what that involves.
 
 Do not apply `infra-live-edge` until phases 2a–2c are complete. The Terraform
 `data.aws_ssm_parameter` reads fail at plan time if any SSM parameter is missing.
@@ -526,7 +553,7 @@ zip name (optional but keeps the filename meaningful):
 #
 # Single function handles both concerns at origin-request event stage.
 # Safe because /api/* has caching disabled — origin-request fires on every
-# API request without exception. See docs/multi-region-edge-routing.md.
+# API request without exception. See docs/infra-architecture-multi-region.md.
 ```
 
 All other resources (`aws_iam_role`, `aws_iam_role_policy_attachment`, `aws_lambda_function`,
@@ -787,17 +814,16 @@ validation {
 }
 ```
 
-Also add the `atlas_endpoint_service_name` variable (documented as Addition 2 in
-`docs/infra-architecture-v1.md` — not yet implemented):
+Also add the `atlas_endpoint_service_name` variable — not yet implemented:
 ```hcl
 # Set via SSM from terraform-atlas Phase 1. Empty until Phase 1 has run —
 # aws_vpc_endpoint (Atlas PrivateLink) is skipped via count=0.
 variable "atlas_endpoint_service_name" { default = "" }
 ```
 
-This variable is consumed by `aws_vpc_endpoint.atlas_privatelink` (also Addition 2 from v1 —
-the Interface endpoint + its security group that must be added to `infra-live-backend`
-before applying new regions). See Change 10d Step 2 for the full resource list.
+This variable is consumed by `aws_vpc_endpoint.atlas_privatelink` — the Interface
+endpoint + its security group that must be added to `infra-live-backend` before
+applying new regions. See Change 10d Step 2 for the full resource definition.
 
 Also remove or update the stale comment inside the `aws_region` variable block (lines 5–15
 of the current file). Line 15 says "Update infra-live-edge/terraform/variables.tf similarly
@@ -815,11 +841,11 @@ options:
   - us-east-1
 ```
 
-**b1b. "Resolve Atlas SSM inputs" step** — this step is documented in
-`docs/infra-architecture-v1.md` Addition 1 as a pending addition to
-`terraform-live-backend.yml` (it does **not** exist in the workflow yet). When implementing
-it, use the **region-specific SSM path** from the start rather than the single-region
-path in v1. The step to add (after "Resolve ops email", before "Setup Terraform"):
+**b1b. "Resolve Atlas SSM inputs" step** — this step does **not** exist in the workflow
+yet and needs to be added. Use the **region-specific SSM path** from the start — a
+shared path with no region segment would get overwritten every time a different
+region's run wrote to it. The step to add (after "Resolve ops email", before "Setup
+Terraform"):
 
 ```yaml
 - name: Resolve Atlas SSM inputs
@@ -843,14 +869,53 @@ path in v1. The step to add (after "Resolve ops email", before "Setup Terraform"
     echo "atlas endpoint_service_name: ${ENDPOINT_SVC:-(not set)}"
 ```
 
-> **v1 path vs multi-region path:** infra-architecture-v1.md Addition 1 uses
-> `/$APP/$ENV/atlas/endpoint_service_name` (no region). Do **not** implement v1's path —
-> use `/$APP/$ENV/atlas/$REGION/endpoint_service_name` so each region reads its own value.
+> **Path format matters here:** use `/$APP/$ENV/atlas/$REGION/endpoint_service_name`
+> (region segment included), not `/$APP/$ENV/atlas/endpoint_service_name` (no region) —
+> the no-region form only works for a single active region and would get silently
+> overwritten by whichever region's Phase 1 ran most recently once there are three.
 
-Similarly, **"Write Atlas and infra SSM outputs"** is documented in v1 Addition 3 as a
-pending addition (also does not exist yet). Add it after the existing "Initialise app
-secrets" step. Use the same region-scoped paths shown in v1 Addition 3 — they already
-include `$REGION` in the path so no additional modification is needed for multi-region.
+**"Write Atlas and infra SSM outputs" step** — this step also does not exist yet. Add it
+after the existing "Initialise app secrets" step:
+
+```yaml
+- name: Write Atlas and infra SSM outputs
+  if: inputs.action == 'apply'
+  run: |
+    APP="${{ secrets.APP_NAME }}"
+    ENV="${{ inputs.environment }}"
+    REGION="${{ inputs.aws_region }}"
+
+    # Atlas PrivateLink VPC endpoint ID — read by terraform-atlas Phase 5
+    VPC_EP=$(terraform output -raw atlas_vpc_endpoint_id 2>/dev/null || echo "")
+    if [[ -n "$VPC_EP" ]]; then
+      aws ssm put-parameter --region us-east-1 \
+        --name "/$APP/$ENV/backend/$REGION/atlas_vpc_endpoint_id" \
+        --value "$VPC_EP" --type String --overwrite
+      echo "Written: /$APP/$ENV/backend/$REGION/atlas_vpc_endpoint_id = $VPC_EP"
+    fi
+
+    # NAT EIP public IPs — read by terraform-atlas for ip_access_list
+    NAT_EIPS=$(terraform output -json nat_eip_public_ips 2>/dev/null | jq -r 'join(",")' || echo "")
+    if [[ -n "$NAT_EIPS" ]]; then
+      aws ssm put-parameter --region us-east-1 \
+        --name "/$APP/$ENV/backend/$REGION/nat_eip_addresses" \
+        --value "$NAT_EIPS" --type String --overwrite
+      echo "Written: /$APP/$ENV/backend/$REGION/nat_eip_addresses = $NAT_EIPS"
+    fi
+
+    # Secrets Manager ARN — read by terraform-atlas Phase 5 to rotate MONGODB_URI
+    SM_ARN=$(terraform output -raw secrets_manager_arn 2>/dev/null || echo "")
+    if [[ -n "$SM_ARN" ]]; then
+      aws ssm put-parameter --region us-east-1 \
+        --name "/$APP/$ENV/backend/$REGION/secrets_manager_arn" \
+        --value "$SM_ARN" --type String --overwrite
+      echo "Written: /$APP/$ENV/backend/$REGION/secrets_manager_arn = $SM_ARN"
+    fi
+```
+
+All three paths already include `$REGION` — this step needs no further modification to
+work correctly across all three regions. `terraform output` works without `-chdir`
+because the job's `working-directory` is already `infra-live-backend/terraform`.
 
 **b2. "Validate required secrets" step** — add new region secrets to the `env:` block
 and add corresponding condition checks in the `run:` script:
@@ -907,44 +972,60 @@ Then apply:
 - `aws_region = eu-west-1` — creates VPC, ALB, ECS, Redis, publishes SSM params
 - `aws_region = us-east-1` — creates VPC, ALB, ECS, Redis, publishes SSM params
 
-**d. Atlas Global Cluster conversion (prerequisite) and PrivateLink per new region**
+**d. Atlas tier upgrade, Global Cluster bootstrap, and PrivateLink per region**
 
-> **Critical architectural prerequisite — not covered by `terraform-atlas` changes alone:**
-> The existing cluster (`mongodbatlas_advanced_cluster.main`) uses `cluster_type = "REPLICASET"`
-> with a single ap-south-1 `replication_spec`. The architecture diagram in this document shows
-> a **Global Cluster** (`cluster_type = "GEOSHARDED"`) with three zone-aware `replication_specs`
-> and zone-based sharding on the `location` field. These are fundamentally different cluster
-> types — a live REPLICASET cannot be in-place converted to GEOSHARDED.
+> **Corrected premise (previously wrong in this doc):** an earlier version of this
+> section assumed a Terraform-managed `mongodbatlas_advanced_cluster.main` resource
+> already existed as a single-region `REPLICASET`, needing an Option A/B decision to
+> get to `GEOSHARDED`. Checked against the actual repo: **no Atlas Terraform resource
+> exists at all** — the current cluster is **Atlas M0 (free tier)**, created and managed
+> manually through the Atlas console, single region, ap-south-1, for cost reasons. There
+> is no REPLICASET-to-GEOSHARDED migration to perform on an existing
+> Terraform resource, because there is no existing Terraform resource — this is a
+> **from-scratch bootstrap**, not a conversion.
 >
-> Options (decision required before implementation):
+> **Decision (confirmed): Global Cluster, GEOSHARDED, exactly 3 zones.** One Atlas
+> Global Cluster, zone-sharded on the `location` field, with zones mapped 1:1 to the
+> three backend regions this doc already targets — ap-south-1, eu-west-1, us-east-1 —
+> and no others. This is a deliberate cost boundary, not an oversight: both the backend
+> ECS footprint and the Atlas zone footprint are capped at these same three regions. A
+> broader 8-zone scheme exists elsewhere spanning up to 10 AWS regions (e.g. `apac` →
+> ap-southeast-1/ap-northeast-1, `br` → sa-east-1, `me` → me-south-1/me-central-1) — that
+> scheme is wider than this 3-region target and needs reconciling separately, outside
+> this doc's scope. For this doc's purposes, every `location` value the backend already
+> produces (`in`/`apac`/`cn`/`eu`/`me`/`ru`/`us`/`br` — see
+> `backend/app/routing.py:COUNTRY_TO_REGION`) collapses into exactly the three zones in
+> the `LOCATION_TO_REGION` map above (APAC/EU/Americas), matching the `ALB_BY_REGION`/
+> API-region targets this doc's Lambda@Edge function routes to. No further reconciliation
+> is needed on the application side — `location` is already being captured on every
+> token and user record (see Change 9) precisely so this remains infra-only work.
 >
-> **Option A — Convert to Global Cluster:** Contact MongoDB Atlas support to convert the
-> existing cluster to GEOSHARDED while preserving data. Atlas support can perform this
-> migration. After conversion, update `mongodbatlas_advanced_cluster.main` in Terraform:
-> - Change `cluster_type = "GEOSHARDED"`
-> - Add `replication_specs` for EU_WEST_1 (priority 7) and US_EAST_1 (priority 7)
-> - Keep `ignore_changes` on `instance_size` to avoid spurious diffs
-> - Add the zone name to each `replication_specs` block (zones are how Atlas assigns data
->   to a shard key range — zone names must match what is configured in `mongodbatlas_global_cluster_config`)
-> - Add `mongodbatlas_global_cluster_config` resource to define the `location` field as
->   the shard key and map zone names to `location` values (in/apac/cn → APAC zone, etc.)
+> **Prerequisite before any Terraform work: upgrade the Atlas project's tier to M50.** M0
+> does not support Global Clusters, custom zone sharding, or PrivateLink — all three
+> require a paid, dedicated cluster tier. This target (M50) has already been sized
+> elsewhere for the single-region PrivateLink prerequisite, so it's not a new number —
+> reuse it here rather than re-deriving it. This is a real, ongoing cost increase — size
+> it and get it approved explicitly, the same way the 3-region backend expansion itself
+> should be, before starting Phase 0.
 >
-> **Option B — Separate regional clusters:** Keep the existing cluster for ap-south-1 and
-> provision separate clusters for eu-west-1 and us-east-1. Each region's ECS tasks connect
-> to its own cluster. There is no cross-zone replication managed by Atlas; application-layer
-> logic handles cross-region reads. This avoids the cluster type migration but loses Atlas
-> zone-aware routing and the unified global backup.
->
-> The rest of Change 10d assumes the PrivateLink changes, which apply to either option.
+> **`infra-live-atlas` does not exist yet either.** Everything below that references
+> "add a resource to `infra-live-atlas/terraform/main.tf`" assumes that module already
+> has a baseline single-region resource to extend. In reality the whole module —
+> `main.tf`, `variables.tf`, `outputs.tf`, provider config, remote state — needs to be
+> created from scratch, starting with a single `mongodbatlas_advanced_cluster` resource
+> for the upgraded-tier ap-south-1 cluster (`cluster_type = "GEOSHARDED"` from the start,
+> not created as `REPLICASET` and converted later), before extending it with the
+> `eu-west-1`/`us-east-1` `replication_specs` and the `mongodbatlas_global_cluster_config`
+> resource described below.
 
-MongoDB traffic must flow via PrivateLink, not
-NAT Gateway. This mirrors the single-region setup documented in `docs/infra-architecture-v1.md`
-(Phases 1 and 5 of the deployment sequence). For each new region, the same 3-step
-handshake must be completed:
+MongoDB traffic must flow via PrivateLink, not NAT Gateway — the same requirement as
+ap-south-1's own pending PrivateLink setup (Phases 1 and 5 above). For each new region,
+the same 3-step handshake must be completed:
 
-**Step 1 — Atlas side** (`infra-live-atlas`): Add a `mongodbatlas_privatelink_endpoint`
-resource for each new region. Note the Atlas region name format differs from AWS
-(`EU_WEST_1`, `US_EAST_1`):
+**Step 1 — Atlas side** (`infra-live-atlas` — new module, see the note above): once the
+module exists with its baseline ap-south-1 `mongodbatlas_advanced_cluster` resource, add
+a `mongodbatlas_privatelink_endpoint` resource for each of the other two regions. Note
+the Atlas region name format differs from AWS (`EU_WEST_1`, `US_EAST_1`):
 ```hcl
 resource "mongodbatlas_privatelink_endpoint" "eu_west_1" {
   count         = var.enable_privatelink ? 1 : 0
@@ -963,11 +1044,16 @@ resource "mongodbatlas_privatelink_endpoint" "us_east_1" {
 After apply, Atlas returns an `endpoint_service_name` per region. Write each to SSM using
 a **region-specific path** — `/{app_name}/{env}/atlas/{aws_region}/endpoint_service_name`.
 
-> **`terraform-atlas.yml` changes required:** Four updates are needed to support
-> multi-region runs. All four changes are in the single `.github/workflows/terraform-atlas.yml` file:
+> **`terraform-atlas.yml` needs to be created from scratch — it does not exist yet.**
+> There is no `.github/workflows/terraform-atlas.yml` in this repo at all today (checked
+> directly — `find .github/workflows -iname '*atlas*'` returns nothing). The four items
+> below describe what the new workflow needs to contain; treat them as the initial
+> design, not a diff against something already running. Since it's being written fresh,
+> build in `eu-west-1`/`us-east-1` support from the start rather than shipping an
+> ap-south-1-only version and revisiting it immediately after:
 >
-> **1. `aws_region` choices** — add `eu-west-1` and `us-east-1` to the
-> `workflow_dispatch.inputs.aws_region.options` list (currently locked to `ap-south-1`).
+> **1. `aws_region` choices** — include `ap-south-1`, `eu-west-1`, and `us-east-1` in the
+> `workflow_dispatch.inputs.aws_region.options` list from the first version of this file.
 >
 > **2. "Write SSM outputs" step** — two fixes:
 >
@@ -1022,16 +1108,44 @@ a **region-specific path** — `/{app_name}/{env}/atlas/{aws_region}/endpoint_se
 > # ... then put-secret-value with --region ${{ inputs.aws_region }} (already present)
 > ```
 
-**Step 2 — AWS side** (`infra-live-backend`, per region): The backend module already
-provisions the `aws_vpc_endpoint` for Atlas PrivateLink in ap-south-1 (currently
-**missing** — see `infra-architecture-v1.md` networking table). The same resources are
-needed for eu-west-1 and us-east-1. Confirm these exist in the backend module before
-applying new regions:
-- `aws_vpc_endpoint` (Atlas PrivateLink — Interface, port 27017) — reads
-  `endpoint_service_name` from SSM written in Step 1
-- `aws_security_group` (Atlas PrivateLink endpoint) — allows inbound 27017 from
-  both API and worker task SGs
-- API and worker ECS task SG egress rule: outbound 27017 to the Atlas PrivateLink SG
+**Step 2 — AWS side** (`infra-live-backend`, per region): the backend module does
+**not** yet provision `aws_vpc_endpoint` for Atlas PrivateLink in any region, including
+ap-south-1 — this needs to be added once, then applies identically to all three
+regions since the module is already region-agnostic. Add to
+`infra-live-backend/terraform/` (e.g. `vpc_endpoints.tf`):
+
+```hcl
+resource "aws_vpc_endpoint" "atlas_privatelink" {
+  count = var.atlas_endpoint_service_name != "" ? 1 : 0
+
+  vpc_id             = aws_vpc.main.id
+  service_name       = var.atlas_endpoint_service_name
+  vpc_endpoint_type  = "Interface"
+  subnet_ids         = aws_subnet.private[*].id
+  security_group_ids = [aws_security_group.atlas_privatelink.id]
+  # Atlas uses its own custom DNS for PrivateLink — do NOT enable AWS private DNS here.
+  # With private_dns_enabled = true, AWS would attempt to resolve the Atlas endpoint
+  # service name via Route 53 Resolver, which conflicts with Atlas-managed private DNS.
+  private_dns_enabled = false
+
+  tags = { Name = "${var.app_name}-${var.environment}-atlas-privatelink" }
+}
+```
+
+Plus a security group (`aws_security_group.atlas_privatelink`, referenced above)
+allowing inbound 27017 from both the API and worker ECS task security groups, and an
+egress rule on those task security groups allowing outbound 27017 to this SG. Add the
+matching output:
+
+```hcl
+output "atlas_vpc_endpoint_id" {
+  value = length(aws_vpc_endpoint.atlas_privatelink) > 0 ? aws_vpc_endpoint.atlas_privatelink[0].id : ""
+}
+```
+
+(`aws_vpc.main`, `aws_subnet.private[*].id`, and `atlas_endpoint_service_name` above are
+assumed to already exist in the module under those names — adjust if the actual
+resource/variable names differ.)
 
 **Step 3 — complete handshake** (`infra-live-atlas`, per region):
 
@@ -1072,11 +1186,10 @@ output "endpoint_service_name_us_east_1" {
   value = var.enable_privatelink ? one(mongodbatlas_privatelink_endpoint.us_east_1).endpoint_service_name : ""
 }
 
-# Only populated after Phase 5 for that region. For a GEOSHARDED global cluster,
-# each region's PrivateLink endpoint produces a separate SRV string in the cluster's
-# connection_strings[0].private_endpoint[] list. The index corresponds to the order
-# the endpoints were registered. If using Option B (separate clusters), reference the
-# correct cluster resource per region.
+# Only populated after Phase 5 for that region. For the single GEOSHARDED global
+# cluster, each region's PrivateLink endpoint produces a separate SRV string in the
+# cluster's connection_strings[0].private_endpoint[] list. The index corresponds to the
+# order the endpoints were registered.
 output "private_mongodb_uri_eu_west_1" {
   value     = var.enable_privatelink && var.vpc_endpoint_id_eu_west_1 != "" ? mongodbatlas_advanced_cluster.main.connection_strings[0].private_endpoint[1].srv_connection_string : ""
   sensitive = true
@@ -1092,9 +1205,7 @@ output "private_mongodb_uri_us_east_1" {
 > in the order PrivateLink endpoints are completed (Phase 5). If ap-south-1 was completed
 > first it is at index 0, eu-west-1 at index 1, us-east-1 at index 2. Verify the index
 > in the Atlas console (Cluster → Connect → Private Endpoint) after each Phase 5 run and
-> adjust the index in the output if it differs. For Option B (separate clusters), replace
-> the `mongodbatlas_advanced_cluster.main` reference with the region-specific cluster
-> resource and use index 0.
+> adjust the index in the output if it differs.
 
 After handshake, Atlas generates a private endpoint-aware SRV connection string per
 region. Update `MONGODB_URI` in each region's Secrets Manager to the private SRV string,
@@ -1102,8 +1213,9 @@ then force-restart ECS tasks to pick up the new URI. Until the restart, tasks co
 using the public SRV string via NAT.
 
 **Important:** Atlas PrivateLink for the existing ap-south-1 region is also still
-**pending** (marked **missing** in `infra-architecture-v1.md`). Complete the ap-south-1
-PrivateLink setup before expanding to new regions — the backend module must have the
+**pending** — nothing described in Step 2 above exists yet, for any region, including
+ap-south-1. Complete the ap-south-1 PrivateLink setup before expanding to new regions —
+the backend module must have the
 Atlas PrivateLink endpoint provisioned and the ECS task SGs updated before applying in
 eu-west-1 or us-east-1.
 
@@ -1134,8 +1246,10 @@ eu-west-1 or us-east-1.
    be deployed in us-east-1. The `infra-live-edge` Terraform module is already pinned
    to us-east-1.
 
-5. **Key rotation procedure (from `docs/jwt-keys.md`) is unchanged.** The function
-   still uses a `PUBLIC_KEYS` map keyed by `kid`, supporting multi-key overlap windows.
+5. **The existing key rotation procedure keeps working unchanged.** The function still
+   uses a `PUBLIC_KEYS` map keyed by `kid`, so a rotation can add a new key alongside the
+   old one, wait out the overlap window, then remove the old key — nothing about this
+   multi-region change alters that mechanism.
 
 ---
 
