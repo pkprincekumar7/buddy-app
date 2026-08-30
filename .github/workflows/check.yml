@@ -677,8 +677,14 @@ jobs:
           echo "Backend failed to start within 60 s"
           exit 1
 
+      # Uses the same script check.sh does — NOT `curl .../openapi.json` against the
+      # live server. FastAPI serves that route as compact/minified JSON, while this
+      # script pretty-prints (indent=2, matching the committed file's format). Diffing
+      # a curled copy against the committed one would show a spurious diff on every
+      # run from formatting alone, even with zero actual schema changes — both sides
+      # of the comparison must be generated the same way.
       - name: Export OpenAPI spec
-        run: curl -sf http://localhost:8000/openapi.json -o openapi.json
+        run: python backend/tools/export-openapi.py > openapi.json
 
       # openapi.json is committed as the reference copy of the API spec (see check.sh).
       # This overwrites the checked-out copy with a freshly generated one above, so a
