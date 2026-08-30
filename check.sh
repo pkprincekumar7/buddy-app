@@ -351,7 +351,10 @@ spectral_api_lint() {
     || { echo "Failed to export OpenAPI spec — check backend imports and env vars"; return 1; }
   "$SPECTRAL" lint "$spec" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
   local rc=$?
-  rm -f "$spec"
+  # openapi.json is intentionally kept (not deleted) and tracked in git — it's the
+  # committed reference copy of the API spec. CI regenerates it fresh on every run
+  # and fails if it doesn't match this file, so always `git add` it after this step
+  # changes it (e.g. after adding/changing an endpoint).
   return $rc
 }
 run "spectral (OpenAPI lint)" spectral_api_lint
