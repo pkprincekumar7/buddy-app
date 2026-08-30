@@ -145,6 +145,10 @@ async def lifespan(app: FastAPI):
 
 
 _OPENAPI_TAGS = [
+    {
+        "name": "admin",
+        "description": "Admin-only: allowed-email invite list and user account management.",
+    },
     {"name": "auth", "description": "Authentication, session management, and account deletion."},
     {
         "name": "users",
