@@ -10,14 +10,20 @@ description = "Known false positives"
 
 # CocoaPod names in Podfile.lock contain "Auth" which triggers generic-api-key.
 # These are library names (AppAuth, GTMAppAuth), not secrets.
-#
-# jwt-keys-alternate.md's rotation runbook shows illustrative AWS CLI commands
-# with PEM-shaped placeholders (e.g. "-----BEGIN PRIVATE KEY-----\n<new key>\n...")
-# to document the exact secret-string format — the placeholder text between the
-# markers is never real key material, only the shape of one.
 paths = [
   "frontend-app/ios/Podfile.lock",
-  "docs/jwt-keys-alternate.md",
+]
+
+# docs/jwt-keys-alternate.md's rotation runbook shows illustrative AWS CLI commands
+# with PEM-shaped placeholders (e.g. "-----BEGIN PRIVATE KEY-----\n<new key>\n...")
+# to document the exact secret-string format. This regex matches ONLY that
+# placeholder shape — an angle-bracket token immediately between the BEGIN/END
+# markers, on the escaped single-line form used inside a JSON string literal — so
+# it cannot match a real key: real PEM key material is base64 (never contains
+# literal "<" or ">") and is never wrapped in nothing but a single bracketed word.
+# A real private key pasted into this file, here or anywhere else, still gets caught.
+regexes = [
+  '''-----BEGIN [A-Z ]*PRIVATE KEY-----\\n<[^<>\n]+>\\n-----END [A-Z ]*PRIVATE KEY-----''',
 ]
 
 # Specific fingerprints for the known false-positive commits
