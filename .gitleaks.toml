@@ -10,8 +10,14 @@ description = "Known false positives"
 
 # CocoaPod names in Podfile.lock contain "Auth" which triggers generic-api-key.
 # These are library names (AppAuth, GTMAppAuth), not secrets.
+#
+# jwt-keys-alternate.md's rotation runbook shows illustrative AWS CLI commands
+# with PEM-shaped placeholders (e.g. "-----BEGIN PRIVATE KEY-----\n<new key>\n...")
+# to document the exact secret-string format — the placeholder text between the
+# markers is never real key material, only the shape of one.
 paths = [
   "frontend-app/ios/Podfile.lock",
+  "docs/jwt-keys-alternate.md",
 ]
 
 # Specific fingerprints for the known false-positive commits
