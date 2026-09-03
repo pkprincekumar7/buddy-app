@@ -226,6 +226,14 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
+# CloudFront's api_security response headers policy (infra-live-edge) is the
+# authoritative source of CORS headers for CloudFront-fronted traffic —
+# origin_override = true there means its values replace whatever this
+# middleware sends. Kept here anyway so CORS still works for direct/local
+# access that never goes through CloudFront (e.g. local dev). Keep the
+# methods/headers/credentials below in sync with that Terraform config if
+# either changes — they're intentionally mirrored, not derived from one
+# source, since the two live in separate Terraform states.
 _allow_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
