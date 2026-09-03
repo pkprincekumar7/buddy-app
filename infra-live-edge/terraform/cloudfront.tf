@@ -140,9 +140,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     cache_policy_id          = local.cache_policy_disabled
     origin_request_policy_id = local.origin_request_all_viewer_except_host
     # api_security sets X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
-    # HSTS, and X-XSS-Protection with override=true.  CORS headers (Access-Control-*)
-    # are NOT in this policy — FastAPI's CORSMiddleware is the sole source for those
-    # and they pass through unchanged, so no duplication occurs.
+    # HSTS, and X-XSS-Protection with override=true, and (via its cors_config)
+    # is now also the authoritative source for CORS (Access-Control-*) headers
+    # — see response_headers.tf for why. allowed_methods above includes OPTIONS,
+    # which preflight requests need in order to reach the origin and come back
+    # through this policy at all.
     response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
 
     lambda_function_association {
