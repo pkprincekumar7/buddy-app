@@ -112,18 +112,59 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 # ---------------------------------------------------------------------------
 # Response headers policy for FastAPI API responses (/api/*)
 #
-# Sets the standard security headers that belong on every HTTPS response.
-# CORS headers (Access-Control-*) are intentionally omitted — FastAPI's
-# CORSMiddleware is the single authoritative source for those and they pass
-# through CloudFront unchanged. Adding them here would create duplicates.
+# Sets the standard security headers that belong on every HTTPS response, and
+# (via cors_config below) is now the authoritative source for CORS headers
+# too. origin_override = true means CloudFront's values win regardless of
+# what FastAPI's own CORSMiddleware sends — the app-level middleware still
+# exists (see backend/app/main.py) purely for direct/local access that never
+# goes through CloudFront; for anything CloudFront-fronted, this policy is
+# the single source of truth, avoiding the duplicate/conflicting
+# Access-Control-* headers that would result if both layers were equally
+# authoritative on the same response.
 #
-# override = true on every header: CloudFront enforces the correct value
-# regardless of what the origin returns, making this policy the single
-# authoritative source for security headers on all /api/* responses.
+# override = true on every security header too: CloudFront enforces the
+# correct value regardless of what the origin returns, making this policy
+# the single authoritative source for security headers on all /api/*
+# responses.
 # ---------------------------------------------------------------------------
 resource "aws_cloudfront_response_headers_policy" "api_security" {
   name    = "${var.app_name}-api-security-${var.environment}"
   comment = "Security headers for FastAPI /api/* responses (${var.environment})"
+
+  # Mirrors backend/app/main.py's CORSMiddleware config (methods, headers,
+  # credentials) so the two don't drift into different behavior —
+  # origin_override = true means this is what actually reaches the browser
+  # for CloudFront-fronted traffic regardless.
+  #
+  # The allowed origin is local.fqdn (same "https://{fqdn}" value this module
+  # already computes and outputs — see outputs.tf) — NOT a separate
+  # cors_origins variable/secret. terraform-live-backend.yml derives its own
+  # copy of this exact same value from SUBDOMAIN + DOMAIN_NAME + environment
+  # (see its "Resolve derived values" step) rather than reading it from a
+  # GitHub secret — there is no CORS_ORIGINS secret. Referencing local.fqdn
+  # here means both modules compute the identical value from the same
+  # primitives, with nothing new to keep in sync.
+  cors_config {
+    access_control_allow_credentials = true
+    origin_override                  = true
+    access_control_max_age_sec       = 600
+
+    access_control_allow_origins {
+      items = ["https://${local.fqdn}"]
+    }
+
+    access_control_allow_methods {
+      items = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+    }
+
+    access_control_allow_headers {
+      items = ["Authorization", "Content-Type", "X-Request-Id"]
+    }
+
+    access_control_expose_headers {
+      items = []
+    }
+  }
 
   security_headers_config {
     # Block MIME-type sniffing on all API responses.
