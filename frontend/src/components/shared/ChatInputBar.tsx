@@ -70,14 +70,14 @@ export default function ChatInputBar({
           onSubmit(e);
         }}
       >
-        {/* Pill — exact 74px height, 28px horizontal padding to match design */}
+        {/* Pill — scales down on smaller screens, 74px height at md+, 28px horizontal padding to match design */}
         <div
           className={cn(
-            'chat-input-bar flex h-[74px] items-center rounded-[40px] px-7',
+            'chat-input-bar flex h-[60px] items-center rounded-[40px] px-7 sm:h-[68px] md:h-[74px]',
             disabled && 'opacity-60',
           )}
         >
-          {/* Input — 20px font, white at 85% opacity for placeholder to match design */}
+          {/* Input — scales down on smaller screens, 20px at md+; white at 85% opacity for placeholder to match design */}
           <input
             ref={inputRef}
             value={value}
@@ -87,7 +87,7 @@ export default function ChatInputBar({
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="sentences"
-            className="min-w-0 flex-1 bg-transparent text-[20px] text-white outline-none placeholder:text-white/85 disabled:cursor-not-allowed"
+            className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:font-light placeholder:text-white/85 disabled:cursor-not-allowed sm:text-lg md:text-xl"
           />
 
           {showSend ? (

@@ -206,9 +206,9 @@ export default function ConversationalOnboarding() {
         {isLoadingAuth || !hydrated ? (
           <PageLoader />
         ) : (
-          <div className="relative flex h-[calc(100vh-4rem)] flex-col bg-[var(--bg-deep-3)]">
+          <div className="relative flex h-[calc(100vh-7rem)] flex-col bg-[var(--bg-deep-3)]">
             {/* Chat fills remaining height */}
-            <div className="flex flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <ConversationalOnboardingChat
                 key={bootKey}
                 user={user}
