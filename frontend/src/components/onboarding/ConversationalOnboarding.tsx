@@ -847,7 +847,7 @@ export default function ConversationalOnboarding({
   // ── Phase splash interstitial ────────────────────────────────────────────────
 
   return (
-    <div className="relative flex flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Ivy intro — full-screen image for 2 s */}
       <AnimatePresence>{showIntro && <IvyIntroScreen />}</AnimatePresence>
 
@@ -888,7 +888,7 @@ export default function ConversationalOnboarding({
                   transition={{ duration: 0.5, ease: 'easeOut' }}
                   className="flex flex-1 flex-col items-center justify-center gap-6 px-6 pb-40"
                 >
-                  <p className="w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl">
+                  <p className="w-full max-w-2xl text-center text-xl font-normal leading-[1.08] text-white/90 sm:text-2xl md:text-3xl">
                     Thank you for your responses, continuing ahead
                   </p>
                   <div className="flex items-center gap-2.5">
@@ -932,7 +932,7 @@ export default function ConversationalOnboarding({
                       {/* The measure widens with the type: a readable line is a
                           character count, so a max-w frozen while the text grew
                           would only add wrap lines. */}
-                      <h2 className="mx-auto w-full max-w-2xl text-center text-3xl font-bold leading-[1.08] text-white/90 sm:text-4xl md:max-w-3xl md:text-[42px] lg:max-w-4xl lg:text-5xl">
+                      <h2 className="mx-auto w-full max-w-2xl text-center text-xl font-normal leading-[1.08] text-white/90 sm:text-2xl md:max-w-3xl md:text-3xl lg:max-w-4xl">
                         {latestBotContent}
                       </h2>
                     </div>
