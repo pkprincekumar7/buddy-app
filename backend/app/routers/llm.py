@@ -7,16 +7,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
-from app.deps import CurrentParent, get_current_parent
-from app.limiter import user_limiter
+from app.deps import CurrentParent, get_current_parent, get_token_claims
+from app.limiter import rate_limit
 from app.llm_rate_limiter import enforce as _enforce_user_rate_limit
 from app.services import llm_service
 from app.services.llm_service import LLMConfigError, ProviderName
 
-# Every route needs an authenticated parent; list_providers doesn't use the
-# returned user document, so the check is declared once here rather than
-# per-function.
-router = APIRouter(prefix="/llm", tags=["llm"], dependencies=[Depends(get_current_parent)])
+# Every route needs a validly-signed access token — declared at the router
+# level as a safety net. This is only the DB-free half of auth
+# (app.deps.get_token_claims). invoke_llm pulls in the DB-backed half via its
+# own `user: CurrentParent` parameter; list_providers doesn't need the user
+# document, so it re-adds get_current_parent explicitly per-route below.
+# Both are deliberately *not* also listed here, so they resolve after each
+# route's rate_limit(...) dependency instead of before.
+router = APIRouter(prefix="/llm", tags=["llm"], dependencies=[Depends(get_token_claims)])
 log = logging.getLogger(__name__)
 
 
@@ -45,8 +49,8 @@ class LLMInvokeBody(BaseModel):
 @router.post(
     "/invoke",
     description="Send a prompt to the configured LLM provider and return the structured response.",
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def invoke_llm(request: Request, body: LLMInvokeBody, user: CurrentParent):
     await asyncio.to_thread(_enforce_user_rate_limit, user["_id"])
     try:
@@ -72,8 +76,10 @@ async def invoke_llm(request: Request, body: LLMInvokeBody, user: CurrentParent)
         ) from e
 
 
-@router.get("/providers")
-@user_limiter.limit("60/minute")
+@router.get(
+    "/providers",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_parent)],
+)
 async def list_providers(request: Request):
     """Return which providers have a key configured and which would be auto-selected."""
     av = llm_service.available()

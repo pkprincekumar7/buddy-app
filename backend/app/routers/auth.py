@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from email_validator import EmailNotValidError
 from email_validator import validate_email as _validate_email
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
@@ -24,7 +24,7 @@ from app.auth_utils import (
     set_auth_cookies,
 )
 from app.deps import CurrentUser, Db, SettingsDep
-from app.limiter import limiter, user_limiter
+from app.limiter import limiter, rate_limit, user_limiter
 from app.routing import LOCATION_RE, resolve_region
 from app.services.google_auth import verify_google_token
 
@@ -629,8 +629,8 @@ async def google_auth(
     "/auth/me",
     response_model=MeResponse,
     description="Return the authenticated user's profile (id, email, full name, role).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def auth_me(request: Request, user: CurrentUser):
     return MeResponse(
         id=user["_id"],
@@ -644,8 +644,8 @@ async def auth_me(request: Request, user: CurrentUser):
     "/user/me",
     status_code=204,
     description="Permanently delete the authenticated user's account and all associated data.",
+    dependencies=[Depends(rate_limit("3/minute"))],
 )
-@user_limiter.limit("3/minute")
 async def delete_account(
     request: Request,
     body: DeleteAccountBody,

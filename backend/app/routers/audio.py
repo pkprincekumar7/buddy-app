@@ -5,15 +5,18 @@ import re
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from app.deps import SettingsDep, get_current_parent
-from app.limiter import user_limiter
+from app.deps import SettingsDep, get_current_parent, get_token_claims
+from app.limiter import rate_limit
 from app.services.llm_service import _openai_client, _openai_init_error
 
 log = logging.getLogger(__name__)
 
-# Every route needs an authenticated parent; none of them use the returned
-# user document, so the check is declared once here rather than per-function.
-router = APIRouter(prefix="/audio", tags=["audio"], dependencies=[Depends(get_current_parent)])
+# Every route needs a validly-signed access token — declared at the router
+# level as a safety net. This is only the DB-free half of auth
+# (app.deps.get_token_claims); none of these routes use the returned user
+# document, so the DB-backed half (get_current_parent) is re-added
+# explicitly per-route below, after that route's rate_limit(...) dependency.
+router = APIRouter(prefix="/audio", tags=["audio"], dependencies=[Depends(get_token_claims)])
 
 _ALLOWED_AUDIO_EXTS = {"webm", "mp3", "wav", "m4a", "ogg", "mp4"}
 _MIME_MAP = {
@@ -34,8 +37,8 @@ class TranscribeResponse(BaseModel):
     "/transcribe",
     response_model=TranscribeResponse,
     description="Transcribe an uploaded audio file to text using speech-to-text.",
+    dependencies=[Depends(rate_limit("10/minute")), Depends(get_current_parent)],
 )
-@user_limiter.limit("10/minute")
 async def transcribe_audio(
     request: Request,
     settings: SettingsDep,
