@@ -4,11 +4,11 @@ from dataclasses import dataclass
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.deps import CurrentParent, SettingsDep
-from app.limiter import user_limiter
+from app.limiter import rate_limit
 
 log = logging.getLogger(__name__)
 
@@ -108,8 +108,8 @@ def _resolve_apk_download(bucket: str) -> ApkDownloadResult:
         "Returns a time-limited pre-signed S3 URL for the most recent Android APK build. "
         "The URL is valid for 5 minutes. Requires an authenticated session."
     ),
+    dependencies=[Depends(rate_limit("10/minute"))],
 )
-@user_limiter.limit("10/minute")
 async def get_apk_download_url(
     request: Request,
     user: CurrentParent,

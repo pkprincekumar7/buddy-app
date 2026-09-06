@@ -7,16 +7,18 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 from app import models
-from app.deps import CurrentParent, Db, get_current_parent
-from app.limiter import user_limiter
+from app.deps import CurrentParent, Db, get_token_claims
+from app.limiter import rate_limit
 from app.schemas.jobs import EnqueueJobRequest, EnqueueJobResponse, JobStatusResponse
 from app.services.journey_progress import has_completed_growth_area
 
-# Every route needs an authenticated parent whose id/location scope the query —
-# declared at the router level as a safety net, and again per-function (below)
-# since the handlers need the returned user document. FastAPI caches the
-# dependency result per request, so it only runs once.
-router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(get_current_parent)])
+# Every route needs a validly-signed access token — declared at the router
+# level as a safety net. This is only the DB-free half of auth
+# (app.deps.get_token_claims); the DB-backed half (get_current_parent) is
+# pulled in per-route via each function's own `user: CurrentParent`
+# parameter, deliberately *not* also listed here, so it resolves after that
+# route's rate_limit(...) dependency below instead of before.
+router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(get_token_claims)])
 log = logging.getLogger(__name__)
 
 _MAX_IN_FLIGHT_PER_TYPE = 2
@@ -110,8 +112,8 @@ def _sanitize_for_log(value: object) -> str:
         "Enqueue an LLM job. Returns a job_id immediately — the worker processes the job "
         "asynchronously. Poll GET /jobs/{job_id} for completion."
     ),
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def enqueue_job(
     request: Request,
     body: EnqueueJobRequest,
@@ -264,8 +266,8 @@ async def enqueue_job(
         "Poll the status of a previously enqueued job. "
         "Re-fetch domain data when status == 'completed'."
     ),
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_job_status(
     request: Request,
     user: CurrentParent,

@@ -9,16 +9,20 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
 from app import models
-from app.deps import CurrentAdmin, Db, get_current_admin
-from app.limiter import user_limiter
+from app.deps import CurrentAdmin, Db, get_current_admin, get_token_claims
+from app.limiter import rate_limit
 
-# Every route in this router requires an authenticated admin. Declaring the
-# dependency here (rather than on each function) enforces it even if a future
-# route is added without remembering to add the check locally. Handlers that
-# also need the admin's own user document still declare it as a parameter
-# (e.g. lock_user) — FastAPI caches the dependency result per-request, so it
-# does not run get_current_admin twice.
-router = APIRouter(tags=["admin"], dependencies=[Depends(get_current_admin)])
+# Every route in this router requires a validly-signed access token —
+# declared here as a safety net. This is only the DB-free half of auth
+# (app.deps.get_token_claims); the DB-backed admin-role check
+# (get_current_admin) is re-added explicitly on every route below, after
+# that route's rate_limit(...) dependency, instead of here — deliberately
+# NOT at router level, so it resolves after the rate check instead of
+# before. lock_user pulls it in via its own `admin: CurrentAdmin` parameter
+# (FastAPI caches the result, so it does not run get_current_admin twice);
+# every other route re-adds it via an explicit dependencies=[...] entry
+# since it doesn't otherwise use the returned admin document.
+router = APIRouter(tags=["admin"], dependencies=[Depends(get_token_claims)])
 log = logging.getLogger(__name__)
 
 
@@ -83,8 +87,8 @@ def _normalize_email_param(email: str) -> str:
     "/admin/allowed-emails",
     response_model=AllowedEmailListResponse,
     description="List allowed emails with pagination. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def list_allowed_emails(
     request: Request,
     db: Db,
@@ -116,8 +120,8 @@ async def list_allowed_emails(
     "/admin/allowed-emails/{email:path}",
     response_model=AllowedEmailResponse,
     description="Fetch a single allowed email record. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def get_allowed_email(
     request: Request,
     email: str,
@@ -135,8 +139,8 @@ async def get_allowed_email(
     response_model=AllowedEmailResponse,
     status_code=201,
     description="Add an email to the allowlist. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def add_allowed_email(
     request: Request,
     body: AllowedEmailBody,
@@ -158,8 +162,8 @@ async def add_allowed_email(
     "/admin/allowed-emails/{email:path}",
     status_code=204,
     description="Remove an email from the allowlist. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def remove_allowed_email(
     request: Request,
     email: str,
@@ -182,8 +186,8 @@ async def remove_allowed_email(
     "/admin/users",
     response_model=AdminUserListResponse,
     description="List registered users with pagination. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def list_users(
     request: Request,
     db: Db,
@@ -237,8 +241,8 @@ async def list_users(
     "/admin/users/by-email/{email:path}",
     response_model=AdminUserSummary,
     description="Look up a registered user by email address. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def get_user_by_email(
     request: Request,
     email: str,
@@ -268,8 +272,8 @@ async def get_user_by_email(
     "/admin/users/{user_id}/lock",
     response_model=LockUserResponse,
     description="Lock a user account — revokes all tokens and blocks login. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def lock_user(
     request: Request,
     user_id: str,
@@ -296,8 +300,8 @@ async def lock_user(
     "/admin/users/{user_id}/unlock",
     response_model=LockUserResponse,
     description="Unlock a previously locked user account. Admin only.",
+    dependencies=[Depends(rate_limit("60/minute")), Depends(get_current_admin)],
 )
-@user_limiter.limit("60/minute")
 async def unlock_user(
     request: Request,
     user_id: str,
