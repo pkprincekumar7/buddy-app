@@ -267,5 +267,6 @@ def health_check():
     tags=["system"],
     description="Health check with build metadata (git SHA, branch, commit timestamp, tag).",
 )
-def api_health_check():
+@limiter.limit("30/minute")
+def api_health_check(request: Request):
     return {"status": "ok", **_GIT_INFO}

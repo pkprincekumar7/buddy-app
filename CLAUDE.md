@@ -55,5 +55,6 @@ Full stack: `docker compose up` from the repo root (see `docker-compose.yml`).
   `frontend` service) `5173`, Redis `6379`.
 - `docker-compose.yml` starts `redis`, `backend`, `worker`, and `frontend` (nginx serving the
   built UI) — it does **not** include MongoDB; point `MONGODB_URI` at an Atlas cluster or a
-  separately-run local Mongo (see `.env.example` for both options). Without `REDIS_URL` set, the
-  LLM rate limiter falls back to in-process (single-instance) limiting automatically.
+  separately-run local Mongo (see `.env.example` for both options). Without `REDIS_URL` set, every
+  rate limiter in the backend (the LLM quota, and the per-route `limiter`/`user_limiter` pair)
+  falls back to in-process (single-instance) limiting automatically.

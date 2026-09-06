@@ -3,13 +3,13 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Body, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import ValidationError
 
 from app import models
 from app.deps import CurrentParent, CurrentUser, Db
-from app.limiter import user_limiter
+from app.limiter import rate_limit
 from app.schemas.goals import (
     GoalInsightsPatch,
     GoalInsightsResponse,
@@ -119,8 +119,8 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
     "/user/preferences",
     response_model=UserPreferences,
     description="Retrieve the authenticated user's app preferences.",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_preferences(
     request: Request,
     user: CurrentUser,
@@ -133,8 +133,8 @@ async def get_preferences(
     "/user/preferences",
     response_model=UserPreferences,
     description="Update one or more of the authenticated user's app preferences.",
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def patch_preferences(
     request: Request,
     body: UserPreferencesPatch,
@@ -166,8 +166,8 @@ async def patch_preferences(
     "/user/completed-growth-areas",
     response_model=CompletedGrowthAreasResponse,
     description="List completed growth areas for a given child, with pagination. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def list_completed_growth_areas(
     request: Request,
     user: CurrentParent,
@@ -193,8 +193,8 @@ async def list_completed_growth_areas(
     "/user/completed-growth-areas",
     status_code=204,
     description="Upsert a growth area document for a given child.",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def append_completed_growth_area(
     request: Request,
     body: AppendGrowthAreaRequest,
@@ -265,8 +265,8 @@ async def append_completed_growth_area(
     "/user/completed-growth-areas",
     status_code=204,
     description="Clear all completed growth areas for a given child.",
+    dependencies=[Depends(rate_limit("10/minute"))],
 )
-@user_limiter.limit("10/minute")
 async def clear_completed_growth_areas(
     request: Request,
     user: CurrentParent,
@@ -288,8 +288,8 @@ async def clear_completed_growth_areas(
     "/user/goals",
     response_model=UserGoals,
     description="Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_goals(
     request: Request,
     user: CurrentParent,
@@ -312,8 +312,8 @@ async def get_goals(
     "/user/goals",
     response_model=UserGoals,
     description="Update the parent concern for a given child.",
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def patch_goals(
     request: Request,
     body: UserGoalsPatch,
@@ -379,8 +379,8 @@ def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
     "/user/goal-months",
     response_model=GoalMonthsResponse,
     description="Retrieve all month plan documents for a given child. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_goal_months(
     request: Request,
     user: CurrentParent,
@@ -402,8 +402,8 @@ async def get_goal_months(
     "/user/goal-months/{month_number}",
     status_code=204,
     description="Upsert a single month plan document for a given child.",
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def patch_goal_month_single(
     request: Request,
     user: CurrentParent,
@@ -450,8 +450,8 @@ async def patch_goal_month_single(
     "/user/goal-months",
     status_code=204,
     description="Replace all month plan documents for a given child in one operation.",
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def patch_goal_months(
     request: Request,
     body: GoalMonthsPatch,
@@ -528,8 +528,8 @@ async def patch_goal_months(
     "/user/goal-insights",
     response_model=GoalInsightsResponse,
     description="Retrieve the insights document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_goal_insights(
     request: Request,
     user: CurrentParent,
@@ -562,8 +562,8 @@ async def get_goal_insights(
     "/user/goal-insights",
     response_model=GoalInsightsResponse,
     description="Update the insights document for a given child.",
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def patch_goal_insights(
     request: Request,
     body: GoalInsightsPatch,
@@ -622,8 +622,8 @@ async def patch_goal_insights(
     "/user/observations",
     response_model=ObservationsResponse,
     description="Retrieve the observations document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_observations(
     request: Request,
     user: CurrentParent,
@@ -655,8 +655,8 @@ async def get_observations(
     "/user/observations",
     response_model=ObservationsResponse,
     description="Update the observations document for a given child.",
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def patch_observations(
     request: Request,
     body: ObservationsPatch,

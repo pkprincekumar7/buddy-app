@@ -22,20 +22,37 @@ Db = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-async def get_current_user(
+async def get_token_claims(
     request: Request,
-    db: Db,
-    settings: SettingsDep,
     _cookie: Annotated[str | None, Depends(_cookie_scheme)] = None,
     _bearer: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)] = None,
 ) -> dict:
+    """Decode and verify the access token — no database access.
+
+    Split out of get_current_user so a per-route rate-limit dependency
+    (app/limiter.py's rate_limit()) can run between this and the database
+    lookup below: declare rate_limit() in a route's own dependencies=[...],
+    and an over-limit request is rejected before get_current_user's find_one
+    ever runs. Safe to keep at router level (see admin.py/children.py/etc.)
+    since it never touches the database.
+    """
     token = extract_token(request, "access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_token(token)
     if not payload or not payload.get("sub") or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token")
+    return payload
 
+
+TokenClaims = Annotated[dict, Depends(get_token_claims)]
+
+
+async def get_current_user(
+    payload: TokenClaims,
+    db: Db,
+    settings: SettingsDep,
+) -> dict:
     user_id = payload["sub"]
     raw_location = payload.get("location", settings.default_location)
     location = (

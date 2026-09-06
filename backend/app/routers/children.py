@@ -13,8 +13,8 @@ from pydantic import BaseModel, Field
 from pymongo import ASCENDING, DESCENDING
 
 from app import models
-from app.deps import CurrentParent, Db, SettingsDep, get_current_parent
-from app.limiter import user_limiter
+from app.deps import CurrentParent, Db, SettingsDep, get_token_claims
+from app.limiter import rate_limit
 from app.schemas.children import (
     ChildCreate,
     ChildPatch,
@@ -47,11 +47,15 @@ _LIST_PROJECTION = {
     "created_at": 1,
 }
 
-# Every route needs an authenticated parent whose id/location scope the query —
-# declared at the router level as a safety net, and again per-function since
-# the handlers need the returned user document (FastAPI caches the dependency
-# result per request, so it only runs once).
-router = APIRouter(tags=["children"], dependencies=[Depends(get_current_parent)])
+# Every route needs a validly-signed access token — declared at the router
+# level as a safety net. This is only the DB-free half of auth
+# (app.deps.get_token_claims); the DB-backed half (get_current_parent, which
+# needs the returned user document) is pulled in per-route via each
+# function's own `user: CurrentParent` parameter, deliberately *not* also
+# listed here, so it resolves after that route's rate_limit(...) dependency
+# below instead of before — see app/deps.py's get_token_claims split and
+# app/limiter.py's rate_limit() for why.
+router = APIRouter(tags=["children"], dependencies=[Depends(get_token_claims)])
 log = logging.getLogger(__name__)
 
 # Fields that the server assigns — must never be accepted from client input.
@@ -143,8 +147,8 @@ async def _child_to_api_with_progress(doc: dict, db: AsyncIOMotorDatabase, user:
     "/children",
     response_model=list[ChildResponse],
     description="List all children linked to the authenticated user's account.",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def list_children(
     request: Request,
     user: CurrentParent,
@@ -177,8 +181,8 @@ async def list_children(
     response_model=ChildResponse,
     status_code=201,
     description="Add a new child profile to the authenticated user's account (maximum 10).",
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def create_child(
     request: Request,
     payload: ChildCreate,
@@ -217,8 +221,8 @@ async def create_child(
     "/children/{child_id}",
     response_model=ChildResponse,
     description="Retrieve a single child profile by ID.",
+    dependencies=[Depends(rate_limit("60/minute"))],
 )
-@user_limiter.limit("60/minute")
 async def get_child(
     request: Request,
     user: CurrentParent,
@@ -237,8 +241,8 @@ async def get_child(
     "/children/{child_id}",
     response_model=ChildResponse,
     description="Update details of an existing child profile.",
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def update_child(
     request: Request,
     user: CurrentParent,
@@ -415,8 +419,8 @@ _PROGRESS_PRECONDITIONS: dict[str, tuple[Callable[..., Awaitable[bool]], str]] =
         "chain already being true — this is the only way to set these flags; "
         "PATCH /children/{child_id} silently ignores them."
     ),
+    dependencies=[Depends(rate_limit("30/minute"))],
 )
-@user_limiter.limit("30/minute")
 async def mark_journey_progress(
     request: Request,
     user: CurrentParent,
@@ -463,8 +467,8 @@ async def mark_journey_progress(
         "(goals, growth areas, etc.) is preserved during the retention window and "
         "purged by a scheduled hard-delete job after expiry."
     ),
+    dependencies=[Depends(rate_limit("10/minute"))],
 )
-@user_limiter.limit("10/minute")
 async def delete_child(
     request: Request,
     user: CurrentParent,
@@ -525,8 +529,8 @@ class AvatarPresignResponse(BaseModel):
         "The client uploads directly to S3 using this URL, then PATCHes the child "
         "with the returned avatar_url."
     ),
+    dependencies=[Depends(rate_limit("20/minute"))],
 )
-@user_limiter.limit("20/minute")
 async def presign_child_avatar(
     request: Request,
     user: CurrentParent,

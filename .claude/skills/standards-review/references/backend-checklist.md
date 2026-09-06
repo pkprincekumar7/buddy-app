@@ -38,11 +38,17 @@
     only — `grep -rn "ObjectId" app/` should stay empty); new indexes added to `init_indexes()` in
     `database.py`, not ad hoc; new raw-dict Mongo writes go through a Pydantic model or get a
     defensive read-side check.
-13. **Rate-limit correctness** — flag any new `@limiter`/`@user_limiter` usage relied on as a real
-    cross-pod limit (it isn't — `grep -n "storage_uri" app/limiter.py` is currently empty, so
-    these are in-memory/per-process only); genuine multi-instance quotas use a Redis-backed check
-    like `llm_rate_limiter.py`; new Redis keys follow the `purpose:id` naming convention with an
-    explicit TTL.
+13. **Rate-limit correctness** — `limiter`/`user_limiter` are Redis-backed with an in-memory
+    fallback (`grep -n "storage_uri" app/limiter.py` should show two matches); flag it only if that
+    wiring or `in_memory_fallback_enabled=True` gets removed, not merely for using them. For any
+    route with a database-backed auth dependency (`CurrentUser`/`CurrentParent`/`CurrentAdmin`),
+    the rate check should be the `rate_limit(...)` dependency declared in that route's own
+    `dependencies=[...]`, placed so it resolves *before* the auth dependency (never at router
+    level alongside a DB-backed auth dependency — router-level always resolves first regardless of
+    order) — not the older `@limiter.limit(...)`/`@user_limiter.limit(...)` decorator, whose check
+    only runs after every other dependency (including that DB lookup) has already resolved. The
+    decorator is still correct for a route with no DB-backed auth dependency to protect. New Redis
+    keys follow the `purpose:id` naming convention with an explicit TTL.
 14. **Blocking-call offload** — every blocking SDK/client call inside `async def` is offloaded via
     `asyncio.to_thread` (not a new `run_in_executor` variant).
 15. **Logging correctness** — module logger used, never `print()`; any new log line relied on for

@@ -13,6 +13,17 @@ checks a file against this same list.
 - When every route in a router needs the same dependency (most commonly auth), declare it once
   at the router level — `APIRouter(dependencies=[Depends(get_current_parent)])` — instead of
   repeating it on every endpoint's own dependency list.
+- **Exception:** if the router's routes also need a per-route `rate_limit(...)` dependency (see
+  "Rate limiting" below) to run *before* the database-backed half of auth, don't put
+  `get_current_parent`/`get_current_admin` at the router level — router-level dependencies always
+  resolve before any route-level one, regardless of declaration order, so a DB-backed auth
+  dependency placed there defeats the point of a rate check that's supposed to run first. Instead
+  put the DB-free `app.deps.get_token_claims` at the router level (safe by default, no query to
+  protect against), and either rely on the route's own `user: CurrentParent`/`CurrentAdmin`
+  function parameter (it resolves after that route's `dependencies=[...]` list either way), or, if
+  the route doesn't otherwise use that parameter, re-add `Depends(get_current_admin)`/
+  `Depends(get_current_parent)` explicitly in the route's own `dependencies=[...]`, after
+  `rate_limit(...)`. See `app/routers/admin.py`/`children.py`/`llm.py` for both shapes of this.
 - Don't duplicate cross-cutting logic (e.g. extracting/validating a token) across multiple
   endpoints or dependencies — factor it into one shared helper or dependency and reuse it.
 
@@ -93,12 +104,30 @@ checks a file against this same list.
 
 ## Rate limiting (Redis)
 
-- The per-route `slowapi` limiters (`limiter`/`user_limiter` in `app/limiter.py`) have no
-  `storage_uri` configured, so they fall back to slowapi's default in-memory store — these limits
-  are per-process only and are **not** shared across replicas/pods. Don't assume
-  `@user_limiter.limit(...)` enforces a real global rate limit in a multi-instance deployment; for
-  anything that must hold correctly across pods (quotas, abuse limits with real consequences), use
-  a Redis-backed check like `app/llm_rate_limiter.py`'s sliding-window Lua script instead.
+- The per-route `slowapi` limiters (`limiter`/`user_limiter` in `app/limiter.py`) are Redis-backed
+  (`storage_uri=settings.redis_url`) with `in_memory_fallback_enabled=True`, so they hold correctly
+  across replicas/pods when Redis is reachable, and degrade to a per-process in-memory limiter
+  (not a crash) if Redis is unset (local dev) or goes down live. Don't assume either state without
+  checking — `grep -n "storage_uri" app/limiter.py` confirms the Redis wiring is present, and
+  `_hit()`'s docstring explains the fallback-latching behavior.
+- For any route with a database-backed auth dependency (`CurrentUser`/`CurrentParent`/
+  `CurrentAdmin`), use the `rate_limit(limit_value)` dependency from `app/limiter.py` — declared in
+  that route's own `dependencies=[...]`, not the older `@limiter.limit(...)`/`@user_limiter.limit(...)`
+  decorator. The decorator's check runs *after* FastAPI resolves every other dependency on that
+  route (including the auth DB lookup), so an over-limit request still pays for a full database
+  round-trip before being rejected. `rate_limit(...)` resolves before that lookup instead — see
+  "Dependency injection" below for how the router/route wiring has to be arranged for that ordering
+  to actually hold, and `app/routers/children.py`/`admin.py` for worked examples. The decorator is
+  still the right tool for a route with no database-backed auth dependency to protect (see
+  `register`/`login`/`google_auth`/`refresh_tokens`/`logout` in `app/routers/auth.py`) — both
+  mechanisms are intentionally in use, not a half-finished migration.
+- `rate_limit()`/`_hit()` reach into slowapi's private (`_`-prefixed) attributes
+  (`_storage_dead`, `_limiter`, `_fallback_limiter`, `_in_memory_fallback_enabled`,
+  `_swallow_errors`, `_key_func`, `_key_prefix`) to implement dependency-based checking with
+  fallback — slowapi 0.1.9 has no public API for this. `slowapi` is exactly pinned in
+  `requirements.txt`, but its `limits` dependency is not pinned anywhere (`uv.lock` is currently
+  empty). If either is ever upgraded, re-verify those attributes still exist with the same meaning
+  before trusting the fallback path.
 - When adding a new Redis-backed rate limit or lock, follow the existing key-naming convention
   (`f"llm_rate:{user_id}"`, `"session_cleanup:lock"`) — scoped, colon-separated, prefixed by
   purpose — and set a TTL matching the window/lock lifetime explicitly rather than relying on
