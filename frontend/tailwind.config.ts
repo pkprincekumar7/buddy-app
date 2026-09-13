@@ -9,6 +9,7 @@ const config: Config = {
       fontFamily: {
         orbitron: ['Orbitron', 'sans-serif'],
         rajdhani: ['Rajdhani', 'sans-serif'],
+        barlow: ['Barlow', 'sans-serif'],
       },
       borderRadius: {
         lg: 'var(--radius)',
