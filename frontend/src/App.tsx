@@ -172,14 +172,6 @@ const ProtectedRoutes = () => (
         </LayoutWrapper>
       }
     />
-    <Route
-      path="/GoalsDashboard/:childId"
-      element={
-        <LayoutWrapper currentPageName="GoalsDashboard">
-          <Pages.GoalsDashboard />
-        </LayoutWrapper>
-      }
-    />
     {/* The parent's reflections, the handoff, the child's rounds and the result
         (constellation + recommendations) are all one overlay on the Growth Map
         now — the old /Activity/:activity page, the image-pick /Game page and

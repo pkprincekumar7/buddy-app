@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 
 /**
@@ -51,6 +51,7 @@ export default function StageSplash({ stage, onReady }: StageSplashProps) {
 
 function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
   const firedRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
 
   const handleEnded = useCallback(() => {
@@ -59,10 +60,23 @@ function VideoSplash({ src, onReady }: { src: string; onReady?: () => void }) {
     onReady?.();
   }, [onReady]);
 
+  // Unmuted autoplay is frequently blocked by the browser (most reliably on a
+  // plain page load/refresh, rather than after in-app navigation) — a blocked
+  // `autoPlay` attribute never fires `ended` or `error`, so onReady would
+  // never fire and the caller's content stays hidden forever. Calling .play()
+  // explicitly surfaces that as a rejected promise, so a block can fall back
+  // to skipping the splash immediately instead of hanging.
+  useEffect(() => {
+    videoRef.current?.play().catch((err: unknown) => {
+      console.warn('[StageSplash] Autoplay blocked, skipping splash:', err);
+      handleEnded();
+    });
+  }, [handleEnded]);
+
   return (
     <video
+      ref={videoRef}
       src={src}
-      autoPlay
       preload="auto"
       muted={false}
       playsInline

@@ -13,10 +13,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 JobType = Literal[
     "generate_recommendations",
-    "generate_goals_plan",
     "generate_activity",
     "generate_personality_analysis",
-    "generate_journey_insights",
     "generate_life_pathway",
     "generate_growth_parent_questions",
     "generate_growth_child_rounds",
@@ -26,9 +24,6 @@ JobType = Literal[
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
 _ALLOWED_WRITE_BACK_COLLECTIONS = {
     "growth_areas",
-    "goals",
-    "goal_months",
-    "goal_insights",
     "observations",
     "children",
 }
@@ -52,7 +47,6 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
         "recommendations_plan",
         "pending_recommendations",
     },
-    "generate_goals_plan": {"goals_plan"},
     "generate_activity": {
         "activity",
         "activity_plan",
@@ -63,9 +57,6 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # raw LLM output via adaptAiPersonalityToViewModel before finalising the
     # canonical personality.view_model field.
     "generate_personality_analysis": {"pending_personality_vm"},
-    # insights written to the goal_insights staging field; finalizeInsights promotes
-    # it to insight_items via PATCH after the job completes.
-    "generate_journey_insights": {"pending_insights"},
     # Life Pathway milestone narrative, generated lazily one growth area at a time
     # and cached on that area's growth_areas document — alongside the answers and
     # recommendations the milestone prompt is built from. Written straight to the

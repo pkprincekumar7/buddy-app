@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ---------------------------------------------------------------------------
 # observations — one document per child
 #
-# Its own collection rather than a field on `children`, matching goals and
-# goal_insights: same shape of thing (one per child, LLM-generated, staged then
-# promoted), and it keeps a few KB off the child document, which is read on almost
-# every page and shares a single 64 KB payload budget across all its extra fields.
+# Its own collection rather than a field on `children`, matching goals: same
+# shape of thing (one per child, LLM-generated, staged then promoted), and it
+# keeps a few KB off the child document, which is read on almost every page
+# and shares a single 64 KB payload budget across all its extra fields.
 # ---------------------------------------------------------------------------
 
 _OBSERVATIONS_MAX_BYTES = 65_536  # 64 KB cap on the serialised item list
@@ -27,8 +27,8 @@ class ObservationsResponse(BaseModel):
 
     source: str | None = None
     # Raw provider objects, validated client-side by normalizeObservations before
-    # they are promoted here — kept as an open list for the same reason
-    # GoalInsightsResponse keeps pending_insights open.
+    # they are promoted here — kept as an open list since the exact shape is
+    # only meaningful to the frontend's own validation, not this schema.
     items: list = Field(default_factory=list, max_length=_OBSERVATIONS_MAX_ITEMS)
     # Observation ids the parent ticked, plus the span and start they chose.
     watching: list[str] = Field(default_factory=list, max_length=_OBSERVATIONS_MAX_ITEMS)
@@ -44,8 +44,7 @@ class ObservationsResponse(BaseModel):
         """
         Truncate rather than reject an over-long stored list.
 
-        Same intent as the legacy-shape unwrapping in get_goal_insights: these
-        fields are populated straight from a stored document, and a plain
+        These fields are populated straight from a stored document, and a plain
         max_length would make Pydantic raise — turning one oversized document
         (an older client, a raised client-side limit, a manual edit) into a
         permanent 500 on every read, with no way for the page to recover.

@@ -39,6 +39,22 @@ const SEC_LABEL: CSSProperties = {
   marginBottom: 18,
 };
 
+/** Shared "gold outline pill" chrome reused by the share buttons and onward
+ * navigation CTAs below — each call site overrides size-specific values
+ * (gap/padding/fontSize) via spread. */
+const GOLD_PILL: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  cursor: 'pointer',
+  borderRadius: 999,
+  border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
+  background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
+  color: 'rgb(var(--constellation-gold-hazy-rgb))',
+  letterSpacing: '.16em',
+  textTransform: 'uppercase',
+  boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
+};
+
 // 6 geometric trait icons matching HTML
 function TraitIcon({ index, containerSize = 46 }: { index: number; containerSize?: number }) {
   const innerScale = containerSize / 46;
@@ -537,6 +553,7 @@ export default function PersonalityProfile() {
         </p>
         <button
           onClick={() => void navigate('/Home')}
+          className="font-barlow"
           style={{
             padding: '10px 32px',
             borderRadius: 100,
@@ -545,7 +562,6 @@ export default function PersonalityProfile() {
             color: 'rgb(var(--constellation-gold-hazy-rgb))',
             cursor: 'pointer',
             fontSize: 14,
-            fontFamily: 'Barlow, sans-serif',
           }}
         >
           Go Back
@@ -645,11 +661,11 @@ export default function PersonalityProfile() {
   if (displayPhase === 'reveal') {
     return (
       <div
+        className="font-barlow"
         style={{
           position: 'fixed',
           inset: 0,
           overflow: 'hidden',
-          fontFamily: 'Barlow, sans-serif',
           color: 'rgb(var(--constellation-blue-frost-rgb))',
           background:
             'radial-gradient(80% 60% at 50% 45%, rgba(30,100,220,.55) 0%, rgba(3,10,32,0) 70%), linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)),#01040e)',
@@ -804,6 +820,7 @@ export default function PersonalityProfile() {
 
           <button
             onClick={() => setDisplayPhase('profile')}
+            className="font-barlow"
             style={{
               marginTop: 6,
               padding: 'clamp(10px, 3vw, 14px) clamp(20px, 6vw, 30px)',
@@ -817,7 +834,6 @@ export default function PersonalityProfile() {
               boxShadow: '0 0 28px rgb(var(--constellation-blue-electric-rgb) / .4)',
               cursor: 'pointer',
               animation: 'ppRiseIn .8s ease-out 1.6s both',
-              fontFamily: 'Barlow, sans-serif',
             }}
           >
             See {childName}'s results
@@ -838,12 +854,12 @@ export default function PersonalityProfile() {
 
   return (
     <div
+      className="font-barlow"
       style={{
         minHeight: '100vh',
         background:
           'linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
         padding: `40px 16px 80px`,
-        fontFamily: 'Barlow, sans-serif',
         color: 'rgb(var(--constellation-blue-frost-rgb))',
       }}
     >
@@ -880,21 +896,12 @@ export default function PersonalityProfile() {
             </div>
             <button
               onClick={() => handleShare('instagram')}
+              className="font-barlow"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
+                ...GOLD_PILL,
                 gap: isWide ? 8 : 0,
-                cursor: 'pointer',
                 padding: isWide ? '9px 16px' : '9px 12px',
-                borderRadius: 999,
-                border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
-                background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
-                color: 'rgb(var(--constellation-gold-hazy-rgb))',
-                fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
-                letterSpacing: '.16em',
-                textTransform: 'uppercase',
-                boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
               }}
             >
               <svg
@@ -915,21 +922,12 @@ export default function PersonalityProfile() {
             </button>
             <button
               onClick={() => handleShare('whatsapp')}
+              className="font-barlow"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
+                ...GOLD_PILL,
                 gap: isWide ? 8 : 0,
-                cursor: 'pointer',
                 padding: isWide ? '9px 16px' : '9px 12px',
-                borderRadius: 999,
-                border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
-                background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
-                color: 'rgb(var(--constellation-gold-hazy-rgb))',
-                fontFamily: 'Barlow, sans-serif',
                 fontSize: 12,
-                letterSpacing: '.16em',
-                textTransform: 'uppercase',
-                boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
               }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
@@ -1413,10 +1411,19 @@ export default function PersonalityProfile() {
             </motion.div>
           )}
 
-          {/* ── Replay link ───────────────────────────────────────────────────── */}
-          <div style={{ textAlign: 'center' }}>
+          {/* ── Replay link + onward CTA ─────────────────────────────────────── */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
             <button
               onClick={() => setDisplayPhase('reveal')}
+              className="font-barlow"
               style={{
                 background: 'none',
                 border: 'none',
@@ -1426,10 +1433,26 @@ export default function PersonalityProfile() {
                 textTransform: 'uppercase',
                 color: '#8a7a4e',
                 padding: '6px 10px',
-                fontFamily: 'Barlow, sans-serif',
               }}
             >
               Replay the reveal
+            </button>
+            <button
+              onClick={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
+              className="font-barlow"
+              style={{ ...GOLD_PILL, gap: 8, padding: '11px 22px', fontSize: 13 }}
+            >
+              Explore Grow
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+              >
+                <path d="M5 12h13M12 6l6 6-6 6" />
+              </svg>
             </button>
           </div>
         </div>

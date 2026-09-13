@@ -126,13 +126,12 @@ this same list.
   adding new top-level providers or setup code — don't assume everything above `<AppShell />` is
   protected.
 - For a component/page whose crash shouldn't take down the whole app (an isolated modal or
-  widget), follow the `ModalErrorBoundary` pattern in `src/pages/GoalsDashboard.tsx` — a scoped
-  boundary around just that region — rather than relying solely on the top-level one.
+  widget), wrap just that region in its own small class-based Error Boundary — a scoped boundary
+  around just that region — rather than relying solely on the top-level one.
 - Error Boundaries never catch promise rejections/async errors — those must be handled
   per-call-site with `try/catch` and surfaced via `toast.error(...)` or inline error state (see
   Form validation above). Don't let a new async failure path only get `console.error`'d with no
-  user-facing surfacing (an existing gap in `useGoalPlan.ts` on init failure) — always surface
-  something to the user, not just log.
+  user-facing surfacing — always surface something to the user, not just log.
 
 ## TypeScript strictness
 

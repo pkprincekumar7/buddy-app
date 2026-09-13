@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Sparkles, X } from 'lucide-react';
 
 import StageSplash from '@/components/shared/StageSplash';
 import { useStageSplash } from '@/hooks/useStageSplash';
-import { useAuth } from '@/lib/AuthContext';
 import { useAmbientAudio } from '@/lib/AmbientAudioContext';
 import { useIsMobile, useMediaQuery } from '@/hooks/use-mobile';
-import { Button } from '@/components/ui/button';
-import TextareaWithVoice from '@/components/shared/TextareaWithVoice';
-import { api } from '@/api/client';
+import StartJourneyModal from '@/components/lifepathway/StartJourneyModal';
 import { useLifePathwayData } from '@/hooks/useLifePathwayData';
 import { useLifePathwayArea } from '@/hooks/useLifePathwayArea';
-import { MODAL_BACKDROP, MODAL_SCALE } from '@/lib/animations';
 import Spinner from '@/components/shared/Spinner';
 import {
   GROWTH_AREAS,
@@ -100,7 +95,6 @@ function splitGapCaption(text: string): [string, string] | null {
 
 const GOLD = 'rgb(var(--constellation-gold-rgb))';
 const CYAN = 'rgb(var(--constellation-cyan-rgb))';
-const INK = 'rgb(var(--constellation-navy-deepest-rgb))';
 
 /**
  * Geometry for the 90-day rail's Day 0/30/60/90 labels.
@@ -156,9 +150,7 @@ const LABEL_ONE_LINE_MAX_UNITS = 20;
 const LABEL_MAX_UNITS = 34;
 
 export default function LifePathway() {
-  const navigate = useNavigate();
   const { childId } = useParams();
-  const { user } = useAuth();
   const isMobile = useIsMobile();
   // Two rows in the 90-day section run out of horizontal room well before the
   // 768px mobile breakpoint, so they key off their own measured threshold: the
@@ -169,8 +161,7 @@ export default function LifePathway() {
   // the few px of slack absorb font-loading and sub-pixel variance.
   const isNarrow = useMediaQuery('(max-width: 535px)');
 
-  const { childData, profile, isLoading, completedAreas, savedConcern, setSavedConcern } =
-    useLifePathwayData(childId);
+  const { childData, profile, isLoading, completedAreas } = useLifePathwayData(childId);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
 
@@ -208,9 +199,7 @@ export default function LifePathway() {
   const [milestoneIdx, setMilestoneIdx] = useState(0);
   const [monthIdx, setMonthIdx] = useState(0);
 
-  const [showConcernModal, setShowConcernModal] = useState(false);
-  const [concernInput, setConcernInput] = useState('');
-  const [concernSubmitted, setConcernSubmitted] = useState(false);
+  const [showStartJourneyModal, setShowStartJourneyModal] = useState(false);
 
   // ── Derived child facts ────────────────────────────────────────────────────
 
@@ -376,59 +365,26 @@ export default function LifePathway() {
       .filter((r) => r.text);
   }, [areaOptions, monthIdx, t]);
 
-  // ── Concern modal ─────────────────────────────────────────────────────────
+  // ── Start-journey modal ───────────────────────────────────────────────────
 
-  const closeConcernModal = useCallback(() => {
-    setShowConcernModal(false);
-    setConcernSubmitted(false);
-    setConcernInput('');
+  const closeStartJourneyModal = useCallback(() => {
+    setShowStartJourneyModal(false);
   }, []);
 
-  useEffect(() => {
-    if (!showConcernModal) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeConcernModal();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showConcernModal, closeConcernModal]);
-
-  // On bfcache restore (Back from GoalsDashboard), close any open modal.
-  // Also calls closeConcernModal on component unmount via the cleanup.
+  // On bfcache restore (Back from a page navigated to elsewhere), close any open modal.
   useEffect(() => {
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) closeConcernModal();
+      if (e.persisted) closeStartJourneyModal();
     };
     window.addEventListener('pageshow', onPageShow);
     return () => {
       window.removeEventListener('pageshow', onPageShow);
-      closeConcernModal();
+      closeStartJourneyModal();
     };
-  }, [closeConcernModal]);
+  }, [closeStartJourneyModal]);
 
   const handleStartJourney = () => {
-    if (savedConcern) {
-      void navigate(`/GoalsDashboard/${childId}`);
-      return;
-    }
-    setShowConcernModal(true);
-  };
-
-  const handleConcernSubmit = useCallback(async () => {
-    const activeChildId = childData?.id;
-    if (!concernInput.trim() || !activeChildId) return;
-    try {
-      await api.goals.patch(activeChildId, { parent_concern: concernInput.trim() });
-      setSavedConcern(concernInput.trim());
-    } catch (err) {
-      console.warn('[LifePathway] Could not persist concern, proceeding anyway:', err);
-    }
-    setConcernSubmitted(true);
-  }, [childData, concernInput, setSavedConcern]);
-
-  const handleProceedToDashboard = () => {
-    closeConcernModal();
-    void navigate(`/GoalsDashboard/${childId}`);
+    setShowStartJourneyModal(true);
   };
 
   // ── Shared style fragments ────────────────────────────────────────────────
@@ -1738,202 +1694,12 @@ export default function LifePathway() {
               </section>
             </main>
 
-            {/* ── Concern modal ────────────────────────────────────────── */}
-            <AnimatePresence>
-              {showConcernModal && (
-                <motion.div
-                  {...MODAL_BACKDROP}
-                  className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-                  style={{ background: 'rgb(var(--constellation-navy-deepest-rgb) / .8)' }}
-                  onClick={closeConcernModal}
-                  role="presentation"
-                >
-                  <motion.div
-                    {...MODAL_SCALE}
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Share your concern"
-                    className="relative w-full max-w-lg rounded-2xl p-8 pt-12 font-rajdhani"
-                    style={{
-                      background:
-                        'linear-gradient(160deg,rgb(var(--constellation-navy-panel3-rgb) / .96),rgb(var(--constellation-ink-navy-rgb) / .98))',
-                      border: '1px solid rgb(var(--constellation-gold-rgb) / .3)',
-                      boxShadow: '0 30px 90px rgb(var(--constellation-void-deep-rgb) / .8)',
-                      color: 'rgb(var(--constellation-text-frost-rgb))',
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      onClick={closeConcernModal}
-                      className="absolute right-4 top-4 rounded-xl p-2 transition-colors"
-                      style={{ color: 'rgb(var(--constellation-slate-warm-rgb))' }}
-                      aria-label="Close dialog"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                    <AnimatePresence mode="wait">
-                      {!concernSubmitted ? (
-                        <motion.div
-                          key="form"
-                          initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{
-                            opacity: 0,
-                            y: -12,
-                            transition: { duration: 0.3, ease: 'easeIn' },
-                          }}
-                          transition={{ duration: 0.5, ease: 'easeOut' }}
-                          className="space-y-5"
-                        >
-                          <div className="mb-2 flex items-center gap-3">
-                            <div
-                              className="flex h-11 w-11 items-center justify-center rounded-xl"
-                              style={{
-                                background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                                boxShadow: '0 0 26px rgb(var(--constellation-cyan-rgb) / .35)',
-                              }}
-                            >
-                              <Sparkles className="h-5 w-5" style={{ color: INK }} />
-                            </div>
-                            <div>
-                              <h3
-                                className="font-orbitron"
-                                style={{
-                                  ...orbitron(16, 700),
-                                  color: 'rgb(var(--constellation-cyan-paler-rgb))',
-                                }}
-                              >
-                                One last thing
-                              </h3>
-                              <p
-                                style={{
-                                  fontSize: lpfs(13.5),
-                                  fontWeight: 600,
-                                  color: 'rgb(var(--constellation-slate-warm-rgb))',
-                                }}
-                              >
-                                Superpower wants to know
-                              </p>
-                            </div>
-                          </div>
-                          <p style={{ fontSize: lpfs(15), fontWeight: 600, lineHeight: 1.55 }}>
-                            Hey{' '}
-                            <span style={{ fontWeight: 700, color: CYAN }}>
-                              {user?.full_name?.split(' ')[0] ?? 'there'}
-                            </span>
-                            , is there anything you want Superpower to work on right now with{' '}
-                            <span style={{ fontWeight: 700, color: GOLD }}>{childName}</span>?
-                          </p>
-                          <TextareaWithVoice
-                            value={concernInput}
-                            onChange={(e) => setConcernInput(e.target.value)}
-                            placeholder={`e.g., I want to improve English speaking skills for ${childName || 'my child'}.`}
-                            className="min-h-[120px] w-full resize-none rounded-xl p-4 font-rajdhani"
-                            style={{
-                              background: 'rgb(var(--constellation-navy-deepest-rgb) / .7)',
-                              border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
-                              color: 'rgb(var(--constellation-text-frost-rgb))',
-                              fontWeight: 600,
-                            }}
-                          />
-                          <div className="flex gap-3">
-                            <Button
-                              variant="outline"
-                              onClick={handleProceedToDashboard}
-                              className="h-11 flex-1 rounded-xl font-rajdhani text-base"
-                              style={{
-                                // Explicit opaque fill rather than relying on `bg-transparent`
-                                // to beat the outline variant's own `bg-background`: those are
-                                // both single-class selectors, so which one wins depends on
-                                // Tailwind's emit order rather than on anything stated here.
-                                background: '#0a111e',
-                                border: '1px solid rgb(var(--constellation-cyan-rgb) / .3)',
-                                color: 'rgb(var(--constellation-slate-soft-rgb))',
-                                fontWeight: 700,
-                              }}
-                            >
-                              Skip for now
-                            </Button>
-                            <Button
-                              onClick={() => {
-                                void handleConcernSubmit();
-                              }}
-                              disabled={!concernInput.trim()}
-                              className="h-11 flex-1 rounded-xl font-orbitron text-base disabled:opacity-40"
-                              style={{
-                                background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                                color: 'rgb(var(--constellation-navy-rgb))',
-                                fontWeight: 900,
-                                letterSpacing: '.08em',
-                                fontSize: lpfs(12),
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              Submit
-                              <ChevronRight className="ml-1 h-4 w-4" />
-                            </Button>
-                          </div>
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="success"
-                          initial={{ opacity: 0, y: 16 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.5, ease: 'easeOut' }}
-                          className="space-y-6 text-center"
-                        >
-                          <div
-                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
-                            style={{ background: `linear-gradient(135deg,${CYAN},${GOLD})` }}
-                          >
-                            <span className="text-2xl">✅</span>
-                          </div>
-                          <div>
-                            <h3
-                              className="mb-2 font-orbitron"
-                              style={{
-                                ...orbitron(16, 700),
-                                color: 'rgb(var(--constellation-cyan-paler-rgb))',
-                              }}
-                            >
-                              Got it
-                            </h3>
-                            <p
-                              style={{
-                                fontSize: lpfs(15),
-                                fontWeight: 600,
-                                lineHeight: 1.55,
-                                color: 'rgb(var(--constellation-slate-pale-rgb))',
-                              }}
-                            >
-                              We will work with{' '}
-                              <span style={{ fontWeight: 700, color: GOLD }}>{childName}</span> on
-                              the same.
-                            </p>
-                          </div>
-                          <Button
-                            onClick={handleProceedToDashboard}
-                            className="h-11 w-full rounded-xl font-orbitron text-base"
-                            style={{
-                              background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-                              color: 'rgb(var(--constellation-navy-rgb))',
-                              fontWeight: 900,
-                              letterSpacing: '.08em',
-                              fontSize: lpfs(12),
-                              textTransform: 'uppercase',
-                            }}
-                          >
-                            Go to Dashboard
-                            <ChevronRight className="ml-2 h-4 w-4" />
-                          </Button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <StartJourneyModal
+              open={showStartJourneyModal}
+              onClose={closeStartJourneyModal}
+              childName={childName}
+              childGender={gender}
+            />
           </div>
         )}
       </motion.div>
