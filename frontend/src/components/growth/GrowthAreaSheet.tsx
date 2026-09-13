@@ -1138,56 +1138,58 @@ export default function GrowthAreaSheet({
               </div>
             </div>
 
-            <div
-              className="flex flex-wrap items-center justify-center"
-              style={{ gap: 12, marginTop: 18 }}
-            >
-              <button
-                type="button"
-                onClick={playAgain}
-                style={{
-                  ...PILL,
-                  padding: '10px 22px',
-                  background: 'rgb(var(--constellation-overlay-rgb) / .85)',
-                  border: '1px solid rgb(var(--constellation-amber-rgb) / .35)',
-                  color: 'rgb(var(--constellation-amber-rgb))',
-                }}
+            {(recsPhase === 'ready' || recsPhase === 'error') && (
+              <div
+                className="flex flex-wrap items-center justify-center"
+                style={{ gap: 12, marginTop: 18 }}
               >
-                Play again
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                style={{ ...PILL, ...CTA, padding: '11px 26px' }}
-              >
-                Done
-              </button>
-              {/* Zero-size flex item — forces Explore Transform onto its own
-                  wrapped row below md without stretching the button itself. */}
-              <div className="w-full md:hidden" />
-              <button
-                type="button"
-                onClick={onExploreTransform}
-                style={{
-                  ...PILL,
-                  padding: '11px 22px',
-                  background: 'rgb(var(--constellation-navy-deep-rgb) / .9)',
-                  border: '1px solid rgb(var(--constellation-gold-rgb) / .5)',
-                  color: 'rgb(var(--constellation-gold-pale-rgb))',
-                }}
-              >
-                Explore Transform
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  style={{ width: 14, height: 14 }}
+                <button
+                  type="button"
+                  onClick={playAgain}
+                  style={{
+                    ...PILL,
+                    padding: '10px 22px',
+                    background: 'rgb(var(--constellation-overlay-rgb) / .85)',
+                    border: '1px solid rgb(var(--constellation-amber-rgb) / .35)',
+                    color: 'rgb(var(--constellation-amber-rgb))',
+                  }}
                 >
-                  <path d="M5 12h13M12 6l6 6-6 6" />
-                </svg>
-              </button>
-            </div>
+                  Play again
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  style={{ ...PILL, ...CTA, padding: '11px 26px' }}
+                >
+                  Done
+                </button>
+                {/* Zero-size flex item — forces Explore Transform onto its own
+                    wrapped row below md without stretching the button itself. */}
+                <div className="w-full md:hidden" />
+                <button
+                  type="button"
+                  onClick={onExploreTransform}
+                  style={{
+                    ...PILL,
+                    padding: '11px 22px',
+                    background: 'rgb(var(--constellation-navy-deep-rgb) / .9)',
+                    border: '1px solid rgb(var(--constellation-gold-rgb) / .5)',
+                    color: 'rgb(var(--constellation-gold-pale-rgb))',
+                  }}
+                >
+                  Explore Transform
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    style={{ width: 14, height: 14 }}
+                  >
+                    <path d="M5 12h13M12 6l6 6-6 6" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </motion.div>

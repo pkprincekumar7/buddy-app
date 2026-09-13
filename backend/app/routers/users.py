@@ -1,24 +1,14 @@
-import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pydantic import ValidationError
 
 from app import models
 from app.deps import CurrentParent, CurrentUser, Db
 from app.limiter import rate_limit
-from app.schemas.goals import (
-    GoalInsightsPatch,
-    GoalInsightsResponse,
-    GoalMonthsPatch,
-    GoalMonthsResponse,
-    GoalsMonth,
-    UserGoals,
-    UserGoalsPatch,
-)
+from app.schemas.goals import UserGoals, UserGoalsPatch
 from app.schemas.growth_areas import (
     AppendGrowthAreaRequest,
     ChildActivity,
@@ -302,10 +292,7 @@ async def get_goals(
     )
     if not doc:
         return UserGoals()
-    return UserGoals(
-        parent_concern=doc.get("parent_concern"),
-        goals_plan=doc.get("goals_plan"),
-    )
+    return UserGoals(parent_concern=doc.get("parent_concern"))
 
 
 @router.patch(
@@ -331,286 +318,13 @@ async def patch_goals(
     elif body.parent_concern is not None:
         set_fields["parent_concern"] = body.parent_concern
 
-    if body.clear_goals_plan:
-        set_fields["goals_plan"] = None
-
     doc = await db[models.GOALS].find_one_and_update(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
         {"$set": set_fields, "$setOnInsert": set_on_insert},
         upsert=True,
         return_document=True,
     )
-    return UserGoals(
-        parent_concern=doc.get("parent_concern") if doc else None,
-        goals_plan=doc.get("goals_plan") if doc else None,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Goal months — one document per month per child
-# ---------------------------------------------------------------------------
-
-
-def _month_doc_to_api(doc: dict) -> GoalsMonth | None:
-    try:
-        # Pass raw values without defaults so Pydantic raises ValidationError on
-        # missing required fields (goal, objective). Pre-filling "" would silently
-        # hide schema drift — e.g. a worker writing "title" instead of "goal".
-        # periods defaults to [] because an empty periods list is valid.
-        return GoalsMonth.model_validate(
-            {
-                "month": doc.get("month"),
-                "goal": doc.get("goal"),
-                "objective": doc.get("objective"),
-                "periods": doc.get("periods", []),
-            }
-        )
-    except (ValidationError, KeyError, TypeError):
-        log.warning(
-            "_month_doc_to_api: skipping invalid month doc _id=%s month=%s",
-            doc.get("_id"),
-            doc.get("month"),
-            exc_info=True,
-        )
-        return None
-
-
-@router.get(
-    "/user/goal-months",
-    response_model=GoalMonthsResponse,
-    description="Retrieve all month plan documents for a given child. Returns an empty list if the child does not exist (query is scoped by user_id so no data leaks).",
-    dependencies=[Depends(rate_limit("60/minute"))],
-)
-async def get_goal_months(
-    request: Request,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
-    docs = await (
-        db[models.GOAL_MONTHS]
-        .find({"child_id": child_id, "user_id": user["_id"], "location": user["location"]})
-        .sort("month", 1)
-        .to_list(12)
-    )
-    months = [m for m in (_month_doc_to_api(d) for d in docs) if m is not None]
-    return GoalMonthsResponse(months=months)
-
-
-@router.patch(
-    "/user/goal-months/{month_number}",
-    status_code=204,
-    description="Upsert a single month plan document for a given child.",
-    dependencies=[Depends(rate_limit("30/minute"))],
-)
-async def patch_goal_month_single(
-    request: Request,
-    user: CurrentParent,
-    db: Db,
-    month_number: int = Path(..., ge=1, le=12),
-    body: GoalsMonth = Body(...),
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    if body.month != month_number:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Path month_number ({month_number}) does not match body month ({body.month})",
-        )
-    await _require_child(db, child_id, user)
-    now = datetime.now(UTC)
-    set_fields = {
-        "goal": body.goal,
-        "objective": body.objective,
-        "periods": [p.model_dump() for p in body.periods],
-        "updated_at": now,
-    }
-    await db[models.GOAL_MONTHS].update_one(
-        {
-            "child_id": child_id,
-            "user_id": user["_id"],
-            "month": month_number,
-            "location": user["location"],
-        },
-        {
-            "$set": set_fields,
-            "$setOnInsert": {
-                "_id": str(uuid.uuid4()),
-                "created_at": now,
-                "user_id": user["_id"],
-                "child_id": child_id,
-                "location": user["location"],
-            },
-        },
-        upsert=True,
-    )
-
-
-@router.patch(
-    "/user/goal-months",
-    status_code=204,
-    description="Replace all month plan documents for a given child in one operation.",
-    dependencies=[Depends(rate_limit("20/minute"))],
-)
-async def patch_goal_months(
-    request: Request,
-    body: GoalMonthsPatch,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    await _require_child(db, child_id, user)
-    now = datetime.now(UTC)
-    filter_key = {"child_id": child_id, "user_id": user["_id"], "location": user["location"]}
-
-    # TODO(M10+): Replace upsert-then-delete below with an atomic transaction once the
-    # cluster is upgraded to Atlas M10 or higher.
-    #
-    # Why upsert-per-month instead of insert_many + delete_many:
-    # goal_months has a unique index on (location, child_id, user_id, month). This
-    # index is intentionally kept — it enforces data integrity (no duplicate month
-    # docs per child) and satisfies the Atlas sharding requirement that every unique
-    # index must have the shard key (location) as its leading field (required on M10+).
-    # insert_many would fail with DuplicateKeyError on every call after the first
-    # because old docs still hold the index entries at insert time. Upserting each
-    # month individually is compatible with the unique index: update_one matches the
-    # existing doc by (filter_key + month) and overwrites it in-place, or inserts a
-    # new doc if none exists — no duplicate key violation in either case.
-    #
-    # Crash safety with this approach:
-    #   - Crash mid-upsert loop → partial update; each upsert is idempotent so a
-    #     retry converges to the correct state (no data loss).
-    #   - Crash after upserts but before delete_many → stale month docs for months
-    #     that were removed from the plan remain; the next successful call will
-    #     clean them up (no data loss).
-    # On M10+ wrap both the upsert loop and the delete in a session transaction to
-    # make the replace fully atomic.
-    submitted_months: list[int] = [m.month for m in body.months]
-
-    async def _upsert_month(month: GoalsMonth) -> None:
-        await db[models.GOAL_MONTHS].update_one(
-            {**filter_key, "month": month.month},
-            {
-                "$set": {
-                    "goal": month.goal,
-                    "objective": month.objective,
-                    "periods": [p.model_dump() for p in month.periods],
-                    "updated_at": now,
-                },
-                "$setOnInsert": {
-                    "_id": str(uuid.uuid4()),
-                    "created_at": now,
-                    "user_id": user["_id"],
-                    "child_id": child_id,
-                    "location": user["location"],
-                },
-            },
-            upsert=True,
-        )
-
-    # Run all per-month upserts concurrently — each is independent and idempotent.
-    # asyncio.gather preserves crash-safety: a partial failure leaves some months
-    # updated and some not, but a retry converges to the correct state.
-    await asyncio.gather(*[_upsert_month(m) for m in body.months])
-
-    # Delete any month docs whose month number was not included in this submission
-    # (i.e. months that were removed from the plan). $nin: [] means "delete all",
-    # which is the correct behaviour when body.months is empty (clearing the plan).
-    await db[models.GOAL_MONTHS].delete_many({**filter_key, "month": {"$nin": submitted_months}})
-
-
-# ---------------------------------------------------------------------------
-# Goal insights — one document per child
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/user/goal-insights",
-    response_model=GoalInsightsResponse,
-    description="Retrieve the insights document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
-    dependencies=[Depends(rate_limit("60/minute"))],
-)
-async def get_goal_insights(
-    request: Request,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
-    doc = await db[models.GOAL_INSIGHTS].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
-    )
-    if not doc:
-        return GoalInsightsResponse()
-    raw_items = doc.get("insight_items", [])
-    # Resilience: before the pending_insights staging-field pattern was introduced,
-    # the worker wrote the full LLM response dict to insight_items directly.
-    # Extract the inner list so old documents don't cause a 500 on GET.
-    if isinstance(raw_items, dict):
-        raw_items = raw_items.get("insight_items", [])
-    if not isinstance(raw_items, list):
-        raw_items = []
-    return GoalInsightsResponse(
-        schema_version=doc.get("schema_version"),
-        insight_items=raw_items,
-        insights_signature=doc.get("insights_signature"),
-        pending_insights=doc.get("pending_insights"),
-    )
-
-
-@router.patch(
-    "/user/goal-insights",
-    response_model=GoalInsightsResponse,
-    description="Update the insights document for a given child.",
-    dependencies=[Depends(rate_limit("20/minute"))],
-)
-async def patch_goal_insights(
-    request: Request,
-    body: GoalInsightsPatch,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    await _require_child(db, child_id, user)
-    now = datetime.now(UTC)
-    set_fields: dict = {"updated_at": now}
-    # clear_* takes precedence over the value field — mirrors UserGoalsPatch pattern.
-    if body.clear_schema_version:
-        set_fields["schema_version"] = None
-    elif body.schema_version is not None:
-        set_fields["schema_version"] = body.schema_version
-    unset_fields: dict = {}
-    if body.insight_items is not None:
-        set_fields["insight_items"] = [item.model_dump() for item in body.insight_items]
-        # Committing insight_items means the staging field has been promoted — clear it.
-        unset_fields["pending_insights"] = ""
-    if body.clear_insights_signature:
-        set_fields["insights_signature"] = None
-    elif body.insights_signature is not None:
-        set_fields["insights_signature"] = body.insights_signature
-
-    update_op: dict = {
-        "$set": set_fields,
-        "$setOnInsert": {
-            "created_at": now,
-            "user_id": user["_id"],
-            "location": user["location"],
-        },
-    }
-    if unset_fields:
-        update_op["$unset"] = unset_fields
-
-    doc = await db[models.GOAL_INSIGHTS].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
-        update_op,
-        upsert=True,
-        return_document=True,
-    )
-    return GoalInsightsResponse(
-        schema_version=doc.get("schema_version") if doc else None,
-        insight_items=doc.get("insight_items", []) if doc else [],
-        insights_signature=doc.get("insights_signature") if doc else None,
-    )
+    return UserGoals(parent_concern=doc.get("parent_concern") if doc else None)
 
 
 # ---------------------------------------------------------------------------

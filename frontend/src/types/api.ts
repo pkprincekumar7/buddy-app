@@ -82,10 +82,8 @@ export interface ChildRecord {
 // rejects any value it does not declare.
 export type JobType =
   | 'generate_recommendations'
-  | 'generate_goals_plan'
   | 'generate_activity'
   | 'generate_personality_analysis'
-  | 'generate_journey_insights'
   | 'generate_life_pathway'
   | 'generate_growth_parent_questions'
   | 'generate_growth_child_rounds'
@@ -109,13 +107,7 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection:
-      | 'growth_areas'
-      | 'children'
-      | 'goals'
-      | 'goal_months'
-      | 'goal_insights'
-      | 'observations';
+    collection: 'growth_areas' | 'children' | 'goals' | 'observations';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -133,55 +125,6 @@ export interface PreferencesRecord {
 
 export interface GoalsRecord {
   parent_concern?: string;
-  goals_plan?: Record<string, unknown> | null;
-  [key: string]: unknown;
-}
-
-export interface GoalsActivity {
-  title: string;
-  objective: string;
-  scorable?: boolean;
-  completed?: boolean | null;
-  score?: number | null;
-  note?: string | null;
-  progress_observation?: string | null;
-  ai_feedback?: string | null;
-  parent_feedback?: string | null;
-  what_changed?: string | null;
-  what_learned?: string | null;
-  recommendation?: string | null;
-  answers_text?: string | null;
-}
-
-export interface GoalsPeriod {
-  label: string;
-  activities: GoalsActivity[];
-}
-
-export interface GoalsMonth {
-  month: number;
-  goal: string;
-  objective: string;
-  periods: GoalsPeriod[];
-}
-
-export interface GoalMonthsRecord {
-  months: GoalsMonth[];
-  [key: string]: unknown;
-}
-
-export interface InsightItem {
-  text: string;
-  type: string;
-  details: string;
-}
-
-export interface GoalInsightsRecord {
-  schema_version?: number | null;
-  insight_items?: InsightItem[];
-  insights_signature?: number | null;
-  /** Staging field: full LLM response written by worker; promoted to insight_items by finalizeInsights. */
-  pending_insights?: { insight_items?: InsightItem[]; [key: string]: unknown } | null;
   [key: string]: unknown;
 }
 

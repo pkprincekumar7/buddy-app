@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import StageSplash from '@/components/shared/StageSplash';
@@ -150,7 +150,6 @@ const LABEL_ONE_LINE_MAX_UNITS = 20;
 const LABEL_MAX_UNITS = 34;
 
 export default function LifePathway() {
-  const navigate = useNavigate();
   const { childId } = useParams();
   const isMobile = useIsMobile();
   // Two rows in the 90-day section run out of horizontal room well before the
@@ -372,7 +371,7 @@ export default function LifePathway() {
     setShowStartJourneyModal(false);
   }, []);
 
-  // On bfcache restore (Back from GoalsDashboard), close any open modal.
+  // On bfcache restore (Back from a page navigated to elsewhere), close any open modal.
   useEffect(() => {
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted) closeStartJourneyModal();
@@ -1700,10 +1699,6 @@ export default function LifePathway() {
               onClose={closeStartJourneyModal}
               childName={childName}
               childGender={gender}
-              onOpenDashboard={() => {
-                setShowStartJourneyModal(false);
-                void navigate(`/GoalsDashboard/${childId}`);
-              }}
             />
           </div>
         )}

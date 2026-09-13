@@ -1,38 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { fillTemplate } from '@/lib/growthAreaData';
+import { readInterest, getPlan, buildPlanMonths } from '@/lib/startJourneyPlans';
+import { useNinetyDayProgress } from '@/hooks/useNinetyDayProgress';
+import DashboardStep from './DashboardStep';
+import TrackStep from './TrackStep';
+import {
+  GOLD,
+  GOLD_PALE,
+  CYAN,
+  INK,
+  BODY,
+  FROST,
+  FIELD_STYLE,
+  FIELD_LABEL_STYLE,
+  PRIMARY_BTN,
+} from './theme';
+import { TextField } from './fields';
 
 /**
- * Static, backend-free mock of the "start the 90-day plan" checkout flow from
- * the reference design — Ask (child's interest) → Plan → Payment → Done. No
- * network calls anywhere: "payment" is a simulated delay, matching how the
- * reference design's own mockup behaves. Real payment processing and any
- * persisted subscription state are deferred to future backend work; "Open
- * dashboard" on the Done step hands off to the existing, real GoalsDashboard
- * rather than reproducing the design's separate mock dashboard/tracker.
+ * Static, backend-free mock of the "start the 90-day plan" flow from the
+ * reference design — Ask (child's interest) → Plan → Payment → Done →
+ * Dashboard → Tracker. No network calls anywhere: "payment" is a simulated
+ * delay and the achievement/tracker progress in the last two steps lives
+ * only in local state, matching how the reference design's own mockup
+ * behaves. Real payment processing and any persisted progress are deferred
+ * to future backend work.
  */
 
-type Step = 0 | 1 | 2 | 3;
+type Step = 0 | 1 | 2 | 3 | 4 | 5;
 
 interface StartJourneyModalProps {
   open: boolean;
   onClose: () => void;
   childName: string;
   childGender: string | null;
-  onOpenDashboard: () => void;
 }
-
-const GOLD = 'rgb(var(--constellation-gold-rgb))';
-const GOLD_PALE = 'rgb(var(--constellation-gold-pale-rgb))';
-const CYAN = 'rgb(var(--constellation-cyan-rgb))';
-const INK = 'rgb(var(--constellation-navy-rgb))';
-const BODY = 'rgb(var(--constellation-slate-warm-rgb))';
-const LABEL_CL = 'rgb(var(--constellation-slate-mute-rgb))';
-const FROST = 'rgb(var(--constellation-text-frost-rgb))';
 
 const INTEREST_CHIPS = [
   'Building things',
@@ -54,20 +61,6 @@ const COUNTRIES = [
   { value: 'SG', label: 'Singapore' },
 ];
 
-const FIELD_STYLE: React.CSSProperties = {
-  width: '100%',
-  boxSizing: 'border-box',
-  marginTop: 7,
-  padding: '12px 14px',
-  borderRadius: 10,
-  background: 'rgb(var(--constellation-navy-deepest-rgb) / .85)',
-  border: '1px solid rgb(var(--constellation-cyan-rgb) / .2)',
-  color: FROST,
-  fontWeight: 700,
-  fontSize: 15.5,
-  outline: 'none',
-};
-
 /** Inner inputs of the unified "Card information" box — transparent, no
  * border of their own; the box around them supplies background/border. */
 const CARD_ROW_INPUT: React.CSSProperties = {
@@ -84,29 +77,6 @@ const CARD_ROW_INPUT: React.CSSProperties = {
   letterSpacing: '.05em',
 };
 
-const FIELD_LABEL_STYLE: React.CSSProperties = {
-  display: 'block',
-  fontWeight: 700,
-  fontSize: 10.5,
-  letterSpacing: '.18em',
-  textTransform: 'uppercase',
-  color: LABEL_CL,
-};
-
-const PRIMARY_BTN: React.CSSProperties = {
-  cursor: 'pointer',
-  padding: '14px 32px',
-  borderRadius: 999,
-  border: 'none',
-  background: `linear-gradient(135deg,${CYAN},${GOLD})`,
-  color: INK,
-  fontWeight: 900,
-  fontSize: 12.5,
-  letterSpacing: '.14em',
-  textTransform: 'uppercase',
-  boxShadow: '0 0 30px rgb(var(--constellation-cyan-rgb) / .35)',
-};
-
 function formatCardNumber(raw: string): string {
   return raw
     .replace(/\D/g, '')
@@ -120,45 +90,11 @@ function formatExpiry(raw: string): string {
   return digits.length > 2 ? `${digits.slice(0, 2)} / ${digits.slice(2)}` : digits;
 }
 
-/** A single-column labeled input — the shape shared by Email, Name on card
- * and Postal code below. Card number/Expiry/CVC don't fit this shape (they
- * share one bordered "Card information" box instead), so they stay inline. */
-function TextField({
-  id,
-  label,
-  type = 'text',
-  value,
-  onChange,
-  placeholder,
-}: {
-  id: string;
-  label: string;
-  type?: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label htmlFor={id}>
-      <span style={FIELD_LABEL_STYLE}>{label}</span>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={FIELD_STYLE}
-      />
-    </label>
-  );
-}
-
 export default function StartJourneyModal({
   open,
   onClose,
   childName,
   childGender,
-  onOpenDashboard,
 }: StartJourneyModalProps) {
   const [step, setStep] = useState<Step>(0);
   const [ask, setAsk] = useState('');
@@ -201,22 +137,18 @@ export default function StartJourneyModal({
   );
 
   // Matches the reference design's own behaviour: the Done step auto-advances
-  // (there, into its own mock dashboard; here, into the real GoalsDashboard)
-  // a couple of seconds after landing, while the button lets the parent skip
-  // ahead immediately. Ref avoids re-arming the timer on every re-render of
-  // the caller's inline onOpenDashboard closure.
-  const onOpenDashboardRef = useRef(onOpenDashboard);
-  useEffect(() => {
-    onOpenDashboardRef.current = onOpenDashboard;
-  }, [onOpenDashboard]);
-
+  // into the Dashboard a couple of seconds after landing, while the button
+  // lets the parent skip ahead immediately.
   useEffect(() => {
     if (!open || step !== 3) return;
-    const timer = setTimeout(() => {
-      onOpenDashboardRef.current();
-    }, 2900);
+    const timer = setTimeout(() => setStep(4), 2900);
     return () => clearTimeout(timer);
   }, [open, step]);
+
+  const progress = useNinetyDayProgress();
+  const interest = useMemo(() => readInterest(ask), [ask]);
+  const plan = useMemo(() => getPlan(interest), [interest]);
+  const months = useMemo(() => buildPlanMonths(plan), [plan]);
 
   const toggleInterestChip = (label: string) => {
     setAsk((prev) =>
@@ -277,9 +209,9 @@ export default function StartJourneyModal({
       }}
     >
       <DialogContent
-        className="max-h-[90vh] w-[calc(100vw-2rem)] overflow-y-auto rounded-3xl border-0 p-0 font-rajdhani sm:rounded-3xl"
+        className="max-h-[90vh] w-[calc(100vw-2rem)] grid-cols-1 overflow-y-auto rounded-3xl border-0 p-0 font-rajdhani sm:rounded-3xl"
         style={{
-          maxWidth: 'min(94vw, 920px)',
+          maxWidth: step === 4 || step === 5 ? 'min(96vw, 1180px)' : 'min(94vw, 920px)',
           background:
             'linear-gradient(165deg,rgb(var(--constellation-navy-panel3-rgb) / .98),rgb(var(--constellation-ink-navy-rgb) / .98))',
           border: '1px solid rgb(var(--constellation-cyan-rgb) / .24)',
@@ -346,11 +278,17 @@ export default function StartJourneyModal({
               >
                 {t('What does {name} say')}
                 <br />
-                <span style={{ color: GOLD }}>
-                  {t('{he} {is} interested in?')}
-                </span>
+                <span style={{ color: GOLD }}>{t('{he} {is} interested in?')}</span>
               </h3>
-              <p style={{ marginTop: 12, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: BODY }}>
+              <p
+                style={{
+                  marginTop: 12,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                  color: BODY,
+                }}
+              >
                 {t(
                   'In {his} words, not yours. Month one is built around what {he} already leans towards, so this is the one thing we need to know.',
                 )}
@@ -416,11 +354,28 @@ export default function StartJourneyModal({
                     outline: 'none',
                   }}
                 />
-                <div className="flex items-center justify-between gap-3" style={{ padding: '0 18px 14px' }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                <div
+                  className="flex items-center justify-between gap-3"
+                  style={{ padding: '0 18px 14px' }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-mute-rgb))',
+                    }}
+                  >
                     {askHint}
                   </div>
-                  <div style={{ fontWeight: 700, fontSize: 11.5, color: askOk ? 'hsl(var(--success-bright))' : 'rgb(var(--constellation-slate-deep-rgb))' }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 11.5,
+                      color: askOk
+                        ? 'hsl(var(--success-bright))'
+                        : 'rgb(var(--constellation-slate-deep-rgb))',
+                    }}
+                  >
                     {askCount}
                   </div>
                 </div>
@@ -435,7 +390,13 @@ export default function StartJourneyModal({
                 >
                   Continue
                 </Button>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                <span
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-mute-rgb))',
+                  }}
+                >
                   {t('You can change this later from {his} profile.')}
                 </span>
               </div>
@@ -454,7 +415,13 @@ export default function StartJourneyModal({
               <div className="px-8 py-8">
                 <h3
                   className="font-orbitron"
-                  style={{ margin: 0, fontWeight: 900, fontSize: 23, lineHeight: 1.2, color: 'rgb(var(--constellation-cyan-pale-rgb))' }}
+                  style={{
+                    margin: 0,
+                    fontWeight: 900,
+                    fontSize: 23,
+                    lineHeight: 1.2,
+                    color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                  }}
                 >
                   {t("{name}'s first month")}
                   <br />
@@ -468,15 +435,39 @@ export default function StartJourneyModal({
                       borderLeft: '2px solid rgb(var(--constellation-cyan-rgb) / .5)',
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: BODY }}>
-                      {t("In {his} words")}
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 10,
+                        letterSpacing: '.18em',
+                        textTransform: 'uppercase',
+                        color: BODY,
+                      }}
+                    >
+                      {t('In {his} words')}
                     </div>
-                    <div style={{ marginTop: 7, fontSize: 14, fontWeight: 600, lineHeight: 1.45, color: 'rgb(var(--constellation-caption-rgb))' }}>
+                    <div
+                      style={{
+                        marginTop: 7,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        lineHeight: 1.45,
+                        color: 'rgb(var(--constellation-caption-rgb))',
+                      }}
+                    >
                       {askEcho}
                     </div>
                   </div>
                 )}
-                <p style={{ marginTop: 12, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: 'rgb(var(--constellation-slate-cool-rgb))' }}>
+                <p
+                  style={{
+                    marginTop: 12,
+                    fontSize: 15,
+                    fontWeight: 600,
+                    lineHeight: 1.5,
+                    color: 'rgb(var(--constellation-slate-cool-rgb))',
+                  }}
+                >
                   Nothing is charged today. Your subscription starts after 30 days and you can
                   cancel before then in one tap.
                 </p>
@@ -497,7 +488,14 @@ export default function StartJourneyModal({
                       >
                         <path d="M4 12.5l5 5L20 6.5" />
                       </svg>
-                      <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.45, color: 'rgb(var(--constellation-caption-rgb))' }}>
+                      <div
+                        style={{
+                          fontSize: 14.5,
+                          fontWeight: 600,
+                          lineHeight: 1.45,
+                          color: 'rgb(var(--constellation-caption-rgb))',
+                        }}
+                      >
                         {line}
                       </div>
                     </div>
@@ -507,51 +505,114 @@ export default function StartJourneyModal({
 
               <div
                 className="px-8 py-8"
-                style={{ background: 'rgb(var(--constellation-ink-navy-rgb) / .7)', borderLeft: '1px solid rgb(var(--constellation-cyan-rgb) / .14)' }}
+                style={{
+                  background: 'rgb(var(--constellation-ink-navy-rgb) / .7)',
+                  borderLeft: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
+                }}
               >
                 <div
                   className="rounded-2xl p-5"
                   style={{
-                    background: 'linear-gradient(150deg,rgb(var(--constellation-gold-rgb) / .14),rgb(var(--constellation-ink-navy-rgb) / .6))',
+                    background:
+                      'linear-gradient(150deg,rgb(var(--constellation-gold-rgb) / .14),rgb(var(--constellation-ink-navy-rgb) / .6))',
                     border: '1px solid rgb(var(--constellation-gold-rgb) / .3)',
                   }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: 10.5, letterSpacing: '.2em', textTransform: 'uppercase', color: GOLD }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 10.5,
+                      letterSpacing: '.2em',
+                      textTransform: 'uppercase',
+                      color: GOLD,
+                    }}
+                  >
                     Superpower Pathway
                   </div>
                   <div className="mt-2 flex items-baseline gap-2">
-                    <div className="font-orbitron" style={{ fontWeight: 900, fontSize: 36, lineHeight: 1, color: 'rgb(var(--constellation-cyan-pale-rgb))' }}>
+                    <div
+                      className="font-orbitron"
+                      style={{
+                        fontWeight: 900,
+                        fontSize: 36,
+                        lineHeight: 1,
+                        color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                      }}
+                    >
                       $0
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: 'rgb(var(--constellation-slate-pale-rgb))' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 14,
+                        color: 'rgb(var(--constellation-slate-pale-rgb))',
+                      }}
+                    >
                       for month one
                     </div>
                   </div>
-                  <div style={{ marginTop: 8, fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-cool-rgb))' }}>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-cool-rgb))',
+                    }}
+                  >
                     then $5 / month, per child
                   </div>
                 </div>
 
                 <div className="mt-5 flex flex-col gap-3">
-                  <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                  <div
+                    className="flex justify-between"
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-light-rgb))',
+                    }}
+                  >
                     <span>Today</span>
                     <span style={{ color: FROST, fontWeight: 700 }}>$0.00</span>
                   </div>
-                  <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                  <div
+                    className="flex justify-between"
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-light-rgb))',
+                    }}
+                  >
                     <span>On {renewLabel}</span>
                     <span style={{ color: FROST, fontWeight: 700 }}>$5.00</span>
                   </div>
-                  <div style={{ height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }} />
-                  <div className="font-orbitron flex justify-between" style={{ fontSize: 13, fontWeight: 900, letterSpacing: '.06em', color: GOLD }}>
+                  <div
+                    style={{ height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }}
+                  />
+                  <div
+                    className="flex justify-between font-orbitron"
+                    style={{ fontSize: 13, fontWeight: 900, letterSpacing: '.06em', color: GOLD }}
+                  >
                     <span>DUE NOW</span>
                     <span>$0.00</span>
                   </div>
                 </div>
 
-                <Button onClick={() => setStep(2)} className="mt-6 h-12 w-full rounded-full text-xs" style={PRIMARY_BTN}>
+                <Button
+                  onClick={() => setStep(2)}
+                  className="mt-6 h-12 w-full rounded-full text-xs"
+                  style={PRIMARY_BTN}
+                >
                   Continue
                 </Button>
-                <div className="mt-3 text-center" style={{ fontSize: 12.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                <div
+                  className="mt-3 text-center"
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-mute-rgb))',
+                  }}
+                >
                   We remind you two days before the first charge.
                 </div>
               </div>
@@ -569,7 +630,15 @@ export default function StartJourneyModal({
             >
               <div className="px-8 py-8">
                 <div className="flex flex-wrap items-center justify-between gap-3.5">
-                  <h3 className="font-orbitron" style={{ margin: 0, fontWeight: 900, fontSize: 19, color: 'rgb(var(--constellation-cyan-pale-rgb))' }}>
+                  <h3
+                    className="font-orbitron"
+                    style={{
+                      margin: 0,
+                      fontWeight: 900,
+                      fontSize: 19,
+                      color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                    }}
+                  >
                     Pay with
                   </h3>
                   <div
@@ -582,7 +651,13 @@ export default function StartJourneyModal({
                       color: 'hsl(var(--success-bright))',
                     }}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: 11, height: 11 }}>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      style={{ width: 11, height: 11 }}
+                    >
                       <rect x="5" y="11" width="14" height="9" rx="2" />
                       <path d="M8 11V8a4 4 0 018 0v3" />
                     </svg>
@@ -632,11 +707,31 @@ export default function StartJourneyModal({
                 </div>
 
                 <div className="my-4 flex items-center gap-3">
-                  <div style={{ flex: 1, height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }} />
-                  <div style={{ fontWeight: 700, fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgb(var(--constellation-cyan-rgb) / .14)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 10,
+                      letterSpacing: '.2em',
+                      textTransform: 'uppercase',
+                      color: 'rgb(var(--constellation-slate-mute-rgb))',
+                    }}
+                  >
                     or pay with card
                   </div>
-                  <div style={{ flex: 1, height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }} />
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 1,
+                      background: 'rgb(var(--constellation-cyan-rgb) / .14)',
+                    }}
+                  />
                 </div>
 
                 <div className="flex flex-col gap-3.5">
@@ -660,7 +755,9 @@ export default function StartJourneyModal({
                     >
                       <div
                         className="flex items-center px-3.5"
-                        style={{ borderBottom: '1px solid rgb(var(--constellation-cyan-rgb) / .14)' }}
+                        style={{
+                          borderBottom: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
+                        }}
                       >
                         <label htmlFor="journey-pay-card" className="min-w-0 flex-1">
                           <span className="sr-only">Card number</span>
@@ -677,16 +774,44 @@ export default function StartJourneyModal({
                           {/* Card-network marks — fixed third-party brand colors, not app theme tokens. */}
                           <div
                             className="flex items-center justify-center rounded-[3px] font-rajdhani"
-                            style={{ width: 26, height: 17, background: '#1a1f71', fontWeight: 800, fontSize: 8, color: '#fff', letterSpacing: '.04em' }}
+                            style={{
+                              width: 26,
+                              height: 17,
+                              background: '#1a1f71',
+                              fontWeight: 800,
+                              fontSize: 8,
+                              color: '#fff',
+                              letterSpacing: '.04em',
+                            }}
                           >
                             VISA
                           </div>
-                          <div className="relative rounded-[3px]" style={{ width: 26, height: 17, background: '#eb001b' }}>
-                            <div className="absolute rounded-[3px]" style={{ left: 9, top: 0, width: 17, height: 17, background: '#f79e1b', opacity: 0.85 }} />
+                          <div
+                            className="relative rounded-[3px]"
+                            style={{ width: 26, height: 17, background: '#eb001b' }}
+                          >
+                            <div
+                              className="absolute rounded-[3px]"
+                              style={{
+                                left: 9,
+                                top: 0,
+                                width: 17,
+                                height: 17,
+                                background: '#f79e1b',
+                                opacity: 0.85,
+                              }}
+                            />
                           </div>
                           <div
                             className="flex items-center justify-center rounded-[3px] font-rajdhani"
-                            style={{ width: 26, height: 17, background: '#016fd0', fontWeight: 800, fontSize: 7, color: '#fff' }}
+                            style={{
+                              width: 26,
+                              height: 17,
+                              background: '#016fd0',
+                              fontWeight: 800,
+                              fontSize: 7,
+                              color: '#fff',
+                            }}
                           >
                             AMEX
                           </div>
@@ -701,7 +826,10 @@ export default function StartJourneyModal({
                             value={expiry}
                             onChange={(e) => setExpiry(formatExpiry(e.target.value))}
                             placeholder="MM / YY"
-                            style={{ ...CARD_ROW_INPUT, borderRight: '1px solid rgb(var(--constellation-cyan-rgb) / .14)' }}
+                            style={{
+                              ...CARD_ROW_INPUT,
+                              borderRight: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
+                            }}
                           />
                         </label>
                         <label htmlFor="journey-pay-cvc">
@@ -756,33 +884,83 @@ export default function StartJourneyModal({
 
               <div
                 className="flex flex-col px-8 py-8"
-                style={{ background: 'rgb(var(--constellation-ink-navy-rgb) / .7)', borderLeft: '1px solid rgb(var(--constellation-cyan-rgb) / .14)' }}
+                style={{
+                  background: 'rgb(var(--constellation-ink-navy-rgb) / .7)',
+                  borderLeft: '1px solid rgb(var(--constellation-cyan-rgb) / .14)',
+                }}
               >
-                <div style={{ fontWeight: 700, fontSize: 10.5, letterSpacing: '.2em', textTransform: 'uppercase', color: 'rgb(var(--constellation-slate-warm-rgb))' }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 10.5,
+                    letterSpacing: '.2em',
+                    textTransform: 'uppercase',
+                    color: 'rgb(var(--constellation-slate-warm-rgb))',
+                  }}
+                >
                   Subscribing to
                 </div>
-                <div className="font-orbitron mt-2" style={{ fontWeight: 900, fontSize: 17, color: 'rgb(var(--constellation-cyan-pale-rgb))' }}>
+                <div
+                  className="mt-2 font-orbitron"
+                  style={{
+                    fontWeight: 900,
+                    fontSize: 17,
+                    color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                  }}
+                >
                   Superpower Pathway
                 </div>
-                <div style={{ marginTop: 5, fontSize: 13.5, fontWeight: 600, color: 'rgb(var(--constellation-slate-warm-rgb))' }}>
+                <div
+                  style={{
+                    marginTop: 5,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-warm-rgb))',
+                  }}
+                >
                   {t('Monthly · one child · {name}')}
                 </div>
 
                 <div className="mt-5 flex flex-col gap-2.5">
-                  <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                  <div
+                    className="flex justify-between"
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-light-rgb))',
+                    }}
+                  >
                     <span>Superpower Pathway</span>
                     <span style={{ color: 'rgb(var(--constellation-caption-rgb))' }}>$5.00</span>
                   </div>
-                  <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                  <div
+                    className="flex justify-between"
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-light-rgb))',
+                    }}
+                  >
                     <span>First month free</span>
                     <span style={{ color: 'hsl(var(--success-bright))' }}>−$5.00</span>
                   </div>
-                  <div style={{ height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }} />
-                  <div className="font-orbitron flex justify-between" style={{ fontSize: 13, fontWeight: 900, letterSpacing: '.06em', color: GOLD }}>
+                  <div
+                    style={{ height: 1, background: 'rgb(var(--constellation-cyan-rgb) / .14)' }}
+                  />
+                  <div
+                    className="flex justify-between font-orbitron"
+                    style={{ fontSize: 13, fontWeight: 900, letterSpacing: '.06em', color: GOLD }}
+                  >
                     <span>TOTAL DUE TODAY</span>
                     <span>$0.00</span>
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-mute-rgb))',
+                    }}
+                  >
                     On {renewLabel} and monthly after, $5.00 will be charged to this card.
                   </div>
                 </div>
@@ -797,25 +975,55 @@ export default function StartJourneyModal({
                   {!busy && <ChevronRight className="ml-1 h-4 w-4" />}
                 </Button>
 
-                <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 600, lineHeight: 1.5, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                <div
+                  style={{
+                    marginTop: 14,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    lineHeight: 1.5,
+                    color: 'rgb(var(--constellation-slate-mute-rgb))',
+                  }}
+                >
                   {`By subscribing you allow Superpower to charge this card for future payments in line with their terms. Cancel any time before ${renewLabel} and you pay nothing.`}
                 </div>
 
-                <div
-                  className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5"
-                >
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
                   <div
                     className="flex items-center gap-1.5"
-                    style={{ fontSize: 12, fontWeight: 700, color: 'rgb(var(--constellation-slate-mute-rgb))' }}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: 'rgb(var(--constellation-slate-mute-rgb))',
+                    }}
                   >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ width: 11, height: 11 }}>
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      style={{ width: 11, height: 11 }}
+                    >
                       <rect x="5" y="11" width="14" height="9" rx="2" />
                       <path d="M8 11V8a4 4 0 018 0v3" />
                     </svg>
-                    Powered by <span style={{ color: 'rgb(var(--constellation-slate-pale-rgb))' }}>Stripe</span>
+                    Powered by{' '}
+                    <span style={{ color: 'rgb(var(--constellation-slate-pale-rgb))' }}>
+                      Stripe
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3" style={{ fontSize: 12, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
-                    <button type="button" onClick={() => setStep(1)} style={{ cursor: 'pointer', color: CYAN }}>
+                  <div
+                    className="flex items-center gap-3"
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: 'rgb(var(--constellation-slate-mute-rgb))',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      style={{ cursor: 'pointer', color: CYAN }}
+                    >
                       Back
                     </button>
                     <span>Terms</span>
@@ -839,40 +1047,85 @@ export default function StartJourneyModal({
                 className="mx-auto flex h-[74px] w-[74px] items-center justify-center rounded-full"
                 style={{ background: `linear-gradient(150deg,${CYAN},${GOLD})` }}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth="3" style={{ width: 32, height: 32 }}>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={INK}
+                  strokeWidth="3"
+                  style={{ width: 32, height: 32 }}
+                >
                   <path d="M4 12.5l5 5L20 6.5" />
                 </svg>
               </div>
-              <h3 className="font-orbitron" style={{ margin: '22px 0 0', fontWeight: 900, fontSize: 22, color: 'rgb(var(--constellation-cyan-pale-rgb))' }}>
+              <h3
+                className="font-orbitron"
+                style={{
+                  margin: '22px 0 0',
+                  fontWeight: 900,
+                  fontSize: 22,
+                  color: 'rgb(var(--constellation-cyan-pale-rgb))',
+                }}
+              >
                 Day 1 starts tomorrow.
               </h3>
               <p
                 className="mx-auto"
-                style={{ marginTop: 12, maxWidth: 440, fontSize: 15, fontWeight: 600, lineHeight: 1.5, color: BODY }}
+                style={{
+                  marginTop: 12,
+                  maxWidth: 440,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  lineHeight: 1.5,
+                  color: BODY,
+                }}
               >
-                {t("{name}'s free month is live. Month one's anchor moves are already in {his} plan.")}
+                {t(
+                  "{name}'s free month is live. Month one's anchor moves are already in {his} plan.",
+                )}
               </p>
               <div
                 className="mx-auto mt-6 flex max-w-[420px] flex-col gap-2.5 rounded-2xl px-5 py-4"
-                style={{ background: 'rgb(var(--constellation-ink-navy-rgb) / .8)', border: '1px solid rgb(var(--constellation-cyan-rgb) / .16)' }}
+                style={{
+                  background: 'rgb(var(--constellation-ink-navy-rgb) / .8)',
+                  border: '1px solid rgb(var(--constellation-cyan-rgb) / .16)',
+                }}
               >
-                <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                <div
+                  className="flex justify-between"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-light-rgb))',
+                  }}
+                >
                   <span>Free until</span>
                   <span style={{ color: FROST, fontWeight: 700 }}>{renewLabel}</span>
                 </div>
-                <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                <div
+                  className="flex justify-between"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-light-rgb))',
+                  }}
+                >
                   <span>Then</span>
                   <span style={{ color: FROST, fontWeight: 700 }}>$5 / month</span>
                 </div>
-                <div className="flex justify-between" style={{ fontSize: 14, fontWeight: 600, color: 'rgb(var(--constellation-slate-light-rgb))' }}>
+                <div
+                  className="flex justify-between"
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-light-rgb))',
+                  }}
+                >
                   <span>Paying with</span>
                   <span style={{ color: FROST, fontWeight: 700 }}>{paymentMethodLabel}</span>
                 </div>
               </div>
               <Button
-                onClick={() => {
-                  onOpenDashboard();
-                }}
+                onClick={() => setStep(4)}
                 className="mt-7 h-12 rounded-full px-8 text-xs"
                 style={PRIMARY_BTN}
               >
@@ -887,16 +1140,63 @@ export default function StartJourneyModal({
                 >
                   <motion.div
                     className="h-full w-full"
-                    style={{ background: `linear-gradient(90deg,${CYAN},${GOLD})`, transformOrigin: 'left' }}
+                    style={{
+                      background: `linear-gradient(90deg,${CYAN},${GOLD})`,
+                      transformOrigin: 'left',
+                    }}
                     initial={{ scaleX: 0 }}
                     animate={{ scaleX: 1 }}
                     transition={{ duration: 2.8, ease: 'linear' }}
                   />
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'rgb(var(--constellation-slate-mute-rgb))' }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'rgb(var(--constellation-slate-mute-rgb))',
+                  }}
+                >
                   {t('Building {his} dashboard…')}
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {step === 4 && (
+            <motion.div
+              key="dash"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            >
+              <DashboardStep
+                childName={childName}
+                childGender={childGender}
+                interest={interest}
+                plan={plan}
+                months={months}
+                progress={progress}
+                onTrack={() => setStep(5)}
+                onDone={onClose}
+              />
+            </motion.div>
+          )}
+
+          {step === 5 && (
+            <motion.div
+              key="track"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            >
+              <TrackStep
+                childName={childName}
+                childGender={childGender}
+                progress={progress}
+                onBack={() => setStep(4)}
+              />
             </motion.div>
           )}
         </AnimatePresence>
