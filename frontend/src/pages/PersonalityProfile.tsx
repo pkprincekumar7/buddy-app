@@ -1413,8 +1413,16 @@ export default function PersonalityProfile() {
             </motion.div>
           )}
 
-          {/* ── Replay link ───────────────────────────────────────────────────── */}
-          <div style={{ textAlign: 'center' }}>
+          {/* ── Replay link + onward CTA ─────────────────────────────────────── */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
             <button
               onClick={() => setDisplayPhase('reveal')}
               style={{
@@ -1430,6 +1438,37 @@ export default function PersonalityProfile() {
               }}
             >
               Replay the reveal
+            </button>
+            <button
+              onClick={() => void navigate(`/GrowthAreas/${childId ?? ''}`)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                padding: '11px 22px',
+                borderRadius: 999,
+                border: '1px solid rgb(var(--constellation-gold-light-rgb) / .6)',
+                background: 'rgb(var(--constellation-blue-royal-rgb) / .45)',
+                color: 'rgb(var(--constellation-gold-hazy-rgb))',
+                fontFamily: 'Barlow, sans-serif',
+                fontSize: 13,
+                letterSpacing: '.16em',
+                textTransform: 'uppercase',
+                boxShadow: '0 0 18px rgb(var(--constellation-gold-light-rgb) / .16)',
+              }}
+            >
+              Explore Grow
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+              >
+                <path d="M5 12h13M12 6l6 6-6 6" />
+              </svg>
             </button>
           </div>
         </div>
