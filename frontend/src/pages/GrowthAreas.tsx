@@ -874,6 +874,7 @@ export default function GrowthAreas() {
                 onCompleteRounds={(pickedIds) => {
                   void handleCompleteRounds(activeArea, pickedIds);
                 }}
+                onExploreTransform={() => void navigate(`/LifePathway/${childId ?? ''}`)}
               />
             );
           })()}

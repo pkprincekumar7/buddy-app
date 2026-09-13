@@ -265,14 +265,14 @@ async def write_to_domain(job: dict) -> None:
                 # _id handling differs by collection type:
                 #
                 # Collections where child_id IS the document _id
-                #   (goals, goal_insights) — _id is an equality condition in the
+                #   (goals) — _id is an equality condition in the
                 #   filter, so MongoDB uses the filter value for the new doc.
                 #   We must NOT include _id in $setOnInsert here: if the filter
                 #   and $setOnInsert both specify _id with different values MongoDB
                 #   raises "Updating the path '_id' would create a conflict at '_id'".
                 #
                 # Collections where _id is a generated UUID
-                #   (goal_months, growth_areas) — _id is not in the filter, so
+                #   (growth_areas) — _id is not in the filter, so
                 #   we provide a UUID string here to match the convention used by
                 #   route handler upserts (str(uuid.uuid4()) rather than ObjectId).
                 #   This also satisfies M10+ sharding: the shard key (location) is

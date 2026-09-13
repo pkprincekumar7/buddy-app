@@ -207,9 +207,6 @@ export function jobProgressMessage(elapsedMs: number, jobType: JobType): string 
   if (jobType === 'generate_recommendations') {
     if (s < 8) return "Analysing your child's growth areas…";
     if (s < 15) return 'Personalising recommendations…';
-  } else if (jobType === 'generate_goals_plan') {
-    if (s < 8) return 'Building a personalised goals plan…';
-    if (s < 15) return 'Tailoring milestones for your child…';
   } else if (jobType === 'generate_personality_analysis') {
     if (s < 8) return 'Shaping personality insights…';
     if (s < 15) return "Finalising your child's personality profile…";

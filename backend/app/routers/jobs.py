@@ -152,13 +152,13 @@ async def enqueue_job(
     job_id = str(uuid.uuid4())
 
     # Scope the domain write to the exact child being operated on.
-    # Collections that use child_id as _id (children, goals, goal_insights, observations):
+    # Collections that use child_id as _id (children, goals, observations):
     #   inject _id = child_id so the filter hits the primary key index.
     # Collections that use a UUID _id with a separate child_id field
-    #   (growth_areas, goal_months): inject child_id as a field filter.
+    #   (growth_areas): inject child_id as a field filter.
     wb_dict = body.write_back.model_dump()
     collection = wb_dict["collection"]
-    if collection in ("growth_areas", "goal_months"):
+    if collection == "growth_areas":
         child_scope = {"child_id": body.child_id}
     else:
         child_scope = {"_id": body.child_id}

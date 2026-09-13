@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
@@ -11,19 +11,15 @@ interface LifePathwayData {
   childData: ChildRecord;
   profile: ProfileType;
   completedAreas: CompletedArea[];
-  parentConcern: string;
 }
 
 async function fetchLifePathwayData(childId: string): Promise<LifePathwayData> {
   const child = await api.entities.Child.get(childId);
   if (!child.id) {
-    return { childData: child, profile: null, completedAreas: [], parentConcern: '' };
+    return { childData: child, profile: null, completedAreas: [] };
   }
 
-  const [completedData, goals] = await Promise.all([
-    api.completedGrowthAreas.list(childId),
-    api.goals.get(childId),
-  ]);
+  const completedData = await api.completedGrowthAreas.list(childId);
 
   const vm = child.personality?.view_model;
   const profile = vm?.profile?.name ? onboardingProfileFromViewModel(vm) : null;
@@ -40,9 +36,7 @@ async function fetchLifePathwayData(childId: string): Promise<LifePathwayData> {
         a.ai_three_month_recommendations.length > 0),
   );
 
-  const parentConcern = typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '';
-
-  return { childData: child, profile, completedAreas, parentConcern };
+  return { childData: child, profile, completedAreas };
 }
 
 export function useLifePathwayData(childId: string | undefined) {
@@ -57,15 +51,6 @@ export function useLifePathwayData(childId: string | undefined) {
     queryFn: () => fetchLifePathwayData(childId!),
     enabled: !!childId,
   });
-
-  // The parent's concern is a local, independently-editable copy: LifePathway
-  // patches it directly (not through this hook) after the parent edits it, so
-  // it can't simply be `data.parentConcern` — seed it once when the fetch
-  // resolves, then let the caller override it via setSavedConcern.
-  const [savedConcern, setSavedConcern] = useState('');
-  useEffect(() => {
-    if (data) setSavedConcern(data.parentConcern);
-  }, [data]);
 
   useEffect(() => {
     if (isError) {
@@ -86,7 +71,5 @@ export function useLifePathwayData(childId: string | undefined) {
     profile: data?.profile ?? null,
     isLoading,
     completedAreas: data?.completedAreas ?? [],
-    savedConcern,
-    setSavedConcern,
   };
 }
