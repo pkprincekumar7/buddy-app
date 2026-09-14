@@ -950,120 +950,6 @@
         }
       }
     },
-    "/api/v1/user/goals": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Get Goals",
-        "description": "Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
-        "operationId": "get_goals_api_v1_user_goals_get",
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "child_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100,
-              "title": "Child Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserGoals"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Patch Goals",
-        "description": "Update the parent concern for a given child.",
-        "operationId": "patch_goals_api_v1_user_goals_patch",
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "child_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100,
-              "title": "Child Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserGoalsPatch"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserGoals"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/user/observations": {
       "get": {
         "tags": [
@@ -1425,7 +1311,7 @@
           "children"
         ],
         "summary": "Delete Child",
-        "description": "Soft-delete a child profile. The profile is hidden immediately but retained for 30 days so accidental deletions can be recovered. Associated data (goals, growth areas, etc.) is preserved during the retention window and purged by a scheduled hard-delete job after expiry.",
+        "description": "Soft-delete a child profile. The profile is hidden immediately but retained for 30 days so accidental deletions can be recovered. Associated data (growth areas, observations, etc.) is preserved during the retention window and purged by a scheduled hard-delete job after expiry.",
         "operationId": "delete_child_api_v1_children__child_id__delete",
         "security": [
           {
@@ -3862,46 +3748,6 @@
         ],
         "title": "TranscribeResponse"
       },
-      "UserGoals": {
-        "properties": {
-          "parent_concern": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Concern"
-          }
-        },
-        "type": "object",
-        "title": "UserGoals"
-      },
-      "UserGoalsPatch": {
-        "properties": {
-          "parent_concern": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Concern"
-          },
-          "clear_concern": {
-            "type": "boolean",
-            "title": "Clear Concern",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "UserGoalsPatch"
-      },
       "UserPreferences": {
         "properties": {
           "tts_enabled": {
@@ -4059,7 +3905,7 @@
     },
     {
       "name": "users",
-      "description": "User preferences and child-scoped data (goals, growth areas)."
+      "description": "User preferences and child-scoped data (growth areas, observations)."
     },
     {
       "name": "children",

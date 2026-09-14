@@ -107,7 +107,7 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'goals' | 'observations';
+    collection: 'growth_areas' | 'children' | 'observations';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -123,14 +123,9 @@ export interface PreferencesRecord {
   [key: string]: unknown;
 }
 
-export interface GoalsRecord {
-  parent_concern?: string;
-  [key: string]: unknown;
-}
-
 /**
- * The Release page's observations document — its own collection keyed by child_id,
- * alongside goals and goal_insights rather than embedded on the child.
+ * The Release page's observations document — its own collection keyed by
+ * child_id, rather than embedded on the child.
  */
 export interface ObservationsRecord {
   source?: string | null;

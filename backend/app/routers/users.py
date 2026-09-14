@@ -8,7 +8,6 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app import models
 from app.deps import CurrentParent, CurrentUser, Db
 from app.limiter import rate_limit
-from app.schemas.goals import UserGoals, UserGoalsPatch
 from app.schemas.growth_areas import (
     AppendGrowthAreaRequest,
     ChildActivity,
@@ -267,64 +266,6 @@ async def clear_completed_growth_areas(
     await db[models.GROWTH_AREAS].delete_many(
         {"user_id": user["_id"], "child_id": child_id, "location": user["location"]}
     )
-
-
-# ---------------------------------------------------------------------------
-# Goals
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/user/goals",
-    response_model=UserGoals,
-    description="Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
-    dependencies=[Depends(rate_limit("60/minute"))],
-)
-async def get_goals(
-    request: Request,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    # Read-only: query scoped by user_id + location. Skip _require_child (see list_completed_growth_areas).
-    doc = await db[models.GOALS].find_one(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
-    )
-    if not doc:
-        return UserGoals()
-    return UserGoals(parent_concern=doc.get("parent_concern"))
-
-
-@router.patch(
-    "/user/goals",
-    response_model=UserGoals,
-    description="Update the parent concern for a given child.",
-    dependencies=[Depends(rate_limit("20/minute"))],
-)
-async def patch_goals(
-    request: Request,
-    body: UserGoalsPatch,
-    user: CurrentParent,
-    db: Db,
-    child_id: str = Query(..., min_length=1, max_length=100),
-):
-    await _require_child(db, child_id, user)
-    now = datetime.now(UTC)
-    set_fields: dict = {"updated_at": now}
-    set_on_insert: dict = {"created_at": now, "user_id": user["_id"], "location": user["location"]}
-
-    if body.clear_concern:
-        set_fields["parent_concern"] = None
-    elif body.parent_concern is not None:
-        set_fields["parent_concern"] = body.parent_concern
-
-    doc = await db[models.GOALS].find_one_and_update(
-        {"_id": child_id, "user_id": user["_id"], "location": user["location"]},
-        {"$set": set_fields, "$setOnInsert": set_on_insert},
-        upsert=True,
-        return_document=True,
-    )
-    return UserGoals(parent_concern=doc.get("parent_concern") if doc else None)
 
 
 # ---------------------------------------------------------------------------

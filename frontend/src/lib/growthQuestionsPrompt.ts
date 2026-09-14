@@ -37,8 +37,6 @@ export interface GrowthQuestionsContext {
   archetype: string | null | undefined;
   personalityNarrative: string | null | undefined;
   traits: string[] | null | undefined;
-  /** goals.parent_concern — what the parent said they are actually worried about. */
-  parentConcern?: string | null;
 }
 
 function sharedContextLines(ctx: GrowthQuestionsContext): string[] {
@@ -63,10 +61,6 @@ function sharedContextLines(ctx: GrowthQuestionsContext): string[] {
   lines.push('"""');
   lines.push('');
   lines.push(`Growth area: ${area.name} — ${area.description}`);
-  if (ctx.parentConcern?.trim()) {
-    lines.push('');
-    lines.push(`What the parent said they are most concerned about: "${ctx.parentConcern.trim()}"`);
-  }
   return lines;
 }
 
@@ -98,7 +92,7 @@ export function buildGrowthParentQuestionsPrompt(ctx: GrowthQuestionsContext): s
     `- Ask only about things the parent has actually witnessed ${name} do or say. A parent can describe a specific afternoon; they cannot reliably rate ${t.his} "resilience". Never ask them to score, rank or diagnose.`,
   );
   lines.push(
-    `- Ground every question in this specific child. Use the questionnaire, the archetype and the concern above so the questions could not have been written for a different ${String(normalizeAge(ctx.childData?.age) ?? 'child')}-year-old.`,
+    `- Ground every question in this specific child. Use the questionnaire and the archetype above so the questions could not have been written for a different ${String(normalizeAge(ctx.childData?.age) ?? 'child')}-year-old.`,
   );
   lines.push(
     '- Order them so they get progressively harder to answer: question 1 recalls something easy and concrete, question 5 asks the parent to notice a pattern they may not have named before.',

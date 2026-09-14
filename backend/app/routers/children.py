@@ -464,8 +464,8 @@ async def mark_journey_progress(
     description=(
         "Soft-delete a child profile. The profile is hidden immediately but retained "
         "for 30 days so accidental deletions can be recovered. Associated data "
-        "(goals, growth areas, etc.) is preserved during the retention window and "
-        "purged by a scheduled hard-delete job after expiry."
+        "(growth areas, observations, etc.) is preserved during the retention window "
+        "and purged by a scheduled hard-delete job after expiry."
     ),
     dependencies=[Depends(rate_limit("10/minute"))],
 )

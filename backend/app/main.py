@@ -152,7 +152,7 @@ _OPENAPI_TAGS = [
     {"name": "auth", "description": "Authentication, session management, and account deletion."},
     {
         "name": "users",
-        "description": "User preferences and child-scoped data (goals, growth areas).",
+        "description": "User preferences and child-scoped data (growth areas, observations).",
     },
     {"name": "children", "description": "Child profiles linked to a parent account."},
     {"name": "jobs", "description": "Async LLM job queue — enqueue and poll jobs."},

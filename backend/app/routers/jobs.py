@@ -152,7 +152,7 @@ async def enqueue_job(
     job_id = str(uuid.uuid4())
 
     # Scope the domain write to the exact child being operated on.
-    # Collections that use child_id as _id (children, goals, observations):
+    # Collections that use child_id as _id (children, observations):
     #   inject _id = child_id so the filter hits the primary key index.
     # Collections that use a UUID _id with a separate child_id field
     #   (growth_areas): inject child_id as a field filter.

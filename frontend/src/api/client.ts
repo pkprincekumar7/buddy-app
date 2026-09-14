@@ -3,7 +3,6 @@ import type {
   UserRecord,
   ChildRecord,
   PreferencesRecord,
-  GoalsRecord,
   ObservationsRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
@@ -235,16 +234,6 @@ export const api = {
       request(`/user/completed-growth-areas?child_id=${encodeURIComponent(childId)}`, {
         method: 'DELETE',
       }) as Promise<void>,
-  },
-
-  goals: {
-    get: (childId: string): Promise<GoalsRecord> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`) as Promise<GoalsRecord>,
-    patch: (childId: string, body: Record<string, unknown>): Promise<GoalsRecord> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<GoalsRecord>,
   },
 
   observations: {
