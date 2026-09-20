@@ -8,7 +8,7 @@ import {
   type PlanActivity,
   type PlanMonth,
 } from '@/lib/startJourneyPlans';
-import type { NinetyDayProgress } from '@/hooks/useNinetyDayProgress';
+import type { NinetyDayPlan } from '@/hooks/useNinetyDayPlan';
 import { GOLD, GOLD_PALE, CYAN, INK, FROST, FIELD_LABEL_STYLE } from './theme';
 import { TextField, TextAreaField } from './fields';
 
@@ -18,7 +18,7 @@ interface DashboardStepProps {
   interest: Interest;
   plan: Plan;
   months: PlanMonth[];
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
   onTrack: () => void;
   onDone: () => void;
 }
@@ -371,6 +371,17 @@ export default function DashboardStep({
                   >
                     Track it step by step →
                   </button>
+                  {progress.isGeneratingTrackSteps && (
+                    <span
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: 'rgb(var(--constellation-slate-mute-rgb))',
+                      }}
+                    >
+                      Personalizing your tracker…
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={progress.editTarget}
@@ -642,7 +653,7 @@ function ActivityCard({
   childGender: string | null;
   activityId: string;
   act: PlanActivity;
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
 }) {
   const t = (text: string) => fillTemplate(text, childName, childGender);
   const on = !!progress.applied[activityId];
@@ -990,7 +1001,7 @@ function ActivityField({
   activityId: string;
   field: PlanActivity['do'][number];
   feedback: { tag?: FeedbackTag | null; note?: string } | undefined;
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
   t: (text: string) => string;
 }) {
   const key = fieldKey(activityId, field.k);

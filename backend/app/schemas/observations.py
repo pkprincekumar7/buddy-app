@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ---------------------------------------------------------------------------
 # observations — one document per child
 #
-# Its own collection rather than a field on `children`, matching goals: same
-# shape of thing (one per child, LLM-generated, staged then promoted), and it
-# keeps a few KB off the child document, which is read on almost every page
-# and shares a single 64 KB payload budget across all its extra fields.
+# Its own collection rather than a field on `children`: it is LLM-generated and
+# staged then promoted, and keeping it separate saves a few KB off the child
+# document, which is read on almost every page and shares a single 64 KB
+# payload budget across all its extra fields.
 # ---------------------------------------------------------------------------
 
 _OBSERVATIONS_MAX_BYTES = 65_536  # 64 KB cap on the serialised item list

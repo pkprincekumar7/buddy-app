@@ -950,120 +950,6 @@
         }
       }
     },
-    "/api/v1/user/goals": {
-      "get": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Get Goals",
-        "description": "Retrieve the parent concern for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
-        "operationId": "get_goals_api_v1_user_goals_get",
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "child_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100,
-              "title": "Child Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserGoals"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "users"
-        ],
-        "summary": "Patch Goals",
-        "description": "Update the parent concern for a given child.",
-        "operationId": "patch_goals_api_v1_user_goals_patch",
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "child_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100,
-              "title": "Child Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserGoalsPatch"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserGoals"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/user/observations": {
       "get": {
         "tags": [
@@ -1161,6 +1047,183 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ObservationsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/ninety-day-plan": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get Ninety Day Plan",
+        "description": "Retrieve the 90-day plan document for a given child. Returns an empty document if the child does not exist (query is scoped by user_id so no data leaks).",
+        "operationId": "get_ninety_day_plan_api_v1_user_ninety_day_plan_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Child Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinetyDayPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Patch Ninety Day Plan",
+        "description": "Update the 90-day plan document for a given child.",
+        "operationId": "patch_ninety_day_plan_api_v1_user_ninety_day_plan_patch",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Child Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NinetyDayPlanPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinetyDayPlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/ninety-day-plan/photo-presign": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Presign Ninety Day Plan Photo",
+        "description": "Generate a presigned S3 PUT URL for uploading an achievement/tracker photo. The client uploads directly to S3 using this URL, then PATCHes /user/ninety-day-plan with the returned photo_url recorded against field_key in the `photos` map.",
+        "operationId": "presign_ninety_day_plan_photo_api_v1_user_ninety_day_plan_photo_presign_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "title": "Child Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NinetyDayPlanPhotoPresignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NinetyDayPlanPhotoPresignResponse"
                 }
               }
             }
@@ -1425,7 +1488,7 @@
           "children"
         ],
         "summary": "Delete Child",
-        "description": "Soft-delete a child profile. The profile is hidden immediately but retained for 30 days so accidental deletions can be recovered. Associated data (goals, growth areas, etc.) is preserved during the retention window and purged by a scheduled hard-delete job after expiry.",
+        "description": "Soft-delete a child profile. The profile is hidden immediately but retained for 30 days so accidental deletions can be recovered. Associated data (growth areas, observations, etc.) is preserved during the retention window and purged by a scheduled hard-delete job after expiry.",
         "operationId": "delete_child_api_v1_children__child_id__delete",
         "security": [
           {
@@ -3450,7 +3513,9 @@
               "generate_life_pathway",
               "generate_growth_parent_questions",
               "generate_growth_child_rounds",
-              "generate_observations"
+              "generate_observations",
+              "generate_ninety_day_plan",
+              "generate_event_tracker"
             ],
             "title": "Type"
           },
@@ -3672,6 +3737,346 @@
         ],
         "title": "MeResponse"
       },
+      "NinetyDayPlanPatch": {
+        "properties": {
+          "ask": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask"
+          },
+          "applied": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied"
+          },
+          "act_inputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Act Inputs"
+          },
+          "act_counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Act Counts"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "event_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Name"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "event_set": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Set"
+          },
+          "track_done": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Done"
+          },
+          "track_inputs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Inputs"
+          },
+          "track_sittings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Sittings"
+          },
+          "photos": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photos"
+          },
+          "clear_track_steps": {
+            "type": "boolean",
+            "title": "Clear Track Steps",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "NinetyDayPlanPatch"
+      },
+      "NinetyDayPlanPhotoPresignRequest": {
+        "properties": {
+          "field_key": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9:_-]{1,100}$",
+            "title": "Field Key"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Content Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_key",
+          "content_type"
+        ],
+        "title": "NinetyDayPlanPhotoPresignRequest"
+      },
+      "NinetyDayPlanPhotoPresignResponse": {
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "photo_url": {
+            "type": "string",
+            "title": "Photo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "upload_url",
+          "photo_url"
+        ],
+        "title": "NinetyDayPlanPhotoPresignResponse"
+      },
+      "NinetyDayPlanResponse": {
+        "properties": {
+          "ask": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ask"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "track_steps": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Steps"
+          },
+          "applied": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Applied"
+          },
+          "act_inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Act Inputs"
+          },
+          "act_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Act Counts"
+          },
+          "feedback": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Feedback"
+          },
+          "event_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Name"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "event_set": {
+            "type": "boolean",
+            "title": "Event Set",
+            "default": false
+          },
+          "track_done": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Track Done"
+          },
+          "track_inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Track Inputs"
+          },
+          "track_sittings": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Track Sittings"
+          },
+          "photos": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Photos"
+          }
+        },
+        "type": "object",
+        "title": "NinetyDayPlanResponse"
+      },
       "ObservationsPatch": {
         "properties": {
           "source": {
@@ -3862,46 +4267,6 @@
         ],
         "title": "TranscribeResponse"
       },
-      "UserGoals": {
-        "properties": {
-          "parent_concern": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Concern"
-          }
-        },
-        "type": "object",
-        "title": "UserGoals"
-      },
-      "UserGoalsPatch": {
-        "properties": {
-          "parent_concern": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Concern"
-          },
-          "clear_concern": {
-            "type": "boolean",
-            "title": "Clear Concern",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "UserGoalsPatch"
-      },
       "UserPreferences": {
         "properties": {
           "tts_enabled": {
@@ -4059,7 +4424,7 @@
     },
     {
       "name": "users",
-      "description": "User preferences and child-scoped data (goals, growth areas)."
+      "description": "User preferences and child-scoped data (growth areas, observations, the 90-day plan)."
     },
     {
       "name": "children",

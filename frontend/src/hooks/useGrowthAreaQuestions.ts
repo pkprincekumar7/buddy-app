@@ -61,8 +61,6 @@ interface UseGrowthAreaQuestionsOptions {
   areas: CompletedArea[];
   /** The area whose sheet is open, or null when none is. Drives which status is reported. */
   area: GrowthArea | null;
-  /** goals.parent_concern, when the page managed to load it. */
-  parentConcern: string | null;
   /** Gate generation until the page is actually visible (splash finished, data loaded). */
   enabled: boolean;
 }
@@ -102,7 +100,6 @@ export function useGrowthAreaQuestions({
   child,
   areas,
   area,
-  parentConcern,
   enabled,
 }: UseGrowthAreaQuestionsOptions): UseGrowthAreaQuestionsResult {
   const [questionCache, setQuestionCache] = useState<Record<string, Question[]>>({});
@@ -270,9 +267,8 @@ export function useGrowthAreaQuestions({
       archetype: profile?.personality_type ?? null,
       personalityNarrative: profile?.summary ?? null,
       traits: Array.isArray(rawTraits) ? rawTraits.map((v) => String(v)).filter(Boolean) : [],
-      parentConcern,
     };
-  }, [child, parentConcern]);
+  }, [child]);
 
   const enqueueStage = useCallback(
     (

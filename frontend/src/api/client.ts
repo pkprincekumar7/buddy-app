@@ -3,8 +3,8 @@ import type {
   UserRecord,
   ChildRecord,
   PreferencesRecord,
-  GoalsRecord,
   ObservationsRecord,
+  NinetyDayPlanRecord,
   CompletedGrowthAreasRecord,
   EnqueueJobPayload,
   EnqueueJobResponse,
@@ -237,16 +237,6 @@ export const api = {
       }) as Promise<void>,
   },
 
-  goals: {
-    get: (childId: string): Promise<GoalsRecord> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`) as Promise<GoalsRecord>,
-    patch: (childId: string, body: Record<string, unknown>): Promise<GoalsRecord> =>
-      request(`/user/goals?child_id=${encodeURIComponent(childId)}`, {
-        method: 'PATCH',
-        body,
-      }) as Promise<GoalsRecord>,
-  },
-
   observations: {
     get: (childId: string): Promise<ObservationsRecord> =>
       request(
@@ -257,6 +247,41 @@ export const api = {
         method: 'PATCH',
         body,
       }) as Promise<ObservationsRecord>,
+  },
+
+  ninetyDayPlan: {
+    get: (childId: string): Promise<NinetyDayPlanRecord> =>
+      request(
+        `/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`,
+      ) as Promise<NinetyDayPlanRecord>,
+    patch: (childId: string, body: Record<string, unknown>): Promise<NinetyDayPlanRecord> =>
+      request(`/user/ninety-day-plan?child_id=${encodeURIComponent(childId)}`, {
+        method: 'PATCH',
+        body,
+      }) as Promise<NinetyDayPlanRecord>,
+    /** Uploads a photo directly to S3 for the given field, returning the public URL to persist. */
+    uploadPhoto: async (
+      childId: string,
+      fieldKey: string,
+      photo: File,
+    ): Promise<{ photo_url: string }> => {
+      const contentType = photo.type || 'image/jpeg';
+      const { upload_url, photo_url } = (await request(
+        `/user/ninety-day-plan/photo-presign?child_id=${encodeURIComponent(childId)}`,
+        { method: 'POST', body: { field_key: fieldKey, content_type: contentType } },
+      )) as { upload_url: string; photo_url: string };
+      // Upload directly to S3 — must include the same Content-Type the presigned
+      // URL was signed with, or S3 will reject the request (signature mismatch).
+      const s3Res = await fetch(upload_url, {
+        method: 'PUT',
+        body: photo,
+        headers: { 'Content-Type': contentType },
+      });
+      if (!s3Res.ok) {
+        throw new Error(`S3 upload failed: ${s3Res.status} ${s3Res.statusText}`);
+      }
+      return { photo_url };
+    },
   },
 
   jobs: {

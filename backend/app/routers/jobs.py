@@ -66,6 +66,19 @@ _PROGRESSION_REQUIREMENTS: dict[str, tuple[str, str]] = {
         "transform_visited",
         "Visit Transform (Life Pathway) before generating Observations.",
     ),
+    # The 90-day plan and its tracker only ever get enqueued from
+    # StartJourneyModal, which lives on Transform (Life Pathway) itself — this
+    # gate is trivially satisfied by the time either job type can be reached,
+    # but kept for the same defense-in-depth reasoning as generate_observations
+    # above (can't be bypassed by enqueuing the job directly).
+    "generate_ninety_day_plan": (
+        "transform_visited",
+        "Visit Transform (Life Pathway) before starting the 90-day plan.",
+    ),
+    "generate_event_tracker": (
+        "transform_visited",
+        "Visit Transform (Life Pathway) before starting the 90-day plan.",
+    ),
 }
 
 # In-process lock per (user_id, child_id, job_type) to close the TOCTOU window
@@ -152,8 +165,9 @@ async def enqueue_job(
     job_id = str(uuid.uuid4())
 
     # Scope the domain write to the exact child being operated on.
-    # Collections that use child_id as _id (children, goals, observations):
-    #   inject _id = child_id so the filter hits the primary key index.
+    # Collections that use child_id as _id (children, observations,
+    #   ninety_day_plans): inject _id = child_id so the filter hits the
+    #   primary key index.
     # Collections that use a UUID _id with a separate child_id field
     #   (growth_areas): inject child_id as a field filter.
     wb_dict = body.write_back.model_dump()

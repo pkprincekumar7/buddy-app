@@ -265,7 +265,7 @@ async def write_to_domain(job: dict) -> None:
                 # _id handling differs by collection type:
                 #
                 # Collections where child_id IS the document _id
-                #   (goals) — _id is an equality condition in the
+                #   (observations) — _id is an equality condition in the
                 #   filter, so MongoDB uses the filter value for the new doc.
                 #   We must NOT include _id in $setOnInsert here: if the filter
                 #   and $setOnInsert both specify _id with different values MongoDB

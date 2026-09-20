@@ -2525,6 +2525,46 @@ export const TRACK: TrackStep[] = [
   },
 ];
 
+/**
+ * Zips LLM-generated tracker text (title/short/when/body/fields — see
+ * `buildNinetyDayTrackerPrompt` in `@/lib/ninetyDayPlanPrompt`) onto this
+ * template's structural shell — icon paths, the photo-import flag, and which
+ * step gets the 4-week sittings grid are design decisions fixed by position,
+ * never left to the model. Falls back to the template's own text field-by-field
+ * for anything missing or malformed, so a partial LLM result still renders
+ * nine complete steps.
+ */
+export function mergeTrackSteps(generated: unknown, template: TrackStep[] = TRACK): TrackStep[] {
+  const list: unknown[] = Array.isArray(generated) ? generated : [];
+  return template.map((base, i) => {
+    const g = list[i];
+    if (!g || typeof g !== 'object') return base;
+    const gg = g as Record<string, unknown>;
+
+    const rawFields: unknown[] = Array.isArray(gg.fields) ? gg.fields : [];
+    const fields = rawFields.length
+      ? rawFields.flatMap((f): TrackField[] => {
+          if (!f || typeof f !== 'object') return [];
+          const ff = f as Record<string, unknown>;
+          if (typeof ff.k !== 'string' || typeof ff.label !== 'string') return [];
+          const type: TrackFieldType = ff.type === 'date' || ff.type === 'note' ? ff.type : 'text';
+          return [
+            { k: ff.k, label: ff.label, ph: typeof ff.ph === 'string' ? ff.ph : undefined, type },
+          ];
+        })
+      : [];
+
+    return {
+      ...base,
+      title: typeof gg.title === 'string' ? gg.title : base.title,
+      short: typeof gg.short === 'string' ? gg.short : base.short,
+      when: typeof gg.when === 'string' ? gg.when : base.when,
+      body: typeof gg.body === 'string' ? gg.body : base.body,
+      fields: fields.length ? fields : base.fields,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Fallback plan — used when the Ask step's free-text answer matches none of
 // the 9 interest categories above. Ported from the reference design's own

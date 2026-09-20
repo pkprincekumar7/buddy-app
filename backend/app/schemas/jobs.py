@@ -19,6 +19,8 @@ JobType = Literal[
     "generate_growth_parent_questions",
     "generate_growth_child_rounds",
     "generate_observations",
+    "generate_ninety_day_plan",
+    "generate_event_tracker",
 ]
 
 # Allowed write-back collections — prevents clients from targeting arbitrary collections
@@ -26,6 +28,7 @@ _ALLOWED_WRITE_BACK_COLLECTIONS = {
     "growth_areas",
     "observations",
     "children",
+    "ninety_day_plans",
 }
 
 _SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
@@ -93,6 +96,16 @@ _ALLOWED_WRITE_BACK_FIELDS: dict[str, set[str]] = {
     # validates the icon/source enums and drops any item the provider returned
     # malformed before it becomes the thing the page renders.
     "generate_observations": {"pending_observations"},
+    # The "Start {name}'s 90 days" plan and its later event tracker — both
+    # written straight to their canonical field with no staging step, same
+    # reasoning as generate_life_pathway above: the client shows a fallback
+    # (static content) for a child with no plan/tracker yet, so a missing
+    # field is always a valid state. Split across two job types, each with
+    # its own active_jobs slot, because the tracker is only generated once
+    # the parent sets a Day-90 target inside the Dashboard — well after the
+    # plan itself, and possibly never in the same session.
+    "generate_ninety_day_plan": {"plan"},
+    "generate_event_tracker": {"track_steps"},
 }
 
 _FILTER_MAX_KEYS = 20

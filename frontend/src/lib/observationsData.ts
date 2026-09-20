@@ -58,12 +58,12 @@ export const SELECTABLE_ICON_KEYS = ICON_KEYS.filter((k) => k !== 'note');
  * dressed up as something the child said. Everything else here is the parent
  * writing in their own words.
  *
- * All four are still single sittings rather than observation over time. What they
+ * All three are still single sittings rather than observation over time. What they
  * do give is corroboration: a pattern the parent described that the child's
  * choices also point to has genuinely turned up more than once, which is the only
  * sense in which this page can currently claim recurrence.
  */
-export const OBSERVATION_SOURCES = ['onboarding', 'grow', 'child', 'concern'] as const;
+export const OBSERVATION_SOURCES = ['onboarding', 'grow', 'child'] as const;
 
 export type ObservationSourceKey = (typeof OBSERVATION_SOURCES)[number];
 
@@ -79,8 +79,6 @@ function sourceNoun(source: ObservationSourceKey, childName: string): string {
       return 'your Grow answers';
     case 'child':
       return childName ? `what ${childName} chose` : 'what your child chose';
-    case 'concern':
-      return 'what you told us';
   }
 }
 
@@ -340,7 +338,7 @@ export interface ObservationSelection {
  * block a slot before any block takes a second.
  *
  * This is the enforcement behind rule 5 of the prompt. The instruction alone was
- * not enough — an early run dropped the parent's stated concern entirely — and an
+ * not enough — an early run dropped an offered source entirely — and an
  * instruction cannot bind in any case. What this can guarantee: if a candidate
  * citing a given block exists, that block appears on the page. What it cannot:
  * manufacture a card the provider never produced. That case is reported via
