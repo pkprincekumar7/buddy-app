@@ -5,8 +5,16 @@ import { ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { fillTemplate } from '@/lib/growthAreaData';
-import { readInterest, getPlan, buildPlanMonths } from '@/lib/startJourneyPlans';
-import { useNinetyDayProgress } from '@/hooks/useNinetyDayProgress';
+import {
+  readInterest,
+  getPlan,
+  buildPlanMonths,
+  mergeTrackSteps,
+  TRACK,
+} from '@/lib/startJourneyPlans';
+import type { Plan } from '@/lib/startJourneyPlans';
+import { useNinetyDayPlan, type PersonalityProfile } from '@/hooks/useNinetyDayPlan';
+import type { ChildRecord } from '@/types/api';
 import DashboardStep from './DashboardStep';
 import TrackStep from './TrackStep';
 import {
@@ -23,13 +31,15 @@ import {
 import { TextField } from './fields';
 
 /**
- * Static, backend-free mock of the "start the 90-day plan" flow from the
- * reference design — Ask (child's interest) → Plan → Payment → Done →
- * Dashboard → Tracker. No network calls anywhere: "payment" is a simulated
- * delay and the achievement/tracker progress in the last two steps lives
- * only in local state, matching how the reference design's own mockup
- * behaves. Real payment processing and any persisted progress are deferred
- * to future backend work.
+ * The "start the 90-day plan" flow — Ask (child's interest) → Plan → Payment →
+ * Done → Dashboard → Tracker. "Payment" is still a simulated delay (real
+ * billing is deferred to future backend work), but the plan itself (Dashboard)
+ * and the event tracker (Tracker) are LLM-generated and persisted via
+ * useNinetyDayPlan/GET+PATCH /user/ninety-day-plan, falling back to the
+ * static content in `@/lib/startJourneyPlans` while a job is pending or if it
+ * fails, so the flow never dead-ends. Reopening the modal for a child who
+ * already has a plan resumes straight into the Dashboard instead of
+ * restarting Ask/Plan/Payment/Done.
  */
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
@@ -39,6 +49,9 @@ interface StartJourneyModalProps {
   onClose: () => void;
   childName: string;
   childGender: string | null;
+  childId: string | undefined;
+  childData: ChildRecord | null;
+  profile: PersonalityProfile | null;
 }
 
 const INTEREST_CHIPS = [
@@ -95,9 +108,11 @@ export default function StartJourneyModal({
   onClose,
   childName,
   childGender,
+  childId,
+  childData,
+  profile,
 }: StartJourneyModalProps) {
   const [step, setStep] = useState<Step>(0);
-  const [ask, setAsk] = useState('');
   const [busy, setBusy] = useState(false);
   const [expressMethod, setExpressMethod] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -107,17 +122,30 @@ export default function StartJourneyModal({
   const [nameOnCard, setNameOnCard] = useState('');
   const [country, setCountry] = useState('IN');
   const [zip, setZip] = useState('');
+  // Drives the Done step's loading bar — true once the real plan is ready
+  // (or the max-wait gives up), never on a fixed timer. See the effect below.
+  const [barComplete, setBarComplete] = useState(false);
   const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const t = (text: string) => fillTemplate(text, childName, childGender);
 
-  // Every open starts a fresh run — nothing here is persisted, so there is no
-  // saved progress to resume.
+  const progress = useNinetyDayPlan({ childId, childData, profile });
+
+  // Every open resets the payment-form fields (never persisted, and
+  // shouldn't be), and decides the opening step exactly once per open: a
+  // child with a saved plan resumes straight into the Dashboard instead of
+  // restarting Ask/Plan/Payment/Done. Gated on loadingDoc so this doesn't run
+  // before useNinetyDayPlan's own fetch has had a chance to say whether a
+  // plan already exists.
+  const didInitStepRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      didInitStepRef.current = false;
+      return;
+    }
+    if (progress.loadingDoc || didInitStepRef.current) return;
+    didInitStepRef.current = true;
     if (busyTimer.current) clearTimeout(busyTimer.current);
-    setStep(0);
-    setAsk('');
     setBusy(false);
     setExpressMethod(null);
     setEmail('');
@@ -127,7 +155,8 @@ export default function StartJourneyModal({
     setNameOnCard('');
     setCountry('IN');
     setZip('');
-  }, [open]);
+    setStep(progress.hasPlan ? 4 : 0);
+  }, [open, progress.loadingDoc, progress.hasPlan]);
 
   useEffect(
     () => () => {
@@ -136,35 +165,66 @@ export default function StartJourneyModal({
     [],
   );
 
-  // Matches the reference design's own behaviour: the Done step auto-advances
-  // into the Dashboard a couple of seconds after landing, while the button
-  // lets the parent skip ahead immediately.
+  // The Done step's loading bar (below) is driven by barComplete, not a
+  // fixed-duration animation — it holds at ~85% for as long as the real
+  // generate_ninety_day_plan job (enqueued in finishPayment) is still
+  // running, and only snaps to 100% once that's actually true. Advancing to
+  // the Dashboard waits for that same signal, with a short pause afterwards
+  // so the bar is visibly at 100% before the screen changes rather than
+  // cutting away mid-fill. The 12s max-wait is a give-up, not a success —
+  // it still completes the bar first so the transition never looks abrupt —
+  // and the Dashboard falls back to the static plan below either way.
   useEffect(() => {
-    if (!open || step !== 3) return;
-    const timer = setTimeout(() => setStep(4), 2900);
-    return () => clearTimeout(timer);
-  }, [open, step]);
+    if (!open || step !== 3) {
+      setBarComplete(false);
+      return;
+    }
+    if (barComplete) {
+      const advance = setTimeout(() => setStep(4), 500);
+      return () => clearTimeout(advance);
+    }
+    if (!progress.isGeneratingPlan) {
+      setBarComplete(true);
+      return;
+    }
+    const maxWait = setTimeout(() => setBarComplete(true), 12000);
+    return () => clearTimeout(maxWait);
+  }, [open, step, progress.isGeneratingPlan, barComplete]);
 
-  const progress = useNinetyDayProgress();
-  const interest = useMemo(() => readInterest(ask), [ask]);
-  const plan = useMemo(() => getPlan(interest), [interest]);
+  const interest = useMemo(() => readInterest(progress.ask), [progress.ask]);
+
+  // Fires generate_event_tracker once the parent locks in a Day-90 target —
+  // guarded on hasTrackSteps/isGeneratingTrackSteps so it's a no-op on resume
+  // (already generated) and can't double-fire while a job is in flight.
+  useEffect(() => {
+    if (!progress.evSet || progress.hasTrackSteps || progress.isGeneratingTrackSteps) return;
+    progress.generateTrackSteps(progress.evName, progress.evDate, interest.label);
+  }, [progress, interest.label]);
+  const plan = useMemo(
+    () => (progress.doc?.plan as Plan | null | undefined) ?? getPlan(interest),
+    [progress.doc?.plan, interest],
+  );
   const months = useMemo(() => buildPlanMonths(plan), [plan]);
+  const trackSteps = useMemo(
+    () => mergeTrackSteps(progress.doc?.track_steps?.steps, TRACK),
+    [progress.doc?.track_steps],
+  );
 
   const toggleInterestChip = (label: string) => {
-    setAsk((prev) =>
-      prev.includes(label)
-        ? prev
-            .split(label)
-            .join('')
-            .replace(/,\s*,/g, ', ')
-            .replace(/^[,\s]+|[,\s]+$/g, '')
-        : prev.trim()
-          ? `${prev.replace(/[,\s]+$/, '')}, ${label}`
-          : label,
-    );
+    const prev = progress.ask;
+    const next = prev.includes(label)
+      ? prev
+          .split(label)
+          .join('')
+          .replace(/,\s*,/g, ', ')
+          .replace(/^[,\s]+|[,\s]+$/g, '')
+      : prev.trim()
+        ? `${prev.replace(/[,\s]+$/, '')}, ${label}`
+        : label;
+    progress.setAsk(next);
   };
 
-  const askEcho = ask.trim();
+  const askEcho = progress.ask.trim();
   const askOk = askEcho.length > 0;
   const askHint = askOk
     ? 'That’s enough to build month one.'
@@ -183,6 +243,14 @@ export default function StartJourneyModal({
     if (busy) return;
     setBusy(true);
     setExpressMethod(method);
+    // Fired at the moment checkout is submitted, not before — a parent who
+    // abandons at Ask/Plan/Payment should never end up with a plan sitting in
+    // the DB (reopening the modal resumes straight to the Dashboard whenever
+    // hasPlan is true, so generating any earlier would let an abandoned
+    // session skip payment entirely on the next open). Done's real-wait UI
+    // is what actually covers the LLM's latency, not a head start earned by
+    // hiding the job behind Plan/Payment.
+    if (!progress.hasPlan) progress.generatePlan(askEcho);
     busyTimer.current = setTimeout(() => {
       setBusy(false);
       setStep(3);
@@ -296,7 +364,7 @@ export default function StartJourneyModal({
 
               <div className="mt-6 flex flex-wrap gap-2">
                 {INTEREST_CHIPS.map((label) => {
-                  const on = ask.includes(label);
+                  const on = progress.ask.includes(label);
                   return (
                     <button
                       key={label}
@@ -333,8 +401,8 @@ export default function StartJourneyModal({
                 </label>
                 <textarea
                   id="journey-ask"
-                  value={ask}
-                  onChange={(e) => setAsk(e.target.value)}
+                  value={progress.ask}
+                  onChange={(e) => progress.setAsk(e.target.value)}
                   rows={4}
                   placeholder={t(
                     '{He} says {he} likes taking things apart to see how they work — mostly old remotes and the phone charger.',
@@ -1126,7 +1194,8 @@ export default function StartJourneyModal({
               </div>
               <Button
                 onClick={() => setStep(4)}
-                className="mt-7 h-12 rounded-full px-8 text-xs"
+                disabled={!barComplete}
+                className="mt-7 h-12 rounded-full px-8 text-xs disabled:opacity-40"
                 style={PRIMARY_BTN}
               >
                 {t('Open {his} dashboard')}
@@ -1145,8 +1214,12 @@ export default function StartJourneyModal({
                       transformOrigin: 'left',
                     }}
                     initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{ duration: 2.8, ease: 'linear' }}
+                    animate={{ scaleX: barComplete ? 1 : 0.85 }}
+                    transition={
+                      barComplete
+                        ? { duration: 0.35, ease: 'easeOut' }
+                        : { duration: 6, ease: 'easeOut' }
+                    }
                   />
                 </div>
                 <div
@@ -1195,6 +1268,7 @@ export default function StartJourneyModal({
                 childName={childName}
                 childGender={childGender}
                 progress={progress}
+                steps={trackSteps}
                 onBack={() => setStep(4)}
               />
             </motion.div>

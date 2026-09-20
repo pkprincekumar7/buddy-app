@@ -1699,6 +1699,9 @@ export default function LifePathway() {
               onClose={closeStartJourneyModal}
               childName={childName}
               childGender={gender}
+              childId={childId}
+              childData={childData}
+              profile={profile}
             />
           </div>
         )}

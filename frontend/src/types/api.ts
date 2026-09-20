@@ -87,7 +87,9 @@ export type JobType =
   | 'generate_life_pathway'
   | 'generate_growth_parent_questions'
   | 'generate_growth_child_rounds'
-  | 'generate_observations';
+  | 'generate_observations'
+  | 'generate_ninety_day_plan'
+  | 'generate_event_tracker';
 
 export type JobStatus = 'pending' | 'processing' | 'result_ready' | 'completed' | 'failed';
 
@@ -107,7 +109,7 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'observations';
+    collection: 'growth_areas' | 'children' | 'observations' | 'ninety_day_plans';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -142,6 +144,37 @@ export interface ObservationsRecord {
   started_at?: string | null;
   /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
   pending_observations?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+/**
+ * The "Start {name}'s 90 days" flow's document — its own collection keyed by
+ * child_id. `plan`/`track_steps` are LLM-generated (written straight to the
+ * canonical field, no staging step — see backend/app/schemas/ninety_day_plan.py);
+ * everything else is entered by the parent/child through the modal's own steps.
+ */
+export interface NinetyDayPlanRecord {
+  ask?: string | null;
+  /** Matches the `Plan` shape in `@/lib/startJourneyPlans` once generated. */
+  plan?: Record<string, unknown> | null;
+  /**
+   * The generate_event_tracker job's own response schema, wrapped exactly as
+   * the LLM returned it: `{ steps: [...] }`, each a `TrackStep`'s text fields
+   * (title/short/when/body/fields) only. Pass `.steps` to `mergeTrackSteps`.
+   */
+  track_steps?: { steps?: Array<Record<string, unknown>> } | null;
+  applied?: Record<string, boolean>;
+  act_inputs?: Record<string, string>;
+  act_counts?: Record<string, number>;
+  feedback?: Record<string, { tag?: string | null; note?: string }>;
+  event_name?: string | null;
+  event_date?: string | null;
+  event_set?: boolean;
+  track_done?: Record<string, boolean>;
+  track_inputs?: Record<string, string>;
+  track_sittings?: Record<string, boolean>;
+  /** field_key -> S3 URLs, covering both Dashboard activity photo fields and Tracker photo-import steps. */
+  photos?: Record<string, string[]>;
   [key: string]: unknown;
 }
 

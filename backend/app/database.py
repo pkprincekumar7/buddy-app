@@ -45,6 +45,12 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
     )
 
+    # ninety_day_plans: single-document-per-child, keyed by child_id — same shape
+    # and same reasoning as observations above.
+    await db["ninety_day_plans"].create_index(
+        [("location", ASCENDING), ("_id", ASCENDING)], unique=True
+    )
+
     # growth_areas: unique per (user, child, area) — child_id added to the compound key.
     await db["growth_areas"].create_index(
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
