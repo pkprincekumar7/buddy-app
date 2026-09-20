@@ -122,10 +122,6 @@ export default function GrowthAreas() {
   const [hydrated, setHydrated] = useState(false);
   /** The raw growth_areas documents, which also carry the generated question sets. */
   const [areaDocs, setAreaDocs] = useState<CompletedArea[]>([]);
-  // What the parent said worries them most, from the goals document. Prompt
-  // context only — the highest-signal single field for aiming the generated
-  // reflections at what this parent actually came here for.
-  const [parentConcern, setParentConcern] = useState<string | null>(null);
   const [activeArea, setActiveArea] = useState<GrowthArea | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [recsStatus, setRecsStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -221,18 +217,6 @@ export default function GrowthAreas() {
           }
         }
         setCompletedResults(results);
-
-        // Prompt context only, and the page is fully usable without it — so it
-        // gets its own guard rather than sharing the fate of the loads above.
-        try {
-          const goals = await api.goals.get(childId);
-          if (cancelled) return;
-          const concern =
-            typeof goals.parent_concern === 'string' ? goals.parent_concern.trim() : '';
-          if (concern) setParentConcern(concern);
-        } catch (err) {
-          console.warn('[GrowthAreas] Could not load the parent concern:', err);
-        }
       } catch (err) {
         console.warn('[GrowthAreas] Load failed:', err);
       } finally {
@@ -262,7 +246,6 @@ export default function GrowthAreas() {
     child: childData,
     areas: areaDocs,
     area: activeArea,
-    parentConcern,
     enabled: hydrated,
   });
   const { ensureParent, ensureChild, questionsFor, roundsFor } = generated;

@@ -460,7 +460,6 @@ export default function Observations() {
     childActivityContext: string;
     /** The exact choice lines in the prompt — the whitelist for child notes. */
     childChoiceLines: string[];
-    parentConcern: string;
     /** Blocks the prompt will contain, in the order it presents them. */
     availableSources: ObservationSourceKey[];
   } | null>(null);
@@ -481,7 +480,6 @@ export default function Observations() {
             questionnaireMd: evidence.questionnaireMd,
             growthAreaContext: evidence.growthAreaContext,
             childActivityContext: evidence.childActivityContext,
-            parentConcern: evidence.parentConcern,
             iconKeys: SELECTABLE_ICON_KEYS,
           }),
           response_json_schema: observationsLlmSchema(),
@@ -571,8 +569,7 @@ export default function Observations() {
 
         // Neither of these is fatal: an observation set built on the
         // questionnaire alone is still honest, it just cites fewer sources.
-        const [goals, completed, stored] = await Promise.all([
-          api.goals.get(childId).catch(() => null),
+        const [completed, stored] = await Promise.all([
           api.completedGrowthAreas.list(childId).catch(() => null),
           api.observations.get(childId).catch(() => null),
         ]);
@@ -586,8 +583,6 @@ export default function Observations() {
         const growthAreaContext = buildGrowthAreaContext(areas, name, gender);
         const childActivity = buildChildActivityContext(areas, name, gender);
         const childActivityContext = childActivity.text;
-        const parentConcern =
-          typeof goals?.parent_concern === 'string' ? goals.parent_concern.trim() : '';
 
         // Order matters — selectObservations reserves slots in this order, and it
         // must match the order buildObservationsPrompt emits the blocks.
@@ -595,14 +590,12 @@ export default function Observations() {
         if (questionnaireMd) availableSources.push('onboarding');
         if (growthAreaContext) availableSources.push('grow');
         if (childActivityContext) availableSources.push('child');
-        if (parentConcern) availableSources.push('concern');
 
         evidenceRef.current = {
           questionnaireMd,
           growthAreaContext,
           childActivityContext,
           childChoiceLines: childActivity.choiceLines,
-          parentConcern,
           availableSources,
         };
         setHasEvidence(availableSources.length > 0);

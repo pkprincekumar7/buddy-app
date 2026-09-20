@@ -1,14 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { fillTemplate } from '@/lib/growthAreaData';
-import { TRACK, type TrackField } from '@/lib/startJourneyPlans';
-import type { NinetyDayProgress } from '@/hooks/useNinetyDayProgress';
+import type { TrackField, TrackStep as TrackStepData } from '@/lib/startJourneyPlans';
+import type { NinetyDayPlan } from '@/hooks/useNinetyDayPlan';
 import { GOLD, GOLD_PALE, CYAN, FROST, FIELD_LABEL_STYLE } from './theme';
 import { TextField, TextAreaField } from './fields';
 
 interface TrackStepProps {
   childName: string;
   childGender: string | null;
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
+  /** The LLM-generated-or-static 9-step sequence — see mergeTrackSteps in `@/lib/startJourneyPlans`. */
+  steps: TrackStepData[];
   onBack: () => void;
 }
 
@@ -23,13 +25,19 @@ function firstFilled(...values: Array<string | undefined>): string {
   return values[values.length - 1] ?? '';
 }
 
-export default function TrackStep({ childName, childGender, progress, onBack }: TrackStepProps) {
+export default function TrackStep({
+  childName,
+  childGender,
+  progress,
+  steps,
+  onBack,
+}: TrackStepProps) {
   const t = (text: string) => fillTemplate(text, childName, childGender);
 
   const trDoneCount = Object.values(progress.trDone).filter(Boolean).length;
-  const nextIdx = TRACK.findIndex((_, k) => !progress.trDone[k]);
+  const nextIdx = steps.findIndex((_, k) => !progress.trDone[k]);
   const activeIdx = progress.trStep ?? (nextIdx === -1 ? 0 : nextIdx);
-  const active = TRACK[activeIdx] ?? TRACK[0];
+  const active = steps[activeIdx] ?? steps[0];
 
   const activeRailBtnRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -41,10 +49,10 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
   }, [activeIdx]);
 
   const trName = firstFilled(progress.trIn.comp, progress.evName, 'School showcase');
-  const nextTitle = t(TRACK[nextIdx]?.title ?? '');
+  const nextTitle = t(steps[nextIdx]?.title ?? '');
   const trNow =
     nextIdx === -1
-      ? `All ${TRACK.length} logged. Made, entered, shown.`
+      ? `All ${steps.length} logged. Made, entered, shown.`
       : `Next: ${nextTitle.charAt(0).toLowerCase()}${nextTitle.slice(1)}.`;
 
   let trCountLabel = 'Date not set';
@@ -133,7 +141,7 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
               color: 'rgb(var(--constellation-slate-pale-rgb))',
             }}
           >
-            {trDoneCount}/{TRACK.length} steps done
+            {trDoneCount}/{steps.length} steps done
           </div>
           <div
             className="whitespace-nowrap rounded-full px-4 py-2.5"
@@ -160,7 +168,7 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
         }}
       >
         <div className="flex items-start gap-0 overflow-x-auto">
-          {TRACK.map((step, k) => {
+          {steps.map((step, k) => {
             const done = !!progress.trDone[k];
             const isNow = !done && k === nextIdx;
             const cl = done ? CYAN : isNow ? GOLD : 'rgb(var(--constellation-slate-deep-rgb))';
@@ -238,7 +246,7 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
           <div
             className="h-full"
             style={{
-              width: `${Math.round((trDoneCount / TRACK.length) * 100)}%`,
+              width: `${Math.round((trDoneCount / steps.length) * 100)}%`,
               background: `linear-gradient(90deg,${CYAN},${GOLD})`,
               transition: 'width .3s ease',
             }}
@@ -267,7 +275,7 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
                   color: GOLD,
                 }}
               >
-                Step {activeIdx + 1} of {TRACK.length} · {t(active.when)}
+                Step {activeIdx + 1} of {steps.length} · {t(active.when)}
               </div>
               <div
                 className="mt-2 font-orbitron"
@@ -373,11 +381,11 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
               </button>
               <button
                 type="button"
-                disabled={activeIdx === TRACK.length - 1}
-                onClick={() => progress.setTrStep(Math.min(TRACK.length - 1, activeIdx + 1))}
+                disabled={activeIdx === steps.length - 1}
+                onClick={() => progress.setTrStep(Math.min(steps.length - 1, activeIdx + 1))}
                 className="rounded-full px-5 py-2.5"
                 style={{
-                  cursor: activeIdx === TRACK.length - 1 ? 'default' : 'pointer',
+                  cursor: activeIdx === steps.length - 1 ? 'default' : 'pointer',
                   border: '1px solid rgb(var(--constellation-gold-rgb) / .35)',
                   background: 'rgb(var(--constellation-gold-rgb) / .08)',
                   fontWeight: 700,
@@ -385,7 +393,7 @@ export default function TrackStep({ childName, childGender, progress, onBack }: 
                   letterSpacing: '.1em',
                   textTransform: 'uppercase',
                   color:
-                    activeIdx === TRACK.length - 1
+                    activeIdx === steps.length - 1
                       ? 'rgb(var(--constellation-slate-deep-rgb))'
                       : GOLD_PALE,
                 }}
@@ -436,7 +444,7 @@ function TrackFieldInput({
   t,
 }: {
   field: TrackField;
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
   t: (text: string) => string;
 }) {
   const label = t(field.label);
@@ -487,7 +495,7 @@ function TrackPhotoImport({
   upKey: string;
   label: string;
   hint: string;
-  progress: NinetyDayProgress;
+  progress: NinetyDayPlan;
 }) {
   const files = progress.photoFiles[upKey] ?? [];
   return (

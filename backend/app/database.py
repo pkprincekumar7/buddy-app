@@ -35,18 +35,19 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     await db["sessions"].create_index([("location", ASCENDING), ("expires_at", ASCENDING)])
     await db["sessions"].create_index([("location", ASCENDING), ("user_id", ASCENDING)])
 
-    # goals: single-document-per-child, keyed by child_id.
+    # observations: single-document-per-child, keyed by child_id.
     # No (location, user_id) index: every lookup is by _id (child_id), which is
-    # covered by the (location, _id) unique index. The only user_id-scoped op is
-    # delete_many in delete_account, which is rare and acceptable without an index.
-    await db["goals"].create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
-
-    # observations: single-document-per-child, keyed by child_id — same shape as
-    # goals above, and indexed the same way. There is no child_id FIELD here
-    # because _id IS the child id; a separate field would duplicate the primary
-    # key and could drift from it. The only user_id-scoped op is delete_many in
-    # delete_account, which is rare and acceptable unindexed.
+    # covered by the (location, _id) unique index below. There is no child_id
+    # FIELD here because _id IS the child id; a separate field would duplicate
+    # the primary key and could drift from it. The only user_id-scoped op is
+    # delete_many in delete_account, which is rare and acceptable unindexed.
     await db["observations"].create_index(
+        [("location", ASCENDING), ("_id", ASCENDING)], unique=True
+    )
+
+    # ninety_day_plans: single-document-per-child, keyed by child_id — same shape
+    # and same reasoning as observations above.
+    await db["ninety_day_plans"].create_index(
         [("location", ASCENDING), ("_id", ASCENDING)], unique=True
     )
 

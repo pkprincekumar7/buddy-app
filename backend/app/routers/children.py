@@ -3,9 +3,8 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 
-import boto3
 import botocore.exceptions
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -21,6 +20,12 @@ from app.schemas.children import (
     ChildResponse,
 )
 from app.services.journey_progress import has_completed_growth_area
+from app.services.s3_uploads import (
+    ALLOWED_IMAGE_CONTENT_TYPES,
+    build_public_url,
+    build_upload_key,
+    get_s3_client,
+)
 
 # Fields returned by the child-card list view. Heavy sub-documents
 # (personality scores/traits, full recommendations blob) are excluded and
@@ -464,8 +469,8 @@ async def mark_journey_progress(
     description=(
         "Soft-delete a child profile. The profile is hidden immediately but retained "
         "for 30 days so accidental deletions can be recovered. Associated data "
-        "(goals, growth areas, etc.) is preserved during the retention window and "
-        "purged by a scheduled hard-delete job after expiry."
+        "(growth areas, observations, etc.) is preserved during the retention window "
+        "and purged by a scheduled hard-delete job after expiry."
     ),
     dependencies=[Depends(rate_limit("10/minute"))],
 )
@@ -492,24 +497,6 @@ async def delete_child(
 # ---------------------------------------------------------------------------
 # Avatar presign
 # ---------------------------------------------------------------------------
-
-_ALLOWED_CONTENT_TYPES: dict[str, str] = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/gif": "gif",
-}
-
-# Lazily initialised on first presign request (region not available at import time).
-# Reused across requests to avoid creating a new connection pool per call.
-_s3_client: Any | None = None
-
-
-def _get_s3_client(region: str) -> Any:
-    global _s3_client
-    if _s3_client is None:
-        _s3_client = boto3.client("s3", region_name=region)
-    return _s3_client
 
 
 class AvatarPresignRequest(BaseModel):
@@ -545,10 +532,10 @@ async def presign_child_avatar(
             detail="File upload is not configured on this server (UPLOADS_BUCKET_NAME / AWS_REGION not set).",
         )
 
-    if payload.content_type not in _ALLOWED_CONTENT_TYPES:
+    if payload.content_type not in ALLOWED_IMAGE_CONTENT_TYPES:
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported image type. Allowed: {', '.join(sorted(_ALLOWED_CONTENT_TYPES))}",
+            detail=f"Unsupported image type. Allowed: {', '.join(sorted(ALLOWED_IMAGE_CONTENT_TYPES))}",
         )
 
     doc = await db[models.CHILDREN].find_one(
@@ -557,13 +544,13 @@ async def presign_child_avatar(
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
 
-    ext = _ALLOWED_CONTENT_TYPES[payload.content_type]
+    ext = ALLOWED_IMAGE_CONTENT_TYPES[payload.content_type]
     bucket = settings.uploads_bucket_name
     region = settings.aws_region
-    key = f"uploads/{child_id}/{uuid.uuid4()}.{ext}"
+    key = build_upload_key(user["location"], child_id, ext=ext)
 
     try:
-        s3 = _get_s3_client(region)
+        s3 = get_s3_client(region)
         loop = asyncio.get_running_loop()
         upload_url: str = await loop.run_in_executor(
             None,
@@ -579,8 +566,5 @@ async def presign_child_avatar(
             status_code=502, detail="Failed to generate upload URL. Please try again."
         ) from exc
 
-    cdn = settings.uploads_cdn_domain
-    avatar_url = (
-        f"https://{cdn}/{key}" if cdn else f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
-    )
+    avatar_url = build_public_url(bucket, region, settings.uploads_cdn_domain, key)
     return AvatarPresignResponse(upload_url=upload_url, avatar_url=avatar_url)
