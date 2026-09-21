@@ -359,20 +359,23 @@ spectral_api_lint() {
 }
 run "spectral (OpenAPI lint)" spectral_api_lint
 
-if require_tool nuclei NUCLEI "brew install nuclei"; then
-  nuclei_dast() {
-    if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-      echo "Backend not running at http://localhost:8000 — start it first:"
-      echo "  cd backend && source .venv/bin/activate && uvicorn app.main:app"
-      return 1
-    fi
-    "$NUCLEI" -u http://localhost:8000 \
-      -t http/misconfiguration,http/exposures,http/technologies \
-      -severity medium,high,critical \
-      -silent -no-color
-  }
-  run "nuclei (DAST)" nuclei_dast
-fi
+# nuclei (DAST) is disabled locally per company security-team guidance (active
+# scanning tool, not permitted on company laptops). CI (check.yml) is unaffected
+# and still runs it.
+# if require_tool nuclei NUCLEI "brew install nuclei"; then
+#   nuclei_dast() {
+#     if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+#       echo "Backend not running at http://localhost:8000 — start it first:"
+#       echo "  cd backend && source .venv/bin/activate && uvicorn app.main:app"
+#       return 1
+#     fi
+#     "$NUCLEI" -u http://localhost:8000 \
+#       -t http/misconfiguration,http/exposures,http/technologies \
+#       -severity medium,high,critical \
+#       -silent -no-color
+#   }
+#   run "nuclei (DAST)" nuclei_dast
+# fi
 
 # ── terraform ─────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ TERRAFORM ════${RESET}"
