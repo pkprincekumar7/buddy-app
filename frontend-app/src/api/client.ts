@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiError } from './errors';
+import { locationHint } from '@/lib/locationHint';
 import type {
   UserRecord,
   ChildRecord,
@@ -76,10 +77,18 @@ type RequestBody = Record<string, unknown> | FormData | undefined;
 
 async function request(
   path: string,
-  { method = 'GET', body }: { method?: string; body?: RequestBody } = {},
+  {
+    method = 'GET',
+    body,
+    headers: extraHeaders,
+  }: {
+    method?: string;
+    body?: RequestBody;
+    headers?: Record<string, string>;
+  } = {},
   _retry = false,
 ): Promise<unknown> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   if (!(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
@@ -130,7 +139,7 @@ async function request(
   if (res.status === 401 && !_retry) {
     try {
       await ensureRefreshed();
-      return await request(path, { method, body }, true);
+      return await request(path, { method, body, headers: extraHeaders }, true);
     } catch {
       navigateTo('Auth');
       throw new ApiError(401, 'Session expired');
@@ -251,6 +260,11 @@ export const api = {
       full_name: string,
       country_code: string,
     ): Promise<void> {
+      // X-Client-Location is a best-effort routing hint only — see
+      // @/lib/locationHint and the Lambda@Edge that reads it. The account's
+      // real `location` field is always computed server-side from
+      // country_code below, regardless of which region processes this call.
+      const hint = locationHint(country_code);
       await request('/auth/register', {
         method: 'POST',
         body: {
@@ -259,6 +273,7 @@ export const api = {
           full_name: full_name || 'Parent',
           country_code,
         },
+        headers: hint ? { 'X-Client-Location': hint } : undefined,
       });
     },
 

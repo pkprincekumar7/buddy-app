@@ -7,6 +7,11 @@ log = logging.getLogger(__name__)
 
 LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
 
+# Mirrored (best-effort, non-authoritative) in frontend/src/lib/locationHint.ts
+# for the X-Client-Location registration header — keep both in sync when
+# adding a country here. See that file's own comment for why drift there is
+# low-risk (it only affects which region handles one bootstrap call, never
+# the stored location value, which is always computed from this table).
 COUNTRY_TO_REGION: dict[str, str] = {
     "AT": "eu",
     "BE": "eu",
@@ -39,10 +44,14 @@ COUNTRY_TO_REGION: dict[str, str] = {
     "NO": "eu",
     "IS": "eu",
     "LI": "eu",
+    "UA": "eu",
     "US": "us",
     "CA": "us",
     "MX": "us",
     "BR": "br",
+    "AR": "br",
+    "CL": "br",
+    "CO": "br",
     "SG": "apac",
     "MY": "apac",
     "ID": "apac",
@@ -55,6 +64,10 @@ COUNTRY_TO_REGION: dict[str, str] = {
     "NZ": "apac",
     "HK": "apac",
     "TW": "apac",
+    # PK deliberately maps to "apac", not "in" — same physical region
+    # (ap-south-1) as India, but avoids literally labelling Pakistani
+    # accounts with the "in" location value.
+    "PK": "apac",
     "IN": "in",
     "SA": "me",
     "AE": "me",
@@ -62,8 +75,20 @@ COUNTRY_TO_REGION: dict[str, str] = {
     "KW": "me",
     "BH": "me",
     "OM": "me",
+    "EG": "me",
     "CN": "cn",
     "RU": "ru",
+    # GH/NG/KE/ZA/TR map to "eu" for cross-border-transfer-law reasons, not
+    # geography or latency: Nigeria's NDPA, South Africa's POPIA, Kenya's DPA,
+    # and Turkey's KVKK are all GDPR-modelled and reference GDPR-style
+    # adequacy — eu-west-1 is the more defensible destination under those
+    # frameworks than ap-south-1 or us-east-1. Not a substitute for an actual
+    # privacy-law review before launching in these markets.
+    "GH": "eu",
+    "NG": "eu",
+    "KE": "eu",
+    "ZA": "eu",
+    "TR": "eu",
 }
 
 

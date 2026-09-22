@@ -45,12 +45,14 @@ on:
         required: true
         default: "ap-south-1"
         type: choice
-        # Multi-region expansion: add the new region here. This value is
-        # forwarded to terraform-live-backend, terraform-live-edge, and
-        # deploy-live-backend — add it in those workflows too.
-        # Full checklist: infra-live-backend/terraform/variables.tf.
+        # This value is forwarded to terraform-live-backend and
+        # deploy-live-backend directly, and to terraform-live-edge as a
+        # single-element backend_regions array (see the tf-edge/destroy-tf-edge
+        # jobs below for the caveat on running this per-region for the edge step).
         options:
           - ap-south-1
+          - eu-west-1
+          - us-east-1
       deploy:
         description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
         required: false
@@ -99,7 +101,16 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Step 2 — Edge (CloudFront + WAF + public DNS) — always us-east-1
-  # backend_region tells CloudFront which ALB to use as /api/* origin.
+  # backend_regions (a JSON array) is the full set of regions infra-live-edge
+  # should route to. This orchestrator only knows about the single aws_region
+  # it was invoked for, so it passes a one-element array built from that value
+  # — CAUTION: since Terraform is declarative, running this orchestrator again
+  # for a second region REPLACES infra-live-edge's active region set rather
+  # than adding to it, which would destroy the first region's uploads
+  # origin/behaviour and drop it from the Lambda@Edge routing map. To run more
+  # than one region simultaneously, invoke terraform-live-edge.yml directly
+  # with the complete backend_regions list instead of looping this
+  # orchestrator per region.
   # ---------------------------------------------------------------------------
   tf-edge:
     name: "2 · Terraform Edge"
@@ -107,9 +118,9 @@ jobs:
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:         ${{ inputs.action }}
-      environment:    ${{ inputs.environment }}
-      backend_region: ${{ inputs.aws_region }}
+      action:          ${{ inputs.action }}
+      environment:     ${{ inputs.environment }}
+      backend_regions: ${{ format('["{0}"]', inputs.aws_region) }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
@@ -175,9 +186,9 @@ jobs:
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:         ${{ inputs.action }}
-      environment:    ${{ inputs.environment }}
-      backend_region: ${{ inputs.aws_region }}
+      action:          ${{ inputs.action }}
+      environment:     ${{ inputs.environment }}
+      backend_regions: ${{ format('["{0}"]', inputs.aws_region) }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------

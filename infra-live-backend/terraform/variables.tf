@@ -1,21 +1,10 @@
 variable "aws_region" {
-  description = "AWS region to deploy resources"
+  description = "AWS region to deploy resources. This module is applied once per region as an independent stack (its state key already includes {region} — see provider.tf); each region needs its own ACM cert, uploads bucket, and logging bucket, resolved via GitHub Environment Secrets in terraform-live-backend.yml."
   type        = string
 
-  # Multi-region expansion checklist — do all of the following for each new region:
-  #   1. Provision an ACM certificate in the new region covering the internal ALB
-  #      subdomain (e.g. buddy-internal-<env>.<domain>) and add it as a GitHub
-  #      environment secret: ACM_CERTIFICATE_ARN_<REGION_UPPER_SNAKE>.
-  #   2. Add a case entry to the "Resolve ACM certificate ARN for backend region"
-  #      step in .github/workflows/terraform-live-backend.yml.
-  #   3. Add the new region as a choice in the aws_region workflow_dispatch input
-  #      in terraform-live-backend.yml and terraform-live-all.yml.
-  #   4. Remove or relax the validation below once a second region is active.
-  #   5. Update infra-live-edge/terraform/variables.tf similarly — the edge module
-  #      must read the ALB FQDN for whichever backend_region is being targeted.
   validation {
-    condition     = var.aws_region == "ap-south-1"
-    error_message = "aws_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
+    condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
+    error_message = "aws_region must be one of: ap-south-1, eu-west-1, us-east-1."
   }
 }
 
