@@ -153,6 +153,13 @@ echo -e "\n${BOLD}════ TESTS ════${RESET}"
 run "pytest + coverage (backend)" \
     bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-report=term-missing --cov-fail-under=0 -q; rc=\$?; [ \$rc -eq 5 ] && { echo 'No tests collected yet — pass until baseline suite is written'; exit 0; } || exit \$rc"
 
+# Renders the .tpl through real `terraform apply` (not a hand-rolled reimplementation
+# of HCL's templatefile() syntax), so this exercises exactly what gets deployed.
+# Uses Node's built-in test runner — no new dependency. Self-skips with a clear
+# message if terraform isn't on PATH, rather than failing the whole run.
+run "jwt-validator-lambda unit tests (infra-live-edge)" \
+    node --test "$ROOT/infra-live-edge/functions/jwt-validator-lambda.test.js"
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
