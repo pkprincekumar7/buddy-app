@@ -181,7 +181,7 @@ jobs:
               echo "ERROR: Uploads bucket secret for region '$region' is empty. Set UPLOADS_BUCKET_NAME_$(echo "$region" | tr 'a-z-' 'A-Z_') in this environment's GitHub secrets."
               exit 1
             fi
-            result=$(echo "$result" | jq --arg k "$region" --arg v "$name" '. + {($k): $v}')
+            result=$(echo "$result" | jq -c --arg k "$region" --arg v "$name" '. + {($k): $v}')
           done
           echo "TF_VAR_uploads_bucket_names=$result" >> "$GITHUB_ENV"
 
