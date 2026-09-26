@@ -242,7 +242,11 @@ app.add_middleware(
     allow_origins=_allow_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
+    # X-Client-Location: best-effort routing hint sent only on /auth/register
+    # (see frontend/src/lib/locationHint.ts) — the backend itself never reads
+    # it, but it must be allow-listed here too or direct/local (non-CloudFront)
+    # access fails CORS preflight. Mirrors infra-live-edge's response_headers.tf.
+    allow_headers=["Authorization", "Content-Type", "X-Request-Id", "X-Client-Location"],
 )
 
 app.include_router(auth_router, prefix=API_V1_PREFIX)

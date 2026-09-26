@@ -19,9 +19,13 @@
 #   font-src    'self' + data:                 — self-hosted fonts; base64-encoded fonts
 #                                               bundled by Vite.
 #   connect-src 'self' + accounts.google.com  — all /api/* calls proxied via CloudFront
-#                + uploads bucket (global and    to the ALB; Google OAuth token exchange.
-#                  regional S3 endpoints)       — presigned PUT for child avatar upload;
-#                                               boto3 may emit either endpoint form.
+#                + every active region's         to the ALB; Google OAuth token exchange.
+#                  uploads bucket (global and   — presigned PUT for child avatar/90-day-plan
+#                  regional S3 endpoint forms)    photo upload goes straight browser→S3,
+#                                                  bypassing CloudFront entirely, so each
+#                                                  region actually in use must be allow-listed
+#                                                  here or its upload is blocked by the browser.
+#                                                  boto3 may emit either endpoint form.
 #   frame-src   accounts.google.com           — GSI "Sign in with Google" button renders
 #                                               as a sandboxed iframe from Google.
 #   frame-ancestors 'none'                    — prevent this SPA from being embedded in
@@ -31,6 +35,20 @@
 #   form-action 'self'                        — form submissions must target same origin.
 #   object-src  'none'                        — no Flash / legacy plug-ins.
 # ---------------------------------------------------------------------------
+
+locals {
+  # One entry per active region's uploads bucket, both the global and
+  # region-specific S3 endpoint forms (boto3's presigned URL may use either) —
+  # see data.tf's regional_uploads_buckets. The presigned PUT itself goes
+  # straight from the browser to S3, bypassing CloudFront, so every active
+  # region must be allow-listed here or the browser blocks the upload.
+  uploads_connect_src_origins = flatten([
+    for region, bucket in local.regional_uploads_buckets : [
+      "https://${bucket.bucket}.s3.amazonaws.com",
+      "https://${bucket.bucket}.s3.${region}.amazonaws.com",
+    ]
+  ])
+}
 
 resource "aws_cloudfront_response_headers_policy" "frontend_security" {
   name    = "${var.app_name}-frontend-security-${var.environment}"
@@ -70,7 +88,7 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
         "img-src 'self' data: https:",
         "font-src 'self' data:",
-        "connect-src 'self' https://accounts.google.com https://${var.uploads_bucket_name}.s3.amazonaws.com https://${var.uploads_bucket_name}.s3.${var.backend_region}.amazonaws.com",
+        "connect-src 'self' https://accounts.google.com ${join(" ", local.uploads_connect_src_origins)}",
         "frame-src https://accounts.google.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
@@ -158,7 +176,10 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
     }
 
     access_control_allow_headers {
-      items = ["Authorization", "Content-Type", "X-Request-Id"]
+      # X-Client-Location: sent only on /auth/register (see frontend/src/lib/locationHint.ts
+      # and the jwt_validator Lambda@Edge's registration-routing hint) — without it here,
+      # the browser's CORS preflight blocks the register call outright.
+      items = ["Authorization", "Content-Type", "X-Request-Id", "X-Client-Location"]
     }
 
     access_control_expose_headers {

@@ -1,21 +1,31 @@
 # ---------------------------------------------------------------------------
 # Full-stack orchestrator — provisions or tears down all infra, then deploys.
 #
+# backend_regions (a JSON array, e.g. '["ap-south-1","eu-west-1"]') is the
+# FULL set of regions this run should apply — not "one more region to add".
+# Steps 1/4 and destroy step 3 fan out across every region in it as a GitHub
+# Actions matrix (one terraform-live-backend / deploy-live-backend instance
+# per region, run in parallel). Step 2 (edge) and destroy step 2 pass the
+# same list straight through to terraform-live-edge.yml, since that module
+# is a single shared distribution covering every region at once — passing
+# anything less than the complete set would make Terraform destroy the
+# missing regions' edge config, not just leave it alone.
+#
 # Apply order (plan / apply):
-#   1. terraform-live-backend   VPC / ECS / ALB / Redis / ECR / Secrets Manager
-#   2. terraform-live-edge      CloudFront / WAF / public DNS
+#   1. terraform-live-backend   VPC / ECS / ALB / Redis / ECR / Secrets Manager (per region, matrix)
+#   2. terraform-live-edge      CloudFront / WAF / public DNS (all regions at once)
 #   3. terraform-live-frontend  S3 bucket policy (OAC)
-#   4. deploy-live-backend      Docker build + ECS rolling update  (apply only)
+#   4. deploy-live-backend      Docker build + ECS rolling update (apply only, per region, matrix)
 #   5. deploy-live-frontend     React build + S3 sync + CF invalidation  (apply only)
 #
 # Destroy order (plan-destroy / destroy) — reverse dependency order:
 #   1. terraform-live-frontend  Remove S3 bucket policy first
-#   2. terraform-live-edge      Remove CloudFront / WAF
-#   3. terraform-live-backend   Remove VPC / ECS / ALB / Redis / ECR
+#   2. terraform-live-edge      Remove CloudFront / WAF (all regions at once)
+#   3. terraform-live-backend   Remove VPC / ECS / ALB / Redis / ECR (per region, matrix)
 # ---------------------------------------------------------------------------
 
 name: Terraform Live — Full Stack
-run-name: "Full Stack (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})"
+run-name: "Full Stack (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.backend_regions }})"
 
 on:
   workflow_dispatch:
@@ -40,17 +50,25 @@ on:
           - sbx
           - stg
           - prod
-      aws_region:
-        description: "Backend AWS region"
+      # Same rationale as terraform-live-edge.yml's backend_regions: GitHub
+      # Actions workflow_dispatch has no native multi-select, so every valid
+      # non-empty combination of the 3 supported regions is enumerated below
+      # as its own choice — adding a 4th region means hand-adding its
+      # combinations here too (2^n - 1 total), in both this file and
+      # terraform-live-edge.yml.
+      backend_regions:
+        description: "Pick the FULL set of regions to apply (not just the new one). Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        default: "ap-south-1"
+        default: '["ap-south-1"]'
         type: choice
-        # Multi-region expansion: add the new region here. This value is
-        # forwarded to terraform-live-backend, terraform-live-edge, and
-        # deploy-live-backend — add it in those workflows too.
-        # Full checklist: infra-live-backend/terraform/variables.tf.
         options:
-          - ap-south-1
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
       deploy:
         description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
         required: false
@@ -64,7 +82,7 @@ on:
       environment:
         required: true
         type: string
-      aws_region:
+      backend_regions:
         required: true
         type: string
       deploy:
@@ -77,29 +95,46 @@ permissions:
   id-token: write
   contents: read
 
-# Only one full-stack run per environment+region at a time.
+# One full-stack run per environment at a time, regardless of which regions
+# it targets — terraform-live-edge's state is a single shared distribution
+# per environment (not per-region), so two concurrent runs for the same
+# environment but different region sets would race on that one state file
+# even if their backend-region sets didn't overlap at all.
 concurrency:
-  group: terraform-live-all-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
+  group: terraform-live-all-buddy360-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
 
   # ---------------------------------------------------------------------------
-  # Step 1 — Backend infrastructure (regional)
+  # Step 1 — Backend infrastructure (one independent stack per region)
+  # fail-fast: false — a Terraform apply/destroy already in progress for one
+  # region must never be forcibly cancelled just because another region's
+  # instance failed; that risks leaving it in a partial state. needs: below
+  # already waits for every matrix instance to finish (success or failure)
+  # regardless of this setting — fail-fast only controls whether a
+  # still-running instance gets cancelled early, not the job's final verdict.
   # ---------------------------------------------------------------------------
   tf-backend:
-    name: "1 · Terraform Backend"
+    name: "1 · Terraform Backend (${{ matrix.region }})"
     if: inputs.action == 'plan' || inputs.action == 'apply'
+    strategy:
+      fail-fast: false
+      matrix:
+        region: ${{ fromJson(inputs.backend_regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
-      aws_region:  ${{ inputs.aws_region }}
+      aws_region:  ${{ matrix.region }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 2 — Edge (CloudFront + WAF + public DNS) — always us-east-1
-  # backend_region tells CloudFront which ALB to use as /api/* origin.
+  # Passes the complete backend_regions list straight through — needs: below
+  # ensures every region in it has already been applied (its SSM
+  # alb_internal_fqdn parameter exists) before this runs, or
+  # terraform-live-edge's own SSM reads fail with a clear error.
   # ---------------------------------------------------------------------------
   tf-edge:
     name: "2 · Terraform Edge"
@@ -107,14 +142,14 @@ jobs:
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:         ${{ inputs.action }}
-      environment:    ${{ inputs.environment }}
-      backend_region: ${{ inputs.aws_region }}
+      action:          ${{ inputs.action }}
+      environment:     ${{ inputs.environment }}
+      backend_regions: ${{ inputs.backend_regions }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Step 3 — Frontend bucket policy (always us-east-1)
-  # No aws_region input — the frontend module hardcodes us-east-1 for all
+  # No region input — the frontend module hardcodes us-east-1 for all
   # resources (S3 bucket policy, SSM reads) and the state key.
   # ---------------------------------------------------------------------------
   tf-frontend:
@@ -128,17 +163,23 @@ jobs:
     secrets: inherit
 
   # ---------------------------------------------------------------------------
-  # Step 4 — Deploy backend (Docker build + ECS rolling update)
-  # Skipped when action=plan or deploy=false.
+  # Step 4 — Deploy backend (Docker build + ECS rolling update), one instance
+  # per region. Skipped when action=plan or deploy=false. Same fail-fast
+  # reasoning as tf-backend — a rolling deploy already underway in one region
+  # must not be cancelled because another region's deploy failed.
   # ---------------------------------------------------------------------------
   deploy-backend:
-    name: "4 · Deploy Backend"
+    name: "4 · Deploy Backend (${{ matrix.region }})"
     needs: tf-frontend
     if: inputs.action == 'apply' && inputs.deploy
+    strategy:
+      fail-fast: false
+      matrix:
+        region: ${{ fromJson(inputs.backend_regions) }}
     uses: ./.github/workflows/deploy-live-backend.yml
     with:
       environment: ${{ inputs.environment }}
-      aws_region:  ${{ inputs.aws_region }}
+      aws_region:  ${{ matrix.region }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
@@ -167,7 +208,8 @@ jobs:
     secrets: inherit
 
   # ---------------------------------------------------------------------------
-  # Destroy step 2 — Edge (CloudFront / WAF)
+  # Destroy step 2 — Edge (CloudFront / WAF) — same full-list pass-through as
+  # the apply-side tf-edge job.
   # ---------------------------------------------------------------------------
   destroy-tf-edge:
     name: "D2 · Terraform Edge (destroy)"
@@ -175,21 +217,26 @@ jobs:
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:         ${{ inputs.action }}
-      environment:    ${{ inputs.environment }}
-      backend_region: ${{ inputs.aws_region }}
+      action:          ${{ inputs.action }}
+      environment:     ${{ inputs.environment }}
+      backend_regions: ${{ inputs.backend_regions }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
-  # Destroy step 3 — Backend (VPC / ECS / ALB / Redis / ECR)
+  # Destroy step 3 — Backend (VPC / ECS / ALB / Redis / ECR), one instance
+  # per region — same fail-fast reasoning as tf-backend/deploy-backend.
   # ---------------------------------------------------------------------------
   destroy-tf-backend:
-    name: "D3 · Terraform Backend (destroy)"
+    name: "D3 · Terraform Backend (destroy) (${{ matrix.region }})"
     needs: destroy-tf-edge
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
+    strategy:
+      fail-fast: false
+      matrix:
+        region: ${{ fromJson(inputs.backend_regions) }}
     uses: ./.github/workflows/terraform-live-backend.yml
     with:
       action:      ${{ inputs.action }}
       environment: ${{ inputs.environment }}
-      aws_region:  ${{ inputs.aws_region }}
+      aws_region:  ${{ matrix.region }}
     secrets: inherit

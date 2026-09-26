@@ -150,6 +150,26 @@
           ]
         }
       }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 12,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "title": "ALB Requests per Target",
+        "metrics": [
+          ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", "${tg_arn_suffix}", "LoadBalancer", "${alb_arn_suffix}"]
+        ],
+        "period": 60,
+        "stat": "Sum",
+        "region": "${region}",
+        "view": "timeSeries",
+        "annotations": {
+          "horizontal": [{ "label": "Autoscaling target", "value": 1000 }]
+        }
+      }
     }
   ]
 }

@@ -59,5 +59,9 @@ enable_ops_email           = false
 enable_guardduty  = false
 enable_cloudtrail = false
 
+# ALB access logs — off on sbx to avoid S3 storage/PUT cost; independent of
+# enable_cloudtrail above (see enable_alb_access_logs's own description)
+enable_alb_access_logs = false
+
 # ADOT sidecar — optional on sbx to save cost
 enable_adot_sidecar = false

@@ -15,11 +15,56 @@ locals {
   cache_policy_disabled                 = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
   origin_request_cors_s3                = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
   origin_request_all_viewer_except_host = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+
+  # The region that actually serves the jwt_validator Lambda@Edge's
+  # PUBLIC_PATHS (register, login, google, health, and refresh/logout when no
+  # location-bearing session is found) — every one of those requests
+  # genuinely lands here, unlike authenticated /api/* traffic, which is
+  # always overridden. Deliberately derived from backend_regions rather than
+  # its own separate variable, so there's one less thing to configure — it's
+  # simply whichever region is first in whatever combination is selected.
+  bootstrap_region = var.backend_regions[0]
+
+  # Mirrors LOCATION_TO_REGION in ../functions/jwt-validator-lambda.js.tpl and
+  # backend/app/routing.py's COUNTRY_TO_REGION groupings. S3 upload keys are
+  # prefixed by location (build_upload_key in backend/app/services/s3_uploads.py),
+  # not by AWS region, so the /uploads/* path-based routing below must match on
+  # location, not on the 3 AWS regions directly. Must stay in sync with the
+  # Lambda@Edge's own LOCATION_TO_REGION — a location mapped differently
+  # between the two would mean a user's API calls and photo uploads land in
+  # different regions.
+  #
+  # cn/ru are deliberately absent, same reasoning as the Lambda@Edge function:
+  # mapping them to a region was considered and reverted on compliance grounds
+  # (China needs AWS's separate China partition; Russia carries export-control
+  # exposure this business isn't taking on). A location missing here falls
+  # through to the default (SPA) behaviour for uploads — the Lambda@Edge's own
+  # 503 is what actually blocks the API for these two, this is just kept
+  # consistent with it rather than serving photos for an account that can't
+  # reach the API at all.
+  uploads_location_to_region = {
+    eu   = "eu-west-1"
+    us   = "us-east-1"
+    br   = "us-east-1"
+    in   = "ap-south-1"
+    apac = "ap-south-1"
+    me   = "ap-south-1"
+    # cn = "us-east-1" -- intentionally disabled, see comment above
+    # ru = "us-east-1" -- intentionally disabled, see comment above
+  }
+
+  # Only locations whose mapped region is actually deployed get a behaviour —
+  # a location mapped to a region with no uploads bucket yet simply falls
+  # through to the default (SPA) behaviour instead of erroring the apply.
+  active_uploads_locations = {
+    for loc, region in local.uploads_location_to_region : loc => region
+    if contains(keys(local.regional_uploads_buckets), region)
+  }
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
   #checkov:skip=CKV_AWS_86:CloudFront access logs not enabled — S3 logging bucket deferred; application-level logs go to CloudWatch
-  #checkov:skip=CKV_AWS_310:Origin failover not configured — single-region deployment; a second origin requires a second ALB in another region which is not provisioned yet
+  #checkov:skip=CKV_AWS_310:Origin failover (active/passive origin groups) not configured — each region's origin serves its own distinct location/path, not a failover pair for the same content
   #checkov:skip=CKV_AWS_374:Geo restriction disabled intentionally — app serves a global audience; blocking regions would lock out legitimate users
   #checkov:skip=CKV2_AWS_47:Log4j AMR rule not added — the backend is Python, not Java; Log4Shell does not apply; Core Rule Set already covers OWASP Top 10
   enabled             = true
@@ -45,15 +90,27 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.backend_assets.id
   }
 
-  origin {
-    origin_id                = "s3-backend-uploads"
-    domain_name              = data.aws_s3_bucket.backend_uploads.bucket_regional_domain_name
-    origin_access_control_id = aws_cloudfront_origin_access_control.backend_uploads.id
+  # One origin per active backend region's uploads bucket. Shared OAC across
+  # all of them — OAC is a signing config, not tied to a specific bucket.
+  dynamic "origin" {
+    for_each = local.regional_uploads_buckets
+    content {
+      origin_id                = "s3-backend-uploads-${origin.key}"
+      domain_name              = origin.value.bucket_regional_domain_name
+      origin_access_control_id = aws_cloudfront_origin_access_control.backend_uploads.id
+    }
   }
 
   origin {
-    origin_id   = "alb-backend"
-    domain_name = data.aws_ssm_parameter.alb_internal_fqdn.value
+    origin_id = "alb-backend"
+    # This IS actually used at request time, unlike the uploads origins above:
+    # the jwt_validator Lambda@Edge (see lambda_edge.tf) only overrides
+    # request.origin for authenticated /api/* traffic it can resolve a
+    # location for. Its PUBLIC_PATHS (register, login, google, health, and
+    # refresh/logout when no location-bearing session is found) genuinely
+    # land here, for every visitor worldwide, regardless of where they are —
+    # see local.bootstrap_region above for which region that is.
+    domain_name = local.regional_alb_fqdns[local.bootstrap_region]
 
     # Lets the ALB's listener rule (infra-live-backend's aws_lb_listener_rule.
     # from_cloudfront) tell requests that came through this distribution apart
@@ -110,21 +167,28 @@ resource "aws_cloudfront_distribution" "frontend" {
     response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
   }
 
-  # -- /uploads/* behaviour: user-generated photos from uploads S3 bucket -----
-  # No Lambda@Edge (no auth check needed — photos are semi-public once uploaded).
-  # Uses the same caching and CORS policy as /app-assets/*.
+  # -- /uploads/{location}/* behaviours: user-generated photos, one per location
+  # group, routed to whichever region actually holds that location's bucket
+  # (see local.active_uploads_locations above). No Lambda@Edge (no auth check
+  # needed — photos are semi-public once uploaded). Same caching/CORS policy
+  # as /app-assets/*. A location whose mapped region has no uploads bucket
+  # deployed yet has no behaviour here and falls through to the default (SPA)
+  # behaviour — not a clean 404, but that region doesn't serve uploads yet.
 
-  ordered_cache_behavior {
-    path_pattern           = "/uploads/*"
-    target_origin_id       = "s3-backend-uploads"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
+  dynamic "ordered_cache_behavior" {
+    for_each = local.active_uploads_locations
+    content {
+      path_pattern           = "/uploads/${ordered_cache_behavior.key}/*"
+      target_origin_id       = "s3-backend-uploads-${ordered_cache_behavior.value}"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
 
-    cache_policy_id            = local.cache_policy_optimized
-    origin_request_policy_id   = local.origin_request_cors_s3
-    response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
+      cache_policy_id            = local.cache_policy_optimized
+      origin_request_policy_id   = local.origin_request_cors_s3
+      response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
+    }
   }
 
   # -- /api/* behaviour: proxy to ALB backend ---------------------------------

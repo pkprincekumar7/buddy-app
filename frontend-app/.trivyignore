@@ -8,10 +8,5 @@ CVE-2024-21907
 # Not included in any shipped binary (Android APK or iOS IPA).
 CVE-2026-14257
 
-# CVE-2025-71329, CVE-2025-71330 — image-size DoS via crafted image buffers.
-# No patched release exists upstream yet. image-size is a transitive dependency
-# of Metro (via expo/@react-native/metro-config) and only runs at build time —
-# it never ships in the app bundle. See frontend-app/yarn.lock and check.sh's
-# yarn audit IGNORED_IDS (1138808, 1138809) for the same exception.
-CVE-2025-71329
-CVE-2025-71330
+# CVE-2025-71329, CVE-2025-71330 (image-size DoS) are fixed, not ignored — see
+# frontend-app/package.json's resolutions/overrides forcing image-size to ^2.0.4.

@@ -1,17 +1,25 @@
 # ---------------------------------------------------------------------------
-# Lambda@Edge — RS256 JWT validation
+# Lambda@Edge — RS256 JWT validation + location-based backend routing
 #
 # Validates the access_token cookie on every /api/* viewer request before
 # the request is forwarded to the ALB. Invalid or missing tokens are
 # rejected with 401 at the nearest CloudFront edge location — the request
 # never consumes ALB or ECS capacity.
 #
+# Once a token is valid, the function also picks which region's ALB the
+# request is forwarded to, based on the token's own `location` claim — there
+# is no default region: a location with no mapped region, or a region with no
+# entry in regional_alb_fqdns below, fails the request with 503 rather than
+# guessing. See ../functions/jwt-validator-lambda.js.tpl for the routing logic
+# and LOCATION_TO_REGION mapping.
+#
 # Lambda@Edge must be provisioned in us-east-1 (enforced by AWS).
 # This module already targets us-east-1 so no provider alias is needed.
 #
-# Public keys are injected at deploy time via templatefile() — no code
-# edits are needed during key rotation. The private key never leaves
-# Secrets Manager. See docs/jwt-keys.md for the full rotation procedure.
+# Public keys, the regional ALB FQDN map, and the origin-verify secret are all
+# injected at deploy time via templatefile() — no code edits are needed for
+# key rotation or for adding a region. The private key never leaves Secrets
+# Manager. See docs/jwt-keys.md for the key-rotation procedure.
 # ---------------------------------------------------------------------------
 
 data "archive_file" "jwt_validator_lambda" {
@@ -22,8 +30,10 @@ data "archive_file" "jwt_validator_lambda" {
     content = templatefile(
       "${path.module}/../functions/jwt-validator-lambda.js.tpl",
       {
-        jwt_public_keys = var.jwt_public_keys
-        jwt_key_id      = var.jwt_key_id
+        jwt_public_keys      = var.jwt_public_keys
+        jwt_key_id           = var.jwt_key_id
+        regional_alb_fqdns   = local.regional_alb_fqdns
+        origin_verify_secret = var.origin_verify_secret
       }
     )
     filename = "index.js"

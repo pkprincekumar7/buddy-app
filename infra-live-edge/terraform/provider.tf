@@ -1,5 +1,5 @@
 terraform {
-  required_version = "~> 1.13.0"
+  required_version = "~> 1.16.0"
 
   backend "s3" {
     region       = "us-east-1"
@@ -51,13 +51,16 @@ provider "aws" {
   }
 }
 
-# Backend region provider — used to manage the uploads S3 bucket policy.
-# The alias is named after the only active backend region today. The region value
-# comes from var.backend_region so it is not hardcoded — if a new region is added,
-# update the alias name and the multi-region expansion checklist in variables.tf.
+# Backend region providers — used to manage each region's uploads S3 bucket
+# policy (see data.tf, s3_uploads_policy.tf). One static alias per supported
+# region — provider aliases can't be generated with for_each/count, so this is
+# a fixed set of 3, matching backend_regions' validated allow-list. A region
+# not present in var.backend_regions simply has no resources created against
+# its alias (see the count guards in data.tf/s3_uploads_policy.tf) — the
+# provider block itself is a no-op until then.
 provider "aws" {
   alias  = "ap_south_1"
-  region = var.backend_region
+  region = "ap-south-1"
 
   default_tags {
     tags = {
@@ -67,3 +70,19 @@ provider "aws" {
     }
   }
 }
+
+provider "aws" {
+  alias  = "eu_west_1"
+  region = "eu-west-1"
+
+  default_tags {
+    tags = {
+      Project     = var.app_name
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
+# A us-east-1 backend region reuses the existing aws.us_east_1 alias above
+# (same account, same region — no third alias needed).
