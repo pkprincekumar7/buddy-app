@@ -460,7 +460,9 @@ function verifyJwt(token) {
 function rewriteOrigin(request, targetRegion) {
   const alb = ALB_BY_REGION[targetRegion] || ALB_BY_REGION[DEFAULT_REGION]
   request.origin.custom.domainName = alb
-  request.headers['host'] = [{ key: 'Host', value: alb }]
+  // Host is read-only in viewer-request events — do not set it here. For a
+  // custom origin, CloudFront automatically sends the origin's own
+  // domainName (set above) as the Host header.
 }
 
 exports.handler = async (event) => {

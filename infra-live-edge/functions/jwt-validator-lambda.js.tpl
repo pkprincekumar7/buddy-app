@@ -274,11 +274,14 @@ function setOrigin(request, albFqdn) {
       },
     },
   }
-  // The /api/* cache behaviour's origin request policy
-  // (AllViewerExceptHostHeader) excludes the viewer's own Host header, so
-  // CloudFront sets Host from the origin it forwards to — set it explicitly
-  // here to match whichever regional ALB domain was just selected.
-  request.headers['host'] = [{ key: 'Host', value: albFqdn }]
+  // Host is read-only in viewer-request events (AWS's documented edge-function
+  // restrictions) — setting it here fails CloudFront's validation with a 502
+  // ("tried to add, delete, or change a read-only header"). No need to
+  // anyway: for a custom origin, CloudFront always sends the origin's own
+  // domainName (set above) as the Host header, regardless of what the
+  // /api/* cache behaviour's origin request policy (AllViewerExceptHostHeader)
+  // forwards from the viewer — that policy's exclusion of Host is exactly
+  // why this is automatic.
 }
 
 exports.handler = async (event) => {

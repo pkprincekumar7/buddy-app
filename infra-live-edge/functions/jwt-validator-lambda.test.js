@@ -134,7 +134,6 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
   await t.test('register with only the X-Client-Location header routes to that region', async () => {
     const res = await invoke(lambda, mockRequest('/api/v1/auth/register', { headers: { 'X-Client-Location': 'eu' } }))
     assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
-    assert.equal(res.headers.host[0].value, 'alb.eu-west-1.example.com')
   })
 
   await t.test('register: an expired but validly-signed session cookie wins over the header', async () => {
