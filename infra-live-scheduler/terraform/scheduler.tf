@@ -52,12 +52,20 @@ resource "aws_scheduler_schedule_group" "main" {
 }
 
 # ---------------------------------------------------------------------------
-# Start schedules — full apply + deploy (02:00 PM IST daily by default)
-# One schedule per region in var.target_aws_regions.
+# Start schedule — full apply + deploy (03:00 PM IST daily by default)
+#
+# Exactly ONE schedule, not one per region: terraform-live-all.yml's
+# backend_regions must always receive the COMPLETE intended region set in a
+# single dispatch — infra-live-edge is one shared distribution per
+# environment, so a dispatch carrying only a subset of var.target_aws_regions
+# would make Terraform destroy whichever regions were left out, not just
+# leave them alone. A prior version of this file created one schedule per
+# region, each sending only its own region — that was fine only by accident,
+# because target_aws_regions had exactly one entry; it would have started
+# actively destroying regions the moment a second one was added.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "start" {
-  for_each   = toset(var.target_aws_regions)
-  name       = "${var.app_name}-${var.environment}-start-${each.key}"
+  name       = "${var.app_name}-${var.environment}-start"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"
 
@@ -79,9 +87,9 @@ resource "aws_scheduler_schedule" "start" {
         environment = var.environment
         # terraform-live-all.yml's backend_regions expects a JSON-array
         # *string* (its own input type is a plain string/choice, not a
-        # list) — jsonencode([each.key]) here produces exactly that, one
-        # region per schedule, matching each.key's own single-region scope.
-        backend_regions = jsonencode([each.key])
+        # list) — jsonencode(var.target_aws_regions) here produces exactly
+        # that, carrying the complete region set in one dispatch.
+        backend_regions = jsonencode(var.target_aws_regions)
         deploy          = "true"
       }
     })
@@ -94,12 +102,11 @@ resource "aws_scheduler_schedule" "start" {
 }
 
 # ---------------------------------------------------------------------------
-# Stop schedules — full destroy (10:00 PM IST daily by default)
-# One schedule per region in var.target_aws_regions.
+# Stop schedule — full destroy (10:00 PM IST daily by default)
+# Exactly ONE schedule — same reasoning as the start schedule above.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "stop" {
-  for_each   = toset(var.target_aws_regions)
-  name       = "${var.app_name}-${var.environment}-stop-${each.key}"
+  name       = "${var.app_name}-${var.environment}-stop"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"
 
@@ -119,7 +126,7 @@ resource "aws_scheduler_schedule" "stop" {
       inputs = {
         action          = "destroy"
         environment     = var.environment
-        backend_regions = jsonencode([each.key])
+        backend_regions = jsonencode(var.target_aws_regions)
         deploy          = "false"
       }
     })

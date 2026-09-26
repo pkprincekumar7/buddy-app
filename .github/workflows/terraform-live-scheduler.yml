@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------
 
 name: Terraform Live — Scheduler
-run-name: "Terraform Scheduler (${{ inputs.environment }}, ${{ inputs.action }}, schedule=${{ inputs.schedule_enabled }})"
+run-name: "Terraform Scheduler (${{ inputs.environment }}, ${{ inputs.action }}, schedule=${{ inputs.schedule_enabled }}, regions=${{ inputs.target_aws_regions }})"
 
 on:
   workflow_dispatch:
@@ -51,6 +51,26 @@ on:
         options:
           - "true"
           - "false"
+      # Same rationale as terraform-live-edge.yml/terraform-live-all.yml's
+      # backend_regions: GitHub Actions workflow_dispatch has no native
+      # multi-select, so every valid non-empty combination of the 3
+      # supported regions is enumerated below — adding a 4th region means
+      # hand-adding its combinations here too (2^n - 1 total), in all three
+      # files. This is the COMPLETE region set the daily schedules will send
+      # to terraform-live-all.yml on every run — not additive across applies.
+      target_aws_regions:
+        description: "Pick the FULL set of regions the daily schedules should apply/destroy. Run 'plan' first to check for unintended deletions before 'apply'."
+        required: true
+        default: '["ap-south-1"]'
+        type: choice
+        options:
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
 
 permissions:
   id-token: write
@@ -75,10 +95,17 @@ jobs:
         working-directory: infra-live-scheduler/terraform
     env:
       TF_IN_AUTOMATION: "1"
-      TF_VAR_app_name:        ${{ secrets.APP_NAME }}
-      TF_VAR_environment:     ${{ inputs.environment }}
-      TF_VAR_github_pat:      ${{ secrets.GIT_ACTIONS_PAT }}
-      TF_VAR_schedule_enabled: ${{ inputs.schedule_enabled }}
+      TF_VAR_app_name:            ${{ secrets.APP_NAME }}
+      TF_VAR_environment:         ${{ inputs.environment }}
+      TF_VAR_github_pat:          ${{ secrets.GIT_ACTIONS_PAT }}
+      TF_VAR_schedule_enabled:    ${{ inputs.schedule_enabled }}
+      # Overrides the tfvars file's value below only if tfvars doesn't also
+      # set this variable — it no longer does (see tfvars/*.tfvars), so this
+      # workflow input is now the sole source, matching how schedule_enabled
+      # already works (Terraform's -var-file on the command line would beat
+      # TF_VAR_* otherwise, since -var-file is evaluated after environment
+      # variables).
+      TF_VAR_target_aws_regions: ${{ inputs.target_aws_regions }}
 
     steps:
       - name: Checkout
