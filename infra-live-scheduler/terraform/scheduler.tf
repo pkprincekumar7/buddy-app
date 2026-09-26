@@ -77,8 +77,12 @@ resource "aws_scheduler_schedule" "start" {
       inputs = {
         action      = "apply"
         environment = var.environment
-        aws_region  = each.key
-        deploy      = "true"
+        # terraform-live-all.yml's backend_regions expects a JSON-array
+        # *string* (its own input type is a plain string/choice, not a
+        # list) — jsonencode([each.key]) here produces exactly that, one
+        # region per schedule, matching each.key's own single-region scope.
+        backend_regions = jsonencode([each.key])
+        deploy          = "true"
       }
     })
 
@@ -113,10 +117,10 @@ resource "aws_scheduler_schedule" "stop" {
     input = jsonencode({
       ref = var.github_default_branch
       inputs = {
-        action      = "destroy"
-        environment = var.environment
-        aws_region  = each.key
-        deploy      = "false"
+        action          = "destroy"
+        environment     = var.environment
+        backend_regions = jsonencode([each.key])
+        deploy          = "false"
       }
     })
 

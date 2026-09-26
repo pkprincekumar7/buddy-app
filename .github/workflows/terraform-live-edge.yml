@@ -67,8 +67,14 @@ permissions:
   id-token: write
   contents: read
 
+# One run per environment at a time — deliberately does NOT include
+# backend_regions. infra-live-edge is a single shared distribution/state per
+# environment (not per-region), so two runs picking different region
+# combinations for the same environment must never be allowed to run
+# concurrently — they'd both mutate the same state file. Same reasoning as
+# terraform-live-all.yml's concurrency group.
 concurrency:
-  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1-${{ inputs.backend_regions }}
+  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1
   cancel-in-progress: false
 
 env:
