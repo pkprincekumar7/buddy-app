@@ -55,7 +55,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  TF_VERSION: "1.13.0"
+  TF_VERSION: "1.16.4"
   TF_VAR_aws_region: ${{ inputs.aws_region }}
   TF_VAR_environment: ${{ inputs.environment }}
 
@@ -187,9 +187,15 @@ jobs:
       # secrets are suffixed with the region (e.g. _AP_SOUTH_1) and resolved
       # here into plain TF_VAR_* names that Terraform consumes.
       # Add a new case entry for each variable when expanding to new regions.
-      # REGIONAL_LOGGING_BUCKET_NAME is only required for stg/prod — dev/sbx
-      # leave it empty so the Terraform count guard skips the bucket policy and
-      # CloudTrail resources.
+      # REGIONAL_LOGGING_BUCKET_NAME is required for every environment (the
+      # bucket exists in all of them — see "Validate required secrets" above,
+      # which enforces this per-region regardless of environment). Whether it
+      # actually gets used is controlled entirely by tfvars, not by this
+      # secret: enable_cloudtrail/enable_alb_access_logs (see
+      # infra-live-backend/terraform/tfvars/*.tfvars) gate the Terraform count
+      # guard that creates the bucket policy and CloudTrail resources — both
+      # false on dev/sbx today, so the bucket name is resolved but unused
+      # there.
       # -------------------------------------------------------------------------
       - name: Resolve region-specific S3 bucket names
         env:

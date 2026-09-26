@@ -12,7 +12,7 @@
 resource "aws_lb" "backend" {
   #checkov:skip=CKV2_AWS_28:WAF not required at this scale; CloudFront WAF handles edge-layer filtering before traffic reaches this ALB
   #checkov:skip=CKV_AWS_150:Deletion protection disabled intentionally — environments are torn down via terraform destroy; enabling it would require a manual disable step before every destroy
-  #checkov:skip=CKV_AWS_91:ALB access logs not enabled — S3 log bucket and associated costs deferred; application-level logs go to CloudWatch
+  #checkov:skip=CKV_AWS_91:ALB access logs are conditionally enabled below (access_logs block, gated on var.enable_alb_access_logs) — off on dev/sbx to avoid the S3 storage/PUT cost at low traffic, on for stg/prod by default. Not universally disabled.
 
   name               = "${var.app_name}-backend-alb-${var.environment}"
   load_balancer_type = "application"
@@ -23,6 +23,21 @@ resource "aws_lb" "backend" {
   ]
   security_groups            = [aws_security_group.alb_sg.id]
   drop_invalid_header_fields = true
+
+  # Independent of enable_cloudtrail — see enable_alb_access_logs's own
+  # description. Absent entirely (not just enabled=false) when it's false,
+  # since var.regional_logging_bucket_name defaults to "" and the AWS
+  # provider requires a non-empty bucket whenever this block is present at
+  # all, even with enabled=false — hence a dynamic block rather than a
+  # static one with a conditional `enabled`.
+  dynamic "access_logs" {
+    for_each = var.enable_alb_access_logs ? [1] : []
+    content {
+      bucket  = var.regional_logging_bucket_name
+      prefix  = "alb-logs"
+      enabled = true
+    }
+  }
 
   tags = {
     Name = "${var.app_name}-backend-alb-${var.environment}"

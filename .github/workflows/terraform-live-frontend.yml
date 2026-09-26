@@ -43,7 +43,7 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  TF_VERSION: "1.13.0"
+  TF_VERSION: "1.16.4"
   TF_VAR_environment: ${{ inputs.environment }}
   # No TF_VAR_aws_region — the module has no aws_region variable.
   # All resources are hardcoded to us-east-1 (S3 bucket policy, SSM reads).

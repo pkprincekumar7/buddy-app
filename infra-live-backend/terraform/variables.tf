@@ -277,13 +277,13 @@ variable "uploads_bucket_name" {
 }
 
 variable "regional_logging_bucket_name" {
-  description = "Pre-existing S3 logging bucket in ap-south-1 (ALB access logs, CloudTrail ap-south-1). Must be non-empty when enable_cloudtrail = true."
+  description = "Pre-existing S3 logging bucket in this backend region (ALB access logs, regional CloudTrail — both write to this one bucket). Must be non-empty when enable_cloudtrail = true or enable_alb_access_logs = true."
   type        = string
   default     = ""
 
   validation {
-    condition     = !var.enable_cloudtrail || length(var.regional_logging_bucket_name) > 0
-    error_message = "regional_logging_bucket_name must be set when enable_cloudtrail = true."
+    condition     = !(var.enable_cloudtrail || var.enable_alb_access_logs) || length(var.regional_logging_bucket_name) > 0
+    error_message = "regional_logging_bucket_name must be set when enable_cloudtrail = true or enable_alb_access_logs = true."
   }
 }
 
@@ -345,15 +345,21 @@ variable "xray_default_sampling_rate" {
 # -- Security ------------------------------------------------------------------
 
 variable "enable_guardduty" {
-  description = "Provision GuardDuty detector with ECS Runtime Monitoring in ap-south-1. false on dev/sbx, true on stg/prod."
+  description = "Provision GuardDuty detector with ECS Runtime Monitoring in this backend region. false on dev/sbx, true on stg/prod."
   type        = bool
   default     = true
 }
 
 variable "enable_cloudtrail" {
-  description = "Provision CloudTrail regional trail in ap-south-1. false on dev/sbx, true on stg/prod."
+  description = "Provision CloudTrail regional trail in this backend region. false on dev/sbx, true on stg/prod."
   type        = bool
   default     = true
+}
+
+variable "enable_alb_access_logs" {
+  description = "Enable ALB access logs to regional_logging_bucket_name (see alb.tf's access_logs block). Independent of enable_cloudtrail — both happen to be set the same way per environment today (false on dev/sbx, true on stg/prod), but either can be flipped on its own without affecting the other. Both share the same bucket/policy resource (see s3.tf), so either flag being true is enough to create the policy."
+  type        = bool
+  default     = false
 }
 
 # -- ADOT sidecar --------------------------------------------------------------
