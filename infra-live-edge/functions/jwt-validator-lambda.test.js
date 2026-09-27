@@ -68,13 +68,19 @@ output "rendered" {
 }
 
 function loadLambda(rendered) {
-  const modulePath = path.join(os.tmpdir(), `jwt-validator-lambda-rendered-${Date.now()}-${Math.random()}.js`)
+  // Same secure-temp-file pattern as renderTemplate() above: mkdtempSync creates
+  // a uniquely-named, owner-only-permissioned directory atomically, instead of
+  // writing a predictably-named file straight into the shared os.tmpdir() (which
+  // a local attacker could race or pre-plant a symlink at, before this code
+  // require()s — i.e. executes — whatever ends up at that path).
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jwt-validator-lambda-rendered-'))
+  const modulePath = path.join(dir, 'index.js')
   fs.writeFileSync(modulePath, rendered)
   try {
     delete require.cache[require.resolve(modulePath)]
     return require(modulePath)
   } finally {
-    fs.rmSync(modulePath, { force: true })
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
