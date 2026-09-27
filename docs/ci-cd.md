@@ -8,10 +8,10 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 |---|---|---|
 | `check.yml` | Push / PR to `main`; Manual (`workflow_dispatch`) | Code quality gate — lint, format, types, build, bundle size, tests + coverage, Terraform lint, secret detection, Dockerfile lint, SAST, IaC security, CVE scan, license compliance, Docker image scan, SBOM, OpenAPI lint, DAST, dependency review (PRs), CodeQL |
 | `terraform-live-all.yml` | Manual / called | Full-stack orchestrator — provisions or tears down all infra, then optionally deploys |
-| `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg/prod; `schedule_enabled` input enables or disables the schedules; EventBridge calls `terraform-live-all.yml` via `workflow_dispatch` directly at exact IST times; GitHub PAT sourced from `GIT_ACTIONS_PAT` environment secret |
-| `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager |
-| `terraform-live-frontend.yml` | Manual / called | S3 bucket for frontend assets |
-| `terraform-live-edge.yml` | Manual / called | CloudFront distribution + ACM cert (always `us-east-1`) |
+| `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg/prod; `schedule_enabled` input enables or disables the schedules; `target_aws_regions` input selects the full region set the daily schedules apply/destroy. EventBridge invokes a Lambda function (the "GitHub dispatcher"), which reads a GitHub PAT from Secrets Manager and calls `terraform-live-all.yml`'s `workflow_dispatch` REST endpoint directly — EventBridge itself never talks to the GitHub API. PAT sourced from `GIT_ACTIONS_PAT` environment secret |
+| `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`) |
+| `terraform-live-frontend.yml` | Manual / called | S3 bucket policy for frontend assets (always `us-east-1`) |
+| `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to — consumes a pre-existing ACM cert ARN, does not create one |
 | `deploy-live-backend.yml` | Manual / called | Builds Docker image, pushes to ECR, updates ECS service |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
 | `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev→stg` or `stg→prod`) without a rebuild — re-tags the ECR image and updates the ECS service in the target environment |
@@ -22,7 +22,7 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 
 ## Code quality workflow (check.yml)
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has nine jobs. `backend-lint`, `frontend-lint`, `frontend-app-lint`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
+[`check.yml`](../.github/workflows/check.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has ten jobs. `backend-lint`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.12)
 
@@ -56,11 +56,19 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `terraform fmt -check -recursive` | Terraform 1.13.0 | Formatting across all four infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`) — fails if any `.tf` file is unformatted |
+| `terraform fmt -check -recursive` | Terraform 1.16.4 | Formatting across all four infra directories (`infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`) — fails if any `.tf` file is unformatted |
 | `tflint (infra-live-backend)` | tflint 0.62.1 | Deprecated syntax, unused variables, wrong argument types and best-practice violations in backend infra |
 | `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
 | `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
 | `tflint (infra-live-scheduler)` | tflint 0.62.1 | Same for scheduler infra (EventBridge Scheduler) |
+
+### `lambda-edge-test` (Node.js 22)
+
+Renders `infra-live-edge/functions/jwt-validator-lambda.js.tpl` through a real `terraform apply` in a temp directory (not a hand-rolled reimplementation of HCL's `templatefile()` syntax), so the test exercises exactly what gets deployed to Lambda@Edge.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| `node --test jwt-validator-lambda.test.js` | Node's built-in test runner | JWT validation, location-based routing (cookie/header/Bearer-token priority, mobile vs web), 401/503 fail-closed behavior, `cn`/`ru` exclusion — 14 test cases |
 
 ### `backend-test` (Python 3.12, needs: backend-lint)
 
@@ -155,7 +163,7 @@ Go to **IAM → Roles → Create role**:
    - Condition key: `token.actions.githubusercontent.com:sub`
    - Operator: `StringLike`
    - Value: `repo:YOUR_GITHUB_ORG/buddy-app:*` (or `repo:...:environment:dev` per env)
-5. Attach the `AdministratorAccess` managed policy (or a scoped policy covering ECS, ECR, ELB, VPC, CloudFront, S3, Route 53, ACM, Secrets Manager, SSM, IAM).
+5. Attach the `AdministratorAccess` managed policy (or a scoped policy covering ECS, ECR, ELB, VPC, CloudFront, WAF, S3, Route 53, ACM, Secrets Manager, SSM, IAM, GuardDuty, CloudTrail, EventBridge Scheduler, and Lambda).
 6. Name the role and copy the **Role ARN** — this becomes the `ROLE_ARN` secret.
 
 ## Required GitHub secrets
@@ -171,23 +179,32 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
 | `ASSETS_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
-| `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app` |
-| `SUBDOMAIN_INTERNAL` | Backend/internal subdomain prefix, e.g. `api` |
+| `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app`. The backend/internal subdomain (`{subdomain}-internal`) is derived from this at workflow runtime — there is no separate secret for it. |
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID |
-| `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers backend ALB) |
-| `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN for `us-east-1` (covers CloudFront) |
+| `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers that region's backend ALB) |
+| `ACM_CERTIFICATE_ARN_EU_WEST_1` | ACM cert ARN for `eu-west-1` (covers that region's backend ALB) |
+| `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN in `us-east-1`. Dual-purpose: **always** required by `terraform-live-edge` (CloudFront's viewer certificate — CloudFront requires the cert in `us-east-1` regardless of which backend regions are active), and **conditionally** required by `terraform-live-backend` (that region's backend ALB, only when `aws_region` is set to `us-east-1`). If you ever deploy the backend to `us-east-1`, this one cert must cover both the public CloudFront domain and the internal ALB subdomain (as separate SANs). |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
+| `UPLOADS_BUCKET_NAME_AP_SOUTH_1` | Pre-existing S3 uploads bucket in `ap-south-1`. Used by `terraform-live-backend` (CORS/lifecycle config) and `terraform-live-edge` (CloudFront origin + bucket policy) whenever that region is in `backend_regions`. |
+| `UPLOADS_BUCKET_NAME_EU_WEST_1` | Same, for `eu-west-1` |
+| `UPLOADS_BUCKET_NAME_US_EAST_1` | Same, for `us-east-1` |
+| `REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1` | Pre-existing S3 bucket in `ap-south-1` for that region's CloudTrail trail and/or ALB access logs (`terraform-live-backend` only; required whenever `enable_cloudtrail` or `enable_alb_access_logs` is true for that region/environment) |
+| `REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1` | Same, for `eu-west-1` |
+| `REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1` | Same, for `us-east-1` |
+| `GLOBAL_LOGGING_BUCKET_NAME` | Pre-existing S3 bucket in `us-east-1` for the edge module's CloudTrail trail and/or WAF Firehose logs (`terraform-live-edge` only; required whenever `enable_cloudtrail` or `enable_waf_logging` is true) |
+| `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rule rejects anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
 | `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
-| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by EventBridge Scheduler to trigger `workflow_dispatch` events; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
+| `OPS_EMAIL` | Operator email address for the CloudWatch alarm SNS subscription. Required only when `enable_ops_email = true` (prod by default). |
+| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
 
 ### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
 
 | Secret | Value |
 |---|---|
 | `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions |
-| `JWT_KEY_ID` | Key ID label matching the `kid` header in signed tokens, e.g. `key-v1` |
 | `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In) |
 | `MONGODB_URI` | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
+| `REDIS_AUTH_TOKEN` | AUTH token for the ElastiCache Redis replication group (required — no default). Must be 16–128 printable ASCII characters, no spaces/quotes/`@`/`/`. |
 | `OPENAI_API_KEY` | OpenAI key (optional) |
 | `OPENAI_MODEL` | e.g. `gpt-5.4-mini` (default) |
 | `ANTHROPIC_API_KEY` | Anthropic key (optional) |
@@ -196,6 +213,8 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `GEMINI_MODEL` | e.g. `gemini-3-flash` (default) |
 | `ASSETS_BUCKET_NAME` | S3 bucket name injected into the ECS task environment; available to the backend for any S3 operations (e.g. future direct uploads). Also declared as an infrastructure secret above — a single GitHub secret drives both Terraform and the ECS environment. |
 
+There is no `JWT_KEY_ID` secret — it's a Terraform variable with `default = "key-v1"` in both `infra-live-backend` and `infra-live-edge`; nothing to configure unless you're rotating keys (see [docs/jwt-keys.md](jwt-keys.md)).
+
 ### Frontend build secrets (baked into the bundle by `deploy-live-frontend.yml`)
 
 | Secret | Value |
@@ -203,5 +222,17 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
 
 `VITE_API_URL` is **not** a GitHub secret — it is computed dynamically in the workflow from `SUBDOMAIN` and `DOMAIN_NAME` and injected into the build environment at runtime.
+
+### Mobile build secrets (`build-ios-ipa.yml`)
+
+| Secret | Value |
+|---|---|
+| `IOS_CLIENT_ID` | OAuth 2.0 iOS client ID for Google Sign-In in the Expo app |
+| `IOS_CERTIFICATE_P12_BASE64` | Base64-encoded `.p12` code-signing certificate |
+| `IOS_CERTIFICATE_PASSWORD` | Password for the `.p12` certificate |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded mobile provisioning profile |
+| `IOS_APPLE_TEAM_ID` | Apple Developer Team ID used for code signing |
+
+`build-android-apk.yml` needs no Android-specific secrets beyond ones already listed above (`SUBDOMAIN`, `DOMAIN_NAME`, `GOOGLE_CLIENT_ID`, `ROLE_ARN`, `ASSETS_BUCKET_NAME`).
 
 At least one LLM API key must be set to enable LLM features.

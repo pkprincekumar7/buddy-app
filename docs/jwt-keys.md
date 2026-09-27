@@ -1,6 +1,6 @@
 # JWT Key Management
 
-The backend signs JWTs with a 2048-bit RSA private key (RS256). The corresponding public key is embedded in a Lambda@Edge function that validates every `/api/*` request at the edge before it reaches the ALB.
+The backend signs JWTs with a 2048-bit RSA private key (RS256). The corresponding public key is embedded in a Lambda@Edge function that validates `/api/*` requests at the edge before they reach the ALB — not every one, though: `login`/`google`/`health` are bypassed entirely (no check at all), and `refresh`/`logout`/`register` only read an unverified location *hint* from an existing token, never requiring or blocking on one. Full signature verification (the thing this document is about managing keys for) applies to every other `/api/*` request. See `infra-architecture-multi-region.md`'s Lambda@Edge section for the full path breakdown.
 
 ## GitHub Actions secrets inventory
 
@@ -61,7 +61,11 @@ cp .env.example .env
 
 ## Key rotation (zero-downtime)
 
-Rotation requires no code changes and no template edits — only GitHub secret updates and two workflow runs.
+Rotation requires no code changes and no template edits — only GitHub secret updates and a
+small number of workflow runs: two fixed edge-workflow runs (Steps 2 and 5), plus one
+backend-workflow run **per active backend region** (Step 3) — so 3 runs total for a
+single-region deployment, up to 5 once all three regions (ap-south-1/eu-west-1/us-east-1)
+are live.
 
 ### Step 1 — Generate a new key pair
 
@@ -99,11 +103,13 @@ Update two secrets:
 
 Run the **backend workflow** (`terraform-live-backend.yml`, action: `apply`) or use `restart-live-backend.yml` to pick up the Secrets Manager change without a full Terraform run.
 
-New tokens are now signed with `key-v2`.
+> **Multi-region: repeat this for every active backend region.** `terraform-live-backend.yml` (and `restart-live-backend.yml`) applies to exactly one `aws_region` per run, and each region has its own independent Secrets Manager secret — the GitHub secret is shared, but picking it up requires a separate run per region. Run this step for `ap-south-1`, `eu-west-1`, and `us-east-1`, whichever are currently deployed (see `infra-architecture-multi-region.md`'s `backend_regions`). Skipping a region doesn't break anything immediately — Lambda@Edge still accepts that region's `key-v1`-signed tokens during the overlap window — but that region silently keeps signing with the old key indefinitely, defeating the rotation for it.
+
+New tokens are now signed with `key-v2`, in every region you ran this against.
 
 ### Step 4 — Wait for old tokens to expire
 
-Wait at least `JWT_ACCESS_EXPIRE_MINUTES` (default: 30 minutes) for all `key-v1` tokens to expire naturally.
+Wait at least `JWT_ACCESS_EXPIRE_MINUTES` (default: 30 minutes) for all `key-v1` tokens to expire naturally — starting from whichever region you ran Step 3 against **last**, not from the first one. A region that switches later can still legitimately issue `key-v1`-signed tokens right up to that point, and those tokens are valid for the full access-token lifetime from their own issuance, not from an earlier region's switchover time.
 
 ### Step 5 — Remove the old public key
 
@@ -126,5 +132,5 @@ rm jwt_private.pem jwt_public.pem jwt_private_v2.pem jwt_public_v2.pem
 ## How it works
 
 - The backend (`FastAPI` on ECS) **signs** tokens with `JWT_PRIVATE_KEY`. The private key never leaves Secrets Manager.
-- The Lambda@Edge function **verifies** tokens at the edge using the public keys embedded in `JWT_PUBLIC_KEYS` at Terraform deploy time. Invalid or missing tokens are rejected with `401` before the request reaches the ALB.
+- The Lambda@Edge function **verifies** tokens at the edge using the public keys embedded in `JWT_PUBLIC_KEYS` at Terraform deploy time — for the paths that require it. Invalid or missing tokens are rejected with `401` on those; the bypass and hint-based paths noted above never reach this check at all.
 - The `JWT_KEY_ID` / `kid` header ties signing to verification: the function looks up the key by `kid` from the token header, so multiple keys can coexist during the rotation overlap window.

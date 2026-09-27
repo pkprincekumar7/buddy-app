@@ -153,6 +153,13 @@ echo -e "\n${BOLD}════ TESTS ════${RESET}"
 run "pytest + coverage (backend)" \
     bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-report=term-missing --cov-fail-under=0 -q; rc=\$?; [ \$rc -eq 5 ] && { echo 'No tests collected yet — pass until baseline suite is written'; exit 0; } || exit \$rc"
 
+# Renders the .tpl through real `terraform apply` (not a hand-rolled reimplementation
+# of HCL's templatefile() syntax), so this exercises exactly what gets deployed.
+# Uses Node's built-in test runner — no new dependency. Self-skips with a clear
+# message if terraform isn't on PATH, rather than failing the whole run.
+run "jwt-validator-lambda unit tests (infra-live-edge)" \
+    node --test "$ROOT/infra-live-edge/functions/jwt-validator-lambda.test.js"
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
@@ -194,13 +201,13 @@ sys.exit(1 if bad else 0)
 # checking severity. Fail only on unignored high (bit 3) or critical (bit 4) findings.
 # Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev tooling
 # (eslint, jest), never shipped to the production bundle.
-# Ignored: 1138808, 1138809 — image-size DoS via Metro's bundler dependency chain;
-# no patched release exists upstream yet, and image-size only runs at build time,
-# never shipped to the production bundle.
+# image-size's GHSA-5p2g-fcmc-qvqq/GHSA-w3rx-r6r6-pgpr (formerly flagged as advisory
+# IDs 1138808/1138809, now 1239765/1239766) is fixed by forcing image-size to ^2.0.4
+# via frontend-app/package.json's resolutions/overrides — no ignore needed any more.
 run "yarn audit (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED_IDS={1124334, 1138808, 1138809}
+IGNORED_IDS={1124334}
 high=0
 for line in sys.stdin:
     line=line.strip()

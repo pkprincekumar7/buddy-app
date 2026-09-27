@@ -185,13 +185,18 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | stg | `https://buddy-stg.learning-dev.com` |
 | prod | `https://buddy.learning-dev.com` |
 
-### Internal ALB FQDN (ap-south-1)
+### Internal ALB FQDN
+
+Region-qualified — one distinct hostname per environment **and** per backend region
+(a second region's apply would otherwise collide with the first region's Route 53
+record, since Route 53 is a global namespace unlike the other region-scoped resources
+in this module):
 
 | Environment | ap-south-1 |
 |---|---|
-| dev | `buddy-internal-ap-dev.learning-dev.com` |
-| stg | `buddy-internal-ap-stg.learning-dev.com` |
-| prod | `buddy-internal-ap.learning-dev.com` |
+| dev | `buddy-internal-dev-ap-south-1.learning-dev.com` |
+| stg | `buddy-internal-stg-ap-south-1.learning-dev.com` |
+| prod | `buddy-internal-ap-south-1.learning-dev.com` |
 
 ---
 

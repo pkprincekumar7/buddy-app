@@ -61,5 +61,9 @@ enable_ops_email           = true
 enable_guardduty  = true
 enable_cloudtrail = true
 
+# ALB access logs always enabled on prod — independent of enable_cloudtrail
+# above (see enable_alb_access_logs's own description); shares the same bucket
+enable_alb_access_logs = true
+
 # ADOT sidecar enabled on prod
 enable_adot_sidecar = true

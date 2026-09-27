@@ -1,5 +1,19 @@
 # Infrastructure cost estimate — production (ap-south-1)
 
+> **Status: superseded — single-region snapshot, predates the multi-region architecture.**
+> The current source of truth for the infrastructure architecture is
+> [`docs/infra-architecture-multi-region.md`](infra-architecture-multi-region.md), which documents
+> the actual multi-region backend (ap-south-1 + eu-west-1 + us-east-1), the `infra-live-scheduler`
+> module (EventBridge Scheduler + Lambda dispatcher — not mentioned anywhere below), and the
+> current combined JWT-validation + geo-routing Lambda@Edge design. This file predates all of
+> that and describes an earlier single-region (ap-south-1-only) target: several specifics below
+> are stale and should not be relied on, including the proposed Terraform version (`1.9.0` — the
+> real version across every module is `~> 1.16.0`), the AWS provider constraint (`~> 5.0` here vs.
+> the real `~> 6.28`), and the entire MongoDB Atlas PrivateLink plan (single-region only). Kept as
+> a historical record of the original design. For current, maintained figures see
+> [aws-resources.md](aws-resources.md) (resource inventory) and
+> [aws-cost-estimate.md](aws-cost-estimate.md) (cost breakdown).
+
 Launch-day services only. Single region, 1,000 to 10 million users. Deferred services are listed at the end for reference.
 
 All figures in USD/month, ap-south-1 on-demand rates (June 2026).

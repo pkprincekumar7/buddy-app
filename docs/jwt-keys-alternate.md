@@ -13,7 +13,7 @@ current setup. What changes is *where the public key lives and who verifies with
 
 | | Current (`jwt-keys.md`) | This variant |
 |---|---|---|
-| Verifier | Lambda@Edge, at CloudFront's Regional Edge Caches (origin-request — not every PoP; see `infra-architecture-multi-region-alternate.md`'s diagram note) | Lambda Authorizer, per region (×3) |
+| Verifier | Lambda@Edge, at `viewer-request` — replicated to every one of CloudFront's ~400+ viewer-facing PoPs, not just Regional Edge Caches (see `infra-architecture-multi-region.md`'s corrected footprint note) | Lambda Authorizer, per region (×3) |
 | Public key storage | Embedded in Lambda@Edge code via Terraform `templatefile()` | AWS Secrets Manager secret, multi-region replicated |
 | Rotation mechanism | Terraform apply + CloudFront propagation (5–15 min) | Secrets Manager `put-secret-value` + replica sync (typically under a few minutes) + authorizer cache TTL |
 | Lambda@Edge involvement | Holds and uses the key | **None** — no key material at the edge at all |
@@ -36,13 +36,16 @@ a GitHub Actions secret consumed by Terraform at deploy time — it's a **live S
 Manager secret** that the Lambda Authorizer reads at runtime (with in-memory caching).
 Rotating it no longer requires a Terraform apply or a CloudFront distribution update.
 
-**Why the private key also needs replication:** login/register requests are geo-routed
-by Lambda@Edge via the CloudFront-Viewer-Country IP-geo fallback (see
-`infra-architecture-multi-region-alternate.md` Section 2 — these are unauthenticated `PUBLIC_PATHS`,
-so there's no JWT `location` claim yet to route by), which can land on any of the 3
-regions depending on the client's network location. Every region's ECS must therefore be
-able to sign a token without a cross-region Secrets Manager call — the same regional-read
-argument used for the public keys applies symmetrically to the private key.
+**Why the private key also needs replication:** not every unauthenticated/semi-authenticated
+path behaves the same way here (see `infra-architecture-multi-region-alternate.md` Section 2,
+corrected). `login` is a pure-bypass path — it always lands on the single static bootstrap
+region, never routed by location or IP, so on its own it wouldn't need signing capability
+anywhere else. `register` and token `refresh`, however, both mint a fresh token on success
+and are routed by a best-effort **location hint** (an existing session cookie/Bearer
+token's payload, or for `register`, a client-supplied `X-Client-Location` header) — which
+can genuinely land on any of the 3 regions depending on that hint. Every region's ECS must
+therefore be able to sign a token without a cross-region Secrets Manager call — the same
+regional-read argument used for the public keys applies symmetrically to the private key.
 
 ---
 
@@ -196,9 +199,12 @@ rm jwt_private.pem jwt_public.pem jwt_private_v2.pem jwt_public_v2.pem
   verifies incoming tokens against the `kid`-matched key. Invalid, unsigned, or
   incorrectly-signed tokens are rejected with `401` at the regional API Gateway — before
   reaching the VPC Link/ALB/ECS.
-- **Lambda@Edge holds no key at all** in this variant — it only checks that a token is
-  present and structurally well-formed with an unexpired `exp` claim (unverified read,
-  no cryptographic check). It plays no role in key rotation.
+- **Lambda@Edge holds no key at all** in this variant. For the paths that need it, it
+  only checks that a token is present and structurally well-formed with an unexpired
+  `exp` claim (unverified read, no cryptographic check) — `login`/`google`/`health`
+  bypass this entirely, and `refresh`/`logout`/`register` only read an unverified location hint,
+  never requiring or blocking on a token. Either way, Lambda@Edge plays no role in key
+  rotation for this variant.
 - The `kid` header on each token ties signing to verification, same mechanism as today —
   multiple keys can coexist in the Secrets Manager JSON map during the overlap window.
 

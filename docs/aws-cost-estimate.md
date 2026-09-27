@@ -4,8 +4,8 @@
 > **Region:** ap-south-1 (backend), us-east-1 (CloudFront / WAF / ACM / Lambda@Edge)
 > **Traffic model:** 500 requests/MAU/month; 70% are API calls hitting ECS, 30% are static assets served from CloudFront cache.
 > **Data transfer:** 2 MB egress/MAU/month via CloudFront; 1 MB/MAU/month through NAT Gateway (LLM API outbound traffic).
-> **Log volume:** ~190 KB/MAU/month (350 API requests × ~500 bytes per log entry).
-> **Pricing confidence:** ✓ = confirmed from AWS Pricing CSV/documentation (fetched June 2026); ~ = estimate, verify via [AWS Pricing Calculator](https://calculator.aws/).
+> **Log volume:** ~175 KB/MAU/month (350 API requests × ~500 bytes per log entry).
+> **Pricing confidence:** ✓ = confirmed directly against AWS's official Price List API (`pricing.us-east-1.amazonaws.com`), re-verified September 2026. Every figure below is ✓ except the edge (us-east-1) GuardDuty foundational rate in Section 11, which is an inherited, not independently re-verified, estimate.
 
 ---
 
@@ -68,13 +68,13 @@ Per-task monthly cost (720 hrs):
 
 ## 3. Application Load Balancer
 
-ALB ap-south-1 pricing (~, estimate): ~$0.008/hr base + ~$0.008/LCU/hr.
+ALB ap-south-1 pricing (✓, confirmed via AWS Price List API): $0.0239/hr base + $0.008/LCU/hr. (The base rate was previously mis-sourced as ~$0.008/hr — that figure is actually the LCU rate, not the base.)
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
-| ALB hourly base | $6 | $6 | $6 | $6 | $6 | $6 | $6 | $6 | $6 |
+| ALB hourly base | $17 | $17 | $17 | $17 | $17 | $17 | $17 | $17 | $17 |
 | LCU usage (scales with request rate) | $0 | $0 | $1 | $1 | $1 | $2 | $5 | $30 | $280 |
-| **Subtotal** | **$6** | **$6** | **$7** | **$7** | **$7** | **$8** | **$11** | **$36** | **$286** |
+| **Subtotal** | **$17** | **$17** | **$18** | **$18** | **$18** | **$19** | **$22** | **$47** | **$297** |
 
 ---
 
@@ -137,14 +137,14 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 
 Confirmed (✓): $5.00/WebACL/month + $1.00/custom rule/month + $1.00/AWS managed rule group/month + $0.60/million requests. Config: 1 WebACL + 1 rate rule + 3 managed groups = **$9/month fixed**.
 
-Kinesis Firehose WAF logging (✓): $0.029/GB (Direct PUT). prod only (`enable_waf_logging = true`).
+Kinesis Firehose WAF logging (✓, re-verified — previously mis-sourced as $0.029/GB, and even us-east-1's current rate is $0.080/GB): $0.0938/GB (Direct PUT, ap-south-1). prod only (`enable_waf_logging = true`).
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
 | Fixed base ($9/mo) | $0 | $0 | $9 | $9 | $9 | $9 | $9 | $9 | $9 |
 | Request cost ($0.60/M) | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $9 | $86 |
-| WAF Firehose logging | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $58 |
-| **Subtotal** | **$0** | **$0** | **$9** | **$9** | **$9** | **$9** | **$11** | **$24** | **$153** |
+| WAF Firehose logging | $0 | $0 | $0 | $0 | $0 | $0 | $3 | $19 | $188 |
+| **Subtotal** | **$0** | **$0** | **$9** | **$9** | **$9** | **$9** | **$13** | **$37** | **$283** |
 
 ---
 
@@ -173,61 +173,61 @@ Confirmed (✓): $0.10/GB/month. ~2 GB of image layers stored. S3 gateway VPC en
 
 ## 9. Secrets Manager
 
-Confirmed (✓): $0.40/secret/month. ~6 secrets per environment. API call costs negligible (first 10K free/month).
+Confirmed (✓): $0.40/secret/month. **2 secrets per environment** — corrected from a previous "~6" estimate, which miscounted AWS's billing unit. AWS bills per `aws_secretsmanager_secret` *resource*, not per credential value: `backend/secrets.tf`'s single `app` secret packs 7 different credentials (JWT key, Google client ID, 3 LLM API keys, MongoDB URI, Redis auth token) into one JSON blob — that's 1 billable secret, not 7. Add the scheduler module's one `github_pat` secret: 2 secrets total for this doc's single-region (`ap-south-1`) model. (Each additional backend region applied would add one more `app` secret, +$0.40/month.) API call costs negligible (first 10K free/month).
 
 | Resource | dev | sbx | stg | prod (1K–100M) |
 |---|---|---|---|---|
-| Secrets (~6) | $2 | $2 | $2 | $2 |
-| **Subtotal** | **$2** | **$2** | **$2** | **$2** |
+| Secrets (2) | $1 | $1 | $1 | $1 |
+| **Subtotal** | **$1** | **$1** | **$1** | **$1** |
 
 ---
 
 ## 10. CloudWatch (Logs, Alarms, Dashboard, X-Ray)
 
-Confirmed (✓): Log ingestion $0.50/GB (first 5 GB/account/month free). Alarms $0.10/alarm/month. Dashboard $3/month. X-Ray: 100K traces free/month, then $5/million.
+Confirmed (✓): Log ingestion $0.67/GB, Standard log class (first 5 GB/account/month free) — corrected from a previous $0.50/GB estimate. Alarms $0.10/alarm/month. Dashboard $3/month (confirmed via multiple current AWS-pricing-sourced references; not independently found under a distinct SKU in the Price List API). X-Ray: 100K traces free/month, then $5/million.
 
-Log volume: ~190 KB/MAU/month (350 API requests × ~500 bytes/entry).
+Log volume: ~175 KB/MAU/month (350 API requests × ~500 bytes/entry) — corrected from a previous "~190 KB" that didn't match its own stated formula (350 × 500 bytes = 175,000 bytes = 175 KB decimal).
 
 X-Ray sampling rate: dev/sbx/stg = 5%; prod = 1% (per tfvars `xray_default_sampling_rate = 0.01`). Only API requests (70% of total) generate traces.
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
-| Log ingestion (190 KB/MAU; 5 GB free) | $0 | $0 | $0 | $0 | $0 | $7 | $93 | $948 | $9,498 |
+| Log ingestion (175 KB/MAU; 5 GB free) | $0 | $0 | $0 | $0 | $0 | $8 | $114 | $1,169 | $11,722 |
 | Alarms — autoscaling always-on (2) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | Alarms — basic (2 ALB; stg+prod) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | Alarms — all (13 additional; prod only) | $0 | $0 | $0 | $1 | $1 | $1 | $1 | $1 | $1 |
 | Dashboard (prod only; ✓ $3/month) | $0 | $0 | $0 | $3 | $3 | $3 | $3 | $3 | $3 |
 | X-Ray traces | $0 | $0 | $0 | $0 | $0 | $1 | $17 | $175 | $1,750 |
-| **Subtotal** | **$0** | **$0** | **$0** | **$4** | **$4** | **$12** | **$114** | **$1,127** | **$11,252** |
+| **Subtotal** | **$0** | **$0** | **$0** | **$4** | **$4** | **$13** | **$135** | **$1,348** | **$13,476** |
 
-> Log ingestion at 100M MAU: 100M × 190 KB = ~19,000 GB → (19,000 − 5) × $0.50 = $9,498. This assumes request-level logging for all API calls. Reducing log verbosity (e.g. log only errors + summaries) would drop this substantially.
+> Log ingestion at 100M MAU: 100M × 175 KB = 17,500 GB → (17,500 − 5) × $0.67 = $11,722. This assumes request-level logging for all API calls. Reducing log verbosity (e.g. log only errors + summaries) would drop this substantially.
 > X-Ray at 100M MAU (1% sampling): 100M × 350 API req × 0.01 = 350M traces → (350M − 100K) / 1M × $5 = $1,750.
 
 ---
 
 ## 11. GuardDuty
 
-Confirmed (✓): ECS Runtime Monitoring $1.50/vCPU/month. VPC Flow Logs analysis $1.00/GB/month.
+Confirmed (✓), corrected from previous estimates: ECS/Fargate Runtime Monitoring **$1.81/vCPU/month** (first 500 vCPU tier — covers this doc's entire modeled range; was previously $1.50). VPC Flow Logs / events analyzed **$1.10/GB/month** (first 500 GB tier; was previously $1.00). Edge (us-east-1) GuardDuty figure below is an inherited estimate, not independently re-verified this pass.
 
 GuardDuty monitors running tasks. vCPU count is based on minimum task counts × task vCPUs:
 
 | Scale | API tasks (min) | Worker tasks (min) | Task vCPUs | Total vCPUs | ECS Runtime cost |
 |---|---|---|---|---|---|
-| stg | 2 | 1 | 0.5 vCPU each | 1.5 vCPU | $2 |
+| stg | 2 | 1 | 0.5 vCPU each | 1.5 vCPU | $3 |
 | prod 1K | 2 | 1 | 1 vCPU each | 3 vCPU | $5 |
-| prod 10K | 3 | 2 | 1 vCPU each | 5 vCPU | $8 |
-| prod 100K | 5 | 3 | 1 vCPU each | 8 vCPU | $12 |
-| prod 1M | 10 | 5 | 2 vCPU each | 30 vCPU | $45 |
-| prod 10M | 15 | 5 | 4 vCPU each | 80 vCPU | $120 |
-| prod 100M | 15 | 5 | 4 vCPU each | 80 vCPU | $120 |
+| prod 10K | 3 | 2 | 1 vCPU each | 5 vCPU | $9 |
+| prod 100K | 5 | 3 | 1 vCPU each | 8 vCPU | $14 |
+| prod 1M | 10 | 5 | 2 vCPU each | 30 vCPU | $54 |
+| prod 10M | 15 | 5 | 4 vCPU each | 80 vCPU | $145 |
+| prod 100M | 15 | 5 | 4 vCPU each | 80 vCPU | $145 |
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
 | Backend GuardDuty enabled | No | No | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| ECS Runtime Monitoring | $0 | $0 | $2 | $5 | $8 | $12 | $45 | $120 | $120 |
-| VPC Flow Logs analysis | $0 | $0 | $1 | $1 | $2 | $2 | $5 | $20 | $100 |
+| ECS Runtime Monitoring | $0 | $0 | $3 | $5 | $9 | $14 | $54 | $145 | $145 |
+| VPC Flow Logs analysis | $0 | $0 | $1 | $1 | $2 | $2 | $6 | $22 | $110 |
 | Edge GuardDuty (us-east-1; stg+prod) | $0 | $0 | $2 | $2 | $2 | $2 | $2 | $2 | $2 |
-| **Subtotal** | **$0** | **$0** | **$5** | **$8** | **$12** | **$16** | **$52** | **$142** | **$222** |
+| **Subtotal** | **$0** | **$0** | **$6** | **$8** | **$13** | **$18** | **$62** | **$169** | **$257** |
 
 > GuardDuty ECS Runtime cost scales with vCPUs in running tasks, not with MAU. At prod 100M MAU, minimum 80 vCPUs (15 API + 5 worker tasks × 4 vCPU) are always monitored.
 
@@ -246,7 +246,7 @@ Confirmed (✓): First trail management events free. stg: `enable_cloudtrail = f
 
 ## 13. S3 (Uploads + Logging)
 
-S3 Standard: $0.023/GB/month (US-East-1 reference; ap-south-1 slightly higher ~$0.025). Requests negligible at small scale.
+S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1, first 50 TB (us-east-1's rate is lower, $0.023/GB — this doc uses the correct ap-south-1 figure). Requests negligible at small scale.
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -261,18 +261,18 @@ S3 Standard: $0.023/GB/month (US-East-1 reference; ap-south-1 slightly higher ~$
 |---|---|---|---|---|---|---|---|---|---|
 | 1. Networking | $40 | $40 | $175 | $261 | $262 | $267 | $317 | $821 | $5,861 |
 | 2. ECS Fargate | $38 | $38 | $56 | $112 | $187 | $299 | $1,121 | $2,988 | $2,988 |
-| 3. ALB | $6 | $6 | $7 | $7 | $7 | $8 | $11 | $36 | $286 |
+| 3. ALB | $17 | $17 | $18 | $18 | $18 | $19 | $22 | $47 | $297 |
 | 4. ElastiCache | $14 | $14 | $58 | $117 | $304 | $304 | $608 | $1,823 | $3,646 |
 | 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $70 | $915 | $10,033 | $98,674 |
-| 6. WAF | $0 | $0 | $9 | $9 | $9 | $9 | $11 | $24 | $153 |
+| 6. WAF | $0 | $0 | $9 | $9 | $9 | $9 | $13 | $37 | $283 |
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $2 | $7 | $59 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
-| 9. Secrets Manager | $2 | $2 | $2 | $2 | $2 | $2 | $2 | $2 | $2 |
-| 10. CloudWatch + X-Ray | $0 | $0 | $0 | $4 | $4 | $12 | $114 | $1,127 | $11,252 |
-| 11. GuardDuty | $0 | $0 | $5 | $8 | $12 | $16 | $52 | $142 | $222 |
+| 9. Secrets Manager | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
+| 10. CloudWatch + X-Ray | $0 | $0 | $0 | $4 | $4 | $13 | $135 | $1,348 | $13,476 |
+| 11. GuardDuty | $0 | $0 | $6 | $8 | $13 | $18 | $62 | $169 | $257 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$101** | **$101** | **$313** | **$521** | **$790** | **$988** | **$3,154** | **$17,009** | **$123,197** |
+| **Grand Total** | **$111** | **$111** | **$324** | **$531** | **$801** | **$1,001** | **$3,197** | **$17,280** | **$125,596** |
 
 ---
 
@@ -280,12 +280,12 @@ S3 Standard: $0.023/GB/month (US-East-1 reference; ap-south-1 slightly higher ~$
 
 | Scale | Top cost driver | Second | Third |
 |---|---|---|---|
-| dev / sbx | NAT Gateway ($40) | ECS Fargate ($38) | ALB ($6) |
-| stg | NAT + VPC Endpoints ($175) | ECS Fargate ($56) | ElastiCache ($58) |
+| dev / sbx | NAT Gateway ($40) | ECS Fargate ($38) | ALB ($17) |
+| stg | NAT + VPC Endpoints ($175) | ElastiCache ($58) | ECS Fargate ($56) |
 | prod 1K–100K | NAT + VPC Endpoints | ElastiCache | ECS Fargate |
 | prod 1M | ECS Fargate ($1,121) | CloudFront ($915) | ElastiCache ($608) |
 | prod 10M | CloudFront+L@E ($10,033) | ECS Fargate ($2,988) | ElastiCache ($1,823) |
-| prod 100M | CloudFront+L@E ($98,674) | CloudWatch logs ($9,498) | NAT + networking ($5,861) |
+| prod 100M | CloudFront+L@E ($98,674) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
 
 ---
 
@@ -318,10 +318,10 @@ S3 Standard: $0.023/GB/month (US-East-1 reference; ap-south-1 slightly higher ~$
 | WAF custom rule | $1.00 | per rule/month |
 | WAF AWS managed rule group | $1.00 | per group/month |
 | WAF requests | $0.60 | per million |
-| Kinesis Firehose (WAF logs) | $0.029 | per GB |
-| GuardDuty ECS Runtime | $1.50 | per vCPU/month |
-| GuardDuty VPC Flow Logs | $1.00 | per GB/month |
-| CloudWatch log ingestion | $0.50 | per GB (5 GB free) |
+| Kinesis Firehose (WAF logs, ap-south-1) | $0.0938 | per GB |
+| GuardDuty ECS/Fargate Runtime (first 500 vCPU) | $1.81 | per vCPU/month |
+| GuardDuty VPC Flow Logs (first 500 GB) | $1.10 | per GB/month |
+| CloudWatch log ingestion (Standard class) | $0.67 | per GB (5 GB free) |
 | CloudWatch alarm | $0.10 | per alarm/month |
 | CloudWatch dashboard | $3.00 | per dashboard/month |
 | X-Ray traces (first 100K) | $0.000 | free |
@@ -331,17 +331,21 @@ S3 Standard: $0.023/GB/month (US-East-1 reference; ap-south-1 slightly higher ~$
 | Route 53 hosted zone | $0.50 | per zone/month |
 | Route 53 queries | $0.40 | per million |
 | CloudTrail (first trail, mgmt events) | $0.00 | free |
+| ALB base (ap-south-1) | $0.0239 | per hr |
+| ALB LCU | $0.008 | per LCU/hr |
+| S3 Standard (ap-south-1, first 50 TB) | $0.025 | per GB/month |
 
-**Estimates only (~) — verify via [AWS Pricing Calculator](https://calculator.aws/):**
+**Remaining estimate (not independently re-verified this pass):**
 
 | Service | Estimate | Note |
 |---|---|---|
-| ALB base (ap-south-1) | ~$0.008/hr | Regional pricing page not parseable |
-| S3 Standard (ap-south-1) | ~$0.025/GB/month | Slightly higher than us-east-1 |
+| Edge GuardDuty foundational detector (us-east-1) | ~$2/month | Inherited flat estimate; only the ap-south-1 GuardDuty rates (ECS Runtime, VPC Flow Logs) were re-verified against the Price List API this pass |
 
 **Key caveats:**
 - All ECS costs reflect **minimum task counts**. Peak autoscaling can multiply ECS cost by up to 4× at high MAU scales.
 - CloudFront 1 TB/month data free tier is **per AWS account** — shared across all environments.
 - At 100M MAU, CloudFront HTTPS request charges ($59,988) are the single largest line item. If your app can cache a meaningful portion of API responses at CloudFront, this drops dramatically.
-- CloudWatch log costs at 100M MAU (~$9,498) assume full request-level logging. Switching to sampled or error-only logging would cut this by 90%+.
+- CloudWatch log costs at 100M MAU (~$11,722) assume full request-level logging. Switching to sampled or error-only logging would cut this by 90%+.
 - dev and sbx are identical configurations.
+- This entire estimate models **one backend region** (`ap-south-1`), matching the "Region" note at the top. Each additional backend region applied (`eu-west-1`, `us-east-1`) adds its own full Networking/ECS/ALB/ElastiCache/S3/IAM/Secrets/CloudWatch/GuardDuty cost (Sections 1–4, 9–11, 13) on top of these totals — see `docs/aws-resources.md`'s multi-region scaling note for the resource-count side of this.
+- The S3 (Section 13) and Route 53 DNS-query (Section 7) rows don't have an explicitly stated per-MAU volume assumption in this document, unlike every other section — their dollar figures could not be independently re-derived this pass.
