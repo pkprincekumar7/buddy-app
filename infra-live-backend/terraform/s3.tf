@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# S3 — uploads bucket configuration (ap-south-1)
+# S3 — uploads bucket configuration (this backend region)
 # The bucket is created manually. Terraform manages CORS, lifecycle, and IAM
 # only, referencing the bucket via var.uploads_bucket_name.
 # ---------------------------------------------------------------------------
@@ -50,22 +50,40 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
 }
 
 # ---------------------------------------------------------------------------
-# S3 — regional logging bucket policy (ap-south-1)
+# ELB access-log delivery accounts — AWS assigns a distinct, fixed AWS-owned
+# account per region for this purpose (published in AWS's ELB access-logging
+# docs; these are not secrets — every AWS customer's ALB in that region uses
+# the same account). Looked up by var.aws_region below rather than hardcoded
+# to one region, since this module is applied once per region.
+# ---------------------------------------------------------------------------
+locals {
+  elb_log_delivery_account_ids = {
+    "ap-south-1" = "718504428378"
+    "eu-west-1"  = "156460612806"
+    "us-east-1"  = "127311923021"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# S3 — regional logging bucket policy (this backend region)
 # The bucket is created manually. Terraform manages the policy only.
-# Skipped when var.enable_cloudtrail = false (dev/sbx).
+# Created whenever EITHER enable_cloudtrail or enable_alb_access_logs is
+# true — the two features are independent (see their own variable
+# descriptions) but share this one bucket/policy resource, so either one
+# needing write access is reason enough for the policy to exist. On dev/sbx,
+# both flags default to false, so the policy doesn't exist there either.
 #
 # Two principals are granted write access:
-#   1. ELB service account (718504428378) — ALB access logs for ap-south-1.
-#      Account ID 718504428378 is the canonical ELB delivery account for
-#      ap-south-1; newer accounts may also accept the service principal
-#      logdelivery.elasticloadbalancing.amazonaws.com but the account ID
-#      form is always safe and backwards compatible.
+#   1. ELB service account (region-specific, see local.elb_log_delivery_account_ids
+#      above) — ALB access log delivery for this backend region. Only
+#      actually used when enable_alb_access_logs = true (see alb.tf).
 #   2. cloudtrail.amazonaws.com — requires GetBucketAcl to validate the
-#      bucket exists and PutObject to write log files.
+#      bucket exists and PutObject to write log files. Only actually used
+#      when enable_cloudtrail = true.
 # ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket_policy" "regional_logging" {
-  count  = var.enable_cloudtrail ? 1 : 0
+  count  = (var.enable_cloudtrail || var.enable_alb_access_logs) ? 1 : 0
   bucket = var.regional_logging_bucket_name
 
   policy = jsonencode({
@@ -75,7 +93,7 @@ resource "aws_s3_bucket_policy" "regional_logging" {
         Sid    = "ALBAccessLogs"
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::718504428378:root"
+          AWS = "arn:aws:iam::${local.elb_log_delivery_account_ids[var.aws_region]}:root"
         }
         Action   = "s3:PutObject"
         Resource = "arn:aws:s3:::${var.regional_logging_bucket_name}/alb-logs/*"

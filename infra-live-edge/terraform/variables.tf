@@ -33,22 +33,19 @@ variable "acm_certificate_arn_us_east_1" {
   type        = string
 }
 
-variable "backend_region" {
-  description = "AWS region where the backend (ALB) was deployed — used to read the correct ALB FQDN from SSM"
-  type        = string
+variable "backend_regions" {
+  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here."
+  type        = list(string)
+  default     = ["ap-south-1"]
 
-  # Multi-region expansion checklist — do all of the following for each new region:
-  #   1. Apply infra-live-backend for the new region first. This module reads the
-  #      ALB FQDN from SSM using backend_region as a path segment; if the backend
-  #      hasn't been applied the SSM parameter won't exist and this apply will fail
-  #      with a cryptic "parameter not found" error.
-  #   2. Add the new region as a choice in the backend_region workflow_dispatch
-  #      input in terraform-live-edge.yml.
-  #   3. Add the new region to the validation condition below.
-  #   4. For the full cross-module checklist see infra-live-backend/terraform/variables.tf.
   validation {
-    condition     = var.backend_region == "ap-south-1"
-    error_message = "backend_region must be ap-south-1 (only active region; see expansion checklist in variable description)."
+    condition     = length(var.backend_regions) > 0
+    error_message = "backend_regions must not be empty — the API would have no origin to route to."
+  }
+
+  validation {
+    condition     = alltrue([for r in var.backend_regions : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
+    error_message = "backend_regions may only contain: ap-south-1, eu-west-1, us-east-1."
   }
 }
 
@@ -63,9 +60,14 @@ variable "assets_bucket_name" {
   type        = string
 }
 
-variable "uploads_bucket_name" {
-  description = "Pre-existing S3 uploads bucket name (backend_region) — holds user-generated content under uploads/; served via CloudFront OAC"
-  type        = string
+variable "uploads_bucket_names" {
+  description = "Pre-existing S3 uploads bucket name per region, keyed by AWS region (e.g. { \"ap-south-1\" = \"...\", \"eu-west-1\" = \"...\" }) — each holds user-generated content under uploads/; served via CloudFront OAC. Must contain an entry for every region in backend_regions."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for r in var.backend_regions : contains(keys(var.uploads_bucket_names), r)])
+    error_message = "uploads_bucket_names must have an entry for every region in backend_regions."
+  }
 }
 
 # -- CloudFront ---------------------------------------------------------------

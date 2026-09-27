@@ -28,10 +28,10 @@ on:
         required: true
         default: "ap-south-1"
         type: choice
-        # Multi-region expansion: add the new region here.
-        # Full checklist: infra-live-backend/terraform/variables.tf.
         options:
           - ap-south-1
+          - eu-west-1
+          - us-east-1
   workflow_call:
     inputs:
       service:

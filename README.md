@@ -15,7 +15,7 @@ Frontend UI library: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), 
 | Frontend pages and routing | [docs/frontend.md](docs/frontend.md) |
 | GitHub Actions workflows, AWS OIDC, secrets | [docs/ci-cd.md](docs/ci-cd.md) |
 | Running tests and coverage | [docs/tests.md](docs/tests.md) |
-| Infrastructure architecture, AWS cost estimates | [docs/infra-architecture-v1.md](docs/infra-architecture-v1.md) |
+| Infrastructure architecture (multi-region backend, edge routing, deployment sequence) | [docs/infra-architecture-multi-region.md](docs/infra-architecture-multi-region.md) |
 | Per-service AWS cost breakdown and hourly rates | [docs/aws-cost-estimate.md](docs/aws-cost-estimate.md) |
 | AWS resource inventory (all Terraform-managed resources) | [docs/aws-resources.md](docs/aws-resources.md) |
 

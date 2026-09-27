@@ -10,8 +10,9 @@ variable "aws_region" {
 }
 
 variable "target_aws_regions" {
-  description = "AWS regions passed to terraform-live-all.yml for application deployment; one start+stop schedule pair is created per region"
+  description = "The complete set of AWS regions passed to terraform-live-all.yml on every scheduled run. Exactly one start+stop schedule pair is created (not one per region) — terraform-live-all.yml's backend_regions must always receive the full intended set in a single dispatch, since infra-live-edge is one shared distribution per environment and a partial set would make it destroy whichever regions were left out. Controlled via workflow input target_aws_regions, not tfvars."
   type        = list(string)
+  default     = ["ap-south-1"]
 
   validation {
     condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(["ap-south-1", "us-east-1", "eu-west-1"], r)])
@@ -66,7 +67,7 @@ variable "schedule_enabled" {
 variable "start_schedule_expression" {
   description = "EventBridge cron for the daily start (6-field AWS cron, IST)"
   type        = string
-  default     = "cron(0 14 * * ? *)" # 02:00 PM IST
+  default     = "cron(0 15 * * ? *)" # 03:00 PM IST
 }
 
 variable "stop_schedule_expression" {

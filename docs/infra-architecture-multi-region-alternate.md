@@ -20,13 +20,21 @@
 The trigger for this alternative was a specific concern: **no signing/verification key
 should live inside Lambda@Edge**, to shrink the blast radius if the edge function's code
 or config ever leaks. The current plan embeds the JWT *public* key in Lambda@Edge (lower
-risk than a private/symmetric key, but still key material at the edge). Both the current
-plan's function and this proposal's run at CloudFront's `origin-request` stage, which
-replicates only to CloudFront's Regional Edge Caches (a much smaller set than the
-~400+ viewer-facing PoPs — see the diagram note below), not to every edge location; the
-key-leak concern is about that smaller footprint, not the full edge network. This design
-removes all key material from Lambda@Edge entirely, at the cost
-of adding a regional hop (API Gateway) and reduced edge-side security filtering.
+risk than a private/symmetric key, but still key material at the edge).
+
+**Correction (this section originally assumed the current plan also runs at
+`origin-request` — it doesn't):** the current plan's function runs at **`viewer-request`**
+(confirmed in `infra-live-edge/terraform/cloudfront.tf`'s `lambda_function_association`),
+which replicates to **every one of CloudFront's ~400+ viewer-facing PoPs**, not just the
+smaller set of Regional Edge Caches. That actually makes the key-leak footprint for the
+current plan *larger* than this section originally stated, not smaller — the public key
+sits at every edge location globally, not a reduced subset. This proposal's own function
+runs at `origin-request` instead (a real, deliberate change from the current plan, not a
+shared trait with it — see the correction under Section 2 below), which is exactly why
+removing the key here also shrinks the footprint of *any* remaining key-adjacent logic to
+Regional Edge Caches only, on top of removing the key itself. This design removes all key
+material from Lambda@Edge entirely, at the cost of adding a regional hop (API Gateway) and
+reduced edge-side security filtering.
 
 ## Design summary
 
@@ -36,8 +44,8 @@ of adding a regional hop (API Gateway) and reduced edge-side security filtering.
 | Lambda@Edge holds key material | Yes (public key) | **No** |
 | Lambda@Edge's job | Full auth + geo-routing | Structural pre-filter (existence + expiry, unverified) + geo-routing (unchanged mechanism — see below) |
 | Where a forged-but-well-formed token is caught | At the edge (signature fails) | At the regional API Gateway (signature fails) |
-| ECS re-validates token | No (trusts Lambda@Edge) | No (trusts API Gateway authorizer context) |
-| MongoDB | Still an open decision (Option A vs B, per that doc's Change 10d) | Assumes Option A (GEOSHARDED) — unaffected by the auth-layer choice either way |
+| ECS re-validates token | **Yes** — `backend/app/deps.py`'s `get_current_user` independently re-verifies the RS256 signature (`jwt.decode(...)` against the public key) as defense-in-depth; it does not trust Lambda@Edge's check at all | **No, by design** — Section 5 explicitly removes this re-validation, trusting API Gateway's injected headers instead |
+| MongoDB | Confirmed: Global Cluster, GEOSHARDED, exactly 3 zones (per that doc's Change 10d) | Same confirmed design — unaffected by the auth-layer choice either way |
 
 ---
 
@@ -69,28 +77,39 @@ of adding a regional hop (API Gateway) and reduced edge-side security filtering.
         │  (runs at CloudFront's        │    └─────────────────────────┘
         │   Regional Edge Caches)       │
         │                               │
-        │  Step 1: structural pre-filter│
-        │    • skip public paths        │
-        │      (PUBLIC_PATHS)           │
+        │  Bypass paths (login/google/  │
+        │  health): pass through        │
+        │  unchanged — no check, no     │
+        │  routing                      │
+        │                               │
+        │  Refresh/logout/register:     │
+        │    • unverified read of a     │
+        │      location HINT from an    │
+        │      existing cookie/Bearer   │
+        │      token's payload, or      │
+        │      (register only)          │
+        │      X-Client-Location header │
+        │    • never blocks; no hint    │
+        │      → static bootstrap       │
+        │      region's API Gateway     │
+        │                               │
+        │  All other paths:             │
         │    • token present, 3 dot-    │
         │      separated segments?      │
         │    • unverified read of `exp` │
         │      claim (no crypto, no key)│
         │    • 401 on failure           │
+        │    • unverified read of       │
+        │      payload.location →       │
+        │      target region's API GW   │
+        │      (routing ≠ security)     │
+        │    • unmapped/undeployed      │
+        │      location → same          │
+        │      bootstrap-region fallback│
+        │      as bypass paths (open    │
+        │      question: see below)     │
         │                               │
-        │  Step 2: geo-routing          │
-        │    • authenticated: read      │
-        │      payload.location claim   │
-        │      (unverified — safe,      │
-        │      routing ≠ security)      │
-        │    • public paths: read       │
-        │      CloudFront-Viewer-       │
-        │      Country header           │
-        │    • rewrite origin hostname  │
-        │      to nearest region's      │
-        │      API Gateway domain       │
-        │                               │
-        │  Step 3: inject/propagate     │
+        │  Step: inject/propagate       │
         │    X-Request-Id header        │
         └───────────────┬───────────────┘
                         │ HTTPS/443 to region-specific API Gateway
@@ -107,7 +126,7 @@ of adding a regional hop (API Gateway) and reduced edge-side security filtering.
 ║     (replicated, local)   ║     (replicated, local)   ║     (replicated, local)   ║
 ╠═══════════════════════════╬═══════════════════════════╬═══════════════════════════╣
 ║ API Gateway (HTTP API)    ║ API Gateway (HTTP API)    ║ API Gateway (HTTP API)    ║
-║  PUBLIC_PATHS routes:     ║  PUBLIC_PATHS routes:     ║  PUBLIC_PATHS routes:     ║
+║  bypass-path routes:      ║  bypass-path routes:      ║  bypass-path routes:      ║
 ║   no authorizer attached  ║   no authorizer attached  ║   no authorizer attached  ║
 ║  all other routes:        ║  all other routes:        ║  all other routes:        ║
 ║   Lambda Authorizer       ║   Lambda Authorizer       ║   Lambda Authorizer       ║
@@ -153,16 +172,19 @@ of adding a regional hop (API Gateway) and reduced edge-side security filtering.
 ┌────────────────────────────────────────────────────────┐
 │             MongoDB Atlas — Global Cluster             │
 │   sharded by `location` field · zone-aware routing     │
-│              (Option A — GEOSHARDED)                   │
+│         (GEOSHARDED, confirmed — exactly 3 zones)      │
 ├──────────────────┬──────────────────┬──────────────────┤
 │   Zone: APAC     │    Zone: EU      │  Zone: Americas  │
 │  (ap-south-1)    │  (eu-west-1)     │  (us-east-1)     │
 │  location: in    │  location: eu    │  location: us    │
-│  location: apac  │  location: me    │  location: br    │
-│  location: cn    │  location: ru    │                  │
+│  location: apac  │                  │  location: br    │
+│  location: me    │                  │                  │
 ├──────────────────┴──────────────────┴──────────────────┤
 │         cross-zone replication (Atlas managed)         │
 └────────────────────────────────────────────────────────┘
+
+  cn / ru: excluded, not assigned to any zone — same exclusion as the current
+  plan, for the same compliance reasons (see the mapping table below).
 ```
 
 **TLS / hop chain:**
@@ -171,19 +193,27 @@ Browser ──HTTPS──▶ CloudFront ──[L@E: pre-filter + geo-route]─�
          (us-east-1 ACM cert)                                    (regional custom domain)                                                          (region ACM cert)
 ```
 
-**Location → API Gateway region mapping:**
+**Location → API Gateway region mapping** (corrected to match the current plan's real
+`LOCATION_TO_REGION` — an earlier version of this table had `me` grouped with EU and
+`cn`/`ru` mapped to a zone; both were wrong):
 
 | JWT `location` value | Atlas zone | Routed to region's API Gateway |
 |---|---|---|
-| `in`, `apac`, `cn` | APAC | ap-south-1 |
-| `eu`, `me`, `ru` | EU | eu-west-1 |
+| `in`, `apac`, `me` | APAC | ap-south-1 |
+| `eu` | EU | eu-west-1 |
 | `us`, `br` | Americas | us-east-1 |
-| authenticated but unrecognized/missing `location` | — | `DEFAULT_REGION` (ap-south-1) |
-| no token at all (public paths) | — | IP-geo fallback (see below), not `DEFAULT_REGION` |
+| `cn`, `ru` | — | **not routed** — same deliberate exclusion as the current plan (China needs AWS's separate China partition; Russia carries OFAC/EAR export-control exposure) |
+| authenticated but unrecognized/undeployed `location` | — | bootstrap-region fallback (see below) — **open question**, see "Open questions" section: without a verified signature at this point, this design can't tell a legitimate unmapped location from a forged one the way the current plan's fail-closed 503 can |
+| no token at all (bypass paths) | — | same bootstrap-region fallback, unconditionally |
 
-**Fallback for public paths (no JWT):** `CloudFront-Viewer-Country` mapped via the same
-country-to-region logic as `backend/app/routing.py`; if the country itself is
-unrecognized, that also falls back to `DEFAULT_REGION` (ap-south-1).
+**Fallback mechanism — no IP-geo routing, matching the current plan's real behaviour**
+(an earlier version of this section described a `CloudFront-Viewer-Country` fallback that
+doesn't exist in the current plan): bypass paths (login, google, health) and any
+authenticated request with an unmapped/undeployed location simply aren't rewritten —
+they fall through to the CloudFront distribution's statically configured origin (the
+first region in whatever region list is deployed). Refresh/logout/register instead read
+a best-effort location *hint* from an existing session cookie/Bearer token, or
+(register only) a client-supplied `X-Client-Location` header — never IP geo.
 
 ---
 
@@ -217,11 +247,15 @@ limiting compensates for this gap at the layer that still sees every request glo
 
 ### 2. Lambda@Edge — structural pre-filter + geo-routing, no key material
 
-This keeps the current implementation's `origin-request` placement and geo-routing
-mechanism (Change 1 / Change 4b in `infra-architecture-multi-region.md`) — only the auth part
-changes from full signature verification to a cheap unverified check. Geo-routing is
-retained because Route 53 latency-based routing would route on network proximity, not
-data locality, which is the exact problem the current doc's
+**Correction: this changes the event-stage placement, it doesn't keep it.** The current
+plan's function runs at `viewer-request`, not `origin-request` (see the correction under
+"Why this design differs from the current plan" above) — so moving to `origin-request`
+here is a real, deliberate change this proposal makes, not something carried over
+unchanged. What *is* kept is the current plan's geo-routing **intent and mechanism**:
+route by the JWT's `location` claim (or a session hint for a few specific paths), not by
+network proximity. Geo-routing is retained because Route 53 latency-based routing would
+route on network proximity, not data locality, which is the exact problem the current
+doc's
 ["Why JWT `location` claim for routing instead of IP geo?"](infra-architecture-multi-region.md#why-jwt-location-claim-for-routing-instead-of-ip-geo)
 section explains and solves: a user's data lives in a specific Atlas zone regardless of
 where they're currently connecting from, and routing by network latency instead of the
@@ -230,22 +264,32 @@ MongoDB read into a cross-region one.
 
 ```
 Input: request path, Authorization header (Bearer <token>) or access_token cookie
-0. Path matches the public allowlist (PUBLIC_PATHS)?
-     -> geo-route by CloudFront-Viewer-Country fallback map, skip to step 4
+0. Path matches the pure-bypass allowlist (login, google, health)?
+     -> forward unchanged, no check, no routing
+0b. Path is refresh/logout, or register?
+     -> unverified read of a location HINT from an existing cookie/Bearer token's
+        payload (register also falls back to X-Client-Location) -> map via
+        LOCATION_TO_REGION; no hint or unmapped -> bootstrap-region fallback,
+        never blocks, skip to step 4
 1. Token present and has exactly 3 dot-separated segments?  -> else 401
 2. Base64url-decode segment 2 (payload), JSON.parse           (no crypto, no key)
 3. payload.exp > now()?                                       -> else 401
-   payload.location -> map to target region (LOCATION_TO_REGION, same map as today)
+   payload.location -> map to target region via LOCATION_TO_REGION (corrected to
+   match the current plan: me groups with ap-south-1, not eu-west-1; cn/ru are
+   excluded, not mapped anywhere) -> unmapped/undeployed region: bootstrap-region
+   fallback (open question — see "Open questions" below)
 4. Rewrite request.origin.custom.domainName to the target region's API Gateway
    custom domain; inject/propagate correlation ID header (see below)
 5. Forward request
 ```
 
-The public-path allowlist (step 0) carries over unchanged from the current
-implementation's `PUBLIC_PATHS` list in `infra-architecture-multi-region.md` (registration,
-login, Google OAuth, refresh, logout, health — see that file's Lambda template for the
-authoritative list) — without it, unauthenticated endpoints like login/register would
-be rejected for lacking a token before they ever get the chance to issue one.
+The pure-bypass allowlist (step 0) carries over unchanged from the current
+implementation's `PURE_BYPASS_PATHS` (login, Google OAuth, health — see that file's
+Lambda template for the authoritative list) — without it, unauthenticated endpoints like
+login would be rejected for lacking a token before they ever get the chance to issue one.
+Register is *not* in that bypass list in the current implementation (an earlier version
+of this section grouped it there) — it gets its own hint-based handling (step 0b), same
+as refresh/logout.
 
 Reading `location` from the decoded-but-unverified payload is safe even though the
 signature hasn't been checked yet: routing is not a security decision. A forged token
@@ -287,16 +331,17 @@ hop executed in. Without a shared ID, tracing one failed request is guesswork.
   signing key from its **regional Secrets Manager replica** (multi-region secret
   replication configured once, read locally in each region — no cross-region Secrets
   Manager calls).
-- **Routes matching `PUBLIC_PATHS` must be defined without the authorizer attached.**
-  HTTP API authorization is configured per-route — a login/register/refresh/health
-  route simply has no `authorizer_id` on it. Without this, an unauthenticated login
-  request routed here by Lambda@Edge's IP-geo fallback (Section 2) would reach the
-  Lambda Authorizer, which requires a valid signed JWT that doesn't exist yet, and get a
-  spurious 401 — this is the same class of gap Lambda@Edge's own `LE0` public-path check
-  exists to avoid, just one layer further in. Both lists (Lambda@Edge's `PUBLIC_PATHS`
-  and HTTP API's no-authorizer routes) **must be kept in sync**, the same maintenance
-  hazard the current implementation already flags for `LOCATION_TO_REGION` /
-  `COUNTRY_TO_REGION` (see its Hard Rules section).
+- **Routes matching the pure-bypass paths (login, Google OAuth, health) must be defined
+  without the authorizer attached.** HTTP API authorization is configured per-route — one
+  of those routes simply has no `authorizer_id` on it. Without this, an unauthenticated
+  login request forwarded unchanged by Lambda@Edge's bypass step (Section 2, step 0)
+  would reach the Lambda Authorizer, which requires a valid signed JWT that doesn't exist
+  yet, and get a spurious 401 — this is the same class of gap Lambda@Edge's own step-0
+  bypass check exists to avoid, just one layer further in. Both lists (Lambda@Edge's
+  bypass paths and HTTP API's no-authorizer routes) **must be kept in sync**, the same
+  maintenance hazard the current implementation already flags for `LOCATION_TO_REGION`
+  (see its Hard Rules section — note the current implementation has no
+  `COUNTRY_TO_REGION` map at all, an earlier version of this note assumed one existed).
 - Authorizer caches the fetched key in-memory per execution environment with a bounded
   TTL (e.g. 15 min), not indefinitely — so key rotation propagates without a redeploy.
 - Authorizer performs full verification: signature, `exp`, `nbf`, `iss`, `aud`, and any
@@ -353,8 +398,8 @@ hop executed in. Without a shared ID, tracing one failed request is guesswork.
   for the same purpose.)
 - Per-region API Gateway custom domains get plain (non-routing-policy) DNS records —
   Lambda@Edge selects among them directly by rewriting `request.origin.custom.domainName`
-  per request, based on the JWT `location` claim (or the IP-geo fallback for public
-  paths). There is no Route 53 latency-based or geolocation routing policy in this path;
+  per request, based on the JWT `location` claim (or the bootstrap-region fallback for
+  bypass paths). There is no Route 53 latency-based or geolocation routing policy in this path;
   using one would make DNS pick a region by network proximity, undoing the data-locality
   routing Lambda@Edge is doing on purpose (see Section 2).
 - **Regional failover is an open gap, same as today**: the current implementation
@@ -368,19 +413,27 @@ hop executed in. Without a shared ID, tracing one failed request is guesswork.
   periodically-refreshed value baked into the function) before falling back to a
   secondary region for that user's zone.
 
-### 7. MongoDB Atlas Global Cluster (Option A — GEOSHARDED)
+### 7. MongoDB Atlas Global Cluster (GEOSHARDED, exactly 3 zones)
 
-`infra-architecture-multi-region.md`'s Change 10d frames this as an **open, undecided**
-choice between two options ("decision required before implementation"), not a settled
-one. This proposal doesn't resolve that decision — it restates Option A as the one
-assumed here, for the same reasons that doc gives, without additional justification:
+**Correction: this is no longer an open decision.** An earlier version of this section
+described `infra-architecture-multi-region.md`'s Change 10d as framing this as an open
+choice between two options requiring a decision before implementation. That doc's Change
+10d now reads: *"Decision (confirmed): Global Cluster, GEOSHARDED, exactly 3 zones"* —
+settled, not restated as an assumption here. It also corrected a premise this section
+inherited: there is no existing Terraform-managed `mongodbatlas_advanced_cluster`
+resource to convert from `REPLICASET` — today's cluster is a manually-managed Atlas
+**M0 (free tier)**, single region. This is a from-scratch bootstrap, not a migration
+between cluster types. This proposal doesn't change any of that decision, and inherits
+it unmodified:
 
-- Shard key includes a region-affinity field (e.g. `location`), zone-mapped to each
-  AWS region so writes/reads for a given zone's data stay local.
-- Requires either converting the existing `REPLICASET` cluster to `GEOSHARDED` (via
-  Atlas support migration) or standing up a new Global Cluster — this is a real data
-  migration, not a config toggle, and needs its own rollout plan independent of the
-  auth-layer changes above.
+- Shard key includes a region-affinity field (`location`), zone-mapped to each of the
+  three target AWS regions (ap-south-1/eu-west-1/us-east-1) so writes/reads for a given
+  zone's data stay local. `cn`/`ru` are excluded from every zone, not assigned one — see
+  the corrected Atlas zone diagram above and the location-mapping table's note.
+- Requires upgrading the Atlas project to a paid tier (M0 can't support Global Clusters,
+  custom zone sharding, or PrivateLink) and building the whole `infra-live-atlas` module
+  from scratch — a real bootstrap effort, not a config toggle, and one that needs its own
+  rollout plan independent of the auth-layer changes above.
 - Cross-zone queries (global aggregations) are the exception path, not the common case —
   application code should avoid triggering them on hot paths.
 
@@ -417,3 +470,14 @@ assumed here, for the same reasons that doc gives, without additional justificat
    exists separately at [`docs/jwt-keys-alternate.md`](jwt-keys-alternate.md) —
    `docs/jwt-keys.md` itself is untouched and remains correct for the current,
    implemented architecture.
+4. **What should happen to an authenticated request whose `location` is unmapped or maps
+   to an undeployed region, given the edge Lambda here never verifies the signature?**
+   The current plan can safely 503 that case, because by the time it makes that call the
+   token has already been cryptographically verified — the failure is known to be a
+   real, legitimate account hitting an infra gap, not a guess. This proposal's Lambda@Edge
+   can't tell the difference between that and an attacker sending a forged token with a
+   made-up `location` to see what happens, since no signature check has run yet. Falling
+   through to the bootstrap region (as this doc currently assumes) forwards the ambiguity
+   to the Lambda Authorizer, which will reject a forged token anyway — but a *legitimate*
+   user with an undeployed location would then get routed to the wrong region's API
+   Gateway and Authorizer instead of a clean, informative failure. Not resolved here.

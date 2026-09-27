@@ -1,15 +1,19 @@
 # Static Assets (Images)
 
-Activity-game images (used in `ChildActivityGame`) are stored in S3 and served differently depending on the environment. **Two separate buckets are used** — a dedicated local bucket that is never touched by Terraform, and per-environment deployed buckets managed entirely by Terraform.
+Activity-game images (used by the `ChildActivityGame` component) and avatar stage-splash images are stored in S3 and served differently depending on the environment. **Two separate buckets are used** — a dedicated local bucket that is never touched by Terraform, and per-environment deployed buckets managed entirely by Terraform.
+
+> **Platform note:** `ChildActivityGame` (and the `child_activity_game/*` images below) is still fully live on the **mobile app** (`frontend-app` — `GrowthAreasActivityGameScreen`), but is now dead code on the **web app**. The web frontend's growth-area flow was redesigned into a single overlay on the Growth Map (see `docs/frontend.md`) whose picker now uses LLM-generated text choices instead of these static images — `RecommendationsPhase`/`ChildActivityGame` are unreferenced anywhere in `frontend/src`. The bucket setup below is still required (mobile depends on it), just no longer for the reason a web-only reader might assume. Avatar stage-splash images (`avatars/`) are used by both platforms.
 
 ## How images are served
 
 | Environment | Bucket | Path | How it works |
 |---|---|---|---|
-| **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy | `vite.config.js` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
+| **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy (web) | `vite.config.ts` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
 | **Deployed (dev/stg/prod)** | per-environment bucket (set via `ASSETS_BUCKET_NAME` GitHub secret) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
-In all environments the frontend resolves a theme-aware path at runtime — `astronaut.jpg` stored in S3 becomes `/app-assets/child_activity_game/life_ambition/astronaut_vg_dark.png` or `…_vg_light.png` depending on the active theme. Avatar stage images follow the same pattern: `stage-01-dark.png` / `stage-01-light.png`. No environment-specific URL logic lives in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
+The Vite-proxy row above is web-only — the mobile app talks to the same S3 buckets over their regular `https://<bucket>.s3.<region>.amazonaws.com` URL directly, no dev-server proxy involved.
+
+Both apps resolve a theme-aware path at runtime — `astronaut.jpg` stored in S3 becomes `/app-assets/child_activity_game/life_ambition/astronaut_vg_dark.png` or `…_vg_light.png` depending on the active theme (mobile's `ChildActivityGame` only — see the platform note above). Avatar stage images follow the same pattern: `stage-01-dark.png` / `stage-01-light.png` (used by both web and mobile). No environment-specific URL logic lives in the component. If an image fails to load, the component falls back to an emoji/gradient tile automatically.
 
 > **Note — CDN edge caching:** Local dev sends requests directly to the S3 regional endpoint in `us-east-1` — there is no CDN, no edge caching, and no geographic distribution. Only deployed CloudFront distributions serve from edge locations.
 
@@ -126,7 +130,7 @@ Images live directly in S3 — there is no `app-assets/` folder in this reposito
    - `creativity`
    - `physical_wellness`
    - `social_skills`
-4. Back in `app-assets/`, create a second top-level folder named `avatars` — this holds the onboarding stage splash images.
+4. Back in `app-assets/`, create a second top-level folder named `avatars` — this holds the stage-splash images shown at points in the app's journey (`PersonalityJourney`, `LifePathway`, `GrowthAreas` on web; see `docs/frontend.md`), not the Onboarding page itself despite the "stage" numbering starting at 1.
 
 ## Step 2 — Upload images
 
@@ -257,13 +261,13 @@ The browser uploads directly to S3 via presigned URL. Without CORS, the browser 
 
 3. Click **Save changes**
 
-> **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. The nginx CSP (`connect-src` and `img-src`) already allows all S3 regions via `https://*.s3.amazonaws.com` and `https://*.s3.*.amazonaws.com` — set in `frontend/nginx.conf` and `frontend/nginx.conf.template`.
+> **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. The nginx CSP (`connect-src` and `img-src`) allows `https://*.s3.amazonaws.com` plus one explicit domain per backend region currently in use (`https://*.s3.us-east-1.amazonaws.com`, `https://*.s3.eu-west-1.amazonaws.com`, `https://*.s3.ap-south-1.amazonaws.com`) — set in `frontend/nginx.conf` and `frontend/nginx.conf.template`. This is a fixed list, not a wildcard — **adding a new backend region requires manually adding its S3 domain to the CSP in both files**, or image/upload requests from that region will be blocked by the browser.
 
 #### d. Create the uploads folder
 
 1. Click the bucket → **Objects** tab → **Create folder** → name it `uploads` → **Create folder**
 
-Objects are stored as `uploads/<child_id>/<uuid>.<ext>` — the `child_id` subdirectory is created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
+Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_upload_key()` in `backend/app/services/s3_uploads.py` always leads with the app's sharding `location` value — e.g. `us` locally by default, per `DEFAULT_LOCATION` — not the AWS region) — the `<location>/<child_id>` subdirectories are created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
 
 ### Deployed bucket setup (one-time, per environment)
 
