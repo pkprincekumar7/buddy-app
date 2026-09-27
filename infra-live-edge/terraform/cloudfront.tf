@@ -5,9 +5,9 @@
 #   s3-frontend  — static assets from S3 (default behaviour)
 #   alb-backend  — FastAPI backend behind the ALB (/api/* behaviour)
 #
-# CloudFront→ALB uses HTTPS only to the internal ALB subdomain
-# (e.g. buddy-internal-dev.learning-dev.com). End-user TLS is terminated
-# at CloudFront. ALB→ECS is HTTP within the VPC.
+# CloudFront→ALB uses HTTPS only to the internal ALB subdomain, one per
+# backend region (e.g. buddy-internal-dev-ap-south-1.learning-dev.com). End-user
+# TLS is terminated at CloudFront. ALB→ECS is HTTP within the VPC.
 # ---------------------------------------------------------------------------
 
 locals {

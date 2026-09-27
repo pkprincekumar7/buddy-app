@@ -76,7 +76,8 @@ valid until TTL expires.
 
 None of these apply to this project. API GW + Lambda Authorizer would cost more, add
 latency, double the infrastructure, and still require Lambda@Edge for geo-routing. The
-current plan — one combined origin-request L@E function — is the minimal correct solution.
+implemented solution — one combined L@E function (at `viewer-request`, not `origin-request`
+— see "Why not two separate Lambda@Edge functions?" below) — is the minimal correct solution.
 
 ---
 
@@ -91,15 +92,21 @@ evaluated and ruled out for this reason.
 ### Why not two separate Lambda@Edge functions?
 
 The original V2 plan placed JWT auth at `viewer-request` and geo-routing at
-`origin-request`. This adds two sequential Lambda invocations per request. The
-`viewer-request` placement for JWT exists to guard cached responses — but the `/api/*`
-cache policy is `cache_policy_disabled` (every request is a cache miss), so
-`origin-request` fires on every API request anyway. Moving JWT to `origin-request`
-closes no security gap and allows both concerns to be handled in one function invocation.
+`origin-request`. This adds two sequential Lambda invocations per request.
 
-**Architectural constraint:** Enabling a cache policy on any authenticated endpoint in
-the future would bypass JWT validation (cached responses skip `origin-request`). This is
-a hard rule: all `/api/*` behaviours must keep `cache_policy_id = local.cache_policy_disabled`.
+**Implemented resolution — combined at `viewer-request`, not moved to `origin-request`:**
+the actual `jwt-validator-lambda.js.tpl` combines both concerns into one function, same
+as this section originally argued for, but the function stayed at `viewer-request`
+(confirmed in `infra-live-edge/terraform/cloudfront.tf`'s `lambda_function_association`)
+rather than moving to `origin-request` as first proposed. The reasoning below for why
+`origin-request` would have been *safe* (cache disabled on `/api/*`) still holds, but the
+codebase never made that particular move — combining the two concerns into a single
+invocation delivered the goal (one Lambda invocation per request, not two) without it.
+
+**Architectural constraint (still holds regardless of event stage):** Enabling a cache
+policy on any authenticated endpoint in the future would bypass this Lambda entirely for
+cached responses. This is a hard rule: all `/api/*` behaviours must keep
+`cache_policy_id = local.cache_policy_disabled`.
 
 ### Why JWT `location` claim for routing instead of IP geo?
 
@@ -109,8 +116,10 @@ zone, `location=in`) travelling to the UK would be routed to eu-west-1, causing 
 MongoDB read to cross regions (~150–200 ms penalty). The JWT access token already
 carries a `location` claim (set at login from the user's stored `location` field in the
 users collection). The combined L@E function decodes the token for auth anyway, so
-reading `payload.location` for routing is free. IP geo is used only as a fallback for
-unauthenticated public paths (login, register, health).
+reading `payload.location` for routing is free. There is no IP-geo fallback in the actual
+implementation (see Change 1 and the corrected "Fallback behaviour" note above) — `login`/
+`google`/`health` always land on the static bootstrap origin unchanged, while `register`/
+`refresh`/`logout` use a session-cookie or client-header location *hint* instead of IP geo.
 
 ---
 
@@ -135,23 +144,35 @@ unauthenticated public paths (login, register, health).
                   ▼                                                 ▼
         ┌───────────────────────────────┐    ┌─────────────────────────┐
         │       Lambda@Edge             │    │  S3 — frontend assets   │
-        │  origin-request (single fn)   │    │  (us-east-1)            │
+        │  viewer-request (single fn)   │    │  (us-east-1)            │
         │                               │    │  OAC — no public access │
-        │  Step 1: JWT auth (RS256)     │    └─────────────────────────┘
-        │    • skip public paths        │
+        │  Bypass paths (login/google/  │    └─────────────────────────┘
+        │  health): pass through        │
+        │  unchanged — no auth, no      │
+        │  routing                      │
+        │                               │
+        │  Refresh/logout/register:     │
+        │    • best-effort location     │
+        │      HINT from an existing    │
+        │      cookie/Bearer token, or  │
+        │      (register only)          │
+        │      X-Client-Location header │
+        │    • never blocks; no hint    │
+        │      → falls through to the   │
+        │      static bootstrap origin  │
+        │                               │
+        │  All other /api/*:            │
         │    • extract access_token     │
         │      cookie / Bearer header   │
-        │    • verify signature + exp   │
+        │    • verify RS256 sig + exp   │
         │    • 401 on failure           │
-        │                               │
-        │  Step 2: geo-routing          │
-        │    • authenticated: read      │
-        │      payload.location claim   │
-        │    • public paths: read       │
-        │      CloudFront-Viewer-       │
-        │      Country header           │
-        │    • rewrite origin hostname  │
-        │      to nearest region's ALB  │
+        │    • resolve payload.location │
+        │      → regional ALB           │
+        │    • 503 if location unmapped │
+        │      or region undeployed     │
+        │      (no default fallback)    │
+        │    • attach X-Origin-Verify   │
+        │      header to the ALB origin │
         └───────────────┬───────────────┘
                         │ HTTPS/443 to region-specific ALB
                         ▼
@@ -195,10 +216,12 @@ unauthenticated public paths (login, register, health).
 │  (ap-south-1)    │  (eu-west-1)     │  (us-east-1)     │
 │  location: in    │  location: eu    │  location: us    │
 │  location: apac  │  location: me    │  location: br    │
-│  location: cn    │  location: ru    │                  │
 ├──────────────────┴──────────────────┴──────────────────┤
 │         cross-zone replication (Atlas managed)         │
 └────────────────────────────────────────────────────────┘
+
+  cn / ru: excluded, not assigned to any zone — see the Location → ALB region
+  mapping table below (same exclusion enforced at the edge, for the same reason).
 ```
 
 This whole diagram is the **target** state, not what's running today. Only ap-south-1
@@ -209,27 +232,47 @@ exactly what's missing and in what order it needs to be built.
 
 **TLS chain:**
 ```
-Browser ──HTTPS──▶ CloudFront ──[L@E origin-request: JWT auth + geo-route]──▶ ALB (443) ──HTTP/8000──▶ ECS task
+Browser ──HTTPS──▶ CloudFront ──[L@E viewer-request: JWT auth + geo-route]──▶ ALB (443) ──HTTP/8000──▶ ECS task
          (us-east-1 ACM cert)                                                  (region ACM cert)
 ```
 
-**Location → ALB region mapping:**
+**Location → ALB region mapping (as implemented in `jwt-validator-lambda.js.tpl`'s
+`LOCATION_TO_REGION`):**
 
-| JWT `location` value | Atlas zone | Routed to ALB region |
-|---|---|---|
-| `in` | APAC | ap-south-1 |
-| `apac` | APAC | ap-south-1 |
-| `cn` | APAC | ap-south-1 |
-| `eu` | EU | eu-west-1 |
-| `me` | EU | eu-west-1 |
-| `ru` | EU | eu-west-1 |
-| `us` | Americas | us-east-1 |
-| `br` | Americas | us-east-1 |
-| unknown / missing | — | fallback (see below) |
+| JWT `location` value | Routed to ALB region |
+|---|---|
+| `in` | ap-south-1 |
+| `apac` | ap-south-1 |
+| `me` | ap-south-1 |
+| `eu` | eu-west-1 |
+| `us` | us-east-1 |
+| `br` | us-east-1 |
+| `cn` | **not routed — 503** (China needs AWS's separate China partition, unreachable from this infrastructure) |
+| `ru` | **not routed — 503** (serving Russia from a commercial region carries OFAC/EAR export-control exposure this business has decided not to take on) |
+| any other unmapped location, or a region not yet deployed | **not routed — 503** (no default-region fallback; see below) |
 
-**Fallback for public paths (no JWT):** `CloudFront-Viewer-Country` header mapped using
-the same country-to-region logic as `backend/app/routing.py`. If country is unknown,
-defaults to `ap-south-1` (current single active region during rollout).
+This differs from an earlier version of this table in two ways worth calling out
+explicitly: `me` (Middle East) is grouped with `ap-south-1`, not `eu-west-1`; and `cn`/`ru`
+are deliberately excluded rather than mapped anywhere — both are compliance decisions
+made in the code, not omissions.
+
+**Fallback behaviour — no IP-geo routing exists.** The implementation does **not** use
+`CloudFront-Viewer-Country` or any country-to-region map. Instead:
+- `PURE_BYPASS_PATHS` (login, google, health) and any authenticated `/api/*` request
+  whose location is unmapped or undeployed never get `request.origin` rewritten by the
+  Lambda at all — they fall through to the CloudFront distribution's own statically
+  configured origin, `local.bootstrap_region = var.backend_regions[0]` (the first region
+  in the currently-applied `backend_regions` list; see `infra-live-edge/terraform/cloudfront.tf`).
+  An authenticated request with an unmapped/undeployed location gets a 503 instead of
+  silently landing on the bootstrap region — the bootstrap-region fallback only applies
+  to unauthenticated bypass paths.
+- `LOCATION_AWARE_PUBLIC_PATHS` (refresh, logout) and `register` use a **session hint**
+  instead: if an existing `access_token`/`refresh_token` cookie or `Authorization: Bearer`
+  header carries a valid signature (expiry ignored — staleness doesn't matter for a
+  routing hint), its `location` claim is used to pick the ALB, even though the token
+  itself no longer authenticates anything. `register` additionally falls back to a
+  client-supplied `X-Client-Location` header. No hint found → same bootstrap-region
+  fallback as above, never blocked.
 
 ---
 
@@ -304,477 +347,149 @@ Do not apply `infra-live-edge` until phases 2a–2c are complete. The Terraform
 
 ## Required Changes
 
-### 1. `infra-live-edge/functions/` — rename and rewrite the Lambda template
+> **Status: items 1–8 below are implemented — but differently, and more robustly, than
+> originally proposed here.** The sections below have been rewritten to describe the
+> actual current implementation rather than the stale plan. The real design generalizes
+> to any number of regions via `var.backend_regions` (not three hardcoded ALB variables),
+> fails closed with a 503 on an unmapped/undeployed location instead of silently
+> defaulting to `ap-south-1`, adds an `X-Origin-Verify` shared-secret header the original
+> plan never had, and never moved the Lambda from `viewer-request` to `origin-request`
+> (see "Why not two separate Lambda@Edge functions?" above). Item 9 (backend) was already
+> accurate and needed no change. Only the MongoDB Atlas/PrivateLink work (Change 10d, and
+> the `atlas_endpoint_service_name` piece of Change 10) remains genuinely not started —
+> confirmed by `infra-live-atlas/` still not existing in the repo.
 
-**File:** rename `jwt-validator-lambda.js.tpl` → `jwt-geo-router-lambda.js.tpl`
+### 1. `infra-live-edge/functions/jwt-validator-lambda.js.tpl` — implemented (not renamed)
 
-Replace the entire file content with:
+The file was **not** renamed to `jwt-geo-router-lambda.js.tpl` — it's still
+`jwt-validator-lambda.js.tpl`, and it combines JWT auth + geo-routing in one
+`viewer-request` function, same goal as originally proposed but a different shape.
+Key differences from the plan, all confirmed against the real file:
 
-```javascript
-'use strict'
-
-// Lambda@Edge origin-request — RS256 JWT validation + geo-routing
-//
-// Runs on every /api/* origin-request (cache is disabled on /api/*, so this
-// fires on every API request without exception).
-//
-// Step 1: JWT auth — rejects unauthenticated requests with 401 before they
-//         reach the ALB. Public paths listed in PUBLIC_PATHS are skipped.
-// Step 2: Geo-routing — rewrites request.origin.custom.domainName to the ALB
-//         nearest to the user's data location. Authenticated requests use the
-//         `location` claim from the JWT payload (data-locality routing).
-//         Public paths fall back to CloudFront-Viewer-Country IP geo.
-//
-// Template variables injected by Terraform templatefile():
-//   jwt_public_keys — map of kid → RSA public key PEM (PKCS#8)
-//   jwt_key_id      — default key ID when JWT header omits kid
-//   alb_ap_south_1  — internal ALB FQDN for ap-south-1
-//   alb_eu_west_1   — internal ALB FQDN for eu-west-1
-//   alb_us_east_1   — internal ALB FQDN for us-east-1
-
-const crypto = require('crypto')
-
-const PUBLIC_KEYS = {
-%{ for kid, pem in jwt_public_keys ~}
-  '${kid}': ${jsonencode(pem)},
-%{ endfor ~}
-}
-
-const DEFAULT_KID = '${jwt_key_id}'
-
-// ALB FQDN per region — injected at deploy time from SSM via Terraform
-const ALB_BY_REGION = {
-  'ap-south-1': '${alb_ap_south_1}',
-  'eu-west-1':  '${alb_eu_west_1}',
-  'us-east-1':  '${alb_us_east_1}',
-}
-
-// JWT location claim → ALB region
-// Keys here are the location values produced by backend/app/routing.py:resolve_region().
-// If a new location value is added to routing.py, add a corresponding entry here.
-const LOCATION_TO_REGION = {
-  'in':   'ap-south-1',
-  'apac': 'ap-south-1',
-  'cn':   'ap-south-1',
-  'eu':   'eu-west-1',
-  'me':   'eu-west-1',
-  'ru':   'eu-west-1',
-  'us':   'us-east-1',
-  'br':   'us-east-1',
-}
-
-// CloudFront-Viewer-Country → ALB region (fallback for public paths)
-// All 56 country codes from backend/app/routing.py:COUNTRY_TO_REGION, mapped to the
-// ALB region that serves each country's Atlas zone. Must stay in sync with that map.
-const COUNTRY_TO_REGION = {
-  // EU
-  AT:'eu-west-1', BE:'eu-west-1', BG:'eu-west-1', CY:'eu-west-1', CZ:'eu-west-1',
-  DE:'eu-west-1', DK:'eu-west-1', EE:'eu-west-1', ES:'eu-west-1', FI:'eu-west-1',
-  FR:'eu-west-1', GR:'eu-west-1', HR:'eu-west-1', HU:'eu-west-1', IE:'eu-west-1',
-  IT:'eu-west-1', LT:'eu-west-1', LU:'eu-west-1', LV:'eu-west-1', MT:'eu-west-1',
-  NL:'eu-west-1', PL:'eu-west-1', PT:'eu-west-1', RO:'eu-west-1', SE:'eu-west-1',
-  SI:'eu-west-1', SK:'eu-west-1', GB:'eu-west-1', NO:'eu-west-1', IS:'eu-west-1',
-  LI:'eu-west-1', SA:'eu-west-1', AE:'eu-west-1', QA:'eu-west-1', KW:'eu-west-1',
-  BH:'eu-west-1', OM:'eu-west-1', RU:'eu-west-1',
-  // Americas
-  US:'us-east-1', CA:'us-east-1', MX:'us-east-1', BR:'us-east-1',
-  // APAC
-  SG:'ap-south-1', MY:'ap-south-1', ID:'ap-south-1', PH:'ap-south-1',
-  TH:'ap-south-1', VN:'ap-south-1', JP:'ap-south-1', KR:'ap-south-1',
-  AU:'ap-south-1', NZ:'ap-south-1', HK:'ap-south-1', TW:'ap-south-1',
-  IN:'ap-south-1', CN:'ap-south-1',
-}
-
-const DEFAULT_REGION = 'ap-south-1'
-
-const COOKIE_NAME = 'access_token'
-
-const PUBLIC_PATHS = [
-  '/api/v1/auth/register',
-  '/api/v1/auth/login',
-  '/api/v1/auth/google',
-  '/api/v1/auth/refresh',
-  '/api/v1/auth/logout',
-  '/api/health',
-]
-
-function base64urlDecode(str) {
-  return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
-}
-
-function parseCookies(headers) {
-  const cookies = {}
-  const cookieHeader = (headers['cookie'] || []).map(h => h.value).join('; ')
-  cookieHeader.split(';').forEach(pair => {
-    const idx = pair.indexOf('=')
-    if (idx < 0) return
-    const k = pair.slice(0, idx).trim()
-    const v = pair.slice(idx + 1).trim()
-    cookies[k] = v
-  })
-  return cookies
-}
-
-function unauthorized() {
-  return {
-    status: '401',
-    statusDescription: 'Unauthorized',
-    headers: { 'content-type': [{ key: 'Content-Type', value: 'application/json' }] },
-    body: JSON.stringify({ message: 'Unauthorized' }),
-  }
-}
-
-function verifyJwt(token) {
-  const parts = token.split('.')
-  if (parts.length !== 3) throw new Error('malformed token')
-
-  const header = JSON.parse(base64urlDecode(parts[0]).toString('utf8'))
-  const kid = header.kid || DEFAULT_KID
-  const publicKeyPem = PUBLIC_KEYS[kid]
-  if (!publicKeyPem) throw new Error('unknown kid: ' + kid)
-
-  const signingInput = parts[0] + '.' + parts[1]
-  const signature = base64urlDecode(parts[2])
-
-  let valid
-  try {
-    valid = crypto.verify(
-      'SHA256',
-      Buffer.from(signingInput),
-      { key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING },
-      signature
-    )
-  } catch (_) {
-    throw new Error('invalid signature')
-  }
-  if (!valid) throw new Error('invalid signature')
-
-  const payload = JSON.parse(base64urlDecode(parts[1]).toString('utf8'))
-  const now = Math.floor(Date.now() / 1000)
-  if (payload.exp && now > payload.exp) throw new Error('expired')
-  if (payload.nbf && now < payload.nbf) throw new Error('not yet valid')
-
-  return payload
-}
-
-function rewriteOrigin(request, targetRegion) {
-  const alb = ALB_BY_REGION[targetRegion] || ALB_BY_REGION[DEFAULT_REGION]
-  request.origin.custom.domainName = alb
-  // Host is read-only in viewer-request events — do not set it here. For a
-  // custom origin, CloudFront automatically sends the origin's own
-  // domainName (set above) as the Host header.
-}
-
-exports.handler = async (event) => {
-  const request = event.Records[0].cf.request
-
-  const isPublic = PUBLIC_PATHS.some(
-    p => request.uri === p || request.uri.startsWith(p + '/')
-  )
-
-  if (isPublic) {
-    // Geo-routing fallback: use CloudFront-Viewer-Country for public paths
-    const country = ((request.headers['cloudfront-viewer-country'] || [])[0] || {}).value || ''
-    const region = COUNTRY_TO_REGION[country.toUpperCase()] || DEFAULT_REGION
-    rewriteOrigin(request, region)
-    return request
-  }
-
-  // -- Step 1: JWT auth -------------------------------------------------------
-
-  const cookies = parseCookies(request.headers)
-  let token = cookies[COOKIE_NAME]
-
-  if (!token) {
-    const authHeader = ((request.headers['authorization'] || [])[0] || {}).value || ''
-    if (authHeader.startsWith('Bearer ')) token = authHeader.slice(7)
-  }
-
-  if (!token) return unauthorized()
-
-  let payload
-  try {
-    payload = verifyJwt(token)
-  } catch (_) {
-    return unauthorized()
-  }
-
-  // -- Step 2: geo-routing using JWT location claim ---------------------------
-
-  const location = (payload.location || '').toLowerCase()
-  const region = LOCATION_TO_REGION[location] || DEFAULT_REGION
-  rewriteOrigin(request, region)
-
-  return request
-}
-```
+- **Per-region map, not three hardcoded variables.** `REGIONAL_ALB_FQDNS` is built from a
+  `regional_alb_fqdns` map template variable (one entry per region actually in
+  `var.backend_regions`), not `alb_ap_south_1`/`alb_eu_west_1`/`alb_us_east_1`. This is
+  what lets the edge module support 1, 2, or 3 deployed backend regions without a code
+  change.
+- **Three path classes, not "public vs. authenticated."** `PURE_BYPASS_PATHS` (login,
+  google, health) always pass through unchanged — no auth, no routing.
+  `LOCATION_AWARE_PUBLIC_PATHS` (refresh, logout) and `REGISTER_PATH` (register) use a
+  best-effort **location hint** from an existing session cookie or `Authorization: Bearer`
+  token (expiry ignored — a stale-but-validly-signed token is still a trustworthy routing
+  hint even though it can no longer authenticate anything); `register` additionally falls
+  back to a client-supplied `X-Client-Location` header. None of these three ever block the
+  request — no hint found just leaves `request.origin` untouched. Every other `/api/*`
+  path requires a valid, unexpired token or gets a 401.
+- **No IP-geo fallback exists.** There is no `CloudFront-Viewer-Country` read and no
+  `COUNTRY_TO_REGION` map anywhere in the function. The "fallback" for bypass/no-hint
+  cases is simply not rewriting `request.origin`, which leaves it at whatever the
+  CloudFront distribution's own `alb-backend` origin is statically configured to (see
+  Change 4 below) — currently `var.backend_regions[0]`.
+- **Fails closed, no default region.** An authenticated request whose `location` claim
+  isn't in `LOCATION_TO_REGION`, or whose mapped region isn't in `REGIONAL_ALB_FQDNS`
+  (not yet deployed), gets a 503 with an explanatory message — never a silent
+  default-region guess. See the corrected location-mapping table above for exactly which
+  locations map where (notably: `cn`/`ru` are deliberately excluded, not defaulted).
+- **`X-Origin-Verify` header.** Every resolved origin gets a `customHeaders` entry
+  carrying a shared secret (`ORIGIN_VERIFY_SECRET`, injected via Terraform from the
+  `ORIGIN_VERIFY_SECRET` GitHub Environment Secret — same value on both `infra-live-edge`
+  and `infra-live-backend`). The backend ALB has a listener rule that 403s any request
+  missing or mismatching this header, so traffic reaching the ALB via CloudFront's shared
+  IP range but *not* through this app's own distribution (and therefore never through this
+  Lambda's JWT check) is rejected before it reaches ECS. The original plan had no
+  equivalent to this.
+- **Mobile support.** Bearer-token extraction is checked identically to the cookie path
+  throughout — the mobile app has no cookie jar, so it sends its access/refresh token as
+  `Authorization: Bearer` instead. The `setOrigin()` helper's comment also documents why
+  it never sets the `Host` header: it's read-only in `viewer-request` events, and setting
+  it would 502 — CloudFront auto-sends the origin's own `domainName` as `Host` for a
+  custom origin regardless.
 
 ---
 
-### 2. `infra-live-edge/terraform/lambda_edge.tf` — update in-place (do not rename resources)
+### 2. `infra-live-edge/terraform/lambda_edge.tf` — implemented in-place, as originally recommended
 
-**Do not rename the Terraform resources or AWS resource names.** `function_name` and
-`aws_iam_role.name` are immutable in AWS — renaming them forces destroy+create. For a
-Lambda@Edge function, destroy fails while CloudFront replicas still exist ("Lambda was
-unable to delete ... because it is a replicated function"). Updating the existing
-resources in-place avoids this entirely: Terraform publishes a new Lambda version and
-CloudFront continues to use the same function ARN structure.
-
-Make the following targeted edits to the existing file:
-
-**a.** In `data "archive_file" "jwt_validator_lambda"`, update the `source` block to
-reference the renamed template file and add the three ALB variables:
-
-```hcl
-  source {
-    content = templatefile(
-      "${path.module}/../functions/jwt-geo-router-lambda.js.tpl",
-      {
-        jwt_public_keys = var.jwt_public_keys
-        jwt_key_id      = var.jwt_key_id
-        alb_ap_south_1  = data.aws_ssm_parameter.alb_fqdn_ap_south_1.value
-        alb_eu_west_1   = data.aws_ssm_parameter.alb_fqdn_eu_west_1.value
-        alb_us_east_1   = data.aws_ssm_parameter.alb_fqdn_us_east_1.value
-      }
-    )
-    filename = "index.js"
-  }
-```
-
-**b.** Update `output_path` in the same `data "archive_file"` block to reflect the new
-zip name (optional but keeps the filename meaningful):
-
-```hcl
-  output_path = "${path.module}/jwt-geo-router-lambda.zip"
-```
-
-**c.** Update the top-of-file comment to reflect the new dual purpose:
-
-```hcl
-# Lambda@Edge — RS256 JWT validation + geo-routing (combined origin-request)
-#
-# Single function handles both concerns at origin-request event stage.
-# Safe because /api/* has caching disabled — origin-request fires on every
-# API request without exception. See docs/infra-architecture-multi-region.md.
-```
-
-All other resources (`aws_iam_role`, `aws_iam_role_policy_attachment`, `aws_lambda_function`,
-`time_sleep`) remain unchanged. Terraform will publish a new Lambda version with the
-updated code; the CloudFront lambda_function_association (Change 4) points to
-`aws_lambda_function.jwt_validator.qualified_arn` which resolves to the new version.
+The recommendation to update resources in-place rather than rename them (Lambda@Edge
+can't be destroyed while CloudFront replicas exist) was followed. The `archive_file`
+source still points at `jwt-validator-lambda.js.tpl` (never renamed — see Change 1) and
+its template variables are `jwt_public_keys`, `jwt_key_id`, `regional_alb_fqdns` (a map,
+not three scalars), and `origin_verify_secret`. `aws_iam_role`,
+`aws_iam_role_policy_attachment`, `aws_lambda_function`, and `time_sleep` are unchanged in
+shape, as predicted. The CloudFront `lambda_function_association` (Change 4) points at
+`aws_lambda_function.jwt_validator.qualified_arn`, exactly as planned.
 
 ---
 
-### 3. `infra-live-edge/terraform/ssm_read.tf` — add per-region ALB reads
+### 3. `infra-live-edge/terraform/ssm_read.tf` — implemented, generalized to N regions
 
-Replace the existing file entirely:
+The real file is a single `for_each` block, not three named data sources:
 
 ```hcl
-# ---------------------------------------------------------------------------
-# SSM reads — one ALB FQDN per backend region.
-# Apply infra-live-backend in each region before applying infra-live-edge.
-# The SSM path pattern is defined in infra-live-backend/terraform/ssm_write.tf.
-# ---------------------------------------------------------------------------
-
-data "aws_ssm_parameter" "alb_fqdn_ap_south_1" {
-  name = "/${var.app_name}/${var.environment}/backend/ap-south-1/alb_internal_fqdn"
+data "aws_ssm_parameter" "alb_internal_fqdn" {
+  for_each = toset(var.backend_regions)
+  name     = "/${var.app_name}/${var.environment}/backend/${each.key}/alb_internal_fqdn"
 }
 
-data "aws_ssm_parameter" "alb_fqdn_eu_west_1" {
-  name = "/${var.app_name}/${var.environment}/backend/eu-west-1/alb_internal_fqdn"
-}
-
-data "aws_ssm_parameter" "alb_fqdn_us_east_1" {
-  name = "/${var.app_name}/${var.environment}/backend/us-east-1/alb_internal_fqdn"
+locals {
+  regional_alb_fqdns = { for region, param in data.aws_ssm_parameter.alb_internal_fqdn : region => param.value }
 }
 ```
 
----
-
-### 4. `infra-live-edge/terraform/cloudfront.tf` — three changes
-
-Lambda@Edge at `origin-request` can rewrite `request.origin.custom.domainName` to any
-hostname freely — the target does **not** need to be pre-registered as an origin in the
-CloudFront distribution. The existing `alb-backend` origin block (pointing to ap-south-1)
-is sufficient as the declared origin; the Lambda function dynamically overrides the
-hostname at request time.
-
-Three changes are needed — the origin `domain_name` reference, the lambda association
-event type, and the checkov skip comment:
-
-**Change a:** In the `alb-backend` origin block, update `domain_name` from the old
-(now deleted) SSM data source to the ap-south-1 one:
-
-```hcl
-  origin {
-    origin_id   = "alb-backend"
-    domain_name = data.aws_ssm_parameter.alb_fqdn_ap_south_1.value  # was: alb_internal_fqdn
-    ...
-  }
-```
-
-This is the statically declared CloudFront origin hostname. Lambda@Edge dynamically
-overrides `request.origin.custom.domainName` at runtime, so the declared hostname is
-only used when Lambda@Edge does not rewrite it (which never happens for `/api/*`). It
-must still reference a valid Terraform data source after Change 3 removes
-`data.aws_ssm_parameter.alb_internal_fqdn`.
-
-**Change b:** In the `/api/*` ordered_cache_behavior, change the lambda association from
-`viewer-request` to `origin-request`. Only the `event_type` changes — everything else
-(including `origin_request_policy_id = local.origin_request_all_viewer_except_host`)
-stays unchanged:
-
-```hcl
-    # Change event_type from "viewer-request" to "origin-request" only:
-    lambda_function_association {
-      event_type   = "origin-request"
-      lambda_arn   = aws_lambda_function.jwt_validator.qualified_arn
-      include_body = false
-    }
-```
-
-> The `origin_request_policy_id` on the same cache behavior is kept as-is.
-> At `origin-request` the policy has already been applied before L@E fires, so
-> there is no conflict. Do not remove it.
-
-**Change c:** Update the checkov skip comment on the distribution to reflect multi-region:
-
-```hcl
-  #checkov:skip=CKV_AWS_310:Origin failover not configured — multi-region routing is handled by Lambda@Edge geo-routing; CloudFront origin failover is not used
-```
-
-No new origin blocks are needed in the distribution. The Lambda template receives all
-three ALB FQDNs as injected variables and sets `request.origin.custom.domainName`
-directly at runtime.
+This reads exactly one SSM parameter per region in `var.backend_regions` — whatever that
+list currently contains, not a fixed three. The `regional_alb_fqdns` local feeds directly
+into the Lambda template variable of the same name (Change 1/2).
 
 ---
 
-### 5. `infra-live-edge/terraform/variables.tf` — remove `backend_region`
+### 4. `infra-live-edge/terraform/cloudfront.tf` — implemented, but the Lambda stayed at `viewer-request`
 
-The `backend_region` variable is no longer used (replaced by three explicit SSM reads).
-Delete the entire `variable "backend_region"` block from `variables.tf`.
-
----
-
-### 6. `.github/workflows/terraform-live-edge.yml` — extensive changes
-
-`backend_region` appears in eight places in this workflow. All must be updated:
-
-**a. `run-name`** — remove the `Backend: ${{ inputs.backend_region }}` suffix:
-```yaml
-run-name: "Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1)"
-```
-
-**b. `workflow_dispatch.inputs`** — delete the entire `backend_region` input block.
-
-**c. `workflow_call.inputs`** — delete the entire `backend_region` input block.
-
-**d. `concurrency.group`** — remove the `backend_region` segment:
-```yaml
-concurrency:
-  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1
-  cancel-in-progress: false
-```
-
-**e. `env` block** — delete the `TF_VAR_backend_region` line.
-
-**f. `Verify SSM parameters exist and are readable` step** — replace the single-path
-check with checks for all three regions:
-```yaml
-- name: Verify SSM parameters exist and are readable
-  if: inputs.action == 'plan' || inputs.action == 'apply'
-  run: |
-    check_ssm() {
-      local name="$1"
-      local value
-      value=$(aws ssm get-parameter --region us-east-1 --name "$name" --query "Parameter.Value" --output text 2>&1)
-      if [[ $? -ne 0 ]]; then
-        echo "ERROR: Cannot read SSM parameter '$name': $value"
-        echo "Ensure infra-live-backend has been applied in that region and the IAM role has ssm:GetParameter on this path."
-        return 1
-      fi
-      echo "OK: $name"
-    }
-    APP="${{ secrets.APP_NAME }}"
-    ENV="${{ inputs.environment }}"
-    check_ssm "/$APP/$ENV/backend/ap-south-1/alb_internal_fqdn"
-    check_ssm "/$APP/$ENV/backend/eu-west-1/alb_internal_fqdn"
-    check_ssm "/$APP/$ENV/backend/us-east-1/alb_internal_fqdn"
-```
-
-**g. Step summary strings** — remove `Backend: ${{ inputs.backend_region }}` from both
-the plan summary step and the destroy plan summary step.
-
-**h. Artifact names** — remove `-backend-${{ inputs.backend_region }}` from both
-upload-artifact steps:
-```yaml
-# plan artifact
-name: tfplan-edge-${{ inputs.environment }}-us-east-1
-# destroy artifact
-name: tfplan-edge-destroy-${{ inputs.environment }}-us-east-1
-```
+**The event type was not changed.** `lambda_function_association.event_type` is still
+`"viewer-request"` — the move to `origin-request` proposed here never happened (see "Why
+not two separate Lambda@Edge functions?" above for the reconciled rationale). The
+`alb-backend` origin's `domain_name` does reference `local.regional_alb_fqdns[local.bootstrap_region]`
+(`bootstrap_region = var.backend_regions[0]`), matching this section's original intent
+that the declared origin only matters as a static fallback, with the Lambda dynamically
+overriding it per request. No new origin blocks were added — confirmed correct as planned.
 
 ---
 
-### 7. `.github/workflows/terraform-live-all.yml` — remove `backend_region` and expand region choices
+### 5. `infra-live-edge/terraform/variables.tf` — implemented
 
-`terraform-live-all.yml` calls `terraform-live-edge.yml` via `workflow_call` and passes
-`backend_region` in two places. Since `backend_region` is being removed from the edge
-workflow's `workflow_call.inputs`, both call sites must be updated.
-
-**a. Stale comment above `tf-edge` job** — remove this comment block (it references `backend_region`):
-```yaml
-# backend_region tells CloudFront which ALB to use as /api/* origin.
-```
-
-**b. `tf-edge` job `with:` block** — remove the `backend_region` line:
-```yaml
-tf-edge:
-  name: "2 · Terraform Edge"
-  needs: tf-backend
-  if: inputs.action == 'plan' || inputs.action == 'apply'
-  uses: ./.github/workflows/terraform-live-edge.yml
-  with:
-    action:      ${{ inputs.action }}
-    environment: ${{ inputs.environment }}
-  secrets: inherit
-```
-
-**c. `destroy-tf-edge` job `with:` block** — remove the `backend_region` line:
-```yaml
-destroy-tf-edge:
-  name: "D2 · Terraform Edge (destroy)"
-  needs: destroy-tf-frontend
-  if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
-  uses: ./.github/workflows/terraform-live-edge.yml
-  with:
-    action:      ${{ inputs.action }}
-    environment: ${{ inputs.environment }}
-  secrets: inherit
-```
-
-**d. `aws_region` workflow_dispatch choices** — add the two new regions:
-```yaml
-options:
-  - ap-south-1
-  - eu-west-1
-  - us-east-1
-```
-
-**Note on tf-all and deployment sequencing:** `terraform-live-all.yml` cannot be used to
-bootstrap the multi-region setup in a single run because `infra-live-edge` reads all
-three ALB SSM parameters at plan time. If any backend region is not yet deployed, the
-plan fails with "parameter not found". Follow the explicit deployment order in the
-**Deployment Order** section above — apply each backend region manually first, then run
-the edge workflow.
+`backend_region` (singular) no longer exists. It was replaced by `backend_regions`
+(plural, a validated list — `length > 0` and every entry one of `ap-south-1`/`eu-west-1`/
+`us-east-1`), not by removing region-parameterization entirely.
 
 ---
 
-### 8. `infra-live-edge/terraform/tfvars/` — no changes needed
+### 6. `.github/workflows/terraform-live-edge.yml` — implemented, generalized
 
-The three ALB FQDNs are read from SSM at apply time. `backend_region` is not present in
-any of the four tfvars files (dev, sbx, stg, prod) — it was always supplied via
-`TF_VAR_backend_region` in the workflow. No tfvars changes are needed.
+`backend_region` is gone from every place this section listed. In its place,
+`backend_regions` is a **JSON array** workflow input (e.g. `'["ap-south-1","eu-west-1"]'`),
+threaded through `run-name`, the `env` block (`TF_VAR_backend_regions`), the SSM
+verification step (loops over `jq -r '.[]'` on the JSON array instead of three hardcoded
+`check_ssm` calls), and the plan/destroy summary and artifact-name strings. The net effect
+matches this section's intent (verify + reflect whichever regions are involved) but scales
+to any subset of the three regions, not just "all three."
+
+---
+
+### 7. `.github/workflows/terraform-live-all.yml` — implemented, with flexible region selection
+
+`backend_region` is gone here too, replaced by the same `backend_regions` JSON-array input,
+`fromJson()`'d where a matrix over regions is needed (backend apply/destroy jobs). The
+`aws_region`/region-choice dropdown offers single regions and multi-region combinations
+(e.g. `'["ap-south-1"]'`, `'["ap-south-1","eu-west-1"]'`) rather than a fixed 3-option list —
+more flexible than this section's original "add the two new regions" proposal. The
+sequencing note (can't bootstrap all regions in one `terraform-live-all` run before each
+backend region's SSM parameter exists) still holds and is unchanged.
+
+---
+
+### 8. `infra-live-edge/terraform/tfvars/` — confirmed no changes needed
+
+Still accurate as originally written: no tfvars file carries region configuration —
+`backend_regions` is supplied entirely via the workflow input (`TF_VAR_backend_regions`),
+not any tfvars file.
 
 ---
 
@@ -806,9 +521,12 @@ The backend module is region-agnostic (`var.aws_region`). It publishes
 (confirmed in `infra-live-backend/terraform/ssm_write.tf`). The following changes are
 required before applying in new regions:
 
-**a. `infra-live-backend/terraform/variables.tf`** — two changes:
+**a. `infra-live-backend/terraform/variables.tf`** — the region-validation part is
+**already done**; the Atlas part is not:
 
-Relax the `aws_region` validation (currently locked to `ap-south-1`):
+✅ Done — the `aws_region` validation already allows all three regions (confirmed in the
+real file, and its description already documents the per-region-stack design accurately,
+with no stale `backend_region`-referencing comment left):
 ```hcl
 validation {
   condition     = contains(["ap-south-1", "eu-west-1", "us-east-1"], var.aws_region)
@@ -816,26 +534,22 @@ validation {
 }
 ```
 
-Also add the `atlas_endpoint_service_name` variable — not yet implemented:
+❌ Still needed — the `atlas_endpoint_service_name` variable does not exist yet:
 ```hcl
 # Set via SSM from terraform-atlas Phase 1. Empty until Phase 1 has run —
 # aws_vpc_endpoint (Atlas PrivateLink) is skipped via count=0.
 variable "atlas_endpoint_service_name" { default = "" }
 ```
 
-This variable is consumed by `aws_vpc_endpoint.atlas_privatelink` — the Interface
+This variable would be consumed by `aws_vpc_endpoint.atlas_privatelink` — the Interface
 endpoint + its security group that must be added to `infra-live-backend` before
-applying new regions. See Change 10d Step 2 for the full resource definition.
+completing PrivateLink. Confirmed absent: no `atlas_endpoint_service_name`,
+`atlas_privatelink`, or `mongodbatlas` reference exists anywhere in
+`infra-live-backend/terraform/`. See Change 10d Step 2 for the full resource definition.
 
-Also remove or update the stale comment inside the `aws_region` variable block (lines 5–15
-of the current file). Line 15 says "Update infra-live-edge/terraform/variables.tf similarly
-— the edge module must read the ALB FQDN for whichever backend_region is being targeted."
-This is no longer accurate after Change 5 (which removes `backend_region` from the edge
-module). Replace the entire comment block with the updated checklist items from this document.
+**b. `.github/workflows/terraform-live-backend.yml`**:
 
-**b. `.github/workflows/terraform-live-backend.yml`** — four edits in this file:
-
-**b1. `aws_region` workflow_dispatch choices** — add the two new regions:
+✅ Done — **b1.** `aws_region` workflow_dispatch already offers all three regions:
 ```yaml
 options:
   - ap-south-1
@@ -843,7 +557,7 @@ options:
   - us-east-1
 ```
 
-**b1b. "Resolve Atlas SSM inputs" step** — this step does **not** exist in the workflow
+❌ Still needed — **b1b. "Resolve Atlas SSM inputs" step** — this step does **not** exist in the workflow
 yet and needs to be added. Use the **region-specific SSM path** from the start — a
 shared path with no region segment would get overwritten every time a different
 region's run wrote to it. The step to add (after "Resolve ops email", before "Setup
@@ -994,13 +708,20 @@ Then apply:
 > broader 8-zone scheme exists elsewhere spanning up to 10 AWS regions (e.g. `apac` →
 > ap-southeast-1/ap-northeast-1, `br` → sa-east-1, `me` → me-south-1/me-central-1) — that
 > scheme is wider than this 3-region target and needs reconciling separately, outside
-> this doc's scope. For this doc's purposes, every `location` value the backend already
+> this doc's scope. For this doc's purposes, of the 8 `location` values the backend
 > produces (`in`/`apac`/`cn`/`eu`/`me`/`ru`/`us`/`br` — see
-> `backend/app/routing.py:COUNTRY_TO_REGION`) collapses into exactly the three zones in
-> the `LOCATION_TO_REGION` map above (APAC/EU/Americas), matching the `ALB_BY_REGION`/
-> API-region targets this doc's Lambda@Edge function routes to. No further reconciliation
-> is needed on the application side — `location` is already being captured on every
-> token and user record (see Change 9) precisely so this remains infra-only work.
+> `backend/app/routing.py:COUNTRY_TO_REGION`), **6 collapse into the three zones** in the
+> `LOCATION_TO_REGION` map above (APAC/EU/Americas), matching the `REGIONAL_ALB_FQDNS`/
+> API-region targets this doc's Lambda@Edge function routes to. **`cn` and `ru` are
+> deliberately excluded from both** — the Lambda already fails these closed (503, see the
+> Location → ALB region mapping table above), and this Atlas zone design should exclude
+> them the same way rather than assign them a zone that the edge layer will never route
+> traffic to: sharding `cn`/`ru` user data into a zone no ALB ever serves would mean
+> writing data with no corresponding compute path to read it from. If either is added to
+> a zone here, add a matching entry to the edge layer's `LOCATION_TO_REGION` at the same
+> time — the two must stay in sync now that this doc's `LOCATION_TO_REGION` table has been
+> corrected to reflect the real code. `location` is already being captured on every token
+> and user record (see Change 9) precisely so the remaining reconciliation is infra-only.
 >
 > **Prerequisite before any Terraform work: upgrade the Atlas project's tier to M50.** M0
 > does not support Global Clusters, custom zone sharding, or PrivateLink — all three
@@ -1226,23 +947,29 @@ eu-west-1 or us-east-1.
 ## Hard Rules (Do Not Break)
 
 1. **All `/api/*` cache behaviours must keep `cache_policy_id = local.cache_policy_disabled`.**
-   The combined origin-request L@E approach is only safe because no API response is ever
-   cached. Adding a non-zero TTL cache policy to any authenticated endpoint bypasses JWT
-   validation for cached responses.
+   Even though the JWT/geo-routing Lambda runs at `viewer-request` (fires before any cache
+   lookup), a cacheable response could still be served to a different, unauthenticated
+   viewer on a later cache hit without the Lambda re-running its check. Adding a non-zero
+   TTL cache policy to any authenticated endpoint risks exactly that.
 
-2. **The `location` claim in the JWT must always map to a key in `LOCATION_TO_REGION`.**
-   If a new location string is added as an output of `backend/app/routing.py:resolve_region()`
-   (i.e., as a new value in the `COUNTRY_TO_REGION` map, not a new country code key), a
-   corresponding entry must be added to `LOCATION_TO_REGION` in the Lambda template.
-   Missing entries fall back to `DEFAULT_REGION` (ap-south-1), which routes correctly
-   during single-region operation but causes cross-region reads once all three regions
-   are live.
+2. **The `location` claim in the JWT must always map to a key in `LOCATION_TO_REGION`,
+   whose mapped region must actually be deployed.** Unlike the original plan, the real
+   Lambda has **no default-region fallback** — a missing `LOCATION_TO_REGION` entry, or an
+   entry that maps to a region not yet in `var.backend_regions`, produces a 503
+   (`resolveRegionalOrigin()` throws rather than guessing an origin). If a new location
+   string is added as an output of `backend/app/routing.py:resolve_region()`, a
+   corresponding entry must be added to `LOCATION_TO_REGION` in the Lambda template, or
+   every token carrying that location gets a hard failure instead of a (possibly wrong,
+   but at least working) guess.
 
-3. **`COUNTRY_TO_REGION` in the Lambda template must stay in sync with
-   `backend/app/routing.py:COUNTRY_TO_REGION`.** The backend map determines which Atlas
-   shard a user's data lands on at registration. The Lambda map determines which ALB
-   handles unauthenticated requests. Divergence causes new users' registration requests
-   to land on a different ALB than the shard that will hold their data.
+3. **There is no `COUNTRY_TO_REGION` map in the Lambda template to keep in sync** — the
+   real implementation has no IP-geo routing at all (see Change 1). The thing that *does*
+   need to stay in sync is narrower: `LOCATION_TO_REGION` in the Lambda template must
+   cover every location value `backend/app/routing.py:resolve_region()` can actually
+   produce. A location `resolve_region()` can return but `LOCATION_TO_REGION` doesn't
+   recognize hits the 503 path in Rule 2 above for every authenticated request from that
+   location — worse than a wrong-but-working default, since it's a hard outage for those
+   users rather than a latency/cost inefficiency.
 
 4. **Lambda@Edge must remain in us-east-1.** AWS requires all Lambda@Edge functions to
    be deployed in us-east-1. The `infra-live-edge` Terraform module is already pinned
@@ -1279,11 +1006,18 @@ When adding a fourth region in future:
 - [ ] Apply `infra-live-backend` for the new region (reads `atlas/<region>/endpoint_service_name` from SSM)
 - [ ] Run `terraform-atlas` (Phase 5 — new region) after backend apply (reads `atlas_vpc_endpoint_id` from SSM)
 - [ ] Update `MONGODB_URI` in new region's Secrets Manager to the private SRV string; restart ECS tasks
-- [ ] Add SSM read for the new region in `infra-live-edge/terraform/ssm_read.tf`
-- [ ] Add the new ALB hostname template variable to the `templatefile()` call in `lambda_edge.tf` (`data "archive_file" "jwt_validator_lambda"`)
-- [ ] Add the new template variable (`alb_<region_underscored>`) to the Lambda template `ALB_BY_REGION`
-- [ ] Add entries to `LOCATION_TO_REGION` and `COUNTRY_TO_REGION` in the Lambda template for
-      any new location/country values that should route to the new region
-- [ ] Add the new region's SSM check to the "Verify SSM parameters" step in `terraform-live-edge.yml`
-- [ ] Add the new region to `terraform-live-all.yml` `aws_region` workflow_dispatch choices
+- [ ] Add the new region to `var.backend_regions` (a workflow input, not a code change) —
+      `infra-live-edge/terraform/ssm_read.tf`'s `for_each` and the Lambda's
+      `regional_alb_fqdns` map both pick up the new region automatically; no per-region
+      edit to `ssm_read.tf`, `lambda_edge.tf`, or the Lambda template's ALB map is needed
+- [ ] Add an entry to `LOCATION_TO_REGION` in the Lambda template (`jwt-validator-lambda.js.tpl`)
+      for any new location value that should route to the new region — this one *is* a
+      manual code edit, since it's a business decision (see Hard Rules 2–3 above), not
+      something `var.backend_regions` can infer
+- [ ] The new region's SSM check happens automatically — `terraform-live-edge.yml`'s
+      "Verify SSM parameters exist and are readable" step already loops over whatever
+      `backend_regions` JSON array is passed in; no hardcoded per-region check to add
+- [ ] Add the new region, and any new multi-region combination including it, to
+      `terraform-live-all.yml`'s `backend_regions` workflow_dispatch options (a JSON-array
+      choice list, not a single `aws_region` — see Change 7)
 - [ ] Apply `infra-live-edge`

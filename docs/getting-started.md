@@ -10,7 +10,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts three services: Redis, the FastAPI backend, and the Nginx-served frontend. MongoDB is **not** bundled — set `MONGODB_URI` in `.env` to a local MongoDB instance or an Atlas connection string before starting.
+This starts four services: Redis, the FastAPI backend, the background job worker (`worker.py` — processes the LLM/job pipeline: personality analysis, recommendations, the 90-day plan, etc.), and the Nginx-served frontend. MongoDB is **not** bundled — set `MONGODB_URI` in `.env` to a local MongoDB instance or an Atlas connection string before starting.
 
 After changing `VITE_GOOGLE_CLIENT_ID` or `VITE_API_URL`, rebuild the frontend image so Vite embeds them (`docker compose build frontend` or `docker compose up --build`).
 
@@ -38,7 +38,7 @@ Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images)
 - Frontend:
   ```bash
   cd frontend
-  cp .env.example .env   # set ASSETS_BUCKET_NAME to your local assets bucket to load activity-game images via Vite proxy
+  cp .env.example .env   # set ASSETS_BUCKET_NAME to your local assets bucket to load app assets (avatars, splash videos, etc.) via Vite proxy
   npm install && npm run dev
   ```
 
@@ -68,9 +68,13 @@ GUI tools (MongoDB Compass, Studio 3T) work too — paste the URI directly.
 | `sessions` | Refresh token sessions (`user_id`, `expires_at`, `location`) |
 | `email_index` | Global email → user_id lookup (unsharded uniqueness guard) |
 | `allowed_emails` | Allowlist — only emails in this collection can register |
-| `goals` | Parent concern and AI-generated goals plan |
-| `growth_areas` | Completed growth areas with activity results |
 | `children` | Children profiles |
+| `growth_areas` | Completed growth areas with activity results |
+| `observations` | Parent observation protocol results — LLM-staged then promoted, one document per child |
+| `ninety_day_plans` | The 90-day plan and event tracker (LLM-generated), one document per child |
+| `jobs` | Queue for every async LLM job (personality analysis, recommendations, 90-day plan, etc.) — polled by the `worker` service |
+
+All of the above except `email_index` and `allowed_emails` carry a `location` field and most indexes lead with it as the shard key (see the queries below) — the one exception is `jobs`' own worker-polling index, which deliberately omits `location` since the worker claims jobs across all locations.
 
 **Useful queries (mongosh):**
 
@@ -83,14 +87,18 @@ db.users.find({}, { email: 1, full_name: 1, role: 1, location: 1 }).sort({ _id: 
 // Active sessions (not yet expired)
 db.sessions.find({ expires_at: { $gt: new Date() } }, { user_id: 1, expires_at: 1 })
 
-// Goals for a specific user
-db.goals.find({ user_id: "<user_id>" })
-
-// Children for a specific user
-db.children.find({ user_id: "<user_id>" }).sort({ created_at: -1 })
+// Children for a specific user (location is the leading index key — a single-region
+// local dev setup can omit it, but include it to match how the backend actually queries)
+db.children.find({ location: "<location>", user_id: "<user_id>" }).sort({ created_at: -1 })
 
 // Completed growth areas for a user
-db.growth_areas.find({ user_id: "<user_id>" }).sort({ created_at: -1 })
+db.growth_areas.find({ location: "<location>", user_id: "<user_id>" }).sort({ created_at: -1 })
+
+// A child's 90-day plan
+db.ninety_day_plans.findOne({ _id: "<child_id>" })
+
+// Pending/failed jobs
+db.jobs.find({ status: { $in: ["pending", "failed"] } }).sort({ created_at: -1 })
 ```
 
 ## Admin setup
@@ -154,9 +162,10 @@ Log in with the same credentials. The app detects `role: "admin"` on the `/auth/
 
 ### What admin accounts can do
 
-- Access the **Allowed Emails** management page (web only) to add or remove emails from the registration allowlist.
-- Admin accounts are **blocked** from all parent-facing endpoints (`/children`, `/jobs`, `/llm/invoke`, etc.) — they are strictly for allowlist management.
-- On mobile (`frontend-app`), admin users see a minimal screen directing them to use the web app.
+Admin accounts are **blocked** from all parent-facing endpoints (`/children`, `/jobs`, `/llm/invoke`, etc.) — everything they can do lives under `/admin/*`, with a **feature-equivalent screen on both web and mobile** (`AdminAllowedEmails.tsx` on web, `frontend-app/src/screens/admin/AdminScreen.tsx` on mobile — not a "use the web app instead" placeholder). Both have two tabs:
+
+- **Allowed Emails** — add, search, and remove emails from the registration allowlist, with pagination.
+- **Users** — list registered users and **lock**/**unlock** individual accounts. Locking a user (`PATCH /admin/users/{user_id}/lock`) revokes all of their sessions and blocks further login until an admin unlocks them; an admin cannot lock their own account.
 
 ### `allowed_emails` document structure
 
@@ -172,7 +181,7 @@ Example:
 
 ### Adding more allowed emails
 
-Once you have an admin account, use the **Allowed Emails** page in the web app — no more manual DB edits needed. The admin panel supports adding, searching, and removing emails with full pagination.
+Once you have an admin account, use the **Allowed Emails** tab in the web or mobile app — no more manual DB edits needed. Both support adding, searching, and removing emails with full pagination.
 
 ---
 

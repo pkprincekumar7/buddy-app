@@ -2,7 +2,7 @@
 # ALB — backend only (HTTPS on port 443)
 #
 # CloudFront terminates TLS for end users and proxies /api/* to this ALB
-# using https-only to the internal subdomain (e.g. buddy-internal-dev.learning-dev.com).
+# using https-only to the internal subdomain (e.g. buddy-internal-dev-ap-south-1.learning-dev.com).
 # The ACM certificate for the backend region (var.acm_certificate_arn) is resolved
 # per-region by the workflow and must cover the internal ALB subdomain.
 # ALB→ECS traffic stays within the VPC on HTTP port 8000.

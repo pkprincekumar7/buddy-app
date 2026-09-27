@@ -100,7 +100,7 @@ variable "elasticache_multi_az" {
 # -- DNS / TLS ----------------------------------------------------------------
 
 variable "subdomain_internal" {
-  description = "Internal subdomain prefix for the ALB (e.g. 'buddy-internal' → buddy-internal-dev.learning-dev.com in dev)"
+  description = "Internal subdomain prefix for the ALB (e.g. 'buddy-internal' → buddy-internal-dev-ap-south-1.learning-dev.com in dev/ap-south-1)"
   type        = string
 }
 

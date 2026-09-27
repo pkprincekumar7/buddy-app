@@ -5,8 +5,12 @@
 # The ACM certificate for this backend region (var.acm_certificate_arn,
 # resolved per-region by the workflow) must cover this subdomain.
 #
-# prod:     buddy-internal.learning-dev.com
-# non-prod: buddy-internal-dev.learning-dev.com
+# Name is region-qualified (see local.alb_internal_fqdn in main.tf) because
+# Route 53 is a global namespace — without the region, a second backend
+# region's apply collides with the first region's already-created record.
+#
+# prod:     buddy-internal-ap-south-1.learning-dev.com
+# non-prod: buddy-internal-dev-ap-south-1.learning-dev.com
 # ---------------------------------------------------------------------------
 
 resource "aws_route53_record" "alb_internal" {
