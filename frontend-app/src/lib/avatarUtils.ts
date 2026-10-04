@@ -26,7 +26,7 @@ export function getInitials(name: string): string {
  * Deterministically maps a string to an HSL colour so that the same name
  * always produces the same avatar colour without any external call.
  */
-export function nameToColor(name: string): string {
+function nameToColor(name: string): string {
   const str = name || '?';
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -55,17 +55,8 @@ export function stripViewModelImages(
   if (!Array.isArray(people)) return vm;
   const stripped = people.map((person: unknown) => {
     if (!person || typeof person !== 'object') return person;
-    const p = person as Record<string, unknown>;
-    const img = p.image;
-    // Only strip SVG data-URIs — they contain inline <svg>/<text> tags that
-    // trigger the AWS WAF CrossSiteScripting_BODY rule when serialised into JSON.
-    // Safe HTTPS URLs (e.g. upload.wikimedia.org) do NOT trigger WAF and must
-    // be preserved so they survive the save→reload cycle.
-    if (typeof img === 'string' && img.startsWith('data:image/')) {
-      const { image: _image, ...rest } = p;
-      return rest;
-    }
-    return p;
+    const { image: _image, ...rest } = person as Record<string, unknown>;
+    return rest;
   });
   return {
     ...vm,
@@ -88,10 +79,7 @@ export function sanitizeViewModelAvatars(
     if (!person || typeof person !== 'object') return person;
     const p = person as Record<string, unknown>;
     const img = p.image;
-    const isSafe =
-      (typeof img === 'string' && img.startsWith('data:image/')) ||
-      (typeof img === 'string' &&
-        img.startsWith('https://upload.wikimedia.org/'));
+    const isSafe = typeof img === 'string' && img.startsWith('data:image/');
     if (isSafe) return p;
     const name = typeof p.name === 'string' ? p.name : 'Guide';
     return { ...p, image: generateAvatarDataUri(name) };
@@ -125,7 +113,7 @@ export function generateAvatarDataUri(
   const bg =
     background === 'random'
       ? nameToColor(name)
-      : background.startsWith('#')
+      : /^(#|hsl|rgb|oklch|color)/.test(background)
       ? background
       : `#${background}`;
   const fontSize = Math.round(size * 0.42);

@@ -2,7 +2,7 @@ fastapi==0.136.1
 uvicorn[standard]==0.34.0
 motor==3.7.0
 pymongo==4.10.1
-PyJWT==2.13.0
+PyJWT==2.15.1
 cryptography==50.0.0
 bcrypt==4.2.1
 python-multipart==0.0.31
@@ -24,8 +24,10 @@ boto3==1.35.49
 starlette>=1.3.1
 
 # urllib3: GHSA-qccp-gfcp-xxvc + GHSA-mf9v-mfxr-j63j (redirect header leak +
-# Brotli decompression bomb). Pulled in by openai / anthropic / google-auth SDKs.
-urllib3>=2.7.0
+# Brotli decompression bomb), CVE-2026-97687 (HTTPS proxy TLS config override) +
+# CVE-2026-97689 (chunk parser memory DoS). Pulled in by openai / anthropic /
+# google-auth SDKs.
+urllib3>=2.8.0
 
 # requests: GHSA-gc5v-m9x4-r6x2 (predictable temp file in extract_zipped_paths).
 # Not exploitable via current code paths, but pin for defence in depth.

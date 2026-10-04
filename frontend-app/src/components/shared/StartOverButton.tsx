@@ -1,133 +1,89 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, Modal, Pressable, ActivityIndicator } from 'react-native';
-import { RotateCcw, AlertTriangle } from 'lucide-react-native';
-import { Button } from '@/components/ui/Button';
+import { Text, View } from 'react-native';
+import { RotateCcw, TriangleAlert } from 'lucide-react-native';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useStartOver } from '@/hooks/useStartOver';
-import { useTheme } from '@/lib/ThemeContext';
-import { useModalScale } from '@/lib/animations';
-import Animated from 'react-native-reanimated';
+import { cn } from '@/lib/utils';
+import { color, recipe } from '@/theme';
+import Spinner from './Spinner';
 
 interface ConfirmModalProps {
-  visible: boolean;
+  open: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   isStartingOver: boolean;
 }
 
-function ConfirmModal({
-  visible,
+/** "Start Over?" confirmation — same copy, icon and colors as the web ConfirmModal. */
+export function ConfirmModal({
+  open,
   onCancel,
   onConfirm,
   isStartingOver,
 }: ConfirmModalProps) {
-  const { colors } = useTheme();
-  const animatedStyle = useModalScale(visible);
-
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onCancel}
-    >
-      <Pressable
-        className="flex-1 items-center justify-center p-4"
-        style={{ backgroundColor: colors.overlayBackground }}
-        onPress={onCancel}
-        accessible={false}
+    <Dialog open={open} onOpenChange={o => !o && onCancel()}>
+      <DialogContent
+        hideClose
+        accessibilityLabel="Confirm start over"
+        className="max-w-sm rounded-2xl border border-edge-strong bg-surface-elevated p-8"
       >
-        <Animated.View
-          style={[
-            animatedStyle,
-            {
-              backgroundColor: colors.card,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-          ]}
-          className="w-full max-w-sm rounded-2xl p-8"
-        >
-          <Pressable onPress={e => e.stopPropagation()}>
-            {/* Icon */}
-            <View className="mb-5 items-center">
-              <View
-                className="h-14 w-14 items-center justify-center rounded-full border"
-                style={{
-                  borderColor: colors.error + '4D',
-                  backgroundColor: colors.error + '1A',
-                }}
-              >
-                <AlertTriangle size={28} color={colors.error} />
+        <View className="mb-5 items-center">
+          <View className="h-14 w-14 items-center justify-center rounded-full border border-error-medium/30 bg-error-medium/10">
+            <TriangleAlert size={28} color={color.error} />
+          </View>
+        </View>
+
+        <View className="mb-7 gap-2">
+          <Text
+            accessibilityRole="header"
+            className="text-center text-lg font-bold text-foreground"
+          >
+            Start Over?
+          </Text>
+          <Text className="text-center text-sm leading-relaxed text-muted-foreground">
+            All progress for this child will be permanently deleted —
+            personality results, growth area answers, and goal plans. You will
+            need to restart the onboarding from the beginning.
+          </Text>
+          <Text className="text-center text-xs font-medium text-error">
+            This cannot be undone.
+          </Text>
+        </View>
+
+        <View className="flex-row gap-3">
+          <Button
+            onPress={onConfirm}
+            disabled={isStartingOver}
+            className="h-11 flex-1 rounded-xl bg-error-strong text-base text-white"
+          >
+            {isStartingOver ? (
+              <View className="flex-row items-center gap-2">
+                <Spinner
+                  className="h-4 w-4 border-white/30 border-t-white"
+                  durationSeconds={1}
+                />
+                <Text className="text-base font-medium text-white">
+                  Deleting…
+                </Text>
               </View>
-            </View>
-
-            {/* Text */}
-            <View className="mb-7 items-center gap-2">
-              <Text
-                className="text-lg font-bold"
-                style={{ color: colors.text }}
-              >
-                Start Over?
-              </Text>
-              <Text
-                className="text-center text-sm leading-relaxed"
-                style={{ color: colors.textMuted }}
-              >
-                All progress for this child will be permanently deleted —
-                personality results, growth area answers, and goal plans. You
-                will need to restart the onboarding from the beginning.
-              </Text>
-              <Text
-                className="text-xs font-medium"
-                style={{ color: colors.error }}
-              >
-                This cannot be undone.
-              </Text>
-            </View>
-
-            {/* Actions */}
-            <View className="flex-row gap-3">
-              <Button
-                onPress={onConfirm}
-                disabled={isStartingOver}
-                className="h-11 flex-1 rounded-xl"
-                style={{ backgroundColor: colors.error }}
-              >
-                {isStartingOver ? (
-                  <View className="flex-row items-center gap-2">
-                    <ActivityIndicator
-                      size="small"
-                      color={colors.primaryForeground}
-                    />
-                    <Text
-                      className="text-sm font-medium"
-                      style={{ color: colors.primaryForeground }}
-                    >
-                      Deleting…
-                    </Text>
-                  </View>
-                ) : (
-                  <Text
-                    className="text-sm font-medium"
-                    style={{ color: colors.primaryForeground }}
-                  >
-                    Yes, delete
-                  </Text>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                onPress={onCancel}
-                disabled={isStartingOver}
-                className="h-11 flex-1 rounded-xl"
-              >
-                Cancel
-              </Button>
-            </View>
-          </Pressable>
-        </Animated.View>
-      </Pressable>
-    </Modal>
+            ) : (
+              'Yes, delete'
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            onPress={onCancel}
+            disabled={isStartingOver}
+            className="h-11 flex-1 rounded-xl text-base text-muted-foreground"
+            style={recipe.btnSecondary}
+          >
+            Cancel
+          </Button>
+        </View>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -140,7 +96,6 @@ export default function StartOverButton({
   childId,
   className = '',
 }: StartOverButtonProps) {
-  const { colors } = useTheme();
   const { doStartOver, isStartingOver } = useStartOver(childId);
   const [confirming, setConfirming] = useState(false);
 
@@ -149,8 +104,6 @@ export default function StartOverButton({
     void doStartOver();
   }, [doStartOver]);
 
-  const handleCancel = useCallback(() => setConfirming(false), []);
-
   return (
     <>
       <Button
@@ -158,22 +111,17 @@ export default function StartOverButton({
         variant="outline"
         onPress={() => childId && setConfirming(true)}
         disabled={isStartingOver || !childId}
-        className={`rounded-2xl ${className}`}
+        className={cn('rounded-2xl text-warning', className)}
+        style={recipe.btnStartOver}
       >
-        <View className="flex-row items-center gap-1">
-          <RotateCcw size={14} color={colors.textMuted} />
-          <Text
-            className="text-base font-medium"
-            style={{ color: colors.text }}
-          >
-            {isStartingOver ? 'Resetting…' : 'Start Over'}
-          </Text>
-        </View>
+        <RotateCcw size={16} color={color.warning} />
+        <Text className="text-sm font-medium text-warning">
+          {isStartingOver ? 'Resetting…' : 'Start Over'}
+        </Text>
       </Button>
-
       <ConfirmModal
-        visible={confirming}
-        onCancel={handleCancel}
+        open={confirming}
+        onCancel={() => setConfirming(false)}
         onConfirm={handleConfirm}
         isStartingOver={isStartingOver}
       />

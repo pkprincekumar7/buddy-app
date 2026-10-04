@@ -1,9 +1,9 @@
 import { useCallback } from 'react';
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
+import { useNavigate } from '@/lib/router';
 import { toast } from '@/lib/toast';
 import { api } from '@/api/client';
-import type { RootStackParamList } from '@/navigation';
+import { createPageUrl } from '@/utils';
+
 import type { DispatchFn } from '@/types';
 
 interface UseOnboardingCompleteProps {
@@ -19,7 +19,7 @@ export function useOnboardingComplete({
   childData,
   recommendations,
 }: UseOnboardingCompleteProps) {
-  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+  const navigate = useNavigate();
 
   return useCallback(async () => {
     dispatch({ type: 'SET_COMPLETION_BUSY', payload: true });
@@ -30,10 +30,12 @@ export function useOnboardingComplete({
         recommendations,
       };
 
+      // Child was created at end of phase 1; just update it with the full profile.
       let childId = activeChildId;
       if (childId) {
         await api.entities.Child.update(childId, finalData);
       } else {
+        // Fallback: create if somehow not created yet (e.g. user refreshed mid-flow).
         const created = await api.entities.Child.create(finalData);
         childId = created?.id;
         if (childId)
@@ -42,7 +44,7 @@ export function useOnboardingComplete({
 
       if (!childId) throw new Error('No child ID available to save journey');
 
-      navigation.replace('Main');
+      void navigate(createPageUrl('LifePathway'), { replace: true });
     } catch (err) {
       console.error('[Onboarding] Failed to save journey:', err);
       toast.error(
@@ -51,5 +53,5 @@ export function useOnboardingComplete({
     } finally {
       dispatch({ type: 'SET_COMPLETION_BUSY', payload: false });
     }
-  }, [dispatch, activeChildId, childData, recommendations, navigation]);
+  }, [dispatch, activeChildId, childData, recommendations, navigate]);
 }

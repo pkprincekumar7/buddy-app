@@ -1,279 +1,144 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, Pressable, Modal, ActivityIndicator } from 'react-native';
-import Animated from 'react-native-reanimated';
-import {
-  Eye,
-  Trash2,
-  CheckCircle,
-  Clock,
-  AlertTriangle,
-} from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
-import type { RootStackParamList } from '@/navigation';
-import { navigateTo } from '@/lib/navigationRef';
-import { Button } from '@/components/ui/Button';
-import { useTheme } from '@/lib/ThemeContext';
-import { useModalScale } from '@/lib/animations';
-import { useStartOver } from '@/hooks/useStartOver';
-import { useAuth } from '@/lib/AuthContext';
+import React, { useState } from 'react';
+import { Text, View } from 'react-native';
+import { CheckCircle, Clock, Eye, Trash2 } from 'lucide-react-native';
+import { useNavigate } from '@/lib/router';
 import type { ChildRecord } from '@/types/api';
-
-type HomeNavProp = StackNavigationProp<RootStackParamList>;
-
-interface DeleteConfirmModalProps {
-  visible: boolean;
-  childName: string;
-  onCancel: () => void;
-  onConfirm: () => void;
-  isDeleting: boolean;
-}
-
-function DeleteConfirmModal({
-  visible,
-  childName,
-  onCancel,
-  onConfirm,
-  isDeleting,
-}: DeleteConfirmModalProps) {
-  const { colors } = useTheme();
-  const animatedStyle = useModalScale(visible);
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onCancel}
-    >
-      <Pressable
-        className="flex-1 items-center justify-center p-4"
-        style={{ backgroundColor: colors.overlayBackground }}
-        onPress={onCancel}
-        accessible={false}
-      >
-        <Animated.View
-          style={[
-            animatedStyle,
-            {
-              backgroundColor: colors.card,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-          ]}
-          className="w-full max-w-sm rounded-2xl p-8"
-        >
-          <Pressable onPress={e => e.stopPropagation()}>
-            <View className="mb-5 items-center">
-              <View
-                className="h-14 w-14 items-center justify-center rounded-full border"
-                style={{
-                  borderColor: colors.error + '4D',
-                  backgroundColor: colors.error + '1A',
-                }}
-              >
-                <AlertTriangle size={28} color={colors.error} />
-              </View>
-            </View>
-
-            <View className="mb-7 items-center gap-2">
-              <Text
-                className="text-lg font-bold"
-                style={{ color: colors.text }}
-              >
-                Delete {childName}?
-              </Text>
-              <Text
-                className="text-center text-sm leading-relaxed"
-                style={{ color: colors.textMuted }}
-              >
-                All progress — personality results, growth area answers, and
-                goal plans — will be permanently deleted.
-              </Text>
-              <Text
-                className="text-xs font-medium"
-                style={{ color: colors.error }}
-              >
-                This cannot be undone.
-              </Text>
-            </View>
-
-            <View className="flex-row gap-3">
-              <Button
-                onPress={onConfirm}
-                disabled={isDeleting}
-                className="h-11 flex-1 rounded-xl"
-                style={{ backgroundColor: colors.error }}
-              >
-                {isDeleting ? (
-                  <View className="flex-row items-center gap-2">
-                    <ActivityIndicator
-                      size="small"
-                      color={colors.primaryForeground}
-                    />
-                    <Text
-                      className="text-sm font-medium"
-                      style={{ color: colors.primaryForeground }}
-                    >
-                      Deleting…
-                    </Text>
-                  </View>
-                ) : (
-                  <Text
-                    className="text-sm font-medium"
-                    style={{ color: colors.primaryForeground }}
-                  >
-                    Yes, delete
-                  </Text>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                onPress={onCancel}
-                disabled={isDeleting}
-                className="h-11 flex-1 rounded-xl"
-              >
-                Cancel
-              </Button>
-            </View>
-          </Pressable>
-        </Animated.View>
-      </Pressable>
-    </Modal>
-  );
-}
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useStartOver } from '@/hooks/useStartOver';
+import { cn } from '@/lib/utils';
+import { color } from '@/theme';
 
 interface ChildCardProps {
   child: ChildRecord;
 }
 
 export default function ChildCard({ child }: ChildCardProps) {
-  const navigation = useNavigation<HomeNavProp>();
-  const { setActiveChildId } = useAuth();
-  const { colors } = useTheme();
-  const [confirming, setConfirming] = useState(false);
+  const navigate = useNavigate();
   const { doStartOver, isStartingOver } = useStartOver(child.id);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const displayName = child.name ?? 'Unnamed child';
-  // Treat as completed if either flag is set OR recommendations exist —
-  // old records may have onboarding_completed: null even though the flow finished.
-  const completed = !!child.onboarding_completed || !!child.recommendations;
-  // Personality is done but journey recommendations haven't been generated yet —
-  // send the parent to PersonalityType so they can continue without redoing the chat.
-  const hasPersonality = !!child.personality?.view_model?.type;
+  const completed = !!child.onboarding_completed;
+  // Phone width: the web's below-name (`sm:hidden`) badge is the one shown.
+  const statusBadgeClass = completed ? 'bg-success/10' : 'bg-warning-medium/10';
+  const statusTextClass = completed ? 'text-success' : 'text-warning-medium';
+  const statusIconColor = completed ? color.success : color['warning-medium'];
 
-  const handleView = useCallback(() => {
-    setActiveChildId(child.id);
-    if (completed || hasPersonality) {
-      // Onboarding is done (or personality exists) — go straight to the personality results tab.
-      navigateTo('Main', {
-        screen: 'Personality',
-        params: { screen: 'PersonalityType', params: { childId: child.id } },
-      });
-    } else {
-      navigation.navigate('Onboarding', { screen: 'ConversationalOnboarding' });
-    }
-  }, [child.id, completed, hasPersonality, setActiveChildId, navigation]);
-
-  const handleConfirmDelete = useCallback(() => {
-    setConfirming(false);
-    void doStartOver();
-  }, [doStartOver]);
+  const details =
+    [child.age && `Age ${child.age}`, child.school]
+      .filter(Boolean)
+      .join(' · ') || 'No details yet';
 
   return (
     <>
-      <View
-        className="rounded-2xl border p-4"
-        style={{ backgroundColor: colors.card, borderColor: colors.border }}
-      >
+      <View className="rounded-2xl border border-edge-faint bg-card p-4">
         <View className="flex-row items-center justify-between">
-          {/* Avatar + info */}
-          <View className="flex-row items-center gap-3 flex-1 mr-2">
-            <View
-              className="h-10 w-10 shrink-0 rounded-full items-center justify-center"
-              style={{ backgroundColor: colors.primary + '1A' }}
-            >
-              <Text
-                className="text-base font-semibold"
-                style={{ color: colors.primary }}
-              >
+          <View className="min-w-0 flex-1 flex-row items-start gap-4">
+            {/* Avatar */}
+            <View className="h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <Text className="text-base font-semibold text-primary">
                 {displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
 
-            <View className="flex-1">
-              <Text
-                className="text-sm font-semibold"
-                style={{ color: colors.text }}
-              >
+            {/* Info */}
+            <View className="min-w-0 flex-1">
+              <Text className="text-sm font-semibold text-foreground">
                 {displayName}
               </Text>
-              <Text className="text-xs" style={{ color: colors.textMuted }}>
-                {[child.age && `Age ${child.age}`, child.school]
-                  .filter(Boolean)
-                  .join(' · ') || 'No details yet'}
-              </Text>
-              {/* Status badge below name/details row */}
+              <Text className="text-xs text-muted-foreground">{details}</Text>
+              {/* Status badge */}
               <View
-                className="mt-1 self-start flex-row items-center gap-1 rounded-full px-2 py-0.5"
-                style={{
-                  backgroundColor: completed
-                    ? colors.success + '1A'
-                    : colors.warning + '1A',
-                }}
+                className={cn(
+                  'mt-1 flex-row items-center gap-1 self-start rounded-full px-2.5 py-0.5',
+                  statusBadgeClass,
+                )}
               >
                 {completed ? (
-                  <CheckCircle size={10} color={colors.success} />
+                  <CheckCircle size={12} color={statusIconColor} />
                 ) : (
-                  <Clock size={10} color={colors.warning} />
+                  <Clock size={12} color={statusIconColor} />
                 )}
-                <Text
-                  className="text-[10px] font-medium"
-                  style={{ color: completed ? colors.success : colors.warning }}
-                >
+                <Text className={cn('text-xs font-medium', statusTextClass)}>
                   {completed ? 'Completed' : 'In Progress'}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Actions */}
-          <View className="flex-row items-center gap-1">
+          <View className="shrink-0 flex-row items-center gap-2">
             {/* View */}
-            <Pressable
-              onPress={handleView}
-              hitSlop={8}
-              className="h-8 w-8 items-center justify-center rounded-lg"
-              style={{ backgroundColor: colors.surfaceElevated }}
+            <Button
+              variant="ghost"
+              size="icon"
+              onPress={() => {
+                void navigate(`/Onboarding/${child.id}`);
+              }}
+              accessibilityLabel="View journey"
             >
-              <Eye size={14} color={colors.iconColor} />
-            </Pressable>
+              <Eye size={16} color={color.foreground} />
+            </Button>
 
-            {/* Delete */}
-            <Pressable
-              onPress={() => setConfirming(true)}
+            {/* Delete (Start Over) */}
+            <Button
+              variant="ghost"
+              size="icon"
+              accessibilityLabel="Delete child"
               disabled={isStartingOver}
-              hitSlop={8}
-              className="h-8 w-8 items-center justify-center rounded-lg"
-              style={{ backgroundColor: colors.error + '1A' }}
+              onPress={() => setConfirmOpen(true)}
             >
-              {isStartingOver ? (
-                <ActivityIndicator size="small" color={colors.error} />
-              ) : (
-                <Trash2 size={14} color={colors.error} />
-              )}
-            </Pressable>
+              <Trash2 size={16} color={color.destructive} />
+            </Button>
           </View>
         </View>
       </View>
 
-      <DeleteConfirmModal
-        visible={confirming}
-        childName={displayName}
-        onCancel={() => setConfirming(false)}
-        onConfirm={handleConfirmDelete}
-        isDeleting={isStartingOver}
-      />
+      {/* Web AlertDialog: no close X, no dismiss on backdrop tap. */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent
+          hideClose
+          dismissible={false}
+          accessibilityLabel={`Delete ${displayName}?`}
+        >
+          <DialogHeader className="gap-2">
+            <DialogTitle className="leading-normal tracking-normal">
+              Delete {displayName}?
+            </DialogTitle>
+            <DialogDescription>
+              All progress — personality results, growth area answers, and goal
+              plans — will be permanently deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="mt-2"
+              onPress={() => setConfirmOpen(false)}
+              accessibilityLabel="Cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-destructive text-destructive-foreground"
+              onPress={() => {
+                setConfirmOpen(false);
+                void doStartOver();
+              }}
+              accessibilityLabel="Yes, delete"
+            >
+              {isStartingOver ? 'Deleting…' : 'Yes, delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

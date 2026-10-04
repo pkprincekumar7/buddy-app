@@ -9,10 +9,9 @@
  * copy, the only consequence is a registration call landing on a
  * sub-optimal region — extra latency, never incorrect data.
  *
- * Identical to frontend/src/lib/locationHint.ts (the web app's copy) — keep
- * both in sync with backend/app/routing.py's COUNTRY_TO_REGION when either
- * changes. See that file's own comments for the reasoning behind
- * non-geographic groupings (PK -> apac, GH/NG/KE/ZA/TR -> eu).
+ * Keep the groupings identical to backend/app/routing.py's COUNTRY_TO_REGION
+ * when either changes — see that file's own comments for the reasoning
+ * behind non-geographic groupings (PK -> apac, GH/NG/KE/ZA/TR -> eu).
  */
 const COUNTRY_TO_LOCATION_HINT: Record<string, string> = {
   AT: 'eu',

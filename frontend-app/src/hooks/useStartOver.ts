@@ -1,17 +1,13 @@
 import { useState, useCallback } from 'react';
-import { useNavigation } from '@react-navigation/native';
-import type { StackNavigationProp } from '@react-navigation/stack';
-import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@/lib/router';
 import { toast } from '@/lib/toast';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { ApiError } from '@/api/errors';
-import type { RootStackParamList } from '@/navigation';
-import { useAuth } from '@/lib/AuthContext';
 
 export function useStartOver(childId: string | undefined) {
-  const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { clearActiveChildId, refetchChildren } = useAuth();
   const [isStartingOver, setIsStartingOver] = useState(false);
 
   const doStartOver = useCallback(async () => {
@@ -22,9 +18,7 @@ export function useStartOver(childId: string | undefined) {
       await api.preferences
         .patch({ last_visited_path: '/Home' })
         .catch(() => {});
-      // Invalidate so the next mount triggers a fresh fetch rather than
-      // serving a deleted-child entry from cache.
-      await queryClient.invalidateQueries({ queryKey: ['children'] });
+      void queryClient.invalidateQueries({ queryKey: ['children'] });
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
         console.warn('[useStartOver] Failed:', err);
@@ -33,22 +27,9 @@ export function useStartOver(childId: string | undefined) {
         return;
       }
     }
-    // Clear first (wipes AsyncStorage key) so refetchChildren won't auto-select
-    // list[0]. The tab bar resets to Home-only because activeChild becomes null.
-    await clearActiveChildId();
-    // Refresh the list so childList in AuthContext reflects the deletion.
-    // Failure here is non-fatal — the next mount will refetch anyway.
-    await refetchChildren().catch(() => {});
     setIsStartingOver(false);
-    navigation.replace('Main');
-  }, [
-    isStartingOver,
-    childId,
-    navigation,
-    queryClient,
-    clearActiveChildId,
-    refetchChildren,
-  ]);
+    void navigate('/Home', { replace: true });
+  }, [isStartingOver, childId, navigate, queryClient]);
 
   return { doStartOver, isStartingOver };
 }

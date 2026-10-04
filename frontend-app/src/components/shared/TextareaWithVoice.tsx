@@ -1,71 +1,44 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { View } from 'react-native';
-import { Textarea } from '@/components/ui/Textarea';
-import type { TextareaProps } from '@/components/ui/Textarea';
+import React, { forwardRef, useState } from 'react';
+import { TextInput, View } from 'react-native';
+import { Textarea, type TextareaProps } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import VoiceInput from './VoiceInput';
 
-export type TextareaWithVoiceProps = Omit<
+type TextareaWithVoiceProps = Omit<
   TextareaProps,
-  'onChangeText' | 'value' | 'onChange'
+  'onChange' | 'value' | 'onChangeText'
 > & {
   value?: string;
+  /** Same `{ target: { value } }` shape as the web component, so call sites port unchanged. */
   onChange: (e: { target: { value: string } }) => void;
 };
 
-export default function TextareaWithVoice({
-  value,
-  onChange,
-  placeholder,
-  className,
-  ...props
-}: TextareaWithVoiceProps) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [partialText, setPartialText] = useState('');
-
-  const handleTranscript = useCallback(
-    (transcript: string) => {
-      setPartialText('');
-      onChange({
-        target: { value: value ? `${value} ${transcript}` : transcript },
-      });
-    },
-    [onChange, value],
-  );
-
-  const handlePartialTranscript = useCallback((partial: string) => {
-    setPartialText(partial);
-  }, []);
-
-  const handleChangeText = useCallback(
-    (text: string) => {
-      onChange({ target: { value: text } });
-    },
-    [onChange],
-  );
-
-  const activePlaceholder = useMemo(() => {
-    if (isRecording) return 'Listening...';
-    return placeholder;
-  }, [isRecording, placeholder]);
-
-  return (
-    <View className="relative">
-      <Textarea
-        value={partialText || value}
-        onChangeText={handleChangeText}
-        placeholder={activePlaceholder}
-        editable={!isRecording}
-        className={`pb-12 ${className ?? ''}`}
-        {...props}
-      />
-      <View className="absolute bottom-3 right-3">
-        <VoiceInput
-          onTranscript={handleTranscript}
-          onPartialTranscript={handlePartialTranscript}
-          isRecording={isRecording}
-          setIsRecording={setIsRecording}
+const TextareaWithVoice = forwardRef<TextInput, TextareaWithVoiceProps>(
+  ({ value, onChange, placeholder, className, ...props }, ref) => {
+    const [isRecording, setIsRecording] = useState(false);
+    return (
+      <View className="relative">
+        <Textarea
+          ref={ref}
+          value={value}
+          onChangeText={text => onChange({ target: { value: text } })}
+          placeholder={isRecording ? 'Listening...' : placeholder}
+          editable={!isRecording}
+          className={cn('pr-14', className)}
+          {...props}
         />
+        <View className="absolute bottom-3 right-3">
+          <VoiceInput
+            onTranscript={t =>
+              onChange({ target: { value: value ? `${value} ${t}` : t } })
+            }
+            isRecording={isRecording}
+            setIsRecording={setIsRecording}
+          />
+        </View>
       </View>
-    </View>
-  );
-}
+    );
+  },
+);
+TextareaWithVoice.displayName = 'TextareaWithVoice';
+export default TextareaWithVoice;
