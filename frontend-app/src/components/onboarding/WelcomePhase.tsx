@@ -1,33 +1,55 @@
-import type { ComponentType } from 'react';
-import { useEffect } from 'react';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withDelay,
-  withSpring,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
-import { View, Text, Pressable } from 'react-native';
-import Svg, { Path as SvgPath, Line as SvgLine } from 'react-native-svg';
+import React from 'react';
+import { Text, View } from 'react-native';
+import Animated, { Easing, Keyframe, ZoomIn } from 'react-native-reanimated';
+import Svg, { Line, Path } from 'react-native-svg';
 import { MessageSquare, Sparkles, Target } from 'lucide-react-native';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button';
 import { api } from '@/api/client';
-import { useSlideUp } from '@/lib/animations';
-import { useTheme } from '@/lib/ThemeContext';
+import { color, glow, raw } from '@/theme';
 
-type LucideIcon = ComponentType<{ size?: number; color?: string }>;
-
-const FEATURES: { icon: LucideIcon; text: string }[] = [
+const FEATURES = [
   { icon: MessageSquare, text: 'Quick chat' },
   { icon: Sparkles, text: 'Personalized' },
   { icon: Target, text: 'Actionable' },
 ];
 
+const easeOut = Easing.out(Easing.ease);
+
+/** framer `initial={{ opacity: 0, y }} animate={{ opacity: 1, y: 0 }}` with delay/duration in seconds. */
+function rise(delay: number, duration: number, y: number) {
+  return new Keyframe({
+    0: { opacity: 0, transform: [{ translateY: y }] },
+    100: { opacity: 1, transform: [{ translateY: 0 }], easing: easeOut },
+  })
+    .duration(duration * 1000)
+    .delay(delay * 1000);
+}
+
+function fade(delay: number, duration: number) {
+  return new Keyframe({ 0: { opacity: 0 }, 100: { opacity: 1 } })
+    .duration(duration * 1000)
+    .delay(delay * 1000);
+}
+
+function chipIn(delay: number) {
+  return new Keyframe({
+    0: { opacity: 0, transform: [{ scale: 0.88 }] },
+    100: { opacity: 1, transform: [{ scale: 1 }], easing: easeOut },
+  })
+    .duration(350)
+    .delay(delay * 1000);
+}
+
+const LOGO_ENTER = ZoomIn.delay(100).springify().stiffness(70).damping(12);
+const EYEBROW_STYLE = { letterSpacing: 11 * 0.16 };
+const CTA_STYLE = { boxShadow: glow.tealMd };
+const LOGO_STYLE = { boxShadow: glow.tealIcon };
+const leaf = raw['logo-leaf'];
+
 interface WelcomePhaseProps {
   onContinue: () => void;
   isAuthenticated?: boolean;
-  user?: { full_name?: string; email?: string } | null;
+  user?: { full_name?: string | null; email?: string | null } | null;
 }
 
 export default function WelcomePhase({
@@ -35,214 +57,127 @@ export default function WelcomePhase({
   isAuthenticated,
   user,
 }: WelcomePhaseProps) {
-  const { colors } = useTheme();
   const firstName = user?.full_name?.split(' ')[0] ?? 'there';
 
   const handleGoogleLogin = () => {
     void api.auth.redirectToLogin();
   };
 
-  // Logo spring animation — mirrors web Framer Motion: scale 0→1, stiffness: 70, damping: 12
-  const logoScale = useSharedValue(0);
-  const logoOpacity = useSharedValue(0);
-  useEffect(() => {
-    logoScale.value = withDelay(
-      100,
-      withSpring(1, { stiffness: 70, damping: 12 }),
-    );
-    logoOpacity.value = withDelay(
-      100,
-      withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const logoSpringStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: logoScale.value }],
-    opacity: logoOpacity.value,
-  }));
-
-  const titleAnim = useSlideUp(0.55, 800);
-  const subtitleAnim = useSlideUp(0.85, 800);
-  // Staggered per-chip animations — mirrors web: delay 1.0 + i * 0.1s
-  const chip0Anim = useSlideUp(1.0, 800);
-  const chip1Anim = useSlideUp(1.1, 800);
-  const chip2Anim = useSlideUp(1.2, 800);
-  const chipAnims = [chip0Anim, chip1Anim, chip2Anim];
-  const ctaAnim = useSlideUp(2.15, 800);
-  const timeAnim = useSlideUp(2.5, 800);
-
   return (
-    <View
-      style={{
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.card,
-        padding: 24,
-      }}
+    <Animated.View
+      entering={rise(0, 0.55, 24)}
+      className="w-full max-w-lg self-center"
     >
-      {/* Hero */}
-      <View className="items-center mb-6">
-        {/* Logo — spring scale + fade, mirrors web Framer Motion spring */}
+      <View className="items-center gap-6 rounded-2xl border border-edge bg-card p-8">
+        {/* Buddy logo — solid teal filled circle with white sprout */}
         <Animated.View
-          style={[logoSpringStyle, { backgroundColor: colors.primary }]}
-          className="mb-6 h-20 w-20 items-center justify-center rounded-full"
+          entering={LOGO_ENTER}
+          className="h-20 w-20 items-center justify-center rounded-full bg-primary"
+          style={LOGO_STYLE}
         >
-          <Svg width={40} height={44} viewBox="0 0 20 22">
-            <SvgLine
+          <Svg viewBox="0 0 20 22" width={40} height={40}>
+            <Line
               x1="10"
               y1="21"
               x2="10"
               y2="14"
-              stroke="white"
-              strokeWidth="2.2"
+              stroke={leaf}
+              strokeWidth={2.2}
               strokeLinecap="round"
             />
-            <SvgPath
+            <Path
               d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-              fill="white"
+              fill={leaf}
             />
-            <SvgPath
+            <Path
               d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-              fill="white"
+              fill={leaf}
             />
           </Svg>
         </Animated.View>
 
-        <Animated.View style={titleAnim} className="items-center">
-          <Text
-            className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-center"
-            style={{ color: colors.primary }}
+        {/* Headline */}
+        <View className="w-full gap-2">
+          <Animated.Text
+            entering={fade(0.35, 0.5)}
+            className="text-center text-[11px] font-semibold uppercase text-primary"
+            style={EYEBROW_STYLE}
           >
             Welcome to your growth journey
-          </Text>
-          <Text
-            className="text-3xl font-bold leading-tight tracking-tight text-center"
-            style={{ color: colors.text }}
+          </Animated.Text>
+          <Animated.Text
+            entering={rise(0.5, 0.55, 14)}
+            accessibilityRole="header"
+            className="text-center text-3xl font-bold leading-tight text-foreground"
           >
             Hey {firstName}! 👋{'\n'}I'm{' '}
-            <Text style={{ color: colors.primary }}>Buddy</Text>, your child's
+            <Text className="text-primary">Buddy</Text>, your child's
             {'\n'}growth companion.
-          </Text>
-        </Animated.View>
+          </Animated.Text>
+        </View>
 
-        <Animated.View style={subtitleAnim} className="items-center mt-4">
-          <Text
-            className="text-center text-sm leading-relaxed"
-            style={{ color: colors.textMuted }}
-          >
-            In a few light, friendly questions I'll learn about your child — one
-            thing at a time. No long forms, no pressure. Promise.
-          </Text>
-        </Animated.View>
-      </View>
+        {/* Subtitle */}
+        <Animated.Text
+          entering={fade(0.75, 0.5)}
+          className="max-w-sm text-center text-sm leading-relaxed text-muted-foreground"
+        >
+          In a few light, friendly questions I'll learn about your child — one
+          thing at a time. No long forms, no pressure. Promise.
+        </Animated.Text>
 
-      {/* Feature chips — staggered entrance, Lucide icons in primary color */}
-      <View className="flex-row mb-6" style={{ gap: 12 }}>
-        {FEATURES.map((f, i) => {
-          const Icon = f.icon;
-          return (
-            <Animated.View key={f.text} style={[chipAnims[i], { flex: 1 }]}>
-              <View
-                className="items-center gap-2 rounded-xl border py-4"
-                style={{
-                  backgroundColor: colors.surfaceElevated,
-                  borderColor: colors.border,
-                }}
-              >
-                <Icon size={20} color={colors.primary} />
-                <Text
-                  className="text-xs font-medium text-center"
-                  style={{ color: colors.text }}
-                >
-                  {f.text}
-                </Text>
-              </View>
+        {/* Feature chips */}
+        <Animated.View
+          entering={rise(0.95, 0.5, 10)}
+          className="w-full flex-row items-center justify-center gap-3"
+        >
+          {FEATURES.map((f, i) => (
+            <Animated.View
+              key={f.text}
+              entering={chipIn(1.0 + i * 0.1)}
+              className="flex-1 items-center gap-2 rounded-xl border border-edge bg-surface-elevated py-4"
+            >
+              <f.icon size={20} color={color.primary} />
+              <Text className="text-xs font-medium text-foreground">
+                {f.text}
+              </Text>
             </Animated.View>
-          );
-        })}
-      </View>
+          ))}
+        </Animated.View>
 
-      {/* CTA — glow shadow mirrors web glow-teal-md */}
-      <Animated.View
-        style={[ctaAnim, { gap: 8 }]}
-        className="items-center mb-4"
-      >
-        {isAuthenticated ? (
-          <View
-            style={{
-              width: '100%',
-              shadowColor: colors.primary,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.35,
-              shadowRadius: 12,
-              elevation: 8,
-            }}
-          >
+        {/* CTA */}
+        <Animated.View
+          entering={rise(1.3, 0.45, 10)}
+          className="w-full items-center gap-2 pt-1"
+        >
+          {isAuthenticated ? (
             <Button
               onPress={onContinue}
-              className="w-full rounded-full h-12 items-center justify-center"
-              style={{ backgroundColor: colors.primary }}
+              accessibilityLabel="Let's start"
+              className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground"
+              style={CTA_STYLE}
             >
-              <Text
-                className="text-base font-semibold"
-                style={{ color: colors.primaryForeground }}
-              >
-                Let's start →
-              </Text>
+              {"Let's start →"}
             </Button>
-          </View>
-        ) : (
-          <>
-            <View
-              style={{
-                width: '100%',
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.35,
-                shadowRadius: 12,
-                elevation: 8,
-              }}
-            >
-              <Pressable
+          ) : (
+            <>
+              <Button
                 onPress={handleGoogleLogin}
-                style={{
-                  backgroundColor: colors.primary,
-                  borderRadius: 999,
-                  height: 48,
-                  width: '100%',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                android_ripple={{ color: colors.pressedBackground }}
+                accessibilityLabel="Get started"
+                className="h-12 rounded-full bg-primary px-12 text-base font-semibold text-primary-foreground"
+                style={CTA_STYLE}
               >
-                <Text
-                  className="text-base font-semibold"
-                  style={{ color: colors.primaryForeground }}
-                >
-                  Get started →
-                </Text>
-              </Pressable>
-            </View>
-            <Text
-              className="text-xs text-center"
-              style={{ color: colors.iconColor }}
-            >
-              Sign in to save your progress securely
-            </Text>
-          </>
-        )}
-      </Animated.View>
-
-      {/* Time estimate */}
-      <Animated.View style={timeAnim}>
-        <Text
-          className="text-center text-xs"
-          style={{ color: colors.iconColor, opacity: 0.5 }}
-        >
-          Takes about 2 minutes
-        </Text>
-      </Animated.View>
-    </View>
+                {'Get started →'}
+              </Button>
+              <Text className="text-center text-xs text-muted-foreground/60">
+                Sign in to save your progress securely
+              </Text>
+            </>
+          )}
+          <Text className="text-center text-xs text-muted-foreground/50">
+            Takes about 2 minutes
+          </Text>
+        </Animated.View>
+      </View>
+    </Animated.View>
   );
 }

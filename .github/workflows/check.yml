@@ -312,11 +312,7 @@ jobs:
         continue-on-error: true
         run: |
           pip-audit -r backend/requirements.txt --skip-editable \
-            --ignore-vuln PYSEC-2025-183 \
-            --ignore-vuln PYSEC-2026-175 \
-            --ignore-vuln PYSEC-2026-177 \
-            --ignore-vuln PYSEC-2026-178 \
-            --ignore-vuln PYSEC-2026-179
+            --ignore-vuln PYSEC-2025-183
 
       - name: Checkov (Terraform IaC security)
         id: checkov
@@ -355,10 +351,12 @@ jobs:
       - name: npm audit (frontend dependency CVEs)
         id: npm_audit
         continue-on-error: true
+        # Ignored (no fixed release exists): GHSA-vfj7-8cjw-p6xm — braces <=3.0.3 DoS;
+        # only via build tooling (tailwindcss, spectral-cli). Remove once a fix ships.
         run: |
           npm audit --json 2>/dev/null | python3 -c "
           import json,sys
-          IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg'}
+          IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg','GHSA-vfj7-8cjw-p6xm'}
           d=json.load(sys.stdin)
           def is_ignored(v, all_vulns):
               for x in v.get('via',[]):
@@ -385,10 +383,13 @@ jobs:
         # advisory IDs 1138808/1138809, now 1239765/1239766) is fixed by forcing
         # image-size to ^2.0.4 via frontend-app/package.json's resolutions/overrides —
         # no ignore needed any more.
+        # Also ignored (no fixed release exists; remove once one ships):
+        #   1240992 (GHSA-vfj7-8cjw-p6xm) — braces <=3.0.3 DoS; build/test tooling only.
+        #   1240912 (GHSA-86w9-cpqp-85rv) — node-forge <=1.4.0; only via @expo/cli (dev CLI).
         run: |
           yarn audit --json 2>/dev/null | python3 -c "
           import json,sys
-          IGNORED_IDS={1124334}
+          IGNORED_IDS={1124334,1240992,1240912}
           high=0
           for line in sys.stdin:
               line=line.strip()
@@ -455,7 +456,8 @@ jobs:
           exit-code: '1'
           scanners: vuln
 
-      # trivyignores: only the brace-expansion/Newtonsoft.Json exceptions remain —
+      # trivyignores: the brace-expansion/Newtonsoft.Json exceptions plus the no-fix
+      # braces (CVE-2026-93687) and node-forge (CVE-2026-85393) dev-tooling CVEs —
       # image-size's CVE-2025-71329/CVE-2025-71330 is now fixed (see
       # frontend-app/.trivyignore and frontend-app/package.json's resolutions).
       - name: Trivy (frontend-app dependency CVE scan)
@@ -529,8 +531,11 @@ jobs:
         run: trivy config infra-live-scheduler/terraform --exit-code 1 --severity HIGH,CRITICAL
 
       # ── Docker image scan (OS-level CVEs inside the built image) ────────────
+      # GIT_SHA is the Dockerfile's apt-layer cache-bust key, so `apt-get upgrade`
+      # re-runs and the scan sees current Debian security patches even if a layer
+      # cache is ever added (check.sh passes a per-day value for the same reason).
       - name: Build backend Docker image
-        run: docker build -t buddy-backend:scan -f backend/Dockerfile .
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t buddy-backend:scan -f backend/Dockerfile .
 
       - name: Trivy (backend image scan)
         id: trivy_image

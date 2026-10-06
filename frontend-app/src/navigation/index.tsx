@@ -1,623 +1,163 @@
-import React, { useCallback, useContext, useRef, useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
-import Svg, { Path as SvgPath, Line as SvgLine } from 'react-native-svg';
+import React from 'react';
+import { Text, View } from 'react-native';
 import {
-  NavigationContainer,
   DarkTheme,
-  DefaultTheme,
-  getStateFromPath as defaultGetStateFromPath,
+  NavigationContainer,
+  type Theme,
 } from '@react-navigation/native';
-import type {
-  LinkingOptions,
-  NavigatorScreenParams,
-  Theme,
-} from '@react-navigation/native';
-import { ThemeProvider, useTheme } from '../lib/ThemeContext';
-import { darkColors, lightColors } from '../lib/themeColors';
-import { navigationRef } from '../lib/navigationRef';
-import { useAuth } from '../lib/AuthContext';
-import { createStackNavigator } from '@react-navigation/stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Home, Target, TrendingUp, Brain, Map } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api } from '../api/client';
+import {
+  createStackNavigator,
+  type StackNavigationOptions,
+} from '@react-navigation/stack';
+import { useAuth } from '@/lib/AuthContext';
+import {
+  navigationRef,
+  syncCurrentRoute,
+  type PageName,
+  type RootStackParamList,
+  type RouteParams,
+} from '@/lib/router';
+import { Button } from '@/components/ui/button';
+import Spinner from '@/components/shared/Spinner';
+import AppHeader from '@/components/layout/AppHeader';
+import { color } from '@/theme';
 
-import AdminScreen from '../screens/admin/AdminScreen';
-import LoginScreen from '../screens/auth/LoginScreen';
-import RegisterScreen from '../screens/auth/RegisterScreen';
-import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
-import ConversationalOnboardingScreen from '../screens/onboarding/ConversationalOnboardingScreen';
-import HomeScreen from '../screens/home/HomeScreen';
-import GoalsDashboardScreen from '../screens/goals/GoalsDashboardScreen';
-import GrowthAreasScreen from '../screens/growth/GrowthAreasScreen';
-import GrowthAreasActivityScreen from '../screens/growth/GrowthAreasActivityScreen';
-import GrowthAreasActivityGameScreen from '../screens/growth/GrowthAreasActivityGameScreen';
-import GrowthAreasGreatInsightsScreen from '../screens/growth/GrowthAreasGreatInsightsScreen';
-import PersonalityTypeScreen from '../screens/personality/PersonalityTypeScreen';
-import PersonalityJourneyScreen from '../screens/personality/PersonalityJourneyScreen';
-import LifePathwayScreen from '../screens/personality/LifePathwayScreen';
-import HeaderRight from '../components/shared/HeaderRight';
-import UserNotRegisteredError from '../components/shared/UserNotRegisteredError';
+import Login from '@/screens/Login';
+import Register from '@/screens/Register';
+import Admin from '@/screens/Admin';
+import Home from '@/screens/Home';
+import Onboarding from '@/screens/Onboarding';
+import ConversationalOnboarding from '@/screens/ConversationalOnboarding';
+import PersonalityJourney from '@/screens/PersonalityJourney';
+import PersonalityProfile from '@/screens/PersonalityProfile';
+import LifePathway from '@/screens/LifePathway';
+import GrowthAreas from '@/screens/GrowthAreas';
+import Observations from '@/screens/Observations';
+import Connect from '@/screens/Connect';
+import PageNotFound from '@/screens/PageNotFound';
+import UserNotRegisteredError from '@/screens/UserNotRegisteredError';
+import { withStackWindow } from './withStackWindow';
 
-export type AuthStackParamList = {
-  Login: undefined;
-  Register: undefined;
-};
+const Stack = createStackNavigator<RootStackParamList>();
 
-export type OnboardingStackParamList = {
-  OnboardingWelcome: { fromBack?: boolean; childId?: string } | undefined;
-  ConversationalOnboarding: { fromBack?: boolean } | undefined;
-};
-
-export type GrowthStackParamList = {
-  GrowthAreas: { fromBack?: boolean } | undefined;
-  GrowthAreasActivity: { activityId: string; fromReview?: boolean };
-  GrowthAreasActivityGame: { activityId: string };
-  GrowthAreasGreatInsights: { activityId: string };
-};
-
-export type PersonalityStackParamList = {
-  PersonalityType: { childId?: string; fromBack?: boolean } | undefined;
-  PersonalityJourney: { childId?: string; fromBack?: boolean } | undefined;
-};
-
-export type MainTabParamList = {
-  Home: undefined;
-  Goals: undefined;
-  Growth: undefined;
-  Personality: undefined;
-  LifePathway: undefined;
-};
-
-export type RootStackParamList = {
-  Auth: undefined;
-  Onboarding: NavigatorScreenParams<OnboardingStackParamList> | undefined;
-  Main: undefined;
-  Admin: undefined;
-};
-
-const RootStack = createStackNavigator<RootStackParamList>();
-const AuthStack = createStackNavigator<AuthStackParamList>();
-const OnboardingStack = createStackNavigator<OnboardingStackParamList>();
-const GrowthStack = createStackNavigator<GrowthStackParamList>();
-const PersonalityStack = createStackNavigator<PersonalityStackParamList>();
-const MainTab = createBottomTabNavigator<MainTabParamList>();
-
-const DEFAULT_UNLOCKED = new Set(['Home']);
-
-// Context lets CenteredTabBar subscribe to unlockedTabs directly so it
-// re-renders whenever the set changes, without relying on the tabBar prop
-// reference changing (React Navigation doesn't guarantee that triggers a re-render).
-const UnlockedTabsContext = React.createContext<Set<string>>(new Set(['Home']));
-
-// Tab display labels — kept here so CenteredTabBar doesn't depend on route names.
-const TAB_LABELS: Record<string, string> = {
-  Home: 'Home',
-  Personality: 'Personality',
-  Growth: 'Growth',
-  LifePathway: 'Pathway',
-  Goals: 'Goals',
-};
-
-// Tab icons by route name.
-const TAB_ICONS: Record<
-  string,
-  (color: string, size: number) => React.ReactNode
-> = {
-  Home: (c, s) => <Home color={c} size={s} />,
-  Personality: (c, s) => <Brain color={c} size={s} />,
-  Growth: (c, s) => <TrendingUp color={c} size={s} />,
-  LifePathway: (c, s) => <Map color={c} size={s} />,
-  Goals: (c, s) => <Target color={c} size={s} />,
-};
-
-function CenteredTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const unlockedTabs = useContext(UnlockedTabsContext);
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const focusedRouteName = state.routes[state.index]?.name;
-
-  const visibleRoutes = state.routes.filter(r => unlockedTabs.has(r.name));
-
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: colors.card,
-        borderTopColor: colors.border,
-        borderTopWidth: 1,
-        paddingBottom: insets.bottom,
-        paddingTop: 8,
-      }}
-    >
-      {visibleRoutes.map(route => {
-        const isFocused = route.name === focusedRouteName;
-        const color = isFocused ? colors.primary : colors.tabInactive;
-        const { options } = descriptors[route.key];
-
-        return (
-          <TouchableOpacity
-            key={route.key}
-            accessibilityRole="button"
-            accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={options.tabBarAccessibilityLabel}
-            onPress={() => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            }}
-            style={{
-              alignItems: 'center',
-              paddingHorizontal: 20,
-              paddingVertical: 4,
-            }}
-          >
-            {TAB_ICONS[route.name]?.(color, 24)}
-            <Text style={{ color, fontSize: 10, marginTop: 3 }}>
-              {TAB_LABELS[route.name] ?? route.name}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-/** Dark navigation theme — built from darkColors token object. */
-const DarkAppTheme: Theme = {
+const navTheme: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: darkColors.background,
-    card: darkColors.card,
-    text: darkColors.text,
-    border: darkColors.border,
-    primary: darkColors.primary,
-    notification: darkColors.primary,
+    primary: color.primary,
+    background: color.background,
+    card: color['sidebar-background'],
+    text: color.foreground,
+    border: color.border,
+    notification: color.primary,
   },
 };
 
-/** Light navigation theme — built from lightColors token object. */
-const LightAppTheme: Theme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    background: lightColors.background,
-    card: lightColors.card,
-    text: lightColors.text,
-    border: lightColors.border,
-    primary: lightColors.primary,
-    notification: lightColors.primary,
-  },
+// Every page the web wraps in <Layout> gets the Layout header.
+const withLayout: StackNavigationOptions = {
+  header: ({ route }) => (
+    <AppHeader
+      currentPageName={route.name as PageName}
+      childId={(route.params as RouteParams | undefined)?.childId}
+    />
+  ),
+  cardStyle: { backgroundColor: color.background },
+};
+const bare: StackNavigationOptions = {
+  headerShown: false,
+  cardStyle: { backgroundColor: color.background },
 };
 
-/** Buddy360 sprout logo + wordmark — replaces per-screen title text to match web header. */
-function HeaderLogo() {
-  const { colors } = useTheme();
+// Pages that route by /:pageName/:childId on the web (App.tsx ProtectedRoutes).
+// Each is wrapped so only the top two stack pages stay rendered — see withStackWindow.
+const PROTECTED_PAGES = {
+  Home: withStackWindow(Home),
+  Onboarding: withStackWindow(Onboarding),
+  ConversationalOnboarding: withStackWindow(ConversationalOnboarding),
+  PersonalityJourney: withStackWindow(PersonalityJourney),
+  PersonalityProfile: withStackWindow(PersonalityProfile),
+  LifePathway: withStackWindow(LifePathway),
+  GrowthAreas: withStackWindow(GrowthAreas),
+  Observations: withStackWindow(Observations),
+  Connect: withStackWindow(Connect),
+} as const;
+
+function FullScreenSpinner() {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-      <View
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          backgroundColor: colors.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Svg width={14} height={15} viewBox="0 0 20 22">
-          <SvgLine
-            x1="10"
-            y1="21"
-            x2="10"
-            y2="14"
-            stroke="white"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          />
-          <SvgPath
-            d="M10 15 C9 12 4 10 4 6.5 C4 3.5 6.5 2.5 8.5 3.5 C9.5 4 10 9 10 15 Z"
-            fill="white"
-          />
-          <SvgPath
-            d="M10 15 C11 12 16 10 16 6.5 C16 3.5 13.5 2.5 11.5 3.5 C10.5 4 10 9 10 15 Z"
-            fill="white"
-          />
-        </Svg>
-      </View>
-      <View>
-        <Text
-          style={{
-            fontSize: 15,
-            fontWeight: '700',
-            letterSpacing: -0.3,
-            color: colors.text,
-          }}
-          numberOfLines={1}
-        >
-          Buddy<Text style={{ color: colors.primary }}>360</Text>
-        </Text>
-        <Text
-          style={{
-            fontSize: 8,
-            fontWeight: '600',
-            textTransform: 'uppercase',
-            letterSpacing: 2,
-            color: colors.textMuted,
-            opacity: 0.6,
-            marginTop: 1,
-          }}
-        >
-          Children's Development
-        </Text>
-      </View>
+    <View className="flex-1 items-center justify-center bg-background">
+      <Spinner className="h-8 w-8" durationSeconds={1} />
     </View>
   );
 }
 
-/** Returns header options that match the current theme. */
-function useHeaderOptions() {
-  const { colors } = useTheme();
-  return {
-    headerStyle: { backgroundColor: colors.card },
-    headerTintColor: colors.text,
-    headerTitleAlign: 'left' as const,
-    headerTitle: () => <HeaderLogo />,
-    headerLeft: () => null,
-    headerRight: () => <HeaderRight />,
-  };
-}
-
-function AuthNavigator() {
-  return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen name="Register" component={RegisterScreen} />
-    </AuthStack.Navigator>
-  );
-}
-
-function OnboardingNavigator() {
-  const headerOptions = useHeaderOptions();
-  return (
-    <OnboardingStack.Navigator screenOptions={headerOptions}>
-      {/* headerLeft: null removes the back arrow on the root screen (nothing to go back to) */}
-      <OnboardingStack.Screen
-        name="OnboardingWelcome"
-        component={OnboardingScreen}
-        options={{ title: 'Welcome', headerLeft: () => null }}
-      />
-      <OnboardingStack.Screen
-        name="ConversationalOnboarding"
-        component={ConversationalOnboardingScreen}
-        options={{ title: 'About Your Child' }}
-      />
-    </OnboardingStack.Navigator>
-  );
-}
-
-function GrowthNavigator() {
-  const headerOptions = useHeaderOptions();
-  return (
-    <GrowthStack.Navigator screenOptions={headerOptions}>
-      <GrowthStack.Screen
-        name="GrowthAreas"
-        component={GrowthAreasScreen}
-        options={{ title: 'Growth' }}
-      />
-      <GrowthStack.Screen
-        name="GrowthAreasActivity"
-        component={GrowthAreasActivityScreen}
-        options={{ title: 'Activity' }}
-      />
-      <GrowthStack.Screen
-        name="GrowthAreasActivityGame"
-        component={GrowthAreasActivityGameScreen}
-        options={{ title: 'Activity' }}
-      />
-      <GrowthStack.Screen
-        name="GrowthAreasGreatInsights"
-        component={GrowthAreasGreatInsightsScreen}
-        options={{ title: 'Insights' }}
-      />
-    </GrowthStack.Navigator>
-  );
-}
-
-function PersonalityNavigator() {
-  const headerOptions = useHeaderOptions();
-  return (
-    <PersonalityStack.Navigator screenOptions={headerOptions}>
-      <PersonalityStack.Screen
-        name="PersonalityType"
-        component={PersonalityTypeScreen}
-        options={{ title: 'Personality' }}
-      />
-      <PersonalityStack.Screen
-        name="PersonalityJourney"
-        component={PersonalityJourneyScreen}
-        options={{ title: 'Journey' }}
-      />
-    </PersonalityStack.Navigator>
-  );
-}
-
-// Stable tabBar renderer — never changes reference so React Navigation doesn't
-// remount the tab bar. CenteredTabBar reads unlockedTabs from context instead.
-const stableTabBar = (props: BottomTabBarProps) => (
-  <CenteredTabBar {...props} />
-);
-
-function MainTabNavigator() {
-  const { activeChild } = useAuth();
-  const headerOptions = useHeaderOptions();
-
-  // Seed from the database — activeChild is kept fresh by AuthContext (React Query).
-  const dbTabs = activeChild?.visited_tabs;
-  const [unlockedTabs, setUnlockedTabs] = useState<Set<string>>(
-    dbTabs && dbTabs.length > 0 ? new Set(dbTabs) : DEFAULT_UNLOCKED,
-  );
-
-  // Sync local state when the server value changes (login, background refresh,
-  // or another device adding a tab).
-  const prevChildIdRef = React.useRef<string | undefined>(undefined);
-  const prevDbTabsRef = React.useRef<Set<string> | undefined>(undefined);
-  // Tracks which tabs are already persisted or in-flight so we don't send
-  // duplicate API calls when the same tab is re-focused.
-  const persistedTabsRef = useRef<Set<string>>(
-    new Set(activeChild?.visited_tabs ?? []),
-  );
-
-  React.useEffect(() => {
-    const childId = activeChild?.id;
-    if (!childId || !dbTabs) return;
-
-    const incoming = new Set(dbTabs);
-    const childChanged = prevChildIdRef.current !== childId;
-
-    if (childChanged) {
-      // Different child — reset completely so Child A's tabs never bleed into
-      // Child B's tab bar. Also resets persistedTabsRef so Child B's tabs are
-      // not skipped by the in-flight guard seeded from Child A (or from the
-      // empty initial value when activeChild was still loading on first render).
-      prevChildIdRef.current = childId;
-      prevDbTabsRef.current = incoming;
-      persistedTabsRef.current = new Set(dbTabs);
-      setUnlockedTabs(new Set([...DEFAULT_UNLOCKED, ...incoming]));
-      return;
-    }
-
-    // Same child — merge so any locally added tabs are never dropped on refresh.
-    // Order-insensitive comparison: $addToSet may return tabs in any order.
-    const prev = prevDbTabsRef.current;
-    if (
-      prev &&
-      prev.size === incoming.size &&
-      [...incoming].every(t => prev.has(t))
-    )
-      return;
-    prevDbTabsRef.current = incoming;
-    setUnlockedTabs(
-      current => new Set([...DEFAULT_UNLOCKED, ...incoming, ...current]),
-    );
-  }, [dbTabs, activeChild?.id]);
-
-  const unlockTab = useCallback(
-    async (tabName: string) => {
-      const childId = activeChild?.id;
-      if (!childId) return;
-      if (persistedTabsRef.current.has(tabName)) return;
-
-      // Mark in-flight immediately to prevent duplicate calls on rapid re-focus.
-      persistedTabsRef.current = new Set([
-        ...persistedTabsRef.current,
-        tabName,
-      ]);
-
-      try {
-        await api.entities.Child.update(childId, { visited_tabs: [tabName] });
-        // Reflect in UI only after the server confirms the write.
-        setUnlockedTabs(prev => new Set([...prev, tabName]));
-      } catch {
-        // Remove the in-flight marker so the next focus event retries.
-        persistedTabsRef.current = new Set(
-          [...persistedTabsRef.current].filter(t => t !== tabName),
-        );
-      }
-    },
-    [activeChild?.id],
-  );
-
-  return (
-    <UnlockedTabsContext.Provider value={unlockedTabs}>
-      <MainTab.Navigator tabBar={stableTabBar} screenOptions={headerOptions}>
-        <MainTab.Screen
-          name="Home"
-          component={HomeScreen}
-          listeners={{ focus: () => void unlockTab('Home') }}
-        />
-        {/* Growth and Personality use nested stacks that manage their own headers.
-            Setting headerShown: false here prevents a doubled header. */}
-        <MainTab.Screen
-          name="Personality"
-          component={PersonalityNavigator}
-          options={{ headerShown: false }}
-          listeners={{ focus: () => void unlockTab('Personality') }}
-        />
-        <MainTab.Screen
-          name="Growth"
-          component={GrowthNavigator}
-          options={{ headerShown: false }}
-          listeners={{ focus: () => void unlockTab('Growth') }}
-        />
-        <MainTab.Screen
-          name="LifePathway"
-          component={LifePathwayScreen}
-          listeners={{ focus: () => void unlockTab('LifePathway') }}
-        />
-        <MainTab.Screen
-          name="Goals"
-          component={GoalsDashboardScreen}
-          listeners={{ focus: () => void unlockTab('Goals') }}
-        />
-      </MainTab.Navigator>
-    </UnlockedTabsContext.Provider>
-  );
-}
-
-const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: ['buddy360://', 'https://buddy360.app'],
-  config: {
-    screens: {
-      Auth: {
-        screens: {
-          Login: 'login',
-          Register: 'register',
-        },
-      },
-      Onboarding: {
-        screens: {
-          OnboardingWelcome: 'onboarding',
-          ConversationalOnboarding: 'onboarding/chat',
-        },
-      },
-      Main: {
-        screens: {
-          Home: 'home',
-          Goals: 'goals',
-          Growth: 'growth',
-          Personality: 'personality',
-          LifePathway: 'life-pathway',
-        },
-      },
-    },
-  },
-  getStateFromPath(path, options) {
-    // Redirect logout links to the Auth stack regardless of path structure
-    if (path.includes('clear_access_token')) {
-      return { routes: [{ name: 'Auth' as const }] };
-    }
-    return defaultGetStateFromPath(path, options);
-  },
-};
-
+/**
+ * Root navigator — the RN counterpart of web App.tsx's AppShell. Each auth
+ * state renders a different screen set (public / admin / protected), so a
+ * login or logout swaps the whole stack exactly like the web re-rendering a
+ * different <Routes> block.
+ */
 function RootNavigator() {
-  const { isAuthenticated, isLoading, authError, checkAppState, logout, user } =
+  const { isLoadingAuth, authError, isAuthenticated, checkAppState, user } =
     useAuth();
-  const { colors } = useTheme();
 
-  if (isLoading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: colors.background,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
-
-  if (authError?.type === 'user_not_registered') {
-    return <UserNotRegisteredError onLogout={logout} />;
-  }
+  if (isLoadingAuth) return <FullScreenSpinner />;
 
   if (authError?.type === 'unknown') {
     return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: colors.background,
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
-          gap: 16,
-        }}
-      >
-        <Text
-          style={{
-            color: colors.textMuted,
-            textAlign: 'center',
-            maxWidth: 320,
-            lineHeight: 22,
-          }}
-        >
+      <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+        <Text className="max-w-lg text-center text-foreground">
           {authError.message}
         </Text>
-        <TouchableOpacity
-          style={{
-            backgroundColor: colors.primaryAction,
-            paddingHorizontal: 24,
-            paddingVertical: 12,
-            borderRadius: 12,
-          }}
-          onPress={() => void checkAppState()}
-        >
-          <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
-            Retry
-          </Text>
-        </TouchableOpacity>
+        <Button variant="action" onPress={() => void checkAppState()}>
+          Retry
+        </Button>
       </View>
     );
   }
 
+  if (authError?.type === 'user_not_registered')
+    return <UserNotRegisteredError />;
+
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={withLayout}>
       {!isAuthenticated ? (
-        /* Unauthenticated — show login/register only */
-        <RootStack.Screen name="Auth" component={AuthNavigator} />
+        <Stack.Group screenOptions={bare}>
+          <Stack.Screen name="Login" component={Login} />
+          <Stack.Screen name="Register" component={Register} />
+        </Stack.Group>
       ) : user?.role === 'admin' ? (
-        /* Admin — dedicated screen, no parent flows */
-        <RootStack.Screen
-          name="Admin"
-          component={AdminScreen}
-          options={{ headerShown: true, title: 'Admin' }}
-        />
+        <Stack.Screen name="Admin" component={Admin} />
       ) : (
-        /*
-         * Authenticated — always render Main first (bottom of the stack) and
-         * Onboarding unconditionally so that navigate('Onboarding') always
-         * works from any screen. HomeScreen's useEffect handles pushing
-         * Onboarding on top for new / incomplete users.
-         */
         <>
-          <RootStack.Screen name="Main" component={MainTabNavigator} />
-          <RootStack.Screen name="Onboarding" component={OnboardingNavigator} />
+          {(
+            Object.keys(PROTECTED_PAGES) as (keyof typeof PROTECTED_PAGES)[]
+          ).map(name => (
+            <Stack.Screen
+              key={name}
+              name={name}
+              component={PROTECTED_PAGES[name]}
+            />
+          ))}
+          <Stack.Screen
+            name="NotFound"
+            component={PageNotFound}
+            options={bare}
+          />
         </>
       )}
-    </RootStack.Navigator>
-  );
-}
-
-function NavigationWithTheme() {
-  const { isDark } = useTheme();
-  return (
-    <NavigationContainer
-      ref={navigationRef}
-      linking={linking}
-      theme={isDark ? DarkAppTheme : LightAppTheme}
-    >
-      <RootNavigator />
-    </NavigationContainer>
+    </Stack.Navigator>
   );
 }
 
 export default function Navigation() {
   return (
-    <ThemeProvider>
-      <NavigationWithTheme />
-    </ThemeProvider>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navTheme}
+      onReady={syncCurrentRoute}
+      onStateChange={syncCurrentRoute}
+    >
+      <RootNavigator />
+    </NavigationContainer>
   );
 }

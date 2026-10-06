@@ -1,149 +1,87 @@
-import { useCallback, useEffect } from 'react';
-import { useFocusEffect } from '@react-navigation/native';
-import {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withDelay,
-  withRepeat,
-  Easing,
-} from 'react-native-reanimated';
-
-// Usage: const style = useFadeIn(); → <Animated.View style={style} />
-
 /**
- * Like useSlideUpWhenReady, but also re-plays the entrance animation every time
- * the screen gains focus (e.g. back navigation, tab re-selection).
- * Use this on screens visited multiple times (Journey, Growth, Pathway, Goals).
+ * Shared animation presets — the Reanimated counterparts of the web's
+ * Framer Motion presets (frontend/src/lib/animations.ts), with the same
+ * durations, offsets and easings. Spread onto an `Animated.View`:
+ *
+ *   <Animated.View {...slideUp(0.2)} />      // web: <motion.div {...slideUp(0.2)} />
+ *   <Animated.View {...MODAL_SCALE} />        // entering + exiting
+ *
+ * Framer's `initial → animate` maps to Reanimated `entering`; `exit` maps to
+ * `exiting` (Reanimated plays it when the view unmounts — no AnimatePresence
+ * needed). For looping/continuous animations use Reanimated 4's CSS
+ * animations (`animationName` / `animationDuration` / `animationIterationCount`),
+ * e.g. the SPINNER style below.
  */
-export function useFocusEntranceAnim(
-  ready: boolean,
-  delay = 0,
-  duration = 700,
-) {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(24);
+import { Easing, Keyframe } from 'react-native-reanimated';
 
-  const play = useCallback(() => {
-    opacity.value = 0;
-    translateY.value = 24;
-    const cfg = { duration, easing: Easing.out(Easing.ease) };
-    opacity.value = withDelay(delay, withTiming(1, cfg));
-    translateY.value = withDelay(delay, withTiming(0, cfg));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [delay, duration]);
+const easeOut = Easing.out(Easing.ease);
 
-  // Initial load: play when data becomes ready
-  useEffect(() => {
-    if (ready) play();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+/** Continuous 2s linear rotation — style for an Animated.View. */
+export const SPINNER = {
+  animationName: {
+    from: { transform: [{ rotate: '0deg' }] },
+    to: { transform: [{ rotate: '360deg' }] },
+  },
+  animationDuration: '2s',
+  animationIterationCount: 'infinite',
+  animationTimingFunction: 'linear',
+} as const;
 
-  // Back/forward navigation: re-play every time screen gains focus
-  useFocusEffect(
-    useCallback(() => {
-      if (ready) play();
-    }, [ready, play]),
-  );
+export const FADE_IN = {
+  entering: new Keyframe({
+    0: { opacity: 0 },
+    100: { opacity: 1, easing: easeOut },
+  }).duration(600),
+};
 
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
-}
+/** Horizontal slide used for wizard phase transitions. */
+export const PAGE_SLIDE = {
+  entering: new Keyframe({
+    0: { opacity: 0, transform: [{ translateX: 50 }] },
+    100: { opacity: 1, transform: [{ translateX: 0 }] },
+  }).duration(450),
+  exiting: new Keyframe({
+    0: { opacity: 1, transform: [{ translateX: 0 }] },
+    100: { opacity: 0, transform: [{ translateX: -50 }] },
+  }).duration(450),
+};
 
-export function useFadeIn(delay = 0, duration = 600) {
-  const opacity = useSharedValue(0);
-  useEffect(() => {
-    opacity.value = withDelay(
-      delay,
-      withTiming(1, { duration, easing: Easing.out(Easing.ease) }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return useAnimatedStyle(() => ({ opacity: opacity.value }));
-}
+export const MODAL_BACKDROP = {
+  entering: new Keyframe({ 0: { opacity: 0 }, 100: { opacity: 1 } }).duration(
+    300,
+  ),
+  exiting: new Keyframe({ 0: { opacity: 1 }, 100: { opacity: 0 } }).duration(
+    300,
+  ),
+};
 
-export function useSlideUp(delaySeconds = 0, duration = 1000) {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(24);
-  const delayMs = delaySeconds * 1000;
-  useEffect(() => {
-    const cfg = { duration, easing: Easing.out(Easing.ease) };
-    opacity.value = withDelay(delayMs, withTiming(1, cfg));
-    translateY.value = withDelay(delayMs, withTiming(0, cfg));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
-}
+export const MODAL_SCALE = {
+  entering: new Keyframe({
+    0: { opacity: 0, transform: [{ scale: 0.95 }, { translateY: 16 }] },
+    100: {
+      opacity: 1,
+      transform: [{ scale: 1 }, { translateY: 0 }],
+      easing: easeOut,
+    },
+  }).duration(375),
+  exiting: new Keyframe({
+    0: { opacity: 1, transform: [{ scale: 1 }, { translateY: 0 }] },
+    100: {
+      opacity: 0,
+      transform: [{ scale: 0.95 }, { translateY: 16 }],
+      easing: easeOut,
+    },
+  }).duration(375),
+};
 
-/**
- * Like useSlideUp, but starts the animation only when `ready` flips to true.
- * Use this on any screen that shows a loading spinner — the animation fires
- * at the moment content becomes visible, not on mount.
- */
-export function useSlideUpWhenReady(ready: boolean, delay = 0, duration = 700) {
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue(24);
-  useEffect(() => {
-    if (!ready) return;
-    const cfg = { duration, easing: Easing.out(Easing.ease) };
-    opacity.value = withDelay(delay, withTiming(1, cfg));
-    translateY.value = withDelay(delay, withTiming(0, cfg));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
-}
-
-export function usePageSlide(direction: 'in' | 'out' = 'in', duration = 450) {
-  const opacity = useSharedValue(direction === 'in' ? 0 : 1);
-  const translateX = useSharedValue(direction === 'in' ? 50 : 0);
-  useEffect(() => {
-    const cfg = { duration };
-    opacity.value = withTiming(direction === 'in' ? 1 : 0, cfg);
-    translateX.value = withTiming(direction === 'in' ? 0 : -50, cfg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateX: translateX.value }],
-  }));
-}
-
-export function useModalScale(visible: boolean) {
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.95);
-  const translateY = useSharedValue(16);
-  useEffect(() => {
-    const cfg = { duration: 375, easing: Easing.out(Easing.ease) };
-    opacity.value = withTiming(visible ? 1 : 0, cfg);
-    scale.value = withTiming(visible ? 1 : 0.95, cfg);
-    translateY.value = withTiming(visible ? 0 : 16, cfg);
-    // opacity/scale/translateY are Reanimated SharedValues — stable refs, safe to omit from deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-  return useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: scale.value }, { translateY: translateY.value }],
-  }));
-}
-
-export function useSpinner() {
-  const rotation = useSharedValue(0);
-  useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 2000, easing: Easing.linear }),
-      -1,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+/** Vertical slide-up entrance with an optional delay (seconds, like the web). */
+export function slideUp(delay = 0, duration = 1.0) {
+  return {
+    entering: new Keyframe({
+      0: { opacity: 0, transform: [{ translateY: 24 }] },
+      100: { opacity: 1, transform: [{ translateY: 0 }], easing: easeOut },
+    })
+      .duration(duration * 1000)
+      .delay(delay * 1000),
+  };
 }

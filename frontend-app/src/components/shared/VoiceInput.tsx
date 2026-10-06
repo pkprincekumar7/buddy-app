@@ -1,139 +1,75 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ActivityIndicator, Alert, Pressable } from 'react-native';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
-import { Mic, MicOff } from 'lucide-react-native';
+import React from 'react';
+import { ActivityIndicator } from 'react-native';
+import { Pressable } from '@/components/ui/pressable';
 import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { useTheme } from '@/lib/ThemeContext';
+import { color, hsl } from '@/theme';
+import { useVoiceRecognition } from '@/hooks/useVoiceRecognition';
+import VoiceWaveIcon from './VoiceWaveIcon';
 
-export interface VoiceInputProps {
+interface VoiceInputProps {
   onTranscript: (transcript: string) => void;
   onPartialTranscript?: (transcript: string) => void;
   isRecording: boolean;
   setIsRecording: (value: boolean) => void;
   'aria-label'?: string;
+  /** When provided, fully replaces the default button className (background, size, etc.) */
+  buttonClassName?: string;
 }
 
+/** RN port of the web VoiceInput — same 40×40 rounded-xl button and waveform glyph. */
 export default function VoiceInput({
   onTranscript,
   onPartialTranscript,
   isRecording,
   setIsRecording,
   'aria-label': ariaLabel,
+  buttonClassName,
 }: VoiceInputProps) {
-  const { colors } = useTheme();
-  const [isPendingPermission, setIsPendingPermission] = useState(false);
-
-  // Keep latest callbacks in refs so event handlers always call the current version.
-  const onTranscriptRef = useRef(onTranscript);
-  const onPartialTranscriptRef = useRef(onPartialTranscript);
-  const setIsRecordingRef = useRef(setIsRecording);
-  useEffect(() => {
-    onTranscriptRef.current = onTranscript;
-  }, [onTranscript]);
-  useEffect(() => {
-    onPartialTranscriptRef.current = onPartialTranscript;
-  }, [onPartialTranscript]);
-  useEffect(() => {
-    setIsRecordingRef.current = setIsRecording;
-  }, [setIsRecording]);
-
-  useSpeechRecognitionEvent('start', () => {
-    setIsRecordingRef.current(true);
+  const { isPending, toggle } = useVoiceRecognition({
+    onTranscript,
+    onPartialTranscript,
+    isRecording,
+    setIsRecording,
   });
 
-  useSpeechRecognitionEvent('end', () => {
-    setIsRecordingRef.current(false);
-  });
-
-  useSpeechRecognitionEvent('result', event => {
-    const transcript = event.results[0]?.transcript;
-    if (event.isFinal) {
-      if (transcript) {
-        onTranscriptRef.current(transcript);
-      } else {
-        toast.error('No speech detected. Please try again.');
-      }
-    } else if (transcript) {
-      onPartialTranscriptRef.current?.(transcript);
-    }
-  });
-
-  useSpeechRecognitionEvent('error', event => {
-    setIsRecordingRef.current(false);
-    // 'no-speech'  = user didn't say anything recognisable.
-    // 'aborted'    = recognition stopped intentionally — not a user-facing error.
-    if (event.error === 'no-speech') {
-      toast.error('No speech detected. Please try again.');
-    } else if (event.error !== 'aborted') {
-      toast.error('Speech recognition failed. Please try again.');
-    }
-  });
-
-  const startRecording = useCallback(async () => {
-    setIsPendingPermission(true);
-    const { granted } =
-      await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    setIsPendingPermission(false);
-
-    if (!granted) {
-      Alert.alert(
-        'Permission denied',
-        'Microphone permission is required. Please allow it in your device settings.',
-      );
-      return;
-    }
-
-    ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
-  }, []);
-
-  const stopRecording = useCallback(() => {
-    ExpoSpeechRecognitionModule.stop();
-  }, []);
-
-  const handlePress = useCallback(() => {
-    if (isPendingPermission) return;
-    if (isRecording) {
-      stopRecording();
-    } else {
-      void startRecording();
-    }
-  }, [isPendingPermission, isRecording, stopRecording, startRecording]);
-
-  const defaultLabel = isPendingPermission
-    ? 'Requesting mic…'
+  const label = isPending
+    ? 'Requesting microphone…'
     : isRecording
     ? 'Stop recording'
     : 'Start voice input';
+  const glyph = buttonClassName
+    ? isRecording
+      ? color['error-medium']
+      : hsl('muted-foreground', 0.7)
+    : isRecording
+    ? color.foreground
+    : color['muted-foreground'];
 
   return (
     <Pressable
-      onPress={handlePress}
-      disabled={isPendingPermission}
-      accessibilityLabel={ariaLabel ?? defaultLabel}
+      onPress={toggle}
+      disabled={isPending}
       accessibilityRole="button"
-      className={cn(
-        'h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl',
-        isRecording ? '' : 'bg-transparent',
-        isPendingPermission && 'opacity-50',
-      )}
-      style={
-        isRecording
-          ? { backgroundColor: colors.error }
-          : isPendingPermission
-          ? { backgroundColor: colors.iconColor }
-          : undefined
+      accessibilityLabel={ariaLabel ?? label}
+      accessibilityState={{ busy: isPending }}
+      hitSlop={4}
+      className={
+        buttonClassName ??
+        cn(
+          'h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+          isRecording
+            ? 'bg-error-medium'
+            : isPending
+            ? 'bg-warning'
+            : 'bg-ghost-strong',
+        )
       }
+      style={({ pressed }) => pressed && { transform: [{ scale: 0.97 }] }}
     >
-      {isPendingPermission ? (
-        <ActivityIndicator size="small" color={colors.primaryForeground} />
-      ) : isRecording ? (
-        <MicOff size={16} color={colors.primaryForeground} />
+      {isPending ? (
+        <ActivityIndicator size="small" color={color.foreground} />
       ) : (
-        <Mic size={16} color={colors.iconColor} />
+        <VoiceWaveIcon color={glyph} />
       )}
     </Pressable>
   );

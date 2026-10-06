@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSCameraUsageDescription</key>
+	<string>The app accesses your camera to let you take a photo for your child's profile.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>The app accesses your photos to let you set a profile picture for your child.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>BuddyApp uses your microphone to record voice input for the onboarding chatbot.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

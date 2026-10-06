@@ -13,3 +13,8 @@ GHSA-qwww-vcr4-c8h2
 # Transitive dependency of eslint and @stoplight/spectral-cli — build/lint tooling only.
 # Neither package is included in the production bundle shipped to users.
 CVE-2026-14257
+
+# CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm: braces <=3.0.3 stack-exhaustion DoS — no fixed
+# release exists. Transitive dependency of tailwindcss and @stoplight/spectral-cli — build
+# tooling only, never in the production bundle. Remove once braces publishes a fix.
+CVE-2026-93687

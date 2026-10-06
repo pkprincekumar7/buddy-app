@@ -1,31 +1,36 @@
-import { useCallback, useState } from 'react';
-import { useRoute } from '@react-navigation/native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from '@/lib/router';
 
 /**
- * Controls whether the StageSplash overlay is mounted.
+ * Returns [showSplash, startTimer].
  *
- * On FORWARD navigation (no fromBack param) showSplash starts as true and the
- * splash component handles its own fade-in → hold → fade-out lifecycle.  Once
- * its container has fully faded out it calls onReady (= dismiss here), which
- * sets showSplash to false and lets the parent unmount the overlay.
+ * showSplash — true while the splash overlay should be visible.
+ * startTimer — call this once the splash is ready to dismiss. After `delay`
+ *              ms the splash is hidden. Pass delay=0 for video stages where
+ *              the media duration already provides the hold time.
  *
- * On BACK navigation the route receives { fromBack: true }, so showSplash
- * starts as false — the splash is never mounted and the page entrance
- * animation fires immediately.
- *
- * Note: no setTimeout lives here; all timing is owned by StageSplash itself.
+ * Automatically skipped when the page was reached via a Back navigation,
+ * i.e. location.state?.fromBack is truthy.
  */
-export function useStageSplash() {
-  const route = useRoute();
-  const params = route.params as { fromBack?: boolean } | undefined;
+export function useStageSplash(delay = 3000) {
+  const location = useLocation();
+  const locationState = location.state as { fromBack?: boolean } | null;
+  const skipRef = useRef(!!locationState?.fromBack);
+  const [showSplash, setShowSplash] = useState(() => !locationState?.fromBack);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initialised once at mount time — forward nav ⟹ true, back nav ⟹ false.
-  const [showSplash, setShowSplash] = useState<boolean>(
-    () => !params?.fromBack,
+  // Clean up any pending timer on unmount.
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
   );
 
-  // Passed to <StageSplash onReady={dismiss} /> — called after the fade-out.
-  const dismiss = useCallback(() => setShowSplash(false), []);
+  const startTimer = useCallback(() => {
+    if (skipRef.current) return;
+    timerRef.current = setTimeout(() => setShowSplash(false), delay);
+  }, [delay]);
 
-  return [showSplash, dismiss] as [boolean, () => void];
+  return [showSplash, startTimer] as [boolean, () => void];
 }
