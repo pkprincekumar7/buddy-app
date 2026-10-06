@@ -105,6 +105,12 @@ be re-copied with a diff.
 - Pressables: import `Pressable` from `@/components/ui/pressable`, never from 'react-native' —
   NativeWind drops a function `style={({ pressed }) => …}` when `className` is also set, which
   silently loses gradients, glows and press feedback.
+- Never run a *looping* animation on props inside an `<Svg>` (`useAnimatedProps` on a
+  Path/Circle). Any changed prop redraws the whole Svg, in software on Android, and re-runs every
+  `<Filter>` in it. The hub spokes did this and rendered at ~2 fps. Draw the SVG once in its own
+  layer and loop the layer view's `opacity`/`transform` instead (see
+  `personalityJourney/Spokes.tsx`, `SvgLayer.tsx`). One-off entrance animations are fine in a
+  filter-free Svg. Keep `<Filter>` regions tight around the shape, not the whole viewBox.
 - SVG gradient stops: `<Stop offset="0%" {...stop(rgb('x', 0.2))} />` (`@/components/ui/svg-stop`).
   react-native-svg discards the alpha of an `rgba()` stopColor, so a translucent stop renders
   opaque unless its alpha is moved into `stopOpacity`.
@@ -120,6 +126,13 @@ calls: `useNavigate()` (`navigate('/GrowthAreas/abc')`, `navigate(-1)`,
 `useSearchParams()`, `<Link to>`, `<Navigate to>`. Routes are the web page names
 (`navigation/index.tsx`). Auth redirects are implicit: the navigator swaps screen sets when
 `isAuthenticated`/`user.role` changes, so `navigate('/Login')` while signed in is a no-op.
+
+Only the top two stack pages stay rendered (`navigation/withStackWindow.tsx`), like the web,
+which keeps a single page mounted. A page two or more levels deep is unmounted; its route stays
+in the history, and it re-mounts when it is focused again, with `location.state.fromBack` set so
+its stage splash is skipped. So a page must not rely on staying mounted while it's covered.
+Clean up every timer, player and listener on unmount, and keep anything that must survive a
+deep navigation in react-query, context or AsyncStorage, not in component state.
 
 ## Animation
 

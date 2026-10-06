@@ -36,6 +36,7 @@ import Observations from '@/screens/Observations';
 import Connect from '@/screens/Connect';
 import PageNotFound from '@/screens/PageNotFound';
 import UserNotRegisteredError from '@/screens/UserNotRegisteredError';
+import { withStackWindow } from './withStackWindow';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -68,16 +69,17 @@ const bare: StackNavigationOptions = {
 };
 
 // Pages that route by /:pageName/:childId on the web (App.tsx ProtectedRoutes).
+// Each is wrapped so only the top two stack pages stay rendered — see withStackWindow.
 const PROTECTED_PAGES = {
-  Home,
-  Onboarding,
-  ConversationalOnboarding,
-  PersonalityJourney,
-  PersonalityProfile,
-  LifePathway,
-  GrowthAreas,
-  Observations,
-  Connect,
+  Home: withStackWindow(Home),
+  Onboarding: withStackWindow(Onboarding),
+  ConversationalOnboarding: withStackWindow(ConversationalOnboarding),
+  PersonalityJourney: withStackWindow(PersonalityJourney),
+  PersonalityProfile: withStackWindow(PersonalityProfile),
+  LifePathway: withStackWindow(LifePathway),
+  GrowthAreas: withStackWindow(GrowthAreas),
+  Observations: withStackWindow(Observations),
+  Connect: withStackWindow(Connect),
 } as const;
 
 function FullScreenSpinner() {
