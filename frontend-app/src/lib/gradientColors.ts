@@ -1,133 +1,52 @@
 /**
  * gradientColors — central registry for categorical gradient and color values.
  *
- * These are fixed semantic colors (growth areas, personality types, etc.)
- * that don't vary with dark/light theme. All hardcoded hex values that are
- * tied to a specific category live here — never inline in components.
+ * These are fixed semantic colors tied to specific categories (growth areas,
+ * personality types, chart bands, etc.) that don't vary with dark/light theme.
+ * The actual RGB values live in `src/index.css` (see "CATEGORICAL / CHART
+ * COLORS") — this file only holds `rgb(var(--x))` references, so a palette
+ * change is still a one-file (`index.css`) edit, never inline in components.
  */
 
-export const GRADIENT_FALLBACK = { from: '#14b8a6', to: '#0d9488' };
+import { css } from '@/theme';
 
-/** Maps Tailwind growth-area `.color` strings to hex gradient pairs. */
-export const AREA_GRADIENT_COLORS: Record<
-  string,
-  { from: string; to: string }
-> = {
-  'from-purple-500 to-indigo-600': { from: '#a855f7', to: '#4f46e5' },
-  'from-rose-500 to-pink-600': { from: '#f43f5e', to: '#db2777' },
-  'from-blue-500 to-cyan-600': { from: '#3b82f6', to: '#0891b2' },
-  'from-amber-500 to-orange-600': { from: '#f59e0b', to: '#ea580c' },
-  'from-emerald-500 to-teal-600': { from: '#10b981', to: '#0d9488' },
-  'from-violet-500 to-purple-600': { from: '#8b5cf6', to: '#9333ea' },
-};
-
-/** Lighter tile palette used in GrowthAreasActivityGame. */
-export const TILE_GRADIENT_COLORS: Record<
-  string,
-  { from: string; to: string }
-> = {
-  'from-purple-400 to-indigo-500': { from: '#c084fc', to: '#6366f1' },
-  'from-rose-400 to-pink-500': { from: '#fb7185', to: '#ec4899' },
-  'from-amber-400 to-orange-500': { from: '#fbbf24', to: '#f97316' },
-  'from-emerald-400 to-teal-500': { from: '#34d399', to: '#14b8a6' },
-  'from-blue-400 to-cyan-500': { from: '#60a5fa', to: '#06b6d4' },
-  'from-violet-400 to-purple-500': { from: '#a78bfa', to: '#a855f7' },
-};
-
-/** Personality type → gradient pair (matches web personalityTypes .color fields). */
-export const TYPE_GRADIENT: Record<string, { from: string; to: string }> = {
-  Ambitious: { from: '#ef4444', to: '#db2777' },
-  Determined: { from: '#f97316', to: '#dc2626' },
-  Outgoing: { from: '#facc15', to: '#f97316' },
-  Creative: { from: '#c084fc', to: '#ec4899' },
-  Enthusiastic: { from: '#34d399', to: '#eab308' },
-  Restless: { from: '#fb923c', to: '#ef4444' },
-  'Highly Energetic': { from: '#ef4444', to: '#eab308' },
-  Thinker: { from: '#60a5fa', to: '#6366f1' },
-  Playful: { from: '#f472b6', to: '#a855f7' },
-};
-
-/** Area key → single line/dot color for the life pathway chart. */
-export const AREA_LINE_COLORS: Record<string, string> = {
-  life_ambition: '#8b5cf6',
-  self_care: '#ec4899',
-  critical_thinking: '#3b82f6',
-  creativity: '#f59e0b',
-  physical_wellness: '#10b981',
-  social_skills: '#7c3aed',
-};
-
-/** Purple gradient for the growth-areas CTA in PersonalityJourneyScreen. */
-export const PERSONALITY_JOURNEY_GRADIENT = { from: '#a855f7', to: '#4f46e5' };
-
-/**
- * Goal dashboard month gradients (index 0 uses theme primary colors, provided
- * here for months 1 and 2 which have their own fixed brand colors).
+/*
+ * Per-growth-area chart colours used to live here as AREA_LINE_COLORS, for the
+ * recharts LineChart the Life Pathway page used to draw. That page now derives
+ * area colour from GROWTH_AREAS[].hue (see AREA_HEX in lifePathwayData), which
+ * keeps a single source of truth, and nothing else consumed the map — so it was
+ * removed rather than left as a second, drifting palette.
  */
-export const MONTH_GRADIENTS: Array<{ from: string; to: string } | null> = [
-  null,
-  { from: '#2563eb', to: '#3b82f6' },
-  { from: '#9333ea', to: '#a855f7' },
-];
 
-/** Chart background band fill colors (decorative, category-specific). */
+/** Chart background band fill colors for the 3-month progress chart. */
 export const CHART_BAND_COLORS = [
-  'rgba(20,255,160,0.04)',
-  'rgba(60,120,255,0.04)',
-  'rgba(160,60,255,0.04)',
+  css('rgb(var(--chart-band-a-rgb) / 0.03)'),
+  css('rgb(var(--chart-band-b-rgb) / 0.03)'),
+  css('rgb(var(--chart-band-c-rgb) / 0.03)'),
 ];
 
-/** Default text color rendered on top of colored avatar backgrounds. */
+/**
+ * Per-pillar glow rgba values used with the `.glow-pillar` CSS utility
+ * (`--pillar-glow` CSS custom property). Each value matches the pillar's
+ * gradient color at 15% opacity.
+ */
+export const PILLAR_GLOW_COLORS = {
+  mind: css('rgb(var(--pillar-mind-rgb) / 0.15)'),
+  heart: css('rgb(var(--pillar-heart-rgb) / 0.15)'),
+  body: css('rgb(var(--pillar-body-rgb) / 0.15)'),
+  talents: css('rgb(var(--pillar-talents-rgb) / 0.15)'),
+  character: css('rgb(var(--pillar-character-rgb) / 0.15)'),
+  future: css('rgb(var(--pillar-future-rgb) / 0.15)'),
+} as const;
+
+/**
+ * Default text color rendered on top of colored avatar backgrounds.
+ *
+ * Deliberately a plain literal, not a `rgb(var(--x))` token: this feeds
+ * `generateAvatarDataUri()`, which bakes it into a standalone
+ * `data:image/svg+xml` document (see `lib/avatarUtils.ts`). A `data:` URI
+ * image has no access to the parent page's CSS custom properties — `var()`
+ * would fail to resolve there and the text would render in the browser's
+ * fallback (black) instead of white.
+ */
 export const AVATAR_TEXT_COLOR = '#ffffff';
-
-/**
- * Home screen pillar icon-box background colors (matches dark-mode -700 Tailwind shades
- * from main branch: blue-700, rose-700, emerald-700, purple-700, amber-700, teal-700).
- * Order matches the PILLARS array in HomeScreen.
- */
-export const PILLAR_BG_COLORS = [
-  '#1d4ed8', // mind — blue-700
-  '#be123c', // heart — rose-700
-  '#047857', // body — emerald-700
-  '#7e22ce', // talents — purple-700
-  '#b45309', // character — amber-700
-  '#0f766e', // future — teal-700
-];
-
-/**
- * Fallback tile background colors for ChildActivityGame image-fail states.
- * Order: purple, rose, amber, emerald, blue, violet.
- */
-export const TILE_BG_HEX_COLORS = [
-  '#a855f7', // purple-500
-  '#f43f5e', // rose-500
-  '#f59e0b', // amber-500
-  '#10b981', // emerald-500
-  '#3b82f6', // blue-500
-  '#8b5cf6', // violet-500
-];
-
-/**
- * Goal dashboard per-month accent colors for label text, dot, and objective strip.
- * Index 0 is null — month 0 uses theme `colors.primary` from ThemeContext.
- */
-export const MONTH_ACCENT_COLORS: Array<{
-  label: string;
-  dot: string;
-  stripBg: string;
-  stripBorder: string;
-} | null> = [
-  null,
-  {
-    label: '#60a5fa',
-    dot: '#3b82f6',
-    stripBg: 'rgba(59,130,246,0.1)',
-    stripBorder: 'rgba(59,130,246,0.25)',
-  },
-  {
-    label: '#c084fc',
-    dot: '#a855f7',
-    stripBg: 'rgba(168,85,247,0.1)',
-    stripBorder: 'rgba(168,85,247,0.25)',
-  },
-];

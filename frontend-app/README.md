@@ -4,6 +4,21 @@ React Native 0.85.3 mobile app (Android & iOS).
 
 > **Working directory convention:** Every terminal command in this file assumes your current directory is the repo root (`buddy-app/`). If you just cloned the repo, run `cd buddy-app` first and stay there.
 
+## Architecture at a glance
+
+The app is a phone-width port of the web app in `frontend/` — same pages, flows, copy and colors.
+`frontend-app/CLAUDE.md` is the full guide; in short:
+
+- `src/screens/<Page>.tsx` mirrors `frontend/src/pages/<Page>.tsx`; routes are the web page names
+  (`src/navigation/index.tsx`), and `src/lib/router.tsx` provides react-router's API
+  (`useNavigate('/GrowthAreas/:id')`, `useParams`, …) on top of React Navigation.
+- `src/lib/**` and `src/hooks/**` are copied verbatim from the web.
+- Colors are generated from the web's `frontend/src/index.css`:
+  `cd frontend-app && yarn theme:sync` rewrites `src/theme/tokens.generated.js`, which feeds both
+  `tailwind.config.js` (NativeWind classes with the web's names) and `src/theme/index.ts`
+  (`color`, `rgb()`, `hsl()`, `css()` helpers). Never hardcode a color in a component.
+- Fonts are the web's Orbitron/Rajdhani files (`assets/fonts`), loaded in `App.tsx`.
+
 ---
 
 ## Table of Contents

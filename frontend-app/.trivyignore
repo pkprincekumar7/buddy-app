@@ -10,3 +10,13 @@ CVE-2026-14257
 
 # CVE-2025-71329, CVE-2025-71330 (image-size DoS) are fixed, not ignored — see
 # frontend-app/package.json's resolutions/overrides forcing image-size to ^2.0.4.
+
+# CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm: braces <=3.0.3 stack-exhaustion DoS — no fixed
+# release exists. Only via build/test tooling (tailwindcss, @react-native-community/cli,
+# jest) — not included in the APK or IPA bundle. Remove once braces publishes a fix.
+CVE-2026-93687
+
+# CVE-2026-85393 / GHSA-86w9-cpqp-85rv: node-forge <=1.4.0 RSA PKCS#1 v1.5 signature
+# verification — no fixed release exists. Only via @expo/cli (developer CLI / code-signing
+# helper) — not bundled into the app. Remove once node-forge publishes a fix.
+CVE-2026-85393

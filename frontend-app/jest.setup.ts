@@ -90,53 +90,77 @@ jest.mock('victory-native', () => ({
 }));
 
 jest.mock('react-native-toast-message', () => ({
-  default: { show: jest.fn(), hide: jest.fn() },
+  __esModule: true,
+  default: Object.assign(() => null, { show: jest.fn(), hide: jest.fn() }),
   BaseToast: 'BaseToast',
   ErrorToast: 'ErrorToast',
 }));
 
-jest.mock('react-native-reanimated', () => {
-  const View = require('react-native').View;
-  const React = require('react');
-  const createAnimatedComponent = (C: unknown) => C;
-  const mod = {
-    default: {
-      View,
-      Text: View,
-      ScrollView: View,
-      FlatList: View,
-      Image: View,
-      createAnimatedComponent,
-    },
-    View,
-    Text: View,
-    ScrollView: View,
-    FlatList: View,
-    Image: View,
-    createAnimatedComponent,
-    useSharedValue: (v: unknown) => ({ value: v }),
-    useAnimatedStyle: (fn: () => unknown) => fn(),
-    withTiming: (v: unknown) => v,
-    withSpring: (v: unknown) => v,
-    withDelay: (_: unknown, v: unknown) => v,
-    withRepeat: (v: unknown) => v,
-    withSequence: (...v: unknown[]) => v[0],
-    Easing: {
-      out: (e: unknown) => e,
-      in: (e: unknown) => e,
-      inOut: (e: unknown) => e,
-      linear: (v: unknown) => v,
-      ease: 0,
-    },
-    cancelAnimation: jest.fn(),
-    runOnJS: (fn: unknown) => fn,
-    runOnUI: (fn: unknown) => fn,
-    interpolate: (_v: unknown, _in: unknown, out: unknown[]) => out[0],
-    Extrapolate: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
-    useAnimatedRef: () => React.createRef(),
-    useAnimatedScrollHandler: () => jest.fn(),
-    useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
-    __esModule: true,
-  };
-  return mod;
-});
+jest.mock('react-native-reanimated', () => ({
+  ...require('react-native-reanimated/mock'),
+  useReducedMotion: () => false,
+  // CSS-animation timing helpers aren't in Reanimated's mock.
+  cubicBezier: (...args: number[]) => `cubic-bezier(${args.join(',')})`,
+  steps: (n: number) => `steps(${n})`,
+}));
+
+jest.mock('expo-video', () => ({
+  createVideoPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    release: jest.fn(),
+    volume: 1,
+    loop: false,
+  })),
+  useVideoPlayer: jest.fn(() => ({ play: jest.fn(), pause: jest.fn() })),
+  VideoView: 'VideoView',
+}));
+
+jest.mock('expo', () => ({ useEventListener: jest.fn(), useEvent: jest.fn() }));
+
+jest.mock('expo-font', () => ({ useFonts: () => [true, null] }));
+
+jest.mock('expo-image-picker', () => ({
+  launchImageLibraryAsync: jest
+    .fn()
+    .mockResolvedValue({ canceled: true, assets: null }),
+  launchCameraAsync: jest
+    .fn()
+    .mockResolvedValue({ canceled: true, assets: null }),
+  requestMediaLibraryPermissionsAsync: jest
+    .fn()
+    .mockResolvedValue({ granted: true }),
+  requestCameraPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+}));
+
+jest.mock('expo-speech-recognition', () => ({
+  ExpoSpeechRecognitionModule: {
+    requestPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+    start: jest.fn(),
+    stop: jest.fn(),
+    abort: jest.fn(),
+  },
+  useSpeechRecognitionEvent: jest.fn(),
+}));
+
+jest.mock('@mhpdev/react-native-speech', () => ({
+  __esModule: true,
+  default: {
+    speak: jest.fn().mockResolvedValue('id'),
+    stop: jest.fn().mockResolvedValue(undefined),
+    configure: jest.fn(),
+    onFinish: jest.fn(() => ({ remove: jest.fn() })),
+    onStopped: jest.fn(() => ({ remove: jest.fn() })),
+  },
+}));
+
+jest.mock('@react-native-google-signin/google-signin', () => ({
+  GoogleSignin: {
+    configure: jest.fn(),
+    hasPlayServices: jest.fn().mockResolvedValue(true),
+    signIn: jest.fn(),
+    signOut: jest.fn().mockResolvedValue(undefined),
+  },
+  statusCodes: {},
+  isSuccessResponse: jest.fn(() => false),
+}));

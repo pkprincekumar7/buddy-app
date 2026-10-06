@@ -1,61 +1,17 @@
-import { Component } from 'react';
-import type { ErrorInfo, ReactNode } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
-import { useTheme } from '@/lib/ThemeContext';
+import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Text, View } from 'react-native';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   children: ReactNode;
 }
-
 interface State {
   hasError: boolean;
 }
 
-function ErrorFallback({ onReset }: { onReset: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.background,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        gap: 16,
-      }}
-    >
-      <Text
-        style={{
-          color: colors.textMuted,
-          textAlign: 'center',
-          maxWidth: 320,
-          lineHeight: 22,
-        }}
-      >
-        Something went wrong. Please try again.
-      </Text>
-      <TouchableOpacity
-        style={{
-          backgroundColor: colors.primaryAction,
-          paddingHorizontal: 24,
-          paddingVertical: 12,
-          borderRadius: 12,
-        }}
-        onPress={onReset}
-      >
-        <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
-          Try again
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
+/** Top-level render-error boundary — same fallback and retry as the web App.tsx boundary. */
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
@@ -68,7 +24,17 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <ErrorFallback onReset={() => this.setState({ hasError: false })} />
+        <View className="flex-1 items-center justify-center gap-4 bg-background p-6">
+          <Text className="max-w-lg text-center text-foreground">
+            Something went wrong. Please restart the app.
+          </Text>
+          <Button
+            variant="action"
+            onPress={() => this.setState({ hasError: false })}
+          >
+            Try again
+          </Button>
+        </View>
       );
     }
     return this.props.children;

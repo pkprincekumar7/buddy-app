@@ -1,222 +1,181 @@
 /** @type {import('tailwindcss').Config} */
 
 /**
- * Tailwind color tokens for NativeWind v4.
+ * Tailwind (NativeWind v4) theme — generated from the same token files as
+ * src/theme/index.ts, which are themselves generated from the web app's
+ * frontend/src/index.css (`yarn theme:sync`). Nothing here is hand-typed:
+ * change a color on the web, re-sync, and both platforms follow.
  *
- * NativeWind v4 on React Native cannot resolve CSS custom properties
- * (hsl(var(--x))) at runtime, so concrete hex values are used here.
- *
- * Values are derived from the web `frontend` app's CSS variables and match
- * the dark-mode palette in themeColors.ts (the app default).
- *
- * IMPORTANT — light-mode color switching:
- *   Tailwind className-based colors below are static (dark-mode defaults).
- *   For any color that must respond to the user's theme toggle, use
- *   `style={{ color: colors.xxx }}` via the `useTheme()` hook instead of a
- *   className token. Layout, spacing, and typography classes are unaffected.
+ * Class names match the web's tailwind.config.ts one-for-one
+ * (`bg-background`, `text-muted-foreground`, `bg-primary-action`,
+ * `text-success-bright`, `bg-surface-elevated`, …) so web classNames port
+ * verbatim. On top of that, every web `--x-rgb` channel token is exposed as a
+ * plain color (`text-constellation-cyan`, `bg-whatsapp-bright/20`,
+ * `border-pillar-mind`) — the RN stand-in for the web's
+ * `text-[rgb(var(--constellation-cyan-rgb))]` arbitrary values, which
+ * NativeWind cannot resolve. The web's `.border-edge*` / `.bg-ghost*` tint
+ * utilities become `border-edge*` / `bg-ghost*` colors (pair the border ones
+ * with a `border` width class).
  */
+const web = require('./src/theme/tokens.generated.js');
+const mobile = require('./src/theme/tokens.mobile.js');
 
-// Dark-mode hex values — keep in sync with darkColors in themeColors.ts
-const dark = {
-  // Surfaces
-  background: '#0a0a0a',
-  card: '#141414',
-  surfaceElevated: '#1a1a1a',
-  surfaceInput: '#1e1e1e',
-  muted: '#1f1f1f',
-  sectionAlt: '#0d0d0d',
-  sectionDark: '#111111',
-  surfaceMuted: '#48566a',
-  surfaceDark: '#1d283a',
-  // Text
-  foreground: '#fafafa',
-  textMuted: '#94a3b8',
-  dim: '#cbd5e1',
-  subtle: '#65758b',
-  faint: '#48566a',
-  xfaint: '#344256',
-  // Border
-  border: '#262626',
-  input: '#262626',
-  inputBorder: '#262626',
-  ring: '#3ee0cf',
-  // Primary scale
-  primaryBgLight: '#a5f3e1',
-  primaryLight: '#73e2d4',
-  primary: '#3ee0cf',
-  primaryMedium: '#10b7a6',
-  primaryAction: '#0d9688',
-  primaryDark: '#0c887c',
-  primaryStronger: '#0f756d',
-  primaryXStrong: '#115f5a',
-  primaryForeground: '#ffffff',
-  // Success scale
-  successMuted: '#a1f2cc',
-  successLight: '#6ee7b7',
-  successBright: '#19eba5',
-  success: '#10b77f',
-  successStrong: '#059467',
-  successXStrong: '#047756',
-  // Warning scale
-  warningLight: '#fcd44f',
-  warning: '#fbbd23',
-  warningMedium: '#f59f0a',
-  warningStrong: '#b35309',
-  warningOrange: '#f97415',
-  warningOrangeMedium: '#e9590c',
-  // Error scale
-  errorXLight: '#fef1f1',
-  errorLight: '#fca6a6',
-  error: '#f87272',
-  errorMedium: '#ef4343',
-  errorStrong: '#c52020',
-  errorMuted: '#fca1a1',
-  // Info scale
-  infoMuted: '#8cb8f2',
-  info: '#3c83f6',
-  infoMedium: '#0b62ef',
-  infoStrong: '#2463eb',
-  // Personality scale
-  personalityLight: '#7b24cc',
-  personality: '#9234ea',
-  personalityAlt: '#895af6',
-  personalityAltStrong: '#6b26d9',
-  // Accent
-  accentPink: '#ec4699',
-  // Tint tokens — 10/20/25% primary, 10/30% success
-  primarySubtle: 'rgba(62,224,207,0.10)',
-  primaryMuted: 'rgba(62,224,207,0.20)',
-  primaryBorder: 'rgba(62,224,207,0.25)',
-  successSubtle: 'rgba(16,183,127,0.10)',
-  successBorder: 'rgba(16,183,127,0.30)',
-};
+const h = web.hsl;
+const rgbTokens = { ...mobile.rgb, ...web.rgb };
+const rgb = ([r, g, b]) => `rgb(${r},${g},${b})`;
+const edge = a => `rgba(${rgbTokens.edge.join(',')},${a})`;
+
+const channelColors = Object.fromEntries(
+  Object.entries(rgbTokens)
+    .filter(([name]) => name !== 'edge')
+    .map(([name, c]) => [name, rgb(c)]),
+);
 
 module.exports = {
   content: ['./App.{js,jsx,ts,tsx}', './src/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
   theme: {
     extend: {
+      fontFamily: {
+        // Per-weight families — RN can't pick a weight inside a custom family.
+        orbitron: ['Orbitron-Bold'],
+        'orbitron-black': ['Orbitron-Black'],
+        rajdhani: ['Rajdhani-Medium'],
+        'rajdhani-semibold': ['Rajdhani-SemiBold'],
+        'rajdhani-bold': ['Rajdhani-Bold'],
+      },
+      borderRadius: { lg: '12px', md: '10px', sm: '8px' },
+      height: { 'btn-sm': '2.5rem', 'btn-md': '2.75rem', 'btn-lg': '3.25rem' },
       colors: {
-        background: dark.background,
-        foreground: dark.foreground,
-
-        card: {
-          DEFAULT: dark.card,
-          foreground: dark.foreground,
-        },
-        popover: {
-          DEFAULT: dark.card,
-          foreground: dark.foreground,
-        },
-
+        ...channelColors,
+        background: h.background,
+        foreground: h.foreground,
+        card: { DEFAULT: h.card, foreground: h['card-foreground'] },
+        popover: { DEFAULT: h.popover, foreground: h['popover-foreground'] },
         primary: {
-          DEFAULT: dark.primary,
-          foreground: dark.primaryForeground,
-          'bg-light': dark.primaryBgLight,
-          light: dark.primaryLight,
-          medium: dark.primaryMedium,
-          action: dark.primaryAction,
-          dark: dark.primaryDark,
-          stronger: dark.primaryStronger,
-          xstrong: dark.primaryXStrong,
-          subtle: dark.primarySubtle,
-          muted: dark.primaryMuted,
-          border: dark.primaryBorder,
+          DEFAULT: h.primary,
+          action: h['primary-action'],
+          foreground: h['primary-foreground'],
+          light: h['primary-light'],
+          medium: h['primary-medium'],
+          dark: h['primary-dark'],
+          stronger: h['primary-stronger'],
+          xstrong: h['primary-xstrong'],
+          'bg-light': h['primary-bg-light'],
         },
-
         secondary: {
-          DEFAULT: dark.surfaceInput,
-          foreground: dark.foreground,
+          DEFAULT: h.secondary,
+          foreground: h['secondary-foreground'],
         },
-
-        muted: {
-          DEFAULT: dark.muted,
-          foreground: dark.textMuted,
-        },
-
-        accent: {
-          DEFAULT: dark.surfaceInput,
-          foreground: dark.foreground,
-        },
-
+        muted: { DEFAULT: h.muted, foreground: h['muted-foreground'] },
+        accent: { DEFAULT: h.accent, foreground: h['accent-foreground'] },
         destructive: {
-          DEFAULT: dark.error,
-          foreground: dark.foreground,
+          DEFAULT: h.destructive,
+          foreground: h['destructive-foreground'],
         },
-
-        border: dark.border,
-        input: dark.input,
-        'input-border': dark.inputBorder,
-        ring: dark.ring,
-
-        surface: {
-          elevated: dark.surfaceElevated,
-          input: dark.surfaceInput,
-          muted: dark.surfaceMuted,
-          dark: dark.surfaceDark,
-        },
-
-        section: {
-          alt: dark.sectionAlt,
-          dark: dark.sectionDark,
-        },
-
-        // Text gradations
-        dim: dark.dim,
-        subtle: dark.subtle,
-        faint: dark.faint,
-        xfaint: dark.xfaint,
-
-        // Semantic success scale
         success: {
-          DEFAULT: dark.success,
-          muted: dark.successMuted,
-          light: dark.successLight,
-          bright: dark.successBright,
-          strong: dark.successStrong,
-          xstrong: dark.successXStrong,
-          subtle: dark.successSubtle,
-          border: dark.successBorder,
+          DEFAULT: h.success,
+          bright: h['success-bright'],
+          light: h['success-light'],
+          strong: h['success-strong'],
+          xstrong: h['success-xstrong'],
+          muted: h['success-muted'],
         },
-
-        // Semantic warning scale
         warning: {
-          DEFAULT: dark.warning,
-          light: dark.warningLight,
-          medium: dark.warningMedium,
-          strong: dark.warningStrong,
-          orange: dark.warningOrange,
-          'orange-medium': dark.warningOrangeMedium,
+          DEFAULT: h.warning,
+          light: h['warning-light'],
+          medium: h['warning-medium'],
+          strong: h['warning-strong'],
+          orange: h['warning-orange'],
+          'orange-medium': h['warning-orange-medium'],
         },
-
-        // Semantic error scale
         error: {
-          DEFAULT: dark.error,
-          xlight: dark.errorXLight,
-          light: dark.errorLight,
-          medium: dark.errorMedium,
-          strong: dark.errorStrong,
-          muted: dark.errorMuted,
+          DEFAULT: h.error,
+          xlight: h['error-xlight'],
+          light: h['error-light'],
+          medium: h['error-medium'],
+          strong: h['error-strong'],
+          muted: h['error-muted'],
         },
-
-        // Semantic info scale
         info: {
-          DEFAULT: dark.info,
-          muted: dark.infoMuted,
-          medium: dark.infoMedium,
-          strong: dark.infoStrong,
+          DEFAULT: h.info,
+          medium: h['info-medium'],
+          strong: h['info-strong'],
+          muted: h['info-muted'],
         },
-
-        // Personality scale
         personality: {
-          DEFAULT: dark.personality,
-          light: dark.personalityLight,
-          alt: dark.personalityAlt,
-          'alt-strong': dark.personalityAltStrong,
+          DEFAULT: h.personality,
+          light: h['personality-light'],
+          lighter: h['personality-lighter'],
+          alt: h['personality-alt'],
+          'alt-strong': h['personality-alt-strong'],
         },
-
-        // Accent
-        'accent-pink': dark.accentPink,
+        'accent-pink': h['accent-pink'],
+        dim: h['dim-foreground'],
+        subtle: h['subtle-foreground'],
+        faint: h['faint-foreground'],
+        xfaint: h['xfaint-foreground'],
+        'surface-muted': h['surface-muted-bg'],
+        'surface-dark': h['surface-dark'],
+        border: h.border,
+        input: h.input,
+        ring: h.ring,
+        overlay: h.overlay,
+        chart: {
+          1: h['chart-1'],
+          2: h['chart-2'],
+          3: h['chart-3'],
+          4: h['chart-4'],
+          5: h['chart-5'],
+        },
+        sidebar: {
+          DEFAULT: h['sidebar-background'],
+          foreground: h['sidebar-foreground'],
+          primary: h['sidebar-primary'],
+          'primary-foreground': h['sidebar-primary-foreground'],
+          accent: h['sidebar-accent'],
+          'accent-foreground': h['sidebar-accent-foreground'],
+          border: h['sidebar-border'],
+          ring: h['sidebar-ring'],
+        },
+        surface: { elevated: h['surface-elevated'], input: h['surface-input'] },
+        section: { alt: h['section-alt'], dark: h['section-dark'] },
+        'avatar-circle': {
+          1: h['avatar-circle-1'],
+          2: h['avatar-circle-2'],
+          3: h['avatar-circle-3'],
+          4: h['avatar-circle-4'],
+          5: h['avatar-circle-5'],
+          6: h['avatar-circle-6'],
+        },
+        badge: {
+          1: h['badge-1-color'],
+          2: h['badge-2-color'],
+          3: h['badge-3-color'],
+          4: h['badge-4-color'],
+          5: h['badge-5-color'],
+          6: h['badge-6-color'],
+        },
+        // Web .border-edge* (width 1px is NOT implied on RN — add `border`).
+        edge: {
+          DEFAULT: edge(0.08),
+          xs: edge(0.04),
+          faint: edge(0.06),
+          md: edge(0.1),
+          strong: edge(0.12),
+          bright: edge(0.18),
+        },
+        // Web .bg-ghost* / .bg-subtle / .bg-na-dim tints.
+        ghost: {
+          DEFAULT: edge(0.02),
+          md: edge(0.04),
+          light: edge(0.06),
+          strong: edge(0.08),
+          hover: edge(0.12),
+          xl: edge(0.2),
+        },
+        'subtle-tint': edge(0.05),
+        'na-dim': edge(0.15),
       },
     },
   },

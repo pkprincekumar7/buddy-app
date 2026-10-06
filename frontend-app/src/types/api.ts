@@ -3,6 +3,34 @@ export interface ErrorResponse {
   status_code?: number;
 }
 
+export interface AllowedEmailRecord {
+  email: string;
+  added_at: string | null;
+}
+
+export interface AllowedEmailsPage {
+  items: AllowedEmailRecord[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface AdminUserRecord {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  location: string | null;
+  created_at: string | null;
+  locked: boolean;
+}
+
+export interface AdminUsersPage {
+  items: AdminUserRecord[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
 export interface UserRecord {
   role?: string;
   full_name?: string;
@@ -25,6 +53,14 @@ export interface ChildRecord {
   current_phase?: string;
   onboarding_completed?: boolean;
   onboarding_phase?: number;
+  /** Personality Journey progression flags — see the comment on ChildResponse in backend/app/schemas/children.py for the full ordered chain. */
+  onboarding_profile_completed?: boolean;
+  conversational_onboarding_completed?: boolean;
+  discover_completed?: boolean;
+  grow_completed?: boolean;
+  transform_visited?: boolean;
+  release_visited?: boolean;
+  connect_visited?: boolean;
   personality?: {
     source?: string;
     view_model?: {
@@ -35,19 +71,25 @@ export interface ChildRecord {
     [key: string]: unknown;
   };
   recommendations?: Record<string, unknown>;
-  visited_tabs?: string[];
   /** job_type → job_id for any LLM jobs currently in flight for this child */
   active_jobs?: Record<string, string>;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
   [key: string]: unknown;
 }
 
+// Must stay in sync with JobType in backend/app/models_api.py — the backend
+// rejects any value it does not declare.
 export type JobType =
   | 'generate_recommendations'
-  | 'generate_goals_plan'
   | 'generate_activity'
   | 'generate_personality_analysis'
-  | 'generate_journey_recommendations'
-  | 'generate_journey_insights';
+  | 'generate_life_pathway'
+  | 'generate_growth_parent_questions'
+  | 'generate_growth_child_rounds'
+  | 'generate_observations'
+  | 'generate_ninety_day_plan'
+  | 'generate_event_tracker';
 
 export type JobStatus =
   | 'pending'
@@ -72,7 +114,11 @@ export interface EnqueueJobPayload {
     provider?: string;
   };
   write_back: {
-    collection: 'growth_areas' | 'children' | 'goals';
+    collection:
+      | 'growth_areas'
+      | 'children'
+      | 'observations'
+      | 'ninety_day_plans';
     filter: Record<string, unknown>;
     field: string;
   };
@@ -84,16 +130,71 @@ export interface EnqueueJobResponse {
 
 export interface PreferencesRecord {
   tts_enabled?: boolean;
-  dark_mode?: boolean;
   last_visited_path?: string;
   [key: string]: unknown;
 }
 
-export interface GoalsRecord {
-  parent_concern?: string;
-  plan?: Record<string, unknown>;
+/**
+ * The Release page's observations document — its own collection keyed by
+ * child_id, rather than embedded on the child.
+ */
+export interface ObservationsRecord {
+  source?: string | null;
+  /**
+   * Raw provider objects. Always read through normalizeObservations in
+   * `@/lib/observationsData` rather than trusting the shape.
+   */
+  items?: unknown;
+  /** Observation ids the parent ticked. */
+  watching?: string[];
+  /** SPANS label the parent chose, e.g. "3 months". */
+  span?: string | null;
+  /** When Start tracking was last pressed. Written but not yet read by anything. */
+  started_at?: string | null;
+  /** Staging field: raw generate_observations output, promoted by finalizeObservations. */
+  pending_observations?: Record<string, unknown> | null;
   [key: string]: unknown;
 }
+
+/**
+ * The "Start {name}'s 90 days" flow's document — its own collection keyed by
+ * child_id. `plan`/`track_steps` are LLM-generated (written straight to the
+ * canonical field, no staging step — see backend/app/schemas/ninety_day_plan.py);
+ * everything else is entered by the parent/child through the modal's own steps.
+ */
+export interface NinetyDayPlanRecord {
+  ask?: string | null;
+  /** Matches the `Plan` shape in `@/lib/startJourneyPlans` once generated. */
+  plan?: Record<string, unknown> | null;
+  /**
+   * The generate_event_tracker job's own response schema, wrapped exactly as
+   * the LLM returned it: `{ steps: [...] }`, each a `TrackStep`'s text fields
+   * (title/short/when/body/fields) only. Pass `.steps` to `mergeTrackSteps`.
+   */
+  track_steps?: { steps?: Array<Record<string, unknown>> } | null;
+  applied?: Record<string, boolean>;
+  act_inputs?: Record<string, string>;
+  act_counts?: Record<string, number>;
+  feedback?: Record<string, { tag?: string | null; note?: string }>;
+  event_name?: string | null;
+  event_date?: string | null;
+  event_set?: boolean;
+  track_done?: Record<string, boolean>;
+  track_inputs?: Record<string, string>;
+  track_sittings?: Record<string, boolean>;
+  /** field_key -> S3 URLs, covering both Dashboard activity photo fields and Tracker photo-import steps. */
+  photos?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
+/**
+ * A stored recommendation. Areas completed before the Growth Areas redesign —
+ * and anything the onboarding RecommendationsPhase writes — hold plain strings;
+ * the redesigned flow writes { title, detail }. Both shapes coexist and neither
+ * is migrated, so always read through normalizeRecommendations() in
+ * `@/lib/growthAreaData` rather than touching these values directly.
+ */
+export type StoredRecommendation = string | { title?: string; detail?: string };
 
 export interface CompletedArea {
   status?: string;
@@ -101,41 +202,34 @@ export interface CompletedArea {
   area_name?: string;
   area_color?: string;
   step?: string;
+  /** Written only by the onboarding flow — always plain strings. */
   recommendations?: string[];
-  ai_three_month_recommendations?: string[];
+  ai_three_month_recommendations?: StoredRecommendation[];
   answers?: Record<string, unknown>;
   interactive_answers?: Record<string, unknown>;
   child_activity?: Record<string, unknown>;
   child_activity_selections?: string[];
+  /**
+   * The two question sets this area was presented with, generated once per child
+   * per area by the generate_growth_parent_questions / generate_growth_child_rounds
+   * jobs. Raw provider output — always read through normalizeGeneratedQuestions /
+   * normalizeGeneratedRounds in `@/lib/growthAreaData` rather than trusting the
+   * shape. `answers` and `child_activity.selections` above are keyed by ids
+   * derived from these, so the three belong together on one document.
+   */
+  parent_questions?: Record<string, unknown>;
+  child_rounds?: Record<string, unknown>;
+  /**
+   * Life Pathway milestone narrative for this area, written by the
+   * generate_life_pathway job and grounded in this document's own answers and
+   * recommendations. Raw provider output — read it through
+   * normalizeLifePathwayArea in `@/lib/lifePathwayData`.
+   */
+  life_pathway_milestones?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
 export interface CompletedGrowthAreasRecord {
   areas?: CompletedArea[];
   [key: string]: unknown;
-}
-
-export interface AdminUserRecord {
-  id: string;
-  email?: string;
-  full_name?: string;
-  locked: boolean;
-  location?: string;
-  created_at: string;
-  [key: string]: unknown;
-}
-
-export interface AllowedEmailRecord {
-  email: string;
-  added_at: string | null;
-}
-
-export interface AllowedEmailsPage {
-  items: AllowedEmailRecord[];
-  total: number;
-}
-
-export interface AdminUsersPage {
-  items: AdminUserRecord[];
-  total: number;
 }

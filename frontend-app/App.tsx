@@ -6,17 +6,22 @@ import 'react-native-gesture-handler';
 import './global.css';
 
 import React from 'react';
-import { Platform, StatusBar, useColorScheme } from 'react-native';
+import { Platform, StatusBar, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { useFonts } from 'expo-font';
 import { queryClientInstance } from './src/lib/query-client';
 import { AuthProvider } from './src/lib/AuthContext';
+import { TtsProvider } from './src/lib/TtsContext';
+import { AmbientAudioProvider } from './src/lib/AmbientAudioContext';
+import { Toaster } from './src/lib/toast';
 import { ErrorBoundary } from './src/components/shared/ErrorBoundary';
-import { Toaster } from './src/components/ui/Toaster';
+import { PortalHost } from './src/components/ui/portal';
 import Navigation from './src/navigation';
 import { env } from './src/lib/env';
+import { color, fonts } from './src/theme';
 
 // Configure Google Sign-In once at app startup.
 // On iOS, iosClientId is required by the native module even though the Sign-In
@@ -30,26 +35,52 @@ GoogleSignin.configure({
   }),
 });
 
+// The web's @font-face faces (frontend/public/fonts), converted to TTF.
+const FONT_FILES = {
+  [fonts.orbitron]: require('./assets/fonts/Orbitron-Bold.ttf'),
+  [fonts.orbitronBlack]: require('./assets/fonts/Orbitron-Black.ttf'),
+  [fonts.rajdhani]: require('./assets/fonts/Rajdhani-Medium.ttf'),
+  [fonts.rajdhaniSemibold]: require('./assets/fonts/Rajdhani-SemiBold.ttf'),
+  [fonts.rajdhaniBold]: require('./assets/fonts/Rajdhani-Bold.ttf'),
+};
+
 function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+  // Like the web's font-display: swap — render immediately; a font error falls
+  // back to the system face rather than blocking the app.
+  const [fontsLoaded, fontError] = useFonts(FONT_FILES);
 
   return (
     // GestureHandlerRootView must wrap everything — without it scroll and
     // swipe gestures are unreliable on Android (React Navigation requirement).
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClientInstance}>
-        <AuthProvider>
-          <SafeAreaProvider>
-            <StatusBar
-              barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-            />
-            <ErrorBoundary>
-              <Navigation />
-            </ErrorBoundary>
-            <Toaster />
-          </SafeAreaProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: color.background }}
+    >
+      <SafeAreaProvider>
+        {/* The app is dark-only, like the web (forcedTheme="dark"). */}
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={color['sidebar-background']}
+        />
+        <QueryClientProvider client={queryClientInstance}>
+          <AuthProvider>
+            <TtsProvider>
+              <AmbientAudioProvider>
+                <ErrorBoundary>
+                  {/* Full-screen overlays (splashes, warp, sheets) render here, above the header. */}
+                  <PortalHost>
+                    {fontsLoaded || fontError ? (
+                      <Navigation />
+                    ) : (
+                      <View style={{ flex: 1 }} />
+                    )}
+                  </PortalHost>
+                </ErrorBoundary>
+              </AmbientAudioProvider>
+            </TtsProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+        <Toaster />
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

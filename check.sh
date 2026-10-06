@@ -169,19 +169,17 @@ run "bandit" \
 
 run "pip-audit" \
     bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable \
-      --ignore-vuln PYSEC-2025-183 \
-      --ignore-vuln PYSEC-2026-175 \
-      --ignore-vuln PYSEC-2026-177 \
-      --ignore-vuln PYSEC-2026-178 \
-      --ignore-vuln PYSEC-2026-179"
-# PyJWT 2.12.1 CVEs (PYSEC-2026-175/177/178/179): fix is PyJWT 2.13.0 but semgrep==1.163.0
-# in requirements-security.txt pins pyjwt~=2.12.0 (shared venv). Track: upgrade semgrep
-# when a version that allows PyJWT>=2.13.0 is released.
+      --ignore-vuln PYSEC-2025-183"
+# PYSEC-2025-183 is disputed with no fix (see requirements.txt). PyJWT and semgrep share
+# the venv, so a PyJWT bump may need a semgrep bump too (semgrep pins pyjwt[crypto]).
 
+# Ignored (no fixed release exists): GHSA-vfj7-8cjw-p6xm — braces <=3.0.3 stack-exhaustion
+# DoS on crafted brace patterns. Reached only via build tooling (tailwindcss, spectral-cli),
+# never in the shipped bundle. Remove once braces publishes a fix.
 run "npm audit" \
     bash -c "cd '$FRONTEND' && npm audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg'}
+IGNORED={'GHSA-qwww-vcr4-c8h2','GHSA-mh99-v99m-4gvg','GHSA-vfj7-8cjw-p6xm'}
 d=json.load(sys.stdin)
 def is_ignored(v, all_vulns):
     for x in v.get('via',[]):
@@ -201,13 +199,18 @@ sys.exit(1 if bad else 0)
 # checking severity. Fail only on unignored high (bit 3) or critical (bit 4) findings.
 # Ignored: 1124334 (GHSA-mh99-v99m-4gvg) — brace-expansion DoS; only in dev tooling
 # (eslint, jest), never shipped to the production bundle.
+# Ignored (no fixed release exists; remove once one ships):
+#   1240992 (GHSA-vfj7-8cjw-p6xm) — braces <=3.0.3 DoS; only via build/test tooling
+#     (tailwindcss, @react-native-community/cli, jest), not in the APK/IPA bundle.
+#   1240912 (GHSA-86w9-cpqp-85rv) — node-forge <=1.4.0 RSA signature verification;
+#     only via @expo/cli (dev CLI), not bundled into the app.
 # image-size's GHSA-5p2g-fcmc-qvqq/GHSA-w3rx-r6r6-pgpr (formerly flagged as advisory
 # IDs 1138808/1138809, now 1239765/1239766) is fixed by forcing image-size to ^2.0.4
 # via frontend-app/package.json's resolutions/overrides — no ignore needed any more.
 run "yarn audit (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED_IDS={1124334}
+IGNORED_IDS={1124334,1240992,1240912}
 high=0
 for line in sys.stdin:
     line=line.strip()
@@ -312,9 +315,13 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
     DOCKLE=""; _SCAN_IMAGE="buddy-backend:check-scan"; _IMAGE_OK=0
 
     # Build the image once — shared by trivy image scan, SBOM generation, and dockle.
+    # GIT_SHA is the Dockerfile's apt-layer cache-bust key (CI passes the commit SHA).
+    # A per-day value re-runs `apt-get upgrade` at least daily, so the scan sees newly
+    # published Debian security patches instead of a stale cached layer.
     build_image_for_scan() {
       echo "Building backend Docker image for scan..."
-      docker build -t "$_SCAN_IMAGE" -f "$BACKEND/Dockerfile" "$ROOT" && _IMAGE_OK=1
+      docker build --build-arg GIT_SHA="local-scan-$(date +%Y%m%d)" \
+        -t "$_SCAN_IMAGE" -f "$BACKEND/Dockerfile" "$ROOT" && _IMAGE_OK=1
     }
     run "docker build (image scan)" build_image_for_scan
 

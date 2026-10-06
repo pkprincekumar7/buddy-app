@@ -8,6 +8,9 @@ Do **not** use git worktree isolation (`isolation: "worktree"`) — edits must l
 ## Project structure
 
 - `frontend/` — React app (Vite, pages auto-routed via `src/pages.config.js`)
+- `frontend-app/` — React Native app: a phone-width port of `frontend/` (same pages/colors; palette
+  generated from `frontend/src/index.css` via `yarn theme:sync`). Conventions in
+  `frontend-app/CLAUDE.md` — port web page changes there too.
 - `backend/` — FastAPI app with MongoDB (Motor async driver) + Redis (rate limiting)
 - `infra-live-backend/` — Terraform for AWS backend (ECS, ALB, ECR, ElastiCache)
 - `infra-live-frontend/` — Terraform for S3 frontend hosting
