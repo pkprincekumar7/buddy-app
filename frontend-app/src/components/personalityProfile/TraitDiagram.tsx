@@ -27,6 +27,8 @@ const INITIALS_BG = css(
   `radial-gradient(circle at 38% 32%, ${PP.initialsGlow}, rgb(var(--constellation-navy-glow-rgb) / 0.96))`,
 );
 const TRAIT_ANGLES_DEG = [0, -60, 60, -120, 120, 180] as const;
+/** Breathing room between the outermost trait item and the diagram's edges. */
+const EDGE_GAP = 8;
 
 /**
  * `object-fit: cover; object-position: 50% 15%` — RN Image has no
@@ -103,6 +105,14 @@ export default function TraitDiagram({
     const w = e.nativeEvent.layout.width;
     if (w > 0 && Math.abs(w - diagAvailW) > 0.5) setDiagAvailW(w);
   };
+  // Measured height of each trait item (icon + wrapped label).
+  const [itemH, setItemH] = useState<Record<number, number>>({});
+  const onItemLayout = (i: number) => (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    setItemH(prev =>
+      Math.abs((prev[i] ?? 0) - h) > 0.5 ? { ...prev, [i]: h } : prev,
+    );
+  };
 
   // Diagram scale — proportional to available container width (748px = design width)
   const dScale = Math.min(1, diagAvailW / 748);
@@ -119,8 +129,18 @@ export default function TraitDiagram({
   // Six items 60° apart; each icon sits just outside the ring.
   const traitOrbitR = ringD / 2 + iconContainerSize / 2;
   const traitWidth = Math.round(180 * dScale);
+  // The icon/label size floors stop shrinking on narrow screens while the orbit
+  // keeps scaling, so the design-width height (520·scale) no longer contains the
+  // items: the top icon pokes above the diagram and the bottom item's label
+  // (two+ lines for multi-word traits) runs into the card below. So the centre
+  // drops just enough for the top icon, and the height grows to the lowest
+  // item's *measured* bottom. At design width neither changes anything.
   const cx = diagAvailW / 2;
-  const cy = diagH / 2;
+  const cy = Math.max(
+    diagH / 2,
+    traitOrbitR + iconContainerSize / 2 + EDGE_GAP,
+  );
+  const estimatedItemH = iconContainerSize + traitGap + traitFontSize * 1.3;
   const traitPos = TRAIT_ANGLES_DEG.map(deg => {
     const rad = (deg * Math.PI) / 180;
     const dx = traitOrbitR * Math.sin(rad);
@@ -131,11 +151,19 @@ export default function TraitDiagram({
       width: traitWidth,
     };
   });
+  const shown = traits.slice(0, 6);
+  const lowestBottom = Math.max(
+    0,
+    ...shown.map(
+      (_, i) => (traitPos[i]?.top ?? 0) + (itemH[i] ?? estimatedItemH),
+    ),
+  );
+  const height = Math.max(diagH, Math.ceil(lowestBottom + EDGE_GAP));
   const inner = circleD - ringPad * 2;
   const preset = AVATAR_MAP[avatarId];
 
   return (
-    <View onLayout={onLayout} style={{ position: 'relative', height: diagH }}>
+    <View onLayout={onLayout} style={{ position: 'relative', height }}>
       {/* Outer ring */}
       <View
         style={{
@@ -195,7 +223,6 @@ export default function TraitDiagram({
                 SERIF,
                 {
                   fontSize: Math.max(24, Math.round(72 * dScale)),
-                  fontWeight: '700',
                   color: rgb('constellation-blue-pale'),
                 },
               ]}
@@ -206,9 +233,10 @@ export default function TraitDiagram({
         )}
       </View>
       {/* 6 trait items */}
-      {traits.slice(0, 6).map((trait, i) => (
+      {shown.map((trait, i) => (
         <Animated.View
           key={i}
+          onLayout={onItemLayout(i)}
           entering={enterScale(0.25 + i * 0.1, 0.8)}
           style={[
             { position: 'absolute', alignItems: 'center', gap: traitGap },

@@ -21,7 +21,7 @@ import {
   type FamousPerson,
   type TraitScore,
 } from './ProfileSections';
-import { GOLD_PILL, SERIF, goldPillText } from './styles';
+import { GOLD_PILL, SERIF, SERIF_ITALIC, goldPillText } from './styles';
 
 const PAGE_BG = css(
   'linear-gradient(180deg,rgb(var(--constellation-navy-black-rgb)) 0%, rgb(var(--constellation-black-navy-rgb)) 50%, rgb(var(--constellation-black-navy2-rgb)) 100%)',
@@ -140,7 +140,7 @@ export default function ProfilePhase(p: ProfilePhaseProps) {
             </View>
 
             {/* ── Header ── */}
-            <View style={{ alignItems: 'center', gap: 6, marginTop: -14 }}>
+            <View style={{ alignItems: 'center', gap: 12, marginTop: -14 }}>
               <Text
                 style={{
                   fontSize: 13,
@@ -168,7 +168,7 @@ export default function ProfilePhase(p: ProfilePhaseProps) {
                     {
                       flexShrink: 1,
                       fontSize: isWide ? 54 : 32,
-                      lineHeight: isWide ? 54 : 32,
+                      lineHeight: Math.round((isWide ? 54 : 32) * 1.15),
                       textAlign: 'center',
                       color: rgb('constellation-blue-pale'),
                       textShadowColor: PP.headerTitleGlow,
@@ -181,7 +181,7 @@ export default function ProfilePhase(p: ProfilePhaseProps) {
                   {p.childName} the{' '}
                   <Text
                     style={{
-                      fontStyle: 'italic',
+                      ...SERIF_ITALIC,
                       color: rgb('constellation-blue-deep'),
                     }}
                   >
@@ -205,13 +205,14 @@ export default function ProfilePhase(p: ProfilePhaseProps) {
                   width: 120,
                   height: 1,
                   experimental_backgroundImage: DIVIDER_BG,
-                  marginTop: 4,
-                  marginBottom: 2,
+                  marginTop: 8,
+                  marginBottom: 6,
                 }}
               />
               <Text
                 style={{
                   fontSize: 14,
+                  lineHeight: 14 * 1.4,
                   letterSpacing: 14 * 0.18,
                   textTransform: 'uppercase',
                   color: PP.headerMeta,
