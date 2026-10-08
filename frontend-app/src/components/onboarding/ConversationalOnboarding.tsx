@@ -173,7 +173,8 @@ export default function ConversationalOnboarding({
   const [collectedData, setCollectedData] = useState<Record<string, unknown>>(
     {},
   );
-  const [isTyping, setIsTyping] = useState(false);
+  // Typing state is still set (web parity) but nothing reads it on mobile.
+  const [, setIsTyping] = useState(false);
   const { ttsEnabled } = useTts();
   const voiceEnabledRef = useRef(ttsEnabled);
   useEffect(() => {
@@ -192,7 +193,6 @@ export default function ConversationalOnboarding({
   const { show: showAnalyzing, showingDots: showingLoadingDots } =
     analyzingState;
 
-  const scrollContainerRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChildIdRef = useRef(activeChildId);
@@ -440,13 +440,18 @@ export default function ConversationalOnboarding({
     };
   }, [resumeHydrationReady, activeChildId]);
 
-  // Scroll to bottom (web: 1800ms eased scroll, 350ms after messages change).
+  // Question steps never auto-scroll: each step mounts a fresh ScrollView (keyed
+  // by step) that starts at the top, keeping the question in view above the
+  // options. Only the all-answered summary scrolls down to reveal its
+  // "Continue to personality analysis" button.
+  const scrollContainerRef = useRef<ScrollView | null>(null);
   useEffect(() => {
+    if (!allAnswered) return;
     const t = setTimeout(() => {
       scrollContainerRef.current?.scrollToEnd({ animated: true });
     }, 350);
     return () => clearTimeout(t);
-  }, [messages, isTyping]);
+  }, [allAnswered, messages]);
 
   useEffect(() => {
     if (waitingForResponse && inputRef.current) inputRef.current.focus();
@@ -749,10 +754,11 @@ export default function ConversationalOnboarding({
                 className="flex-1 overflow-hidden"
                 style={{ backfaceVisibility: 'hidden' }}
               >
-                {/* Scrollable: question text + summary + continue button */}
+                {/* Scrollable: question text + summary + continue button + MCQ options */}
                 <ScrollView
                   ref={scrollContainerRef}
                   className="min-h-0 flex-1"
+                  contentContainerStyle={{ flexGrow: 1 }}
                   keyboardShouldPersistTaps="handled"
                 >
                   <View className="items-center px-6 pb-5 pt-4">
@@ -786,16 +792,14 @@ export default function ConversationalOnboarding({
                         </Button>
                       </View>
                     )}
-                </ScrollView>
-
-                {/* Pinned bottom: MCQ or chat input — part of same flip unit */}
-                <View className="shrink-0">
-                  {/* MCQ grid for choice steps */}
+                  {/* MCQ grid for choice steps — inside the scroll area, pushed to the
+                      bottom (mt-auto): a long option list scrolls with the question
+                      instead of squeezing it out of view. */}
                   {waitingForResponse &&
                     !allAnswered &&
                     currentStepData?.type === 'choice' && (
                       <View
-                        className="gap-3 px-4"
+                        className="mt-auto gap-3 px-4 pt-2"
                         style={{ paddingBottom: Math.max(32, insets.bottom) }}
                       >
                         <MCQGrid
@@ -823,7 +827,10 @@ export default function ConversationalOnboarding({
                         </View>
                       </View>
                     )}
+                </ScrollView>
 
+                {/* Pinned bottom: chat input — part of same flip unit */}
+                <View className="shrink-0">
                   {/* Chat input bar for text steps */}
                   {waitingForResponse &&
                     !allAnswered &&

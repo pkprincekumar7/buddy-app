@@ -42,6 +42,8 @@ const FONT_FILES = {
   [fonts.rajdhani]: require('./assets/fonts/Rajdhani-Medium.ttf'),
   [fonts.rajdhaniSemibold]: require('./assets/fonts/Rajdhani-SemiBold.ttf'),
   [fonts.rajdhaniBold]: require('./assets/fonts/Rajdhani-Bold.ttf'),
+  [fonts.playfair]: require('./assets/fonts/PlayfairDisplay-Bold.ttf'),
+  [fonts.playfairItalic]: require('./assets/fonts/PlayfairDisplay-BoldItalic.ttf'),
 };
 
 function App() {

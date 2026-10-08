@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -450,6 +451,28 @@ export default function PersonalityProfile() {
     ro.observe(el);
     resizeObserverRef.current = ro;
   }, []);
+  // Measured height of each trait item (icon + wrapped label), so the diagram can
+  // grow to contain multi-line labels — see traitDiagramH below. offsetHeight is
+  // unaffected by the items' framer-motion scale transform.
+  const [traitItemH, setTraitItemH] = useState<Record<number, number>>({});
+  const traitItemObservers = useRef<Record<number, ResizeObserver>>({});
+  const traitItemRefs = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => (el: HTMLDivElement | null) => {
+        traitItemObservers.current[i]?.disconnect();
+        delete traitItemObservers.current[i];
+        if (!el) return;
+        const ro = new ResizeObserver(() => {
+          const h = el.offsetHeight;
+          setTraitItemH((prev) =>
+            Math.abs((prev[i] ?? 0) - h) > 0.5 ? { ...prev, [i]: h } : prev,
+          );
+        });
+        ro.observe(el);
+        traitItemObservers.current[i] = ro;
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -624,11 +647,33 @@ export default function PersonalityProfile() {
   // correct at every screen size, not just the design width.
   const traitOrbitR = ringD / 2 + iconContainerSize / 2;
   const traitWidth = Math.round(180 * dScale);
+  // The icon/label size floors stop shrinking on narrow screens while the orbit
+  // keeps scaling, so the design-width height (520·scale) no longer contains the
+  // items: the top icon pokes above the diagram and the bottom item's label
+  // (two+ lines for multi-word traits) runs into the card below. So the centre
+  // drops just enough for the top icon, and the height grows to the lowest
+  // item's *measured* bottom. At design width neither changes anything.
+  const TRAIT_EDGE_GAP = 8;
+  const traitCy = Math.max(diagH / 2, traitOrbitR + iconContainerSize / 2 + TRAIT_EDGE_GAP);
+  const estimatedTraitItemH = iconContainerSize + traitGap + traitFontSize * 1.3;
   const TRAIT_ANGLES_DEG = [0, -60, 60, -120, 120, 180];
-  const traitPosScaled: CSSProperties[] = TRAIT_ANGLES_DEG.map((deg) => {
+  const traitTops = TRAIT_ANGLES_DEG.map(
+    (deg) => traitCy - traitOrbitR * Math.cos((deg * Math.PI) / 180) - iconContainerSize / 2,
+  );
+  const traitDiagramH = Math.max(
+    diagH,
+    Math.ceil(
+      Math.max(
+        0,
+        ...traits
+          .slice(0, 6)
+          .map((_, i) => (traitTops[i] ?? 0) + (traitItemH[i] ?? estimatedTraitItemH)),
+      ) + TRAIT_EDGE_GAP,
+    ),
+  );
+  const traitPosScaled: CSSProperties[] = TRAIT_ANGLES_DEG.map((deg, i) => {
     const rad = (deg * Math.PI) / 180;
     const dx = traitOrbitR * Math.sin(rad);
-    const dy = -traitOrbitR * Math.cos(rad);
     return {
       // Half the width subtracted directly in the `left` calc (not a
       // `transform: translateX(-50%)`) — these items are motion.div's that
@@ -637,7 +682,7 @@ export default function PersonalityProfile() {
       // it. calc() sidesteps the conflict entirely, matching how the
       // previous top/bottom-center positions in this same array did it.
       left: `calc(50% + ${(dx - traitWidth / 2).toFixed(1)}px)`,
-      top: `calc(50% + ${(dy - iconContainerSize / 2).toFixed(1)}px)`,
+      top: (traitTops[i] ?? 0).toFixed(1) + 'px',
       width: traitWidth,
     };
   });
@@ -944,7 +989,7 @@ export default function PersonalityProfile() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 6,
+              gap: 12,
               marginTop: -14,
             }}
           >
@@ -971,7 +1016,7 @@ export default function PersonalityProfile() {
                 style={{
                   fontFamily: "'Playfair Display', serif",
                   fontSize: isWide ? 54 : 32,
-                  lineHeight: 1,
+                  lineHeight: 1.15,
                   color: 'rgb(var(--constellation-blue-pale-rgb))',
                   textShadow: '0 0 26px rgba(70,150,255,.75)',
                   textAlign: 'center',
@@ -1002,12 +1047,13 @@ export default function PersonalityProfile() {
                 height: 1,
                 background:
                   'linear-gradient(90deg, transparent, rgb(var(--constellation-gold-light-rgb) / .85), transparent)',
-                margin: '4px 0 2px',
+                margin: '8px 0 6px',
               }}
             />
             <div
               style={{
                 fontSize: 14,
+                lineHeight: 1.4,
                 letterSpacing: '.18em',
                 textTransform: 'uppercase',
                 color: '#d8b96f',
@@ -1022,13 +1068,13 @@ export default function PersonalityProfile() {
 
           {/* ── Trait diagram — scales proportionally to available width ──────── */}
           {traits.length > 0 && (
-            <div ref={diagramRefCallback} style={{ position: 'relative', height: diagH }}>
+            <div ref={diagramRefCallback} style={{ position: 'relative', height: traitDiagramH }}>
               {/* Outer ring */}
               <div
                 style={{
                   position: 'absolute',
                   left: '50%',
-                  top: '50%',
+                  top: traitCy,
                   width: ringD,
                   height: ringD,
                   margin: `${-ringD / 2}px 0 0 ${-ringD / 2}px`,
@@ -1041,7 +1087,7 @@ export default function PersonalityProfile() {
                 style={{
                   position: 'absolute',
                   left: '50%',
-                  top: '50%',
+                  top: traitCy,
                   width: circleD,
                   height: circleD,
                   margin: `${-circleD / 2}px 0 0 ${-circleD / 2}px`,
@@ -1112,6 +1158,7 @@ export default function PersonalityProfile() {
               {traits.slice(0, 6).map((trait, i) => (
                 <motion.div
                   key={i}
+                  ref={traitItemRefs[i]}
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.25 + i * 0.1 }}

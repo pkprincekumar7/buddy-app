@@ -926,8 +926,8 @@ export default function ConversationalOnboarding({
                   style={{ backfaceVisibility: 'hidden', transformStyle: 'preserve-3d' }}
                   className="flex flex-1 flex-col overflow-hidden"
                 >
-                  {/* Scrollable: question text + summary + continue button */}
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  {/* Scrollable: question text + summary + continue button + MCQ options */}
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
                     <div className="flex flex-col items-center px-6 pb-5 pt-4 md:pb-6 md:pt-6">
                       {/* The measure widens with the type: a readable line is a
                           character count, so a max-w frozen while the text grew
@@ -1003,13 +1003,11 @@ export default function ConversationalOnboarding({
                         </Button>
                       </div>
                     )}
-                  </div>
-
-                  {/* Pinned bottom: MCQ or chat input — part of same flip unit */}
-                  <div className="shrink-0">
-                    {/* MCQ grid for choice steps */}
+                    {/* MCQ grid for choice steps — inside the scroll area, pushed to the
+                        bottom (mt-auto): a long option list scrolls with the question
+                        instead of squeezing it out of view. */}
                     {waitingForResponse && !allAnswered && currentStepData?.type === 'choice' && (
-                      <div className="space-y-3 px-4 pb-8">
+                      <div className="mt-auto space-y-3 px-4 pb-8 pt-2">
                         <MCQGrid
                           options={currentStepData.options ?? []}
                           selected={collectedData[currentStepData.field] as string | undefined}
@@ -1033,7 +1031,10 @@ export default function ConversationalOnboarding({
                         </div>
                       </div>
                     )}
+                  </div>
 
+                  {/* Pinned bottom: chat input — part of same flip unit */}
+                  <div className="shrink-0">
                     {/* Chat input bar for text steps */}
                     {waitingForResponse &&
                       !allAnswered &&

@@ -215,6 +215,11 @@ export const fonts = {
   rajdhani: 'Rajdhani-Medium', // font-rajdhani / fontWeight 500
   rajdhaniSemibold: 'Rajdhani-SemiBold', // fontWeight 600
   rajdhaniBold: 'Rajdhani-Bold', // fontWeight 700+
+  // 'Playfair Display' — the web's @font-face only declares weights 700–900, so
+  // every Playfair text renders at 700 there; these are static 700 instances of
+  // the same variable woff2 files.
+  playfair: 'PlayfairDisplay-Bold',
+  playfairItalic: 'PlayfairDisplay-BoldItalic',
 } as const;
 
 /** Picks the right font family for a web `fontFamily` + `fontWeight` pair. */
