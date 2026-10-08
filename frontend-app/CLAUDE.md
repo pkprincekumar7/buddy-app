@@ -71,6 +71,9 @@ be re-copied with a diff.
   - `font-orbitron` (700/800) → `font-orbitron`; Orbitron 900 / `font-black` → `font-orbitron-black`
   - `font-rajdhani` 500 → `font-rajdhani`; 600 → `font-rajdhani-semibold`; 700+ → `font-rajdhani-bold`
   - or `style={font('rajdhani', 700)}` from `@/theme`.
+  - `'Playfair Display', serif` → `SERIF` from `personalityProfile/styles` (`fonts.playfair`). Italic
+    runs use `SERIF_ITALIC` (`fonts.playfairItalic`), never `fontStyle: 'italic'`. The web's
+    @font-face declares only weights 700–900, so both files are static weight-700 instances.
   - `font-barlow` has no font file on the web either — drop it (system sans).
 - `letterSpacing` is in px on RN: web `.22em` at 11px → `letterSpacing: 11 * 0.22`.
 - rem is 16px (metro `inlineRem: 16`), so `p-4`, `text-sm`, `h-9`… are the same pixels as the web.

@@ -2,22 +2,18 @@
  * Shared chrome for the Personality Profile ("Discover") page — the web's
  * CARD_BG / CARD_BORDER / SEC_LABEL / GOLD_PILL constants, as RN styles.
  */
-import { Platform, type TextStyle, type ViewStyle } from 'react-native';
-import { css, rgb } from '@/theme';
+import { type TextStyle, type ViewStyle } from 'react-native';
+import { css, fonts, rgb } from '@/theme';
 import { PP } from './palette';
 
 /**
- * The web sets `'Playfair Display', serif`. Playfair has no font file in the
- * app (assets/fonts), so this falls back to the platform serif — the same
- * fallback the web's `serif` generic would take.
+ * The web's `'Playfair Display', serif` — the same font files (static weight-700
+ * instances, see `fonts.playfair`). Italic runs use SERIF_ITALIC: RN picks a
+ * custom font by exact family, so `fontStyle: 'italic'` would only slant the
+ * upright face.
  */
-export const SERIF: TextStyle = {
-  fontFamily: Platform.select({
-    ios: 'Georgia',
-    android: 'serif',
-    default: 'serif',
-  }),
-};
+export const SERIF: TextStyle = { fontFamily: fonts.playfair };
+export const SERIF_ITALIC: TextStyle = { fontFamily: fonts.playfairItalic };
 
 /** CSS `clamp(min, vw * factor, max)` against the window width. */
 export function clampVw(

@@ -25,7 +25,7 @@ import {
   ringOut,
   sparkFall,
 } from './animations';
-import { SERIF, clampVw } from './styles';
+import { SERIF, SERIF_ITALIC, clampVw } from './styles';
 
 // Falling sparks for reveal
 const SPARKS = [
@@ -343,7 +343,7 @@ export default function RevealPhase({
             {childName} is a{'\n'}
             <Text
               style={{
-                fontStyle: 'italic',
+                ...SERIF_ITALIC,
                 color: rgb('constellation-blue-deep'),
               }}
             >

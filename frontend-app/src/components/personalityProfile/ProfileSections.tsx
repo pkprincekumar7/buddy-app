@@ -13,7 +13,7 @@ import { css, rgb } from '@/theme';
 import { PP } from './palette';
 import { barGrow, enterFade, enterScale, enterUp } from './animations';
 import { StrengthIcon } from './ProfileIcons';
-import { CARD, SEC_LABEL, SERIF } from './styles';
+import { CARD, SEC_LABEL, SERIF, SERIF_ITALIC } from './styles';
 
 export interface TraitScore {
   label: string;
@@ -301,7 +301,7 @@ export function OwnWordsCard({
             SERIF,
             {
               flex: 1,
-              fontStyle: 'italic',
+              ...SERIF_ITALIC,
               fontSize: 24,
               lineHeight: 24 * 1.4,
               textAlign: 'center',
