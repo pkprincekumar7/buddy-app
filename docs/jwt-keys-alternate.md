@@ -13,7 +13,7 @@ current setup. What changes is *where the public key lives and who verifies with
 
 | | Current (`jwt-keys.md`) | This variant |
 |---|---|---|
-| Verifier | Lambda@Edge, at `viewer-request` — replicated to every one of CloudFront's ~400+ viewer-facing PoPs, not just Regional Edge Caches (see `infra-architecture-multi-region.md`'s corrected footprint note) | Lambda Authorizer, per region (×3) |
+| Verifier | Lambda@Edge, at `origin-request` — executes at CloudFront's Regional Edge Caches (it was `viewer-request`, replicated to every viewer-facing PoP, until the origin-routing fix) | Lambda Authorizer, per region (×3) |
 | Public key storage | Embedded in Lambda@Edge code via Terraform `templatefile()` | AWS Secrets Manager secret, multi-region replicated |
 | Rotation mechanism | Terraform apply + CloudFront propagation (5–15 min) | Secrets Manager `put-secret-value` + replica sync (typically under a few minutes) + authorizer cache TTL |
 | Lambda@Edge involvement | Holds and uses the key | **None** — no key material at the edge at all |

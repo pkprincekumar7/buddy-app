@@ -49,6 +49,10 @@ npm run typecheck   # tsc --noEmit, app + node configs
 
 Full stack: `docker compose up` from the repo root (see `docker-compose.yml`).
 
+Country/region routing data: edit only `shared/routing.json`, then run
+`node scripts/sync-routing.mjs` (regenerates `backend/app/routing_data.py` and the frontends'
+`countries.ts`/`locationHint.ts`; CI runs it with `--check`). See `shared/README.md`.
+
 ## Environment & ports
 
 - Copy `.env.example` → `.env` (root, for Docker Compose) or `backend/.env.example` →

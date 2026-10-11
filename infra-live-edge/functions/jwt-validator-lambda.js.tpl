@@ -41,6 +41,8 @@
 // Template variables (injected by Terraform templatefile(), see ../terraform/lambda_edge.tf):
 //   jwt_public_keys      — map of kid => RSA public key PEM
 //   jwt_key_id           — default key ID when JWT header omits kid
+//   location_to_region   — map of location => AWS region (shared/routing.json,
+//                          see ../terraform/routing.tf)
 //   regional_alb_fqdns   — map of AWS region => internal ALB FQDN, one entry
 //                          per region currently in var.backend_regions (see
 //                          ../terraform/ssm_read.tf)
@@ -68,31 +70,22 @@ function matchesAnyPath(uri, paths) {
   return paths.some(p => uri === p || uri.startsWith(p + '/'))
 }
 
-// Mirrors backend/app/routing.py's COUNTRY_TO_REGION groupings, collapsed to
-// this app's 3 AWS regions. Every location a token can actually carry is
-// produced by resolve_region() in backend/app/routing.py, whose only outputs
-// are the 6 keys below (eu, us, br, apac, in, me); backend/tests/
-// test_routing.py fails if the two drift. CN/RU (and other sanctioned
-// countries) are now refused at registration — see BLOCKED_COUNTRIES there —
-// but accounts created before that may still carry cn/ru.
+// location => AWS region, injected from shared/routing.json (the repo-wide
+// single source of truth — see ../terraform/routing.tf). Every location a token
+// can carry is assigned by the backend from that same file at registration.
 //
-// cn/ru are deliberately absent — NOT a default, an unrecognised value still
-// fails closed below. Mapping them to a region was considered and reverted:
-// China legitimately requires AWS's separate China partition (a different
-// account/infrastructure entirely, not reachable from here), and serving
-// Russia from a commercial region carries export-control exposure (OFAC/EAR)
-// this business has decided not to take on. A token carrying either location
-// gets a clean 503 instead of silently landing somewhere compliance hasn't
-// signed off on.
+// Deliberately no default: a location absent here fails closed below (503).
+// That covers legacy accounts carrying cn/ru — China legitimately requires
+// AWS's separate China partition (a different account/infrastructure entirely,
+// not reachable from here), and serving Russia from a commercial region carries
+// export-control exposure (OFAC/EAR) this business has decided not to take on.
+// Those countries (and other sanctioned ones) are now refused at registration,
+// so no new account gets them, and a token carrying one gets a clean 503
+// instead of silently landing somewhere compliance hasn't signed off on.
 const LOCATION_TO_REGION = {
-  eu: 'eu-west-1',
-  us: 'us-east-1',
-  br: 'us-east-1',
-  in: 'ap-south-1',
-  apac: 'ap-south-1',
-  me: 'ap-south-1',
-  // cn: 'us-east-1', -- intentionally disabled, see comment above
-  // ru: 'us-east-1', -- intentionally disabled, see comment above
+%{ for loc, region in location_to_region ~}
+  ${jsonencode(loc)}: ${jsonencode(region)},
+%{ endfor ~}
 }
 
 // Only regions actually applied via infra-live-backend appear here (see

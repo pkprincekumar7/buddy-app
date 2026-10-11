@@ -4,22 +4,13 @@
 # MUST be provisioned in us-east-1 (scope = CLOUDFRONT).
 #
 # Rules (evaluated in priority order):
-#    5 — Geo block: countries this business never serves (see local below)
+#    5 — Geo block: countries this business never serves (local.blocked_country_codes,
+#        from shared/routing.json — see routing.tf)
 #   10 — AWS Managed: Core Rule Set (OWASP Top 10)
 #   20 — AWS Managed: Known Bad Inputs
 #   30 — AWS Managed: Amazon IP Reputation List (known malicious IPs)
 #   40 — Rate limit: 1 000 requests / 5 min per IP (blocks sustained abusers)
 # ---------------------------------------------------------------------------
-
-locals {
-  # Must equal BLOCKED_COUNTRIES in backend/app/routing.py — backend/tests/
-  # test_routing.py fails on drift. The backend refuses registration for these
-  # self-declared countries; this rule adds the IP-geolocation half of the
-  # control (a user in a blocked country can still *pick* another one). CN: AWS
-  # China partition required; the rest: comprehensive sanctions (OFAC/EAR).
-  # Not VPN-proof — IP geolocation never is.
-  waf_blocked_country_codes = ["BY", "CN", "CU", "IR", "KP", "RU", "SY"]
-}
 
 resource "aws_wafv2_web_acl" "frontend" {
   #checkov:skip=CKV2_AWS_31:WAF logging is configured conditionally via aws_wafv2_web_acl_logging_configuration in waf_logging.tf (prod only; enable_waf_logging = true)
@@ -59,7 +50,7 @@ resource "aws_wafv2_web_acl" "frontend" {
 
     statement {
       geo_match_statement {
-        country_codes = local.waf_blocked_country_codes
+        country_codes = local.blocked_country_codes
       }
     }
 
