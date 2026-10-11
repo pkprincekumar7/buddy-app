@@ -25,13 +25,33 @@ from app.auth_utils import (
 )
 from app.deps import CurrentUser, Db, SettingsDep
 from app.limiter import limiter, rate_limit, user_limiter
-from app.routing import LOCATION_RE, resolve_region
+from app.routing import BLOCKED_COUNTRIES, COUNTRY_TO_REGION, LOCATION_RE, resolve_region
 from app.services.google_auth import verify_google_token
 
 router = APIRouter(tags=["auth"])
 log = logging.getLogger(__name__)
 
 _DUMMY_HASH: str = hash_password("__dummy_constant_time__")
+
+
+def _validate_country_code(v: str) -> str:
+    """Reject codes that aren't a registrable country. Blocked countries pass here so the
+    route can answer with a specific 403 (see _reject_blocked_country) instead of a generic
+    422 — the frontends never offer them, so this only matters for stale/third-party clients."""
+    if v not in COUNTRY_TO_REGION and v not in BLOCKED_COUNTRIES:
+        raise ValueError(f"Unsupported country_code {v!r}")
+    return v
+
+
+def _reject_blocked_country(country_code: str) -> None:
+    if country_code in BLOCKED_COUNTRIES:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "country_not_supported",
+                "msg": "This service is not available in your country.",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +94,11 @@ class RegisterBody(BaseModel):
     def normalise_country_code(cls, v: object) -> object:
         return v.strip().upper() if isinstance(v, str) else v
 
+    @field_validator("country_code")
+    @classmethod
+    def check_country_code(cls, v: str) -> str:
+        return _validate_country_code(v)
+
 
 class LoginBody(BaseModel):
     email: str = Field(max_length=255)
@@ -106,6 +131,11 @@ class GoogleAuthBody(BaseModel):
     @classmethod
     def normalise_country_code(cls, v: object) -> object:
         return v.strip().upper() if isinstance(v, str) else v
+
+    @field_validator("country_code")
+    @classmethod
+    def check_country_code(cls, v: str | None) -> str | None:
+        return _validate_country_code(v) if v is not None else v
 
 
 class DeleteAccountBody(BaseModel):
@@ -158,7 +188,8 @@ async def register(
     if not await db[models.ALLOWED_EMAILS].find_one({"_id": body.email.lower()}):
         raise HTTPException(status_code=403, detail="Registration is not open.")
 
-    location = resolve_region(body.country_code or "")
+    _reject_blocked_country(body.country_code)
+    location = resolve_region(body.country_code)
     now = datetime.now(UTC)
     new_user_id = str(uuid.uuid4())
 
@@ -517,6 +548,7 @@ async def google_auth(
                 },
             )
 
+        _reject_blocked_country(body.country_code)
         location = resolve_region(body.country_code)
         now = datetime.now(UTC)
         new_user_id = str(uuid.uuid4())

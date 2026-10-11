@@ -70,9 +70,11 @@ function matchesAnyPath(uri, paths) {
 
 // Mirrors backend/app/routing.py's COUNTRY_TO_REGION groupings, collapsed to
 // this app's 3 AWS regions. Every location a token can actually carry is
-// produced by resolve_region() in backend/app/routing.py, whose only possible
-// outputs are the 8 keys that would appear here: eu, us, br, apac, in, me,
-// cn, ru.
+// produced by resolve_region() in backend/app/routing.py, whose only outputs
+// are the 6 keys below (eu, us, br, apac, in, me); backend/tests/
+// test_routing.py fails if the two drift. CN/RU (and other sanctioned
+// countries) are now refused at registration — see BLOCKED_COUNTRIES there —
+// but accounts created before that may still carry cn/ru.
 //
 // cn/ru are deliberately absent — NOT a default, an unrecognised value still
 // fails closed below. Mapping them to a region was considered and reverted:

@@ -1,302 +1,318 @@
-# MongoDB Atlas Global Cluster — Setup & Operations Runbook
+# MongoDB Atlas — Setup & Global Cluster Migration Runbook
 
-This document covers everything needed to create, configure, and operate the
-MongoDB Atlas Global Cluster used by buddy-app. Terraform automation is planned
-for a future phase; these are the manual steps until then.
-
----
-
-## Architecture Overview
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Single Atlas Global Cluster  (one connection string, many zones)    │
-│                                                                      │
-│  email_index  ─── UNSHARDED (primary shard, global)                 │
-│                   _id = email  →  { user_id, location }             │
-│                   Global uniqueness guard + login routing lookup     │
-│                                                                      │
-│  users / sessions / onboarding / goals / recommendations             │
-│  growth_areas / children / missions  ─── ZONE-SHARDED               │
-│                   shard key: { location: 1, _id: 1 }                │
-│                                                                      │
-│  Zone routing:                                                       │
-│    location = "us"   → AWS us-east-1 / us-west-2  shard             │
-│    location = "eu"   → AWS eu-central-1 / eu-west-1 shard           │
-│    location = "apac" → AWS ap-southeast-1 / ap-northeast-1 shard    │
-│    location = "in"   → AWS ap-south-1 shard                         │
-│    location = "br"   → AWS sa-east-1 shard                          │
-│    location = "me"   → AWS me-south-1 / me-central-1 shard          │
-│    location = "cn"   → (separate deployment — see China note)        │
-│    location = "ru"   → (separate deployment — see Russia note)       │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Why zone sharding?** Data-residency laws (GDPR, India DPDP, Brazil LGPD,
-Saudi PDPL) require that personal data be physically stored within a specific
-jurisdiction. Atlas Global Clusters enforce this automatically: a document with
-`location: "eu"` is written to and stored on EU-region nodes only. The
-application never needs to manage routing logic — Atlas handles it.
+How the database is set up today, and the steps to move it to an **Atlas Global Cluster** so
+each user's data is stored in their own region. For *why* the design looks like this, see
+[`GLOBAL_ROUTING_MONGO.md`](./GLOBAL_ROUTING_MONGO.md). Terraform automation for Atlas is planned
+(`docs/infra-architecture-multi-region.md`, Change 10d); these are the manual steps until then.
 
 ---
 
-## Step 1 — Create the Atlas Organisation and Project
+## Where things stand
+
+| | Today | Target |
+|---|---|---|
+| Cluster | One Atlas **M0** (free) replica set in **ap-south-1** | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
+| Used by | Backends in ap-south-1, eu-west-1 and us-east-1 (same `MONGODB_URI`) | Same — one connection string; mongos routes by `location` |
+| Data residency | Not enforced — everything is stored in ap-south-1 | Each document stored only in its location's zone |
+| App readiness | Every user-owned document has `location`; every index leads with it; login avoids scatter-gather | Needs the code changes in Step 0 |
+
+```
+Target layout
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Atlas Global Cluster (one connection string)                              │
+│                                                                           │
+│  email_index, allowed_emails ── UNSHARDED (global lookups, primary shard) │
+│                                                                           │
+│  users · sessions · children · observations · ninety_day_plans            │
+│  growth_areas · jobs ── ZONE-SHARDED, shard key leads with `location`     │
+│                                                                           │
+│  Zone APAC     (ap-south-1 shards)  ◄── location in, apac, me             │
+│  Zone EU       (eu-west-1 shards)   ◄── location eu                       │
+│  Zone AMERICAS (us-east-1 shards)   ◄── location us, br                   │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+The zone ↔ location mapping is **not** maintained by hand: it is generated from
+`REGION_TO_LOCATIONS` in [`backend/app/routing.py`](backend/app/routing.py) — the same mapping
+Lambda@Edge routes API calls by and the regional workers scope their jobs by.
+
+---
+
+## Step 0 — Code changes that must ship before sharding
+
+| # | Change | Why |
+|---|---|---|
+| 1 | `users`: make `(location, email)` **non-unique** in [`database.py`](backend/app/database.py) | On a sharded collection a unique index must start with the **full** shard key (`location, _id`). Email uniqueness is already guaranteed globally by `email_index` |
+| 2 | `growth_areas`: make `(location, _id)` **non-unique** | `growth_areas` is sharded on `{location, user_id}` so its existing unique `(location, user_id, child_id, area_id)` stays valid; a unique `(location, _id)` would not |
+| 3 | Add `location` to the worker's `jobs` updates by `job_id` and `children` updates by `_id` ([`worker.py`](backend/worker.py)) | Otherwise every such update fans out to all zones. The job document already carries `location` |
+| 4 | Scope admin `list_users` ([`routers/admin.py`](backend/app/routers/admin.py)) to a chosen `location` | Unfiltered, it is a cross-zone scatter-gather |
+| 5 | Optional: resolve the `TODO(M10+)` transaction markers (account deletion, job enqueue) | Transactions become available on M10+; keep `email_index` outside them |
+
+`jobs` is sharded on `{location, job_id}`: its unique `(location, job_id, user_id)` index already
+starts with that key, so no index change is needed there.
+
+Dropping or changing a unique index in `init_indexes()` does **not** remove the old index from an
+existing database — drop the old one manually (Step 7).
+
+---
+
+## Step 1 — Organisation and project
 
 1. Sign in at <https://cloud.mongodb.com>.
-2. Create an **Organisation** (e.g. `buddy360`).
-3. Inside it, create a **Project** (e.g. `buddy360-prod`).
+2. Use (or create) the **Organisation**, e.g. `buddy360`, and a **Project** per environment, e.g.
+   `buddy360-prod`.
 
 ---
 
 ## Step 2 — Create the Global Cluster
 
-1. In the project, click **Build a Database → Advanced Configuration**.
-2. Select **Global Cluster** (requires M30 or higher for production; M0 free
-   tier does NOT support Global Clusters — use it only for single-zone dev).
-3. Choose a **Global Write** configuration.
-4. Add zones to match your active markets. Recommended starting set:
+1. **Build a Database → Advanced Configuration → Global Cluster.**
+   - Tier **M30 or higher** (Global Clusters are not available on M0/M2/M5 or below M30).
+   - MongoDB version **8.0** (the worker's claim query needs 7.1+ on a sharded cluster).
+2. **Sharding mode: self-managed sharding** (custom zone ranges). Atlas's default *Atlas-managed*
+   Global Writes expect ISO country codes in the location field; ours holds location *groups*
+   (`eu`, `apac`, …), so the ranges are defined explicitly (Step 4). Confirm the option names
+   against the current Atlas documentation when creating the cluster.
+3. Add exactly three zones, named as below — the names must match
+   `ZONE_FOR_REGION` in [`backend/tools/atlas_zone_ranges.py`](backend/tools/atlas_zone_ranges.py):
 
-   | Zone name (in Atlas) | Cloud region(s) | Maps to `location` value |
-   |----------------------|-----------------|--------------------------|
-   | `US_EAST`            | AWS us-east-1   | `us`                     |
-   | `EU_CENTRAL`         | AWS eu-central-1| `eu`                     |
-   | `APAC_SE`            | AWS ap-southeast-1 | `apac`                |
-   | `INDIA`              | AWS ap-south-1  | `in`                     |
-   | `BRAZIL`             | AWS sa-east-1   | `br`                     |
-   | `MIDDLE_EAST`        | AWS me-south-1  | `me`                     |
+   | Zone name | Cloud region | Locations it will hold |
+   |---|---|---|
+   | `APAC` | AWS ap-south-1 | `in`, `apac`, `me` |
+   | `EU` | AWS eu-west-1 | `eu` |
+   | `AMERICAS` | AWS us-east-1 | `us`, `br` |
 
-   You can add zones incrementally — only add a zone when you have real users
-   in that region.
+4. Enable **Backup** (continuous cloud backup) and confirm each zone's snapshots are stored in
+   that zone's region.
+5. Create the cluster (provisioning takes a while).
 
-5. Set the cluster tier (M30+ for Global; M10 acceptable for staging).
-6. Enable **Backup** (continuous cloud backups recommended for production).
-7. Click **Create Cluster** and wait for provisioning (~10 minutes).
-
-> **China / Russia note:** PIPL and FZ-242 impose strict requirements that
-> cannot be satisfied by an Atlas Global Cluster hosted in a Western cloud.
-> Treat `cn` and `ru` as completely separate deployments with separate MONGODB_URI
-> values, not as zones in the main cluster. These locations are present in
-> `routing.py` as placeholders only.
+There is no `cn`/`ru` zone. Those countries are blocked at registration (and at the WAF in
+stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are already refused
+(503) at the edge.
 
 ---
 
-## Step 3 — Configure Zone Sharding Rules
+## Step 3 — Database user
 
-Zone sharding rules tell Atlas which `location` values belong to which physical
-zone. This must be done **once** after cluster creation, before any data is
-written.
-
-1. In the Atlas UI, navigate to your cluster → **Collections**.
-2. For each collection listed below, enable sharding and add zone mappings:
-
-### Collections to zone-shard
-
-Apply the following for each of: `users`, `sessions`, `onboarding`, `goals`,
-`recommendations`, `growth_areas`, `children`, `missions`.
-
-**Shard key:** `{ "location": 1, "_id": 1 }`
-
-Zone mapping (add one entry per zone):
-
-| Zone (Atlas name) | Min key `location` | Max key `location` |
-|-------------------|--------------------|--------------------|
-| `US_EAST`         | `"us"`             | `"us"`             |
-| `EU_CENTRAL`      | `"eu"`             | `"eu"`             |
-| `APAC_SE`         | `"apac"`           | `"apac"`           |
-| `INDIA`           | `"in"`             | `"in"`             |
-| `BRAZIL`          | `"br"`             | `"br"`             |
-| `MIDDLE_EAST`     | `"me"`             | `"me"`             |
-
-For `_id`, set both min and max to `MinKey` / `MaxKey` (Atlas default — leave
-the `_id` range as the full range; only the `location` prefix drives zone
-placement).
-
-> **Do not add `location` = `cn` or `ru` zone mappings here.** These are served
-> by separate clusters and must never land on this cluster's shards.
-
-### `email_index` — do NOT shard
-
-`email_index` must remain **unsharded**. It is a global lookup table with no
-zone affinity. Do not add it to the zone-shard configuration. It will
-automatically live on the cluster's primary shard.
+1. **Database Access → Add New Database User**, password authentication, e.g. `buddy360app`.
+2. Role: **readWrite** on the application database (`MONGODB_DB_NAME`, default `buddy_app`).
+   Use a separate admin user for the sharding commands in Step 4.
+3. Store the password in Secrets Manager only.
 
 ---
 
-## Step 4 — Create a Database User
+## Step 4 — Zone-shard the collections
 
-1. Go to **Database Access → Add New Database User**.
-2. Choose **Password** authentication.
-3. Username: `buddy360app` (or your preferred name).
-4. Generate a strong random password (save it in your secrets manager).
-5. Built-in Role: **Atlas admin** for migration/setup; switch to
-   **Read and write to any database** for the application user in production.
-6. Click **Add User**.
+Do this on the **empty** cluster, before loading any data.
 
----
+1. Generate the commands from the code (prints `sh.updateZoneKeyRange` for every
+   collection × location — 7 × 6 = 42 ranges — then `sh.shardCollection` for each collection):
 
-## Step 5 — Configure Network Access
-
-1. Go to **Network Access → Add IP Address**.
-2. For production: add the static egress IPs of your application servers /
-   ECS tasks.
-3. For local dev: add your current IP address (or `0.0.0.0/0` temporarily,
-   but remove it before going live).
-
----
-
-## Step 6 — Get the Connection String
-
-1. On the cluster overview, click **Connect → Drivers**.
-2. Select **Python** / **Motor** (they use the same connection string format).
-3. Copy the `mongodb+srv://` URI. It looks like:
-
-   ```
-   mongodb+srv://buddy360app:<password>@buddy360.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   ```bash
+   python backend/tools/atlas_zone_ranges.py <MONGODB_DB_NAME> > zone-setup.js
    ```
 
-4. Set this as `MONGODB_URI` in your `.env` (local dev) or your secrets
-   manager / ECS task definition (production).
+2. Review it, then run it with the admin user:
+
+   ```bash
+   mongosh "<connection string>" --username <admin> zone-setup.js
+   ```
+
+   Zone ranges are defined first so each empty collection is pre-split straight onto its zones'
+   shards.
+
+3. Resulting shard keys:
+
+   | Collection | Shard key |
+   |---|---|
+   | `users`, `sessions`, `children`, `observations`, `ninety_day_plans` | `{ location: 1, _id: 1 }` |
+   | `growth_areas` | `{ location: 1, user_id: 1 }` |
+   | `jobs` | `{ location: 1, job_id: 1 }` |
+   | `email_index`, `allowed_emails` | **not sharded** |
+
+4. Verify with `sh.status()` and, after data is loaded, `db.<coll>.getShardDistribution()`.
+
+The script's collection list is checked against [`backend/app/models.py`](backend/app/models.py)
+by [`backend/tests/test_atlas_zone_ranges.py`](backend/tests/test_atlas_zone_ranges.py): adding a
+collection fails the test until it is explicitly placed as zone-sharded or unsharded.
 
 ---
 
-## Step 7 — Indexes (handled automatically by the application)
+## Step 5 — Network access
 
-The application calls `init_indexes()` in [`backend/app/database.py`](backend/app/database.py)
-on every startup. This is idempotent — if the indexes already exist, the call
-is a no-op. You do not need to create indexes manually.
+The backends reach Atlas from three regions. Either:
 
-For reference, the indexes created are:
+- **IP access list:** add each region's NAT gateway public IP (no `0.0.0.0/0`):
 
-| Collection      | Index                                              | Notes                              |
-|-----------------|----------------------------------------------------|------------------------------------|
-| `email_index`   | `{ user_id: 1 }`                                  | Supports reverse lookups           |
-| `users`         | `{ location: 1, _id: 1 }` unique                 | Shard key index (required)         |
-| `users`         | `{ location: 1, email: 1 }` unique                | Email uniqueness per shard         |
-| `users`         | `{ location: 1, role: 1 }`                        | Role-based queries                 |
-| `sessions`      | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `sessions`      | `{ location: 1, expires_at: 1 }`                  | Expiry cleanup                     |
-| `sessions`      | `{ location: 1, user_id: 1 }`                     | Logout / revocation                |
-| `onboarding`    | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `goals`         | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `recommendations` | `{ location: 1, _id: 1 }` unique               | Shard key index                    |
-| `recommendations` | `{ location: 1, step: 1 }`                     |                                    |
-| `recommendations` | `{ location: 1, current_area_index: 1 }`       |                                    |
-| `growth_areas`  | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `growth_areas`  | `{ location: 1, user_id: 1, area_id: 1 }` unique | One record per user per area       |
-| `growth_areas`  | `{ location: 1, user_id: 1, created_at: 1 }`      | Chronological listing              |
-| `children`      | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `children`      | `{ location: 1, user_id: 1, created_at: -1 }`     | Default sort                       |
-| `children`      | `{ location: 1, user_id: 1, name: 1 }`            | Name sort                          |
-| `missions`      | `{ location: 1, _id: 1 }` unique                 | Shard key index                    |
-| `missions`      | `{ location: 1, child_id: 1, created_at: -1 }`    | Per-child listing                  |
-| `missions`      | `{ location: 1, child_id: 1, status: 1 }`         | Status filtering                   |
-| `missions`      | `{ location: 1, user_id: 1 }`                     | Account deletion cascade           |
+  ```bash
+  aws ec2 describe-nat-gateways --region <region> --filter Name=state,Values=available \
+    --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
+  ```
+
+  Run for ap-south-1, eu-west-1 and us-east-1. A missing region shows up as that region's API
+  calls hanging ~30 s and failing (the backend only connects on first query).
+
+- **PrivateLink** per region — planned, see `docs/infra-architecture-multi-region.md` Change 10d.
 
 ---
 
-## Step 8 — Local Development Setup
+## Step 6 — Connection string
 
-Atlas M0 (free tier) is a single-region replica set, not a Global Cluster.
-It is perfectly fine for local development — data residency is not enforced
-but all application logic works identically.
+1. **Connect → Drivers → Python**, copy the `mongodb+srv://` URI.
+2. Put it in the `MONGODB_URI` key of each region's `buddy360/<env>/backend-secrets` secret
+   (same value in all three regions — the API and worker both read it). Rotating it later:
+   `put-secret-value` replaces the whole JSON, so include every key (see
+   [`infra-live-backend/terraform/secrets.tf`](infra-live-backend/terraform/secrets.tf)).
+3. Redeploy the backend in each region so tasks pick it up.
 
-**Recommended local dev flow:**
+---
 
-1. Create a free M0 cluster at <https://cloud.mongodb.com>.
-2. Set `MONGODB_URI` in your root `.env` to the M0 connection string.
-3. Set `DEFAULT_LOCATION=us` (or any valid location string — it doesn't matter
-   for M0 since there is no zone sharding).
-4. Run `docker compose up` — the backend connects to Atlas M0 on startup and
-   creates all indexes.
+## Step 7 — Indexes (created by the application)
 
-**Alternative: local MongoDB (no Atlas account needed):**
+`init_indexes()` in [`backend/app/database.py`](backend/app/database.py) runs on every API
+startup (not the worker) and is idempotent. It creates indexes; it never drops them. Current set:
+
+| Collection | Index | Notes |
+|---|---|---|
+| `email_index` | `{ user_id: 1 }` | Reverse lookup |
+| `users` | `{ location: 1, _id: 1 }` unique | Shard key index |
+| `users` | `{ location: 1, email: 1 }` unique | **Make non-unique before sharding** (Step 0) |
+| `users` | `{ location: 1, role: 1 }` | |
+| `sessions` | `{ location: 1, _id: 1 }` unique | Shard key index |
+| `sessions` | `{ location: 1, expires_at: 1 }` | Expiry cleanup (no TTL — TTL can't be compound) |
+| `sessions` | `{ location: 1, user_id: 1 }` | Logout-all / deletion |
+| `observations` | `{ location: 1, _id: 1 }` unique | `_id` = child id |
+| `ninety_day_plans` | `{ location: 1, _id: 1 }` unique | `_id` = child id |
+| `growth_areas` | `{ location: 1, _id: 1 }` unique | **Make non-unique before sharding** (Step 0) |
+| `growth_areas` | `{ location: 1, user_id: 1, child_id: 1, area_id: 1 }` unique | One record per user/child/area |
+| `children` | `{ location: 1, _id: 1 }` unique | Shard key index |
+| `children` | `{ location: 1, user_id: 1, created_at: -1 }` partial `is_deleted: false` | Default list order |
+| `children` | `{ location: 1, user_id: 1, name: 1 }` partial `is_deleted: false` | Name sort |
+| `children` | `{ location: 1, deleted_at: 1 }` partial `is_deleted: true` | Soft-delete purge (no purge job exists yet) |
+| `jobs` | `{ location: 1, status: 1, retry_after: 1, created_at: 1 }` | Worker claim |
+| `jobs` | `{ location: 1, job_id: 1, user_id: 1 }` unique | Client polling; valid under shard key `{location, job_id}` |
+| `jobs` | `{ location: 1, user_id: 1, child_id: 1, type: 1, status: 1 }` | In-flight cap check |
+| `jobs` | `{ location: 1, status: 1, claimed_at: 1 }` | Stale-claim recovery |
+| `jobs` | `{ location: 1, status: 1, domain_write_attempt: 1 }` partial `status: result_ready` | Domain-write retry |
+| `jobs` | `{ completed_at: 1 }` TTL 24 h, partial `status ∈ {completed, failed}` | TTL must be single-field, so no `location` |
+
+**Superseded indexes to drop by hand** on any database created before the location-first `jobs`
+indexes (only after the new code runs in every region — an old worker without them would scan
+the collection):
+
+```javascript
+db.jobs.dropIndex("status_1_retry_after_1_created_at_1")
+db.jobs.dropIndex("status_1_claimed_at_1")
+db.jobs.dropIndex("status_1_domain_write_attempt_1")
+```
+
+---
+
+## Step 8 — Migrate the data from M0
+
+1. Freeze writes (maintenance window) or use Atlas **Live Migration**, if available for the
+   source tier, into the already-sharded target.
+2. Otherwise `mongodump` from M0 and `mongorestore` into the Global Cluster **after** Step 4, so
+   documents land directly in their zones.
+3. Verify counts per collection and per `location`, then switch `MONGODB_URI` (Step 6).
+
+Documents keep their `location`; nothing is recomputed. Correcting legacy accounts (e.g. users
+saved as `"us"` from a then-unmapped country — their real `country_code` is on the user document)
+is a separate, deliberate migration: changing `location` moves every one of that user's documents
+to another zone.
+
+---
+
+## Step 9 — Local development
+
+Any single MongoDB works — M0 or a local container; zones don't apply:
 
 ```bash
-# Start a local MongoDB 7 container on the host network
-docker run -d --name mongo-dev -p 27017:27017 mongo:7
+docker run -d --name mongo-dev -p 27017:27017 mongo:8
 ```
 
-Then set in `.env`:
 ```
-# On Mac/Windows with Docker Desktop:
+# .env — Docker Desktop (backend in Compose, Mongo on the host):
 MONGODB_URI=mongodb://host.docker.internal:27017
-# On Linux with --network host:
+# backend run directly on the host:
 MONGODB_URI=mongodb://localhost:27017
 ```
 
-> **Important:** `mongodb://localhost:27017` inside a Docker container refers to
-> the container itself, not the host. Use `host.docker.internal` on Mac/Windows
-> (Docker Desktop), or add the Mongo container to the `buddy360_net` network
-> and reference it by service name.
+`localhost` inside a container is the container itself — use `host.docker.internal`, or attach
+Mongo to the `buddy360_net` network and use its service name. The local worker processes every
+location (it is only region-scoped when `WORKER_SCOPE_TO_REGION=true`, which only ECS sets), even
+though `.env.example` sets `AWS_REGION` for S3.
 
 ---
 
-## Step 9 — Adding a New Location / Region
+## Step 10 — Adding a country, location or region
 
-1. In the Atlas UI, add a new zone to the Global Cluster (new cloud region).
-2. Add a zone mapping for the new `location` string (e.g. `"za"` for South
-   Africa) following the same pattern as Step 3.
-3. Add the new country codes to `COUNTRY_TO_REGION` in
-   [`backend/app/routing.py`](backend/app/routing.py).
-4. Add the new zone name to this document's zone table (Step 2 and Step 3).
-5. Deploy the updated application. Atlas begins routing new documents with the
-   new `location` value to the new zone immediately.
+**A country to an existing location** — edit `COUNTRY_TO_REGION` in `routing.py`, then mirror it in
+`frontend{,-app}/src/lib/countries.ts` and `locationHint.ts`. `pytest` fails until all copies
+match. No Atlas change.
 
-Existing users are unaffected — their `location` is set at registration and
-never changes. No data migration is needed.
+**A new location** (e.g. `af`) on an existing region — all of these, in one change:
 
----
+1. `COUNTRY_TO_REGION` and `REGION_TO_LOCATIONS` (`routing.py`)
+2. `LOCATION_TO_REGION` in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`
+3. `uploads_location_to_region` in `infra-live-edge/terraform/cloudfront.tf`
+4. The four frontend files above
+5. Atlas: regenerate and run the new zone ranges (Step 4, new location's lines only)
 
-## Step 10 — Production Checklist
-
-Before going live, verify:
-
-- [ ] M30+ cluster tier selected (Global Clusters require M30 minimum)
-- [ ] All required zones provisioned in Atlas (Step 2)
-- [ ] Zone shard mappings configured for all 8 user-data collections (Step 3)
-- [ ] `email_index` confirmed as **not** zone-sharded (Step 3)
-- [ ] Application user has **Read and write to any database** role (not Atlas admin)
-- [ ] Network access restricted to application server egress IPs (no `0.0.0.0/0`)
-- [ ] `MONGODB_URI` stored in secrets manager (not in version-controlled `.env`)
-- [ ] `DEFAULT_LOCATION` set to your primary zone string (e.g. `"us"`)
-- [ ] Atlas Backup enabled with a retention policy
-- [ ] Atlas Alerts configured for CPU, replication lag, and connection count
-- [ ] `COOKIE_SECURE=true` and `APP_ENV=prod` in production environment
+**A new AWS region** — backend Terraform + deploy in that region; add it to the edge's
+`backend_regions` (keep `ap-south-1` first — it's the bootstrap region for login); add it to
+`REGION_TO_LOCATIONS`, `ZONE_FOR_REGION` and the Lambda/CloudFront maps; add the Atlas zone; allow
+its NAT IP (Step 5).
 
 ---
 
-## Key Design Decisions
+## Step 11 — Production checklist
 
-### Why `email_index` is unsharded
+- [ ] Step 0 code changes deployed in every region
+- [ ] Global Cluster: M30+, MongoDB 8.0, zones `APAC` / `EU` / `AMERICAS` in the right regions
+- [ ] `zone-setup.js` generated from the deployed code and run; `sh.status()` shows 42 ranges
+- [ ] `email_index` and `allowed_emails` **not** sharded
+- [ ] App user has `readWrite` on the app database only
+- [ ] Network access: three NAT IPs (or PrivateLink); no `0.0.0.0/0`
+- [ ] `MONGODB_URI` in each region's Secrets Manager secret; backends redeployed
+- [ ] Backups enabled, each zone's snapshots stored in its own region
+- [ ] Atlas alerts: CPU, replication lag, connections, balancer/chunk-migration errors
+- [ ] Superseded `jobs` indexes dropped (Step 7)
+- [ ] Edge `backend_regions` = `["ap-south-1","eu-west-1","us-east-1"]`
 
-Email is global — the same address cannot exist in two zones. An unsharded
-collection provides a single authoritative uniqueness guard without scatter-
-gather. At login, one cheap lookup on `email_index` (primary shard, tiny
-collection) resolves the user's zone; all subsequent hot-path queries are
-shard-key-aware and touch only the user's own zone.
+---
 
-### Why transactions exclude `email_index`
+## Key design decisions
 
-MongoDB transactions on Atlas can span multiple sharded collections within
-the same zone shard. However, a transaction that includes an unsharded
-collection alongside a sharded one becomes a **cross-shard transaction**, which
-Atlas M0/M2/M5 free tiers do not support and which adds cross-zone latency on
-paid tiers.
+### `email_index` stays unsharded
 
-Account deletion therefore uses a two-step approach:
+Email is global — one address can't exist in two zones. An unsharded collection is a single
+authoritative uniqueness guard (its `_id` is the email) and the login router: one small lookup
+returns `{user_id, location}`, after which every query is shard-key targeted. It holds only email,
+user id and location.
 
-1. **Transaction (single zone shard):** revoke tokens → delete sessions, children,
-   missions, onboarding, goals, recommendations, growth_areas, user doc.
-2. **Post-commit (outside transaction):** delete the `email_index` entry.
+### No transactions today; `email_index` outside them later
 
-If step 2 fails, the orphaned `email_index` entry is reclaimed automatically
-the next time someone attempts to register with the same email address.
+M0 has no transactions, so registration reserves the email in `email_index` first, inserts the
+user second, and deletes the reservation if the insert fails; a leftover reservation without a
+user is reclaimed on the next attempt. Account deletion deletes user data first and the
+`email_index` entry last (best effort, same reclaim). After the upgrade, transactions can cover a
+single user's documents (one location → one zone) but never `email_index` — it lives on the
+primary shard, which would make the transaction cross-shard.
 
-### Why `location` is immutable
+### Login always runs in the bootstrap region
 
-A user's zone is determined at registration from their country code and never
-changes. Moving a user between zones would require copying every document across
-shards — a complex, expensive migration with no atomic guarantee. If a user
-moves countries, their data remains in the original zone. This is both simpler
-and compliant: GDPR allows data to remain where it was lawfully collected;
-it does not require migration on relocation.
+Login and Google sign-in carry no token yet, so the edge sends them to `backend_regions[0]`
+(ap-south-1). The email lookup there is cheap; the user's location is then put in the tokens and
+every later call goes to the user's own region.
+
+### `location` is immutable
+
+Set at registration from the declared country; never changed when a user moves. Changing it would
+move all of a user's documents across zones with no atomic guarantee, and GDPR allows data to stay
+where it was lawfully collected.
+
+### TTL indexes can't include `location`
+
+MongoDB TTL indexes must be single-field. `jobs` uses a single-field `completed_at` TTL (each shard
+expires its own documents); `sessions` has no TTL and is cleaned hourly by the API instead.
