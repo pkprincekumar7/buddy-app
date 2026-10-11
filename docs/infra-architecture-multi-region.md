@@ -79,6 +79,12 @@ latency, double the infrastructure, and still require Lambda@Edge for geo-routin
 implemented solution — one combined L@E function (at `viewer-request`, not `origin-request`
 — see "Why not two separate Lambda@Edge functions?" below) — is the minimal correct solution.
 
+> **Update:** the Lambda now runs at **`origin-request`**. At `viewer-request` CloudFront
+> silently ignored the function's `request.origin` change, so every `/api/*` call went to the
+> bootstrap region whatever the token's `location` (fixed in `infra-live-edge/terraform/cloudfront.tf`;
+> see `GLOBAL_ROUTING_MONGO.md` §4.1). Statements below that it stayed at `viewer-request` are
+> historical.
+
 ---
 
 ### Why not CloudFront Functions for JWT auth?
@@ -93,6 +99,12 @@ evaluated and ruled out for this reason.
 
 The original V2 plan placed JWT auth at `viewer-request` and geo-routing at
 `origin-request`. This adds two sequential Lambda invocations per request.
+
+> **Update:** the Lambda now runs at **`origin-request`**. At `viewer-request` CloudFront
+> silently ignored the function's `request.origin` change, so every `/api/*` call went to the
+> bootstrap region whatever the token's `location` (fixed in `infra-live-edge/terraform/cloudfront.tf`;
+> see `GLOBAL_ROUTING_MONGO.md` §4.1). Statements below that it stayed at `viewer-request` are
+> historical.
 
 **Implemented resolution — combined at `viewer-request`, not moved to `origin-request`:**
 the actual `jwt-validator-lambda.js.tpl` combines both concerns into one function, same
@@ -443,6 +455,12 @@ into the Lambda template variable of the same name (Change 1/2).
 
 ### 4. `infra-live-edge/terraform/cloudfront.tf` — implemented, but the Lambda stayed at `viewer-request`
 
+> **Update:** the Lambda now runs at **`origin-request`**. At `viewer-request` CloudFront
+> silently ignored the function's `request.origin` change, so every `/api/*` call went to the
+> bootstrap region whatever the token's `location` (fixed in `infra-live-edge/terraform/cloudfront.tf`;
+> see `GLOBAL_ROUTING_MONGO.md` §4.1). Statements below that it stayed at `viewer-request` are
+> historical.
+
 **The event type was not changed.** `lambda_function_association.event_type` is still
 `"viewer-request"` — the move to `origin-request` proposed here never happened (see "Why
 not two separate Lambda@Edge functions?" above for the reconciled rationale). The
@@ -708,9 +726,9 @@ Then apply:
 > broader 8-zone scheme exists elsewhere spanning up to 10 AWS regions (e.g. `apac` →
 > ap-southeast-1/ap-northeast-1, `br` → sa-east-1, `me` → me-south-1/me-central-1) — that
 > scheme is wider than this 3-region target and needs reconciling separately, outside
-> this doc's scope. For this doc's purposes, of the 8 `location` values the backend
-> produces (`in`/`apac`/`cn`/`eu`/`me`/`ru`/`us`/`br` — see
-> `backend/app/routing.py:COUNTRY_TO_REGION`), **6 collapse into the three zones** in the
+> this doc's scope. For this doc's purposes, the backend assigns 6 `location` values
+> (`in`/`apac`/`eu`/`me`/`us`/`br` — see `shared/routing.json`; `cn`/`ru` survive only on
+> legacy accounts, the countries now being blocked at registration), which **collapse into the three zones** in the
 > `LOCATION_TO_REGION` map above (APAC/EU/Americas), matching the `REGIONAL_ALB_FQDNS`/
 > API-region targets this doc's Lambda@Edge function routes to. **`cn` and `ru` are
 > deliberately excluded from both** — the Lambda already fails these closed (503, see the
@@ -947,29 +965,22 @@ eu-west-1 or us-east-1.
 ## Hard Rules (Do Not Break)
 
 1. **All `/api/*` cache behaviours must keep `cache_policy_id = local.cache_policy_disabled`.**
-   Even though the JWT/geo-routing Lambda runs at `viewer-request` (fires before any cache
-   lookup), a cacheable response could still be served to a different, unauthenticated
-   viewer on a later cache hit without the Lambda re-running its check. Adding a non-zero
+   The JWT/geo-routing Lambda runs at `origin-request`, which fires only on a cache miss — a
+   cacheable response would be served to a different, unauthenticated viewer on a later
+   cache hit without the Lambda running its check at all. Adding a non-zero
    TTL cache policy to any authenticated endpoint risks exactly that.
 
-2. **The `location` claim in the JWT must always map to a key in `LOCATION_TO_REGION`,
-   whose mapped region must actually be deployed.** Unlike the original plan, the real
-   Lambda has **no default-region fallback** — a missing `LOCATION_TO_REGION` entry, or an
-   entry that maps to a region not yet in `var.backend_regions`, produces a 503
-   (`resolveRegionalOrigin()` throws rather than guessing an origin). If a new location
-   string is added as an output of `backend/app/routing.py:resolve_region()`, a
-   corresponding entry must be added to `LOCATION_TO_REGION` in the Lambda template, or
-   every token carrying that location gets a hard failure instead of a (possibly wrong,
-   but at least working) guess.
+2. **Every location's region must actually be deployed.** The Lambda has **no
+   default-region fallback**: a location whose mapped region is not in
+   `var.backend_regions` produces a 503 (`resolveRegionalOrigin()` throws rather than
+   guessing an origin) for every authenticated request from that location — a hard outage
+   for those users, not a latency inefficiency.
 
-3. **There is no `COUNTRY_TO_REGION` map in the Lambda template to keep in sync** — the
-   real implementation has no IP-geo routing at all (see Change 1). The thing that *does*
-   need to stay in sync is narrower: `LOCATION_TO_REGION` in the Lambda template must
-   cover every location value `backend/app/routing.py:resolve_region()` can actually
-   produce. A location `resolve_region()` can return but `LOCATION_TO_REGION` doesn't
-   recognize hits the 503 path in Rule 2 above for every authenticated request from that
-   location — worse than a wrong-but-working default, since it's a hard outage for those
-   users rather than a latency/cost inefficiency.
+3. **Location → region is not maintained in the Lambda template.** Its `LOCATION_TO_REGION`
+   is rendered from `shared/routing.json` (via `infra-live-edge/terraform/routing.tf`) — the
+   same file the backend generates `COUNTRY_TO_REGION`/`resolve_region()` from — so every
+   location the backend can assign is in the Lambda's map by construction. See
+   `shared/README.md`.
 
 4. **Lambda@Edge must remain in us-east-1.** AWS requires all Lambda@Edge functions to
    be deployed in us-east-1. The `infra-live-edge` Terraform module is already pinned
@@ -1010,10 +1021,11 @@ When adding a fourth region in future:
       `infra-live-edge/terraform/ssm_read.tf`'s `for_each` and the Lambda's
       `regional_alb_fqdns` map both pick up the new region automatically; no per-region
       edit to `ssm_read.tf`, `lambda_edge.tf`, or the Lambda template's ALB map is needed
-- [ ] Add an entry to `LOCATION_TO_REGION` in the Lambda template (`jwt-validator-lambda.js.tpl`)
-      for any new location value that should route to the new region — this one *is* a
-      manual code edit, since it's a business decision (see Hard Rules 2–3 above), not
-      something `var.backend_regions` can infer
+- [ ] Add the region (with its `atlas_zone`) and the locations it should serve to
+      `shared/routing.json`, then run `node scripts/sync-routing.mjs` — this one *is* a
+      manual edit, since it's a business decision (see Hard Rules 2–3 above), not something
+      `var.backend_regions` can infer; the Lambda, CloudFront, WAF, backend and frontends all
+      pick it up from that file
 - [ ] The new region's SSM check happens automatically — `terraform-live-edge.yml`'s
       "Verify SSM parameters exist and are readable" step already loops over whatever
       `backend_regions` JSON array is passed in; no hardcoded per-region check to add

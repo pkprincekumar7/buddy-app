@@ -22,6 +22,12 @@ should live inside Lambda@Edge**, to shrink the blast radius if the edge functio
 or config ever leaks. The current plan embeds the JWT *public* key in Lambda@Edge (lower
 risk than a private/symmetric key, but still key material at the edge).
 
+> **Update:** the Lambda now runs at **`origin-request`**. At `viewer-request` CloudFront
+> silently ignored the function's `request.origin` change, so every `/api/*` call went to the
+> bootstrap region whatever the token's `location` (fixed in `infra-live-edge/terraform/cloudfront.tf`;
+> see `GLOBAL_ROUTING_MONGO.md` §4.1). Statements below that it stayed at `viewer-request` are
+> historical.
+
 **Correction (this section originally assumed the current plan also runs at
 `origin-request` — it doesn't):** the current plan's function runs at **`viewer-request`**
 (confirmed in `infra-live-edge/terraform/cloudfront.tf`'s `lambda_function_association`),

@@ -33,6 +33,7 @@ data "archive_file" "jwt_validator_lambda" {
         jwt_public_keys      = var.jwt_public_keys
         jwt_key_id           = var.jwt_key_id
         regional_alb_fqdns   = local.regional_alb_fqdns
+        location_to_region   = local.location_to_region
         origin_verify_secret = var.origin_verify_secret
       }
     )

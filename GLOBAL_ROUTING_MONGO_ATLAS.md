@@ -32,9 +32,9 @@ Target layout
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The zone ↔ location mapping is **not** maintained by hand: it is generated from
-`REGION_TO_LOCATIONS` in [`backend/app/routing.py`](backend/app/routing.py) — the same mapping
-Lambda@Edge routes API calls by and the regional workers scope their jobs by.
+The zone ↔ location mapping is **not** maintained by hand: zone names and locations come from
+[`shared/routing.json`](shared/routing.json) — the same file Lambda@Edge routes API calls by and
+the regional workers scope their jobs by (see [`shared/README.md`](shared/README.md)).
 
 ---
 
@@ -73,8 +73,8 @@ existing database — drop the old one manually (Step 7).
    Global Writes expect ISO country codes in the location field; ours holds location *groups*
    (`eu`, `apac`, …), so the ranges are defined explicitly (Step 4). Confirm the option names
    against the current Atlas documentation when creating the cluster.
-3. Add exactly three zones, named as below — the names must match
-   `ZONE_FOR_REGION` in [`backend/tools/atlas_zone_ranges.py`](backend/tools/atlas_zone_ranges.py):
+3. Add exactly three zones, named as below — the names must match each region's `atlas_zone`
+   in [`shared/routing.json`](shared/routing.json):
 
    | Zone name | Cloud region | Locations it will hold |
    |---|---|---|
@@ -247,22 +247,16 @@ though `.env.example` sets `AWS_REGION` for S3.
 
 ## Step 10 — Adding a country, location or region
 
-**A country to an existing location** — edit `COUNTRY_TO_REGION` in `routing.py`, then mirror it in
-`frontend{,-app}/src/lib/countries.ts` and `locationHint.ts`. `pytest` fails until all copies
-match. No Atlas change.
+Everything starts in [`shared/routing.json`](shared/routing.json) — see
+[`shared/README.md`](shared/README.md) for the rules and per-change steps. In short: edit the file,
+run `node scripts/sync-routing.mjs`, commit the regenerated files, deploy backend + frontends
+together, and apply the edge Terraform (it reads the JSON directly). Atlas-specific extras:
 
-**A new location** (e.g. `af`) on an existing region — all of these, in one change:
-
-1. `COUNTRY_TO_REGION` and `REGION_TO_LOCATIONS` (`routing.py`)
-2. `LOCATION_TO_REGION` in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`
-3. `uploads_location_to_region` in `infra-live-edge/terraform/cloudfront.tf`
-4. The four frontend files above
-5. Atlas: regenerate and run the new zone ranges (Step 4, new location's lines only)
-
-**A new AWS region** — backend Terraform + deploy in that region; add it to the edge's
-`backend_regions` (keep `ap-south-1` first — it's the bootstrap region for login); add it to
-`REGION_TO_LOCATIONS`, `ZONE_FOR_REGION` and the Lambda/CloudFront maps; add the Atlas zone; allow
-its NAT IP (Step 5).
+- **New location** on an existing region: once on the Global Cluster, add its zone ranges — the
+  new location's lines from `python backend/tools/atlas_zone_ranges.py <db>`.
+- **New AWS region:** add it under `regions` with its `atlas_zone`; deploy the backend there; add
+  it to the edge's `backend_regions` (keep `ap-south-1` first — the bootstrap region for login);
+  add the zone in Atlas; allow its NAT IP (Step 5).
 
 ---
 

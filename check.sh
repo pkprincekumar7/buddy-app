@@ -160,6 +160,11 @@ run "pytest + coverage (backend)" \
 run "jwt-validator-lambda unit tests (infra-live-edge)" \
     node --test "$ROOT/infra-live-edge/functions/jwt-validator-lambda.test.js"
 
+# shared/routing.json → generated backend/app/routing_data.py and the frontends'
+# countries.ts / locationHint.ts. Fails if a generated copy is stale.
+run "routing data in sync (shared/routing.json)" \
+    node "$ROOT/scripts/sync-routing.mjs" --check
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 

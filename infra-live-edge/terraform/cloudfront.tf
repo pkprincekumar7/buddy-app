@@ -25,33 +25,12 @@ locals {
   # simply whichever region is first in whatever combination is selected.
   bootstrap_region = var.backend_regions[0]
 
-  # Mirrors LOCATION_TO_REGION in ../functions/jwt-validator-lambda.js.tpl and
-  # backend/app/routing.py's COUNTRY_TO_REGION groupings. S3 upload keys are
-  # prefixed by location (build_upload_key in backend/app/services/s3_uploads.py),
-  # not by AWS region, so the /uploads/* path-based routing below must match on
-  # location, not on the 3 AWS regions directly. Must stay in sync with the
-  # Lambda@Edge's own LOCATION_TO_REGION — a location mapped differently
-  # between the two would mean a user's API calls and photo uploads land in
-  # different regions.
-  #
-  # cn/ru are deliberately absent, same reasoning as the Lambda@Edge function:
-  # mapping them to a region was considered and reverted on compliance grounds
-  # (China needs AWS's separate China partition; Russia carries export-control
-  # exposure this business isn't taking on). A location missing here falls
-  # through to the default (SPA) behaviour for uploads — the Lambda@Edge's own
-  # 503 is what actually blocks the API for these two, this is just kept
-  # consistent with it rather than serving photos for an account that can't
-  # reach the API at all.
-  uploads_location_to_region = {
-    eu   = "eu-west-1"
-    us   = "us-east-1"
-    br   = "us-east-1"
-    in   = "ap-south-1"
-    apac = "ap-south-1"
-    me   = "ap-south-1"
-    # cn = "us-east-1" -- intentionally disabled, see comment above
-    # ru = "us-east-1" -- intentionally disabled, see comment above
-  }
+  # S3 upload keys are prefixed by location (build_upload_key in
+  # backend/app/services/s3_uploads.py), not by AWS region, so the /uploads/*
+  # path-based routing below matches on location. The location → region map is
+  # the same one the Lambda@Edge routes API calls by (local.location_to_region,
+  # from shared/routing.json — see routing.tf).
+  uploads_location_to_region = local.location_to_region
 
   # Only locations whose mapped region is actually deployed get a behaviour —
   # a location mapped to a region with no uploads bucket yet simply falls

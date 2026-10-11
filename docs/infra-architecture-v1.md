@@ -30,7 +30,7 @@ flowchart TD
     subgraph EDGE["EDGE — managed from us-east-1 · served from all CloudFront edge locations"]
         R53[Route 53\nDNS / A alias]
         CF[CloudFront\nCDN + SPA routing]
-        CFF["Lambda@Edge\nJWT validation · RS256\nviewer-request · us-east-1"]
+        CFF["Lambda@Edge\nJWT validation · RS256\norigin-request · us-east-1"]
         WAF[WAF WebACL\n4 rules]
         S3FE[S3 SPA Assets\nOAC via CloudFront · us-east-1]
         S3BA[S3 App Assets\nOAC via CloudFront · us-east-1]
@@ -282,10 +282,10 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 
 | Terraform resource | Status | Notes |
 |---|---|---|
-| `aws_cloudfront_distribution` | exists | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling; Lambda@Edge JWT validator associated on `/api/*` cache behavior (viewer-request, `qualified_arn`). |
+| `aws_cloudfront_distribution` | exists | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling; Lambda@Edge JWT validator associated on `/api/*` cache behavior (origin-request, `qualified_arn`). |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
-| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge viewer-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
+| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge origin-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
 | `aws_iam_role` (Lambda@Edge execution) | exists | Assumed by both `lambda.amazonaws.com` and `edgelambda.amazonaws.com`; attached `AWSLambdaBasicExecutionRole` |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
 | `aws_wafv2_web_acl_logging_configuration` | exists | `count = var.enable_waf_logging ? 1 : 0` (prod only); log destination = Firehose stream ARN; in `waf_logging.tf`. |
@@ -333,7 +333,7 @@ Tokens carry a `kid` (key ID) claim in the JWT header. The `JWT_PUBLIC_KEYS` Git
 
 The function code lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`. Terraform renders it at apply time via `templatefile()` inside an `archive_file` data source, injecting the `jwt_public_keys` map and `jwt_key_id`:
 
-Associated on the `/api/*` cache behavior as a `viewer-request` `lambda_function_association` using `qualified_arn`.
+Associated on the `/api/*` cache behavior as an `origin-request` `lambda_function_association` using `qualified_arn` (only an origin-request event can change `request.origin`; `/api/*` is uncached, so it still runs on every request).
 
 #### GitHub secrets additions
 
