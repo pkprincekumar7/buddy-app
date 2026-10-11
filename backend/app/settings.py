@@ -1,5 +1,4 @@
 import logging
-import re
 from functools import lru_cache
 
 from cryptography.hazmat.primitives.serialization import (
@@ -9,8 +8,6 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-_LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
 
 log = logging.getLogger(__name__)
 
@@ -26,10 +23,6 @@ class Settings(BaseSettings):
         default="buddy_app",
         validation_alias=AliasChoices("MONGODB_DB_NAME", "mongodb_db_name"),
     )
-    default_location: str = Field(
-        default="us",
-        validation_alias=AliasChoices("DEFAULT_LOCATION", "default_location"),
-    )
 
     @field_validator("mongodb_uri")
     @classmethod
@@ -39,16 +32,6 @@ class Settings(BaseSettings):
                 f"MONGODB_URI must start with mongodb:// or mongodb+srv://, got {v!r}. "
                 "Local example: mongodb://localhost:27017  "
                 "Atlas example: mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/"
-            )
-        return v
-
-    @field_validator("default_location")
-    @classmethod
-    def validate_default_location(cls, v: str) -> str:
-        if not _LOCATION_RE.match(v):
-            raise ValueError(
-                f"DEFAULT_LOCATION must match [a-z0-9_-]{{1,16}} (got {v!r}). "
-                "Valid examples: us, eu, apac, in, br, me, cn, ru."
             )
         return v
 

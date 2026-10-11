@@ -185,16 +185,6 @@ variable "llm_hourly_limit" {
   type = number
 }
 
-variable "default_region" {
-  type = string
-}
-
-variable "default_location" {
-  description = "Default MongoDB location shard for users without an explicit location in their JWT (e.g. \"us\", \"eu\")"
-  type        = string
-  default     = "us"
-}
-
 variable "cors_origins" {
   description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
   type        = string

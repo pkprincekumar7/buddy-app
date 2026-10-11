@@ -28,7 +28,8 @@ Do **not** use git worktree isolation (`isolation: "worktree"`) — edits must l
 ## Common commands
 
 Backend (run from `backend/`, with `.venv` active — deps split across
-`requirements.txt`/`requirements-lint.txt`/`requirements-test.txt`/`requirements-security.txt`):
+`requirements.txt`/`requirements-lint.txt`/`requirements-test.txt`/`requirements-security.txt`/
+`requirements-mutation.txt`):
 
 ```
 uvicorn app.main:app --reload --port 8000   # dev server (matches Dockerfile's prod CMD, minus --reload)
@@ -36,6 +37,11 @@ python worker.py                            # background job worker
 ruff check .                                # lint (ruff format . to auto-format)
 mypy app                                    # type check
 pytest                                      # tests (backend/tests/)
+MONGODB_TEST_URI=mongodb://localhost:27017 REDIS_URL=redis://localhost:6379 pytest
+                                            # + real-Mongo/Redis integration tests (CI always runs these;
+                                            #   never point MONGODB_TEST_URI at a real cluster)
+mutmut run                                  # mutation testing (pip install -r requirements-mutation.txt;
+                                            #   needs a throwaway JWT_PRIVATE_KEY; config in pyproject.toml)
 ```
 
 Frontend (run from `frontend/`):

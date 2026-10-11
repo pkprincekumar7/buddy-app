@@ -274,8 +274,8 @@ Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore
 | Category | Fields |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
-| Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
+| Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `REDIS_AUTH_TOKEN` (pointers only — not the secret values themselves; the worker task gets only `MONGODB_URI`, `JWT_PRIVATE_KEY` and the three LLM keys) |
 | Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
 | Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |
 

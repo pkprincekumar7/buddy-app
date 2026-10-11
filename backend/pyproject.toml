@@ -46,3 +46,26 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "live_service: needs a real MongoDB/Redis; skipped locally without one, but a skip fails the run when REQUIRE_LIVE_SERVICES=1 (CI)",
+]
+
+# Mutation testing (optional, not run in CI): pip install -r requirements-mutation.txt,
+# then `mutmut run` from backend/ with a throwaway JWT_PRIVATE_KEY in the environment.
+# Mutates the modules whose tests target 100% coverage, to check the tests would
+# actually catch changes in behaviour — not just execute the lines.
+[tool.mutmut]
+source_paths = ["app"]
+only_mutate = [
+    "app/auth_utils.py",
+    "app/database.py",
+    "app/deps.py",
+    "app/limiter.py",
+    "app/llm_rate_limiter.py",
+    "app/main.py",
+    "app/routers/admin.py",
+    "app/routers/audio.py",
+]
+also_copy = ["tools", "worker.py"]
+pytest_add_cli_args_test_selection = ["tests"]
+pytest_add_cli_args = ["-p", "no:warnings", "-q"]

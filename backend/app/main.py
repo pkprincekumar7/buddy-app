@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -191,7 +192,10 @@ app.add_middleware(SlowAPIMiddleware)
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     log.warning("422 validation_error path=%s errors=%s", request.url.path, exc.errors())
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # jsonable_encoder, as FastAPI's own handler does: errors raised by a custom
+    # field_validator carry the original exception in ctx.error, which plain JSON
+    # can't serialize — returning exc.errors() raw turned every such 422 into a 500.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 @app.exception_handler(HTTPException)

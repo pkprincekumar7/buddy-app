@@ -61,7 +61,7 @@ def _encode(payload: dict[str, Any]) -> str:
 
 def create_access_token(
     sub: str,
-    location: str = settings.default_location,
+    location: str,
     extra: dict[str, Any] | None = None,
 ) -> str:
     now = datetime.now(UTC)
@@ -82,7 +82,7 @@ def create_access_token(
     return _encode(payload)
 
 
-def create_refresh_token(sub: str, location: str = settings.default_location) -> tuple[str, str]:
+def create_refresh_token(sub: str, location: str) -> tuple[str, str]:
     jti = str(uuid.uuid4())
     now = datetime.now(UTC)
     expire = now + timedelta(hours=settings.jwt_refresh_expire_hours)

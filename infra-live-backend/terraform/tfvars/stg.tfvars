@@ -28,7 +28,6 @@ desired_count = 1
 # Application
 llm_timeout_seconds = 60
 llm_hourly_limit    = 100
-default_region      = "us"
 
 # ECS Exec — intentionally enabled in staging for live container debugging.
 # Staging does not use production data, so shell access to running tasks is

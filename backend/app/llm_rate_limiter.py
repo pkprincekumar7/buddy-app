@@ -55,12 +55,15 @@ def _enforce_memory(user_id: str) -> None:
         _mem_sweep_counter += 1
         if _mem_sweep_counter >= _MEM_SWEEP_EVERY:
             _mem_sweep_counter = 0
-            stale = [k for k, dq in _mem_log.items() if not dq or dq[-1] < cutoff]
+            stale = [k for k, dq in _mem_log.items() if not dq or dq[-1] <= cutoff]
             for k in stale:
                 del _mem_log[k]
 
         dq = _mem_log.pop(user_id, deque())
-        while dq and dq[0] < cutoff:
+        # <= cutoff, not <: a call exactly _WINDOW_SECONDS old has left the window —
+        # the same boundary as the Redis backend (ZREMRANGEBYSCORE -inf cutoff is
+        # inclusive), so both backends agree on the limit.
+        while dq and dq[0] <= cutoff:
             dq.popleft()
         if len(dq) >= limit:
             _mem_log[user_id] = dq

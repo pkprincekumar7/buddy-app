@@ -34,9 +34,8 @@ variable "acm_certificate_arn_us_east_1" {
 }
 
 variable "backend_regions" {
-  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here."
+  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here. The FIRST entry is the bootstrap region (login, Google sign-in, health, hint-less register). Required — no default, so a run that doesn't pass it (TF_VAR_backend_regions from terraform-live-edge.yml's backend_regions input) fails instead of silently assuming a region."
   type        = list(string)
-  default     = ["ap-south-1"]
 
   validation {
     condition     = length(var.backend_regions) > 0

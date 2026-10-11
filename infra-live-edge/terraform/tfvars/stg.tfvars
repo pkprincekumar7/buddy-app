@@ -11,5 +11,6 @@ cloudfront_price_class = "PriceClass_100"
 enable_guardduty  = true
 enable_cloudtrail = false
 
-# WAF logging — disabled on stg (no global logging bucket)
+# WAF — enabled on stg (CloudFront WebACL); full logging disabled (no global logging bucket)
+enable_waf         = true
 enable_waf_logging = false

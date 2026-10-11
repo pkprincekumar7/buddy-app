@@ -1,5 +1,6 @@
-import logging
 import re
+from collections.abc import Mapping
+from typing import Any
 
 from app.routing_data import (
     ATLAS_ZONE_FOR_REGION,
@@ -7,9 +8,6 @@ from app.routing_data import (
     COUNTRY_TO_REGION,
     REGION_TO_LOCATIONS,
 )
-from app.settings import settings
-
-log = logging.getLogger(__name__)
 
 LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
 
@@ -26,6 +24,7 @@ __all__ = [
     "COUNTRY_TO_REGION",
     "LOCATION_RE",
     "REGION_TO_LOCATIONS",
+    "location_from_claims",
     "locations_for_region",
     "resolve_region",
 ]
@@ -52,16 +51,19 @@ def locations_for_region(aws_region: str) -> list[str] | None:
 
 
 def resolve_region(country_code: str) -> str:
-    if not country_code:
-        return settings.default_location
-    normalised = country_code.strip().upper()
-    region = COUNTRY_TO_REGION.get(normalised)
-    if region is None:
-        log.debug(
-            "resolve_region: unrecognised country code %r — falling back to DEFAULT_LOCATION=%r. "
-            "Add it to shared/routing.json if this is a valid market.",
-            normalised,
-            settings.default_location,
-        )
-        return settings.default_location
-    return region
+    """Location for a country code. Raises ValueError for a code not in
+    COUNTRY_TO_REGION — callers validate the code first (and refuse
+    BLOCKED_COUNTRIES), so reaching that is a bug, never a user error; there is
+    deliberately no fallback location to hide it."""
+    location = COUNTRY_TO_REGION.get(country_code.strip().upper())
+    if location is None:
+        raise ValueError(f"no location for country code {country_code!r}")
+    return location
+
+
+def location_from_claims(claims: Mapping[str, Any]) -> str | None:
+    """The ``location`` claim of a verified token, or None if it is missing or
+    malformed. Every token this backend issues carries a valid location, so
+    callers treat None as an invalid token — never as a default location."""
+    location = claims.get("location")
+    return location if isinstance(location, str) and LOCATION_RE.match(location) else None
