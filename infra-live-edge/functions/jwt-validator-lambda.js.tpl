@@ -1,8 +1,12 @@
 'use strict'
 
-// Lambda@Edge viewer-request — RS256 JWT validation + location-based backend
+// Lambda@Edge origin-request — RS256 JWT validation + location-based backend
 // routing.
-// Runs on every /api/* viewer request before forwarding to the ALB.
+// Runs on every /api/* request before forwarding to the ALB (cache is
+// disabled for /api/*, so every request is an origin request). Must be
+// origin-request, not viewer-request: CloudFront silently ignores changes to
+// request.origin made in a viewer-request event, so routing would always
+// land on the bootstrap origin.
 // Invalid or missing tokens are rejected with 401 at the edge. A valid token
 // whose location has no deployed backend region is rejected with 503 — there
 // is no default region to fall back to.
@@ -274,14 +278,11 @@ function setOrigin(request, albFqdn) {
       },
     },
   }
-  // Host is read-only in viewer-request events (AWS's documented edge-function
-  // restrictions) — setting it here fails CloudFront's validation with a 502
-  // ("tried to add, delete, or change a read-only header"). No need to
-  // anyway: for a custom origin, CloudFront always sends the origin's own
-  // domainName (set above) as the Host header, regardless of what the
-  // /api/* cache behaviour's origin request policy (AllViewerExceptHostHeader)
-  // forwards from the viewer — that policy's exclusion of Host is exactly
-  // why this is automatic.
+  // In an origin-request event, Host already holds the distribution's
+  // configured origin (the bootstrap region's ALB) and is NOT updated when
+  // request.origin changes — it must be rewritten to match, or the selected
+  // ALB receives the wrong Host (and TLS SNI) and the request fails.
+  request.headers['host'] = [{ key: 'Host', value: albFqdn }]
 }
 
 exports.handler = async (event) => {
