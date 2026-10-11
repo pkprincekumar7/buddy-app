@@ -3,9 +3,9 @@
 
 Run via:  python backend/tools/atlas_zone_ranges.py <db_name> > zone-setup.js
 
-Generated from REGION_TO_LOCATIONS in app/routing.py, so the Atlas zone ranges
-can never drift from the Lambda@Edge routing and the regional workers (all
-three share that one mapping; tests/test_atlas_zone_ranges.py checks it).
+Generated from shared/routing.json (via app/routing.py), so the Atlas zone
+ranges can never drift from the Lambda@Edge routing and the regional workers —
+all three read that one file. tests/test_atlas_zone_ranges.py checks the output.
 
 Run the output once against the cluster, on EMPTY collections, before loading
 data — see GLOBAL_ROUTING_MONGO_ATLAS.md "Step 4" for the prerequisites
@@ -19,15 +19,10 @@ _BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _BACKEND)
 
 from app import models  # noqa: E402 — must come after sys.path setup
-from app.routing import REGION_TO_LOCATIONS  # noqa: E402
+from app.routing import ATLAS_ZONE_FOR_REGION, REGION_TO_LOCATIONS  # noqa: E402
 
-# Atlas zone name for each AWS region the backend runs in. These must match
+# Zone names (ATLAS_ZONE_FOR_REGION) come from shared/routing.json and must match
 # the zone names configured on the Global Cluster in the Atlas UI.
-ZONE_FOR_REGION: dict[str, str] = {
-    "ap-south-1": "APAC",
-    "eu-west-1": "EU",
-    "us-east-1": "AMERICAS",
-}
 
 # Zone-sharded collection → second shard-key field (location is always first).
 # jobs and growth_areas don't use _id: their unique indexes
@@ -57,7 +52,7 @@ def zone_setup_script(db_name: str) -> str:
     ]
     for coll, field in SHARD_KEY_SECOND_FIELD.items():
         for region, locations in REGION_TO_LOCATIONS.items():
-            zone = ZONE_FOR_REGION[region]
+            zone = ATLAS_ZONE_FOR_REGION[region]
             for loc in locations:
                 lines.append(
                     f'sh.updateZoneKeyRange("{db_name}.{coll}", '

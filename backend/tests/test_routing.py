@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from app.routers.auth import GoogleAuthBody, RegisterBody, _reject_blocked_country
 from app.routing import (
+    ATLAS_ZONE_FOR_REGION,
     BLOCKED_COUNTRIES,
     COUNTRY_TO_REGION,
     REGION_TO_LOCATIONS,
@@ -14,38 +16,12 @@ from app.routing import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LAMBDA_TEMPLATE = REPO_ROOT / "infra-live-edge" / "functions" / "jwt-validator-lambda.js.tpl"
-CLOUDFRONT_TF = REPO_ROOT / "infra-live-edge" / "terraform" / "cloudfront.tf"
-WAF_TF = REPO_ROOT / "infra-live-edge" / "terraform" / "waf.tf"
-# Both frontends keep their own copies of the country list and location hint.
-FRONTEND_LIBS = [REPO_ROOT / app / "src" / "lib" for app in ("frontend", "frontend-app")]
+ROUTING_JSON = REPO_ROOT / "shared" / "routing.json"
 
-# These files aren't in the backend-only Docker build context.
+# shared/routing.json isn't in the backend-only Docker build context.
 needs_repo = pytest.mark.skipif(
-    not LAMBDA_TEMPLATE.exists(), reason="full repo checkout not available"
+    not ROUTING_JSON.exists(), reason="full repo checkout not available"
 )
-
-
-def _block(source: str, start: str, end: str) -> str:
-    match = re.search(re.escape(start) + r"(.*?)" + re.escape(end), source, re.DOTALL)
-    assert match, f"{start!r} not found"
-    return match.group(1)
-
-
-def _lambda_location_to_region() -> dict[str, str]:
-    """Uncommented entries of LOCATION_TO_REGION in the Lambda@Edge template."""
-    block = _block(LAMBDA_TEMPLATE.read_text(), "const LOCATION_TO_REGION = {", "\n}")
-    return dict(re.findall(r"^\s+(\w+): '([a-z0-9-]+)',", block, re.MULTILINE))
-
-
-def _cloudfront_uploads_location_to_region() -> dict[str, str]:
-    """Uncommented entries of uploads_location_to_region in cloudfront.tf."""
-    block = _block(CLOUDFRONT_TF.read_text(), "uploads_location_to_region = {", "\n  }")
-    return dict(re.findall(r"^\s+(\w+)\s+=\s+\"([a-z0-9-]+)\"", block, re.MULTILINE))
-
-
-def _expected_location_to_region() -> dict[str, str]:
-    return {loc: region for region, locs in REGION_TO_LOCATIONS.items() for loc in locs}
 
 
 # -- worker region scoping ------------------------------------------------------
@@ -115,36 +91,15 @@ def test_blocked_country_gets_specific_403():
     _reject_blocked_country("IN")  # served → no error
 
 
-# -- copies elsewhere in the repo must not drift ----------------------------------
+# -- generated data must match the single source of truth -------------------------
+# (The edge Terraform reads shared/routing.json directly; the frontends' generated
+# copies are checked by `node scripts/sync-routing.mjs --check` in CI.)
 
 
 @needs_repo
-def test_lambda_edge_routes_each_location_to_its_worker_region():
-    assert _lambda_location_to_region() == _expected_location_to_region()
-
-
-@needs_repo
-def test_cloudfront_uploads_routing_matches():
-    assert _cloudfront_uploads_location_to_region() == _expected_location_to_region()
-
-
-@needs_repo
-def test_waf_geo_block_matches_blocked_countries():
-    block = _block(WAF_TF.read_text(), "waf_blocked_country_codes = [", "]")
-    assert set(re.findall(r'"([A-Z]{2})"', block)) == BLOCKED_COUNTRIES
-
-
-@needs_repo
-@pytest.mark.parametrize("lib", FRONTEND_LIBS, ids=lambda p: p.parents[1].name)
-def test_frontend_location_hint_matches(lib: Path):
-    block = _block((lib / "locationHint.ts").read_text(), "COUNTRY_TO_LOCATION_HINT", "\n};")
-    hint = dict(re.findall(r"^\s+([A-Z]{2}): '([a-z]+)',", block, re.MULTILINE))
-    assert hint == COUNTRY_TO_REGION
-
-
-@needs_repo
-@pytest.mark.parametrize("lib", FRONTEND_LIBS, ids=lambda p: p.parents[1].name)
-def test_frontend_country_selector_matches(lib: Path):
-    codes = re.findall(r"code: '([A-Z]{2})'", (lib / "countries.ts").read_text())
-    assert len(codes) == len(set(codes)), "duplicate country in selector"
-    assert set(codes) == COUNTRY_TO_REGION.keys()
+def test_routing_data_matches_shared_json():
+    data = json.loads(ROUTING_JSON.read_text(encoding="utf-8"))
+    assert {c["code"]: c["location"] for c in data["countries"]} == COUNTRY_TO_REGION
+    assert set(data["blocked_countries"]) == BLOCKED_COUNTRIES
+    assert {r: v["locations"] for r, v in data["regions"].items()} == REGION_TO_LOCATIONS
+    assert {r: v["atlas_zone"] for r, v in data["regions"].items()} == ATLAS_ZONE_FOR_REGION

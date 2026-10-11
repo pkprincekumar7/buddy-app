@@ -22,6 +22,17 @@ const { execFileSync } = require('node:child_process')
 
 const TEMPLATE_PATH = path.join(__dirname, 'jwt-validator-lambda.js.tpl')
 
+// The real location => region map, derived from the repo-wide source of truth
+// exactly as ../terraform/routing.tf does, so the tests route like production.
+const ROUTING = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', '..', 'shared', 'routing.json'), 'utf8'),
+)
+const LOCATION_TO_REGION = Object.fromEntries(
+  Object.entries(ROUTING.regions).flatMap(([region, { locations }]) =>
+    locations.map((loc) => [loc, region]),
+  ),
+)
+
 function terraformAvailable() {
   try {
     execFileSync('terraform', ['version'], { stdio: 'ignore' })
@@ -51,6 +62,7 @@ locals {
     jwt_public_keys      = { "key-v1" = ${JSON.stringify(publicKeyPem)} }
     jwt_key_id            = "key-v1"
     regional_alb_fqdns    = ${JSON.stringify(regionalAlbFqdns)}
+    location_to_region    = ${JSON.stringify(LOCATION_TO_REGION)}
     origin_verify_secret  = ${JSON.stringify(originVerifySecret)}
   })
 }

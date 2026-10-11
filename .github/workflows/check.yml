@@ -208,6 +208,11 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      # shared/routing.json is the single source of truth for country → location →
+      # region; the backend and both frontends commit generated copies of it.
+      - name: Routing data in sync with shared/routing.json
+        run: node scripts/sync-routing.mjs --check
+
       - name: Run jwt-validator-lambda unit tests
         run: node --test infra-live-edge/functions/jwt-validator-lambda.test.js
 
