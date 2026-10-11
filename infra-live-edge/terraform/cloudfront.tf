@@ -65,7 +65,7 @@ locals {
 resource "aws_cloudfront_distribution" "frontend" {
   #checkov:skip=CKV_AWS_86:CloudFront access logs not enabled — S3 logging bucket deferred; application-level logs go to CloudWatch
   #checkov:skip=CKV_AWS_310:Origin failover (active/passive origin groups) not configured — each region's origin serves its own distinct location/path, not a failover pair for the same content
-  #checkov:skip=CKV_AWS_374:Geo restriction disabled intentionally — app serves a global audience; blocking regions would lock out legitimate users
+  #checkov:skip=CKV_AWS_374:CloudFront geo restriction unused — unserved countries are geo-blocked by the WAF instead (GeoBlockUnservedCountries in waf.tf; stg/prod, where enable_waf = true), which can return a JSON 403 body
   #checkov:skip=CKV2_AWS_47:Log4j AMR rule not added — the backend is Python, not Java; Log4Shell does not apply; Core Rule Set already covers OWASP Top 10
   enabled             = true
   is_ipv6_enabled     = true

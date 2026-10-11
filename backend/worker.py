@@ -10,6 +10,11 @@ Environment variables:
   WORKER_CONCURRENCY            number of parallel job slots (default 5)
   WORKER_POLL_INTERVAL_SECONDS  idle poll interval in seconds (default 2)
   AWS_REGION                    used for CloudWatch client
+  WORKER_SCOPE_TO_REGION        "true" → only process jobs for AWS_REGION's
+                                locations (REGION_TO_LOCATIONS in
+                                app/routing.py). Set by the ECS task
+                                definition; unset locally (default) → one
+                                worker processes every location
 """
 
 import asyncio
@@ -23,6 +28,7 @@ import boto3
 import motor.motor_asyncio
 
 from app.models import CHILDREN, JOBS
+from app.routing import locations_for_region
 from app.services import llm_service
 from app.services.llm_service import LLMConfigError
 from app.settings import settings
@@ -75,6 +81,18 @@ if not _aws_region:
     log.warning("AWS_REGION not set — CloudWatch metrics will be disabled")
 cloudwatch = boto3.client("cloudwatch", region_name=_aws_region) if _aws_region else None
 
+# Each regional worker only claims, counts, and cleans up jobs for the
+# locations its region serves — the same grouping the Lambda@Edge router uses
+# to send those users' API calls here. Merged into every jobs-collection
+# filter below. Opt-in rather than keyed off AWS_REGION alone: local dev sets
+# AWS_REGION too (for S3) but runs a single worker that must handle every
+# location, or jobs for users registered outside that region would never run.
+_scope_to_region = os.environ.get("WORKER_SCOPE_TO_REGION", "").strip().lower() == "true"
+if _scope_to_region and not _aws_region:
+    raise RuntimeError("WORKER_SCOPE_TO_REGION=true requires AWS_REGION to be set")
+_worker_locations = locations_for_region(_aws_region) if _scope_to_region else None
+_LOCATION_SCOPE: dict = {"location": {"$in": _worker_locations}} if _worker_locations else {}
+
 
 # ---------------------------------------------------------------------------
 # Job claim
@@ -85,15 +103,13 @@ async def claim_next_job() -> dict | None:
     now = datetime.now(UTC)
     stale_threshold = now - timedelta(minutes=5)
 
-    # NOTE: The claim filter intentionally omits the `location` shard key.
-    # On the current single-region Atlas M10+ cluster this is fine — there is
-    # only one shard so no scatter-gather occurs.  If the app is ever migrated
-    # to an Atlas Global Cluster with location-based sharding, add:
-    #   "location": os.environ["WORKER_LOCATION"]
-    # to this filter and set that env var per regional worker task so each
-    # worker only claims jobs for its own region.
+    # _LOCATION_SCOPE limits the claim to this region's locations. On an Atlas
+    # Global Cluster sharded by location, it also targets the claim at this
+    # region's zone instead of every shard (claiming without the full shard
+    # key needs MongoDB 7.1+).
     return await db[JOBS].find_one_and_update(
         {
+            **_LOCATION_SCOPE,
             "$or": [
                 # Unclaimed pending jobs within LLM retry budget whose backoff
                 # has elapsed. retry_after <= now covers both the no-backoff case
@@ -118,7 +134,7 @@ async def claim_next_job() -> dict | None:
                     "claimed_at": {"$lt": stale_threshold},
                     "$expr": {"$lt": ["$llm_attempt", "$max_llm_attempts"]},
                 },
-            ]
+            ],
         },
         {"$set": {"status": "processing", "claimed_at": now, "updated_at": now}},
         sort=[("created_at", 1)],  # FIFO
@@ -424,8 +440,10 @@ async def emit_metrics() -> None:
             if cloudwatch is None:
                 continue
             pending_count, processing_count = await asyncio.gather(
-                db[JOBS].count_documents({"status": "pending"}),
-                db[JOBS].count_documents({"status": "processing"}),
+                # Scoped so each region's PendingJobCount (which drives that
+                # region's worker autoscaling) counts only its own queue.
+                db[JOBS].count_documents({**_LOCATION_SCOPE, "status": "pending"}),
+                db[JOBS].count_documents({**_LOCATION_SCOPE, "status": "processing"}),
             )
             await asyncio.to_thread(
                 cloudwatch.put_metric_data,
@@ -466,6 +484,7 @@ async def cleanup_expired_jobs() -> None:
                 now = datetime.now(UTC)
                 job = await db[JOBS].find_one_and_update(
                     {
+                        **_LOCATION_SCOPE,
                         "status": {"$in": ["pending", "processing", "result_ready"]},
                         "created_at": {"$lt": deadline},
                     },
@@ -524,10 +543,11 @@ async def process_one_forever() -> None:
 
 async def main() -> None:
     log.info(
-        "worker.start concurrency=%d poll_interval=%ds region=%s",
+        "worker.start concurrency=%d poll_interval=%ds region=%s locations=%s",
         WORKER_CONCURRENCY,
         POLL_INTERVAL_SECONDS,
         _aws_region,
+        ",".join(_worker_locations) if _worker_locations else "all",
     )
 
     # Fail fast if MongoDB is unreachable — Motor defers connection errors to

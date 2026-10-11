@@ -232,6 +232,8 @@ resource "aws_ecs_task_definition" "worker" {
           { name = "AWS_REGION", value = var.aws_region },
           { name = "WORKER_CONCURRENCY", value = tostring(var.worker_concurrency) },
           { name = "WORKER_POLL_INTERVAL_SECONDS", value = tostring(var.worker_poll_interval_seconds) },
+          # Each regional worker only processes its own region's locations (see worker.py)
+          { name = "WORKER_SCOPE_TO_REGION", value = "true" },
           # CORS_ORIGINS and COOKIE_* not needed — worker has no HTTP server
           # REDIS_URL not needed — worker does not use Redis (rate limiting is API-side)
         ]

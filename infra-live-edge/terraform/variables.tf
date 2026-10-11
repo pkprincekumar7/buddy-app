@@ -118,7 +118,7 @@ variable "enable_cloudtrail" {
 # -- WAF ----------------------------------------------------------------------
 
 variable "enable_waf" {
-  description = "Enable WAF WebACL on CloudFront. Skipped on dev/sbx to avoid ~$5/mo WebACL + per-request charges."
+  description = "Enable WAF WebACL on CloudFront. Skipped on dev/sbx to avoid ~$10/mo (WebACL + 5 rules, prorated hourly) + per-request charges."
   type        = bool
   default     = true
 }

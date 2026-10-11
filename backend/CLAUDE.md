@@ -58,10 +58,10 @@ checks a file against this same list.
 
 - Flag missing test coverage on critical paths (auth, payment/limits, data-integrity logic) as a
   real finding even when it isn't actioned immediately — don't silently skip mentioning it.
-- `pytest`, `pytest-asyncio`, and `httpx` are already declared in `requirements-test.txt`, but no
-  test file exists anywhere in `backend/` yet — the tooling is installed and unused, the same gap
-  as the frontend's test setup. When adding tests, drive routes through `httpx.AsyncClient` (or
-  FastAPI's `TestClient`) against the app instance rather than calling router functions directly,
+- `pytest`, `pytest-asyncio`, and `httpx` are declared in `requirements-test.txt`; tests live in
+  `backend/tests/` (so far only `test_routing.py` — routes are still untested). When adding
+  tests, drive routes through `httpx.AsyncClient` (or FastAPI's `TestClient`) against the app
+  instance rather than calling router functions directly,
   and override dependencies with `app.dependency_overrides[...]` (e.g. swap `Db`/`CurrentParent`
   for a fake) instead of monkeypatching internals — this is the idiomatic FastAPI testing pattern
   and plays correctly with the `Annotated[Type, Depends(...)]` style already used throughout

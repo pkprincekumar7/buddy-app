@@ -97,11 +97,16 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
     # jobs: worker polling — find pending jobs whose backoff has elapsed (retry_after <= now),
     # then sort FIFO by created_at.  retry_after is included so the index covers the claim
     # query without a collection scan.
-    # Note: this index omits the shard key (location) because the worker processes jobs
-    # across all locations. On a sharded Atlas cluster this causes scatter-gather per claim —
-    # acceptable at current scale; add location to the index if claim latency becomes a concern.
+    # location is first because each regional worker scopes its claim to its own region's
+    # locations (REGION_TO_LOCATIONS in app/routing.py) — on an Atlas Global Cluster this also
+    # keeps the claim on that region's zone instead of fanning out to every shard.
     await db["jobs"].create_index(
-        [("status", ASCENDING), ("retry_after", ASCENDING), ("created_at", ASCENDING)]
+        [
+            ("location", ASCENDING),
+            ("status", ASCENDING),
+            ("retry_after", ASCENDING),
+            ("created_at", ASCENDING),
+        ]
     )
     # jobs: client polling — fetch by job_id scoped to user and location (auth + shard guard).
     # location is first so the query lands on the correct shard without scatter-gather.
@@ -119,14 +124,16 @@ async def init_indexes(db: AsyncIOMotorDatabase) -> None:
             ("status", ASCENDING),
         ]
     )
-    # jobs: stale claim recovery — find jobs stuck in processing
-    await db["jobs"].create_index([("status", ASCENDING), ("claimed_at", ASCENDING)])
+    # jobs: stale claim recovery — find jobs stuck in processing (location-scoped, same as above)
+    await db["jobs"].create_index(
+        [("location", ASCENDING), ("status", ASCENDING), ("claimed_at", ASCENDING)]
+    )
     # jobs: result_ready domain-write retry — the claim query for result_ready jobs filters
     # on domain_write_attempt which cannot use the (status, retry_after, created_at) index
     # because $expr bypasses index selection.  This partial index lets MongoDB satisfy
-    # the result_ready branch without a collection scan.
+    # the result_ready branch without a collection scan (location-scoped, same as above).
     await db["jobs"].create_index(
-        [("status", ASCENDING), ("domain_write_attempt", ASCENDING)],
+        [("location", ASCENDING), ("status", ASCENDING), ("domain_write_attempt", ASCENDING)],
         partialFilterExpression={"status": "result_ready"},
     )
     # jobs: TTL — auto-delete completed/failed jobs after 24h
