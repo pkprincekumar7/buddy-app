@@ -40,7 +40,8 @@ try {
 }
 const { regions, blocked_countries: blocked, countries } = data;
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-if (!isObject(regions)) fail('"regions" must be an object of AWS region → { atlas_zone, locations }');
+if (!isObject(regions))
+  fail('"regions" must be an object of AWS region → { atlas_zone, locations }');
 if (!Array.isArray(blocked)) fail('"blocked_countries" must be an array of country codes');
 if (!Array.isArray(countries)) fail('"countries" must be an array of { code, location, label }');
 
@@ -77,7 +78,8 @@ for (const code of blocked) {
 
 const seen = new Set();
 for (const entry of countries) {
-  if (!isObject(entry)) fail(`countries: every entry must be an object, got ${JSON.stringify(entry)}`);
+  if (!isObject(entry))
+    fail(`countries: every entry must be an object, got ${JSON.stringify(entry)}`);
   const { code, location, label } = entry;
   if (!CODE_RE.test(code ?? '')) fail(`invalid country code ${JSON.stringify(code)}`);
   if (seen.has(code)) fail(`country ${code} listed twice`);
@@ -101,7 +103,10 @@ const tsString = (s) => (s.includes("'") ? `"${s}"` : `'${s}'`);
 
 function renderPython() {
   // Match ruff format (line-length 100): one line if it fits, else wrapped.
-  const blockedSetLiteral = `{${[...blockedSet].sort().map((c) => `"${c}"`).join(', ')}}`;
+  const blockedSetLiteral = `{${[...blockedSet]
+    .sort()
+    .map((c) => `"${c}"`)
+    .join(', ')}}`;
   const blockedOneLine = `BLOCKED_COUNTRIES: frozenset[str] = frozenset(${blockedSetLiteral})`;
   const blockedLines =
     blockedOneLine.length <= 100
@@ -158,8 +163,8 @@ function renderLocationHint() {
     ' * Location per country, used only to compute the X-Client-Location header sent',
     " * on registration (see api/client.ts's `register` call). This is NEVER",
     " * authoritative — the account's real `location` field is always computed",
-    ' * server-side from the validated country_code, on whichever region\'s backend',
-    ' * actually receives the request (see Lambda@Edge\'s jwt-validator-lambda.js.tpl',
+    " * server-side from the validated country_code, on whichever region's backend",
+    " * actually receives the request (see Lambda@Edge's jwt-validator-lambda.js.tpl",
     ' * for how the header is consumed). A wrong hint only costs latency (the',
     ' * registration call lands on a sub-optimal region), never incorrect data.',
     ' */',
@@ -222,7 +227,9 @@ for (const [rel, content] of Object.entries(outputs)) {
 }
 
 if (CHECK && stale.length) {
-  console.error(`Stale generated files (run \`node scripts/sync-routing.mjs\`):\n  ${stale.join('\n  ')}`);
+  console.error(
+    `Stale generated files (run \`node scripts/sync-routing.mjs\`):\n  ${stale.join('\n  ')}`,
+  );
   process.exit(1);
 }
 console.log(
