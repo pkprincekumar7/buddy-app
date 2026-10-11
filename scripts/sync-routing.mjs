@@ -192,13 +192,33 @@ const outputs = {
   'frontend-app/src/lib/locationHint.ts': renderLocationHint(),
 };
 
+// Compares (and, unless --check, rewrites) one generated file. Reads and writes
+// go through a single file descriptor rather than separate path-based calls,
+// so the file can't be swapped between the check and the write (CWE-367 /
+// CodeQL js/file-system-race). Returns true if the file was stale.
+function syncFile(file, content) {
+  let fd;
+  try {
+    fd = fs.openSync(file, CHECK ? 'r' : fs.constants.O_RDWR | fs.constants.O_CREAT);
+  } catch (err) {
+    if (CHECK && err.code === 'ENOENT') return true; // missing counts as stale
+    throw err;
+  }
+  try {
+    if (fs.readFileSync(fd, 'utf8') === content) return false;
+    if (!CHECK) {
+      fs.ftruncateSync(fd, 0);
+      fs.writeSync(fd, content, 0, 'utf8');
+    }
+    return true;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 const stale = [];
 for (const [rel, content] of Object.entries(outputs)) {
-  const file = path.join(ROOT, rel);
-  const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
-  if (current === content) continue;
-  stale.push(rel);
-  if (!CHECK) fs.writeFileSync(file, content);
+  if (syncFile(path.join(ROOT, rel), content)) stale.push(rel);
 }
 
 if (CHECK && stale.length) {
