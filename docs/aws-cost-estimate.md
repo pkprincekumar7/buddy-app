@@ -135,16 +135,16 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 
 ## 6. WAF (us-east-1; stg + prod only)
 
-Confirmed (✓): $5.00/WebACL/month + $1.00/custom rule/month + $1.00/AWS managed rule group/month + $0.60/million requests. Config: 1 WebACL + 1 rate rule + 3 managed groups = **$9/month fixed**.
+Confirmed (✓): $5.00/WebACL/month + $1.00/custom rule/month + $1.00/AWS managed rule group/month + $0.60/million requests. Config: 1 WebACL + 2 custom rules (rate limit, geo block) + 3 managed groups = **$10/month fixed**. The WebACL and rule fees are prorated hourly (~$0.014/hour) — a WebACL that exists for part of a month is billed only for those hours.
 
 Kinesis Firehose WAF logging (✓, re-verified — previously mis-sourced as $0.029/GB, and even us-east-1's current rate is $0.080/GB): $0.0938/GB (Direct PUT, ap-south-1). prod only (`enable_waf_logging = true`).
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
-| Fixed base ($9/mo) | $0 | $0 | $9 | $9 | $9 | $9 | $9 | $9 | $9 |
+| Fixed base ($10/mo) | $0 | $0 | $10 | $10 | $10 | $10 | $10 | $10 | $10 |
 | Request cost ($0.60/M) | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $9 | $86 |
 | WAF Firehose logging | $0 | $0 | $0 | $0 | $0 | $0 | $3 | $19 | $188 |
-| **Subtotal** | **$0** | **$0** | **$9** | **$9** | **$9** | **$9** | **$13** | **$37** | **$283** |
+| **Subtotal** | **$0** | **$0** | **$10** | **$10** | **$10** | **$10** | **$14** | **$38** | **$284** |
 
 ---
 
@@ -264,7 +264,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | 3. ALB | $17 | $17 | $18 | $18 | $18 | $19 | $22 | $47 | $297 |
 | 4. ElastiCache | $14 | $14 | $58 | $117 | $304 | $304 | $608 | $1,823 | $3,646 |
 | 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $70 | $915 | $10,033 | $98,674 |
-| 6. WAF | $0 | $0 | $9 | $9 | $9 | $9 | $13 | $37 | $283 |
+| 6. WAF | $0 | $0 | $10 | $10 | $10 | $10 | $14 | $38 | $284 |
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $2 | $7 | $59 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 9. Secrets Manager | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
@@ -272,7 +272,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | 11. GuardDuty | $0 | $0 | $6 | $8 | $13 | $18 | $62 | $169 | $257 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$111** | **$111** | **$324** | **$531** | **$801** | **$1,001** | **$3,197** | **$17,280** | **$125,596** |
+| **Grand Total** | **$111** | **$111** | **$325** | **$532** | **$802** | **$1,002** | **$3,198** | **$17,281** | **$125,597** |
 
 ---
 

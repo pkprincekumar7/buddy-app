@@ -4,11 +4,22 @@
 # MUST be provisioned in us-east-1 (scope = CLOUDFRONT).
 #
 # Rules (evaluated in priority order):
+#    5 — Geo block: countries this business never serves (see local below)
 #   10 — AWS Managed: Core Rule Set (OWASP Top 10)
 #   20 — AWS Managed: Known Bad Inputs
 #   30 — AWS Managed: Amazon IP Reputation List (known malicious IPs)
 #   40 — Rate limit: 1 000 requests / 5 min per IP (blocks sustained abusers)
 # ---------------------------------------------------------------------------
+
+locals {
+  # Must equal BLOCKED_COUNTRIES in backend/app/routing.py — backend/tests/
+  # test_routing.py fails on drift. The backend refuses registration for these
+  # self-declared countries; this rule adds the IP-geolocation half of the
+  # control (a user in a blocked country can still *pick* another one). CN: AWS
+  # China partition required; the rest: comprehensive sanctions (OFAC/EAR).
+  # Not VPN-proof — IP geolocation never is.
+  waf_blocked_country_codes = ["BY", "CN", "CU", "IR", "KP", "RU", "SY"]
+}
 
 resource "aws_wafv2_web_acl" "frontend" {
   #checkov:skip=CKV2_AWS_31:WAF logging is configured conditionally via aws_wafv2_web_acl_logging_configuration in waf_logging.tf (prod only; enable_waf_logging = true)
@@ -20,6 +31,43 @@ resource "aws_wafv2_web_acl" "frontend" {
 
   default_action {
     allow {}
+  }
+
+  # Same shape as the backend's own 403 (detail.code = country_not_supported),
+  # so API clients can handle both the same way.
+  custom_response_body {
+    key          = "country_not_supported"
+    content_type = "APPLICATION_JSON"
+    content      = jsonencode({ detail = { code = "country_not_supported", msg = "This service is not available in your country." } })
+  }
+
+  # Priority 5 — evaluated first, so blocked traffic is rejected before it
+  # reaches the managed rule groups or the rate limit. Covers the whole
+  # distribution (SPA, assets, uploads and /api/*), not just registration.
+  rule {
+    name     = "GeoBlockUnservedCountries"
+    priority = 5
+
+    action {
+      block {
+        custom_response {
+          response_code            = 403
+          custom_response_body_key = "country_not_supported"
+        }
+      }
+    }
+
+    statement {
+      geo_match_statement {
+        country_codes = local.waf_blocked_country_codes
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.app_name}-waf-geo-block-${var.environment}"
+      sampled_requests_enabled   = true
+    }
   }
 
   rule {

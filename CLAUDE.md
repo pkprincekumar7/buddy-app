@@ -35,7 +35,7 @@ uvicorn app.main:app --reload --port 8000   # dev server (matches Dockerfile's p
 python worker.py                            # background job worker
 ruff check .                                # lint (ruff format . to auto-format)
 mypy app                                    # type check
-pytest                                      # tests — pytest/pytest-asyncio/httpx installed, no test files exist yet
+pytest                                      # tests (backend/tests/)
 ```
 
 Frontend (run from `frontend/`):
