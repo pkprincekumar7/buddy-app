@@ -211,8 +211,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     # through this policy at all.
     response_headers_policy_id = aws_cloudfront_response_headers_policy.api_security.id
 
+    # origin-request, not viewer-request: only an origin-request event can
+    # change request.origin — in viewer-request CloudFront silently ignores
+    # it and every call lands on the bootstrap region's ALB.
     lambda_function_association {
-      event_type   = "viewer-request"
+      event_type   = "origin-request"
       lambda_arn   = aws_lambda_function.jwt_validator.qualified_arn
       include_body = false
     }

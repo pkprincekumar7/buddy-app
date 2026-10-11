@@ -180,6 +180,11 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     assert.equal(res.status, undefined)
   })
 
+  await t.test('rerouting also rewrites Host to the selected ALB', async () => {
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/me', { cookies: { access_token: signJwt({ location: 'eu' }) } }))
+    assert.equal(res.headers['host'][0].value, 'alb.eu-west-1.example.com')
+  })
+
   await t.test('authenticated /api/* call with a valid token routes by location', async () => {
     const accessToken = signJwt({ sub: 'u1', type: 'access', location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
     const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))

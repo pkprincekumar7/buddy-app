@@ -1,8 +1,8 @@
 # ---------------------------------------------------------------------------
 # Lambda@Edge — RS256 JWT validation + location-based backend routing
 #
-# Validates the access_token cookie on every /api/* viewer request before
-# the request is forwarded to the ALB. Invalid or missing tokens are
+# Validates the access_token cookie on every /api/* request (as an
+# origin-request trigger — see cloudfront.tf) before it is forwarded to the ALB. Invalid or missing tokens are
 # rejected with 401 at the nearest CloudFront edge location — the request
 # never consumes ALB or ECS capacity.
 #
