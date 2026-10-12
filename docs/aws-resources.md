@@ -194,7 +194,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | Assets S3 Bucket Policy (CloudFront OAC) | `aws_s3_bucket_policy` | ✅ | ✅ | ✅ | ✅ |
 | Uploads S3 Bucket Policy (CloudFront OAC) ³ | `aws_s3_bucket_policy` | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 |
 
-> ³ One policy per region in `var.backend_regions` (the `terraform-live-edge`/`terraform-live-all` workflow's region-selection input), not per environment — up to 3 (`ap-south-1`, `eu-west-1`, `us-east-1`). Counted as **×1** in the Summary totals below, matching the current single-region default (`["ap-south-1"]`).
+> ³ One policy per region in `var.backend_regions` (the `terraform-live-edge`/`terraform-live-all` workflow's region-selection input), not per environment — up to 3 (`ap-south-1`, `eu-west-1`, `us-east-1`). Counted as **×1** in the Summary totals below, matching a single-region deployment (e.g. `["ap-south-1"]`; the input is required, with no default).
 
 ### Lambda@Edge
 
@@ -262,7 +262,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 
 ## Summary — Resource Count per Environment
 
-Counts below are for **one backend region** (the current single-region default, `["ap-south-1"]`) plus one application each of edge, frontend, and scheduler.
+Counts below are for **one backend region** (a single-region deployment, e.g. `["ap-south-1"]`) plus one application each of edge, frontend, and scheduler.
 
 | Category | dev | sbx | stg | prod |
 |----------|:---:|:---:|:---:|:----:|

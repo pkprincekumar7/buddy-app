@@ -31,7 +31,7 @@ _ALLOWED_WRITE_BACK_COLLECTIONS = {
     "ninety_day_plans",
 }
 
-_SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}$")
+_SAFE_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]{0,99}\Z")  # \Z: $ allows a trailing "\n"
 # Dots in a field path are interpreted by MongoDB $set as nested sub-field
 # writes (e.g. "plan.months" updates doc.plan.months, not a literal key).
 # This is intentional for nested write-back, but callers MUST only send

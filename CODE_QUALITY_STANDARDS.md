@@ -33,7 +33,6 @@ The following mandatory checks are listed as blocking in the standards but are *
 
 | Gap | Current state | Required state |
 |---|---|---|
-| Coverage gate | `--cov-fail-under=0` (disabled) | Per-layer minimums (see Section 8) |
 | mypy strict mode | `strict = false` | `strict = true` |
 | CODEOWNERS auto-reviewer | File missing | `.github/CODEOWNERS` required |
 | Branch protection rules | Not configured | 1 review, CI required, no force-push to main |
@@ -234,7 +233,7 @@ uv run pytest
 
 Create `backend/.python-version`:
 ```
-3.12
+3.13
 ```
 `uv` reads this file automatically. CI uses it via `uv python install`.
 
@@ -266,7 +265,7 @@ Currently `strict = false`. Change:
 
 ```toml
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 strict = true
 ignore_missing_imports = true
 exclude = ["tests/"]
@@ -532,17 +531,17 @@ Cost diffs are advisory — do not block merge, but cost changes > $50/month mus
 
 ### Base image digest pinning
 
-Current Dockerfiles use mutable tags (`FROM python:3.12-slim`, `FROM node:22-alpine`). Pin by digest:
+Current Dockerfiles use mutable tags (`FROM python:3.13-slim`, `FROM node:22-alpine`). Pin by digest:
 
 ```dockerfile
 # Get the digest:
-# docker pull python:3.12-slim && docker inspect python:3.12-slim --format='{{index .RepoDigests 0}}'
+# docker pull python:3.13-slim && docker inspect python:3.13-slim --format='{{index .RepoDigests 0}}'
 
 # Correct — pinned by digest
-FROM python:3.12-slim@sha256:<digest>
+FROM python:3.13-slim@sha256:<digest>
 
 # Wrong — tag is mutable
-FROM python:3.12-slim
+FROM python:3.13-slim
 ```
 
 Update pinned digests as part of the monthly dependency update cycle. This is a supply chain attack vector — tags can be moved by a compromised upstream registry.
@@ -555,13 +554,12 @@ No tests currently exist in the backend. No frontend test setup exists. This ent
 
 ### Backend — Pytest
 
-**Tools: pytest + pytest-asyncio + pytest-cov + coverage.py**
+**Tools: pytest + pytest-cov + coverage.py** (no pytest-asyncio — tests run async code with `asyncio.run(...)`)
 
 Add to `requirements-test.txt` (or `uv add --dev`):
 ```
 pytest
 pytest-cov
-pytest-asyncio
 httpx
 hypothesis
 ```
@@ -569,7 +567,6 @@ hypothesis
 Configure `pyproject.toml`:
 ```toml
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "unit: pure unit tests",
@@ -585,10 +582,9 @@ fail_under = 80
 show_missing = true
 ```
 
-Update CI `pytest` command:
+CI and `check.sh` run (already enforced — line + branch coverage of `app/` is ~99.96%):
 ```bash
-# Change from --cov-fail-under=0 to:
-pytest --cov=app --cov-report=term-missing --cov-fail-under=80 -q
+pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
 ```
 
 **Coverage thresholds by layer:**
@@ -1073,7 +1069,6 @@ All actions currently use version tags. See Section 11 for the required SHA pinn
 Add to the pipeline once tools are configured:
 
 **On merge to main (currently not running):**
-- pytest (integration) against test MongoDB — currently pytest runs but `--cov-fail-under=0` (gate disabled, fix per Section 8)
 - Playwright E2E against staging (Section 8)
 - k6 load test against staging (Section 10)
 - Lighthouse CI / Core Web Vitals against staging (Section 10)

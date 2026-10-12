@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app import models
 from app.auth_utils import decode_token, extract_token
 from app.database import get_db
-from app.routing import LOCATION_RE
+from app.routing import location_from_claims
 from app.settings import Settings, get_settings
 
 # These two schemes exist solely so FastAPI advertises the auth requirement in
@@ -51,15 +51,12 @@ TokenClaims = Annotated[dict, Depends(get_token_claims)]
 async def get_current_user(
     payload: TokenClaims,
     db: Db,
-    settings: SettingsDep,
 ) -> dict:
     user_id = payload["sub"]
-    raw_location = payload.get("location", settings.default_location)
-    location = (
-        raw_location
-        if isinstance(raw_location, str) and LOCATION_RE.match(raw_location)
-        else settings.default_location
-    )
+    # Every issued token carries a valid location; one without is invalid.
+    location = location_from_claims(payload)
+    if location is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     user = await db[models.USERS].find_one({"_id": user_id, "location": location})
     if not user:

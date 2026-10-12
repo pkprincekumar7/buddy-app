@@ -29,7 +29,6 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
-      DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
       JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
@@ -83,7 +82,6 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
       MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
-      DEFAULT_LOCATION: ${DEFAULT_LOCATION:-us}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}

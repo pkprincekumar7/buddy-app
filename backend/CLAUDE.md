@@ -58,20 +58,44 @@ checks a file against this same list.
 
 - Flag missing test coverage on critical paths (auth, payment/limits, data-integrity logic) as a
   real finding even when it isn't actioned immediately — don't silently skip mentioning it.
-- `pytest`, `pytest-asyncio`, and `httpx` are declared in `requirements-test.txt`; tests live in
-  `backend/tests/` (so far only `test_routing.py` — routes are still untested). When adding
-  tests, drive routes through `httpx.AsyncClient` (or FastAPI's `TestClient`) against the app
-  instance rather than calling router functions directly,
-  and override dependencies with `app.dependency_overrides[...]` (e.g. swap `Db`/`CurrentParent`
-  for a fake) instead of monkeypatching internals — this is the idiomatic FastAPI testing pattern
-  and plays correctly with the `Annotated[Type, Depends(...)]` style already used throughout
-  `app/deps.py`.
+- `pytest`, `pytest-cov` and `httpx` are declared in `requirements-test.txt` (no pytest-asyncio:
+  tests run async code with `asyncio.run(...)`, so the plugin isn't needed); tests live in
+  `backend/tests/`, one file per module (`test_<module>.py`; schemas as `test_schemas_<name>.py`).
+  Modules with a test file are at 100% line + branch coverage (except one branch in `main.py`'s
+  session-cleanup loop that real Motor can't reach) — keep them there, with assertions on
+  behaviour (stored documents, responses, logs), not just executed lines.
+- Drive routes through `httpx.AsyncClient` (or FastAPI's `TestClient`) against the app instance
+  rather than calling router functions directly, and override dependencies with
+  `app.dependency_overrides[...]` (e.g. swap `get_db` for an in-memory fake, `get_settings` for a
+  `settings.model_copy(update=...)`) instead of monkeypatching internals — this is the idiomatic
+  FastAPI testing pattern and plays correctly with the `Annotated[Type, Depends(...)]` style
+  already used throughout `app/deps.py`. Reset `limiter`/`user_limiter` between tests.
+- Fake only at the external boundary, and keep the real library in the loop where possible:
+  provider SDK clients in `llm_service`, a real boto3 client with botocore's `Stubber`, real
+  signed Google ID tokens with only the cert download patched.
+- Don't `importlib.reload` a module that defines an exception class other code catches (e.g.
+  `llm_service.LLMConfigError`) — it mints a new class and breaks every `except` elsewhere; load a
+  fresh copy with `importlib.util.spec_from_file_location` instead (see `test_llm_service.py`).
+- Mutation testing is manual-only (`docs/mutation-testing.md`). Never run `mutmut run` or
+  `tools/mutate_handlers.py` with a module/`--all` — they take hours, and both refuse to
+  start under Claude Code. Only `python tools/mutate_handlers.py --check` (seconds) is
+  allowed: run it after editing a route handler or `main.py`, and update any mutant in
+  `tools/handler_mutants/` whose source text changed; add mutants for new decisions,
+  filters or limits.
+- Real-Mongo/Redis integration tests (`test_mongo_integration.py`, the live-Redis tests) are marked
+  `@pytest.mark.live_service` and run only when `MONGODB_TEST_URI`/`REDIS_URL` are set — CI sets
+  both, plus `REQUIRE_LIVE_SERVICES=1`, which turns a skipped `live_service` test into a failure
+  (`tests/conftest.py`). Mark any new real-service test the same way. Never point
+  `MONGODB_TEST_URI` at a real cluster: each test creates and drops a throwaway `buddy_test_*`
+  database.
 
 ## Error handling
 
 - A global exception handler stack already exists in `app/main.py`: `RequestValidationError` →
-  422 `{"detail": exc.errors()}`, `HTTPException` → default Starlette handling, catch-all
-  `Exception` → logged via `log.exception` and a generic 500 `{"detail": "Internal server error"}`.
+  422 `{"detail": jsonable_encoder(exc.errors())}` (encoded, as FastAPI's own handler does — a
+  custom `field_validator`'s error carries the raw exception in `ctx.error`), `HTTPException` →
+  default Starlette handling, catch-all `Exception` → logged via `log.exception` and a generic
+  500 `{"detail": "Internal server error"}`.
   Every endpoint gets this consistent response shape for free — don't build a parallel
   error-formatting path in a router.
 - Prefer a dedicated exception class over threading error state through return values when the

@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 # Relative path: starts with a single /, no control chars, no protocol chars (:)
 # and no characters that enable HTML/script injection or open-redirect via //host.
-_SAFE_PATH_RE = re.compile(r'^/(?!/)[^\x00-\x1f\\<>"\':`]*$')
+# Anchored with \Z, not $ — Python's $ also matches before a trailing newline.
+_SAFE_PATH_RE = re.compile(r'^/(?!/)[^\x00-\x1f\x7f\\<>"\':`]*\Z')
 
 
 class UserPreferences(BaseModel):

@@ -24,7 +24,6 @@ class ChildActivity(BaseModel):
 class CompletedGrowthArea(BaseModel):
     area_id: str
     area_name: str
-    area_color: str | None = None
     answers: dict[str, str] = Field(default_factory=dict)
     recommendations: list[str] | None = None
     child_activity: ChildActivity | None = None
@@ -84,7 +83,6 @@ _GROWTH_AREA_MAX_BYTES = 65_536  # 64 KB cap on the total serialised dict payloa
 class AppendGrowthAreaRequest(BaseModel):
     area_id: str = Field(max_length=50)
     area_name: str = Field(max_length=100)
-    area_color: str | None = Field(None, max_length=100)
     answers: dict[str, Annotated[str, Field(max_length=1000)]] = Field(
         default_factory=dict, max_length=100
     )

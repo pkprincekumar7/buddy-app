@@ -32,3 +32,6 @@ frontend/retire-jsrepo.json
 # Terraform-generated Lambda zips — rebuilt on every plan/apply
 infra-live-edge/terraform/*.zip
 infra-live-scheduler/lambda/*.zip
+
+# mutmut working copy (backend mutation testing)
+backend/mutants/

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from email_validator import EmailNotValidError
 from email_validator import validate_email as _validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError
 
@@ -25,7 +26,12 @@ from app.auth_utils import (
 )
 from app.deps import CurrentUser, Db, SettingsDep
 from app.limiter import limiter, rate_limit, user_limiter
-from app.routing import BLOCKED_COUNTRIES, COUNTRY_TO_REGION, LOCATION_RE, resolve_region
+from app.routing import (
+    BLOCKED_COUNTRIES,
+    COUNTRY_TO_REGION,
+    location_from_claims,
+    resolve_region,
+)
 from app.services.google_auth import verify_google_token
 
 router = APIRouter(tags=["auth"])
@@ -52,6 +58,15 @@ def _reject_blocked_country(country_code: str) -> None:
                 "msg": "This service is not available in your country.",
             },
         )
+
+
+def _reject_and_clear_cookies(status_code: int, detail: str) -> JSONResponse:
+    """An error response that also deletes the auth cookies. Raising HTTPException
+    can't do this: its error response is built fresh, so cookie deletions set on
+    the route's injected Response would be dropped."""
+    res = JSONResponse(status_code=status_code, content={"detail": detail})
+    clear_auth_cookies(res)
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +348,7 @@ async def login(
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    location = user.get("location", settings.default_location)
+    location = user["location"]
     log.info("auth.login.ok id=%s location=%s", user["_id"], location)
     tokens = await set_auth_cookies(response, user["_id"], location, db)
     return AuthTokenResponse(access_token=tokens.access_token, refresh_token=tokens.refresh_token)
@@ -350,7 +365,6 @@ async def refresh_tokens(
     request: Request,
     response: Response,
     db: Db,
-    settings: SettingsDep,
 ):
     refresh_token_val = extract_token(request, "refresh_token")
     if not refresh_token_val:
@@ -358,9 +372,8 @@ async def refresh_tokens(
 
     refresh_payload = decode_token_of_type(refresh_token_val, "refresh")
     if not refresh_payload:
-        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=invalid_refresh_token")
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return _reject_and_clear_cookies(401, "Invalid token")
 
     # Access token is optional — the browser deletes it when it expires (max_age),
     # so it may be absent even when the refresh token is still valid. If present,
@@ -369,78 +382,67 @@ async def refresh_tokens(
     if access_token:
         access_payload = decode_access_token_ignore_exp(access_token)
         if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
-            clear_auth_cookies(response)
             log.warning(
                 "auth.refresh.failed reason=subject_mismatch sub=%s", refresh_payload.get("sub")
             )
-            raise HTTPException(status_code=401, detail="Token mismatch")
+            return _reject_and_clear_cookies(401, "Token mismatch")
 
     jti = refresh_payload.get("jti")
     if not jti:
-        clear_auth_cookies(response)
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return _reject_and_clear_cookies(401, "Invalid token")
 
     uid = refresh_payload.get("sub")
     if not uid:
-        clear_auth_cookies(response)
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return _reject_and_clear_cookies(401, "Invalid token")
     # Derive location from the refresh token — the access token may be absent.
-    raw_location = refresh_payload.get("location", settings.default_location)
-    location = (
-        raw_location
-        if isinstance(raw_location, str) and LOCATION_RE.match(raw_location)
-        else settings.default_location
-    )
+    location = location_from_claims(refresh_payload)
+    if location is None:
+        log.warning("auth.refresh.failed reason=invalid_location sub=%s", uid)
+        return _reject_and_clear_cookies(401, "Invalid token")
 
     session = await db[models.SESSIONS].find_one({"_id": jti, "user_id": uid, "location": location})
     if not session:
-        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=jti_not_found sub=%s", uid)
-        raise HTTPException(status_code=401, detail="Session expired or already logged out")
+        return _reject_and_clear_cookies(401, "Session expired or already logged out")
 
     expires_at = session["expires_at"]
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
     if expires_at < datetime.now(UTC):
         await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=db_expiry sub=%s", uid)
-        raise HTTPException(status_code=401, detail="Session expired")
+        return _reject_and_clear_cookies(401, "Session expired")
 
     # Fetch the user and enforce token revocation.  This mirrors get_current_user so
     # that revoking tokens (e.g. on account compromise) also blocks refresh flows and
     # prevents an attacker from minting new access tokens with a stolen refresh cookie.
     refresh_user = await db[models.USERS].find_one({"_id": uid, "location": location})
     if not refresh_user:
-        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=user_not_found sub=%s", uid)
-        raise HTTPException(status_code=401, detail="User not found")
+        return _reject_and_clear_cookies(401, "User not found")
 
     # Checked before tokens_revoked_at (same order as get_current_user) so a locked
     # account gets this clearer message instead of the generic "Session revoked".
     if refresh_user.get("is_locked"):
         await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-        clear_auth_cookies(response)
         log.warning("auth.refresh.failed reason=account_locked sub=%s", uid)
-        raise HTTPException(
-            status_code=403, detail="Your account has been locked. Please contact support."
+        return _reject_and_clear_cookies(
+            403, "Your account has been locked. Please contact support."
         )
 
     if refresh_user.get("tokens_revoked_at") is not None:
         iat = refresh_payload.get("iat")
         if iat is None:
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-            clear_auth_cookies(response)
-            raise HTTPException(status_code=401, detail="Session revoked")
+            return _reject_and_clear_cookies(401, "Session revoked")
         token_issued_at = datetime.fromtimestamp(iat, tz=UTC)
         revoked_at = refresh_user["tokens_revoked_at"]
         if revoked_at.tzinfo is None:
             revoked_at = revoked_at.replace(tzinfo=UTC)
         if token_issued_at <= revoked_at:
             await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
-            clear_auth_cookies(response)
             log.warning("auth.refresh.revoked sub=%s", uid)
-            raise HTTPException(status_code=401, detail="Session revoked")
+            return _reject_and_clear_cookies(401, "Session revoked")
 
     # Insert new session before deleting old: if the process crashes after the insert
     # but before the HTTP response is sent, the client retries with the old cookies
@@ -460,7 +462,6 @@ async def logout(
     request: Request,
     response: Response,
     db: Db,
-    settings: SettingsDep,
 ):
     refresh_token_val = extract_token(request, "refresh_token")
     if refresh_token_val:
@@ -470,16 +471,13 @@ async def logout(
             if access_token:
                 access_payload = decode_access_token_ignore_exp(access_token)
                 if access_payload and access_payload.get("sub") != refresh_payload.get("sub"):
-                    clear_auth_cookies(response)
-                    raise HTTPException(status_code=401, detail="Token mismatch")
-            raw_loc = refresh_payload.get("location", "")
-            location = (
-                raw_loc
-                if isinstance(raw_loc, str) and LOCATION_RE.match(raw_loc)
-                else settings.default_location
-            )
-            await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
+                    return _reject_and_clear_cookies(401, "Token mismatch")
+            # A token without a valid location can't name its session; logout
+            # still succeeds and clears the cookies.
+            if location := location_from_claims(refresh_payload):
+                await db[models.SESSIONS].delete_one({"_id": jti, "location": location})
     clear_auth_cookies(response)
+    return None
 
 
 @router.post(
@@ -530,8 +528,7 @@ async def google_auth(
                 status_code=403,
                 detail="Your account has been locked. Please contact support.",
             )
-        location = existing.get("location", settings.default_location)
-        tokens = await set_auth_cookies(response, existing["_id"], location, db)
+        tokens = await set_auth_cookies(response, existing["_id"], existing["location"], db)
     else:
         if not await db[models.ALLOWED_EMAILS].find_one({"_id": email.lower()}):
             raise HTTPException(status_code=403, detail="Registration is not open.")
@@ -632,7 +629,7 @@ async def google_auth(
                 tokens = await set_auth_cookies(
                     response,
                     race_user["_id"],
-                    race_user.get("location", settings.default_location),
+                    race_user["location"],
                     db,
                 )
                 return AuthTokenResponse(
@@ -696,7 +693,7 @@ async def delete_account(
         raise HTTPException(status_code=400, detail="Email confirmation does not match")
 
     user_id = user["_id"]
-    location = user.get("location", settings.default_location)
+    location = user["location"]
     now = datetime.now(UTC)
 
     # TODO(M10+): Wrap all steps below in a single multi-document transaction once

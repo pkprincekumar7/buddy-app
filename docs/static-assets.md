@@ -267,7 +267,7 @@ The browser uploads directly to S3 via presigned URL. Without CORS, the browser 
 
 1. Click the bucket → **Objects** tab → **Create folder** → name it `uploads` → **Create folder**
 
-Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_upload_key()` in `backend/app/services/s3_uploads.py` always leads with the app's sharding `location` value — e.g. `us` locally by default, per `DEFAULT_LOCATION` — not the AWS region) — the `<location>/<child_id>` subdirectories are created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
+Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_upload_key()` in `backend/app/services/s3_uploads.py` always leads with the user's sharding `location` value — e.g. `eu` for a user registered from Germany, assigned from their country at registration — not the AWS region) — the `<location>/<child_id>` subdirectories are created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
 
 ### Deployed bucket setup (one-time, per environment)
 

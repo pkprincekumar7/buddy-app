@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # Git metadata baked in at build time — no .git directory or git binary needed.
 # CI passes real values via --build-arg; local/scan builds default to "unknown".
@@ -29,7 +29,12 @@ ENV GIT_COMMITTED_AT=$GIT_COMMITTED_AT
 ENV GIT_TAG=$GIT_TAG
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip pinned (hadolint DL3013) — bump it deliberately, like any other dependency.
+# Then removed: the app never runs pip, and pip carries its own vendored copies of
+# urllib3/msgpack/setuptools that image scanners flag (and which we can't upgrade).
+RUN python -m pip install --no-cache-dir pip==26.2.1 \
+    && pip install --no-cache-dir -r requirements.txt \
+    && python -m pip uninstall -y pip
 
 COPY backend/app/ ./app/
 COPY backend/worker.py .

@@ -40,7 +40,6 @@ on:
       backend_regions:
         description: "Pick the FULL set of active regions (not just the new one). Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        default: '["ap-south-1"]'
         type: choice
         options:
           - '["ap-south-1"]'
@@ -60,8 +59,7 @@ on:
         required: true
       backend_regions:
         type: string
-        required: false
-        default: '["ap-south-1"]'
+        required: true
 
 permissions:
   id-token: write

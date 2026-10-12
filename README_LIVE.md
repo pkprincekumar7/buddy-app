@@ -161,7 +161,7 @@ Environment secrets are configured in **GitHub → Settings → Environments** (
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | `terraform-live-backend` | ACM cert in `ap-south-1` covering the internal ALB subdomain |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | `terraform-live-edge` | ACM cert in `us-east-1` for CloudFront (must be in `us-east-1`) |
 | `VITE_GOOGLE_CLIENT_ID` | `deploy-live-frontend` | Frontend env var: Google OAuth client ID |
-| `JWT_SECRET` | `terraform-live-backend` | Injected into Secrets Manager (required) |
+| `JWT_PRIVATE_KEY` | `terraform-live-backend` | RSA private key (PEM) — injected into Secrets Manager (required) |
 | `GOOGLE_CLIENT_ID` | `terraform-live-backend` | Injected into Secrets Manager (required) |
 | `OPENAI_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (required) |
 | `ANTHROPIC_API_KEY` | `terraform-live-backend` | Injected into Secrets Manager (optional — falls back to `REPLACE_ME` if not set) |
@@ -241,7 +241,7 @@ ECS tasks run in public subnets with `assign_public_ip = true`; outbound traffic
 - **ECR**: private repository in `ap-south-1`; `scan_on_push = true`; AES256 encryption at rest; lifecycle policy — keep last 10 tagged images, expire untagged after 1 day
 - **ElastiCache Redis 7.1**: single-node (`num_cache_clusters = 1`), no automatic failover, no Multi-AZ; at-rest encryption (AES256); in-transit TLS required (`transit_encryption_mode = "required"`); no auth token — connections are VPC-internal only so TLS alone is sufficient (acceptable for ephemeral rate-limit counters; revisit if persistent or sensitive data is ever cached); used for LLM rate-limit counters only (ephemeral, no persistence needed)
 - **CloudWatch Logs**: log group `/ecs/{APP_NAME}/backend/{env}`, 30-day retention; Container Insights metrics also collected
-- **Secrets Manager**: one JSON secret holding `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
+- **Secrets Manager**: one JSON secret holding `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `MONGODB_URI`; `recovery_window_in_days = 0` (hard-deleted immediately on destroy — ⚠ irreversible, ensure secrets are backed up before running `terraform destroy`); Terraform writes `REPLACE_ME` placeholder values on resource creation; the workflow auto-populates real values from GitHub secrets on the **first** apply only (when placeholders are detected) — subsequent applies skip the update, preserving any manually rotated values; `ignore_changes = [secret_string]` prevents Terraform itself from overwriting values
 - **Backend S3 bucket** (pre-existing, `us-east-1`): ECS task role has `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on this bucket; passed to the container as `ASSETS_BUCKET_NAME` env var; static activity-game images are stored under the `app-assets/` prefix and served via CloudFront; separate from the frontend assets bucket
 - **IAM**: execution role — `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` and `secretsmanager:DescribeSecret`; task role — inline S3 policy on backend bucket + four specific `ssmmessages:` actions for ECS Exec (see ECS Exec bullet above)
 - **Route 53 A record**: `{SUBDOMAIN}-internal-{env}.{DOMAIN_NAME}` → ALB (prod omits the `-{env}` suffix)
@@ -274,8 +274,8 @@ Terraform manages `aws_ecs_task_definition` as a normal resource with no `ignore
 | Category | Fields |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `DEFAULT_REGION`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
-| Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (pointers only — not the secret values themselves) |
+| Plain env vars | `MONGODB_DB_NAME`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `COOKIE_SECURE`, `COOKIE_SAMESITE`, `BEHIND_PROXY`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` (derived), `COOKIE_DOMAIN` (derived) |
+| Secrets references | ARN pointers to Secrets Manager for `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `REDIS_AUTH_TOKEN` (pointers only — not the secret values themselves; the worker task gets only `MONGODB_URI`, `JWT_PRIVATE_KEY` and the three LLM keys) |
 | Infrastructure | Log group, health check command/intervals, execution role ARN, task role ARN, network mode |
 | Image | Terraform always sets `:latest`; the deploy workflow overwrites this with `:<git-sha>` before activating any revision — so `:latest` never runs in practice after the first deploy |
 
@@ -343,7 +343,7 @@ Backend app secrets are auto-populated from GitHub environment secrets on the **
 
 `recovery_window_in_days = 0` means the secret is **hard-deleted immediately** on `terraform destroy` — no 30-day window — allowing clean re-applies without naming conflicts. ⚠ This deletion is irreversible — ensure all secret values are backed up before running destroy.
 
-The required keys (`JWT_SECRET`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `MONGODB_URI`) are validated before apply. The optional LLM keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) fall back to `REPLACE_ME` if not set — the app will start but those providers will be unavailable.
+The required keys (`JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `MONGODB_URI`) are validated before apply. The optional LLM keys (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) fall back to `REPLACE_ME` if not set — the app will start but those providers will be unavailable.
 
 > **Note:** `CORS_ORIGINS`, `COOKIE_DOMAIN`, and `SUBDOMAIN_INTERNAL` are all **derived automatically** by the workflow from `SUBDOMAIN` + `environment` + `DOMAIN_NAME` — none need to be set as separate secrets. All follow the same prod/non-prod FQDN logic as CloudFront (`CORS_ORIGINS = https://{fqdn}`, `COOKIE_DOMAIN = {fqdn}`, `SUBDOMAIN_INTERNAL = {SUBDOMAIN}-internal`). They are plain ECS task definition env vars, not stored in Secrets Manager.
 
@@ -354,7 +354,7 @@ aws secretsmanager put-secret-value \
   --secret-id "{APP_NAME}/{env}/backend-secrets" \
   --region ap-south-1 \
   --secret-string '{
-    "JWT_SECRET":         "...",
+    "JWT_PRIVATE_KEY":    "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
     "GOOGLE_CLIENT_ID":   "...",
     "OPENAI_API_KEY":     "sk-...",
     "ANTHROPIC_API_KEY":  "sk-ant-...",

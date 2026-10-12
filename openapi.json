@@ -2161,18 +2161,6 @@
             "maxLength": 100,
             "title": "Area Name"
           },
-          "area_color": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Area Color"
-          },
           "answers": {
             "additionalProperties": {
               "type": "string",
@@ -3175,17 +3163,6 @@
           "area_name": {
             "type": "string",
             "title": "Area Name"
-          },
-          "area_color": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Area Color"
           },
           "answers": {
             "additionalProperties": {

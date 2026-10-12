@@ -24,7 +24,7 @@ There are no schema migrations — MongoDB collections and indexes are created a
 
 ## Local development (without Docker)
 
-Requires **Python 3.12** and **Node.js 22** (versions used by the Docker images).
+Requires **Python 3.13** and **Node.js 22** (versions used by the Docker images).
 
 - Start a local MongoDB instance (or use Atlas) and set `MONGODB_URI` in `backend/.env` — see `backend/.env.example`.
 - Backend:

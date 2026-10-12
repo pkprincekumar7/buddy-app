@@ -10,9 +10,8 @@ variable "aws_region" {
 }
 
 variable "target_aws_regions" {
-  description = "The complete set of AWS regions passed to terraform-live-all.yml on every scheduled run. Exactly one start+stop schedule pair is created (not one per region) — terraform-live-all.yml's backend_regions must always receive the full intended set in a single dispatch, since infra-live-edge is one shared distribution per environment and a partial set would make it destroy whichever regions were left out. Controlled via workflow input target_aws_regions, not tfvars."
+  description = "The complete set of AWS regions passed to terraform-live-all.yml on every scheduled run. Exactly one start+stop schedule pair is created (not one per region) — terraform-live-all.yml's backend_regions must always receive the full intended set in a single dispatch, since infra-live-edge is one shared distribution per environment and a partial set would make it destroy whichever regions were left out. Controlled via workflow input target_aws_regions, not tfvars. Required — no default, so a run that doesn't pass it (TF_VAR_target_aws_regions) fails instead of silently assuming a region."
   type        = list(string)
-  default     = ["ap-south-1"]
 
   validation {
     condition     = length(var.target_aws_regions) > 0 && alltrue([for r in var.target_aws_regions : contains(["ap-south-1", "us-east-1", "eu-west-1"], r)])
@@ -62,6 +61,13 @@ variable "schedule_enabled" {
   description = "Enable or disable the EventBridge schedules; controlled via workflow input schedule_enabled, not tfvars."
   type        = bool
   default     = false
+
+  # The stop schedule runs a full destroy of the environment every night —
+  # never acceptable for prod. (Cross-variable validation needs Terraform >= 1.9.)
+  validation {
+    condition     = !(var.schedule_enabled && var.environment == "prod")
+    error_message = "schedule_enabled must be false for prod: the stop schedule destroys the whole environment nightly."
+  }
 }
 
 variable "start_schedule_expression" {

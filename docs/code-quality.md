@@ -102,7 +102,7 @@ brew install terraform-linters/tap/tflint
 |---|---|---|---|
 | 1 | `ruff check` | ruff 0.11.2 | `backend/` — linting (unused imports, bugbear, naming, …) |
 | 2 | `ruff format` | ruff 0.11.2 | `backend/` — formatting (black-compatible, line-length 100) |
-| 3 | `mypy` | mypy 1.15.0 | `backend/app/` + `backend/tools/` — static type checking (Python 3.12) |
+| 3 | `mypy` | mypy 1.15.0 | `backend/app/` + `backend/tools/` — static type checking (Python 3.13) |
 | 4 | `eslint` | ESLint (via npm) | `frontend/src/**` (excl. `components/ui/`) — React/hooks rules, unused imports, security |
 | 5 | `prettier` | Prettier (devDependency) | `frontend/src/**` — JS/JSX/CSS formatting; Tailwind classes auto-sorted (`prettier-plugin-tailwindcss`) |
 | 6 | `typecheck` | tsc (via npm) | `frontend/src/**` — plain TypeScript type checking, two separate `tsc --noEmit` runs against `tsconfig.app.json` and `tsconfig.node.json` (no `checkJs`/JSDoc involved — this is a TS-only codebase) |
@@ -167,7 +167,7 @@ The exit code is non-zero if any check fails, making it safe to call from other 
 
 | Setting | Value | Notes |
 |---|---|---|
-| `target-version` | `py312` | Enables Python 3.12 syntax modernisations via pyupgrade |
+| `target-version` | `py313` | Enables Python 3.13 syntax modernisations via pyupgrade |
 | `line-length` | `100` | Enforced by `ruff format`; `E501` is disabled in `ruff check` to avoid duplicate warnings |
 | `quote-style` | `double` | Double-quoted strings (Black-compatible) |
 | `indent-style` | `space` | Space indentation |
@@ -182,7 +182,7 @@ Rule sets enabled:
 | `F` | pyflakes | Undefined names, unused imports |
 | `I` | isort | Import ordering |
 | `B` | flake8-bugbear | Common bugs and opinionated style |
-| `UP` | pyupgrade | Syntax modernisation for Python 3.12 |
+| `UP` | pyupgrade | Syntax modernisation for Python 3.13 |
 | `C4` | flake8-comprehensions | Simplify list/dict/set comprehensions |
 | `RET` | flake8-return | Remove unnecessary `else` after `return` |
 | `SIM` | flake8-simplify | General simplification suggestions |
@@ -201,7 +201,7 @@ Ignored rules and rationale:
 
 | Setting | Value | Notes |
 |---|---|---|
-| `python_version` | `3.12` | Matches the runtime Python version |
+| `python_version` | `3.13` | Matches the runtime Python version |
 | `ignore_missing_imports` | `true` | Avoids errors for third-party packages without bundled stubs |
 | `check_untyped_defs` | `true` | Type-checks function bodies even when they have no annotations |
 | `warn_unused_ignores` | `true` | Flags stale `# type: ignore` comments so they don't accumulate |
