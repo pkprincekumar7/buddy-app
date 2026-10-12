@@ -2,10 +2,18 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.testclient import TestClient
 
 from app.auth_utils import _encode, create_access_token, create_refresh_token
-from app.deps import get_current_admin, get_current_parent, get_current_user, get_token_claims
+from app.database import get_db
+from app.deps import (
+    CurrentParent,
+    get_current_admin,
+    get_current_parent,
+    get_current_user,
+    get_token_claims,
+)
 from app.main import app
 
 
@@ -70,6 +78,15 @@ def test_token_claims_rejects_invalid_tokens():
         _raises(get_token_claims(_request(bearer=token)), 401, "Invalid token")
 
 
+def test_token_claims_rejects_an_expired_access_token():
+    # Expiry is enforced here, not only in decode_token's own tests — a switch to
+    # the expiry-ignoring decoder would otherwise go unnoticed.
+    past = datetime.now(UTC) - timedelta(hours=2)
+    expired = _encode({"sub": "u1", "type": "access", "location": "eu", "iat": past,
+                       "exp": past + timedelta(minutes=1)})  # fmt: skip
+    _raises(get_token_claims(_request(bearer=expired)), 401, "Invalid token")
+
+
 def test_auth_schemes_are_advertised_in_openapi():
     schemes = app.openapi()["components"]["securitySchemes"]
     assert {s["type"] for s in schemes.values()} >= {"apiKey", "http"}
@@ -94,6 +111,13 @@ def test_current_user_without_location_is_invalid_and_not_looked_up():
     assert users.queries == []
 
 
+@pytest.mark.parametrize("location", ["", "EU", "eu; drop", "../us", 7, ["eu"], "x" * 17])
+def test_current_user_with_a_malformed_location_is_invalid_and_not_looked_up(location):
+    db, users = _db(USER)
+    _raises(get_current_user(_claims(location=location), db), 401, "Invalid token")
+    assert users.queries == []  # never used to build a query
+
+
 def test_current_user_not_found():
     db, _ = _db(None)
     _raises(get_current_user(_claims(), db), 401, "User not found")
@@ -103,6 +127,18 @@ def test_locked_user_is_forbidden():
     db, _ = _db({**USER, "is_locked": True})
     _raises(
         get_current_user(_claims(), db),
+        403,
+        "Your account has been locked. Please contact support.",
+    )
+
+
+def test_locked_wins_over_revoked():
+    # Same order as refresh_tokens: a locked account gets the clearer 403, not
+    # the generic "Session revoked" its revoked tokens would also earn.
+    long_ago = datetime.now(UTC) - timedelta(days=1)
+    db, _ = _db({**USER, "is_locked": True, "tokens_revoked_at": datetime.now(UTC)})
+    _raises(
+        get_current_user(_claims(iat=long_ago), db),
         403,
         "Your account has been locked. Please contact support.",
     )
@@ -147,3 +183,25 @@ def test_parent_dependency():
     for user in ({**USER, "role": "parent"}, {"_id": "u1"}):
         assert asyncio.run(get_current_parent(user)) is user
     _raises(get_current_parent({**USER, "role": "admin"}), 403, "Not available for admin accounts")
+
+
+# -- per-request dependency caching -------------------------------------------------
+
+
+def test_user_is_looked_up_once_even_when_the_check_is_declared_twice():
+    # The pattern the routers rely on: the check at router level *and* as a
+    # parameter. FastAPI caches a dependency per request, so one DB lookup.
+    users = _Users(USER)
+    router = APIRouter(dependencies=[Depends(get_current_user)])
+
+    @router.get("/probe")
+    async def probe(user: CurrentParent):
+        return {"id": user["_id"]}
+
+    probe_app = FastAPI()
+    probe_app.include_router(router)
+    probe_app.dependency_overrides[get_db] = lambda: {"users": users}
+    token = create_access_token("u1", "eu")
+    res = TestClient(probe_app).get("/probe", headers={"Authorization": f"Bearer {token}"})
+    assert (res.status_code, res.json()) == (200, {"id": "u1"})
+    assert len(users.queries) == 1

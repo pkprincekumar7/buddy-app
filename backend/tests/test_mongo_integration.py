@@ -10,6 +10,7 @@ test gets a throwaway database that is dropped afterwards.
 
 import asyncio
 import os
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -240,3 +241,169 @@ def test_admin_lookup_lock_and_unlock_persist():
     assert after_lock["is_locked"] is True and after_lock["tokens_revoked_at"] is not None
     assert unlocked.status_code == 200
     assert after_unlock["is_locked"] is False and after_unlock["tokens_revoked_at"] is None
+
+
+# -- indexes serve the real queries ------------------------------------------------
+#
+# The index contract above says which indexes exist; these say the app's actual
+# queries use them. MongoDB's profiler records the plan of every operation the
+# real routes / worker send, so nothing here restates a query by hand — a query
+# that drifts from its index (e.g. a partial index whose filter it no longer
+# matches) shows up as a COLLSCAN.
+
+PARENT = {"_id": "p1", "location": "eu", "role": "parent", "email": "p@example.com"}
+
+
+async def _profile(db, run):
+    """Run `run()` with the profiler on; return {collection: [planSummary, ...]}."""
+    await db.command("profile", 2)
+    try:
+        await run()
+    finally:
+        await db.command("profile", 0)
+    plans: dict[str, list[str]] = {}
+    async for op in db["system.profile"].find({"planSummary": {"$exists": True}}):
+        collection = op["ns"].split(".", 1)[1]
+        plans.setdefault(collection, []).append(op["planSummary"])
+    return plans
+
+
+def _uses(plans, collection, index_keys):
+    # An $or query's summary lists one IXSCAN per branch, comma-separated.
+    return any(f"IXSCAN {{ {index_keys} }}" in p for p in plans.get(collection, []))
+
+
+def _scans(plans, collection):
+    return [p for p in plans.get(collection, []) if "COLLSCAN" in p]
+
+
+def test_route_and_worker_queries_use_their_indexes(monkeypatch):
+    import worker  # deferred: importing it builds an (unconnected) Motor client
+
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+    async def test(db):
+        await init_indexes(db)
+        await db[models.USERS].insert_one(PARENT)
+        # Enough documents, spread over owners/locations, that the planner has a
+        # real choice to make between candidate indexes.
+        await db[models.CHILDREN].insert_many(
+            [
+                {
+                    "_id": f"c{i}",
+                    "user_id": f"p{i % 5 + 1}",
+                    "location": ("eu", "us")[i % 2],
+                    "is_deleted": i % 9 == 0,
+                    "deleted_at": None,
+                    "name": f"child-{i:03}",
+                    "created_at": t0 + timedelta(minutes=i),
+                }
+                for i in range(300)
+            ]  # fmt: skip
+        )
+        await db[models.CHILDREN].insert_one(
+            {
+                "_id": "mine",
+                "user_id": "p1",
+                "location": "eu",
+                "is_deleted": False,
+                "deleted_at": None,
+                "name": "Mia",
+                "created_at": t0,
+            }  # fmt: skip
+        )
+        await db[models.JOBS].insert_many(
+            [
+                {
+                    "job_id": f"j{i}",
+                    "user_id": f"p{i % 5 + 1}",
+                    "child_id": f"c{i % 40}",
+                    "location": ("eu", "us")[i % 2],
+                    "type": "generate_activity",
+                    "status": ("pending", "processing", "result_ready", "completed", "failed")[
+                        i % 5
+                    ],
+                    "llm_attempt": 0,
+                    "max_llm_attempts": 3,
+                    "domain_write_attempt": 0,
+                    "max_domain_attempts": 5,
+                    "retry_after": t0,
+                    "created_at": t0 + timedelta(seconds=i),
+                    "claimed_at": t0,
+                }
+                for i in range(300)
+            ]  # fmt: skip
+        )
+        monkeypatch.setattr(worker, "db", db)
+        monkeypatch.setattr(worker, "_LOCATION_SCOPE", {"location": {"$in": ["eu", "in"]}})
+
+        async def run():
+            assert (await api(db, "GET", "/api/v1/children", user=PARENT)).status_code == 200
+            res = await api(db, "GET", "/api/v1/children?sort=name", user=PARENT)
+            assert res.status_code == 200
+            assert (await api(db, "GET", "/api/v1/jobs/j0", user=PARENT)).status_code == 200
+            body = {"type": "generate_personality_analysis", "child_id": "mine",
+                    "payload": {"prompt": "x"},
+                    "write_back": {"collection": "children", "filter": {},
+                                   "field": "pending_personality_vm"}}  # fmt: skip
+            assert (
+                await api(db, "POST", "/api/v1/jobs", user=PARENT, json=body)
+            ).status_code == 201
+            assert await worker.claim_next_job() is not None  # as deployed: region-scoped
+
+        return await _profile(db, run)
+
+    plans = run_with_db(test)
+    for collection in (models.USERS, models.CHILDREN, models.JOBS):
+        assert plans.get(collection), f"no {collection} queries were profiled"
+        assert not _scans(plans, collection), (collection, plans)
+    # The partial indexes only serve queries whose filter includes is_deleted: False.
+    assert _uses(plans, models.CHILDREN, "location: 1, user_id: 1, created_at: -1")
+    assert _uses(plans, models.CHILDREN, "location: 1, user_id: 1, name: 1")
+    assert _uses(plans, models.JOBS, "location: 1, job_id: 1, user_id: 1")  # client polling
+    assert _uses(plans, models.JOBS, "location: 1, user_id: 1, child_id: 1, type: 1, status: 1")
+    # Worker claim: one index scan per $or branch, each led by (location, status) —
+    # which of the qualifying indexes the planner picks depends on the data.
+    [claim] = [p for p in plans[models.JOBS] if p.count("IXSCAN") == 3]
+    branches = re.findall(r"IXSCAN \{ ([^}]*) \}", claim)
+    assert len(branches) == 3 and all(b.startswith("location: 1, status: 1,") for b in branches)
+
+
+def test_session_cleanup_uses_the_expiry_index(monkeypatch):
+    # Lock acquired, so the cycle runs straight away (no-Redis mode adds a random delay).
+    monkeypatch.setattr(main, "get_redis_client", lambda: SimpleNamespace(
+        set=lambda *a, **k: True, delete=lambda *a: None))  # fmt: skip
+
+    async def one_cycle_sleep(seconds):
+        one_cycle_sleep.calls += 1
+        if one_cycle_sleep.calls > 1:
+            raise asyncio.CancelledError
+
+    one_cycle_sleep.calls = 0
+
+    async def test(db):
+        await init_indexes(db)
+        now = datetime.now(UTC)
+        await db[models.SESSIONS].insert_many(
+            [
+                {
+                    "_id": f"s{i}",
+                    "location": ("eu", "us", "in")[i % 3],
+                    "user_id": "u",
+                    "expires_at": now + timedelta(minutes=i - 100),
+                }
+                for i in range(200)
+            ]  # fmt: skip
+        )
+        monkeypatch.setattr(main.asyncio, "sleep", one_cycle_sleep)
+
+        async def run():
+            with pytest.raises(asyncio.CancelledError):
+                await main._cleanup_expired_sessions(db)
+
+        return await _profile(db, run)
+
+    plans = run_with_db(test)
+    assert plans.get(models.SESSIONS), "the cleanup query was not profiled"
+    assert not _scans(plans, models.SESSIONS), plans
+    assert _uses(plans, models.SESSIONS, "location: 1, expires_at: 1")

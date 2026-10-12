@@ -34,10 +34,6 @@ from app.services.s3_uploads import (
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
 
-# Hard cap on growth-area documents returned in a single response.
-# Exceeding this is extremely unlikely in practice but logged so it's visible.
-_GROWTH_AREAS_MAX = 500
-
 # Optional fields in AppendGrowthAreaRequest that must only be written when
 # explicitly set by the caller — prevents silently null-overwriting existing data.
 _GROWTH_AREA_OPTIONAL_FIELDS = (
@@ -88,7 +84,6 @@ def _doc_to_growth_area(doc: dict) -> CompletedGrowthArea:
     return CompletedGrowthArea(
         area_id=doc["area_id"],
         area_name=doc["area_name"],
-        area_color=doc.get("area_color"),
         answers=doc.get("answers") or {},
         recommendations=doc.get("recommendations"),
         child_activity=child_activity,

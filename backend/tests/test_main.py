@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.database import get_db
 from app.main import app
+from app.routing import COUNTRY_TO_REGION
 
 
 @pytest.fixture
@@ -86,6 +87,14 @@ def test_invalid_request_id_is_replaced_with_a_uuid(client, bad):
     rid = client.get("/health", headers={"X-Request-Id": bad}).headers["X-Request-Id"]
     assert rid != bad
     uuid.UUID(rid)  # a freshly generated UUID
+
+
+@pytest.mark.parametrize("rid", ["abc123\n", "abc\nX-Injected: 1", "x" * 64 + "\n"])
+def test_request_id_pattern_rejects_newlines(rid):
+    # HTTP can't carry a raw newline in a header, so this checks the pattern itself:
+    # anchored with \Z — Python's $ would have accepted a trailing "\n".
+    assert main._REQUEST_ID_RE.match(rid) is None
+    assert main._REQUEST_ID_RE.match(rid.split("\n")[0][:64]) is not None
 
 
 def test_api_responses_are_not_cacheable_but_health_is(client):
@@ -242,7 +251,9 @@ def test_cleanup_with_redis_lock_deletes_expired_sessions_and_releases_lock(
         _run_cleanup(monkeypatch, redis, sessions)
     assert redis.set_calls == [(main._CLEANUP_LOCK_KEY, "1", True, main._CLEANUP_LOCK_TTL)]
     [query] = sessions.queries
-    assert set(query) == {"expires_at"} and set(query["expires_at"]) == {"$lt"}
+    assert set(query) == {"location", "expires_at"} and set(query["expires_at"]) == {"$lt"}
+    # Every location a user can be assigned — so no expired session is missed.
+    assert set(query["location"]["$in"]) == set(COUNTRY_TO_REGION.values())
     cutoff = query["expires_at"]["$lt"]
     # Must be "now" in UTC: Mongo stores UTC, so a naive local time would delete
     # the wrong sessions on any non-UTC host.

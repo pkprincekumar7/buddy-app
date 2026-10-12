@@ -40,9 +40,12 @@ pytest                                      # tests (backend/tests/)
 MONGODB_TEST_URI=mongodb://localhost:27017 REDIS_URL=redis://localhost:6379 pytest
                                             # + real-Mongo/Redis integration tests (CI always runs these;
                                             #   never point MONGODB_TEST_URI at a real cluster)
-mutmut run                                  # mutation testing (pip install -r requirements-mutation.txt;
-                                            #   needs a throwaway JWT_PRIVATE_KEY; config in pyproject.toml)
+python tools/mutate_handlers.py --check     # validate the hand-built mutant lists (seconds)
 ```
+
+Mutation testing (`mutmut run` + `python tools/mutate_handlers.py --all`) is **manual-only**:
+it takes hours, so it's not in CI, and Claude Code must never start it — both refuse to run
+when `CLAUDECODE` is set. Steps for running it yourself: `docs/mutation-testing.md`.
 
 Frontend (run from `frontend/`):
 

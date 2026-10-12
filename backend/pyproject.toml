@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.backends.legacy:build"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
@@ -13,7 +13,7 @@ select = [
     "F",   # pyflakes (undefined names, unused imports)
     "I",   # isort
     "B",   # flake8-bugbear (common bugs + opinionated style)
-    "UP",  # pyupgrade (modernise syntax for py312)
+    "UP",  # pyupgrade (modernise syntax for py313)
     "C4",  # flake8-comprehensions (simplify comprehensions)
     "RET", # flake8-return (unnecessary else after return)
     "SIM", # flake8-simplify
@@ -35,7 +35,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 ignore_missing_imports = true
 strict = false
 warn_unused_ignores = true
@@ -49,23 +49,27 @@ pythonpath = ["."]
 markers = [
     "live_service: needs a real MongoDB/Redis; skipped locally without one, but a skip fails the run when REQUIRE_LIVE_SERVICES=1 (CI)",
 ]
+# Third-party deprecations we can't fix here, each matched by message AND by the
+# package that triggers it — so a deprecation from our own code still shows up.
+# Drop an entry once that package's upgrade fixes it.
+filterwarnings = [
+    # slowapi 0.1.9 calls asyncio.iscoroutinefunction (deprecated in Python 3.14).
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:slowapi",
+    # botocore 1.35 calls datetime.utcnow() (deprecated in Python 3.12) when signing.
+    "ignore:datetime.datetime.utcnow\\(\\) is deprecated:DeprecationWarning:botocore",
+    # Starlette 1.x's TestClient (used via fastapi.testclient) on httpx.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
-# Mutation testing (optional, not run in CI): pip install -r requirements-mutation.txt,
-# then `mutmut run` from backend/ with a throwaway JWT_PRIVATE_KEY in the environment.
-# Mutates the modules whose tests target 100% coverage, to check the tests would
-# actually catch changes in behaviour — not just execute the lines.
+# Mutation testing — MANUAL ONLY: never in CI, never from Claude Code (tests/conftest.py
+# stops a mutmut run when CLAUDECODE is set). Steps: docs/mutation-testing.md.
+# Covers every module under app/ except the generated country data (guarded by
+# test_routing.py's parity test and CI's sync-routing --check). mutmut can't mutate
+# decorated functions — route handlers, main.py's lifespan/handlers/middleware — so
+# tools/mutate_handlers.py covers those with hand-built mutants.
 [tool.mutmut]
 source_paths = ["app"]
-only_mutate = [
-    "app/auth_utils.py",
-    "app/database.py",
-    "app/deps.py",
-    "app/limiter.py",
-    "app/llm_rate_limiter.py",
-    "app/main.py",
-    "app/routers/admin.py",
-    "app/routers/audio.py",
-]
+do_not_mutate = ["app/routing_data.py"]
 also_copy = ["tools", "worker.py"]
 pytest_add_cli_args_test_selection = ["tests"]
 pytest_add_cli_args = ["-p", "no:warnings", "-q"]

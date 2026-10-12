@@ -25,10 +25,11 @@
 9. **Module size / single responsibility** — router/module files split by concern once they
    cover multiple unrelated things.
 10. **Test coverage** — flag missing tests on critical paths (auth, limits, data-integrity
-    logic) as a real finding, even knowing it may not be actioned immediately. `pytest`/
-    `pytest-asyncio`/`httpx` are installed (`requirements-test.txt`) but zero test files exist
-    yet — when tests are added, they should drive routes via `httpx.AsyncClient`/`TestClient` and
-    override dependencies with `app.dependency_overrides[...]`, not monkeypatch internals.
+    logic) as a real finding, even knowing it may not be actioned immediately. Every module under
+    `app/` has its own test file in `backend/tests/` at 100% line + branch coverage (CI gates the
+    total at 99%) — new code needs tests to match. Tests drive routes via `httpx.AsyncClient`/
+    `TestClient` and override dependencies with `app.dependency_overrides[...]`, not monkeypatch
+    internals (see the Tests section of `backend/CLAUDE.md`).
 11. **Consistent error handling** — no parallel error-formatting path bypassing the global
     handler in `main.py`; cross-module errors that don't need FastAPI use a plain exception class
     (like `LLMConfigError`), converted to `HTTPException` only at the router boundary; the

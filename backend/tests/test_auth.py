@@ -692,6 +692,24 @@ def test_logout_deletes_the_session_and_clears_cookies(db, client):
     assert _cleared(res)
     assert jti not in [s["_id"] for s in db[models.SESSIONS].docs]
     assert len(db[models.SESSIONS].docs) == 1
+    # Deleted under the token's own location (the shard key), not looked up globally.
+    assert db.calls(models.SESSIONS, "delete_one") == [{"_id": jti, "location": "eu"}]
+
+
+@pytest.mark.parametrize("location", [None, "EU; drop"])
+def test_logout_with_a_token_without_a_valid_location_still_succeeds(db, client, location):
+    # It can't name the session's shard, so nothing is deleted — but logout still
+    # clears the cookies rather than failing.
+    now = datetime.now(UTC)
+    claims = {"sub": "u1", "jti": "j1", "type": "refresh", "iat": now,
+              "exp": now + timedelta(hours=1)}  # fmt: skip
+    if location:
+        claims["location"] = location
+    _session(db, "j1")
+    res = client.post(LOGOUT, headers=_cookies(refresh_token=_encode(claims)))
+    assert res.status_code == 204
+    assert _cleared(res)
+    assert db.calls(models.SESSIONS, "delete_one") == []
 
 
 @pytest.mark.parametrize("token", [None, "garbage"])

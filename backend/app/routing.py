@@ -9,7 +9,7 @@ from app.routing_data import (
     REGION_TO_LOCATIONS,
 )
 
-LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}$")
+LOCATION_RE = re.compile(r"^[a-z0-9_-]{1,16}\Z")  # \Z: $ would allow a trailing "\n"
 
 # The routing tables live in shared/routing.json — the single source of truth for
 # country → location → AWS region → Atlas zone — and are generated into

@@ -31,12 +31,13 @@ from app.routers.downloads import router as downloads_router
 from app.routers.jobs import router as jobs_router
 from app.routers.llm import router as llm_router
 from app.routers.users import router as users_router
+from app.routing import REGION_TO_LOCATIONS
 from app.services import llm_service
 from app.settings import settings
 
 log = logging.getLogger(__name__)
 
-_REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9\-_]{1,64}$")
+_REQUEST_ID_RE = re.compile(r"^[a-zA-Z0-9\-_]{1,64}\Z")  # \Z: $ allows a trailing "\n"
 
 
 def _git_info() -> dict:
@@ -57,12 +58,13 @@ _GIT_INFO = _git_info()
 # ---------------------------------------------------------------------------
 # Background task: expired-session cleanup
 # ---------------------------------------------------------------------------
-# MongoDB TTL indexes cannot be compound, so they cannot include the shard key
-# (location) that is required on Atlas Global Clusters.  Instead, a background
-# coroutine runs every hour and deletes any sessions whose expires_at has
-# already passed.  On Atlas the fan-out across shards is acceptable for a
-# once-hourly maintenance operation.
+# A background coroutine runs every hour and deletes any sessions whose
+# expires_at has already passed (see init_indexes in database.py for why this
+# isn't a TTL index). The query names every location so it can use the
+# (location, expires_at) index — and, on an Atlas Global Cluster, target each
+# shard by its shard key — instead of scanning the whole collection.
 _SESSION_CLEANUP_INTERVAL_SECONDS = 3600  # 1 hour
+_ALL_LOCATIONS = sorted({loc for locs in REGION_TO_LOCATIONS.values() for loc in locs})
 _CLEANUP_LOCK_KEY = "session_cleanup:lock"
 # TTL is slightly shorter than the interval so the lock never outlives a full cycle.
 # It acts as a safety net only — the lock is explicitly released after cleanup.
@@ -95,13 +97,11 @@ async def _cleanup_expired_sessions(db) -> None:
 
         try:
             now = datetime.now(UTC)
-            # NOTE: The `sessions` collection is sharded by `location`.  Querying
-            # without the shard key triggers a scatter-gather fan-out across all
-            # shards.  This is intentional and acceptable for a once-hourly
-            # maintenance task.  If cleanup latency becomes a concern, replace this
-            # with one delete_many per known location value (see routing.py for
-            # the full set of valid location strings).
-            result = await db["sessions"].delete_many({"expires_at": {"$lt": now}})
+            # Every session carries one of these locations, so this deletes exactly
+            # the expired ones — but through the index rather than a full scan.
+            result = await db["sessions"].delete_many(
+                {"location": {"$in": _ALL_LOCATIONS}, "expires_at": {"$lt": now}}
+            )
             if result.deleted_count:
                 log.info("session_cleanup: removed %d expired sessions", result.deleted_count)
         except asyncio.CancelledError:

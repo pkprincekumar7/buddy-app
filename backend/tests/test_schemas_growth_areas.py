@@ -104,7 +104,6 @@ def test_request_tracks_which_optional_fields_were_sent():
     [
         ("area_id", "x" * 50, "x" * 51),
         ("area_name", "x" * 100, "x" * 101),
-        ("area_color", "x" * 100, "x" * 101),
         ("status", "x" * 50, "x" * 51),
         ("step", "x" * 100, "x" * 101),
         ("feedback", "x" * 2000, "x" * 2001),

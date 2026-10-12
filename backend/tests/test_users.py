@@ -358,7 +358,7 @@ def test_list_returns_every_stored_field_including_worker_written_ones(db, clien
         "life_pathway_milestones": {"y1": "copy"},
     }
     wizard = {
-        "area_color": "#fff", "answers": {"q1": "yes"}, "recommendations": ["read"],
+        "answers": {"q1": "yes"}, "recommendations": ["read"],
         "status": "in_progress", "step": "quiz", "selected_activity": {"id": 1},
         "parent_liked": True, "want_child_activity": False, "feedback": "good",
         "interactive_step": 2, "interactive_answers": {"a": 1}, "interactive_draft": {"d": 1},
@@ -428,6 +428,15 @@ def test_saving_again_updates_the_same_document_without_nulling_unsent_fields(db
     assert doc["area_name"] == "Focus & attention" and doc["show_game"] is True
     assert doc["feedback"] == "lovely" and doc["recommendations"] == ["read"]
     assert doc["parent_questions"] == {"q": "worker-written"}  # clients can't write these
+
+
+def test_area_color_from_older_clients_is_ignored_not_rejected(db, client):
+    # The field was removed; an older app build that still sends it must keep working.
+    _child(db, discover_completed=True)
+    assert _save_area(client, area_color="#fff").status_code == 204
+    assert "area_color" not in db[models.GROWTH_AREAS].docs[0]
+    [area] = client.get(f"{GA}?child_id=c1", headers=_auth()).json()["areas"]
+    assert "area_color" not in area
 
 
 def test_explicit_nulls_on_optional_fields_are_written(db, client):

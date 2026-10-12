@@ -35,10 +35,18 @@ run() {
 # Backend: create the venv on first run, then always sync packages so that
 # requirements.txt changes and tool-version bumps are picked up automatically.
 # pip install is fast (no-ops on already-correct versions).
+# Python 3.13 everywhere: same as backend/Dockerfile and CI (check.yml).
+PYTHON_VERSION="3.13"
 if [ ! -d "$BACKEND/.venv" ]; then
-  echo -e "${CYAN}Creating backend/.venv...${RESET}"
-  python3 -m venv "$BACKEND/.venv" \
-    || { echo -e "${RED}Failed to create backend/.venv — is python3 installed?${RESET}"; exit 1; }
+  echo -e "${CYAN}Creating backend/.venv (Python $PYTHON_VERSION)...${RESET}"
+  "python$PYTHON_VERSION" -m venv "$BACKEND/.venv" \
+    || { echo -e "${RED}Failed to create backend/.venv — is python$PYTHON_VERSION installed? (brew install python@$PYTHON_VERSION)${RESET}"; exit 1; }
+fi
+VENV_PY_VERSION="$("$BACKEND/.venv/bin/python" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null)"
+if [ "$VENV_PY_VERSION" != "$PYTHON_VERSION" ]; then
+  echo -e "${RED}backend/.venv is Python ${VENV_PY_VERSION:-unknown}, but CI and Docker use $PYTHON_VERSION — recreate it:${RESET}"
+  echo "  rm -rf backend/.venv && ./check.sh"
+  exit 1
 fi
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
@@ -48,13 +56,13 @@ echo -e "${CYAN}Syncing backend/.venv...${RESET}"
   -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or requirements.txt${RESET}"; exit 1; }
 
-# Frontend: npm install is fast when node_modules already exists (it checks
-# versions and exits quickly), so run it unconditionally — package.json changes
-# are always reflected without a manual step.
+# Frontend: npm ci, as CI does — installs exactly what package-lock.json says and
+# never rewrites it (npm install can, so local checks could run against different
+# packages than CI). Slower: it deletes and reinstalls node_modules every run.
 # --quiet suppresses progress bars but still shows warnings and errors.
-echo -e "${CYAN}Syncing frontend/node_modules...${RESET}"
-(cd "$FRONTEND" && npm install --quiet) \
-  || { echo -e "${RED}npm install failed — check your network or package.json${RESET}"; exit 1; }
+echo -e "${CYAN}Installing frontend/node_modules (npm ci)...${RESET}"
+(cd "$FRONTEND" && npm ci --quiet) \
+  || { echo -e "${RED}npm ci failed — check your network, or run npm install if package-lock.json is out of sync with package.json${RESET}"; exit 1; }
 
 echo -e "${CYAN}Syncing frontend-app/node_modules...${RESET}"
 (cd "$FRONTEND_APP" && yarn install --frozen-lockfile --quiet) \
@@ -124,7 +132,7 @@ bundle_size_check() {
   local bundle
   bundle=$(ls "$FRONTEND/dist/assets/index-"*.js 2>/dev/null | head -1)
   if [ -z "$bundle" ]; then echo "No bundle found in dist/assets/"; return 1; fi
-  local size limit=$((1400 * 1024))  # 1.4 MB
+  local size limit=1468006  # 1.4 MB = 1.4 * 1024 * 1024 — same as check.yml
   size=$(wc -c < "$bundle")
   echo "Bundle: $(basename "$bundle") — ${size} bytes (limit ${limit})"
   if [ "$size" -gt "$limit" ]; then
@@ -146,12 +154,24 @@ run "prettier (check) (frontend-app)" \
 run "typecheck (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && node_modules/.bin/tsc --noEmit"
 
+run "jest (frontend-app)" \
+    bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
+
 # ── tests ─────────────────────────────────────────────────────────────────────
-# Requires MONGODB_URI and JWT_SECRET in backend/.env (same env used by the dev server).
+# Settings load from backend/.env (needs JWT_PRIVATE_KEY, as for the dev server); no
+# test connects to MONGODB_URI. Same command and coverage gate as CI. The real
+# Mongo/Redis integration tests skip unless you point them at throwaway servers —
+# never a real cluster — e.g. (docker run -d -p 27017:27017 mongo:7, same for redis):
+#   MONGODB_TEST_URI=mongodb://localhost:27017 REDIS_URL=redis://localhost:6379 ./check.sh
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
 
 run "pytest + coverage (backend)" \
-    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-report=term-missing --cov-fail-under=0 -q; rc=\$?; [ \$rc -eq 5 ] && { echo 'No tests collected yet — pass until baseline suite is written'; exit 0; } || exit \$rc"
+    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+
+# Validates the hand-built mutant lists against the current source (seconds).
+# This never runs mutation testing itself — that's manual (docs/mutation-testing.md).
+run "mutant lists valid (tools/mutate_handlers.py --check)" \
+    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/mutate_handlers.py --check"
 
 # Renders the .tpl through real `terraform apply` (not a hand-rolled reimplementation
 # of HCL's templatefile() syntax), so this exercises exactly what gets deployed.
@@ -257,7 +277,7 @@ GITLEAKS=""; HADOLINT=""; TRIVY=""; DOCKER=""
 
 if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
   run "gitleaks (secret detection)" \
-      bash -c "cd '$ROOT' && '$GITLEAKS' detect --config '$ROOT/.gitleaks.toml'"
+      bash -c "cd '$ROOT' && '$GITLEAKS' detect --source . --redact --config '$ROOT/.gitleaks.toml'"
 fi
 
 run "semgrep (SAST)" \
@@ -364,17 +384,28 @@ echo -e "\n${BOLD}════ DAST & API SPEC ════${RESET}"
 SPECTRAL="$FRONTEND/node_modules/.bin/spectral"
 NUCLEI=""
 
+# openapi.json is tracked in git — the committed reference copy of the API spec. CI
+# regenerates it and fails if the committed copy differs; this fails the same way
+# when your copy is stale, after writing the fresh one so you can review and commit it.
+openapi_up_to_date() {
+  local spec="$ROOT/openapi.json" fresh
+  fresh="$(mktemp)"
+  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" > "$fresh" \
+    || { rm -f "$fresh"; echo "Failed to export OpenAPI spec — check backend imports and env vars"; return 1; }
+  if cmp -s "$fresh" "$spec"; then
+    rm -f "$fresh"
+  else
+    # cat, not mv: mktemp's file is owner-only (0600); writing the contents into the
+    # existing file keeps openapi.json's own permissions.
+    cat "$fresh" > "$spec" && rm -f "$fresh"
+    echo "openapi.json was out of date — regenerated it. Review (git diff openapi.json) and commit."
+    return 1
+  fi
+}
+run "openapi.json up to date" openapi_up_to_date
+
 spectral_api_lint() {
-  local spec="$ROOT/openapi.json"
-  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" > "$spec" \
-    || { echo "Failed to export OpenAPI spec — check backend imports and env vars"; return 1; }
-  "$SPECTRAL" lint "$spec" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
-  local rc=$?
-  # openapi.json is intentionally kept (not deleted) and tracked in git — it's the
-  # committed reference copy of the API spec. CI regenerates it fresh on every run
-  # and fails if it doesn't match this file, so always `git add` it after this step
-  # changes it (e.g. after adding/changing an endpoint).
-  return $rc
+  "$SPECTRAL" lint "$ROOT/openapi.json" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
 }
 run "spectral (OpenAPI lint)" spectral_api_lint
 

@@ -58,7 +58,8 @@ checks a file against this same list.
 
 - Flag missing test coverage on critical paths (auth, payment/limits, data-integrity logic) as a
   real finding even when it isn't actioned immediately — don't silently skip mentioning it.
-- `pytest`, `pytest-asyncio`, and `httpx` are declared in `requirements-test.txt`; tests live in
+- `pytest`, `pytest-cov` and `httpx` are declared in `requirements-test.txt` (no pytest-asyncio:
+  tests run async code with `asyncio.run(...)`, so the plugin isn't needed); tests live in
   `backend/tests/`, one file per module (`test_<module>.py`; schemas as `test_schemas_<name>.py`).
   Modules with a test file are at 100% line + branch coverage (except one branch in `main.py`'s
   session-cleanup loop that real Motor can't reach) — keep them there, with assertions on
@@ -75,6 +76,12 @@ checks a file against this same list.
 - Don't `importlib.reload` a module that defines an exception class other code catches (e.g.
   `llm_service.LLMConfigError`) — it mints a new class and breaks every `except` elsewhere; load a
   fresh copy with `importlib.util.spec_from_file_location` instead (see `test_llm_service.py`).
+- Mutation testing is manual-only (`docs/mutation-testing.md`). Never run `mutmut run` or
+  `tools/mutate_handlers.py` with a module/`--all` — they take hours, and both refuse to
+  start under Claude Code. Only `python tools/mutate_handlers.py --check` (seconds) is
+  allowed: run it after editing a route handler or `main.py`, and update any mutant in
+  `tools/handler_mutants/` whose source text changed; add mutants for new decisions,
+  filters or limits.
 - Real-Mongo/Redis integration tests (`test_mongo_integration.py`, the live-Redis tests) are marked
   `@pytest.mark.live_service` and run only when `MONGODB_TEST_URI`/`REDIS_URL` are set — CI sets
   both, plus `REQUIRE_LIVE_SERVICES=1`, which turns a skipped `live_service` test into a failure

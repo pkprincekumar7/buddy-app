@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
             backend/requirements.txt
@@ -50,6 +50,11 @@ jobs:
 
       - name: mypy type check
         run: mypy app/ tools/
+
+      # Validates the hand-built mutant lists against the current source (seconds).
+      # Never runs mutation testing itself — that's manual (docs/mutation-testing.md).
+      - name: Mutant lists valid
+        run: python tools/mutate_handlers.py --check
 
   backend-test:
     name: Backend Tests
@@ -88,7 +93,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
             backend/requirements.txt
@@ -195,6 +200,9 @@ jobs:
 
       - name: TypeScript type check
         run: node_modules/.bin/tsc --noEmit
+
+      - name: Jest (unit tests)
+        run: yarn test --ci
 
   lambda-edge-test:
     name: Lambda@Edge Unit Tests
@@ -306,7 +314,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: backend/requirements-security.txt
 
@@ -685,7 +693,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 

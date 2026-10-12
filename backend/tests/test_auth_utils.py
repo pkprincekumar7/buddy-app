@@ -1,4 +1,9 @@
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import threading
 from datetime import UTC, datetime, timedelta
 from http.cookies import Morsel, SimpleCookie
 
@@ -99,6 +104,39 @@ def test_verify_password_returns_false_for_a_malformed_hash():
     assert verify_password("anything", "not-a-bcrypt-hash") is False
 
 
+def test_passwords_are_hashed_with_bcrypt_cost_12():
+    # Pins the work factor: a lowered cost (e.g. gensalt(4)) would pass every
+    # other test while making stolen hashes ~256x cheaper to crack.
+    assert hash_password("s3cret-pass").startswith("$2b$12$")
+
+
+def test_async_password_helpers_run_bcrypt_off_the_event_loop_thread(monkeypatch):
+    # bcrypt at cost 12 takes ~250 ms; run inline it would stall every request.
+    threads: list[tuple[str, int]] = []
+    real_hash, real_verify = auth_utils.hash_password, auth_utils.verify_password
+
+    def spy_hash(password):
+        threads.append(("hash", threading.get_ident()))
+        return real_hash(password)
+
+    def spy_verify(plain, hashed):
+        threads.append(("verify", threading.get_ident()))
+        return real_verify(plain, hashed)
+
+    monkeypatch.setattr(auth_utils, "hash_password", spy_hash)
+    monkeypatch.setattr(auth_utils, "verify_password", spy_verify)
+
+    async def scenario():
+        loop_thread = threading.get_ident()
+        hashed = await async_hash_password("s3cret-pass")
+        assert await async_verify_password("s3cret-pass", hashed) is True
+        return loop_thread
+
+    loop_thread = asyncio.run(scenario())
+    assert [name for name, _ in threads] == ["hash", "verify"]
+    assert all(ident != loop_thread for _, ident in threads)
+
+
 def test_async_password_helpers():
     hashed = asyncio.run(async_hash_password("s3cret-pass"))
     assert asyncio.run(async_verify_password("s3cret-pass", hashed)) is True
@@ -164,6 +202,49 @@ def test_decode_token_rejects_garbage_expired_and_foreign_signatures():
     forged = jwt.encode({"sub": "u1", "type": "access"}, other_pem, algorithm="RS256")
     for token in ("not-a-jwt", _expired("access"), forged):
         assert decode_token(token) is None
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _unsigned_or_hmac_token(alg: str, key: bytes = b"", now: int | None = None) -> str:
+    if now is None:
+        now = int(datetime.now(UTC).timestamp())
+    header = {"alg": alg, "typ": "JWT", "kid": settings.jwt_key_id}
+    payload = {"sub": "u1", "type": "access", "location": "eu", "iat": now, "exp": now + 600}
+    signing_input = (
+        f"{_b64url(json.dumps(header).encode())}.{_b64url(json.dumps(payload).encode())}"
+    )
+    if alg == "none":
+        return f"{signing_input}."
+    signature = hmac.new(key, signing_input.encode(), hashlib.sha256).digest()
+    return f"{signing_input}.{_b64url(signature)}"
+
+
+@pytest.mark.parametrize("decode", [decode_token, decode_access_token_ignore_exp])
+def test_unsigned_alg_none_tokens_are_rejected(decode):
+    assert decode(_unsigned_or_hmac_token("none")) is None
+
+
+@pytest.mark.parametrize("decode", [decode_token, decode_access_token_ignore_exp])
+def test_hs256_signed_with_the_public_key_is_rejected(decode):
+    # Algorithm confusion: the public key is public, so if HS256 were accepted
+    # anyone could mint a valid token by using it as the HMAC secret.
+    token = _unsigned_or_hmac_token("HS256", key=settings.jwt_public_key.encode())
+    assert decode(token) is None
+
+
+def test_the_forged_token_helper_is_well_formed():
+    # Guards the two tests above: the same construction, signed RS256 for real,
+    # must be accepted — so a rejection there is about the algorithm, not the shape.
+    now = int(datetime.now(UTC).timestamp())
+    payload = {"sub": "u1", "type": "access", "location": "eu", "iat": now, "exp": now + 600}
+    assert decode_token(_encode(payload))["sub"] == "u1"
+    # Same `now` as `payload`: two clock reads can straddle a second boundary.
+    header, body, _ = _unsigned_or_hmac_token("HS256", key=b"k", now=now).split(".")
+    assert json.loads(base64.urlsafe_b64decode(body + "==")) == payload
+    assert json.loads(base64.urlsafe_b64decode(header + "=="))["alg"] == "HS256"
 
 
 def test_decode_token_of_type_matches_expected_type():
