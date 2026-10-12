@@ -13,5 +13,6 @@ cloudfront_price_class = "PriceClass_All"
 enable_guardduty  = true
 enable_cloudtrail = true
 
-# WAF logging — enabled on prod only
+# WAF — enabled on prod, with full logging (prod only)
+enable_waf         = true
 enable_waf_logging = true

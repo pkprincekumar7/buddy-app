@@ -12,7 +12,9 @@ from app.routing import (
     BLOCKED_COUNTRIES,
     COUNTRY_TO_REGION,
     REGION_TO_LOCATIONS,
+    location_from_claims,
     locations_for_region,
+    resolve_region,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +54,42 @@ def test_every_assignable_location_has_a_worker_region():
     # user's API calls 503ing and their jobs pending until the deadline fails them.
     covered = {loc for locs in REGION_TO_LOCATIONS.values() for loc in locs}
     assert set(COUNTRY_TO_REGION.values()) == covered
+
+
+# -- location resolution ----------------------------------------------------------
+# Every token and user record carries a valid location; there is no fallback
+# location anywhere — an unmapped code or a token without one is an error, never
+# silently treated as some default.
+
+
+@pytest.mark.parametrize(("code", "location"), [("DE", "eu"), (" in ", "in"), ("us", "us")])
+def test_resolve_region_maps_known_codes(code, location):
+    assert resolve_region(code) == location
+
+
+@pytest.mark.parametrize("code", ["", "ZZ", "IR"])  # empty, unknown, blocked (never mapped)
+def test_resolve_region_has_no_fallback(code):
+    with pytest.raises(ValueError, match="no location for country code"):
+        resolve_region(code)
+
+
+@pytest.mark.parametrize(
+    ("claims", "expected"),
+    [
+        ({"location": "eu"}, "eu"),
+        ({"location": "a_b-1"}, "a_b-1"),
+        ({}, None),
+        ({"location": ""}, None),
+        ({"location": 7}, None),
+        ({"location": None}, None),
+        ({"location": "EU"}, None),
+        ({"location": "EU; drop"}, None),
+        ({"location": "x" * 17}, None),
+        ({"location": "eu\n"}, None),  # $ would have allowed a trailing newline
+    ],
+)
+def test_location_from_claims(claims, expected):
+    assert location_from_claims(claims) == expected
 
 
 # -- country table --------------------------------------------------------------

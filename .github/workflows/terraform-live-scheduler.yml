@@ -61,7 +61,6 @@ on:
       target_aws_regions:
         description: "Pick the FULL set of regions the daily schedules should apply/destroy. Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        default: '["ap-south-1"]'
         type: choice
         options:
           - '["ap-south-1"]'

@@ -27,7 +27,6 @@ on:
       aws_region:
         description: "AWS region"
         required: true
-        default: "ap-south-1"
         type: choice
         options:
           - ap-south-1

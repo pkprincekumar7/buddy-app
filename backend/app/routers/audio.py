@@ -62,8 +62,13 @@ async def transcribe_audio(
         raise HTTPException(status_code=413, detail="Audio file too large (max 10 MB).")
 
     raw_name = audio.filename or "recording.webm"
-    # Strip null bytes and control characters before parsing the extension so
-    # a filename like "file.webm\x00.exe" cannot trick the allowlist check.
+    # Strip control characters before parsing the extension, so raw stray bytes
+    # in it ("voice.mp3\r\n", "voice.m\x004a") don't reject a valid file. Standard
+    # clients percent-encode CR/LF/NUL/TAB in multipart filenames (only DEL
+    # arrives raw), so this mainly guards hand-built requests. Smuggling
+    # an extension ("file.webm\x00.exe") is prevented by checking the LAST
+    # extension; the user's filename itself is never sent anywhere (OpenAI gets
+    # a fixed "recording.<ext>").
     filename = re.sub(r"[\x00-\x1f\x7f]", "", raw_name) or "recording.webm"
     raw_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
     if raw_ext not in _ALLOWED_AUDIO_EXTS:

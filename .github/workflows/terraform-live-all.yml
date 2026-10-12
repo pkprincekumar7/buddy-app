@@ -59,7 +59,6 @@ on:
       backend_regions:
         description: "Pick the FULL set of regions to apply (not just the new one). Run 'plan' first to check for unintended deletions before 'apply'."
         required: true
-        default: '["ap-south-1"]'
         type: choice
         options:
           - '["ap-south-1"]'

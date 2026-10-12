@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
             backend/requirements.txt
@@ -51,6 +51,11 @@ jobs:
       - name: mypy type check
         run: mypy app/ tools/
 
+      # Validates the hand-built mutant lists against the current source (seconds).
+      # Never runs mutation testing itself — that's manual (docs/mutation-testing.md).
+      - name: Mutant lists valid
+        run: python tools/mutate_handlers.py --check
+
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -60,14 +65,26 @@ jobs:
       run:
         working-directory: backend
     services:
+      # Health checks make GitHub wait until each service accepts connections
+      # before the first step runs (it otherwise only waits for "started").
       mongodb:
         image: mongo:7
         ports:
           - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
 
     steps:
       - name: Checkout
@@ -76,7 +93,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
             backend/requirements.txt
@@ -93,19 +110,18 @@ jobs:
             echo 'JWTKEYEOF'
           } >> "$GITHUB_ENV"
 
+      # Line + branch coverage of app/ is ~99.96% (one branch in main.py's
+      # session-cleanup loop real Motor can't reach); the gate stops it slipping.
       - name: pytest + coverage
-        run: |
-          set +e
-          pytest --cov=app --cov-report=term-missing --cov-fail-under=0 -q
-          RC=$?
-          set -e
-          if [ "$RC" -eq 5 ]; then
-            echo "No tests collected yet — treating as pass until baseline suite is written"
-            exit 0
-          fi
-          exit "$RC"
+        run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
         env:
           MONGODB_URI: mongodb://localhost:27017
+          # Enables tests/test_mongo_integration.py against the mongo:7 service above
+          # (separate from MONGODB_URI so local runs never touch a real cluster).
+          MONGODB_TEST_URI: mongodb://localhost:27017
+          # A skipped live_service test (Mongo/Redis unreachable) fails the run instead
+          # of passing silently — see tests/conftest.py.
+          REQUIRE_LIVE_SERVICES: "1"
           JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
           JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
@@ -184,6 +200,9 @@ jobs:
 
       - name: TypeScript type check
         run: node_modules/.bin/tsc --noEmit
+
+      - name: Jest (unit tests)
+        run: yarn test --ci
 
   lambda-edge-test:
     name: Lambda@Edge Unit Tests
@@ -295,7 +314,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: backend/requirements-security.txt
 
@@ -674,7 +693,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 

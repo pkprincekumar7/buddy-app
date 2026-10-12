@@ -108,9 +108,10 @@ Rules (full reasoning in [`shared/README.md`](shared/README.md)):
   sign-up returns `403 {"detail": {"code": "country_not_supported", ...}}`. CN needs AWS's separate
   China partition; the rest are under comprehensive sanctions. In stg/prod the WAF additionally
   blocks requests *from* those countries' IPs with the same response body.
-- **Unknown codes are rejected (422)** — there is no silent fallback to `DEFAULT_LOCATION` for a
-  supplied code. All 249 ISO 3166-1 codes are accounted for (mapped, blocked, or one of six
-  uninhabited territories), plus `XK` (Kosovo).
+- **Unknown codes are rejected (422)**, and there is no fallback location anywhere: a token
+  without a valid `location` claim is rejected (401), and every user record carries one. All 249
+  ISO 3166-1 codes are accounted for (mapped, blocked, or one of six uninhabited territories),
+  plus `XK` (Kosovo).
 
 ### 3.2 What is stored
 
@@ -171,9 +172,11 @@ Defined in [`backend/app/auth_utils.py`](backend/app/auth_utils.py); RS256, head
 | Refresh | `sub`, `iat`, `exp`, `type: "refresh"`, `jti`, `location` | 24 h | cookie `refresh_token` (path `/api/v1/auth/`); server-side as a `sessions` document `{_id: jti, user_id, location, expires_at}` |
 
 - Clients send tokens as cookies (web) or `Authorization: Bearer` (mobile); cookie wins.
-- `get_current_user` ([`deps.py`](backend/app/deps.py)) reads `location` from the verified token,
-  validates it against `LOCATION_RE`, and loads the user with **`{_id: sub, location}`** — a
-  tampered location simply finds no document.
+- `get_current_user` ([`deps.py`](backend/app/deps.py)) reads `location` from the verified token
+  (`location_from_claims`, validated against `LOCATION_RE`) — a missing or malformed one is a
+  **401**, never a default — and loads the user with **`{_id: sub, location}`**, so a wrong
+  location simply finds no document. Refresh rejects a missing/malformed one the same way (401,
+  cookies cleared); logout still succeeds and clears the cookies, but has no session to delete.
 - Revocation: `users.tokens_revoked_at`; any token with `iat <= tokens_revoked_at` is rejected (set
   by account deletion and admin lock).
 

@@ -28,7 +28,6 @@ desired_count = 1
 # Application
 llm_timeout_seconds = 60
 llm_hourly_limit    = 50
-default_region      = "us"
 
 # ECS Exec
 enable_execute_command = true

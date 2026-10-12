@@ -72,7 +72,7 @@ resource "aws_lambda_function" "dispatcher" {
 
   function_name    = "${var.app_name}-${var.environment}-github-dispatcher"
   role             = aws_iam_role.lambda_exec.arn
-  runtime          = "python3.12"
+  runtime          = "python3.13"
   handler          = "dispatcher.lambda_handler"
   filename         = data.archive_file.dispatcher.output_path
   source_code_hash = data.archive_file.dispatcher.output_base64sha256

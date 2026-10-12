@@ -200,7 +200,6 @@ export interface CompletedArea {
   status?: string;
   area_id?: string;
   area_name?: string;
-  area_color?: string;
   step?: string;
   /** Written only by the onboarding flow — always plain strings. */
   recommendations?: string[];

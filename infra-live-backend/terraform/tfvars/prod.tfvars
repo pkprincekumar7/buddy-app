@@ -28,7 +28,6 @@ desired_count = 2
 # Application
 llm_timeout_seconds = 90
 llm_hourly_limit    = 200
-default_region      = "us"
 
 # ECS Exec
 enable_execute_command = false
@@ -46,8 +45,8 @@ api_max_capacity    = 200
 worker_min_capacity = 5
 worker_max_capacity = 50
 
-# Observability — prod: 90-day retention (default), all alarms, dashboard enabled, email alerts on
-# log_retention_days = 90  (matches variable default — no override needed)
+# Observability — prod: 90-day retention, all alarms, dashboard enabled, email alerts on
+log_retention_days         = 90
 enable_basic_alarms        = true
 enable_all_alarms          = true
 enable_dashboard           = true
