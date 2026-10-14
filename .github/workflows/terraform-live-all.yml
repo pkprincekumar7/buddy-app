@@ -3,9 +3,10 @@
 #
 # backend_regions (a JSON array, e.g. '["ap-south-1","eu-west-1"]') is the
 # FULL set of regions this run should apply — not "one more region to add".
-# Steps 1/4 and destroy step 3 fan out across every region in it as a GitHub
-# Actions matrix (one terraform-live-backend / deploy-live-backend instance
-# per region, run in parallel). Step 2 (edge) and destroy step 2 pass the
+# Step 1 and destroy step 3 fan out across every region in it as a GitHub
+# Actions matrix (one terraform-live-backend instance per region, run in
+# parallel); step 4 passes the whole list to deploy-live-backend, which
+# builds once and fans out internally. Step 2 (edge) and destroy step 2 pass the
 # same list straight through to terraform-live-edge.yml, since that module
 # is a single shared distribution covering every region at once — passing
 # anything less than the complete set would make Terraform destroy the
@@ -15,7 +16,7 @@
 #   1. terraform-live-backend   VPC / ECS / ALB / Redis / ECR / Secrets Manager (per region, matrix)
 #   2. terraform-live-edge      CloudFront / WAF / public DNS (all regions at once)
 #   3. terraform-live-frontend  S3 bucket policy (OAC)
-#   4. deploy-live-backend      Docker build + ECS rolling update (apply only, per region, matrix)
+#   4. deploy-live-backend      Docker build once + push to every region's ECR + ECS rolling update per region (apply only)
 #   5. deploy-live-frontend     React build + S3 sync + CF invalidation  (apply only)
 #
 # Destroy order (plan-destroy / destroy) — reverse dependency order:
@@ -162,23 +163,19 @@ jobs:
     secrets: inherit
 
   # ---------------------------------------------------------------------------
-  # Step 4 — Deploy backend (Docker build + ECS rolling update), one instance
-  # per region. Skipped when action=plan or deploy=false. Same fail-fast
-  # reasoning as tf-backend — a rolling deploy already underway in one region
-  # must not be cancelled because another region's deploy failed.
+  # Step 4 — Deploy backend (Docker build + ECS rolling update). A single call
+  # covering every region: deploy-live-backend builds the image once, pushes
+  # it to each region's ECR, then rolls ECS out per region in parallel
+  # (fail-fast: false inside it). Skipped when action=plan or deploy=false.
   # ---------------------------------------------------------------------------
   deploy-backend:
-    name: "4 · Deploy Backend (${{ matrix.region }})"
+    name: "4 · Deploy Backend"
     needs: tf-frontend
     if: inputs.action == 'apply' && inputs.deploy
-    strategy:
-      fail-fast: false
-      matrix:
-        region: ${{ fromJson(inputs.backend_regions) }}
     uses: ./.github/workflows/deploy-live-backend.yml
     with:
       environment: ${{ inputs.environment }}
-      aws_region:  ${{ matrix.region }}
+      aws_regions: ${{ inputs.backend_regions }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------

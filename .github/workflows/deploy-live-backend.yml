@@ -1,5 +1,5 @@
 name: Deploy Live Backend
-run-name: Deploy Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Deploy Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_regions }})
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ on:
       service:
         description: "ECS service(s) to deploy"
         required: true
-        default: "both"
+        default: "all"
         type: choice
         options:
-          - both
+          - all
           - backend
           - worker
       environment:
@@ -23,24 +23,36 @@ on:
           - sbx
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+      # workflow_dispatch has no native multi-select input, so every valid
+      # non-empty combination of the 3 supported regions is enumerated below
+      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
+      # region means hand-adding its combinations here too (2^n - 1 total).
+      # Each selected region runs as its own parallel matrix instance.
+      aws_regions:
+        description: "AWS region(s) — each runs as a separate parallel job"
         required: true
         type: choice
         options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
   workflow_call:
     inputs:
       service:
         type: string
         required: false
-        default: "both"
+        default: "all"
       environment:
         type: string
         required: true
-      aws_region:
+      # JSON array, e.g. '["ap-south-1","eu-west-1"]' — same shape as the
+      # workflow_dispatch choice. The image is built once and pushed to every
+      # region in it.
+      aws_regions:
         type: string
         required: true
 
@@ -48,18 +60,27 @@ permissions:
   id-token: write
   contents: read
 
+# Locked per environment + service (not per region): a run covers every
+# selected region at once, and deploy/promote/restart share this namespace so
+# none of them can overlap on the same env+service, whichever regions they hit.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}-${{ inputs.service }}
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  deploy:
-    name: Deploy Live Backend
+  # ---------------------------------------------------------------------------
+  # Build the image once and push the identical image to every selected
+  # region's ECR repository, so all regions run byte-for-byte the same build.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build & Push Image
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    outputs:
+      image_tag: ${{ steps.git_meta.outputs.image_tag }}
 
     steps:
       - name: Checkout
@@ -79,12 +100,119 @@ jobs:
             exit 1
           fi
 
+      # us-east-1 is the control-plane region (SSM); ECR calls below pass
+      # --region explicitly for each target region.
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: deploy-live-backend-${{ inputs.environment }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: us-east-1
+
+      # -------------------------------------------------------------------------
+      # Resolve every region's ECR repository up front (SSM parameters written
+      # by terraform-live-backend.yml) so a missing region fails before the
+      # build, not halfway through the pushes.
+      # -------------------------------------------------------------------------
+      - name: Resolve ECR repositories
+        env:
+          REGIONS: ${{ inputs.aws_regions }}
+        run: |
+          get_ssm() {
+            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
+          }
+
+          : > ecr_targets.txt
+          for REGION in $(echo "$REGIONS" | jq -r '.[]'); do
+            ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/$REGION/ecr_repository_url")
+            if [ -z "$ECR_URL" ]; then
+              echo "ERROR: ECR repository URL for $REGION not found in SSM. Run terraform-live-backend workflow (apply) for $REGION first."
+              exit 1
+            fi
+            echo "$REGION $ECR_URL" >> ecr_targets.txt
+            echo "ECR ($REGION): $ECR_URL"
+          done
+
+      # -------------------------------------------------------------------------
+      # Build once, push to each region's ECR.
+      # Tagged with :<date>-<git-sha> only — ECR repositories use IMMUTABLE
+      # tags so each tag can only be pushed once. :latest is intentionally
+      # omitted; the SHA tag provides full traceability and safe rollbacks
+      # without ever needing to overwrite a tag.
+      # Git metadata is resolved here and passed as build args so the image
+      # can serve it from /api/health without needing .git or the git binary.
+      # -------------------------------------------------------------------------
+      - name: Resolve git metadata
+        id: git_meta
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)"                                   >> "$GITHUB_OUTPUT"
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)"                           >> "$GITHUB_OUTPUT"
+          echo "committed_at=$(git log -1 --format=%cI)"                             >> "$GITHUB_OUTPUT"
+          echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"         >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg GIT_SHA="${{ steps.git_meta.outputs.sha }}" \
+            --build-arg GIT_BRANCH="${{ steps.git_meta.outputs.branch }}" \
+            --build-arg GIT_COMMITTED_AT="${{ steps.git_meta.outputs.committed_at }}" \
+            --build-arg GIT_TAG="${{ steps.git_meta.outputs.tag }}" \
+            -t "backend:${{ steps.git_meta.outputs.image_tag }}" \
+            -f backend/Dockerfile \
+            .
+
+      - name: Push image to each region's ECR
+        env:
+          TAG: ${{ steps.git_meta.outputs.image_tag }}
+        run: |
+          while read -r REGION REPO; do
+            REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
+            REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
+            IMAGE="$REPO:$TAG"
+
+            aws ecr get-login-password --region "$REGION" \
+              | docker login --username AWS --password-stdin "$REGISTRY"
+
+            # IMMUTABLE tags — pushing the same tag twice (e.g., re-running a
+            # failed workflow) would error. If the tag already exists the image
+            # is identical, so skip the push and proceed.
+            if aws ecr describe-images \
+                 --region "$REGION" \
+                 --repository-name "$REPO_NAME" \
+                 --image-ids imageTag="$TAG" \
+                 --output text &>/dev/null; then
+              echo "Image $IMAGE already exists in ECR — skipping push."
+            else
+              docker tag "backend:$TAG" "$IMAGE"
+              docker push "$IMAGE"
+              echo "Pushed: $IMAGE"
+            fi
+          done < ecr_targets.txt
+
+  # ---------------------------------------------------------------------------
+  # Roll the pushed image out to ECS, one parallel instance per region.
+  # fail-fast: false — an in-flight rollout in one region must never be
+  # cancelled just because another region's instance failed.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy Live Backend (${{ matrix.aws_region }})
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(inputs.aws_regions) }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: deploy-live-backend-${{ inputs.environment }}
+          aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
       # Resolve deployment targets.
@@ -99,15 +227,11 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecr_repository_url")
-          CLUSTER=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_cluster_name")
-          SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_service_name")
-          WORKER_SERVICE=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/ecs_worker_service_name")
+          ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/ecr_repository_url")
+          CLUSTER=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/ecs_cluster_name")
+          SERVICE=$(get_ssm  "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/ecs_service_name")
+          WORKER_SERVICE=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/ecs_worker_service_name")
 
-          if [ -z "$ECR_URL" ]; then
-            echo "ERROR: ECR repository URL not found in SSM. Run terraform-live-backend workflow (apply) first."
-            exit 1
-          fi
           if [ -z "$CLUSTER" ]; then
             echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
             exit 1
@@ -117,67 +241,15 @@ jobs:
             exit 1
           fi
 
-          echo "ecr_url=$ECR_URL"               >> "$GITHUB_OUTPUT"
+          IMAGE="$ECR_URL:${{ needs.build.outputs.image_tag }}"
+          echo "image=$IMAGE"                    >> "$GITHUB_OUTPUT"
           echo "ecs_cluster=$CLUSTER"            >> "$GITHUB_OUTPUT"
           echo "ecs_service=$SERVICE"            >> "$GITHUB_OUTPUT"
           echo "ecs_worker_service=$WORKER_SERVICE" >> "$GITHUB_OUTPUT"
-          echo "ECR:            $ECR_URL"
+          echo "Image:          $IMAGE"
           echo "Cluster:        $CLUSTER"
           echo "Service:        $SERVICE"
           echo "Worker service: ${WORKER_SERVICE:-<not yet provisioned>}"
-
-      # -------------------------------------------------------------------------
-      # Build and push to ECR.
-      # Tagged with :<git-sha> only — ECR repository uses IMMUTABLE tags so
-      # each tag can only be pushed once. :latest is intentionally omitted;
-      # the SHA tag provides full traceability and safe rollbacks without
-      # ever needing to overwrite a tag.
-      # Git metadata is resolved here and passed as build args so the image
-      # can serve it from /api/health without needing .git or the git binary.
-      # -------------------------------------------------------------------------
-      - name: Login to Amazon ECR
-        id: ecr_login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Resolve git metadata
-        id: git_meta
-        run: |
-          echo "sha=$(git rev-parse --short HEAD)"                                   >> "$GITHUB_OUTPUT"
-          echo "branch=$(git rev-parse --abbrev-ref HEAD)"                           >> "$GITHUB_OUTPUT"
-          echo "committed_at=$(git log -1 --format=%cI)"                             >> "$GITHUB_OUTPUT"
-          echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"         >> "$GITHUB_OUTPUT"
-
-      - name: Build and push Docker image
-        id: build
-        run: |
-          IMAGE_SHA="${{ steps.tf_outputs.outputs.ecr_url }}:${{ steps.git_meta.outputs.image_tag }}"
-          docker build \
-            --platform linux/amd64 \
-            --build-arg GIT_SHA="${{ steps.git_meta.outputs.sha }}" \
-            --build-arg GIT_BRANCH="${{ steps.git_meta.outputs.branch }}" \
-            --build-arg GIT_COMMITTED_AT="${{ steps.git_meta.outputs.committed_at }}" \
-            --build-arg GIT_TAG="${{ steps.git_meta.outputs.tag }}" \
-            -t "$IMAGE_SHA" \
-            -f backend/Dockerfile \
-            .
-
-          # ECR repository uses IMMUTABLE tags — pushing the same SHA twice
-          # (e.g., re-running a failed workflow) would error. If the tag already
-          # exists the image is identical, so skip the push and proceed.
-          REPO="${{ steps.tf_outputs.outputs.ecr_url }}"
-          TAG="${{ steps.git_meta.outputs.image_tag }}"
-          REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
-          if aws ecr describe-images \
-               --repository-name "$REPO_NAME" \
-               --image-ids imageTag="$TAG" \
-               --output text &>/dev/null; then
-            echo "Image $IMAGE_SHA already exists in ECR — skipping push."
-          else
-            docker push "$IMAGE_SHA"
-            echo "Pushed: $IMAGE_SHA"
-          fi
-          echo "image=$IMAGE_SHA" >> "$GITHUB_OUTPUT"
 
       # -------------------------------------------------------------------------
       # Register new task definitions — one for the API service, one for the
@@ -188,9 +260,9 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Register API task definition
         id: register_td
-        if: inputs.service == 'both' || inputs.service == 'backend'
+        if: inputs.service == 'all' || inputs.service == 'backend'
         env:
-          IMAGE_SHA: ${{ steps.build.outputs.image }}
+          IMAGE_SHA: ${{ steps.tf_outputs.outputs.image }}
         run: |
           TASK_FAMILY="${{ secrets.APP_NAME }}-backend-${{ inputs.environment }}"
 
@@ -223,7 +295,7 @@ jobs:
       # services-stable has a hard 10-minute ceiling).
       # -------------------------------------------------------------------------
       - name: Deploy new task definition to ECS
-        if: inputs.service == 'both' || inputs.service == 'backend'
+        if: inputs.service == 'all' || inputs.service == 'backend'
         env:
           CLUSTER:    ${{ steps.tf_outputs.outputs.ecs_cluster }}
           SERVICE:    ${{ steps.tf_outputs.outputs.ecs_service }}
@@ -274,9 +346,9 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Register Worker task definition
         id: register_worker_td
-        if: inputs.service == 'both' || inputs.service == 'worker'
+        if: inputs.service == 'all' || inputs.service == 'worker'
         env:
-          IMAGE_SHA: ${{ steps.build.outputs.image }}
+          IMAGE_SHA: ${{ steps.tf_outputs.outputs.image }}
         run: |
           TASK_FAMILY="${{ secrets.APP_NAME }}-worker-${{ inputs.environment }}"
 

@@ -48,8 +48,8 @@ env:
 
 jobs:
   # -------------------------------------------------------------------------
-  # Validate runs immediately — no environment gate — so bad inputs are
-  # rejected before the manual approval request is even raised for prod.
+  # Validate runs first, before any environment secrets are loaded, so bad
+  # inputs are rejected up front.
   # -------------------------------------------------------------------------
   validate:
     name: Validate Promotion
@@ -80,8 +80,6 @@ jobs:
 
   # -------------------------------------------------------------------------
   # promote runs after validate passes.
-  # Setting environment: <target_env> triggers the manual approval gate
-  # configured in Settings → Environments → prod (required reviewer).
   # All secrets are read from the target environment.
   # -------------------------------------------------------------------------
   promote:
