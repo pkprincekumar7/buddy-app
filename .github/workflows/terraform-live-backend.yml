@@ -1,5 +1,5 @@
 name: Terraform Live Backend
-run-name: Terraform Live Backend (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Terraform Live Backend (${{ inputs.action }}, ${{ inputs.environment }}, ${{ inputs.aws_regions || inputs.aws_region }})
 
 on:
   workflow_dispatch:
@@ -24,14 +24,23 @@ on:
           - sbx
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+      # workflow_dispatch has no native multi-select input, so every valid
+      # non-empty combination of the 3 supported regions is enumerated below
+      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
+      # region means hand-adding its combinations here too (2^n - 1 total).
+      # Each selected region runs as its own parallel matrix instance.
+      aws_regions:
+        description: "AWS region(s) — each runs as a separate parallel job"
         required: true
         type: choice
         options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
   workflow_call:
     inputs:
       action:
@@ -48,26 +57,34 @@ permissions:
   id-token: write
   contents: read
 
-concurrency:
-  group: terraform-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}
-  cancel-in-progress: false
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   TF_VERSION: "1.16.4"
-  TF_VAR_aws_region: ${{ inputs.aws_region }}
   TF_VAR_environment: ${{ inputs.environment }}
 
 jobs:
   terraform:
-    name: Terraform Live Backend ${{ inputs.action }}
+    name: Terraform Live Backend ${{ inputs.action }} (${{ matrix.aws_region }})
     runs-on: ubuntu-latest
+    # One parallel instance per selected region. fail-fast: false — an
+    # in-flight apply in one region must never be cancelled just
+    # because another region's instance failed.
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(inputs.aws_regions || format('["{0}"]', inputs.aws_region)) }}
+    # Job-level (not workflow-level) so the lock stays per-region now that
+    # one run can target several regions.
+    concurrency:
+      group: terraform-live-backend-buddy360-${{ inputs.environment }}-${{ matrix.aws_region }}
+      cancel-in-progress: false
     environment: ${{ inputs.environment }}
     defaults:
       run:
         working-directory: infra-live-backend/terraform
     env:
       TF_IN_AUTOMATION: "1"
+      TF_VAR_aws_region: ${{ matrix.aws_region }}
       # Resolved from GitHub Environment Secrets so dev/stg/prod each use their own values.
       TF_VAR_app_name:            ${{ secrets.APP_NAME }}
       TF_VAR_mongodb_db_name:     ${{ secrets.APP_NAME }}-${{ inputs.environment }}
@@ -126,15 +143,15 @@ jobs:
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME")
           [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET")
-          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
-          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
-          [[ "${{ inputs.aws_region }}" == "ap-south-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1")
-          [[ "${{ inputs.aws_region }}" == "eu-west-1" && -z "$ACM_CERTIFICATE_ARN_EU_WEST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_EU_WEST_1")
-          [[ "${{ inputs.aws_region }}" == "eu-west-1" && -z "$UPLOADS_BUCKET_NAME_EU_WEST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_EU_WEST_1")
-          [[ "${{ inputs.aws_region }}" == "eu-west-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1")
-          [[ "${{ inputs.aws_region }}" == "us-east-1" && -z "$ACM_CERTIFICATE_ARN_US_EAST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_US_EAST_1")
-          [[ "${{ inputs.aws_region }}" == "us-east-1" && -z "$UPLOADS_BUCKET_NAME_US_EAST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_US_EAST_1")
-          [[ "${{ inputs.aws_region }}" == "us-east-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1")
+          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
+          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
+          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1")
+          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$ACM_CERTIFICATE_ARN_EU_WEST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_EU_WEST_1")
+          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$UPLOADS_BUCKET_NAME_EU_WEST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_EU_WEST_1")
+          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1")
+          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$ACM_CERTIFICATE_ARN_US_EAST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_US_EAST_1")
+          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$UPLOADS_BUCKET_NAME_US_EAST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_US_EAST_1")
+          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1")
           [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
@@ -160,7 +177,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: terraform-live-backend-${{ inputs.environment }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
       # GitHub Actions does not support dynamic secret references, so the
@@ -174,11 +191,11 @@ jobs:
           ACM_ARN_EU_WEST_1:  ${{ secrets.ACM_CERTIFICATE_ARN_EU_WEST_1 }}
           ACM_ARN_US_EAST_1:  ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
         run: |
-          case "${{ inputs.aws_region }}" in
+          case "${{ matrix.aws_region }}" in
             ap-south-1) echo "TF_VAR_acm_certificate_arn=$ACM_ARN_AP_SOUTH_1" >> "$GITHUB_ENV" ;;
             eu-west-1)  echo "TF_VAR_acm_certificate_arn=$ACM_ARN_EU_WEST_1" >> "$GITHUB_ENV" ;;
             us-east-1)  echo "TF_VAR_acm_certificate_arn=$ACM_ARN_US_EAST_1" >> "$GITHUB_ENV" ;;
-            *) echo "ERROR: No ACM certificate configured for region '${{ inputs.aws_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
+            *) echo "ERROR: No ACM certificate configured for region '${{ matrix.aws_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
           esac
 
       # -------------------------------------------------------------------------
@@ -205,7 +222,7 @@ jobs:
           REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1 }}
           REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1 }}
         run: |
-          case "${{ inputs.aws_region }}" in
+          case "${{ matrix.aws_region }}" in
             ap-south-1)
               echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_AP_SOUTH_1"                   >> "$GITHUB_ENV"
               echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1:-}" >> "$GITHUB_ENV"
@@ -219,7 +236,7 @@ jobs:
               echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:-}" >> "$GITHUB_ENV"
               ;;
             *)
-              echo "ERROR: No S3 bucket names configured for region '${{ inputs.aws_region }}'. Add secrets and case entries to this workflow."
+              echo "ERROR: No S3 bucket names configured for region '${{ matrix.aws_region }}'. Add secrets and case entries to this workflow."
               exit 1
               ;;
           esac
@@ -292,7 +309,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}/terraform.tfstate"
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -308,7 +325,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
           {
-            echo "### Terraform Plan — backend / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo "### Terraform Plan — backend / ${{ inputs.environment }} / ${{ matrix.aws_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -318,7 +335,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-backend-${{ inputs.environment }}-${{ inputs.aws_region }}
+          name: tfplan-backend-${{ inputs.environment }}-${{ matrix.aws_region }}
           path: infra-live-backend/terraform/tfplan.bin
           retention-days: 7
 
@@ -389,7 +406,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         run: |
           {
-            echo "### Terraform Destroy Plan — backend / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
+            echo "### Terraform Destroy Plan — backend / ${{ inputs.environment }} / ${{ matrix.aws_region }}"
             echo '```'
             terraform show -no-color tfplan.bin
             echo '```'
@@ -399,7 +416,7 @@ jobs:
         if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: tfplan-backend-destroy-${{ inputs.environment }}-${{ inputs.aws_region }}
+          name: tfplan-backend-destroy-${{ inputs.environment }}-${{ matrix.aws_region }}
           path: infra-live-backend/terraform/tfplan.bin
           retention-days: 7
 

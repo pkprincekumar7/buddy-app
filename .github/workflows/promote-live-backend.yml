@@ -1,5 +1,5 @@
 name: Promote Live Backend
-run-name: Promote Live Backend (${{ inputs.service }}, ${{ inputs.source_env }} → ${{ inputs.target_env }}, ${{ inputs.aws_region }})
+run-name: Promote Live Backend (${{ inputs.service }}, ${{ inputs.source_env }} → ${{ inputs.target_env }}, ${{ inputs.aws_regions }})
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ on:
       service:
         description: "ECS service(s) to promote"
         required: true
-        default: "both"
+        default: "all"
         type: choice
         options:
-          - both
+          - all
           - backend
           - worker
       source_env:
@@ -33,23 +33,33 @@ on:
           - sbx
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+      # workflow_dispatch has no native multi-select input, so every valid
+      # non-empty combination of the 3 supported regions is enumerated below
+      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
+      # region means hand-adding its combinations here too (2^n - 1 total).
+      # Each selected region runs as its own parallel matrix instance.
+      aws_regions:
+        description: "AWS region(s) — each runs as a separate parallel job"
         required: true
         type: choice
         options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
 
 permissions:
   id-token: write
   contents: read
 
-# Shares the same concurrency namespace as deploy-live-backend so a promotion
-# and a direct deploy cannot run simultaneously against the same env+service.
+# Locked per environment + service (not per region) — same namespace as
+# deploy-live-backend, so deploy/promote/restart can never overlap on the
+# same env+service, whichever regions they hit.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.target_env }}-${{ inputs.aws_region }}-${{ inputs.service }}
+  group: deploy-live-backend-buddy360-${{ inputs.target_env }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
@@ -57,8 +67,8 @@ env:
 
 jobs:
   # -------------------------------------------------------------------------
-  # Validate runs immediately — no environment gate — so bad inputs are
-  # rejected before the manual approval request is even raised for prod.
+  # Validate runs first, before any environment secrets are loaded, so bad
+  # inputs are rejected up front.
   # -------------------------------------------------------------------------
   validate:
     name: Validate Promotion
@@ -89,14 +99,19 @@ jobs:
 
   # -------------------------------------------------------------------------
   # promote runs after validate passes.
-  # Setting environment: <target_env> triggers the manual approval gate
-  # configured in Settings → Environments → prod (required reviewer).
   # The ROLE_ARN and APP_NAME secrets are read from the target environment.
   # -------------------------------------------------------------------------
   promote:
-    name: Promote Live Backend
+    name: Promote Live Backend (${{ matrix.aws_region }})
     needs: validate
     runs-on: ubuntu-latest
+    # One parallel instance per selected region. fail-fast: false — an
+    # in-flight rollout in one region must never be cancelled just
+    # because another region's instance failed.
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(inputs.aws_regions) }}
     environment: ${{ inputs.target_env }}
 
     steps:
@@ -119,7 +134,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: promote-backend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: ${{ matrix.aws_region }}
         # NOTE: this role is the target environment's deploy role. It must have
         # ssm:GetParameter and ecs:DescribeServices + ecs:DescribeTaskDefinition
         # for source-environment resources in addition to the full set of deploy
@@ -140,7 +155,7 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          SRC_BASE="/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ inputs.aws_region }}"
+          SRC_BASE="/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}"
           SRC_CLUSTER=$(get_ssm "$SRC_BASE/ecs_cluster_name")
           SRC_SERVICE=$(get_ssm "$SRC_BASE/ecs_service_name")
           SRC_WORKER_SERVICE=$(get_ssm "$SRC_BASE/ecs_worker_service_name")
@@ -168,7 +183,7 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          TGT_BASE="/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ inputs.aws_region }}"
+          TGT_BASE="/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ matrix.aws_region }}"
           TGT_CLUSTER=$(get_ssm "$TGT_BASE/ecs_cluster_name")
           TGT_SERVICE=$(get_ssm "$TGT_BASE/ecs_service_name")
           TGT_WORKER_SERVICE=$(get_ssm "$TGT_BASE/ecs_worker_service_name")
@@ -272,7 +287,7 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Register new task definition for target
         id: register_td
-        if: inputs.service == 'both' || inputs.service == 'backend'
+        if: inputs.service == 'all' || inputs.service == 'backend'
         env:
           IMAGE: ${{ steps.source_image.outputs.image }}
         run: |
@@ -307,7 +322,7 @@ jobs:
       # services-stable has a hard 10-minute ceiling).
       # -------------------------------------------------------------------------
       - name: Deploy to target ECS service
-        if: inputs.service == 'both' || inputs.service == 'backend'
+        if: inputs.service == 'all' || inputs.service == 'backend'
         env:
           CLUSTER:    ${{ steps.target.outputs.ecs_cluster }}
           SERVICE:    ${{ steps.target.outputs.ecs_service }}
@@ -357,7 +372,7 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Register new worker task definition for target
         id: register_worker_td
-        if: (inputs.service == 'both' || inputs.service == 'worker') && steps.source_image.outputs.worker_image != ''
+        if: (inputs.service == 'all' || inputs.service == 'worker') && steps.source_image.outputs.worker_image != ''
         env:
           WORKER_IMAGE: ${{ steps.source_image.outputs.worker_image }}
         run: |

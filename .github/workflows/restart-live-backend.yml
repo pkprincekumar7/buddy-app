@@ -1,15 +1,16 @@
 name: Restart Live Backend
-run-name: Restart Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_region }})
+run-name: Restart Live Backend (${{ inputs.service }}, ${{ inputs.environment }}, ${{ inputs.aws_regions }})
 
 on:
   workflow_dispatch:
     inputs:
       service:
-        description: "ECS service to restart"
+        description: "ECS service(s) to restart"
         required: true
-        default: "backend"
+        default: "all"
         type: choice
         options:
+          - all
           - backend
           - worker
       environment:
@@ -22,21 +23,33 @@ on:
           - sbx
           - stg
           - prod
-      aws_region:
-        description: "AWS region"
+      # workflow_dispatch has no native multi-select input, so every valid
+      # non-empty combination of the 3 supported regions is enumerated below
+      # as its own choice (same list as terraform-live-all.yml) — adding a 4th
+      # region means hand-adding its combinations here too (2^n - 1 total).
+      # Each selected region runs as its own parallel matrix instance.
+      aws_regions:
+        description: "AWS region(s) — each runs as a separate parallel job"
         required: true
         type: choice
         options:
-          - ap-south-1
-          - eu-west-1
-          - us-east-1
+          - '["ap-south-1"]'
+          - '["eu-west-1"]'
+          - '["us-east-1"]'
+          - '["ap-south-1","eu-west-1"]'
+          - '["ap-south-1","us-east-1"]'
+          - '["eu-west-1","us-east-1"]'
+          - '["ap-south-1","eu-west-1","us-east-1"]'
 
 permissions:
   id-token: write
   contents: read
 
+# Locked per environment + service (not per region) — same namespace as
+# deploy-live-backend, so deploy/promote/restart can never overlap on the
+# same env+service, whichever regions they hit.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.aws_region }}-${{ inputs.service }}
+  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:
@@ -44,8 +57,17 @@ env:
 
 jobs:
   restart:
-    name: Restart Live Backend
+    name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
     runs-on: ubuntu-latest
+    # One parallel instance per selected region (and per service for 'all').
+    # fail-fast: false — an in-flight rollout must never be cancelled just
+    # because another instance failed.
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        # 'all' fans out to one instance per service, restarted in parallel.
+        service: ${{ inputs.service == 'all' && fromJson('["backend","worker"]') || fromJson(format('["{0}"]', inputs.service)) }}
     environment: ${{ inputs.environment }}
 
     steps:
@@ -68,7 +90,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
       # Resolve ECS targets from SSM (written by terraform-live-backend).
@@ -77,13 +99,13 @@ jobs:
       - name: Resolve deployment targets
         id: tf_outputs
         env:
-          SERVICE_INPUT: ${{ inputs.service }}
+          SERVICE_INPUT: ${{ matrix.service }}
         run: |
           get_ssm() {
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          SSM_BASE="/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ inputs.aws_region }}"
+          SSM_BASE="/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}"
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
 
           if [ "$SERVICE_INPUT" = "worker" ]; then
