@@ -61,30 +61,29 @@ Status legend: ✅ in place · ⚠️ partial · ❌ missing
 
 | # | Gap | Current state | Target | Section |
 |---|---|---|---|---|
-| 1 | Orphaned `backend/uv.lock` | Committed but unused; no `[project]` table; says `requires-python >=3.14` while everything runs 3.13 | Finish the uv migration or delete the file | [4](#4-backend--python--fastapi) |
-| 2 | Terraform provider lock files | No `.terraform.lock.hcl` committed in any module | Committed per module | [6](#6-infrastructure--terraform) |
-| 3 | GitHub Actions pinned by SHA | All actions use mutable tags | Full commit SHA + version comment | [11](#11-security--cross-cutting) |
-| 4 | Dependabot | `.github/dependabot.yml` missing | Weekly/monthly updates for every ecosystem | [2](#2-github-repository-configuration) |
-| 5 | Frontend (web) tests | No test runner, no tests | Vitest + Testing Library + MSW | [8](#8-testing) |
-| 6 | mypy strict | `strict = false` — **207 errors in 22 files** under `--strict` | `strict = true` | [4](#4-backend--python--fastapi) |
-| 7 | Ruff `S` + `ANN` rules | Not selected — **58 findings** in `app/` | Selected, findings fixed | [4](#4-backend--python--fastapi) |
-| 8 | `terraform validate` on PRs | Only runs inside the `terraform-live-*` deploy workflows (not scheduler); not in `check.yml` | All 4 modules in `terraform-lint` | [6](#6-infrastructure--terraform) |
-| 9 | tflint config | No `.tflint.hcl` → AWS ruleset not enabled | `.tflint.hcl` per module | [6](#6-infrastructure--terraform) |
-| 10 | Readiness endpoint | Only `/health` (liveness) and `/api/health` (build info) | `/health/ready` checking Mongo + Redis | [4](#4-backend--python--fastapi) |
-| 11 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
-| 12 | Error monitoring | No Sentry / OpenTelemetry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
-| 13 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
-| 14 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
-| 15 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
-| 16 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
-| 17 | Accessibility lint | No `eslint-plugin-jsx-a11y` (web or app) | Recommended rules on | [5](#5-frontend--react--typescript) |
-| 18 | Structured logging | stdlib `logging` with `event key=value` messages; `request_id` not attached to log records | JSON logs with `request_id` | [4](#4-backend--python--fastapi) |
-| 19 | Conventional Commits / CHANGELOG | Commit messages are free-form (`Updated code.`); no `CHANGELOG.md` | Conventional Commits + release-please | [2](#2-github-repository-configuration), [12](#12-documentation-standards) |
-| 20 | READMEs | Missing in `backend/`, `infra-live-*/` (4), `scripts/` | One per runnable directory | [12](#12-documentation-standards) |
-| 21 | ADRs | No `docs/adr/` | MADR records for major decisions | [12](#12-documentation-standards) |
-| 22 | RFC 7807 errors | FastAPI `{"detail": ...}` shape | Problem Details (breaking change) | [9](#9-api-quality) |
-| 23 | Schemathesis / k6 / Lighthouse / Playwright | None configured | Advisory runs against staging | [8](#8-testing), [9](#9-api-quality), [10](#10-performance) |
-| 24 | Prettier `trailingComma` | Not set in `frontend/.prettierrc` | `"all"` | [5](#5-frontend--react--typescript) |
+| 1 | Terraform provider lock files | No `.terraform.lock.hcl` committed in any module | Committed per module | [6](#6-infrastructure--terraform) |
+| 2 | GitHub Actions pinned by SHA | All actions use mutable tags | Full commit SHA + version comment | [11](#11-security--cross-cutting) |
+| 3 | Dependabot | `.github/dependabot.yml` missing | Weekly/monthly updates for every ecosystem | [2](#2-github-repository-configuration) |
+| 4 | Frontend (web) tests | No test runner, no tests | Vitest + Testing Library + MSW | [8](#8-testing) |
+| 5 | mypy strict | `strict = false` — **207 errors in 22 files** under `--strict` | `strict = true` | [4](#4-backend--python--fastapi) |
+| 6 | Ruff `S` + `ANN` rules | Not selected — **58 findings** in `app/` | Selected, findings fixed | [4](#4-backend--python--fastapi) |
+| 7 | `terraform validate` on PRs | Only runs inside the `terraform-live-*` deploy workflows (not scheduler); not in `check.yml` | All 4 modules in `terraform-lint` | [6](#6-infrastructure--terraform) |
+| 8 | tflint config | No `.tflint.hcl` → AWS ruleset not enabled | `.tflint.hcl` per module | [6](#6-infrastructure--terraform) |
+| 9 | Readiness endpoint | Only `/health` (liveness) and `/api/health` (build info) | `/health/ready` checking Mongo + Redis | [4](#4-backend--python--fastapi) |
+| 10 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
+| 11 | Error monitoring | No Sentry / OpenTelemetry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
+| 12 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
+| 13 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
+| 14 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
+| 15 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
+| 16 | Accessibility lint | No `eslint-plugin-jsx-a11y` (web or app) | Recommended rules on | [5](#5-frontend--react--typescript) |
+| 17 | Structured logging | stdlib `logging` with `event key=value` messages; `request_id` not attached to log records | JSON logs with `request_id` | [4](#4-backend--python--fastapi) |
+| 18 | Conventional Commits / CHANGELOG | Commit messages are free-form (`Updated code.`); no `CHANGELOG.md` | Conventional Commits + release-please | [2](#2-github-repository-configuration), [12](#12-documentation-standards) |
+| 19 | READMEs | Missing in `backend/`, `infra-live-*/` (4), `scripts/` | One per runnable directory | [12](#12-documentation-standards) |
+| 20 | ADRs | No `docs/adr/` | MADR records for major decisions | [12](#12-documentation-standards) |
+| 21 | RFC 7807 errors | FastAPI `{"detail": ...}` shape | Problem Details (breaking change) | [9](#9-api-quality) |
+| 22 | Schemathesis / k6 / Lighthouse / Playwright | None configured | Advisory runs against staging | [8](#8-testing), [9](#9-api-quality), [10](#10-performance) |
+| 23 | Prettier `trailingComma` | Not set in `frontend/.prettierrc` | `"all"` | [5](#5-frontend--react--typescript) |
 
 ---
 
@@ -264,24 +263,12 @@ preferences without real ambiguity.
 
 ## 4. Backend — Python / FastAPI
 
-### Package manager — resolve the orphaned `uv.lock` ❌
+### Package manager ✅
 
-`backend/uv.lock` is committed, but nothing uses it:
-- `pyproject.toml` has no `[project]` table, so there is nothing for `uv` to lock against.
-- The lock declares `requires-python = ">=3.14"`, while the Dockerfile and CI use Python 3.13.
-- CI, `check.sh`, the Dockerfile and the Husky hook all install with `pip install -r requirements*.txt`.
-
-It will drift silently and mislead anyone who runs `uv sync`. Pick one:
-
-**Option A — delete it** (lowest effort): `git rm backend/uv.lock`. `requirements*.txt` stay the
-single source of truth.
-
-**Option B — finish the migration to uv:**
-1. Add a `[project]` table (`requires-python = ">=3.13,<3.14"`, runtime deps from
-   `requirements.txt`) and `[dependency-groups]` for `lint`, `test`, `security`, `mutation`.
-2. Regenerate: `uv lock`.
-3. Switch CI, `check.sh`, the Dockerfile (`uv sync --frozen --no-dev`) and the Husky hook to uv.
-4. Delete the `requirements*.txt` files, and update `CLAUDE.md`'s command list.
+`requirements*.txt` (runtime, lint, test, security, mutation) are the single source of truth,
+installed with pip in CI, `check.sh`, the Dockerfile and the Husky hook. The orphaned `uv.lock`
+was removed. If you later move to uv, add a `[project]` table + `[dependency-groups]`, `uv lock`,
+switch every install site in one change, then delete the requirements files.
 
 ### Python version pin ⚠️
 
@@ -394,8 +381,7 @@ The current code follows these; enforce them in review:
 
 `frontend/.prettierrc` currently has `plugins`, `tailwindConfig`, `singleQuote`, `semi`,
 `printWidth`. Add `"trailingComma": "all"` (the Prettier 3 default — making it explicit prevents
-churn if the default changes). Apply the same setting in `frontend-app/` so the two ports format
-the same way.
+churn if the default changes). `frontend-app/.prettierrc.js` already sets it.
 
 ### Accessibility — eslint-plugin-jsx-a11y ❌
 
@@ -565,7 +551,7 @@ Add `"test": "vitest"` and `"test:coverage": "vitest run --coverage"` scripts, p
 
 ### End-to-End — Playwright ❌
 
-Cover the onboarding flow (`Onboarding → LifePathway → GoalsDashboard`) and auth (login,
+Cover the onboarding flow (`Onboarding → LifePathway → GrowthAreas`) and auth (login,
 registration, Google sign-in callback, session expiry/refresh). Run on `main` against staging only,
 not on every PR.
 
@@ -767,10 +753,6 @@ supersede one by adding a new record. Initial records to backfill: RS256 JWT wit
 sessions, MongoDB Atlas global clusters with `location` routing, multi-region ECS behind one
 CloudFront distribution, the Lambda@Edge JWT validator, and building the image once and pushing it
 to every region's ECR.
-
-The `README_LIVE_PROPOSED_*` files at the repo root are proposals that predate the current
-architecture (e.g. they require a prod reviewer gate, which is not used). Convert what still
-applies into ADRs, then archive or delete them.
 
 ---
 

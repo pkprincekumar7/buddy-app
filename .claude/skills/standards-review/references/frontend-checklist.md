@@ -6,7 +6,7 @@
    `AVATAR_TEXT_COLOR` in `lib/gradientColors.ts` stays a plain literal because it's baked into a
    standalone `data:image/svg+xml` document (`lib/avatarUtils.ts`) that has no access to the parent
    page's CSS custom properties; each growth area's `hue` in `lib/growthAreaData.ts` stays raw
-   because it's parsed numerically by `hueToHex()` and spliced into `rgba(${hue},N)` template
+   because it's parsed numerically by `hueToHex()` (`lib/lifePathwayData.ts`) and spliced into `rgba(${hue},N)` template
    strings, not read as a CSS value. Both have an explanatory comment at their definition.
 3. **Tailwind arbitrary-value spaces escaped as `_`** — a literal space inside `[...]` silently
    breaks the utility with no build or type error. Grep for this specifically:
@@ -23,7 +23,9 @@
 8. **React Query over hand-rolled fetch state** — `useQuery` preferred over manual
    `useState`/`useEffect`/`cancelled`-flag patterns for server data.
 9. **No duplicated derived-state logic** — shared logic like viewport/media-query checks lives in
-   one hook (`useMediaQuery`), not reimplemented per component.
+   one hook (`useMediaQuery` in `hooks/use-mobile.ts`), not reimplemented per component —
+   `grep -rn "matchMedia" src` should only hit that hook (a `prefers-reduced-motion` check can
+   use it too).
 10. **Single source of truth for shared state** — every consumer of an app-wide value (a
     preference toggle, auth session) reads it from the same shared context/hook. Flag any
     component holding its own local copy with its own default and its own one-off fetch of the
@@ -54,8 +56,8 @@
     two existing conventions (inline error string, or `sonner` toast) — no third pattern.
 18. **Error boundary awareness** — new top-level providers/setup code in `App.tsx` outside
     `<AppShell />` is flagged as unprotected by the top-level boundary; a component that shouldn't
-    be able to crash the whole app follows the `ModalErrorBoundary` scoped pattern
-    (`GoalsDashboard.tsx`); new async failure paths always surface to the user (toast/inline),
+    be able to crash the whole app gets its own small class-based scoped boundary (the only
+    boundary today is the top-level one in `App.tsx` — `grep -rln "ErrorBoundary" src`); new async failure paths always surface to the user (toast/inline),
     never just `console.error`.
 19. **TypeScript strictness** — no new `any`, `as any`, `@ts-ignore`, or `@ts-expect-error`
     (`grep -rn ": any\|as any" src` and `grep -rn "@ts-ignore\|@ts-expect-error" src` should stay

@@ -11,7 +11,8 @@
    re-instantiated per request.
 5. **Resource lifecycle** — long-lived clients (LLM SDK clients, DB pools) created at startup are
    closed in the `lifespan` shutdown phase.
-6. **Response models** — every endpoint declares `response_model=...`.
+6. **Response models** — every endpoint that returns a body declares `response_model=...`
+   (`status_code=204` / `response_class=` routes with no JSON body are exempt).
 7. **OpenAPI security schemes** — auth-protected routes use FastAPI security utilities
    (`APIKeyCookie`, `HTTPBearer`, etc.) so the requirement is visible in the OpenAPI schema.
 8. **List/detail response-shape parity** — when a resource is exposed through both a list
@@ -25,9 +26,12 @@
 9. **Module size / single responsibility** — router/module files split by concern once they
    cover multiple unrelated things.
 10. **Test coverage** — flag missing tests on critical paths (auth, limits, data-integrity
-    logic) as a real finding, even knowing it may not be actioned immediately. Every module under
-    `app/` has its own test file in `backend/tests/` at 100% line + branch coverage (CI gates the
-    total at 99%) — new code needs tests to match. Tests drive routes via `httpx.AsyncClient`/
+    logic) as a real finding, even knowing it may not be actioned immediately. Every module with
+    logic has its own `tests/test_<module>.py` (`test_schemas_<name>.py` for schemas) at 100% line +
+    branch coverage (CI gates the total at 99%); only the constant/data modules `constants.py`,
+    `models.py` and the generated `routing_data.py` have none. A new module needs its own test file
+    at the same level. `live_service` tests (real Mongo/Redis) are skipped locally but must pass
+    in CI. Tests drive routes via `httpx.AsyncClient`/
     `TestClient` and override dependencies with `app.dependency_overrides[...]`, not monkeypatch
     internals (see the Tests section of `backend/CLAUDE.md`).
 11. **Consistent error handling** — no parallel error-formatting path bypassing the global
@@ -40,7 +44,7 @@
     `database.py`, not ad hoc; new raw-dict Mongo writes go through a Pydantic model or get a
     defensive read-side check.
 13. **Rate-limit correctness** — `limiter`/`user_limiter` are Redis-backed with an in-memory
-    fallback (`grep -n "storage_uri" app/limiter.py` should show two matches); flag it only if that
+    fallback (`grep -n "storage_uri=settings" app/limiter.py` should show two matches); flag it only if that
     wiring or `in_memory_fallback_enabled=True` gets removed, not merely for using them. For any
     route with a database-backed auth dependency (`CurrentUser`/`CurrentParent`/`CurrentAdmin`),
     the rate check should be the `rate_limit(...)` dependency declared in that route's own
