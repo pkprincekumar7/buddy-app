@@ -903,8 +903,8 @@ app.add_exception_handler(...)  # type: ignore[arg-type]  # <reason>
 #checkov:skip=CKV_AWS_18:Access logging not required for internal-only bucket
 ```
 
-**Trivy — `.trivyignore`** ⚠️ exists, with a justification for each entry (e.g. CVE-2024-21907
-Windows-only path, GHSA-qwww-vcr4-c8h2 RSC mode unused, build-tooling-only DoS CVEs). The entries
+**Trivy — `.trivyignore`** ⚠️ exists, with a justification for each entry (e.g.
+GHSA-qwww-vcr4-c8h2 RSC mode unused, build-tooling-only DoS CVEs). The entries
 are **missing review dates** — add one to each:
 ```
 # GHSA-xxxx-xxxx-xxxx: not exploitable because X. Review: 2027-01-01

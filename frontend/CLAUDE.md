@@ -72,8 +72,8 @@ this same list.
   `AccomplishmentCards.tsx`, `Observations.tsx`, `Connect.tsx`). Never add a clickable `div`/`span`
   without all three — or use a native `<button>` instead, which needs none of them.
 - Prefer the existing `src/components/ui/dialog.tsx` (Radix) wrapper for any new modal/dialog — it
-  gives focus-trap and focus-return for free. It's currently used in three places
-  (`AdminAllowedEmails.tsx`, `lifepathway/StartJourneyModal.tsx`, and internally by `command.tsx`);
+  gives focus-trap and focus-return for free. It's currently used in two places
+  (`AdminAllowedEmails.tsx`, `lifepathway/StartJourneyModal.tsx`);
   the remaining modals (`StartOverButton.tsx`, `GrowthAreaSheet.tsx`, `Layout.tsx`'s profile panel)
   are hand-rolled with a manual `document.addEventListener('keydown', ...)` for Escape and
   trap/restore focus nowhere. Don't add another hand-rolled modal — build new ones on
