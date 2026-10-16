@@ -1,79 +1,125 @@
 # Code Quality, Security, Testing and Performance Standards
 
-Stack: Python/FastAPI backend (MongoDB Atlas + Redis), React + TypeScript frontend (Vite), Terraform infrastructure (AWS), GitHub Actions CI/CD.
+Stack: Python 3.13 / FastAPI backend (MongoDB Atlas + Redis), React + TypeScript web frontend
+(Vite), React Native app (`frontend-app/`), Terraform infrastructure (AWS, multi-region), GitHub
+Actions CI/CD.
 
-Items listed here are **not yet implemented**. Everything already running in production has been removed from this file.
+This document is a **code-quality analysis**: what the repo enforces today, and the verified
+gaps against the target standard, each with how to close it. Status was checked against the code
+on **2026-10-16** — re-verify before acting on an item, and update the status when one is closed.
+
+Status legend: ✅ in place · ⚠️ partial · ❌ missing
 
 ---
 
 ## Table of Contents
 
-1. [Enforcement Gaps](#1-enforcement-gaps)
+1. [Status Summary](#1-status-summary)
 2. [GitHub Repository Configuration](#2-github-repository-configuration)
 3. [Code Review Standards](#3-code-review-standards)
-4. [Backend — Python / FastAPI](#4-backend-python-fastapi)
-5. [Frontend — React + TypeScript](#5-frontend-react-typescript)
-6. [Infrastructure — Terraform](#6-infrastructure-terraform)
+4. [Backend — Python / FastAPI](#4-backend--python--fastapi)
+5. [Frontend — React + TypeScript](#5-frontend--react--typescript)
+6. [Infrastructure — Terraform](#6-infrastructure--terraform)
 7. [Container Security](#7-container-security)
 8. [Testing](#8-testing)
 9. [API Quality](#9-api-quality)
 10. [Performance](#10-performance)
-11. [Security — Cross-Cutting](#11-security-cross-cutting)
+11. [Security — Cross-Cutting](#11-security--cross-cutting)
 12. [Documentation Standards](#12-documentation-standards)
 13. [Dependency Management](#13-dependency-management)
 14. [Observability and Error Monitoring](#14-observability-and-error-monitoring)
-15. [CI/CD Pipeline Gaps](#15-cicd-pipeline-gaps)
+15. [CI/CD Pipeline](#15-cicd-pipeline)
 16. [Exception and Suppression Process](#16-exception-and-suppression-process)
 
 ---
 
-## 1. Enforcement Gaps
+## 1. Status Summary
 
-The following mandatory checks are listed as blocking in the standards but are **not yet enforced**:
+### Already enforced
 
-| Gap | Current state | Required state |
+| Area | What runs today | Where |
 |---|---|---|
-| mypy strict mode | `strict = false` | `strict = true` |
-| CODEOWNERS auto-reviewer | File missing | `.github/CODEOWNERS` required |
-| Branch protection rules | Not configured | 1 review, CI required, no force-push to main |
-| infracost cost diff | Not in CI | Required on infra-live-* PRs |
-| k6 load tests | Not configured | Staging post-merge (advisory) |
-| Lighthouse / Core Web Vitals | Not configured | CI advisory check |
-| Schemathesis API fuzz | Not in CI | main + staging runs |
-| Gitleaks pre-commit | CI only | Also in Husky pre-commit hook |
-| Terraform fmt pre-commit | CI only | Also in Husky pre-commit hook |
+| Backend lint / format / types | `ruff check`, `ruff format --check`, `mypy app` (non-strict) | `check.yml` → `backend-lint` |
+| Backend tests | pytest, **99% line + branch coverage gate**, real Mongo/Redis integration tests in CI | `check.yml` → `backend-test` |
+| Mutation testing | mutmut + hand-built handler mutants (manual only, list validated in CI) | `docs/mutation-testing.md` |
+| Frontend lint / types / build | ESLint, Prettier check, `tsc`, build, bundle-size budget (≤ 1.4 MB) | `check.yml` → `frontend-lint` |
+| React Native app | ESLint, Prettier check, `tsc`, Jest unit tests | `check.yml` → `frontend-app-lint` |
+| Lambda@Edge | unit tests + `shared/routing.json` sync check | `check.yml` → `lambda-edge-test` |
+| Terraform | `terraform fmt -check`, tflint (default rules) on all 4 modules | `check.yml` → `terraform-lint` |
+| SAST | Bandit, Semgrep (`p/security-audit`), CodeQL | `check.yml` |
+| Secrets | Gitleaks (full history, `.gitleaks.toml`) | `check.yml` → `security-scan` |
+| Dependencies | pip-audit, npm audit, yarn audit, Retire.js, Trivy (deps + licenses), Dependency Review | `check.yml` |
+| IaC security | Checkov + `trivy config` on all 4 modules | `check.yml` → `security-scan` |
+| Containers | Hadolint (both Dockerfiles), Trivy image scan, Dockle, SBOMs | `check.yml` → `security-scan` |
+| DAST / API contract | committed `openapi.json` drift check, Spectral lint, Nuclei | `check.yml` → `dast` |
+| Pre-commit | Husky: lint-staged (`frontend/src`) + ruff; `pre-commit` framework: file hygiene + ruff | `frontend/.husky/`, `.pre-commit-config.yaml` |
+| Auth | RS256 JWT, single-use refresh tokens (session `jti` rotated on every refresh), token revocation, slowapi + Redis rate limits | `backend/app/routers/auth.py` |
+| Transport | CloudFront `redirect-to-https`, HTTPS-only origin, ALB HTTPS-only (443), HSTS 2 years + `includeSubDomains` + `preload` | `infra-live-edge`, `infra-live-backend` |
+| Deploy safety | ECS circuit breaker with automatic rollback; deploy waits for steady state | `ecs.tf`, `deploy-live-backend.yml` |
+
+### Open gaps (priority order)
+
+| # | Gap | Current state | Target | Section |
+|---|---|---|---|---|
+| 1 | Orphaned `backend/uv.lock` | Committed but unused; no `[project]` table; says `requires-python >=3.14` while everything runs 3.13 | Finish the uv migration or delete the file | [4](#4-backend--python--fastapi) |
+| 2 | Terraform provider lock files | No `.terraform.lock.hcl` committed in any module | Committed per module | [6](#6-infrastructure--terraform) |
+| 3 | GitHub Actions pinned by SHA | All actions use mutable tags | Full commit SHA + version comment | [11](#11-security--cross-cutting) |
+| 4 | Dependabot | `.github/dependabot.yml` missing | Weekly/monthly updates for every ecosystem | [2](#2-github-repository-configuration) |
+| 5 | Frontend (web) tests | No test runner, no tests | Vitest + Testing Library + MSW | [8](#8-testing) |
+| 6 | mypy strict | `strict = false` — **207 errors in 22 files** under `--strict` | `strict = true` | [4](#4-backend--python--fastapi) |
+| 7 | Ruff `S` + `ANN` rules | Not selected — **58 findings** in `app/` | Selected, findings fixed | [4](#4-backend--python--fastapi) |
+| 8 | `terraform validate` on PRs | Only runs inside the `terraform-live-*` deploy workflows (not scheduler); not in `check.yml` | All 4 modules in `terraform-lint` | [6](#6-infrastructure--terraform) |
+| 9 | tflint config | No `.tflint.hcl` → AWS ruleset not enabled | `.tflint.hcl` per module | [6](#6-infrastructure--terraform) |
+| 10 | Readiness endpoint | Only `/health` (liveness) and `/api/health` (build info) | `/health/ready` checking Mongo + Redis | [4](#4-backend--python--fastapi) |
+| 11 | Post-deploy smoke test | Deploy checks ECS steady state only | HTTP smoke test after each deploy | [15](#15-cicd-pipeline) |
+| 12 | Error monitoring | No Sentry / OpenTelemetry | Sentry (backend + frontends) | [14](#14-observability-and-error-monitoring) |
+| 13 | Base image digests | `python:3.13-slim`, `node:22-alpine`, `nginx:1.27-alpine` by tag | Pinned by digest | [7](#7-container-security) |
+| 14 | CODEOWNERS | `.github/CODEOWNERS` missing | Present | [2](#2-github-repository-configuration) |
+| 15 | Branch protection | Not verifiable from the repo | 1 review, CI required, no force-push | [2](#2-github-repository-configuration) |
+| 16 | Pre-commit secrets + Terraform fmt | Gitleaks and `terraform fmt` run in CI only | Also on commit | [11](#11-security--cross-cutting) |
+| 17 | Accessibility lint | No `eslint-plugin-jsx-a11y` (web or app) | Recommended rules on | [5](#5-frontend--react--typescript) |
+| 18 | Structured logging | stdlib `logging` with `event key=value` messages; `request_id` not attached to log records | JSON logs with `request_id` | [4](#4-backend--python--fastapi) |
+| 19 | Conventional Commits / CHANGELOG | Commit messages are free-form (`Updated code.`); no `CHANGELOG.md` | Conventional Commits + release-please | [2](#2-github-repository-configuration), [12](#12-documentation-standards) |
+| 20 | READMEs | Missing in `backend/`, `infra-live-*/` (4), `scripts/` | One per runnable directory | [12](#12-documentation-standards) |
+| 21 | ADRs | No `docs/adr/` | MADR records for major decisions | [12](#12-documentation-standards) |
+| 22 | RFC 7807 errors | FastAPI `{"detail": ...}` shape | Problem Details (breaking change) | [9](#9-api-quality) |
+| 23 | Schemathesis / k6 / Lighthouse / Playwright | None configured | Advisory runs against staging | [8](#8-testing), [9](#9-api-quality), [10](#10-performance) |
+| 24 | Prettier `trailingComma` | Not set in `frontend/.prettierrc` | `"all"` | [5](#5-frontend--react--typescript) |
 
 ---
 
 ## 2. GitHub Repository Configuration
 
-### CODEOWNERS
+### CODEOWNERS ❌
 
 Create `.github/CODEOWNERS`:
 
 ```
 # Auth is security-sensitive
 /backend/app/routers/auth.py          @prince-els
+/backend/app/auth_utils.py            @prince-els
+/infra-live-edge/functions/           @prince-els
 
 # Infrastructure changes require infra owner review
 /infra-live-backend/                  @prince-els
 /infra-live-frontend/                 @prince-els
 /infra-live-edge/                     @prince-els
+/infra-live-scheduler/                @prince-els
 
 # CI/CD pipeline changes
 /.github/workflows/                   @prince-els
 ```
 
-### Branch protection rules
+### Branch protection rules ⚠️ (GitHub setting — not verifiable from the repo)
 
-Configure on GitHub → Settings → Branches for `main`:
+Configure on GitHub → Settings → Branches (or a ruleset) for `main`:
 - Require 1 approved review before merging
 - Dismiss stale reviews on new pushes
-- Require status checks to pass (backend-lint, frontend-lint, security-scan, terraform-lint)
-- No force-push to main or staging
-- No deletions of main or staging
+- Require status checks: `backend-lint`, `backend-test`, `frontend-lint`, `frontend-app-lint`,
+  `lambda-edge-test`, `terraform-lint`, `security-scan`, `dast`, `codeql`, `dependency-review`
+- No force-push, no deletion
 
-### Dependabot
+### Dependabot ❌
 
 Create `.github/dependabot.yml`:
 
@@ -92,18 +138,25 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  - package-ecosystem: npm          # yarn.lock is handled by the npm ecosystem
+    directory: /frontend-app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
   - package-ecosystem: terraform
-    directory: /infra-live-backend
+    directories:
+      - /infra-live-backend/terraform
+      - /infra-live-frontend/terraform
+      - /infra-live-edge/terraform
+      - /infra-live-scheduler/terraform
     schedule:
       interval: monthly
 
-  - package-ecosystem: terraform
-    directory: /infra-live-frontend
-    schedule:
-      interval: monthly
-
-  - package-ecosystem: terraform
-    directory: /infra-live-edge
+  - package-ecosystem: docker
+    directories:
+      - /backend
+      - /frontend
     schedule:
       interval: monthly
 
@@ -113,7 +166,10 @@ updates:
       interval: monthly
 ```
 
-### Git workflow conventions
+### Git workflow conventions ⚠️
+
+Branches currently follow `feature/...`. Commit messages do **not** follow a convention (recent
+history is `Updated code.`), which blocks automated changelogs (Section 12).
 
 **Branch naming:**
 
@@ -140,35 +196,36 @@ updates:
 Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `revert`
 
 **Merge strategy:**
-- Feature/fix/refactor/chore → main: squash merge
+- Feature/fix/refactor/chore → main: squash merge (the squash title must be a Conventional Commit)
 - Hotfix → main: merge commit
 - Release → main: merge commit
 
-Keep PRs under **400 lines** of non-generated code.
+Keep PRs under **400 lines** of non-generated code (generated: `openapi.json`,
+`backend/app/routing_data.py`, the frontends' `countries.ts` / `locationHint.ts`, lock files).
 
-**Hotfix path:** On `hotfix/*` branches, Schemathesis, k6, and Lighthouse CI are skipped. All mandatory security checks still run.
+### Release tagging ❌
 
-### Release tagging
-
-Releases follow [Semantic Versioning](https://semver.org/). Tags created on `main` after release branch merges:
+Releases follow [Semantic Versioning](https://semver.org/). Tags created on `main`:
 ```
 git tag -a v1.4.2 -m "Release v1.4.2"
 ```
-`CHANGELOG.md` updated on every release via `release-please` GitHub Action (see Section 12).
+Automate with `release-please` once Conventional Commits are in use (Section 12).
 
 ---
 
 ## 3. Code Review Standards
 
-Approval requirements:
-- Minimum 1 approved review before merge (requires CODEOWNERS configured — see Section 2)
+Approval requirements (depend on branch protection + CODEOWNERS — Section 2):
+- Minimum 1 approved review before merge
 - PR author cannot approve their own PR
 - Stale reviews dismissed on new pushes
 - Reviews completed within 1 business day
 
 Open as **Draft** when work is in progress; convert to "Ready for review" when complete.
 
-**Reviewer checklist:**
+The project-specific checklists live in `backend/CLAUDE.md`, `frontend/CLAUDE.md` and
+`frontend-app/CLAUDE.md`; `/standards-review` audits code against them. The list below is the
+cross-cutting reviewer checklist.
 
 **Correctness**
 - [ ] Logic matches intent in the PR description
@@ -180,451 +237,312 @@ Open as **Draft** when work is in progress; convert to "Ready for review" when c
 - [ ] No hardcoded secrets, tokens, or credentials
 - [ ] User input validated at all system boundaries (Pydantic models on every route)
 - [ ] MongoDB queries use dict literals — no raw string interpolation
-- [ ] `Depends(get_current_user)` present on all new protected routes
+- [ ] Every query is scoped by `location` (multi-region data residency) as well as `user_id`
+- [ ] Auth dependency present on all new protected routes
 - [ ] New auth-related code reviewed against [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 
 **Testing**
-- [ ] New logic has corresponding unit or integration tests
+- [ ] New logic has tests; the 99% coverage gate still passes
 - [ ] At least one failure/edge case tested, not just the happy path
-- [ ] Integration tests use a real MongoDB instance (not mocked)
+- [ ] DB-touching behaviour also covered by a `live_service` test (real MongoDB, not mocked)
 
 **API contracts**
 - [ ] Response shape changes are backwards-compatible, or documented as a breaking change
-- [ ] New endpoints have FastAPI docstrings (flows into OpenAPI spec)
-- [ ] Error responses use RFC 7807 Problem Details format (see Section 9)
+- [ ] Committed `openapi.json` regenerated (CI fails on drift)
+- [ ] New endpoints have a `description=` on the route decorator (flows into the OpenAPI spec)
+- [ ] Web change ported to `frontend-app/` where applicable (`frontend-app/CLAUDE.md`)
 
 **Infrastructure**
-- [ ] Terraform changes include `terraform plan` output in PR description
+- [ ] Terraform changes include `terraform plan` output in the PR description
 - [ ] No new public-facing AWS resources without explicit justification
-- [ ] infracost diff reviewed for unexpected cost increases
+- [ ] Region data changed only in `shared/routing.json` + `node scripts/sync-routing.mjs`
 
-Reviewers should NOT block on: style issues that Ruff/Prettier enforce, or subjective naming preferences without real ambiguity.
+Reviewers should NOT block on: style issues that Ruff/Prettier enforce, or subjective naming
+preferences without real ambiguity.
 
 ---
 
 ## 4. Backend — Python / FastAPI
 
-### Package manager — migrate to uv
+### Package manager — resolve the orphaned `uv.lock` ❌
 
-Currently using `pip` + `requirements.txt`. Migrate to `uv`:
+`backend/uv.lock` is committed, but nothing uses it:
+- `pyproject.toml` has no `[project]` table, so there is nothing for `uv` to lock against.
+- The lock declares `requires-python = ">=3.14"`, while the Dockerfile and CI use Python 3.13.
+- CI, `check.sh`, the Dockerfile and the Husky hook all install with `pip install -r requirements*.txt`.
 
-```bash
-# Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
+It will drift silently and mislead anyone who runs `uv sync`. Pick one:
 
-# Migrate from requirements.txt
-uv add $(cat requirements.txt | grep -v "^#" | grep -v "^$" | tr '\n' ' ')
-uv add --dev $(cat requirements-lint.txt | grep -v "^#" | grep -v "^$" | tr '\n' ' ')
-```
+**Option A — delete it** (lowest effort): `git rm backend/uv.lock`. `requirements*.txt` stay the
+single source of truth.
 
-`uv.lock` replaces all `requirements*.txt` files and is committed to version control. `pyproject.toml` becomes the single source of truth.
+**Option B — finish the migration to uv:**
+1. Add a `[project]` table (`requires-python = ">=3.13,<3.14"`, runtime deps from
+   `requirements.txt`) and `[dependency-groups]` for `lint`, `test`, `security`, `mutation`.
+2. Regenerate: `uv lock`.
+3. Switch CI, `check.sh`, the Dockerfile (`uv sync --frozen --no-dev`) and the Husky hook to uv.
+4. Delete the `requirements*.txt` files, and update `CLAUDE.md`'s command list.
 
-CI commands change from:
-```bash
-pip install -r requirements.txt -r requirements-lint.txt
-```
-to:
-```bash
-uv sync
-uv run pytest
-```
+### Python version pin ⚠️
 
-### Python version pin
+3.13 is pinned in the Dockerfile and each `setup-python` step, but there is no
+`backend/.python-version`. Add one (`3.13`) so local venvs, `uv` and `setup-python`
+(`python-version-file: backend/.python-version`) all read the same value.
 
-Create `backend/.python-version`:
-```
-3.13
-```
-`uv` reads this file automatically. CI uses it via `uv python install`.
+### Ruff — add security and annotation rules ❌
 
-### Ruff — add security and annotation rules
-
-Current `pyproject.toml` is missing two rule groups. Add "S" and "ANN" to the select list:
+`select` currently has `E, W, F, I, B, UP, C4, RET, SIM, N`. Enabling `S` and `ANN` on `app/`
+today reports **58 findings** — 46 × `ANN201` (missing return type on public functions),
+4 × `ANN401` (`Any`), 4 × `S101` (`assert`), 2 × `ANN001`, 1 × `ANN202`, 1 × `S311`
+(non-crypto `random`).
 
 ```toml
 [tool.ruff.lint]
 select = [
     "E", "W", "F", "I", "B", "UP", "C4", "RET", "SIM", "N",
-    "S",    # flake8-security — bandit-equivalent security checks (SQL injection, shell injection, etc.)
-    "ANN",  # flake8-annotations — requires type annotations on public functions
+    "S",    # flake8-bandit — security checks
+    "ANN",  # flake8-annotations — type annotations on public functions
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "ANN"]   # assert and missing annotations are fine in tests
 ```
 
-Also add `[tool.bandit]` config section (currently missing):
-```toml
-[tool.bandit]
-skips = ["B101"]  # assert acceptable in tests
-```
+Bandit already runs in CI (`bandit -r backend/app/ backend/tools/ -ll`) and does not scan
+`tests/`, so no `[tool.bandit]` skip config is needed.
 
-### mypy — enable strict mode
+### mypy — enable strict mode ❌
 
-Currently `strict = false`. Change:
+Current config: `strict = false`, `disallow_untyped_defs = false`, `warn_return_any = false`,
+`check_untyped_defs = true`. Running `mypy app --strict` today reports **207 errors in 22 files**.
+
+Target:
 
 ```toml
 [tool.mypy]
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
-exclude = ["tests/"]
+warn_unused_ignores = true
 ```
 
-`strict = true` enables: `disallow_untyped_defs`, `disallow_any_generics`, `warn_return_any`, `no_implicit_optional`, and others. Every public function must have complete type annotations. Fix all resulting errors before enabling — do not use `# type: ignore` to suppress.
+Fix incrementally — enable `disallow_untyped_defs` first (it overlaps with Ruff `ANN`), then
+`warn_return_any`, then full `strict`. Do not use `# type: ignore` to get there.
 
-### pip-audit config in pyproject.toml
+### pip-audit ignores ⚠️
 
-Move the `--ignore-vuln` CI flags into `pyproject.toml` so they are version-controlled:
+The ignore for `PYSEC-2025-183` is duplicated inline in `check.yml` and `check.sh`. pip-audit has
+no config-file option for ignores, so keep both copies in sync, and record the reason and a review
+date in a comment next to each (Section 16).
 
-```toml
-[tool.pip-audit]
-ignore-vulns = [
-  # "PYSEC-2025-183",  # example: add CVE ID + reason + review date
-]
-```
+### Structured logging ⚠️
 
-Remove the inline `--ignore-vuln PYSEC-2025-183` from the CI command. `pip-audit` reads `pyproject.toml` automatically.
+Current state: stdlib `logging`, already using an event-style message convention
+(`log.warning("auth.refresh.failed reason=jti_not_found sub=%s", uid)`). `request_id_middleware`
+generates or propagates `X-Request-Id`, but the ID is not attached to log records, so you can't
+correlate log lines for a single request in CloudWatch.
 
-### Structured logging — structlog
+Target: JSON logs in deployed environments, with `request_id` on every request-scoped event.
+Either:
+- **structlog** — `structlog.configure(...)` with `JSONRenderer()` when `app_env != "dev"`, and
+  `structlog.contextvars.bind_contextvars(request_id=...)` in `request_id_middleware`; or
+- **stdlib only** — a `contextvars.ContextVar` set in the middleware, plus a `logging.Filter` that
+  copies it onto each record, plus a JSON formatter.
 
-Currently using Python's standard `logging` module. Replace with `structlog` for machine-parseable JSON output (CloudWatch, Datadog, ELK).
+Required fields on every event: `timestamp`, `level`, `event`, `request_id` (request-scoped).
+Never log tokens, passwords, or full emails.
 
-Install:
-```bash
-uv add structlog
-```
+Log levels: `DEBUG` (local only), `INFO` (normal events), `WARNING` (recoverable issues), `ERROR`
+(failures needing attention), `CRITICAL` (service-level failures).
 
-Usage:
-```python
-import structlog
+### Health check — add readiness endpoint ❌
 
-logger = structlog.get_logger()
+Current state: `/health` (liveness, unthrottled) and `/api/health` (build metadata,
+rate-limited at 30/min). Neither checks dependencies.
 
-# Correct — structured fields
-logger.info("user.created", user_id=str(user.id), email=user.email)
-logger.error("db.query_failed", collection="users", error=str(e))
+Add `/health/ready`: ping MongoDB (`db.command("ping")`) and Redis, if one is configured. Return
+200 only when both respond, or 503 otherwise. Add the path to `_HEALTH_PATHS` so it gets the same
+middleware treatment. Point the ALB target-group health check at it, keep `/health` for liveness,
+and use it for the post-deploy smoke test (Section 15).
 
-# Wrong — unstructured string (current pattern to remove)
-logger.info(f"User {user.id} created")
-```
+### JWT ✅ / ⚠️
 
-Configure structlog in `app/main.py` at startup to output JSON in production and pretty-printed in development:
+Already in place: RS256 signing, single-use refresh tokens (each refresh inserts a new session
+`jti` and deletes the old one), `tokens_revoked_at` revocation honoured on refresh, and
+location-scoped sessions.
 
-```python
-import structlog, logging
+Remaining (optional): defaults are `jwt_access_expire_minutes = 30` and
+`jwt_refresh_expire_hours = 24`. Consider a 15-minute access token. Lengthening the refresh window
+is a product decision, since it trades re-login frequency against session lifetime.
 
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer() if settings.app_env == "prod"
-        else structlog.dev.ConsoleRenderer(),
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-)
-logging.basicConfig(level=logging.INFO)
-```
+### MongoDB-specific standards ✅
 
-Bind `request_id` to structlog context in `request_id_middleware` so every log event within a request automatically includes the correlation ID:
+The current code follows these; enforce them in review:
 
-```python
-import structlog.contextvars
-
-async def request_id_middleware(request, call_next):
-    request_id = ...  # existing logic
-    structlog.contextvars.clear_contextvars()
-    structlog.contextvars.bind_contextvars(request_id=request_id)
-    response = await call_next(request)
-    response.headers["X-Request-Id"] = request_id
-    return response
-```
-
-Required log fields on every event: `timestamp`, `level`, `event`, `request_id` (on request-scoped events).
-
-Log levels: `DEBUG` (local only), `INFO` (normal events), `WARNING` (recoverable issues), `ERROR` (failures needing attention), `CRITICAL` (service-level failures).
-
-### Health check — add readiness endpoint
-
-Currently only `/health` (liveness) exists. Add `/health/ready`:
-
-```python
-from app.database import get_database
-from app.llm_rate_limiter import get_redis_client
-
-@app.get("/health/ready", tags=["system"])
-async def readiness(request: Request):
-    """Readiness probe — returns 200 only when DB and Redis are reachable."""
-    db = request.app.state.db
-    await db.command("ping")
-
-    r = get_redis_client()
-    if r is not None:
-        r.ping()
-
-    return {"status": "ok"}
-```
-
-ECS/ALB readiness checks should point to `/health/ready`; liveness checks to `/health`.
-
-### JWT expiry — tighten defaults
-
-Current defaults in `settings.py`:
-- `jwt_access_expire_minutes = 30` → change to `15`
-- `jwt_refresh_expire_hours = 24` → change to `168` (7 days)
-
-Refresh tokens must be single-use: rotate on every refresh call. The existing auth router must be verified to invalidate the old refresh token on use (store token IDs in Redis or a `used_tokens` collection).
-
-```python
-jwt_access_expire_minutes: int = Field(default=15, ...)
-jwt_refresh_expire_hours: int = Field(default=168, ...)  # 7 days
-```
-
-### MongoDB-specific standards
-
-These rules apply to all Motor async database access and must be enforced in code review:
-
-- **No raw string interpolation in queries.** Use dict literals only:
-  ```python
-  # Correct
-  await collection.find_one({"user_id": user_id})
-  # Wrong
-  await collection.find_one({"user_id": f"{user_id}"})
-  ```
-- All queries must have a supporting index. New queries without a declared index require a code review note.
-- No synchronous Motor calls inside async routes — every DB call must be `await`ed.
-- `init_indexes()` is the only place to create indexes, never inline in route handlers.
-- All `find()` calls must include `.limit()` or be explicitly reviewed.
+- **No raw string interpolation in queries.** Use dict literals only.
+- Every query is scoped by `location` (multi-region data residency).
+- Every query has a supporting index. `init_indexes()` in `app/database.py` is the only place
+  indexes are created, never inline in route handlers.
+- Every DB call is `await`ed — no synchronous Motor calls in async routes.
+- List queries are bounded: `.to_list(limit)` (current pattern), or `.limit()`.
 
 ---
 
 ## 5. Frontend — React + TypeScript
 
-### Prettier — add trailingComma
+### Prettier — set trailingComma ❌
 
-Add to `.prettierrc`:
-```json
-{
-  "plugins": ["prettier-plugin-tailwindcss"],
-  "tailwindConfig": "./tailwind.config.ts",
-  "singleQuote": true,
-  "semi": true,
-  "printWidth": 100,
-  "trailingComma": "all"
-}
-```
+`frontend/.prettierrc` currently has `plugins`, `tailwindConfig`, `singleQuote`, `semi`,
+`printWidth`. Add `"trailingComma": "all"` (the Prettier 3 default — making it explicit prevents
+churn if the default changes). Apply the same setting in `frontend-app/` so the two ports format
+the same way.
 
-`"trailingComma": "all"` is the Prettier 3 default and required for consistent diffs.
+### Accessibility — eslint-plugin-jsx-a11y ❌
 
-### Accessibility — eslint-plugin-jsx-a11y
+**Target: WCAG 2.1 Level AA.** Not installed in `frontend/` or `frontend-app/`.
 
-**Target: WCAG 2.1 Level AA**
-
-Install:
+Web (`frontend/eslint.config.ts`):
 ```bash
 npm install -D eslint-plugin-jsx-a11y
 ```
-
-Add to `eslint.config.ts`:
 ```ts
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 
-// Inside the main config object:
-plugins: {
-  ...existing plugins,
-  'jsx-a11y': jsxA11y,
-},
-rules: {
-  ...existing rules,
-  ...jsxA11y.configs.recommended.rules,
-},
+// In the config array:
+jsxA11y.flatConfigs.recommended,
 ```
 
-Fix all reported violations before enabling — do not suppress with `eslint-disable`. Lighthouse accessibility score target: ≥ 90 (advisory).
+React Native (`frontend-app/`): `eslint-plugin-react-native-a11y`.
 
-### Snyk — frontend dependency scanning
+Fix all reported violations before enabling — do not suppress with `eslint-disable`. Lighthouse
+accessibility score target: ≥ 90 (advisory).
 
-Snyk runs weekly on `main` for deeper transitive dependency analysis beyond `npm audit`:
+### Dependency scanning ✅
 
-```yaml
-# Add to .github/workflows/lint.yml (weekly schedule or main push)
-- name: Snyk (frontend)
-  uses: snyk/actions/node@...
-  with:
-    args: --severity-threshold=high
-  env:
-    SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-```
+npm audit, yarn audit, Retire.js, Trivy, CodeQL and Dependency Review already run on every PR.
+Snyk would be redundant — only add it if you need its reachability analysis.
 
 ---
 
 ## 6. Infrastructure — Terraform
 
-### terraform validate — add to CI
+Modules: `infra-live-backend`, `infra-live-edge`, `infra-live-frontend`, `infra-live-scheduler`
+(each under `terraform/`).
 
-`terraform validate` is not in CI. Add after `terraform fmt` check in the `terraform-lint` job:
+### terraform validate — add to PR CI ⚠️
+
+`terraform validate` runs only inside `terraform-live-backend/edge/frontend.yml` (at deploy time,
+never for the scheduler). It should fail the PR instead. Add it to `check.yml` → `terraform-lint`:
 
 ```yaml
-- name: Terraform validate (infra-live-backend)
+- name: Terraform validate (all modules)
   run: |
-    terraform -chdir=infra-live-backend/terraform init -backend=false
-    terraform -chdir=infra-live-backend/terraform validate
-
-- name: Terraform validate (infra-live-edge)
-  run: |
-    terraform -chdir=infra-live-edge/terraform init -backend=false
-    terraform -chdir=infra-live-edge/terraform validate
-
-- name: Terraform validate (infra-live-frontend)
-  run: |
-    terraform -chdir=infra-live-frontend/terraform init -backend=false
-    terraform -chdir=infra-live-frontend/terraform validate
+    for m in infra-live-backend infra-live-edge infra-live-frontend infra-live-scheduler; do
+      terraform -chdir=$m/terraform init -backend=false -input=false
+      terraform -chdir=$m/terraform validate
+    done
 ```
 
-### tflint configuration file
+### tflint configuration file ❌
 
-Create `.tflint.hcl` at each infra module root:
+tflint runs on all 4 modules, but with no `.tflint.hcl`, so only the core Terraform rules apply —
+the AWS ruleset (invalid instance types, deprecated arguments, etc.) is off. Create
+`.tflint.hcl` in each `infra-live-*/terraform/` (or one at the root, passed with `--config`):
 
 ```hcl
+plugin "terraform" {
+  enabled = true
+  preset  = "recommended"
+}
+
 plugin "aws" {
   enabled = true
-  version = "0.32.0"
+  version = "<latest from github.com/terraform-linters/tflint-ruleset-aws/releases>"
   source  = "github.com/terraform-linters/tflint-ruleset-aws"
 }
-
-rule "terraform_required_version" {
-  enabled = true
-}
-
-rule "terraform_required_providers" {
-  enabled = true
-}
 ```
 
-tflint errors block merge; warnings are advisory.
+Add `tflint --init` before the tflint steps in CI. tflint errors block merge; warnings are advisory.
 
-### infracost — add to CI
+### infracost ❌ (optional)
 
-Add to the `terraform-lint` job, conditional on infra-live-* file changes:
+Advisory cost diff on PRs that touch `infra-live-*`. Cost changes > $50/month must be acknowledged
+in the PR description. See `docs/aws-cost-estimate.md` for the current baseline.
 
-```yaml
-- name: infracost diff
-  if: contains(github.event.pull_request.changed_files, 'infra-live')
-  run: infracost diff --path . --format json --out-file /tmp/infracost.json
-```
+### Terraform state and provider locks ⚠️
 
-Cost diffs are advisory — do not block merge, but cost changes > $50/month must be acknowledged in the PR description.
-
-### Terraform state
-
-- Remote state must be in S3 with DynamoDB locking.
-- `.terraform.lock.hcl` committed to version control, updated when provider versions change.
-- `terraform plan` output must be included in the PR description for infrastructure-affecting changes.
+- ✅ Remote state in S3 with native S3 locking (`use_lockfile = true`) — DynamoDB is not needed.
+- ✅ State key per environment, and per region for the backend.
+- ❌ **No `.terraform.lock.hcl` is committed in any module**, so every `init` can resolve different
+  provider builds. Run `terraform init` in each module, then
+  `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`, and commit the lock
+  files. Update them deliberately when provider versions change.
+- `terraform plan` output goes in the PR description for infrastructure-affecting changes.
 
 ---
 
 ## 7. Container Security
 
-### Base image digest pinning
+Already in place ✅: Hadolint on both Dockerfiles, Trivy image scan, Dockle (CIS benchmark), and
+CycloneDX SBOMs.
 
-Current Dockerfiles use mutable tags (`FROM python:3.13-slim`, `FROM node:22-alpine`). Pin by digest:
+### Base image digest pinning ❌
+
+Current images are mutable tags: `python:3.13-slim` (backend), `node:22-alpine` + `nginx:1.27-alpine`
+(frontend). Pin by digest and keep the tag as a comment:
 
 ```dockerfile
-# Get the digest:
-# docker pull python:3.13-slim && docker inspect python:3.13-slim --format='{{index .RepoDigests 0}}'
-
-# Correct — pinned by digest
+# docker buildx imagetools inspect python:3.13-slim  → copy the index digest
 FROM python:3.13-slim@sha256:<digest>
-
-# Wrong — tag is mutable
-FROM python:3.13-slim
 ```
 
-Update pinned digests as part of the monthly dependency update cycle. This is a supply chain attack vector — tags can be moved by a compromised upstream registry.
+Dependabot's `docker` ecosystem (Section 2) keeps pinned digests current. Tags can be moved
+upstream, so this is a supply-chain risk.
 
 ---
 
 ## 8. Testing
 
-No tests currently exist in the backend. No frontend test setup exists. This entire section is pending implementation.
+### Backend — Pytest ✅
 
-### Backend — Pytest
+- 29 test modules in `backend/tests/` (flat layout); tooling: pytest, pytest-cov, httpx.
+- CI and `check.sh` enforce **99% line + branch coverage** of `app/`:
+  `pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q`
+- `live_service` marker: tests against a real MongoDB/Redis. They're skipped locally without one,
+  but **fail** the run in CI (`REQUIRE_LIVE_SERVICES=1`). Never point `MONGODB_TEST_URI` at a real
+  cluster.
+- Mutation testing (mutmut + `tools/mutate_handlers.py`) is manual-only — see
+  `docs/mutation-testing.md`.
 
-**Tools: pytest + pytest-cov + coverage.py** (no pytest-asyncio — tests run async code with `asyncio.run(...)`)
-
-Add to `requirements-test.txt` (or `uv add --dev`):
-```
-pytest
-pytest-cov
-httpx
-hypothesis
-```
-
-Configure `pyproject.toml`:
-```toml
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "unit: pure unit tests",
-    "integration: requires running test database",
-]
-
-[tool.coverage.run]
-source = ["app"]
-omit = ["app/main.py", "tests/*"]
-
-[tool.coverage.report]
-fail_under = 80
-show_missing = true
-```
-
-CI and `check.sh` run (already enforced — line + branch coverage of `app/` is ~99.96%):
-```bash
-pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
-```
-
-**Coverage thresholds by layer:**
-
-| Layer | Minimum |
-|---|---|
-| `routers/auth.py` | 90% |
-| `routers/llm.py` | 85% |
-| All other routers | 80% |
-| Service layer | 85% |
-| Database access | 80% |
-| Utilities | 70% |
-
-**Test structure:**
-- `tests/unit/` — pure logic, no DB or HTTP calls, mock external dependencies
-- `tests/integration/` — use the real MongoDB test instance (CI spins one up), test route → DB round-trips
-
-**Do not mock the database in integration tests.** Mocked DB tests mask real migration and schema failures.
-
-**Property-based testing — Hypothesis:**
-
-Use for functions that process user input, data transformations, or parsing logic:
+Rules:
+- **Do not mock the database for DB behaviour** — cover it with a `live_service` test.
+  Mocked DB tests hide real query and index failures.
+- Optional: add **Hypothesis** for input-parsing and validation functions (e.g. Pydantic schema
+  validators):
 
 ```python
 from hypothesis import given, strategies as st
 
 @given(st.text(min_size=1, max_size=255))
-def test_sanitize_name_never_raises(name: str) -> None:
-    result = sanitize_name(name)
-    assert isinstance(result, str)
+def test_name_validator_never_raises_unexpectedly(name: str) -> None:
+    ...
 ```
 
-### Frontend — Vitest
+### React Native app — Jest ⚠️
 
-Install:
+Jest with React Native Testing Library runs in CI. Only 7 test files exist (routing, theme,
+class names, portal, and so on) and there's no coverage threshold. Add screen-level tests for the
+critical flows, and a `--coverage` threshold once a baseline exists.
+
+### Frontend (web) — Vitest ❌
+
+No test runner or tests exist in `frontend/`.
+
 ```bash
 npm install -D vitest @vitest/coverage-v8 @testing-library/react @testing-library/user-event jsdom msw
 ```
 
-Create `frontend/vitest.config.ts`:
+`frontend/vitest.config.ts`:
 ```ts
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
@@ -632,105 +550,45 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: { '@': resolve(import.meta.dirname, './src') },
-  },
+  resolve: { alias: { '@': resolve(import.meta.dirname, './src') } },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
-    coverage: {
-      provider: 'v8',
-      thresholds: { lines: 70, functions: 70, branches: 65 },
-    },
+    coverage: { provider: 'v8', thresholds: { lines: 70, functions: 70, branches: 65 } },
   },
 });
 ```
 
-Add `"test": "vitest"` and `"test:coverage": "vitest run --coverage"` to `package.json` scripts.
+Add `"test": "vitest"` and `"test:coverage": "vitest run --coverage"` scripts, plus a CI step in
+`frontend-lint`. Use **MSW** to intercept at the network level — don't mock `fetch` directly.
 
-**MSW (Mock Service Worker):**
+### End-to-End — Playwright ❌
 
-MSW intercepts at the network level — tests exercise the same fetch code as production. Do not mock `fetch` directly.
-
-```ts
-// src/mocks/handlers.ts
-import { http, HttpResponse } from 'msw';
-
-export const handlers = [
-  http.get('/api/v1/children', () =>
-    HttpResponse.json([{ id: '1', name: 'Test Child' }])
-  ),
-];
-```
-
-```ts
-// vitest.setup.ts
-import { setupServer } from 'msw/node';
-import { handlers } from './src/mocks/handlers';
-
-const server = setupServer(...handlers);
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-```
-
-### End-to-End — Playwright
-
-Install:
-```bash
-npm install -D @playwright/test
-npx playwright install
-```
-
-Cover:
-- Onboarding flow (`Onboarding → LifePathway → GoalsDashboard`)
-- Auth flows (login, registration, session expiry)
-
-E2E tests run in CI on `main` and `staging` only — not on every feature PR.
+Cover the onboarding flow (`Onboarding → LifePathway → GoalsDashboard`) and auth (login,
+registration, Google sign-in callback, session expiry/refresh). Run on `main` against staging only,
+not on every PR.
 
 ---
 
 ## 9. API Quality
 
-### Error response format — RFC 7807
+### Error response format — RFC 7807 ❌
 
-All error responses must follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807). Currently not implemented — FastAPI returns raw `{"detail": "..."}` shapes.
+Current state: custom handlers in `app/main.py` for `RequestValidationError` (422),
+`HTTPException` and unhandled exceptions. They keep FastAPI's `{"detail": ...}` shape, and no
+stack traces leak.
 
-Implement globally in `app/main.py`:
+Target: [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807)
+(`type`, `title`, `status`, `detail`, `instance`; media type `application/problem+json`).
+**This is a breaking change** — both `frontend/` and `frontend-app/` read `detail`. Ship it with
+the client changes in the same release, or keep `detail` as a compatible field during a deprecation
+window.
 
-```python
-from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-from typing import Optional
+### Schemathesis — API fuzz testing ❌
 
-class ProblemDetail(BaseModel):
-    type: str       # URI identifying the error type
-    title: str      # Short summary
-    status: int     # HTTP status code
-    detail: str     # Human-readable explanation for this occurrence
-    instance: Optional[str] = None
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=ProblemDetail(
-            type=f"https://buddy360.com/errors/{exc.status_code}",
-            title=exc.detail if isinstance(exc.detail, str) else "HTTP Error",
-            status=exc.status_code,
-            detail=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
-        ).model_dump(),
-    )
-```
-
-Do not invent custom error shapes. RFC 7807 is what API clients and monitoring tools expect.
-
-### Schemathesis — API fuzz testing
-
-FastAPI auto-generates an OpenAPI spec. Schemathesis fuzz-tests all endpoints automatically. Currently the DAST job uses Spectral + Nuclei but not Schemathesis.
-
-Add to the `dast` CI job:
+The `dast` job already boots the backend, checks the committed `openapi.json` for drift, and runs
+Spectral and Nuclei. Add Schemathesis to the same job and to its fail-gate:
 
 ```yaml
 - name: Schemathesis (API fuzz)
@@ -740,8 +598,6 @@ Add to the `dast` CI job:
     pip install schemathesis
     schemathesis run http://localhost:8000/openapi.json --checks all --max-examples 50
 ```
-
-Add `schemathesis` to the fail-gate at the end of the DAST job.
 
 ### Breaking change policy
 
@@ -754,11 +610,12 @@ A **breaking change** is any of:
 Breaking changes require:
 1. `BREAKING CHANGE:` footer in the commit message
 2. API version bump (`/api/v1` → `/api/v2`) if it affects a public client contract
-3. Deprecation notice in the PR description with a migration guide
+3. Both clients (`frontend/`, `frontend-app/`) updated in the same release
+4. Deprecation notice in the PR description with a migration guide
 
-### CORS
+### CORS ✅
 
-CORS is already correctly configured — explicit origins only, no wildcard. Do not change.
+Explicit origins from `settings.cors_origins` (comma-separated), no wildcard. Do not change.
 
 ---
 
@@ -766,53 +623,32 @@ CORS is already correctly configured — explicit origins only, no wildcard. Do 
 
 ### Service-level objectives (SLOs)
 
-Define and instrument these targets once Prometheus is configured (see Section 14):
+Define and instrument these once metrics exist (Section 14):
 
 | Metric | Target |
 |---|---|
 | Uptime | 99.9% (≤ 8.7h downtime/year) |
-| API p95 latency | < 500ms |
-| API p99 latency | < 1000ms |
+| API p95 latency (non-LLM routes) | < 500ms |
+| API p99 latency (non-LLM routes) | < 1000ms |
 | Error rate | < 0.1% (5xx responses) |
-| Redis cache hit rate | > 80% |
+
+LLM-backed routes (`/api/v1/llm/*`, background jobs) are bound by the upstream provider's latency.
+Track them separately rather than against the API targets.
 
 Alerts fire when any SLO is breached for > 5 consecutive minutes.
 
-### Backend load testing — k6
+### Backend load testing — k6 ❌
 
-Create `k6/thresholds.js`:
-```js
-import http from 'k6/http';
-import { check } from 'k6';
+Create `k6/thresholds.js` with `p(95)<500`, `p(99)<1000`, `http_req_failed rate<0.01`. Target
+`/health/ready` and a representative authenticated read route. Run against staging after deploys
+to `main` (advisory). Never load-test the LLM routes against real providers.
 
-export const options = {
-  vus: 50,
-  duration: '2m',
-  thresholds: {
-    http_req_duration: ['p(95)<500', 'p(99)<1000'],
-    http_req_failed: ['rate<0.01'],
-  },
-};
+### Frontend performance
 
-export default function () {
-  const res = http.get(`${__ENV.BASE_URL}/health/ready`);
-  check(res, { 'status 200': (r) => r.status === 200 });
-}
-```
+Already in place ✅: a bundle-size budget in CI (main JS ≤ 1.4 MB).
 
-Run on staging after every deploy to `main`. Results advisory on PRs.
-
-### Frontend — Core Web Vitals
-
-Track the three Core Web Vitals via Lighthouse CI:
-
-| Metric | Good |
-|---|---|
-| LCP (Largest Contentful Paint) | < 2.5s |
-| INP (Interaction to Next Paint) | < 200ms |
-| CLS (Cumulative Layout Shift) | < 0.1 |
-
-Add `lhci` to CI against staging. Score drops > 10 points on any metric trigger a mandatory review comment (advisory).
+Missing ❌: Lighthouse CI against staging for Core Web Vitals — LCP < 2.5s, INP < 200ms,
+CLS < 0.1. A score drop of > 10 points triggers a review comment (advisory).
 
 ---
 
@@ -820,131 +656,121 @@ Add `lhci` to CI against staging. Score drops > 10 points on any metric trigger 
 
 ### OWASP Top 10 — mitigation table
 
-| Risk | Mitigation |
-|---|---|
-| A01 Broken Access Control | `Depends(get_current_user)` on all protected routes |
-| A02 Cryptographic Failures | JWT HS256 + strong secret; TLS at CloudFront/ALB |
-| A03 Injection | MongoDB dict queries; Pydantic at all boundaries |
-| A04 Insecure Design | RFC 7807 format (pending); no stack traces in prod responses |
-| A05 Security Misconfiguration | Checkov + tflint on all Terraform; no wildcard CORS |
-| A06 Vulnerable Components | pip-audit + npm audit + Trivy on every PR |
-| A07 Auth Failures | JWT expiry + refresh rotation; rate limiting via slowapi + Redis |
-| A09 Logging Failures | structlog (pending); Sentry (pending); no secrets in logs |
+| Risk | Mitigation | Status |
+|---|---|---|
+| A01 Broken Access Control | Auth dependency on protected routes; queries scoped by `user_id` + `location` | ✅ |
+| A02 Cryptographic Failures | RS256 JWT (keys in Secrets Manager); TLS at CloudFront/ALB; HSTS preload | ✅ |
+| A03 Injection | MongoDB dict queries; Pydantic at all boundaries; Semgrep + Bandit + CodeQL | ✅ |
+| A04 Insecure Design | No stack traces in responses; RFC 7807 pending | ⚠️ |
+| A05 Security Misconfiguration | Checkov + `trivy config` + tflint on all Terraform; no wildcard CORS; Hadolint/Dockle | ✅ |
+| A06 Vulnerable Components | pip-audit, npm/yarn audit, Retire.js, Trivy, Dependency Review; Dependabot pending | ⚠️ |
+| A07 Auth Failures | Short-lived access JWT; single-use rotating refresh tokens; revocation; slowapi + Redis rate limits | ✅ |
+| A08 Integrity Failures | SBOMs generated; action SHA pinning and image digest pinning pending | ⚠️ |
+| A09 Logging Failures | Event-style logs, no secrets logged; request correlation + Sentry pending | ⚠️ |
 
-### GitHub Actions — pin all actions to commit SHA
+### GitHub Actions — pin all actions to commit SHA ❌
 
-Currently all actions use version tags (`@v6.0.2`, `@v4.0.1`). Tags are mutable and are a supply chain attack vector. Pin every action to a full commit SHA:
+Every `uses:` is a mutable tag today (e.g. `actions/checkout@v6.0.2`,
+`aws-actions/configure-aws-credentials@v6.1.1`, `aquasecurity/trivy-action@v0.36.0`,
+`actions/cache@v5`, `github/codeql-action/*@v3`). Pin each one to a full SHA, keeping the version as
+a comment:
 
 ```yaml
-# Correct — pinned to SHA
-- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-- uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
-- uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
-
-# Wrong — tag is mutable (current state)
-- uses: actions/checkout@v6.0.2
+- uses: actions/checkout@<40-char-sha>  # v6.0.2
 ```
 
-Use [pinact](https://github.com/suzuki-shunsuke/pinact) to automate SHA pinning:
-```bash
-pinact run
+Automate with [pinact](https://github.com/suzuki-shunsuke/pinact) (`pinact run`). Dependabot's
+`github-actions` ecosystem then keeps the SHAs current. Pinning matters most for third-party
+actions that receive AWS credentials or secrets (`configure-aws-credentials`, `trivy-action`).
+
+### Gitleaks configuration ✅
+
+`.gitleaks.toml` extends the default ruleset and has a narrow allowlist: `frontend-app/ios/Podfile.lock`
+(library names that trigger the generic-key rule) and the PEM-placeholder shape in
+`docs/jwt-keys-alternate.md`. Keep allowlist entries narrow, each with a comment explaining why.
+
+If a real secret is ever committed: **rotate it immediately**, then remediate history with
+`git filter-repo` and enable GitHub push protection.
+
+### Pre-commit hooks — add gitleaks and terraform fmt ⚠️
+
+Two hook systems run today:
+- **Husky** (`frontend/.husky/pre-commit`): lint-staged for `frontend/src/` and ruff for `backend/`.
+  `frontend-app/` is not covered.
+- **pre-commit framework** (`.pre-commit-config.yaml`): file hygiene (trailing whitespace, YAML/JSON
+  checks, large files > 500 KB, LF endings) and ruff.
+
+Add secrets scanning and `terraform fmt` to `.pre-commit-config.yaml`:
+
+```yaml
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1          # match the CI version
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: <latest tag>
+    hooks:
+      - id: terraform_fmt
 ```
 
-Dependabot (Section 2) will keep pinned SHAs up to date automatically.
+Also extend lint-staged (or add a Husky block) to run ESLint/Prettier on staged `frontend-app/`
+files.
 
-### Gitleaks configuration
+### HTTPS enforcement ✅
 
-Create `.gitleaks.toml`:
-```toml
-[allowlist]
-paths = [".env.example"]
-```
-
-`.env.example` is allowlisted (placeholder values only). `.env` must never be committed and is in `.gitignore`.
-
-Any secrets finding immediately blocks merge. If a real secret is committed: **rotate the secret immediately**, then use `git filter-repo` or GitHub push protection to remediate history.
-
-### Pre-commit hooks — add gitleaks and terraform fmt
-
-Current Husky pre-commit handles frontend (ESLint + Prettier) and backend (ruff). Add two more checks to `frontend/.husky/pre-commit`:
-
-```sh
-# ── Gitleaks secrets scan ────────────────────────────────────────────────────
-if command -v gitleaks >/dev/null 2>&1; then
-  gitleaks protect --staged --redact || exit 1
-else
-  echo "WARNING: gitleaks not installed — skipping pre-commit secrets scan"
-  echo "Install: https://github.com/gitleaks/gitleaks#installing"
-fi
-
-# ── Terraform fmt on staged .tf files ────────────────────────────────────────
-STAGED_TF=$(git diff --cached --name-only --diff-filter=ACMR | grep "\.tf$" || true)
-if [ -n "$STAGED_TF" ]; then
-  echo "$STAGED_TF" | xargs -I{} terraform fmt "$ROOT/{}" || exit 1
-  echo "$STAGED_TF" | xargs -I{} git add "$ROOT/{}"
-fi
-```
-
-### HTTPS enforcement
-
-- All traffic enters via CloudFront, which enforces HTTPS and redirects HTTP → HTTPS
-- ALB listener: HTTPS only (HTTP redirects to HTTPS)
-- HSTS header at CloudFront: `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- CloudFront: `viewer_protocol_policy = "redirect-to-https"`; the origin connection is `https-only`
+- ALB: a single HTTPS listener on 443 (no HTTP listener)
+- HSTS response header at CloudFront: `max-age=63072000; includeSubDomains; preload`
 
 ---
 
 ## 12. Documentation Standards
 
-### FastAPI route docstrings
+### FastAPI route descriptions ✅
 
-Every route handler must have a one-line summary (flows into OpenAPI spec):
+The convention is the `description=` argument on the route decorator (flows into the OpenAPI spec),
+and all routes currently have one. Keep it for every new route; reserve docstrings for
+non-obvious internals.
 
-```python
-@router.post("/children", response_model=ChildResponse)
-async def create_child(payload: ChildCreate, user=Depends(get_current_user)):
-    """Create a new child profile linked to the authenticated user."""
-```
+### Type annotations ⚠️
 
-For non-obvious behaviour, use the `description` parameter on the decorator rather than a long docstring.
-
-### Type annotations
-
-All public functions in service layer, routers, and database modules must have complete type annotations — enforced by `mypy strict = true` and Ruff ANN rules (both pending — see Section 4).
+All public functions in services, routers and database modules must be fully annotated. This will
+be enforced once Ruff `ANN` and `mypy --strict` are on (Section 4) — 46 public functions currently
+lack a return type.
 
 ### Inline comments
 
-Only add a comment when the **why** is non-obvious: a hidden constraint, a library workaround, or a surprising invariant. Do not comment what the code does.
+Only add a comment when the **why** is non-obvious: a hidden constraint, a library workaround, or a
+surprising invariant. Do not comment what the code does.
 
-### README completeness
+### README completeness ⚠️
 
-Every directory with runnable code must have a `README.md`:
-- How to run locally
-- Required environment variables (reference to `.env.example`)
-- How to run tests
+Present: root, `frontend/`, `frontend-app/`, `shared/`, plus guides in `docs/` (`getting-started`,
+`ci-cd`, `tests`, `code-quality`, `api`, infra architecture).
 
-### CHANGELOG
+Missing: `backend/`, `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`,
+`infra-live-scheduler/`, `scripts/`. Each should cover how to run locally, required environment
+variables (pointing to `.env.example`), and how to test or plan. Linking to the relevant `docs/`
+page is enough when the detail already lives there.
 
-Create `CHANGELOG.md` at the repo root. Format follows [Keep a Changelog](https://keepachangelog.com/). Entries generated from Conventional Commits via [`release-please`](https://github.com/googleapis/release-please):
+### CHANGELOG ❌
 
-```yaml
-# .github/workflows/release-please.yml
-on:
-  push:
-    branches: [main]
-jobs:
-  release-please:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: googleapis/release-please-action@...
-        with:
-          release-type: node
-```
+Create `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/) format), generated by
+[`release-please`](https://github.com/googleapis/release-please). This only works once commits
+follow Conventional Commits (Section 2).
 
-### Architecture Decision Records (ADRs)
+### Architecture Decision Records (ADRs) ❌
 
-Significant architectural decisions are recorded in `docs/adr/`. Use the [MADR template](https://adr.github.io/madr/). ADRs are write-once — supersede by adding a new one.
+Create `docs/adr/` using the [MADR template](https://adr.github.io/madr/). ADRs are write-once —
+supersede one by adding a new record. Initial records to backfill: RS256 JWT with rotating refresh
+sessions, MongoDB Atlas global clusters with `location` routing, multi-region ECS behind one
+CloudFront distribution, the Lambda@Edge JWT validator, and building the image once and pushing it
+to every region's ECR.
 
-Create `docs/adr/` and add an initial ADR for any major decision already made (auth strategy, MongoDB multi-region, etc.).
+The `README_LIVE_PROPOSED_*` files at the repo root are proposals that predate the current
+architecture (e.g. they require a prod reviewer gate, which is not used). Convert what still
+applies into ADRs, then archive or delete them.
 
 ---
 
@@ -955,156 +781,111 @@ Create `docs/adr/` and add an initial ADR for any major decision already made (a
 | Type | Cadence |
 |---|---|
 | Security patches (any CVE) | CRITICAL: 24h, HIGH: 3 business days, MEDIUM/LOW: next cycle |
-| Minor/patch bumps | Weekly via Dependabot (Section 2) |
+| Minor/patch bumps | Weekly via Dependabot (Section 2 — pending) |
 | Major version bumps | Quarterly, manual review + smoke test on staging |
+
+Transitive CVE floor pins (e.g. `starlette`, `urllib3` in `backend/requirements.txt`) must carry a
+comment with the advisory IDs. Remove them once the direct dependency's own floor covers the fix.
 
 ### Major version upgrade policy
 
 1. Dedicated `chore(deps):` PR — not bundled with feature work
-2. Full test suite passing
+2. Full test suite passing (including `live_service` tests)
 3. Manual smoke test on staging before merging to main
 4. `CHANGELOG.md` entry
 
-### License compliance
+### License compliance ✅
 
-New dependencies must use an OSI-approved license compatible with the project license. AGPL and SSPL dependencies are not permitted.
+New dependencies must use an OSI-approved license compatible with the project license. AGPL and
+SSPL dependencies are not permitted. Trivy license scans run on every PR for backend, frontend
+and frontend-app. For a manual review:
 
-Check with:
 ```bash
-# Python
-pip install pip-licenses
-pip-licenses --format=table
-
-# Node
-npx license-checker --summary
+pip-licenses --format=table          # Python
+npx license-checker --summary        # Node
 ```
-
-Run as part of major dependency reviews. Trivy license scanning (already in CI) catches most cases automatically.
 
 ---
 
 ## 14. Observability and Error Monitoring
 
+Nothing beyond application logs (CloudWatch via ECS) is configured today. ❌
+
 ### Sentry — error monitoring
 
-Nothing is currently configured. Install in both backend and frontend.
+**Backend:** `sentry-sdk[fastapi]` initialised in `app/main.py` with `send_default_pii=False`,
+`environment=settings.app_env` and `traces_sample_rate=0.1`. Add `sentry_dsn` to `Settings` and to
+Secrets Manager.
 
-**Backend:**
-```bash
-uv add sentry-sdk[fastapi,asyncio]
-```
+**Web frontend:** `@sentry/react` initialised in `src/main.tsx` with `VITE_SENTRY_DSN`. Upload
+source maps in `deploy-live-frontend.yml`.
 
-In `app/main.py`:
-```python
-import sentry_sdk
+**React Native app:** `@sentry/react-native`. Upload source maps in the APK/IPA build workflows.
 
-sentry_sdk.init(
-    dsn=settings.sentry_dsn,  # add to Settings
-    traces_sample_rate=0.1,   # 10% in production
-    send_default_pii=False,
-    environment=settings.app_env,
-)
-```
+Tag each deploy as a Sentry release (`sentry-cli releases`), using the same `<date>-<sha>` image
+tag as the backend deploy.
 
-Add `sentry_dsn: str = Field(default="", ...)` to `Settings`.
+### Metrics and tracing — OpenTelemetry
 
-**Frontend:**
-```bash
-npm install @sentry/react
-```
-
-In `src/main.tsx`:
-```ts
-import * as Sentry from '@sentry/react';
-
-Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN,
-  tracesSampleRate: 0.1,
-  environment: import.meta.env.MODE,
-});
-```
-
-Add `VITE_SENTRY_DSN` to `vite-env.d.ts` and `src/lib/env.ts`.
-
-In CI: `sentry-cli releases` to tag each deploy + upload frontend source maps.
-
-### Metrics and tracing — OpenTelemetry + Prometheus + Grafana
-
-Install:
-```bash
-uv add opentelemetry-sdk opentelemetry-instrumentation-fastapi \
-       opentelemetry-instrumentation-motor opentelemetry-exporter-prometheus \
-       prometheus-fastapi-instrumentator
-```
-
-Minimum required Prometheus metrics:
-
-| Metric | Type | Labels |
-|---|---|---|
-| `http_request_duration_seconds` | Histogram | method, path, status_code |
-| `http_requests_total` | Counter | method, path, status_code |
-| `db_query_duration_seconds` | Histogram | collection, operation |
-| `redis_hit_total` / `redis_miss_total` | Counter | key_prefix |
-
-Expose `/metrics` endpoint (Prometheus scrape target). Grafana dashboards: request latency (p50/p95/p99), error rates by endpoint, DB query duration, Redis hit rate, ECS CPU/memory.
+Start with CloudWatch-native metrics (ALB latency/5xx, ECS CPU/memory) and add CloudWatch alarms
+for them. Add OpenTelemetry (`opentelemetry-instrumentation-fastapi`, `-pymongo`) exporting to
+CloudWatch/X-Ray only when request-level tracing is needed.
 
 ### Alert thresholds
 
-Once Prometheus + Grafana are configured, set alerts for:
-- Error rate (5xx) > 1% for > 5 minutes
-- p99 latency > 2s for > 5 minutes
-- ECS task health check failing for > 2 consecutive checks
+- 5xx rate > 1% for > 5 minutes
+- p99 latency (non-LLM routes) > 2s for > 5 minutes
+- ECS target health check failing for > 2 consecutive checks
 - Any CRITICAL Sentry issue with > 10 occurrences in 1 hour
 
 ---
 
-## 15. CI/CD Pipeline Gaps
+## 15. CI/CD Pipeline
 
-### GitHub Actions SHA pinning
+### Current pipeline ✅
 
-All actions currently use version tags. See Section 11 for the required SHA pinning and `pinact` tooling.
+`check.yml` runs on every PR to `main`, on every push to `main`, and on manual dispatch. Jobs:
+`backend-lint`, `backend-test`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`,
+`terraform-lint`, `security-scan`, `dast`, `codeql`, `dependency-review`. pip, npm and yarn
+caching is configured through the `setup-*` actions.
 
-### Missing CI checks
+Deployment is manual (`workflow_dispatch`):
+- `terraform-live-*` — plan, apply, plan-destroy or destroy, per environment and region set.
+- `deploy-live-backend` — builds the image once, pushes it to every selected region's ECR, then
+  rolls ECS out in each region in parallel.
+- `promote-live-*` — promotes between environments along fixed paths.
+- `restart-live-backend` — restarts ECS services.
 
-Add to the pipeline once tools are configured:
+Deploy, promote and restart share a lock per environment + service.
 
-**On merge to main (currently not running):**
-- Playwright E2E against staging (Section 8)
-- k6 load test against staging (Section 10)
-- Lighthouse CI / Core Web Vitals against staging (Section 10)
-- Schemathesis API fuzz test against staging (Section 9)
-- Sentry release + source map upload (Section 14)
+### SHA pinning ❌
 
-### Post-deploy smoke tests
+See Section 11.
 
-After every deploy to staging or production, run a smoke test job:
+### Post-deploy smoke tests ❌
+
+`deploy-live-backend` and `promote-live-backend` wait for ECS steady state, but never call the
+service over HTTP. Add a final step that hits the public endpoint through CloudFront:
 
 ```bash
-curl -f https://api.staging.example.com/health/ready
-curl -f https://api.staging.example.com/health
+curl -fsS --retry 5 --retry-delay 5 "https://<api-host>/health/ready"
+curl -fsS "https://<api-host>/api/health" | jq -e --arg sha "$GIT_SHA" '.commit == $sha'
 ```
 
-A deploy is not considered successful until smoke tests pass.
+The second call confirms the new build is actually being served. A deploy is not successful until
+both pass.
 
-### Deployment strategy
+### Deployment strategy ✅
 
-ECS must use rolling update with minimum healthy percent 100%, maximum 200%. Rollback triggered automatically if the new task fails its health check within 5 minutes. Verify this is configured in Terraform.
+ECS rolling update with the deployment circuit breaker (`rollback = true`) and a 90s health-check
+grace period. The minimum healthy / maximum percentages use the AWS defaults (100% / 200%), so
+capacity never drops during a deploy. Set them explicitly in `ecs.tf` if you want them visible in
+code.
 
-### CI caching
+### Missing CI checks ❌
 
-```yaml
-# Python (after uv migration)
-- uses: actions/cache@<sha>  # v4
-  with:
-    path: ~/.cache/uv
-    key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
-
-# Node (already configured — keep)
-- uses: actions/cache@<sha>  # v4
-  with:
-    path: ~/.npm
-    key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
-```
+On merge to `main`, against staging (advisory): Playwright E2E (Section 8), k6 (Section 10),
+Lighthouse CI (Section 10), Schemathesis (Section 9), Sentry release + source maps (Section 14).
 
 ---
 
@@ -1112,14 +893,22 @@ ECS must use rolling update with minimum healthy percent 100%, maximum 200%. Rol
 
 ### How to suppress
 
+Every suppression needs **why** the finding is a false positive or an accepted risk, plus a
+**review date**.
+
 **Ruff:**
 ```python
-result = eval(user_input)  # noqa: S307 -- sandboxed eval, input sanitized upstream
+value = random.choice(options)  # noqa: S311 -- UI shuffle, not security-sensitive. Review: 2027-01-01
 ```
 
 **Bandit:**
 ```python
-subprocess.run(cmd)  # nosec B603 -- cmd is a hardcoded list, no user input
+subprocess.run(cmd)  # nosec B603 -- cmd is a hardcoded list, no user input. Review: 2027-01-01
+```
+
+**mypy:**
+```python
+app.add_exception_handler(...)  # type: ignore[arg-type]  # <reason>
 ```
 
 **ESLint:**
@@ -1132,25 +921,21 @@ subprocess.run(cmd)  # nosec B603 -- cmd is a hardcoded list, no user input
 #checkov:skip=CKV_AWS_18:Access logging not required for internal-only bucket
 ```
 
-**Trivy — create `.trivyignore`:**
+**Trivy — `.trivyignore`** ⚠️ exists, with a justification for each entry (e.g. CVE-2024-21907
+Windows-only path, GHSA-qwww-vcr4-c8h2 RSC mode unused, build-tooling-only DoS CVEs). The entries
+are **missing review dates** — add one to each:
 ```
-# GHSA-xxxx-xxxx-xxxx: not exploitable because X. Review: 2026-08-01
+# GHSA-xxxx-xxxx-xxxx: not exploitable because X. Review: 2027-01-01
 GHSA-xxxx-xxxx-xxxx
 ```
 
-Note: `.trivyignore` does not yet exist in this repo. Create it when the first justified suppression is needed.
-
-**pip-audit — add to `pyproject.toml`** (see Section 4):
-```toml
-[tool.pip-audit]
-ignore-vulns = [
-  # "GHSA-xxxx-xxxx-xxxx",  # not exploitable because X. Review: 2026-08-01
-]
-```
+**pip-audit** — `--ignore-vuln <ID>` in both `check.yml` and `check.sh` (see Section 4), with the
+reason and review date in a comment next to each.
 
 ### Approval requirements
 
-- Any suppression on a HIGH or CRITICAL finding requires a **second reviewer** to explicitly approve the suppression in the PR review
-- Suppressions must include: **why** the finding is a false positive or acceptable risk + a **review date**
-- Suppressions without justification + review date are rejected in code review
-- `.trivyignore` and `pyproject.toml` pip-audit entries audited quarterly to remove stale suppressions
+- Any suppression of a HIGH or CRITICAL finding needs a **second reviewer** to approve the
+  suppression explicitly in the PR review
+- Suppressions without a justification and review date are rejected in code review
+- `.trivyignore`, `.gitleaks.toml` allowlists and pip-audit ignores are audited quarterly to
+  remove stale entries
