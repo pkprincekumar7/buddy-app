@@ -132,8 +132,8 @@ checks a file against this same list.
   (`storage_uri=settings.redis_url`) with `in_memory_fallback_enabled=True`, so they hold correctly
   across replicas/pods when Redis is reachable, and degrade to a per-process in-memory limiter
   (not a crash) if Redis is unset (local dev) or goes down live. Don't assume either state without
-  checking — `grep -n "storage_uri" app/limiter.py` confirms the Redis wiring is present, and
-  `_hit()`'s docstring explains the fallback-latching behavior.
+  checking — `grep -n "storage_uri=settings" app/limiter.py` (two matches) confirms the Redis
+  wiring is present, and `_hit()`'s docstring explains the fallback-latching behavior.
 - For any route with a database-backed auth dependency (`CurrentUser`/`CurrentParent`/
   `CurrentAdmin`), use the `rate_limit(limit_value)` dependency from `app/limiter.py` — declared in
   that route's own `dependencies=[...]`, not the older `@limiter.limit(...)`/`@user_limiter.limit(...)`
@@ -149,8 +149,7 @@ checks a file against this same list.
   (`_storage_dead`, `_limiter`, `_fallback_limiter`, `_in_memory_fallback_enabled`,
   `_swallow_errors`, `_key_func`, `_key_prefix`) to implement dependency-based checking with
   fallback — slowapi 0.1.9 has no public API for this. `slowapi` is exactly pinned in
-  `requirements.txt`, but its `limits` dependency is not pinned anywhere (`uv.lock` is currently
-  empty). If either is ever upgraded, re-verify those attributes still exist with the same meaning
+  `requirements.txt`, but its `limits` dependency is not pinned anywhere. If either is ever upgraded, re-verify those attributes still exist with the same meaning
   before trusting the fallback path.
 - When adding a new Redis-backed rate limit or lock, follow the existing key-naming convention
   (`f"llm_rate:{user_id}"`, `"session_cleanup:lock"`) — scoped, colon-separated, prefixed by

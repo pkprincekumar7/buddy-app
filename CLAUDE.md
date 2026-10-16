@@ -18,9 +18,10 @@ Do **not** use git worktree isolation (`isolation: "worktree"`) — edits must l
 
 ## Coding standards
 
-- `backend/CLAUDE.md` and `frontend/CLAUDE.md` hold this project's specific coding-standards
-  checklists (FastAPI conventions; React/Tailwind conventions) — loaded automatically whenever
-  work touches those directories, so new code follows them from the start.
+- `backend/CLAUDE.md`, `frontend/CLAUDE.md` and `frontend-app/CLAUDE.md` hold this project's
+  specific coding-standards checklists (FastAPI conventions; React/Tailwind conventions; React
+  Native/NativeWind port conventions) — loaded automatically whenever work touches those
+  directories, so new code follows them from the start.
 - Run `/standards-review` to audit *existing* code against that same checklist on demand (e.g.
   after a batch of changes, or a periodic sweep) — see
   `.claude/skills/standards-review/SKILL.md`.

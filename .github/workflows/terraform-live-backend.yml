@@ -350,7 +350,7 @@ jobs:
       # Terraform on resource creation). This prevents every apply from overwriting
       # secrets that were rotated manually outside of Terraform.
       # To update secrets after initial setup, use aws secretsmanager put-secret-value
-      # directly (see README_LIVE.md — Secrets Manager section).
+      # directly, in every active backend region (see docs/infra-operations.md — Secrets Manager).
       # -------------------------------------------------------------------------
       - name: Initialise app secrets (first apply only)
         if: inputs.action == 'apply'

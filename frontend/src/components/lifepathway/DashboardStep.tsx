@@ -622,13 +622,11 @@ export default function DashboardStep({
         <button
           type="button"
           onClick={onDone}
-          className="rounded-full px-7 py-3"
+          className="rounded-full px-7 py-3 font-orbitron font-black"
           style={{
             cursor: 'pointer',
             border: '1px solid rgb(var(--constellation-cyan-rgb) / .34)',
             background: 'rgb(var(--constellation-cyan-rgb) / .08)',
-            fontFamily: 'Orbitron, sans-serif',
-            fontWeight: 900,
             fontSize: 11.5,
             letterSpacing: '.14em',
             textTransform: 'uppercase',

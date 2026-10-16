@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useMediaQuery } from '@/hooks/use-mobile';
 
 /**
  * Drifting, twinkling starfield on a canvas — the ambient backdrop for the
@@ -10,6 +11,7 @@ import { useEffect, useRef } from 'react';
  */
 export default function Starfield({ opacity = 0.55 }: { opacity?: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -67,8 +69,6 @@ export default function Starfield({ opacity = 0.55 }: { opacity?: number }) {
       }
     };
 
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     resize();
     if (reduceMotion) {
       paint(false);
@@ -90,7 +90,7 @@ export default function Starfield({ opacity = 0.55 }: { opacity?: number }) {
       if (raf !== null) cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
     };
-  }, []);
+  }, [reduceMotion]);
 
   return (
     <canvas
