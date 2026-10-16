@@ -23,10 +23,14 @@ export function useIsMobile() {
  * breakpoint is too coarse (e.g. a row of pills that only needs to compact on
  * genuinely narrow phones, not on every sub-tablet width).
  *
- * Returns false until the first effect runs, matching `useIsMobile`.
+ * Reads the query synchronously on first render, so the initial paint already
+ * matches — no one-frame flash of the wrong layout (or of motion under
+ * prefers-reduced-motion) before the effect runs.
  */
 export function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
 
   useEffect(() => {
     const mql = window.matchMedia(query);

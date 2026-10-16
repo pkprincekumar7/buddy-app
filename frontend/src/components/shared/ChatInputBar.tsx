@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import type { ChangeEvent, FormEvent, Ref } from 'react';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMediaQuery } from '@/hooks/use-mobile';
 import VoiceInput from '@/components/shared/VoiceInput';
 
 interface ChatInputBarProps {
@@ -27,16 +28,7 @@ export default function ChatInputBar({
 }: ChatInputBarProps) {
   const [isRecording, setIsRecording] = useState(false);
   const voiceButtonRef = useRef<HTMLButtonElement>(null);
-  const [isSmallScreen, setIsSmallScreen] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches,
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 640px)');
-    const handler = (e: MediaQueryListEvent) => setIsSmallScreen(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
+  const isSmallScreen = useMediaQuery('(max-width: 640px)');
 
   // On small screens, keep only the first example value to avoid overlapping the mic icon
   const displayPlaceholder = (() => {

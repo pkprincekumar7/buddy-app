@@ -72,13 +72,12 @@ this same list.
   `AccomplishmentCards.tsx`, `Observations.tsx`, `Connect.tsx`). Never add a clickable `div`/`span`
   without all three — or use a native `<button>` instead, which needs none of them.
 - Prefer the existing `src/components/ui/dialog.tsx` (Radix) wrapper for any new modal/dialog — it
-  gives focus-trap and focus-return for free. It's currently used in only two places
-  (`AdminAllowedEmails.tsx`, and internally by `command.tsx`); every other modal in the app
-  (`ActivityModal.tsx`, `ProgressInsightsModal.tsx`, `StartOverButton.tsx`, `GrowthAreaSheet.tsx`,
-  `connect/shared.tsx`, `Layout.tsx`'s profile panel) is hand-rolled with a manual
-  `document.addEventListener('keydown', ...)` for Escape and traps/restores focus nowhere. Don't
-  add another hand-rolled modal — build new ones on `ui/dialog.tsx` instead of copying the
-  hand-rolled pattern.
+  gives focus-trap and focus-return for free. It's currently used in two places
+  (`AdminAllowedEmails.tsx`, `lifepathway/StartJourneyModal.tsx`);
+  the remaining modals (`StartOverButton.tsx`, `GrowthAreaSheet.tsx`, `Layout.tsx`'s profile panel)
+  are hand-rolled with a manual `document.addEventListener('keydown', ...)` for Escape and
+  trap/restore focus nowhere. Don't add another hand-rolled modal — build new ones on
+  `ui/dialog.tsx` instead of copying the hand-rolled pattern.
 - Images already carry meaningful `alt` text everywhere they appear in this codebase — keep that
   up for any new `<img>`.
 - Every form input needs a programmatically-associated label — `<label htmlFor="id">` matching

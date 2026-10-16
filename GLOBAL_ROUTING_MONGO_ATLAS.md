@@ -14,7 +14,13 @@ each user's data is stored in their own region. For *why* the design looks like 
 | Cluster | One Atlas **M0** (free) replica set in **ap-south-1** | Atlas **Global Cluster**, M30+, MongoDB **8.0** |
 | Used by | Backends in ap-south-1, eu-west-1 and us-east-1 (same `MONGODB_URI`) | Same — one connection string; mongos routes by `location` |
 | Data residency | Not enforced — everything is stored in ap-south-1 | Each document stored only in its location's zone |
-| App readiness | Every user-owned document has `location`; every index leads with it; login avoids scatter-gather | Needs the code changes in Step 0 |
+| App readiness | Every user-owned document has `location`; every index on a to-be-sharded collection leads with it (except the single-field `jobs` TTL); login avoids scatter-gather | Needs the code changes in Step 0 |
+
+> **Relation to the infra plan.** [`docs/infra-architecture-multi-region.md`](docs/infra-architecture-multi-region.md)
+> Change 10d is the Terraform version of this runbook and sets stricter targets: an **M50** tier,
+> `cluster_type = "GEOSHARDED"`, and Atlas traffic over **PrivateLink only** (no NAT/IP list).
+> The M30+ tier and the IP access-list option below are the manual minimum; if you follow the
+> infra plan, use its numbers.
 
 ```
 Target layout
@@ -51,8 +57,19 @@ the regional workers scope their jobs by (see [`shared/README.md`](shared/README
 `jobs` is sharded on `{location, job_id}`: its unique `(location, job_id, user_id)` index already
 starts with that key, so no index change is needed there.
 
-Dropping or changing a unique index in `init_indexes()` does **not** remove the old index from an
-existing database — drop the old one manually (Step 7).
+**Drop the two old unique indexes before deploying items 1–2**, in every database that already has
+them (the current M0 included):
+
+```javascript
+db.users.dropIndex("location_1_email_1")
+db.growth_areas.dropIndex("location_1__id_1")
+```
+
+`init_indexes()` never drops an index, and MongoDB refuses to create an index under an existing
+name with different options. If the old unique index is still there, the new code's non-unique
+request fails with an index-options conflict, and because `init_indexes()` runs unguarded in the
+API's startup, **the API won't start**. Email uniqueness stays guaranteed by `email_index` in the
+meantime. New, empty databases need nothing — the app creates the non-unique versions itself.
 
 ---
 
@@ -95,8 +112,10 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 ## Step 3 — Database user
 
 1. **Database Access → Add New Database User**, password authentication, e.g. `buddy360app`.
-2. Role: **readWrite** on the application database (`MONGODB_DB_NAME`, default `buddy_app`).
-   Use a separate admin user for the sharding commands in Step 4.
+2. Role: **readWrite** on the application database. Its name is `MONGODB_DB_NAME`: `buddy_app` by
+   default locally, but deployed environments set it from the Terraform variable
+   `mongodb_db_name` (e.g. `buddy360-<env>`) — use that name everywhere below, or Step 4 shards
+   the wrong database. Use a separate admin user for the sharding commands in Step 4.
 3. Store the password in Secrets Manager only.
 
 ---
@@ -105,14 +124,21 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 
 Do this on the **empty** cluster, before loading any data.
 
-1. Generate the commands from the code (prints `sh.updateZoneKeyRange` for every
+1. **Create the app's indexes first.** Start one API task against the new cluster (with the Step 0
+   code), or otherwise run `init_indexes()`, *before* `zone-setup.js`. `shardCollection` reuses an
+   existing index on the shard key; if none exists it creates a **non-unique**
+   `location_1__id_1`, and the app's later request for a **unique** index under that same name
+   (on `users`, `sessions`, `children`, `observations`, `ninety_day_plans`) fails with an
+   index-options conflict — the API won't start. Verify this order once on a scratch cluster.
+
+2. Generate the commands from the code (prints `sh.updateZoneKeyRange` for every
    collection × location — 7 × 6 = 42 ranges — then `sh.shardCollection` for each collection):
 
    ```bash
    python backend/tools/atlas_zone_ranges.py <MONGODB_DB_NAME> > zone-setup.js
    ```
 
-2. Review it, then run it with the admin user:
+3. Review it, then run it with the admin user:
 
    ```bash
    mongosh "<connection string>" --username <admin> zone-setup.js
@@ -121,7 +147,7 @@ Do this on the **empty** cluster, before loading any data.
    Zone ranges are defined first so each empty collection is pre-split straight onto its zones'
    shards.
 
-3. Resulting shard keys:
+4. Resulting shard keys:
 
    | Collection | Shard key |
    |---|---|
@@ -130,7 +156,7 @@ Do this on the **empty** cluster, before loading any data.
    | `jobs` | `{ location: 1, job_id: 1 }` |
    | `email_index`, `allowed_emails` | **not sharded** |
 
-4. Verify with `sh.status()` and, after data is loaded, `db.<coll>.getShardDistribution()`.
+5. Verify with `sh.status()` and, after data is loaded, `db.<coll>.getShardDistribution()`.
 
 The script's collection list is checked against [`backend/app/models.py`](backend/app/models.py)
 by [`backend/tests/test_atlas_zone_ranges.py`](backend/tests/test_atlas_zone_ranges.py): adding a
@@ -142,15 +168,19 @@ collection fails the test until it is explicitly placed as zone-sharded or unsha
 
 The backends reach Atlas from three regions. Either:
 
-- **IP access list:** add each region's NAT gateway public IP (no `0.0.0.0/0`):
+- **IP access list:** add **every** NAT gateway public IP in each region (no `0.0.0.0/0`). ECS
+  tasks run in private subnets (`assign_public_ip = false`) and reach Atlas through the NAT
+  gateways, and their count differs per environment (`nat_gateway_count`: 1 per region in
+  dev/sbx, 2 in stg, 3 in prod — so 9 IPs for prod across three regions):
 
   ```bash
   aws ec2 describe-nat-gateways --region <region> --filter Name=state,Values=available \
     --query 'NatGateways[].NatGatewayAddresses[].PublicIp' --output text
   ```
 
-  Run for ap-south-1, eu-west-1 and us-east-1. A missing region shows up as that region's API
-  calls hanging ~30 s and failing (the backend only connects on first query).
+  Run for every deployed region. A missing IP shows up as that region's **API tasks failing to
+  start** — startup index creation (`init_indexes()`) times out after ~30 s of server selection —
+  and its worker logging connection errors on its first claim.
 
 - **PrivateLink** per region — planned, see `docs/infra-architecture-multi-region.md` Change 10d.
 
@@ -159,7 +189,8 @@ The backends reach Atlas from three regions. Either:
 ## Step 6 — Connection string
 
 1. **Connect → Drivers → Python**, copy the `mongodb+srv://` URI.
-2. Put it in the `MONGODB_URI` key of each region's `buddy360/<env>/backend-secrets` secret
+2. Put it in the `MONGODB_URI` key of each region's `<APP_NAME>/<env>/backend-secrets` secret
+   (`APP_NAME` is the GitHub secret, e.g. `buddy360`)
    (same value in all three regions — the API and worker both read it). Rotating it later:
    `put-secret-value` replaces the whole JSON, so include every key (see
    [`infra-live-backend/terraform/secrets.tf`](infra-live-backend/terraform/secrets.tf)).
@@ -204,7 +235,11 @@ the collection):
 db.jobs.dropIndex("status_1_retry_after_1_created_at_1")
 db.jobs.dropIndex("status_1_claimed_at_1")
 db.jobs.dropIndex("status_1_domain_write_attempt_1")
+db.jobs.dropIndex("job_id_1_user_id_1")   // unique and not prefixed by the shard key — blocks sharding
 ```
+
+Plus the two unique indexes Step 0 replaces (`users.location_1_email_1`,
+`growth_areas.location_1__id_1`) — those must go **before** the Step 0 code is deployed; see Step 0.
 
 ---
 
@@ -213,7 +248,12 @@ db.jobs.dropIndex("status_1_domain_write_attempt_1")
 1. Freeze writes (maintenance window) or use Atlas **Live Migration**, if available for the
    source tier, into the already-sharded target.
 2. Otherwise `mongodump` from M0 and `mongorestore` into the Global Cluster **after** Step 4, so
-   documents land directly in their zones.
+   documents land directly in their zones. Restore with **`--noIndexRestore`** — the dump carries
+   the old index definitions (including the unique ones Step 0/7 removes), and the app has
+   already created the right ones (Step 4.1). Restore **only the collections listed in
+   [`backend/app/models.py`](backend/app/models.py)**: an older database can still hold
+   collections the code no longer uses (`goals`, `goal_months`, `goal_insights`,
+   `recommendations`, `missions`, `onboarding`), and those would land unsharded.
 3. Verify counts per collection and per `location`, then switch `MONGODB_URI` (Step 6).
 
 Documents keep their `location`; nothing is recomputed. Correcting legacy accounts (e.g. users
@@ -262,16 +302,16 @@ together, and apply the edge Terraform (it reads the JSON directly). Atlas-speci
 
 ## Step 11 — Production checklist
 
-- [ ] Step 0 code changes deployed in every region
+- [ ] Old unique `users.location_1_email_1` / `growth_areas.location_1__id_1` dropped, then Step 0 code changes deployed in every region
 - [ ] Global Cluster: M30+, MongoDB 8.0, zones `APAC` / `EU` / `AMERICAS` in the right regions
-- [ ] `zone-setup.js` generated from the deployed code and run; `sh.status()` shows 42 ranges
+- [ ] App indexes created on the empty cluster first, then `zone-setup.js` (generated from the deployed code) run; `sh.status()` shows 42 ranges
 - [ ] `email_index` and `allowed_emails` **not** sharded
 - [ ] App user has `readWrite` on the app database only
-- [ ] Network access: three NAT IPs (or PrivateLink); no `0.0.0.0/0`
+- [ ] Network access: every NAT gateway IP in every region (9 for prod) or PrivateLink; no `0.0.0.0/0`
 - [ ] `MONGODB_URI` in each region's Secrets Manager secret; backends redeployed
 - [ ] Backups enabled, each zone's snapshots stored in its own region
 - [ ] Atlas alerts: CPU, replication lag, connections, balancer/chunk-migration errors
-- [ ] Superseded `jobs` indexes dropped (Step 7)
+- [ ] Superseded `jobs` indexes dropped, incl. `job_id_1_user_id_1` (Step 7); data restored with `--noIndexRestore`
 - [ ] Edge `backend_regions` = `["ap-south-1","eu-west-1","us-east-1"]`
 
 ---

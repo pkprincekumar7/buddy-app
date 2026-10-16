@@ -8,11 +8,11 @@
 
 > **Status (what is live vs planned)**
 > - **Live:** country → location assignment at registration; location-based API routing at the
->   edge to three AWS backend regions (ap-south-1, eu-west-1, us-east-1); region-scoped workers;
->   WAF geo-block (stg/prod).
+>   edge to all three AWS backend regions (ap-south-1, eu-west-1, us-east-1 — the edge's
+>   `backend_regions`); region-scoped workers; WAF geo-block (stg/prod).
 > - **Live, but not yet residency-enforcing:** the database. Every region's backend uses **one
 >   MongoDB Atlas cluster in ap-south-1** (free tier). Documents already carry `location` and every
->   index leads with it, so the data is shard-ready — but until the move to an Atlas Global
+>   index on a to-be-sharded collection leads with it, so the data is shard-ready — but until the move to an Atlas Global
 >   Cluster, all data physically lives in ap-south-1.
 > - **Planned:** Atlas Global Cluster with 3 zones — see the runbook.
 
@@ -71,8 +71,9 @@ backend tests also compare `routing_data.py` with the JSON.
                               documents pinned to a zone by their `location`
 ```
 
-Each region's backend is the same image with the same `MONGODB_URI`; only region-specific settings
-differ (`AWS_REGION`, the uploads bucket, the ALB certificate) — plus the worker's
+Each region's backend is the same image with the same `MONGODB_URI` value (held in each region's
+own Secrets Manager app secret and set by hand, so keeping them identical is a convention, not
+something Terraform enforces); only region-specific settings differ (`AWS_REGION`, the uploads bucket, the ALB certificate) — plus the worker's
 `WORKER_SCOPE_TO_REGION=true`, which makes it process only its region's locations. Redis (ElastiCache) is deployed per region by
 `infra-live-backend` and holds only rate-limit counters and locks — never user data.
 
@@ -134,7 +135,7 @@ an explicit migration script.
 
 ## 4. Request routing
 
-### 4.1 Lambda@Edge (`jwt-validator-lambda.js.tpl`)
+### 4.1 Lambda@Edge ([`infra-live-edge/functions/jwt-validator-lambda.js.tpl`](infra-live-edge/functions/jwt-validator-lambda.js.tpl))
 
 Attached to `/api/*` as an **origin-request** trigger (viewer-request cannot change the origin —
 CloudFront silently ignores it). Caching is disabled for `/api/*`, so it runs on every call. It
@@ -178,7 +179,8 @@ Defined in [`backend/app/auth_utils.py`](backend/app/auth_utils.py); RS256, head
   location simply finds no document. Refresh rejects a missing/malformed one the same way (401,
   cookies cleared); logout still succeeds and clears the cookies, but has no session to delete.
 - Revocation: `users.tokens_revoked_at`; any token with `iat <= tokens_revoked_at` is rejected (set
-  by account deletion and admin lock).
+  by account deletion and admin lock; admin unlock clears it). A locked account (`is_locked`) is
+  also refused outright by login, refresh and `get_current_user`.
 
 ---
 
@@ -188,12 +190,12 @@ All `_id`s are application-generated UUID strings, except where noted.
 
 | Collection | `location`? | `_id` | Contents | Planned sharding |
 |---|---|---|---|---|
-| `users` | ✅ | uuid | Profile, `country_code`, `location`, preferences, `password_hash`, `tokens_revoked_at`, `is_being_deleted` | `{location, _id}` |
+| `users` | ✅ | uuid | Profile, `country_code`, `location`, preferences, `password_hash`, `tokens_revoked_at`, `is_locked`, `is_being_deleted` | `{location, _id}` |
 | `sessions` | ✅ | refresh `jti` | One per refresh token | `{location, _id}` |
 | `children` | ✅ | uuid | Child profiles (soft delete), `active_jobs` | `{location, _id}` |
 | `observations` | ✅ | child id | Per-child observations | `{location, _id}` |
 | `ninety_day_plans` | ✅ | child id | Per-child plan | `{location, _id}` |
-| `growth_areas` | ✅ | uuid | Completed growth areas per user/child/area | `{location, user_id}` |
+| `growth_areas` | ✅ | uuid | One document per user/child/area — in-progress (`status`, wizard/staging fields) and completed | `{location, user_id}` |
 | `jobs` | ✅ | ObjectId (app key: `job_id` uuid) | Background LLM jobs; TTL 24 h after completion | `{location, job_id}` |
 | `email_index` | ✅ (as data) | email | `{user_id, location}` — global uniqueness + login lookup | **unsharded** |
 | `allowed_emails` | ❌ | email (lowercased) | Registration allow-list | **unsharded** |
@@ -267,7 +269,7 @@ cross-shard).
 | Process | Scope | Notes |
 |---|---|---|
 | Job worker ([`worker.py`](backend/worker.py)) | With `WORKER_SCOPE_TO_REGION=true` (set by the ECS task definition): only jobs whose `location` is in `REGION_TO_LOCATIONS[AWS_REGION]`. Unset (local dev): all locations | Claim, `PendingJobCount`/`ProcessingJobCount` metrics (drive that region's autoscaling), and the 30-min deadline cleanup are all scoped. Startup log shows `locations=…` |
-| Expired-session cleanup ([`main.py`](backend/app/main.py)) | All locations, hourly | `delete_many({expires_at < now})` — deliberately unscoped (a scatter-gather once sharded, acceptable hourly). A Redis lock `session_cleanup:lock` makes one API task per region do it |
+| Expired-session cleanup ([`main.py`](backend/app/main.py)) | All locations, hourly | `delete_many({location: {$in: <every location>}, expires_at < now})` — naming every location lets it use the `(location, expires_at)` index and, once sharded, target each zone's shards by shard key instead of scanning. A Redis lock `session_cleanup:lock` makes one API task per region do it |
 | `jobs` TTL index | All locations | Single-field `completed_at` TTL (24 h, terminal jobs only). TTL indexes can't be compound, so it can't include `location`; on a sharded cluster each shard expires its own documents |
 
 Rate limiting is Redis-backed per region (`rl_ip:*`, `rl_user:*`, `llm_rate:{user_id}`), with an
@@ -284,8 +286,9 @@ Zone sharding pins **contiguous shard-key ranges** to zones. With `location` fir
 documents form one range (`{location: "eu", <x>: MinKey}` → `{location: "eu", <x>: MaxKey}`)
 assigned to the EU zone; the balancer never moves them out. With anything else first, a location's
 documents would be spread across every zone and residency could not be enforced. For the same
-reason every index in `init_indexes()` (except the TTL index) leads with `location`, so filtered
-queries are routed to one zone.
+reason every index on a to-be-sharded collection leads with `location`, so filtered queries are
+routed to one zone. The two exceptions are deliberate: the single-field `jobs` TTL index (TTL
+indexes can't be compound) and `email_index`'s `{user_id}` index (`email_index` stays unsharded).
 
 ### 9.2 Zones
 
@@ -308,6 +311,9 @@ users' data on shards in the same AWS region. The ranges are generated, not hand
 | MongoDB **8.0** | The worker claims with `find_one_and_update` without the full shard key (needs 7.1+ on sharded clusters) | Atlas cluster version |
 | Add `location` to worker filters on `jobs` (by `job_id`) and `children` (by `_id`) | Without it each update fans out to every zone; the job document already carries `location` | `worker.py` |
 | Admin `list_users` | Aggregates `users` with no `location` filter — a cross-zone scatter that also lets an operator see every jurisdiction's data at once | `routers/admin.py` |
+
+Deploying the two index changes onto an existing database needs the old unique indexes dropped
+first, or the API fails to start — see the runbook's Step 0.
 
 ### 9.4 Transactions
 
