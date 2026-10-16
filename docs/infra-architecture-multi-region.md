@@ -156,7 +156,7 @@ implementation (see Change 1 and the corrected "Fallback behaviour" note above) 
                   ▼                                                 ▼
         ┌───────────────────────────────┐    ┌─────────────────────────┐
         │       Lambda@Edge             │    │  S3 — frontend assets   │
-        │  viewer-request (single fn)   │    │  (us-east-1)            │
+        │  origin-request (single fn)   │    │  (us-east-1)            │
         │                               │    │  OAC — no public access │
         │  Bypass paths (login/google/  │    └─────────────────────────┘
         │  health): pass through        │
@@ -236,15 +236,16 @@ implementation (see Change 1 and the corrected "Fallback behaviour" note above) 
   mapping table below (same exclusion enforced at the edge, for the same reason).
 ```
 
-This whole diagram is the **target** state, not what's running today. Only ap-south-1
-is live currently (single region, no PrivateLink); the eu-west-1/us-east-1 columns in
-the backend VPC layout and the entire MongoDB Atlas Global Cluster box are all
-bootstrap work — see the Deployment Order and Required Changes sections below for
-exactly what's missing and in what order it needs to be built.
+The backend side of this diagram is live: all three regions (ap-south-1, eu-west-1,
+us-east-1) run behind the shared CloudFront distribution. The **database** side is still the
+target state — today every region uses one Atlas M0 cluster in ap-south-1, reached via each
+region's NAT gateways, with no PrivateLink. The MongoDB Atlas Global Cluster box (and Change
+10d) is the remaining work — see the Deployment Order and Required Changes sections below for
+what's missing and in what order it needs to be built.
 
 **TLS chain:**
 ```
-Browser ──HTTPS──▶ CloudFront ──[L@E viewer-request: JWT auth + geo-route]──▶ ALB (443) ──HTTP/8000──▶ ECS task
+Browser ──HTTPS──▶ CloudFront ──[L@E origin-request: JWT auth + geo-route]──▶ ALB (443) ──HTTP/8000──▶ ECS task
          (us-east-1 ACM cert)                                                  (region ACM cert)
 ```
 
@@ -365,17 +366,17 @@ Do not apply `infra-live-edge` until phases 2a–2c are complete. The Terraform
 > to any number of regions via `var.backend_regions` (not three hardcoded ALB variables),
 > fails closed with a 503 on an unmapped/undeployed location instead of silently
 > defaulting to `ap-south-1`, adds an `X-Origin-Verify` shared-secret header the original
-> plan never had, and never moved the Lambda from `viewer-request` to `origin-request`
-> (see "Why not two separate Lambda@Edge functions?" above). Item 9 (backend) was already
-> accurate and needed no change. Only the MongoDB Atlas/PrivateLink work (Change 10d, and
-> the `atlas_endpoint_service_name` piece of Change 10) remains genuinely not started —
+> plan never had, and (after a later fix) runs the Lambda at `origin-request` — at
+> `viewer-request` CloudFront silently ignored its origin change (see the Update notes above).
+> Item 9 (backend) was already accurate and needed no change. Only the MongoDB
+> Atlas/PrivateLink work (Change 10d, and the `atlas_endpoint_service_name` piece of Change 10) remains genuinely not started —
 > confirmed by `infra-live-atlas/` still not existing in the repo.
 
 ### 1. `infra-live-edge/functions/jwt-validator-lambda.js.tpl` — implemented (not renamed)
 
 The file was **not** renamed to `jwt-geo-router-lambda.js.tpl` — it's still
 `jwt-validator-lambda.js.tpl`, and it combines JWT auth + geo-routing in one
-`viewer-request` function, same goal as originally proposed but a different shape.
+`origin-request` function, same goal as originally proposed but a different shape.
 Key differences from the plan, all confirmed against the real file:
 
 - **Per-region map, not three hardcoded variables.** `REGIONAL_ALB_FQDNS` is built from a
@@ -412,10 +413,11 @@ Key differences from the plan, all confirmed against the real file:
   equivalent to this.
 - **Mobile support.** Bearer-token extraction is checked identically to the cookie path
   throughout — the mobile app has no cookie jar, so it sends its access/refresh token as
-  `Authorization: Bearer` instead. The `setOrigin()` helper's comment also documents why
-  it never sets the `Host` header: it's read-only in `viewer-request` events, and setting
-  it would 502 — CloudFront auto-sends the origin's own `domainName` as `Host` for a
-  custom origin regardless.
+  `Authorization: Bearer` instead. The `setOrigin()` helper also rewrites the `Host`
+  header to the chosen ALB: in an `origin-request` event `Host` still holds the
+  distribution's configured origin (the bootstrap region's ALB) and isn't updated when
+  `request.origin` changes, so without the rewrite the selected ALB gets the wrong `Host`
+  (and TLS SNI) and the request fails.
 
 ---
 
