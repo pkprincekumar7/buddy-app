@@ -106,9 +106,12 @@ jobs:
       # Validate required secrets first — pure bash, no AWS calls needed —
       # so the workflow fails with a clear message before touching AWS if any
       # secret is missing, regardless of action (plan, apply, destroy, etc.).
-      # ANTHROPIC_API_KEY and GEMINI_API_KEY are intentionally omitted — they
-      # are optional integrations. If absent, the Secrets Manager init step
-      # writes REPLACE_ME placeholders which can be updated manually later.
+      # At least one LLM key (OPENAI/ANTHROPIC/GEMINI_API_KEY) is required —
+      # the backend refuses to start without one. A missing ANTHROPIC/GEMINI
+      # key gets a REPLACE_ME placeholder from the Secrets Manager init step.
+      # GOOGLE_CLIENT_ID (empty = Google Sign-In off) and OPS_EMAIL (needed only
+      # when enable_ops_email = true — Terraform's own validation enforces
+      # that) are optional, so they are not checked here.
       # -------------------------------------------------------------------------
       - name: Validate required secrets
         env:
@@ -129,14 +132,14 @@ jobs:
           REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1 }}
           REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1 }}
           JWT_PRIVATE_KEY:                     ${{ secrets.JWT_PRIVATE_KEY }}
-          GOOGLE_CLIENT_ID:                    ${{ secrets.GOOGLE_CLIENT_ID }}
           MONGODB_URI:                         ${{ secrets.MONGODB_URI }}
           OPENAI_API_KEY:                      ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
           OPENAI_MODEL:                        ${{ secrets.OPENAI_MODEL }}
           ANTHROPIC_MODEL:                     ${{ secrets.ANTHROPIC_MODEL }}
           GEMINI_MODEL:                        ${{ secrets.GEMINI_MODEL }}
           REDIS_AUTH_TOKEN:                    ${{ secrets.REDIS_AUTH_TOKEN }}
-          OPS_EMAIL:                           ${{ secrets.OPS_EMAIL }}
           ORIGIN_VERIFY_SECRET:                ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           missing=()
@@ -157,14 +160,12 @@ jobs:
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
           [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ -z "$JWT_PRIVATE_KEY"                ]] && missing+=("JWT_PRIVATE_KEY")
-          [[ -z "$GOOGLE_CLIENT_ID"               ]] && missing+=("GOOGLE_CLIENT_ID")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
-          [[ -z "$OPENAI_API_KEY"                 ]] && missing+=("OPENAI_API_KEY")
+          [[ -z "$OPENAI_API_KEY$ANTHROPIC_API_KEY$GEMINI_API_KEY" ]] && missing+=("one of OPENAI_API_KEY/ANTHROPIC_API_KEY/GEMINI_API_KEY")
           [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
           [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL")
           [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
           [[ -z "$REDIS_AUTH_TOKEN"               ]] && missing+=("REDIS_AUTH_TOKEN")
-          [[ -z "$OPS_EMAIL"                      ]] && missing+=("OPS_EMAIL")
           [[ -z "$ORIGIN_VERIFY_SECRET"           ]] && missing+=("ORIGIN_VERIFY_SECRET")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
@@ -327,16 +328,19 @@ jobs:
           {
             echo "### Terraform Plan — backend / ${{ inputs.environment }} / ${{ matrix.aws_region }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The redacted text plan, not tfplan.bin: a binary plan holds every
+      # variable unredacted (Redis token, origin secret, GitHub PAT), and
+      # artifacts are downloadable by anyone with read access to the repo.
       - name: Upload plan artefact
         if: inputs.action == 'plan' || inputs.action == 'apply'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-backend-${{ inputs.environment }}-${{ matrix.aws_region }}
-          path: infra-live-backend/terraform/tfplan.bin
+          path: infra-live-backend/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Apply
@@ -408,7 +412,7 @@ jobs:
           {
             echo "### Terraform Destroy Plan — backend / ${{ inputs.environment }} / ${{ matrix.aws_region }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -417,7 +421,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-backend-destroy-${{ inputs.environment }}-${{ matrix.aws_region }}
-          path: infra-live-backend/terraform/tfplan.bin
+          path: infra-live-backend/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Destroy

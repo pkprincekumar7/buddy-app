@@ -167,16 +167,19 @@ jobs:
           {
             echo "### Terraform Plan — scheduler (${{ inputs.environment }})"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The redacted text plan, not tfplan.bin: a binary plan holds every
+      # variable unredacted (Redis token, origin secret, GitHub PAT), and
+      # artifacts are downloadable by anyone with read access to the repo.
       - name: Upload plan artefact
         if: inputs.action == 'plan'
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-scheduler-${{ inputs.environment }}
-          path: infra-live-scheduler/terraform/tfplan.bin
+          path: infra-live-scheduler/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Apply
@@ -193,7 +196,7 @@ jobs:
           {
             echo "### Terraform Destroy Plan — scheduler (${{ inputs.environment }})"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -202,7 +205,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-scheduler-${{ inputs.environment }}-destroy
-          path: infra-live-scheduler/terraform/tfplan.bin
+          path: infra-live-scheduler/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Destroy

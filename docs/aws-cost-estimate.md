@@ -196,7 +196,7 @@ X-Ray sampling rate: dev/sbx/stg = 5%; prod = 1% (per tfvars `xray_default_sampl
 | Alarms — autoscaling always-on (2) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | Alarms — basic (2 ALB; stg+prod) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | Alarms — all (13 additional; prod only) | $0 | $0 | $0 | $1 | $1 | $1 | $1 | $1 | $1 |
-| Dashboard (prod only; ✓ $3/month) | $0 | $0 | $0 | $3 | $3 | $3 | $3 | $3 | $3 |
+| Dashboard (prod only; ✓ $3/month per backend region — one per region) | $0 | $0 | $0 | $3 | $3 | $3 | $3 | $3 | $3 |
 | X-Ray traces | $0 | $0 | $0 | $0 | $0 | $1 | $17 | $175 | $1,750 |
 | **Subtotal** | **$0** | **$0** | **$0** | **$4** | **$4** | **$13** | **$135** | **$1,348** | **$13,476** |
 

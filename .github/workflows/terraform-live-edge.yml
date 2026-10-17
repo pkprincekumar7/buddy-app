@@ -189,16 +189,21 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Verify SSM parameters exist and are readable
+        id: ssm
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
+          # A missing parameter fails apply. A plan instead skips the Terraform
+          # plan with a notice: on a brand-new environment infra-live-backend
+          # has only been planned, not applied, so there is nothing to read
+          # yet (terraform-live-all's plan hits this on every fresh env).
+          missing=0
           check_ssm() {
             local name="$1"
             local value
-            value=$(aws ssm get-parameter --region us-east-1 --name "$name" --query "Parameter.Value" --output text 2>&1)
-            if [[ $? -ne 0 ]]; then
-              echo "ERROR: Cannot read SSM parameter '$name': $value"
-              echo "Ensure infra-live-backend has been applied and the IAM role has ssm:GetParameter on this path."
-              return 1
+            if ! value=$(aws ssm get-parameter --region us-east-1 --name "$name" --query "Parameter.Value" --output text 2>&1); then
+              echo "Cannot read SSM parameter '$name': $value"
+              missing=1
+              return 0
             fi
             echo "OK: $name"
           }
@@ -211,6 +216,16 @@ jobs:
           for region in $(echo '${{ inputs.backend_regions }}' | jq -r '.[]'); do
             check_ssm "/$APP/$ENV/backend/$region/alb_internal_fqdn"
           done
+
+          if [[ "$missing" -eq 0 ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ inputs.action }}" == "plan" ]]; then
+            echo "::notice::infra-live-backend is not applied for this environment yet — skipping the plan. Apply it first, then plan this stack."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ERROR: Ensure infra-live-backend has been applied and the IAM role has ssm:GetParameter on this path."
+            exit 1
+          fi
 
       - name: Terraform Init
         run: |
@@ -225,28 +240,31 @@ jobs:
         run: terraform validate
 
       - name: Terraform Plan
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
         run: terraform plan -out=tfplan.bin -input=false -no-color -var-file=tfvars/${{ inputs.environment }}.tfvars
 
       - name: Show plan summary
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
         run: |
           {
             echo "### Terraform Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend regions: ${{ inputs.backend_regions }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The redacted text plan, not tfplan.bin: a binary plan holds every
+      # variable unredacted (Redis token, origin secret, GitHub PAT), and
+      # artifacts are downloadable by anyone with read access to the repo.
       - name: Upload plan artefact
-        if: inputs.action == 'plan' || inputs.action == 'apply'
+        if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
         uses: actions/upload-artifact@v7.0.1
         with:
           # backend_regions is a JSON array (contains characters like " that
           # GitHub Actions artifact names disallow) — not included here; the
           # step summary above already records which regions this plan covers.
           name: tfplan-edge-${{ inputs.environment }}-us-east-1
-          path: infra-live-edge/terraform/tfplan.bin
+          path: infra-live-edge/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Apply
@@ -263,7 +281,7 @@ jobs:
           {
             echo "### Terraform Destroy Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend regions: ${{ inputs.backend_regions }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -272,7 +290,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan-edge-destroy-${{ inputs.environment }}-us-east-1
-          path: infra-live-edge/terraform/tfplan.bin
+          path: infra-live-edge/terraform/tfplan.txt
           retention-days: 7
 
       - name: Terraform Destroy
