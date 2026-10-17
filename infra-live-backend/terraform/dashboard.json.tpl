@@ -137,7 +137,7 @@
       "properties": {
         "title": "Worker Pending Job Count",
         "metrics": [
-          ["Buddy360/Worker", "PendingJobCount"]
+          ["Superpower/Worker", "PendingJobCount"]
         ],
         "period": 300,
         "stat": "Average",

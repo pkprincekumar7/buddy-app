@@ -1,6 +1,6 @@
 {
-  "name": "BuddyApp",
-  "displayName": "BuddyApp",
+  "name": "Superpower",
+  "displayName": "Superpower",
   "expo": {
     "userInterfaceStyle": "automatic",
     "plugins": [

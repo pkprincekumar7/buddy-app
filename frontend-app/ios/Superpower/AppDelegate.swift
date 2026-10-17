@@ -28,7 +28,7 @@ class AppDelegate: ExpoAppDelegate {
     self.window = UIWindow(frame: UIScreen.main.bounds)
 
     factory.startReactNative(
-      withModuleName: "BuddyApp",
+      withModuleName: "Superpower",
       in: window,
       launchOptions: launchOptions
     )

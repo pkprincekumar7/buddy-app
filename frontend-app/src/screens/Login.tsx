@@ -161,7 +161,7 @@ export default function Login() {
     >
       <AuthCardHeader
         title="Sign in"
-        subtitle="Buddy360 — continue to your pathway"
+        subtitle="Superpower — continue to your pathway"
       />
 
       {!pendingGoogleToken && (

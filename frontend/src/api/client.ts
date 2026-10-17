@@ -49,7 +49,9 @@ export function resolveAuthExpiry(err: unknown): { status: 401 | 403; message: s
 export function dispatchAuthExpired(status: number, message: string): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(
-    new CustomEvent('buddy360:auth-expired', { detail: status === 403 ? { message } : undefined }),
+    new CustomEvent('superpower:auth-expired', {
+      detail: status === 403 ? { message } : undefined,
+    }),
   );
 }
 

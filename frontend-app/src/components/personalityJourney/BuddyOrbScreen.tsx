@@ -24,7 +24,7 @@ interface BuddyOrbScreenProps {
   viewport: JourneyViewport;
 }
 
-/** Phase 1 — the Buddy 360 orb: heading above, tappable core, hint below. */
+/** Phase 1 — the Buddy orb: heading above, tappable core, hint below. */
 export default function BuddyOrbScreen({
   childName,
   isAnalyzing,

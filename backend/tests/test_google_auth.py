@@ -20,7 +20,7 @@ from google.oauth2 import id_token as google_id_token
 import app.services.google_auth as google_auth
 from app.settings import settings
 
-CLIENT_ID = "buddy-test.apps.googleusercontent.com"
+CLIENT_ID = "superpower-test.apps.googleusercontent.com"
 KID = "test-key-1"
 
 

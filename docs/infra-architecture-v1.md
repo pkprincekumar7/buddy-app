@@ -158,7 +158,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_appautoscaling_policy` (API — ALB request count) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ALBRequestCountPerTarget"`; `target_value = 1000`; `resource_label = "${aws_lb.backend.arn_suffix}/${aws_lb_target_group.backend.arn_suffix}"` — note: actual resource names in code are `.backend`, not `.main`/`.api`. All three API policies use implicit references on `aws_appautoscaling_target.api.resource_id` for correct dependency ordering. |
 | `aws_appautoscaling_target` (worker service) | exists | `min_capacity` / `max_capacity` parameterised via `var.worker_min_capacity` / `var.worker_max_capacity`; same `scalable_dimension` and `service_namespace` as API |
 | `aws_appautoscaling_policy` (worker — CPU) | exists | `policy_type = "TargetTrackingScaling"`; `predefined_metric_type = "ECSServiceAverageCPUUtilization"`; `target_value = 60` |
-| `aws_appautoscaling_policy` (worker — PendingJobCount step scaling) | exists | `policy_type = "StepScaling"`; custom metric `Buddy360/Worker / PendingJobCount`; alarm threshold is 50 (`worker_pending_jobs`); three step adjustments relative to that threshold: 50–100 pending → +2 tasks, 100–150 pending → +4 tasks, >150 pending → +6 tasks; driven by `aws_cloudwatch_metric_alarm.worker_pending_jobs`. The driving alarm uses `period = 60` and `evaluation_periods = 1` — it fires on a **single 60-second data point** above threshold. This makes scale-out deliberately aggressive (LLM jobs are latency-sensitive), at the cost of potential over-scaling on brief transient spikes. |
+| `aws_appautoscaling_policy` (worker — PendingJobCount step scaling) | exists | `policy_type = "StepScaling"`; custom metric `Superpower/Worker / PendingJobCount`; alarm threshold is 50 (`worker_pending_jobs`); three step adjustments relative to that threshold: 50–100 pending → +2 tasks, 100–150 pending → +4 tasks, >150 pending → +6 tasks; driven by `aws_cloudwatch_metric_alarm.worker_pending_jobs`. The driving alarm uses `period = 60` and `evaluation_periods = 1` — it fires on a **single 60-second data point** above threshold. This makes scale-out deliberately aggressive (LLM jobs are latency-sensitive), at the cost of potential over-scaling on brief transient spikes. |
 | `aws_appautoscaling_policy` (worker — scale-in) | exists | `policy_type = "StepScaling"`; single step: PendingJobCount ≤ 10 → remove 1 task; cooldown 300 s between steps; `disable_scale_in = true` on the CPU target-tracking policy so both policies do not compete; driven by `aws_cloudwatch_metric_alarm.worker_pending_jobs_low` |
 | `aws_ecr_repository` | exists | `image_tag_mutability = "IMMUTABLE"`, `scan_on_push = true`, `force_delete = true`. **Image tag format:** `YYYYMMDD-<short-sha>` (e.g. `20260621-abc1234`) — set by `deploy-live-backend.yml` using `date -u +%Y%m%d` + `git rev-parse --short HEAD`. **Lifecycle policy** (`aws_ecr_lifecycle_policy`): keep last 30 tagged images; expire untagged images after 7 days. No `lifecycle { prevent_destroy = true }` — intentional full deletion on destroy is the desired behaviour. **Image loss on destroy:** `force_delete = true` deletes all images when the repository is destroyed; a fresh `docker build && docker push` via `deploy-live-backend` is required before ECS tasks can run again. |
 
@@ -216,7 +216,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_secretsmanager_secret_version` | exists | Placeholder JSON includes `REDIS_AUTH_TOKEN = "REPLACE_ME"`. Real value seeded from `secrets.REDIS_AUTH_TOKEN` GitHub secret on first apply by the "Initialise app secrets" workflow step. |
 | `aws_iam_role` (execution role) | exists | No change |
 | `aws_iam_role` (task role — API) | exists | No change needed. X-Ray permissions granted via `aws_iam_role_policy.ecs_task_xray`; S3 uploads permissions via `aws_iam_role_policy.ecs_task_s3_uploads`. |
-| `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. Execution role (`ecs_execution_role`) is shared. Worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Buddy360/Worker`; `ssmmessages:*` for ECS Exec; X-Ray permissions via `aws_iam_role_policy.worker_task_xray`. |
+| `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. Execution role (`ecs_execution_role`) is shared. Worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Superpower/Worker`; `ssmmessages:*` for ECS Exec; X-Ray permissions via `aws_iam_role_policy.worker_task_xray`. |
 | `aws_iam_role_policy` (X-Ray — API task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on API task role (`aws_iam_role_policy.ecs_task_xray`). |
 | `aws_iam_role_policy` (X-Ray — worker task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on worker task role (`aws_iam_role_policy.worker_task_xray`). |
 | `aws_guardduty_detector` | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod, skipped on dev/sbx. ECS Runtime Monitoring enabled via `aws_guardduty_detector_feature.ecs_runtime` (`name = "ECS_RUNTIME_MONITORING"`, `status = "ENABLED"`). |
@@ -244,7 +244,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_cloudwatch_metric_alarm` (worker ProcessingJobCount stuck) | exists | `aws_cloudwatch_metric_alarm.worker_processing_stuck` — fires when `ProcessingJobCount > 0` for 10 consecutive 1-minute periods (10 minutes); `statistic = "Maximum"` (not Average) — catches even a single stuck job within any 1-minute window rather than requiring the average to exceed 0; indicates a worker crash-loop or MongoDB connectivity problem; alerts to ops SNS. |
 | `aws_cloudwatch_metric_alarm` (API CPU sustained) | exists | `aws_cloudwatch_metric_alarm.api_cpu_sustained` — fires when API CPU > 85% for 3 consecutive 5-minute periods. |
 | `aws_cloudwatch_metric_alarm` (API memory sustained) | exists | `aws_cloudwatch_metric_alarm.api_memory_sustained` — fires when API memory > 85% for 3 consecutive 5-minute periods; same period/threshold/SNS action as `api_cpu_sustained`. |
-| `aws_cloudwatch_dashboard` | exists | `count = var.enable_dashboard ? 1 : 0`; enabled on prod. `dashboard_body = templatefile("dashboard.json.tpl", {...})`. 8 MetricWidget widgets: ECS API CPUUtilization, ECS API MemoryUtilization, ECS Worker CPUUtilization, ALB RequestCount, ALB HTTPCode_Target_5XX_Count, ElastiCache CurrConnections, ElastiCache NetworkBytesIn, `Buddy360/Worker` PendingJobCount. Template at `infra-live-backend/terraform/dashboard.json.tpl`. |
+| `aws_cloudwatch_dashboard` | exists | `count = var.enable_dashboard ? 1 : 0`; enabled on prod. `dashboard_body = templatefile("dashboard.json.tpl", {...})`. 8 MetricWidget widgets: ECS API CPUUtilization, ECS API MemoryUtilization, ECS Worker CPUUtilization, ALB RequestCount, ALB HTTPCode_Target_5XX_Count, ElastiCache CurrConnections, ElastiCache NetworkBytesIn, `Superpower/Worker` PendingJobCount. Template at `infra-live-backend/terraform/dashboard.json.tpl`. |
 | `aws_xray_sampling_rule` | exists | Rule 1 (default, all envs): `priority = 9999`, `fixed_rate = var.xray_default_sampling_rate` (0.05 for dev/sbx/stg, 0.01 for prod), `reservoir_size = 1`. Rule 2 (errors, prod only): `count = var.enable_xray_error_rule ? 1 : 0`, `priority = 1`, `fixed_rate = 1.0`, `reservoir_size = 5` — captures 100% of error traces. |
 
 #### Storage — user uploads bucket (ap-south-1)
@@ -597,9 +597,9 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 
 | Step | Action | Notes |
 |---|---|---|
-| 0.1 | Create Route 53 hosted zone for `buddy360.com` | Not managed by Terraform — only the A record is. Note the hosted zone ID. |
-| 0.2 | Request ACM certificate in **us-east-1** for `buddy360.com` + `*.buddy360.com` | Required by CloudFront (CloudFront only accepts certs in us-east-1). Validate via DNS CNAME in Route 53. Note the ARN. |
-| 0.3 | Request ACM certificate in **ap-south-1** for `buddy360.com` | Required by the ALB HTTPS listener. Validate via DNS. Note the ARN. |
+| 0.1 | Create Route 53 hosted zone for `superpower.example.com` | Not managed by Terraform — only the A record is. Note the hosted zone ID. |
+| 0.2 | Request ACM certificate in **us-east-1** for `superpower.example.com` + `*.superpower.example.com` | Required by CloudFront (CloudFront only accepts certs in us-east-1). Validate via DNS CNAME in Route 53. Note the ARN. |
+| 0.3 | Request ACM certificate in **ap-south-1** for `superpower.example.com` | Required by the ALB HTTPS listener. Validate via DNS. Note the ARN. |
 | 0.4 | Create **S3 SPA assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
 | 0.5 | Create **S3 app assets bucket** (us-east-1) | Block all public access. Note the bucket name. |
 | 0.6 | Create **S3 user uploads bucket** (ap-south-1) | Block all public access. Note the bucket name. |
@@ -613,10 +613,10 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 | Secret | Value | Used by |
 |---|---|---|
 | `ROLE_ARN` | IAM role ARN for OIDC assume | All workflows |
-| `APP_NAME` | Application name (e.g. `buddy360`) | All workflows |
+| `APP_NAME` | Application name (e.g. `superpower`) | All workflows |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state | All Terraform workflows |
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID (from step 0.1) | terraform-live-backend, terraform-live-edge |
-| `DOMAIN_NAME` | Root domain (e.g. `buddy360.com`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
+| `DOMAIN_NAME` | Root domain (e.g. `superpower.example.com`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
 | `SUBDOMAIN` | Subdomain prefix (e.g. `app`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
 | `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN in ap-south-1 (from step 0.3) | terraform-live-backend |
 | `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN in us-east-1 (from step 0.2) | terraform-live-edge |
@@ -797,8 +797,8 @@ Forces a new ECS deployment without rebuilding or re-pushing the image. Tasks re
 
 | Check | How |
 |---|---|
-| `buddy360.com` resolves and loads | Browser + `dig buddy360.com` |
-| API returns 200 | `curl https://buddy360.com/api/health` |
+| `superpower.example.com` resolves and loads | Browser + `dig superpower.example.com` |
+| API returns 200 | `curl https://superpower.example.com/api/health` |
 | Async job flow end-to-end | POST /api/jobs → poll GET /api/jobs/{id} → completed result returned |
 | MongoDB traffic via PrivateLink | Atlas console → Network → PrivateLink — connection status shows Active |
 | Redis active | ElastiCache console — replication group status Active, 1 primary + 1 replica |
@@ -847,7 +847,7 @@ Run destroy in reverse dependency order: `terraform-live-frontend` → `terrafor
 | | SNS topics + subscriptions |
 | | GuardDuty + CloudTrail |
 | | S3 bucket policies (buckets survive; policies wiped) |
-| | Route 53 A record (`buddy360.com` stops resolving) |
+| | Route 53 A record (`superpower.example.com` stops resolving) |
 
 > **EIP note:** `aws_eip.nat` resources (count-indexed, one per `nat_gateway_count`) do **not** have `lifecycle { prevent_destroy = true }` — NAT EIPs are not registered in the Atlas project IP access list (Atlas PrivateLink is not yet provisioned). `terraform destroy` on `terraform-live-backend` will release the EIPs without issue. When Atlas PrivateLink is provisioned in the future, add `lifecycle { prevent_destroy = true }` to the EIP resources and register the NAT EIP addresses in the Atlas IP access list as a break-glass fallback.
 
@@ -1072,7 +1072,7 @@ output "private_mongodb_uri" {
 #### `tfvars/prod.tfvars`
 
 ```hcl
-app_name             = "buddy360"
+app_name             = "superpower"
 environment          = "prod"
 aws_region           = "ap-south-1"
 atlas_instance_size  = "M50"
@@ -1084,7 +1084,7 @@ enable_privatelink   = true
 #### `tfvars/stg.tfvars`
 
 ```hcl
-app_name             = "buddy360"
+app_name             = "superpower"
 environment          = "stg"
 aws_region           = "ap-south-1"
 atlas_instance_size  = "M20"
@@ -1096,7 +1096,7 @@ enable_privatelink   = true
 #### `tfvars/dev.tfvars`
 
 ```hcl
-app_name             = "buddy360"
+app_name             = "superpower"
 environment          = "dev"
 aws_region           = "ap-south-1"
 atlas_instance_size  = "M10"
@@ -1110,7 +1110,7 @@ enable_privatelink   = false
 Identical to `dev.tfvars` — sbx uses the same Atlas tier and flags; it differs only in the `environment` name (which Terraform uses to tag resources).
 
 ```hcl
-app_name             = "buddy360"
+app_name             = "superpower"
 environment          = "sbx"
 aws_region           = "ap-south-1"
 atlas_instance_size  = "M10"
@@ -1179,7 +1179,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-atlas-buddy360-${{ inputs.environment }}
+  group: terraform-atlas-superpower-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -1642,7 +1642,7 @@ The flow is identical locally and in production. No environment switches, no moc
 | Service | Local substitute | Gap |
 |---|---|---|
 | ElastiCache Redis | Docker Redis container | No TLS, no auth token — acceptable for local dev |
-| VPC / NAT GW / Endpoints | Not applicable | All traffic goes over Docker's internal `buddy360_net` network |
+| VPC / NAT GW / Endpoints | Not applicable | All traffic goes over Docker's internal `superpower_net` network |
 | Secrets Manager | `.env` file | Secrets read directly from env vars, not Secrets Manager |
 | MongoDB Atlas M50 | Atlas M0 free tier | M0 is shared, capped at 512 MB storage, ~100 max connections — sufficient for dev load |
 | CloudWatch metric emitter (PendingJobCount) | Skipped (`APP_ENV=local`) | `emit_pending_job_count` is gated on `APP_ENV != local`; no boto3 credentials available in Docker — metric emission is a no-op locally |

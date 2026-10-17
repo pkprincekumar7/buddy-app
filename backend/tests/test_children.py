@@ -732,7 +732,7 @@ def test_delete_twice_is_404(db, client):
 
 
 def _upload_settings(**overrides):
-    values = {"uploads_bucket_name": "buddy-uploads", "aws_region": "eu-west-1",
+    values = {"uploads_bucket_name": "superpower-uploads", "aws_region": "eu-west-1",
               "uploads_cdn_domain": "", **overrides}  # fmt: skip
     return settings.model_copy(update=values)
 
@@ -780,12 +780,12 @@ def test_presign_returns_a_short_lived_put_url_under_the_childs_prefix(
     assert res.status_code == 200
     [(method, params, expires)] = s3.calls
     assert (method, expires) == ("put_object", 300)
-    assert params["Bucket"] == "buddy-uploads" and params["ContentType"] == content_type
+    assert params["Bucket"] == "superpower-uploads" and params["ContentType"] == content_type
     assert params["Key"].startswith("uploads/eu/c1/") and params["Key"].endswith(f".{ext}")
     assert s3.regions == ["eu-west-1"]
     assert res.json() == {
         "upload_url": f"https://signed.example/{params['Key']}?sig=1",
-        "avatar_url": f"https://buddy-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
+        "avatar_url": f"https://superpower-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
     }
 
 

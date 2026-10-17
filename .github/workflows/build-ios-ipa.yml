@@ -20,7 +20,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: build-ios-ipa-buddy360-${{ inputs.environment }}
+  group: build-ios-ipa-superpower-${{ inputs.environment }}
   cancel-in-progress: true
 
 env:
@@ -189,7 +189,7 @@ jobs:
           IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:   ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/buddy-ci.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/superpower-ci.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 20)"
           P12_PATH="$RUNNER_TEMP/certificate.p12"
 
@@ -239,8 +239,8 @@ jobs:
       # Archive the app, then export it as an Ad Hoc .ipa.
       #
       # xcodebuild archive:
-      #   -workspace   BuddyApp.xcworkspace (CocoaPods requires .xcworkspace)
-      #   -scheme      BuddyApp
+      #   -workspace   Superpower.xcworkspace (CocoaPods requires .xcworkspace)
+      #   -scheme      Superpower
       #   -sdk         iphoneos  (device slice only — not simulator)
       #   -configuration Release
       #   -archivePath output path for the .xcarchive
@@ -254,11 +254,11 @@ jobs:
           IOS_APPLE_TEAM_ID: ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
           xcodebuild archive \
-            -workspace BuddyApp.xcworkspace \
-            -scheme BuddyApp \
+            -workspace Superpower.xcworkspace \
+            -scheme Superpower \
             -sdk iphoneos \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/BuddyApp.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Superpower.xcarchive" \
             DEVELOPMENT_TEAM="${IOS_APPLE_TEAM_ID}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
@@ -285,7 +285,7 @@ jobs:
             echo '  <string>manual</string>'
             echo '  <key>provisioningProfiles</key>'
             echo '  <dict>'
-            echo '    <key>org.reactjs.native.example.BuddyApp</key>'
+            echo '    <key>com.superpowerapp</key>'
             echo "    <string>${IOS_PROVISIONING_PROFILE_UUID}</string>"
             echo '  </dict>'
             echo '  <key>compileBitcode</key>'
@@ -297,7 +297,7 @@ jobs:
           } > "$RUNNER_TEMP/ExportOptions.plist"
 
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/BuddyApp.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Superpower.xcarchive" \
             -exportPath "$RUNNER_TEMP/ipa" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
@@ -317,14 +317,14 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: buddy360-ios-${{ inputs.environment }}-${{ github.sha }}
+          name: superpower-ios-${{ inputs.environment }}-${{ github.sha }}
           path: ${{ runner.temp }}/ipa/*.ipa
           retention-days: 14
 
       # -------------------------------------------------------------------------
       # Authenticate with AWS via OIDC and push the IPA to S3.
       # Mirrors the Android workflow's upload pattern:
-      #   app-assets/applications/ios/BuddyApp-YYYY-MM-DD-HH-MM-SS.ipa
+      #   app-assets/applications/ios/Superpower-YYYY-MM-DD-HH-MM-SS.ipa
       # -------------------------------------------------------------------------
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
@@ -338,7 +338,7 @@ jobs:
           ASSETS_BUCKET_NAME: ${{ secrets.ASSETS_BUCKET_NAME }}
         run: |
           # Discover the IPA dynamically — xcodebuild names it after the scheme,
-          # which may differ from "BuddyApp.ipa" depending on Xcode version / settings.
+          # which may differ from "Superpower.ipa" depending on Xcode version / settings.
           IPA_FILE=$(find "$RUNNER_TEMP/ipa" -name "*.ipa" | head -1)
           if [[ -z "$IPA_FILE" ]]; then
             echo "ERROR: No .ipa file found in $RUNNER_TEMP/ipa"
@@ -346,6 +346,6 @@ jobs:
             exit 1
           fi
           TIMESTAMP=$(date -u '+%Y-%m-%d-%H-%M-%S')
-          S3_KEY="app-assets/applications/ios/BuddyApp-${TIMESTAMP}.ipa"
+          S3_KEY="app-assets/applications/ios/Superpower-${TIMESTAMP}.ipa"
           aws s3 cp "$IPA_FILE" "s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"
           echo "Uploaded to s3://${ASSETS_BUCKET_NAME}/${S3_KEY}"

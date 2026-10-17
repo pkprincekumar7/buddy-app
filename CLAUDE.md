@@ -1,4 +1,4 @@
-# buddy-app — Claude Code Instructions
+# Superpower — Claude Code Instructions
 
 ## Working directory
 

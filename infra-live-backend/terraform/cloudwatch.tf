@@ -55,7 +55,7 @@ resource "aws_cloudwatch_metric_alarm" "worker_processing_stuck" {
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 10 # 10 × 60s = 10 minutes
   metric_name         = "ProcessingJobCount"
-  namespace           = "Buddy360/Worker"
+  namespace           = "Superpower/Worker"
   period              = 60
   statistic           = "Maximum"
   threshold           = 0
@@ -76,7 +76,7 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_high" {
   count               = var.enable_all_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-worker-pending-jobs-high-${var.environment}"
   alarm_description   = "Job queue backlog is high — worker may need manual scaling or investigation."
-  namespace           = "Buddy360/Worker"
+  namespace           = "Superpower/Worker"
   metric_name         = "PendingJobCount"
   statistic           = "Average"
   period              = 300

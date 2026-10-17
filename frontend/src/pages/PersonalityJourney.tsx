@@ -34,7 +34,7 @@ type Phase = 1 | 2;
 // including Connect — has been visited, so nothing is pointed at.
 type ActiveDimension = 'discover' | 'grow' | 'transform' | 'release' | 'connect' | null;
 
-// ── Phase 1: Buddy 360 Orb ────────────────────────────────────────────────────
+// ── Phase 1: Buddy Orb ────────────────────────────────────────────────────
 
 function BuddyOrbScreen({
   childName,
@@ -310,7 +310,7 @@ function BuddyOrbScreen({
   );
 }
 
-// ── Phase 2: Buddy 360 Nav (matches HTML exactly) ────────────────────────────
+// ── Phase 2: Buddy Nav (matches HTML exactly) ────────────────────────────
 
 const NODE_STYLE = {
   position: 'absolute' as const,

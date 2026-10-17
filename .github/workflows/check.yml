@@ -559,7 +559,7 @@ jobs:
       # re-runs and the scan sees current Debian security patches even if a layer
       # cache is ever added (check.sh passes a per-day value for the same reason).
       - name: Build backend Docker image
-        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t buddy-backend:scan -f backend/Dockerfile .
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t superpower-backend:scan -f backend/Dockerfile .
 
       - name: Trivy (backend image scan)
         id: trivy_image
@@ -567,7 +567,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: buddy-backend:scan
+          image-ref: superpower-backend:scan
           severity: HIGH,CRITICAL
           exit-code: '1'
           scanners: vuln
@@ -589,14 +589,14 @@ jobs:
           dockle \
             -af settings.py \
             --ignore DKL-DI-0005 \
-            buddy-backend:scan
+            superpower-backend:scan
 
       # ── SBOM generation ──────────────────────────────────────────────────────
       - name: Generate SBOM (backend image)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: buddy-backend:scan
+          image-ref: superpower-backend:scan
           format: cyclonedx
           output: sbom-backend.cyclonedx.json
 

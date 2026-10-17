@@ -34,8 +34,8 @@ import { DeviceEventEmitter } from 'react-native';
 //      and storing the new token pair.
 // ---------------------------------------------------------------------------
 
-const ACCESS_KEY = 'buddy360:access_token';
-const REFRESH_KEY = 'buddy360:refresh_token';
+const ACCESS_KEY = 'superpower:access_token';
+const REFRESH_KEY = 'superpower:refresh_token';
 
 const tokenStore = {
   async getAccess(): Promise<string | null> {
@@ -96,7 +96,7 @@ export function resolveAuthExpiry(err: unknown): {
 }
 
 /** Event name AuthContext listens on — RN's stand-in for the web's window CustomEvent. */
-export const AUTH_EXPIRED_EVENT = 'buddy360:auth-expired';
+export const AUTH_EXPIRED_EVENT = 'superpower:auth-expired';
 
 export function dispatchAuthExpired(status: number, message: string): void {
   DeviceEventEmitter.emit(

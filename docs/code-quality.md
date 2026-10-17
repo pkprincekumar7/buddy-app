@@ -136,8 +136,8 @@ brew install terraform-linters/tap/tflint
 | 34 ³ | trivy config (infra-live-edge) | trivy | `infra-live-edge/terraform/` — same |
 | 35 ³ | trivy config (infra-live-frontend) | trivy | `infra-live-frontend/terraform/` — same |
 | 36 ³ | trivy config (infra-live-scheduler) | trivy | `infra-live-scheduler/terraform/` — same |
-| 37 ³ | docker build (image scan) | docker | Builds `buddy-backend` image locally — prerequisite for the three image-level checks below |
-| 38 ³ | trivy (backend image scan) | trivy + docker | Built `buddy-backend` image — OS-level HIGH/CRITICAL CVEs in the Debian base layer (unfixed only) |
+| 37 ³ | docker build (image scan) | docker | Builds `superpower-backend` image locally — prerequisite for the three image-level checks below |
+| 38 ³ | trivy (backend image scan) | trivy + docker | Built `superpower-backend` image — OS-level HIGH/CRITICAL CVEs in the Debian base layer (unfixed only) |
 | 39 ³ | trivy (backend image SBOM) | trivy + docker | Built image — generates `sbom-backend.cyclonedx.json` in CycloneDX format |
 | 40 ³ | dockle (CIS Docker Benchmark) | dockle + docker | Built image — CIS Docker Benchmark: root user, secrets baked into layers, missing `HEALTHCHECK`, hardening rules |
 | 41 ⁴ | spectral (OpenAPI lint) | spectral (via `frontend/node_modules/.bin/`) | Exports the FastAPI OpenAPI spec via `backend/tools/export-openapi.py` (no running server needed) and lints it against `.spectral.yaml` — security schemes, operationId, tags |

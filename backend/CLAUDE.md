@@ -86,7 +86,7 @@ checks a file against this same list.
   `@pytest.mark.live_service` and run only when `MONGODB_TEST_URI`/`REDIS_URL` are set — CI sets
   both, plus `REQUIRE_LIVE_SERVICES=1`, which turns a skipped `live_service` test into a failure
   (`tests/conftest.py`). Mark any new real-service test the same way. Never point
-  `MONGODB_TEST_URI` at a real cluster: each test creates and drops a throwaway `buddy_test_*`
+  `MONGODB_TEST_URI` at a real cluster: each test creates and drops a throwaway `superpower_test_*`
   database.
 
 ## Error handling

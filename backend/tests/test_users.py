@@ -710,7 +710,7 @@ def test_invalid_plan_patches_are_422(db, client, body):
 
 
 def _upload_settings(**overrides):
-    values = {"uploads_bucket_name": "buddy-uploads", "aws_region": "eu-west-1",
+    values = {"uploads_bucket_name": "superpower-uploads", "aws_region": "eu-west-1",
               "uploads_cdn_domain": "", **overrides}  # fmt: skip
     return settings.model_copy(update=values)
 
@@ -745,12 +745,12 @@ def test_presign_returns_a_put_url_namespaced_by_field(db, client, s3):
     assert res.status_code == 200
     [(method, params, expires)] = s3.calls
     assert (method, expires) == ("put_object", 300)
-    assert (params["Bucket"], params["ContentType"]) == ("buddy-uploads", "image/webp")
+    assert (params["Bucket"], params["ContentType"]) == ("superpower-uploads", "image/webp")
     assert params["Key"].startswith("uploads/eu/c1/ninety-day-plan/act:m101:sketch/")
     assert params["Key"].endswith(".webp")
     assert res.json() == {
         "upload_url": f"https://signed.example/{params['Key']}?sig=1",
-        "photo_url": f"https://buddy-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
+        "photo_url": f"https://superpower-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
     }
 
 

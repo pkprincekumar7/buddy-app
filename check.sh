@@ -337,7 +337,7 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' config '$ROOT/infra-live-scheduler/terraform' --exit-code 1 --severity HIGH,CRITICAL"
 
   if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
-    DOCKLE=""; _SCAN_IMAGE="buddy-backend:check-scan"; _IMAGE_OK=0
+    DOCKLE=""; _SCAN_IMAGE="superpower-backend:check-scan"; _IMAGE_OK=0
 
     # Build the image once — shared by trivy image scan, SBOM generation, and dockle.
     # GIT_SHA is the Dockerfile's apt-layer cache-bust key (CI passes the commit SHA).

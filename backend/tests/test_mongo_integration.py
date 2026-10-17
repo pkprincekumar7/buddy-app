@@ -41,7 +41,7 @@ def run_with_db(test):
 
     async def scenario():
         client = AsyncIOMotorClient(MONGODB_TEST_URI, serverSelectionTimeoutMS=3000)
-        name = f"buddy_test_{uuid.uuid4().hex[:12]}"
+        name = f"superpower_test_{uuid.uuid4().hex[:12]}"
         db = client[name]
         try:
             await client.admin.command("ping")

@@ -1,4 +1,4 @@
-# BuddyApp — React Native Frontend
+# Superpower — React Native Frontend
 
 React Native 0.85.3 mobile app (Android & iOS).
 
@@ -286,7 +286,7 @@ yarn start
 If this is your first time back after the initial build, the app is already installed — just tap its icon or run:
 
 ```bash
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 If you need to rebuild (e.g. after a native change or new device), run `yarn android` from `frontend-app/` instead. The app connects to Metro automatically and loads.
@@ -325,7 +325,7 @@ cd frontend-app/android
 rm -rf app/build
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 > **Why `rm -rf app/build` and not `./gradlew clean`?** > `./gradlew clean` wipes build artifacts from all modules including `react-native-reanimated`. This causes a CMake prefab error on the next build. Deleting only `app/build` keeps library artifacts intact and avoids this issue.
@@ -337,7 +337,7 @@ cd frontend-app/android
 ./gradlew :react-native-reanimated:assembleDebug
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 **Nuclear reset (last resort):**
@@ -347,7 +347,7 @@ cd frontend-app/android
 rm -rf app/build ~/.gradle/caches
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 ---
@@ -392,8 +392,8 @@ Required for Play Store submission. Needs a signed keystore.
 
 ```bash
 keytool -genkeypair -v \
-  -keystore frontend-app/android/app/buddyapp-release.keystore \
-  -alias buddyapp \
+  -keystore frontend-app/android/app/superpower-release.keystore \
+  -alias superpower \
   -keyalg RSA -keysize 2048 \
   -validity 10000
 ```
@@ -403,10 +403,10 @@ Keep the keystore file and passwords safe — required for every future release.
 #### Step 2 — Add credentials to `android/gradle.properties`
 
 ```properties
-BUDDYAPP_RELEASE_STORE_FILE=buddyapp-release.keystore
-BUDDYAPP_RELEASE_KEY_ALIAS=buddyapp
-BUDDYAPP_RELEASE_STORE_PASSWORD=your_store_password
-BUDDYAPP_RELEASE_KEY_PASSWORD=your_key_password
+SUPERPOWER_RELEASE_STORE_FILE=superpower-release.keystore
+SUPERPOWER_RELEASE_KEY_ALIAS=superpower
+SUPERPOWER_RELEASE_STORE_PASSWORD=your_store_password
+SUPERPOWER_RELEASE_KEY_PASSWORD=your_key_password
 ```
 
 #### Step 3 — Update signing config in `android/app/build.gradle`
@@ -414,10 +414,10 @@ BUDDYAPP_RELEASE_KEY_PASSWORD=your_key_password
 ```groovy
 signingConfigs {
     release {
-        storeFile file(BUDDYAPP_RELEASE_STORE_FILE)
-        storePassword BUDDYAPP_RELEASE_STORE_PASSWORD
-        keyAlias BUDDYAPP_RELEASE_KEY_ALIAS
-        keyPassword BUDDYAPP_RELEASE_KEY_PASSWORD
+        storeFile file(SUPERPOWER_RELEASE_STORE_FILE)
+        storePassword SUPERPOWER_RELEASE_STORE_PASSWORD
+        keyAlias SUPERPOWER_RELEASE_KEY_ALIAS
+        keyPassword SUPERPOWER_RELEASE_KEY_PASSWORD
     }
 }
 buildTypes {
@@ -526,7 +526,7 @@ npx pod-install
 Always open the **workspace**, never the project file. To open it in Xcode:
 
 ```bash
-open frontend-app/ios/BuddyApp.xcworkspace
+open frontend-app/ios/Superpower.xcworkspace
 ```
 
 > Do not try to execute the `.xcworkspace` file directly in the terminal — use the `open` command above.
@@ -634,8 +634,8 @@ Requires an **Apple Developer account** ($99/year).
 
 #### Via Xcode (recommended)
 
-1. Open `frontend-app/ios/BuddyApp.xcworkspace`
-2. Set scheme to **BuddyApp**, destination to **Any iOS Device (arm64)**
+1. Open `frontend-app/ios/Superpower.xcworkspace`
+2. Set scheme to **Superpower**, destination to **Any iOS Device (arm64)**
 3. **Product → Archive**
 4. In the Organizer → **Distribute App**
    - **Ad Hoc** — install directly on registered test devices
@@ -652,13 +652,13 @@ npx react-native bundle \
   --bundle-output ios/main.jsbundle --assets-dest ios
 
 # Archive
-xcodebuild -workspace ios/BuddyApp.xcworkspace -scheme BuddyApp \
+xcodebuild -workspace ios/Superpower.xcworkspace -scheme Superpower \
   -sdk iphoneos -configuration Release \
-  -archivePath build/BuddyApp.xcarchive archive
+  -archivePath build/Superpower.xcarchive archive
 
 # Export IPA
 xcodebuild -exportArchive \
-  -archivePath build/BuddyApp.xcarchive \
+  -archivePath build/Superpower.xcarchive \
   -exportOptionsPlist ios/ExportOptions.plist \
   -exportPath build/ipa
 ```
@@ -707,19 +707,19 @@ Environments used: `dev`, `stg`, `prod`. Each environment needs its own copy of 
 
 Add these to **every** environment that will run CI builds.
 
-| Secret               | Description                                     | Example                                          |
-| -------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `SUBDOMAIN`          | CloudFront subdomain prefix                     | `buddy`                                          |
-| `DOMAIN_NAME`        | Root domain                                     | `learning-dev.com`                               |
-| `GOOGLE_CLIENT_ID`   | Web OAuth 2.0 Client ID (same value as `.env`)  | `491922250866-xxx.apps.googleusercontent.com`    |
-| `ROLE_ARN`           | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-buddy-ci` |
-| `ASSETS_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded    | `buddy360-assets-dev`                            |
+| Secret               | Description                                     | Example                                               |
+| -------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| `SUBDOMAIN`          | CloudFront subdomain prefix                     | `superpower`                                          |
+| `DOMAIN_NAME`        | Root domain                                     | `learning-dev.com`                                    |
+| `GOOGLE_CLIENT_ID`   | Web OAuth 2.0 Client ID (same value as `.env`)  | `491922250866-xxx.apps.googleusercontent.com`         |
+| `ROLE_ARN`           | AWS IAM role ARN for GitHub OIDC authentication | `arn:aws:iam::123456789012:role/github-superpower-ci` |
+| `ASSETS_BUCKET_NAME` | S3 bucket where APK / IPA files are uploaded    | `superpower-assets-dev`                               |
 
 **How the API URL is derived at build time:**
 
 ```
-prod  →  https://{SUBDOMAIN}.{DOMAIN_NAME}              e.g. https://buddy.learning-dev.com
-other →  https://{SUBDOMAIN}-{env}.{DOMAIN_NAME}        e.g. https://buddy-dev.learning-dev.com
+prod  →  https://{SUBDOMAIN}.{DOMAIN_NAME}              e.g. https://superpower.learning-dev.com
+other →  https://{SUBDOMAIN}-{env}.{DOMAIN_NAME}        e.g. https://superpower-dev.learning-dev.com
 ```
 
 This value is written into `frontend-app/.env` as both `API_URL` and `CDN_BASE_URL` at the start of every workflow run. The iOS workflow additionally writes `IOS_CLIENT_ID` (required for Google Sign-In on iOS).
@@ -732,12 +732,12 @@ The current release build uses the **debug keystore** for signing (suitable for 
 
 For Play Store submission in the future, replace the debug keystore with a production keystore and add these secrets:
 
-| Secret                 | Description                                     |
-| ---------------------- | ----------------------------------------------- |
-| `KEYSTORE_FILE_BASE64` | Base64-encoded `.jks` release keystore          |
-| `KEYSTORE_PASSWORD`    | Keystore store password                         |
-| `KEY_ALIAS`            | Key alias inside the keystore (e.g. `buddyapp`) |
-| `KEY_PASSWORD`         | Key password                                    |
+| Secret                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| `KEYSTORE_FILE_BASE64` | Base64-encoded `.jks` release keystore            |
+| `KEYSTORE_PASSWORD`    | Keystore store password                           |
+| `KEY_ALIAS`            | Key alias inside the keystore (e.g. `superpower`) |
+| `KEY_PASSWORD`         | Key password                                      |
 
 See [Build a Release APK](#build-a-release-apk) for keystore generation instructions.
 
@@ -777,7 +777,7 @@ The `build-ios-ipa.yml` workflow creates an Ad Hoc `.ipa` and requires both a **
 If you want to test on a physical iPhone during local development before enrolling:
 
 1. Connect the iPhone to your Mac via USB
-2. Open `frontend-app/ios/BuddyApp.xcworkspace` in Xcode
+2. Open `frontend-app/ios/Superpower.xcworkspace` in Xcode
 3. Select your device in the scheme toolbar (top left)
 4. **Signing & Capabilities** → set Team to your free Apple ID
 5. Click **Run** — Xcode signs and installs directly
@@ -831,18 +831,18 @@ Ad Hoc distribution requires each test device's UDID to be registered:
 #### Step 4 — Create an Ad Hoc provisioning profile
 
 1. Go to **Profiles → +** → select **Ad Hoc** under Distribution → Continue
-2. Select the App ID for this app (`org.reactjs.native.example.BuddyApp`) → Continue
+2. Select the App ID for this app (`com.superpowerapp`) → Continue
 3. Select the **Distribution certificate** created in Step 2 → Continue
 4. Select the **registered test devices** from Step 3 → Continue
-5. Name the profile (e.g. `BuddyApp Ad Hoc Dev`) → **Generate** → Download
+5. Name the profile (e.g. `Superpower Ad Hoc Dev`) → **Generate** → Download
 6. Base64-encode it and copy to clipboard:
    ```bash
    # macOS — result is copied to clipboard
-   base64 -i /path/to/BuddyAppAdHocDev.mobileprovision | pbcopy
+   base64 -i /path/to/SuperpowerAdHocDev.mobileprovision | pbcopy
    ```
 7. Paste as `IOS_PROVISIONING_PROFILE_BASE64`
 
-> **Bundle ID note:** The Xcode project currently uses the default React Native bundle ID `org.reactjs.native.example.BuddyApp`. When this is changed to a production ID (e.g. `com.buddyapp`), update the `provisioningProfiles` key inside `build-ios-ipa.yml` and create a new provisioning profile for the new ID.
+> **Bundle ID note:** The app's bundle ID is `com.superpowerapp` (iOS and Android). The provisioning profile must be issued for exactly that ID, and it's also the `provisioningProfiles` key inside `build-ios-ipa.yml` — if the ID ever changes, update both.
 
 ---
 
@@ -870,31 +870,31 @@ Go to the completed workflow run → scroll to the **Artifacts** section at the 
 Artifact name format:
 
 ```
-buddy360-android-{env}-{git-sha}
-buddy360-ios-{env}-{git-sha}
+superpower-android-{env}-{git-sha}
+superpower-ios-{env}-{git-sha}
 ```
 
 **S3** (permanent, timestamped):
 
 ```
 s3://{ASSETS_BUCKET_NAME}/app-assets/applications/android/app-release-YYYY-MM-DD-HH-MM-SS.apk
-s3://{ASSETS_BUCKET_NAME}/app-assets/applications/ios/BuddyApp-YYYY-MM-DD-HH-MM-SS.ipa
+s3://{ASSETS_BUCKET_NAME}/app-assets/applications/ios/Superpower-YYYY-MM-DD-HH-MM-SS.ipa
 ```
 
 List and download from S3:
 
 ```bash
 # List all Android builds in the dev bucket
-aws s3 ls s3://buddy360-assets-dev/app-assets/applications/android/
+aws s3 ls s3://superpower-assets-dev/app-assets/applications/android/
 
 # Download a specific Android build
-aws s3 cp s3://buddy360-assets-dev/app-assets/applications/android/app-release-2026-05-28-10-30-00.apk ./
+aws s3 cp s3://superpower-assets-dev/app-assets/applications/android/app-release-2026-05-28-10-30-00.apk ./
 
 # List all iOS builds in the dev bucket
-aws s3 ls s3://buddy360-assets-dev/app-assets/applications/ios/
+aws s3 ls s3://superpower-assets-dev/app-assets/applications/ios/
 
 # Download a specific iOS build
-aws s3 cp s3://buddy360-assets-dev/app-assets/applications/ios/BuddyApp-2026-05-28-10-30-00.ipa ./
+aws s3 cp s3://superpower-assets-dev/app-assets/applications/ios/Superpower-2026-05-28-10-30-00.ipa ./
 ```
 
 ---
@@ -1018,8 +1018,8 @@ SHA1: AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD
 ```bash
 cd frontend-app/android
 keytool -list -v \
-  -keystore app/buddyapp-release.keystore \
-  -alias buddyapp \
+  -keystore app/superpower-release.keystore \
+  -alias superpower \
   | grep SHA1
 ```
 
@@ -1033,7 +1033,7 @@ Do this once for the debug keystore, and again later for the release keystore.
 2. Click **Create Credentials → OAuth Client ID**
 3. Set **Application type** to **Android**
 4. Fill in:
-   - **Package name:** `com.buddyapp`
+   - **Package name:** `com.superpowerapp`
    - **SHA-1 certificate fingerprint:** paste the SHA1 from Step 1
 5. Click **Create**
 
@@ -1048,8 +1048,8 @@ iOS requires its own Client ID registered against the app's Bundle ID. Without i
 1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services → Credentials**
 2. Click **Create Credentials → OAuth Client ID**
 3. Set **Application type** to **iOS**
-4. Fill in **Bundle ID**: `org.reactjs.native.example.BuddyApp`
-   > To confirm: open `frontend-app/ios/BuddyApp.xcworkspace` in Xcode → select the BuddyApp target → **General** tab → **Bundle Identifier**
+4. Fill in **Bundle ID**: `com.superpowerapp`
+   > To confirm: open `frontend-app/ios/Superpower.xcworkspace` in Xcode → select the Superpower target → **General** tab → **Bundle Identifier**
 5. Click **Create** and **copy the Client ID** (you will need it in Step 5)
 
 ---
@@ -1183,7 +1183,7 @@ adb start-server
 adb devices                  # confirm emulator shows as "device" not "offline"
 cd frontend-app/android
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 If the emulator shows `offline`, cold boot it: Android Studio → Device Manager → ▼ → Cold Boot Now.
@@ -1195,7 +1195,7 @@ You are installing the wrong ABI variant for your CPU. On Apple Silicon Mac (M1/
 ```bash
 cd frontend-app/android
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 On Intel Mac with the default x86_64 emulator:
@@ -1203,7 +1203,7 @@ On Intel Mac with the default x86_64 emulator:
 ```bash
 cd frontend-app/android
 adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 ### `INSTALL_FAILED_INSUFFICIENT_STORAGE`
@@ -1213,10 +1213,10 @@ The emulator's `/data` partition is full. Android needs free space beyond the AP
 **Quick fix — uninstall the old build first, then reinstall:**
 
 ```bash
-adb uninstall com.buddyapp
+adb uninstall com.superpowerapp
 cd frontend-app/android
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 Uninstalling the previous version typically frees enough space for the new build.
@@ -1254,7 +1254,7 @@ cd frontend-app/android
 rm -rf app/build
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 If the error persists, force reanimated to build first:
@@ -1264,7 +1264,7 @@ cd frontend-app/android
 ./gradlew :react-native-reanimated:assembleDebug
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 ### `react-native-worklets library not found`
@@ -1283,7 +1283,7 @@ cd frontend-app/android
 rm -rf app/build
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-adb shell am start -n com.buddyapp/.MainActivity
+adb shell am start -n com.superpowerapp/.MainActivity
 ```
 
 ### `Gradle requires JVM 17 or later`

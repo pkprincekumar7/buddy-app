@@ -56,7 +56,7 @@ def _settings(**values):
 
 def test_safe_defaults():
     s = _settings()
-    assert (s.mongodb_uri, s.mongodb_db_name) == ("mongodb://localhost:27017", "buddy_app")
+    assert (s.mongodb_uri, s.mongodb_db_name) == ("mongodb://localhost:27017", "superpower_app")
     assert (s.jwt_algorithm, s.jwt_key_id) == ("RS256", "key-v1")
     assert (s.jwt_access_expire_minutes, s.jwt_refresh_expire_hours) == (30, 24)
     assert s.cookie_secure is True and s.cookie_samesite == "lax" and s.cookie_domain is None

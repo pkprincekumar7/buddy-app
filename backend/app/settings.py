@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MONGODB_URI", "mongodb_uri"),
     )
     mongodb_db_name: str = Field(
-        default="buddy_app",
+        default="superpower_app",
         validation_alias=AliasChoices("MONGODB_DB_NAME", "mongodb_db_name"),
     )
 
@@ -195,7 +195,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AWS_REGION", "aws_region"),
     )
-    # CloudFront domain used to serve uploaded photos (e.g. buddy-dev.example.com).
+    # CloudFront domain used to serve uploaded photos (e.g. superpower-dev.example.com).
     # When set, avatar_url is constructed as https://{uploads_cdn_domain}/uploads/...
     # so photos are served via CloudFront OAC with no public S3 access required.
     # Leave blank in local dev — falls back to direct S3 URL (local bucket has

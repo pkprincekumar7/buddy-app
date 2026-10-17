@@ -1,7 +1,6 @@
 __pycache__/
 *.py[cod]
 .venv/
-buddy360.db
 
 # Environment
 .env

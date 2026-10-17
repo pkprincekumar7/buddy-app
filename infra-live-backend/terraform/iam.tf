@@ -108,7 +108,7 @@ resource "aws_iam_role_policy" "worker_task_cloudwatch" {
   # PutMetricData requires Resource = "*" (CloudWatch does not support
   # resource-level ARNs for this action), but the Condition key
   # "cloudwatch:namespace" IS enforced by the service for PutMetricData,
-  # effectively scoping this permission to the Buddy360/Worker namespace only.
+  # effectively scoping this permission to the Superpower/Worker namespace only.
   # Do NOT remove the Condition block assuming it is ineffective — it is the
   # only constraint preventing the worker from writing to arbitrary namespaces.
   policy = jsonencode({
@@ -120,7 +120,7 @@ resource "aws_iam_role_policy" "worker_task_cloudwatch" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "cloudwatch:namespace" = "Buddy360/Worker"
+            "cloudwatch:namespace" = "Superpower/Worker"
           }
         }
       }

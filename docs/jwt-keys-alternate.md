@@ -22,14 +22,14 @@ current setup. What changes is *where the public key lives and who verifies with
 
 ## Secrets inventory
 
-Both secrets below use new names (`buddy-app/jwt-*`) to avoid clashing with the
+Both secrets below use new names (`superpower/jwt-*`) to avoid clashing with the
 `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEYS` **GitHub Actions secrets** used by the current
 architecture — those remain untouched and unrelated to this variant.
 
 | Secret name | Format | Location | Used by |
 |---|---|---|---|
-| `buddy-app/jwt-private-key` | JSON: `{"key_id": "key-v1", "private_key": "<single-line PEM>"}` | Secrets Manager, primary region + **multi-region replicas** (all 3 regions need to sign tokens locally — see note below) | Backend/ECS, all 3 regions — signs tokens |
-| `buddy-app/jwt-public-keys` | JSON map of `kid` → single-line public key PEM | Secrets Manager, primary region + **multi-region replicas** | Lambda Authorizer, all 3 regions — verifies tokens |
+| `superpower/jwt-private-key` | JSON: `{"key_id": "key-v1", "private_key": "<single-line PEM>"}` | Secrets Manager, primary region + **multi-region replicas** (all 3 regions need to sign tokens locally — see note below) | Backend/ECS, all 3 regions — signs tokens |
+| `superpower/jwt-public-keys` | JSON map of `kid` → single-line public key PEM | Secrets Manager, primary region + **multi-region replicas** | Lambda Authorizer, all 3 regions — verifies tokens |
 
 The critical structural change from the current setup: public key material is no longer
 a GitHub Actions secret consumed by Terraform at deploy time — it's a **live Secrets
@@ -63,7 +63,7 @@ openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
 ```bash
 aws secretsmanager create-secret \
   --region us-east-1 \
-  --name "buddy-app/jwt-public-keys" \
+  --name "superpower/jwt-public-keys" \
   --secret-string '{"key-v1": "-----BEGIN PUBLIC KEY-----\n<contents>\n-----END PUBLIC KEY-----\n"}' \
   --add-replica-regions '[{"Region":"eu-west-1"},{"Region":"ap-south-1"}]'
 ```
@@ -80,7 +80,7 @@ aws secretsmanager create-secret \
 ```bash
 aws secretsmanager create-secret \
   --region us-east-1 \
-  --name "buddy-app/jwt-private-key" \
+  --name "superpower/jwt-private-key" \
   --secret-string '{"key_id": "key-v1", "private_key": "-----BEGIN PRIVATE KEY-----\n<contents>\n-----END PRIVATE KEY-----\n"}' \
   --add-replica-regions '[{"Region":"eu-west-1"},{"Region":"ap-south-1"}]'
 ```
@@ -114,7 +114,7 @@ openssl rsa -in jwt_private_v2.pem -pubout -out jwt_public_v2.pem
 ```bash
 aws secretsmanager put-secret-value \
   --region us-east-1 \
-  --secret-id "buddy-app/jwt-public-keys" \
+  --secret-id "superpower/jwt-public-keys" \
   --secret-string '{
     "key-v1": "-----BEGIN PUBLIC KEY-----\n<old key>\n-----END PUBLIC KEY-----\n",
     "key-v2": "-----BEGIN PUBLIC KEY-----\n<new key>\n-----END PUBLIC KEY-----\n"
@@ -141,7 +141,7 @@ and `ap-south-1` replicas automatically.
 ```bash
 aws secretsmanager put-secret-value \
   --region us-east-1 \
-  --secret-id "buddy-app/jwt-private-key" \
+  --secret-id "superpower/jwt-private-key" \
   --secret-string '{"key_id": "key-v2", "private_key": "-----BEGIN PRIVATE KEY-----\n<new key>\n-----END PRIVATE KEY-----\n"}'
 ```
 
@@ -174,7 +174,7 @@ produces spurious 401s for users holding still-valid `key-v1` tokens.
 ```bash
 aws secretsmanager put-secret-value \
   --region us-east-1 \
-  --secret-id "buddy-app/jwt-public-keys" \
+  --secret-id "superpower/jwt-public-keys" \
   --secret-string '{"key-v2": "-----BEGIN PUBLIC KEY-----\n<new key>\n-----END PUBLIC KEY-----\n"}'
 ```
 
@@ -192,9 +192,9 @@ rm jwt_private.pem jwt_public.pem jwt_private_v2.pem jwt_public_v2.pem
 ## How it works
 
 - The backend (ECS) **signs** tokens with the private key from
-  `buddy-app/jwt-private-key`. The private key never leaves Secrets Manager /
+  `superpower/jwt-private-key`. The private key never leaves Secrets Manager /
   ECS task memory — same guarantee as today.
-- Each region's **Lambda Authorizer** fetches `buddy-app/jwt-public-keys` from its
+- Each region's **Lambda Authorizer** fetches `superpower/jwt-public-keys` from its
   **local** Secrets Manager replica, caches it in memory for the configured TTL, and
   verifies incoming tokens against the `kid`-matched key. Invalid, unsigned, or
   incorrectly-signed tokens are rejected with `401` at the regional API Gateway — before

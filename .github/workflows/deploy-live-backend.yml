@@ -64,7 +64,7 @@ permissions:
 # selected region at once, and deploy/promote/restart share this namespace so
 # none of them can overlap on the same env+service, whichever regions they hit.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.environment }}-${{ inputs.service }}
+  group: deploy-live-backend-superpower-${{ inputs.environment }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:

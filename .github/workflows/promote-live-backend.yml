@@ -59,7 +59,7 @@ permissions:
 # deploy-live-backend, so deploy/promote/restart can never overlap on the
 # same env+service, whichever regions they hit.
 concurrency:
-  group: deploy-live-backend-buddy360-${{ inputs.target_env }}-${{ inputs.service }}
+  group: deploy-live-backend-superpower-${{ inputs.target_env }}-${{ inputs.service }}
   cancel-in-progress: false
 
 env:

@@ -27,7 +27,7 @@ import type { ReactNode } from 'react';
  *      (imported directly — not re-exported here, since a hook export next
  *      to a component export in the same file breaks React Fast Refresh).
  */
-const THEME_STORAGE_KEY = 'buddy360-theme';
+const THEME_STORAGE_KEY = 'superpower-theme';
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
   return (

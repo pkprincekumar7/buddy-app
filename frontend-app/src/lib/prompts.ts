@@ -83,7 +83,7 @@ export function buildPersonalityAnalysisPrompt({
     .map(k => `  • ${k} — ${ARCHETYPE_DESCRIPTORS[k] ?? 'see context'}`)
     .join('\n');
 
-  return `You are a child development specialist analysing a single child using a Buddy360 onboarding questionnaire completed by their parent/caregiver.
+  return `You are a child development specialist analysing a single child using a Superpower onboarding questionnaire completed by their parent/caregiver.
 
 Return JSON ONLY that conforms to the response schema. Use warm, parent-friendly language throughout all human-facing fields.
 

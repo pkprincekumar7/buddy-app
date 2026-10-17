@@ -76,7 +76,7 @@ jobs:
     # Job-level (not workflow-level) so the lock stays per-region now that
     # one run can target several regions.
     concurrency:
-      group: terraform-live-backend-buddy360-${{ inputs.environment }}-${{ matrix.aws_region }}
+      group: terraform-live-backend-superpower-${{ inputs.environment }}-${{ matrix.aws_region }}
       cancel-in-progress: false
     environment: ${{ inputs.environment }}
     defaults:
