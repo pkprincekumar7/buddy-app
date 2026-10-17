@@ -8,8 +8,10 @@ import React, {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { createVideoPlayer, type VideoPlayer } from 'expo-video';
 import { useLocation } from '@/lib/router';
+import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
 
 // expo-video's player doubles as an audio-only player (no VideoView needed),
@@ -36,15 +38,36 @@ interface AmbientAudioContextValue {
   setSuppressed: (suppressed: boolean) => void;
 }
 
+// 'unknown' (possible on iOS during launch) counts as foreground, so the loop
+// isn't left silent waiting for a change event that may never come.
+function isForeground(state: AppStateStatus): boolean {
+  return state !== 'background' && state !== 'inactive';
+}
+
 const AmbientAudioContext = createContext<AmbientAudioContextValue | null>(
   null,
 );
 
 export function AmbientAudioProvider({ children }: { children: ReactNode }) {
   const { ttsEnabled } = useTts();
+  const { isAuthenticated } = useAuth();
   const location = useLocation();
   const playerRef = useRef<VideoPlayer | null>(null);
   const [suppressed, setSuppressed] = useState(false);
+  const [appActive, setAppActive] = useState(() =>
+    isForeground(AppState.currentState),
+  );
+
+  // Silent while the app is backgrounded (the web pauses on a hidden tab the
+  // same way). expo-video's own background pause only covers players attached
+  // to a VideoView — this audio-only player has none, so without this it keeps
+  // looping on Android after the user leaves the app.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state =>
+      setAppActive(isForeground(state)),
+    );
+    return () => sub.remove();
+  }, []);
 
   const inScope = useMemo(
     () =>
@@ -52,11 +75,19 @@ export function AmbientAudioProvider({ children }: { children: ReactNode }) {
     [location.pathname],
   );
 
-  // Keyed on [ttsEnabled, inScope, suppressed] rather than the full pathname —
-  // moving between in-scope pages leaves all three unchanged, so the same
-  // player (and its playback position) survives the navigation.
+  // Keyed on these flags rather than the full pathname — moving between
+  // in-scope pages leaves them all unchanged, so the same player (and its
+  // playback position) survives the navigation. isAuthenticated stops it on
+  // logout directly, without waiting for the navigator's screen swap to
+  // reach the current-route store.
   useEffect(() => {
-    if (!ttsEnabled || !inScope || suppressed) {
+    if (
+      !ttsEnabled ||
+      !isAuthenticated ||
+      !inScope ||
+      suppressed ||
+      !appActive
+    ) {
       playerRef.current?.pause();
       return;
     }
@@ -66,7 +97,7 @@ export function AmbientAudioProvider({ children }: { children: ReactNode }) {
     player.audioMixingMode = 'mixWithOthers';
     playerRef.current = player;
     player.play();
-  }, [ttsEnabled, inScope, suppressed]);
+  }, [ttsEnabled, isAuthenticated, inScope, suppressed, appActive]);
 
   useEffect(
     () => () => {
