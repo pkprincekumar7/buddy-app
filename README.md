@@ -1,4 +1,4 @@
-# Buddy360
+# Superpower
 
 A child development app for parents. Stack: **React 19 + TypeScript (Vite)** web app, a **React Native** phone app (`frontend-app/`, a port of the web app), **FastAPI** with a background job worker, **MongoDB** (Motor async driver), **Redis** (rate limiting), optional LLM providers (**OpenAI**, **Anthropic**, **Gemini**) and **OpenAI Whisper** for audio transcription. Deployed to AWS (multi-region ECS behind CloudFront) with Terraform. Run everything locally with **Docker Compose** or the backend/frontend dev servers.
 
@@ -24,4 +24,4 @@ Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanSt
 
 - **LLM providers**: do not commit keys. Set at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. Auto-selection priority: OpenAI → Anthropic → Gemini. Model defaults: `gpt-5.4-mini`, `claude-sonnet-4-6`, `gemini-3-flash` (override via `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL`). Without any key, `POST /api/v1/llm/invoke` returns `503`. Audio transcription still requires `OPENAI_API_KEY` (OpenAI Whisper).
 - **Rate limiting**: `POST /api/v1/auth/register` and Google auth are capped at 5 requests/minute per IP; login at 10/minute. LLM calls are also rate-limited per-user (sliding window, default 200 calls/hour) via Redis — set `REDIS_URL` to a Redis instance; without it the rate limiter falls back to an in-process counter that breaks under multiple containers.
-- **Session management**: the access token has a 30-minute lifetime; the refresh token lasts 24 hours. `AuthContext` schedules a proactive silent refresh 60 seconds before the access token would expire. If the silent refresh returns 401/403 (refresh token expired or revoked), the app dispatches a `buddy360:auth-expired` custom event and the user is logged out. Network hiccups retry after 30 seconds.
+- **Session management**: the access token has a 30-minute lifetime; the refresh token lasts 24 hours. `AuthContext` schedules a proactive silent refresh 60 seconds before the access token would expire. If the silent refresh returns 401/403 (refresh token expired or revoked), the app dispatches a `superpower:auth-expired` custom event and the user is logged out. Network hiccups retry after 30 seconds.

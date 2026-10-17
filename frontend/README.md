@@ -1,6 +1,6 @@
-# buddy-app — Frontend
+# Superpower — Frontend
 
-React 18 + TypeScript + Vite frontend for the buddy-app platform.
+React 19 + TypeScript + Vite frontend for the Superpower platform.
 
 ## Prerequisites
 

@@ -40,7 +40,7 @@ permissions:
 # Use the same concurrency group as deploy-live-frontend for the target environment
 # so a promotion and a direct deploy cannot run simultaneously against the same env.
 concurrency:
-  group: deploy-live-frontend-buddy360-${{ inputs.target_env }}
+  group: deploy-live-frontend-superpower-${{ inputs.target_env }}
   cancel-in-progress: false
 
 env:

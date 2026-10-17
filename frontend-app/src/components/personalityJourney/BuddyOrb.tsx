@@ -22,7 +22,7 @@ const SPIN_REV_26 = spin(26, true);
 const SPIN_6 = spin(6);
 
 /**
- * Phase-1 "Buddy 360" core — the web BuddyOrbScreen SVG (viewBox 350), one
+ * Phase-1 "Buddy" core — the web BuddyOrbScreen SVG (viewBox 350), one
  * layer per animated group so each rotates/breathes natively around 175,175.
  */
 export default function BuddyOrb({ size }: { size: number }) {

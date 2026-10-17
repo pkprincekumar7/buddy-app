@@ -24,7 +24,7 @@ from app.main import app
 from app.settings import get_settings, settings
 
 URL = "/api/v1/downloads/apk"
-BUCKET = "buddy-assets"
+BUCKET = "superpower-assets"
 PREFIX = "app-assets/applications/android/"
 PARENT = {"_id": "p1", "location": "eu", "role": "parent"}
 ADMIN = {"_id": "a1", "location": "eu", "role": "admin"}
@@ -129,13 +129,13 @@ def test_returns_a_presigned_link_to_the_newest_apk_across_pages(users, client, 
         res = client.get(URL, headers=_auth())
     assert res.status_code == 200
     body = res.json()
-    assert (body["filename"], body["expires_in"]) == ("buddy360-android.apk", 300)
+    assert (body["filename"], body["expires_in"]) == ("superpower-android.apk", 300)
 
     url = urlsplit(body["url"])
     query = {k: v[0] for k, v in parse_qs(url.query).items()}
     assert url.scheme == "https" and BUCKET in url.netloc + url.path
     assert url.path.endswith(f"/{PREFIX}app-release-2026-04-15-08-30-00.apk")
-    assert query["response-content-disposition"] == 'attachment; filename="buddy360-android.apk"'
+    assert query["response-content-disposition"] == 'attachment; filename="superpower-android.apk"'
     # Valid for 5 minutes, whichever signature version botocore picked
     # (SigV4: X-Amz-Expires=seconds; SigV2: Expires=absolute epoch).
     if "X-Amz-Expires" in query:
@@ -144,7 +144,7 @@ def test_returns_a_presigned_link_to_the_newest_apk_across_pages(users, client, 
         assert abs(int(query["Expires"]) - (time.time() + 300)) < 30
     # The bucket's own region, not the backend's (eu-west-1 here).
     assert s3.regions == ["us-east-1"]
-    assert "user=p1 requested APK pre-signed URL filename=buddy360-android.apk" in caplog.text
+    assert "user=p1 requested APK pre-signed URL filename=superpower-android.apk" in caplog.text
 
 
 def test_user_id_is_sanitised_in_the_log(users, client, s3, caplog):

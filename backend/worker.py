@@ -447,7 +447,7 @@ async def emit_metrics() -> None:
             )
             await asyncio.to_thread(
                 cloudwatch.put_metric_data,
-                Namespace="Buddy360/Worker",
+                Namespace="Superpower/Worker",
                 MetricData=[
                     {"MetricName": "PendingJobCount", "Value": pending_count, "Unit": "Count"},
                     {

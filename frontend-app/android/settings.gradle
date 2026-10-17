@@ -17,7 +17,7 @@ plugins {
   id("expo-autolinking-settings")
 }
 extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand(expoAutolinking.rnConfigCommand) }
-rootProject.name = 'BuddyApp'
+rootProject.name = 'Superpower'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
 expoAutolinking.useExpoModules()

@@ -72,7 +72,7 @@ permissions:
 # concurrently — they'd both mutate the same state file. Same reasoning as
 # terraform-live-all.yml's concurrency group.
 concurrency:
-  group: terraform-live-edge-buddy360-${{ inputs.environment }}-us-east-1
+  group: terraform-live-edge-superpower-${{ inputs.environment }}-us-east-1
   cancel-in-progress: false
 
 env:

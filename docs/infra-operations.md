@@ -2,14 +2,14 @@
 
 Day-2 reference for the live AWS stack: how the Terraform modules and workflows hand data to
 each other, where state lives, what each workflow changes on ECS, how app secrets are managed,
-and how hostnames are formed.
+how the main resources are configured, and how hostnames are formed.
 
 For the architecture and deployment sequence see
 [infra-architecture-multi-region.md](infra-architecture-multi-region.md). For the resource
 inventory see [aws-resources.md](aws-resources.md), and for workflows and GitHub secrets see
 [ci-cd.md](ci-cd.md).
 
-Placeholders used below: `{app}` = `APP_NAME` secret (e.g. `buddy360`), `{env}` = `dev` / `sbx` /
+Placeholders used below: `{app}` = `APP_NAME` secret (e.g. `superpower`), `{env}` = `dev` / `sbx` /
 `stg` / `prod`, `{region}` = a backend region (`ap-south-1` / `eu-west-1` / `us-east-1`).
 
 ---
@@ -165,12 +165,65 @@ keys: see [jwt-keys.md](jwt-keys.md).
 
 ---
 
+## Key resource settings
+
+What [aws-resources.md](aws-resources.md) doesn't show: *how* the main resources are configured.
+Values are per environment where they differ (`tfvars/<env>.tfvars` in each module).
+
+### Edge — CloudFront (`infra-live-edge/terraform/cloudfront.tf`)
+
+| Behaviour | Origin | Cache policy | Notes |
+|---|---|---|---|
+| Default `/*` | S3 frontend (OAC) | `CachingOptimized` | GET/HEAD/OPTIONS, compressed; full security response headers (HSTS 2 y + preload, CSP, frame options…) |
+| `/app-assets/*` | S3 assets bucket (OAC) | `CachingOptimized` | Static activity images; minimal headers (nosniff + HSTS) |
+| `/uploads/{location}/*` | That location's regional uploads bucket | `CachingOptimized` | One behaviour per location, from `shared/routing.json` |
+| `/api/*` | Regional ALB (chosen by Lambda@Edge, `origin-request`) | `CachingDisabled` | All methods, not compressed, `AllViewerExceptHostHeader`, its own security-headers policy; `origin_read_timeout = 60` s for slow LLM calls |
+
+- **SPA fallback:** only **404** → `/index.html` (200, `error_caching_min_ttl = 0`). OAC has
+  `s3:ListBucket`, so missing files are 404, not 403 — which lets API 403s (e.g. "Registration is
+  not open.") reach the client untouched.
+- IPv6 on, `default_root_object = index.html`, minimum TLS `TLSv1.2_2021`.
+- **Price class:** `PriceClass_100` in dev/sbx/stg, `PriceClass_All` in prod.
+
+### Edge — WAF (`waf.tf`, **stg and prod only**; logging prod only)
+
+| Priority | Rule | Action |
+|---|---|---|
+| 5 | Geo block — the blocked countries from `shared/routing.json` | Block (JSON `country_not_supported` body) |
+| 10 | AWS Common Rule Set (OWASP-style) | Managed |
+| 20 | AWS Known Bad Inputs | Managed |
+| 30 | AWS IP Reputation List | Managed |
+| 40 | Rate limit — 1,000 requests / 5 min per IP | Block |
+
+### Backend (`infra-live-backend/terraform/`, per region)
+
+| Resource | Setting |
+|---|---|
+| Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
+| ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy) |
+| ECS | Container Insights on; container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
+| ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
+| ElastiCache Redis 7.1 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx/stg, 2 replicas with Multi-AZ failover in prod. Holds rate-limit counters and locks only |
+| CloudWatch Logs | API and worker log groups, retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
+
+### Frontend deploy (`deploy-live-frontend.yml`)
+
+1. Builds the React app (`VITE_API_URL` is baked in, derived from `SUBDOMAIN` + env + `DOMAIN_NAME`).
+2. Syncs `dist/assets/` with `Cache-Control: public,max-age=31536000,immutable` (hashed files).
+3. Syncs the rest (`index.html` …) with `no-cache,no-store,must-revalidate`; both syncs `--delete`.
+4. Invalidates CloudFront `/*`, waits for completion, and records `deployed_git_sha` in SSM.
+
+`infra-live-frontend`'s bucket policy has a precondition: apply fails if `spa_bucket_name` in its
+tfvars differs from the bucket name `infra-live-edge` wrote to SSM.
+
+---
+
 ## DNS names
 
-| Name | Pattern | Example (`SUBDOMAIN=buddy`, `DOMAIN_NAME=example.com`) |
+| Name | Pattern | Example (`SUBDOMAIN=superpower`, `DOMAIN_NAME=example.com`) |
 |---|---|---|
-| Public app URL (CloudFront, one per environment) | non-prod `{SUBDOMAIN}-{env}.{DOMAIN_NAME}` · prod `{SUBDOMAIN}.{DOMAIN_NAME}` | `buddy-dev.example.com` · `buddy.example.com` |
-| Internal ALB (one per environment **and** region) | non-prod `{SUBDOMAIN}-internal-{env}-{region}.{DOMAIN_NAME}` · prod `{SUBDOMAIN}-internal-{region}.{DOMAIN_NAME}` | `buddy-internal-dev-ap-south-1.example.com` · `buddy-internal-eu-west-1.example.com` |
+| Public app URL (CloudFront, one per environment) | non-prod `{SUBDOMAIN}-{env}.{DOMAIN_NAME}` · prod `{SUBDOMAIN}.{DOMAIN_NAME}` | `superpower-dev.example.com` · `superpower.example.com` |
+| Internal ALB (one per environment **and** region) | non-prod `{SUBDOMAIN}-internal-{env}-{region}.{DOMAIN_NAME}` · prod `{SUBDOMAIN}-internal-{region}.{DOMAIN_NAME}` | `superpower-internal-dev-ap-south-1.example.com` · `superpower-internal-eu-west-1.example.com` |
 
 The region suffix on the internal name is required. Route 53 is a global namespace, so without it a
 second region's record would collide with the first region's. CloudFront is the only intended

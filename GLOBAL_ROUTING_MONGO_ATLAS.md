@@ -76,8 +76,8 @@ meantime. New, empty databases need nothing — the app creates the non-unique v
 ## Step 1 — Organisation and project
 
 1. Sign in at <https://cloud.mongodb.com>.
-2. Use (or create) the **Organisation**, e.g. `buddy360`, and a **Project** per environment, e.g.
-   `buddy360-prod`.
+2. Use (or create) the **Organisation**, e.g. `superpower`, and a **Project** per environment, e.g.
+   `superpower-prod`.
 
 ---
 
@@ -111,10 +111,10 @@ stg/prod); a few legacy accounts may still carry `location: "cn"/"ru"` and are a
 
 ## Step 3 — Database user
 
-1. **Database Access → Add New Database User**, password authentication, e.g. `buddy360app`.
-2. Role: **readWrite** on the application database. Its name is `MONGODB_DB_NAME`: `buddy_app` by
+1. **Database Access → Add New Database User**, password authentication, e.g. `superpowerapp`.
+2. Role: **readWrite** on the application database. Its name is `MONGODB_DB_NAME`: `superpower_app` by
    default locally, but deployed environments set it from the Terraform variable
-   `mongodb_db_name` (e.g. `buddy360-<env>`) — use that name everywhere below, or Step 4 shards
+   `mongodb_db_name` (e.g. `superpower-<env>`) — use that name everywhere below, or Step 4 shards
    the wrong database. Use a separate admin user for the sharding commands in Step 4.
 3. Store the password in Secrets Manager only.
 
@@ -190,7 +190,7 @@ The backends reach Atlas from three regions. Either:
 
 1. **Connect → Drivers → Python**, copy the `mongodb+srv://` URI.
 2. Put it in the `MONGODB_URI` key of each region's `<APP_NAME>/<env>/backend-secrets` secret
-   (`APP_NAME` is the GitHub secret, e.g. `buddy360`)
+   (`APP_NAME` is the GitHub secret, e.g. `superpower`)
    (same value in all three regions — the API and worker both read it). Rotating it later:
    `put-secret-value` replaces the whole JSON, so include every key (see
    [`infra-live-backend/terraform/secrets.tf`](infra-live-backend/terraform/secrets.tf)).
@@ -279,7 +279,7 @@ MONGODB_URI=mongodb://localhost:27017
 ```
 
 `localhost` inside a container is the container itself — use `host.docker.internal`, or attach
-Mongo to the `buddy360_net` network and use its service name. The local worker processes every
+Mongo to the `superpower_net` network and use its service name. The local worker processes every
 location (it is only region-scoped when `WORKER_SCOPE_TO_REGION=true`, which only ECS sets), even
 though `.env.example` sets `AWS_REGION` for S3.
 

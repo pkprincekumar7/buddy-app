@@ -20,9 +20,9 @@ def test_every_backend_region_has_an_atlas_zone():
 
 
 def test_script_assigns_every_location_of_every_collection_to_its_regions_zone():
-    script = zone_setup_script("buddy_app")
+    script = zone_setup_script("superpower_app")
     ranges = re.findall(
-        r'updateZoneKeyRange\("buddy_app\.(\w+)", \{ location: "(\w+)",.*"(\w+)"\);', script
+        r'updateZoneKeyRange\("superpower_app\.(\w+)", \{ location: "(\w+)",.*"(\w+)"\);', script
     )
     expected = {
         (coll, loc, ATLAS_ZONE_FOR_REGION[region])
@@ -35,8 +35,10 @@ def test_script_assigns_every_location_of_every_collection_to_its_regions_zone()
 
 
 def test_script_shards_each_collection_once_with_location_first():
-    script = zone_setup_script("buddy_app")
+    script = zone_setup_script("superpower_app")
     sharded = dict(
-        re.findall(r'shardCollection\("buddy_app\.(\w+)", \{ location: 1, (\w+): 1 \}\)', script)
+        re.findall(
+            r'shardCollection\("superpower_app\.(\w+)", \{ location: 1, (\w+): 1 \}\)', script
+        )
     )
     assert sharded == SHARD_KEY_SECOND_FIELD

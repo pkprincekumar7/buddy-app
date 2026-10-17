@@ -5,7 +5,7 @@ description: Audit backend (FastAPI), frontend (React/Tailwind) and/or frontend-
 
 # /standards-review
 
-Audit code against buddy-app's own coding-standards checklist — not generic best practices, but
+Audit code against Superpower's own coding-standards checklist — not generic best practices, but
 the specific list distilled from an explicit review of this codebase. Review-only: report
 findings, do not fix anything unless the user explicitly asks afterward.
 

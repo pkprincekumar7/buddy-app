@@ -166,13 +166,13 @@ _OPENAPI_TAGS = [
 ]
 
 app = FastAPI(
-    title="Buddy360 API",
+    title="Superpower API",
     description=(
-        "Backend API for the Buddy360 parenting-companion app. "
+        "Backend API for the Superpower parenting-companion app. "
         "Provides authentication, child-profile management, LLM-powered guidance, "
         "and audio transcription."
     ),
-    contact={"name": "Buddy360 Engineering", "email": "prince.kumar@pearson.com"},
+    contact={"name": "Superpower Engineering", "email": "prince.kumar@pearson.com"},
     servers=[{"url": "/", "description": "Current environment"}],
     openapi_tags=_OPENAPI_TAGS,
     lifespan=lifespan,

@@ -189,7 +189,7 @@ resource "aws_appautoscaling_policy" "worker_cpu" {
 resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs" {
   alarm_name          = "${var.app_name}-worker-pending-jobs-${var.environment}"
   metric_name         = "PendingJobCount"
-  namespace           = "Buddy360/Worker"
+  namespace           = "Superpower/Worker"
   statistic           = "Average"
   period              = 60
   evaluation_periods  = 1
@@ -244,7 +244,7 @@ resource "aws_appautoscaling_policy" "worker_pending_jobs" {
 resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_low" {
   alarm_name          = "${var.app_name}-worker-pending-jobs-low-${var.environment}"
   metric_name         = "PendingJobCount"
-  namespace           = "Buddy360/Worker"
+  namespace           = "Superpower/Worker"
   statistic           = "Average"
   period              = 60
   evaluation_periods  = 5 # 5 consecutive minutes below threshold before scaling in

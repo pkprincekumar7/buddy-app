@@ -66,7 +66,7 @@ export default function Register() {
           </div>
           <h1 className="text-2xl font-bold text-foreground">Create account</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose an email and password for Buddy360
+            Choose an email and password for Superpower
           </p>
         </div>
 

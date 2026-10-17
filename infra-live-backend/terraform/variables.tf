@@ -100,7 +100,7 @@ variable "elasticache_multi_az" {
 # -- DNS / TLS ----------------------------------------------------------------
 
 variable "subdomain_internal" {
-  description = "Internal subdomain prefix for the ALB (e.g. 'buddy-internal' → buddy-internal-dev-ap-south-1.learning-dev.com in dev/ap-south-1)"
+  description = "Internal subdomain prefix for the ALB (e.g. 'superpower-internal' → superpower-internal-dev-ap-south-1.learning-dev.com in dev/ap-south-1)"
   type        = string
 }
 
@@ -129,7 +129,7 @@ variable "assets_bucket_name" {
 # -- Database ------------------------------------------------------------------
 
 variable "mongodb_db_name" {
-  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME); include the environment suffix, e.g. buddy360-dev"
+  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME); include the environment suffix, e.g. superpower-dev"
   type        = string
 }
 

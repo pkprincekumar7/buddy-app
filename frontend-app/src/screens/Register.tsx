@@ -74,7 +74,7 @@ export default function Register() {
     <AuthScreen>
       <AuthCardHeader
         title="Create account"
-        subtitle="Choose an email and password for Buddy360"
+        subtitle="Choose an email and password for Superpower"
       />
 
       <View className="gap-4">

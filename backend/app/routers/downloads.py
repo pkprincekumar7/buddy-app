@@ -89,7 +89,7 @@ def _resolve_apk_download(bucket: str) -> ApkDownloadResult:
             Params={
                 "Bucket": bucket,
                 "Key": key,
-                "ResponseContentDisposition": 'attachment; filename="buddy360-android.apk"',
+                "ResponseContentDisposition": 'attachment; filename="superpower-android.apk"',
             },
             ExpiresIn=_PRESIGN_EXPIRES_SECONDS,
         )
@@ -97,7 +97,7 @@ def _resolve_apk_download(bucket: str) -> ApkDownloadResult:
         log.error("downloads: failed to generate pre-signed URL for key=%s: %s", key, exc)
         raise _ApkError("Could not generate download link.", 503) from exc
 
-    return ApkDownloadResult(url=url, filename="buddy360-android.apk")
+    return ApkDownloadResult(url=url, filename="superpower-android.apk")
 
 
 @router.get(

@@ -101,7 +101,7 @@ permissions:
 # environment but different region sets would race on that one state file
 # even if their backend-region sets didn't overlap at all.
 concurrency:
-  group: terraform-live-all-buddy360-${{ inputs.environment }}
+  group: terraform-live-all-superpower-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:

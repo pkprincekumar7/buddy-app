@@ -115,9 +115,9 @@ All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so g
 | Trivy config (infra-live-edge) | trivy (CLI) | `infra-live-edge/terraform/` — same |
 | Trivy config (infra-live-frontend) | trivy (CLI) | `infra-live-frontend/terraform/` — same |
 | Trivy config (infra-live-scheduler) | trivy (CLI) | `infra-live-scheduler/terraform/` — same |
-| Docker build (image scan) | docker | Builds `buddy-backend` image once; shared by the three image-level checks below |
-| Trivy (backend image) | trivy-action 0.36.0 | Built `buddy-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
-| Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `buddy-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
+| Docker build (image scan) | docker | Builds `superpower-backend` image once; shared by the three image-level checks below |
+| Trivy (backend image) | trivy-action 0.36.0 | Built `superpower-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
+| Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `superpower-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
 | Dockle | dockle (installed from release tarball) | Built image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
 
 ### `codeql`
@@ -178,7 +178,7 @@ Configure under **Settings → Environments → `<env>` → Secrets** (one set p
 | Secret | Value |
 |---|---|
 | `ROLE_ARN` | ARN of the IAM OIDC role |
-| `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `buddy360` |
+| `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `superpower` |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
 | `ASSETS_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
