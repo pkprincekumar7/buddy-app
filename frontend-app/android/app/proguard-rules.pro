@@ -11,4 +11,4 @@
 
 # react-native-config injects .env values as BuildConfig fields at build time.
 # R8 must not strip or obfuscate BuildConfig or the values resolve to null at runtime.
--keep class com.buddyapp.BuildConfig { *; }
+-keep class com.superpowerapp.BuildConfig { *; }

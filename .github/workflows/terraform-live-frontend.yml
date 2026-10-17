@@ -38,7 +38,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-live-frontend-buddy360-${{ inputs.environment }}
+  group: terraform-live-frontend-superpower-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:

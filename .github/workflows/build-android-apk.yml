@@ -20,7 +20,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: build-android-apk-buddy360-${{ inputs.environment }}
+  group: build-android-apk-superpower-${{ inputs.environment }}
   cancel-in-progress: true
 
 env:
@@ -62,8 +62,8 @@ jobs:
 
       # -------------------------------------------------------------------------
       # Derive the CloudFront FQDN using the same logic as deploy-live-frontend.yml:
-      #   prod  →  {SUBDOMAIN}.{DOMAIN_NAME}           e.g. buddy.learning-dev.com
-      #   other →  {SUBDOMAIN}-{env}.{DOMAIN_NAME}     e.g. buddy-dev.learning-dev.com
+      #   prod  →  {SUBDOMAIN}.{DOMAIN_NAME}           e.g. superpower.learning-dev.com
+      #   other →  {SUBDOMAIN}-{env}.{DOMAIN_NAME}     e.g. superpower-dev.learning-dev.com
       #
       # Both API_URL and CDN_BASE_URL point to this same CloudFront domain because:
       #   /api/*         → CloudFront proxies to the ALB / FastAPI backend
@@ -154,7 +154,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: buddy360-android-${{ inputs.environment }}-${{ github.sha }}
+          name: superpower-android-${{ inputs.environment }}-${{ github.sha }}
           path: frontend-app/android/app/build/outputs/apk/release/*.apk
           retention-days: 14
 

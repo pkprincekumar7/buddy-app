@@ -4,12 +4,16 @@
 # UI: http://localhost:${FRONTEND_PORT:-5173} → nginx proxies /api/* to backend:8000
 # API directly: http://localhost:${BACKEND_PORT:-8000}
 #
+# Project name: images and containers are named superpower-<service>(-1), not after the
+# checkout folder (buddy-app).
+name: superpower
+
 services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     networks:
-      - buddy360_net
+      - superpower_net
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -28,7 +32,7 @@ services:
     restart: unless-stopped
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-superpower-local}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
       JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
       JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
@@ -56,7 +60,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       UPLOADS_CDN_DOMAIN: ${UPLOADS_CDN_DOMAIN:-}
     networks:
-      - buddy360_net
+      - superpower_net
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -81,7 +85,7 @@ services:
     restart: unless-stopped
     environment:
       MONGODB_URI: ${MONGODB_URI:?MONGODB_URI is required - see .env.example}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buddy360-local}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-superpower-local}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
@@ -95,14 +99,14 @@ services:
       WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
       AWS_REGION: ${AWS_REGION:-}
     networks:
-      - buddy360_net
+      - superpower_net
     depends_on:
       backend:
         condition: service_healthy
 
   frontend:
     networks:
-      - buddy360_net
+      - superpower_net
     build:
       context: ./frontend
       args:
@@ -125,8 +129,8 @@ services:
 
 volumes:
   redis_data:
-    name: buddy360_redis_data
+    name: superpower_redis_data
 
 networks:
-  buddy360_net:
-    name: buddy360_net
+  superpower_net:
+    name: superpower_net

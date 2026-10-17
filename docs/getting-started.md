@@ -44,7 +44,7 @@ Requires **Python 3.13** and **Node.js 22** (versions used by the Docker images)
 
 ## Connecting to MongoDB
 
-MongoDB is external — the app connects via `MONGODB_URI`. The database name is controlled by `MONGODB_DB_NAME` (code default: `buddy_app`; `.env.example` sets `buddy360-local` for local dev). Use whatever name you set, or leave it at the default.
+MongoDB is external — the app connects via `MONGODB_URI`. The database name is controlled by `MONGODB_DB_NAME` (code default: `superpower_app`; `.env.example` sets `superpower-local` for local dev). Use whatever name you set, or leave it at the default.
 
 **Local dev:** start a local mongod and set `MONGODB_URI=mongodb://localhost:27017` in `.env`.
 
@@ -55,7 +55,7 @@ MongoDB is external — the app connects via `MONGODB_URI`. The database name is
 ```bash
 mongosh "$MONGODB_URI" --eval "use $(grep MONGODB_DB_NAME .env | cut -d= -f2)"
 # or explicitly:
-mongosh "$MONGODB_URI" --eval "use buddy360-local"
+mongosh "$MONGODB_URI" --eval "use superpower-local"
 ```
 
 GUI tools (MongoDB Compass, Studio 3T) work too — paste the URI directly.
@@ -79,7 +79,7 @@ All of the above except `email_index` and `allowed_emails` carry a `location` fi
 **Useful queries (mongosh):**
 
 ```js
-use buddy360-local   // or whatever MONGODB_DB_NAME is set to
+use superpower-local   // or whatever MONGODB_DB_NAME is set to
 
 // All registered users
 db.users.find({}, { email: 1, full_name: 1, role: 1, location: 1 }).sort({ _id: -1 })
@@ -114,7 +114,7 @@ This is a one-time manual process done directly in the database. There is no API
 In mongosh:
 
 ```js
-use buddy360-local   // or your MONGODB_DB_NAME value
+use superpower-local   // or your MONGODB_DB_NAME value
 
 db.allowed_emails.insertOne({
   _id: "admin@example.com",

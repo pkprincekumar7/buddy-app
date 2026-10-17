@@ -76,7 +76,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-live-scheduler-${{ inputs.environment }}-buddy360
+  group: terraform-live-scheduler-${{ inputs.environment }}-superpower
   cancel-in-progress: false
 
 env:

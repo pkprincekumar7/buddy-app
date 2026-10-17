@@ -107,8 +107,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       void navigate('/Login', { replace: true });
     };
     if (typeof window !== 'undefined') {
-      window.addEventListener('buddy360:auth-expired', onExpired);
-      return () => window.removeEventListener('buddy360:auth-expired', onExpired);
+      window.addEventListener('superpower:auth-expired', onExpired);
+      return () => window.removeEventListener('superpower:auth-expired', onExpired);
     }
     return undefined;
   }, [navigate]);

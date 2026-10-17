@@ -87,13 +87,15 @@ export default function Login() {
         };
       };
     };
-    const existing = document.querySelector<HTMLScriptElement>('script[data-buddy-google-gsi]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-superpower-google-gsi]',
+    );
     const script: HTMLScriptElement = existing ?? document.createElement('script');
     if (!existing) {
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
-      script.dataset['buddyGoogleGsi'] = 'true';
+      script.dataset['superpowerGoogleGsi'] = 'true';
       document.body.appendChild(script);
     }
 
@@ -152,7 +154,9 @@ export default function Login() {
             <span className="text-lg font-bold text-white">LP</span>
           </div>
           <h1 className="text-2xl font-bold text-foreground">Sign in</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Buddy360 — continue to your pathway</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Superpower — continue to your pathway
+          </p>
         </div>
 
         {!pendingGoogleToken && (

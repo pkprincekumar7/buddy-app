@@ -211,7 +211,7 @@ export default function Home() {
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-semibold text-foreground">
-                    Get the Buddy360 Android App
+                    Get the Superpower Android App
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Install directly on your device for the full experience
@@ -442,9 +442,9 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 text-center">
           <div className="mb-2 flex items-center justify-center gap-2">
             <div className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary-dark">
-              <span className="text-[10px] font-bold text-white">B</span>
+              <span className="text-[10px] font-bold text-white">S</span>
             </div>
-            <span className="text-sm font-semibold text-foreground">Buddy360</span>
+            <span className="text-sm font-semibold text-foreground">Superpower</span>
           </div>
           <p className="text-xs text-muted-foreground">
             A Growth Companion for Raising Self-Aware, Capable, and Purpose-Driven Humans

@@ -6,7 +6,7 @@
 #   alb-backend  — FastAPI backend behind the ALB (/api/* behaviour)
 #
 # CloudFront→ALB uses HTTPS only to the internal ALB subdomain, one per
-# backend region (e.g. buddy-internal-dev-ap-south-1.learning-dev.com). End-user
+# backend region (e.g. superpower-internal-dev-ap-south-1.learning-dev.com). End-user
 # TLS is terminated at CloudFront. ALB→ECS is HTTP within the VPC.
 # ---------------------------------------------------------------------------
 

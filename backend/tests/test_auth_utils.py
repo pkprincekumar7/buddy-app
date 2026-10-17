@@ -273,7 +273,7 @@ def test_decode_access_token_ignore_exp_rejects_other_types_and_garbage():
 
 
 @pytest.mark.parametrize(
-    ("domain", "expected"), [("", None), ("buddy.example.com", "buddy.example.com")]
+    ("domain", "expected"), [("", None), ("superpower.example.com", "superpower.example.com")]
 )
 def test_cookie_kwargs(monkeypatch, domain, expected):
     monkeypatch.setattr(auth_utils.settings, "cookie_domain", domain)
@@ -296,14 +296,14 @@ class _Sessions:
 def prod_cookies(monkeypatch):
     monkeypatch.setattr(auth_utils.settings, "cookie_secure", True)
     monkeypatch.setattr(auth_utils.settings, "cookie_samesite", "strict")
-    monkeypatch.setattr(auth_utils.settings, "cookie_domain", "buddy.example.com")
+    monkeypatch.setattr(auth_utils.settings, "cookie_domain", "superpower.example.com")
 
 
 def _assert_secure(morsel):
     assert morsel["httponly"] is True
     assert morsel["secure"] is True
     assert morsel["samesite"].lower() == "strict"
-    assert morsel["domain"] == "buddy.example.com"
+    assert morsel["domain"] == "superpower.example.com"
 
 
 @pytest.mark.usefixtures("prod_cookies")

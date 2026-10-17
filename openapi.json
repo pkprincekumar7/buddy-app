@@ -1,10 +1,10 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Buddy360 API",
-    "description": "Backend API for the Buddy360 parenting-companion app. Provides authentication, child-profile management, LLM-powered guidance, and audio transcription.",
+    "title": "Superpower API",
+    "description": "Backend API for the Superpower parenting-companion app. Provides authentication, child-profile management, LLM-powered guidance, and audio transcription.",
     "contact": {
-      "name": "Buddy360 Engineering",
+      "name": "Superpower Engineering",
       "email": "prince.kumar@pearson.com"
     },
     "version": "0.1.0"

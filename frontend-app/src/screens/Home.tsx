@@ -559,10 +559,10 @@ export default function Home() {
               className="h-5 w-5 items-center justify-center rounded-md"
               style={FOOTER_LOGO}
             >
-              <Text className="text-[10px] font-bold text-white">B</Text>
+              <Text className="text-[10px] font-bold text-white">S</Text>
             </View>
             <Text className="text-sm font-semibold text-foreground">
-              Buddy360
+              Superpower
             </Text>
           </View>
           <Text className="text-center text-xs text-muted-foreground">

@@ -9,8 +9,8 @@
 # Route 53 is a global namespace — without the region, a second backend
 # region's apply collides with the first region's already-created record.
 #
-# prod:     buddy-internal-ap-south-1.learning-dev.com
-# non-prod: buddy-internal-dev-ap-south-1.learning-dev.com
+# prod:     superpower-internal-ap-south-1.learning-dev.com
+# non-prod: superpower-internal-dev-ap-south-1.learning-dev.com
 # ---------------------------------------------------------------------------
 
 resource "aws_route53_record" "alb_internal" {

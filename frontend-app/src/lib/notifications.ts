@@ -5,8 +5,8 @@ import notifee, {
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
 
-const CHANNEL_ID = 'buddy360';
-const CHANNEL_NAME = 'Buddy360 Notifications';
+const CHANNEL_ID = 'superpower';
+const CHANNEL_NAME = 'Superpower Notifications';
 
 async function ensureAndroidChannel(): Promise<string> {
   if (Platform.OS !== 'android') return CHANNEL_ID;

@@ -71,7 +71,7 @@ jest.mock('@notifee/react-native', () => ({
     getNotificationSettings: jest
       .fn()
       .mockResolvedValue({ authorizationStatus: 1 }),
-    createChannel: jest.fn().mockResolvedValue('buddy360'),
+    createChannel: jest.fn().mockResolvedValue('superpower'),
     displayNotification: jest.fn().mockResolvedValue(undefined),
     createTriggerNotification: jest.fn().mockResolvedValue('notification-id'),
     cancelNotification: jest.fn().mockResolvedValue(undefined),

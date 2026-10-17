@@ -19,7 +19,7 @@ variable "domain_name" {
 }
 
 variable "subdomain" {
-  description = "Public subdomain prefix (e.g. 'buddy' → buddy.learning-dev.com in prod, buddy-dev.learning-dev.com in dev)"
+  description = "Public subdomain prefix (e.g. 'superpower' → superpower.learning-dev.com in prod, superpower-dev.learning-dev.com in dev)"
   type        = string
 }
 
