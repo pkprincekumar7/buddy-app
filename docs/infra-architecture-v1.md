@@ -219,7 +219,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_iam_role` (task role — worker) | exists | Separate **task** role from the API task role. Execution role (`ecs_execution_role`) is shared. Worker task role grants: `cloudwatch:PutMetricData` scoped to namespace `Superpower/Worker`; `ssmmessages:*` for ECS Exec; X-Ray permissions via `aws_iam_role_policy.worker_task_xray`. |
 | `aws_iam_role_policy` (X-Ray — API task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on API task role (`aws_iam_role_policy.ecs_task_xray`). |
 | `aws_iam_role_policy` (X-Ray — worker task role) | exists | `xray:PutTraceSegments` + `xray:PutTelemetryRecords` inline policy on worker task role (`aws_iam_role_policy.worker_task_xray`). |
-| `aws_guardduty_detector` | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod, skipped on dev/sbx. ECS Runtime Monitoring enabled via `aws_guardduty_detector_feature.ecs_runtime` (`name = "ECS_RUNTIME_MONITORING"`, `status = "ENABLED"`). |
+| `aws_guardduty_detector` | exists | Enabled on stg + prod, skipped on dev/sbx — and never in `us-east-1`, whose detector `infra-live-edge` owns (one detector per account per region). Runtime Monitoring enabled via `aws_guardduty_detector_feature.ecs_runtime` (`name = "RUNTIME_MONITORING"`, `status = "ENABLED"`). |
 | `aws_cloudtrail` | exists | `count = var.enable_cloudtrail ? 1 : 0`; enabled on stg + prod. `is_multi_region_trail = false`; `include_global_service_events = false`; `s3_bucket_name = var.regional_logging_bucket_name`; `s3_key_prefix = "cloudtrail"`; `depends_on = [aws_s3_bucket_policy.regional_logging]`. |
 
 #### Observability
@@ -285,7 +285,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | `aws_cloudfront_distribution` | exists | 3 origins (S3 SPA assets, S3 app assets, ALB); SPA error handling; Lambda@Edge JWT validator associated on `/api/*` cache behavior (origin-request, `qualified_arn`). |
 | `aws_cloudfront_origin_access_control` × 2 | exists | SigV4 signing for both S3 origins |
 | `aws_cloudfront_response_headers_policy` × 3 | exists | CSP, HSTS, X-Frame-Options on all behaviors |
-| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge origin-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs20.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
+| `aws_lambda_function` (JWT validator) | exists | Lambda@Edge origin-request function — validates RS256 JWT on every `/api/*` request before forwarding to ALB. Rejects invalid or missing tokens with 401 at the edge. **Key points:** (1) Runtime is `nodejs22.x` using Node.js built-in `crypto` module for RS256 verification. (2) Must be provisioned in `us-east-1` (Lambda@Edge requirement). (3) Published with `publish = true` — CloudFront requires the qualified ARN (with version number). (4) Public keys are injected at deploy time via `templatefile()` + `archive_file` — no code edits needed during key rotation. (5) Token is read from the `access_token` HttpOnly cookie; falls back to `Authorization: Bearer` for React Native clients. (6) Supports multiple active key IDs (`kid` claim in JWT header) for zero-downtime key rotation. (7) Public paths bypass validation. **Deployment:** template lives in `infra-live-edge/functions/jwt-validator-lambda.js.tpl`; rendered and zipped by `archive_file` in `infra-live-edge/terraform/lambda_edge.tf`. |
 | `aws_iam_role` (Lambda@Edge execution) | exists | Assumed by both `lambda.amazonaws.com` and `edgelambda.amazonaws.com`; attached `AWSLambdaBasicExecutionRole` |
 | `aws_wafv2_web_acl` | exists | 4 rules: OWASP CRS, Known Bad Inputs, IP Reputation, rate limit |
 | `aws_wafv2_web_acl_logging_configuration` | exists | `count = var.enable_waf_logging ? 1 : 0` (prod only); log destination = Firehose stream ARN; in `waf_logging.tf`. |
@@ -295,7 +295,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | `aws_s3_bucket_policy` (global logging) | exists | `count = var.global_logging_bucket_name != "" ? 1 : 0` (prod only). Two CloudTrail statements: `s3:GetBucketAcl` on bucket ARN and `s3:PutObject` on `/cloudtrail/*` with `s3:x-amz-acl = bucket-owner-full-control` condition. Note: CloudFront access log canonical user grant (`c4c1ede6...`) requires `BucketOwnerPreferred` ownership and should be added when CloudFront access logging is enabled. |
 | `aws_s3_bucket_policy` (app assets OAC) | exists | Scoped to CloudFront distribution ARN; references bucket via `var.assets_bucket_name` — bucket is created manually, no `aws_s3_bucket` resource in Terraform |
 | `aws_route53_record` | exists | A alias to CloudFront |
-| `aws_guardduty_detector` (us-east-1) | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod. No ECS Runtime Monitoring (no ECS workloads in us-east-1). In `security.tf`. |
+| `aws_guardduty_detector` (us-east-1) | exists | `count = var.enable_guardduty ? 1 : 0`; enabled on stg + prod. The account's only us-east-1 detector (the backend stack skips us-east-1), so it also enables Runtime Monitoring for a us-east-1 backend's ECS tasks. In `security.tf`. |
 | `aws_cloudtrail` (us-east-1) | exists | `count = var.enable_cloudtrail && var.global_logging_bucket_name != "" ? 1 : 0` (prod only — stg has no global bucket). `include_global_service_events = true`; destination: global logging bucket, prefix `cloudtrail/`; `depends_on = [aws_s3_bucket_policy.global_logging]`. In `security.tf`. |
 | `aws_ssm_parameter` (CloudFront ARN, bucket name) | exists | Read by `infra-live-frontend` |
 
@@ -1329,7 +1329,7 @@ jobs:
           {
             echo "### Terraform Plan — atlas / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1338,7 +1338,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-atlas-${{ inputs.environment }}-${{ inputs.aws_region }}
-          path: infra-live-atlas/terraform/tfplan.bin
+          path: infra-live-atlas/terraform/tfplan.txt  # redacted text, never the binary plan (it holds secrets unredacted)
           retention-days: 7
 
       - name: Terraform Apply
@@ -1406,7 +1406,7 @@ jobs:
           {
             echo "### Terraform Destroy Plan — atlas / ${{ inputs.environment }} / ${{ inputs.aws_region }}"
             echo '```'
-            terraform show -no-color tfplan.bin
+            terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1415,7 +1415,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-atlas-destroy-${{ inputs.environment }}-${{ inputs.aws_region }}
-          path: infra-live-atlas/terraform/tfplan.bin
+          path: infra-live-atlas/terraform/tfplan.txt  # redacted text, never the binary plan (it holds secrets unredacted)
           retention-days: 7
 
       - name: Terraform Destroy

@@ -103,7 +103,9 @@
       "properties": {
         "title": "Redis Current Connections",
         "metrics": [
-          ["AWS/ElastiCache", "CurrConnections", "ReplicationGroupId", "${redis_replication_group}"]
+          %{ for i, id in redis_member_ids ~}
+          ["AWS/ElastiCache", "CurrConnections", "CacheClusterId", "${id}"]${i < length(redis_member_ids) - 1 ? "," : ""}
+          %{ endfor ~}
         ],
         "period": 300,
         "stat": "Average",
@@ -120,7 +122,9 @@
       "properties": {
         "title": "Redis Network Bytes In",
         "metrics": [
-          ["AWS/ElastiCache", "NetworkBytesIn", "ReplicationGroupId", "${redis_replication_group}"]
+          %{ for i, id in redis_member_ids ~}
+          ["AWS/ElastiCache", "NetworkBytesIn", "CacheClusterId", "${id}"]${i < length(redis_member_ids) - 1 ? "," : ""}
+          %{ endfor ~}
         ],
         "period": 300,
         "stat": "Average",
@@ -137,7 +141,7 @@
       "properties": {
         "title": "Worker Pending Job Count",
         "metrics": [
-          ["Superpower/Worker", "PendingJobCount"]
+          ["Superpower/Worker", "PendingJobCount", "Environment", "${environment}"]
         ],
         "period": 300,
         "stat": "Average",

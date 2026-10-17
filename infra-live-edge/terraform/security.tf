@@ -1,8 +1,11 @@
 # ---------------------------------------------------------------------------
 # Security — GuardDuty (us-east-1) + CloudTrail (us-east-1)
 #
-# GuardDuty in us-east-1 covers CloudFront and WAF management events.
-# ECS Runtime Monitoring is not required here — no ECS workloads in us-east-1.
+# GuardDuty in us-east-1 covers CloudFront and WAF management events. This is
+# the account's only us-east-1 detector (one per account per region): the
+# backend stack skips its own detector in us-east-1, so RUNTIME_MONITORING is
+# enabled here to cover the us-east-1 backend's ECS tasks when that region is
+# deployed.
 #
 # CloudTrail in us-east-1 is the only trail with include_global_service_events = true
 # so IAM/STS/global-service events are captured exactly once. The ap-south-1
@@ -23,6 +26,14 @@ resource "aws_guardduty_detector" "main" {
   tags = {
     Name = "${var.app_name}-guardduty-edge-${var.environment}"
   }
+}
+
+resource "aws_guardduty_detector_feature" "ecs_runtime" {
+  count       = var.enable_guardduty ? 1 : 0
+  provider    = aws.us_east_1
+  detector_id = aws_guardduty_detector.main[0].id
+  name        = "RUNTIME_MONITORING"
+  status      = "ENABLED"
 }
 
 #trivy:ignore:AVD-AWS-0015

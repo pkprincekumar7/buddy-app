@@ -197,6 +197,10 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching" # no data = queue is empty = no scale-out
 
+  dimensions = {
+    Environment = var.environment
+  }
+
   alarm_actions = [aws_appautoscaling_policy.worker_pending_jobs.arn]
 
   tags = {
@@ -251,6 +255,10 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_low" {
   threshold           = 10
   comparison_operator = "LessThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching" # see comment above — avoid restart loop on startup
+
+  dimensions = {
+    Environment = var.environment
+  }
 
   alarm_actions = [aws_appautoscaling_policy.worker_scale_in.arn]
 

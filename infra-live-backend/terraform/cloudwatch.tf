@@ -63,6 +63,10 @@ resource "aws_cloudwatch_metric_alarm" "worker_processing_stuck" {
 
   alarm_description = "Worker jobs stuck in processing for >10 minutes — check ECS logs and MongoDB connectivity."
 
+  dimensions = {
+    Environment = var.environment
+  }
+
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
@@ -84,6 +88,10 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_high" {
   threshold           = 100
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Environment = var.environment
+  }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
@@ -259,21 +267,47 @@ resource "aws_cloudwatch_metric_alarm" "worker_memory_high" {
   }
 }
 
+# ElastiCache publishes CurrConnections per node (CacheClusterId), never per
+# replication group, so the alarm sums every member node. Member ids are
+# deterministic: <replication_group_id>-001, -002, ... (one per
+# num_cache_clusters).
+locals {
+  redis_member_ids = [
+    for i in range(var.elasticache_replica_count + 1) :
+    format("%s-%03d", aws_elasticache_replication_group.main.id, i + 1)
+  ]
+}
+
 resource "aws_cloudwatch_metric_alarm" "redis_connections" {
   count               = var.enable_all_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-redis-connections-${var.environment}"
-  alarm_description   = "Redis current connections dropped below 1 — possible cluster failure."
-  namespace           = "AWS/ElastiCache"
-  metric_name         = "CurrConnections"
-  statistic           = "Minimum"
-  period              = 300
+  alarm_description   = "Redis current connections (all nodes) dropped below 1 — possible cluster failure."
   evaluation_periods  = 2
   threshold           = 1
   comparison_operator = "LessThanThreshold"
   treat_missing_data  = "breaching"
 
-  dimensions = {
-    ReplicationGroupId = aws_elasticache_replication_group.main.id
+  metric_query {
+    id          = "total"
+    expression  = "SUM(METRICS())"
+    label       = "CurrConnections (all nodes)"
+    return_data = true
+  }
+
+  dynamic "metric_query" {
+    for_each = local.redis_member_ids
+    content {
+      id = "node${metric_query.key}"
+      metric {
+        namespace   = "AWS/ElastiCache"
+        metric_name = "CurrConnections"
+        stat        = "Minimum"
+        period      = 300
+        dimensions = {
+          CacheClusterId = metric_query.value
+        }
+      }
+    }
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
@@ -335,16 +369,19 @@ resource "aws_xray_sampling_rule" "errors" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_dashboard" "main" {
-  count          = var.enable_dashboard ? 1 : 0
-  dashboard_name = "${var.app_name}-${var.environment}"
+  count = var.enable_dashboard ? 1 : 0
+  # Region-qualified: CloudWatch dashboard names are account-global, so one
+  # name per env would make every region's apply overwrite the same dashboard.
+  dashboard_name = "${var.app_name}-${var.environment}-${var.aws_region}"
 
   dashboard_body = templatefile("${path.module}/dashboard.json.tpl", {
-    region                  = var.aws_region
-    cluster_name            = aws_ecs_cluster.backend.name
-    api_service_name        = aws_ecs_service.backend.name
-    worker_service_name     = aws_ecs_service.worker.name
-    alb_arn_suffix          = aws_lb.backend.arn_suffix
-    tg_arn_suffix           = aws_lb_target_group.backend.arn_suffix
-    redis_replication_group = aws_elasticache_replication_group.main.id
+    region              = var.aws_region
+    cluster_name        = aws_ecs_cluster.backend.name
+    api_service_name    = aws_ecs_service.backend.name
+    worker_service_name = aws_ecs_service.worker.name
+    alb_arn_suffix      = aws_lb.backend.arn_suffix
+    tg_arn_suffix       = aws_lb_target_group.backend.arn_suffix
+    redis_member_ids    = local.redis_member_ids
+    environment         = var.environment
   })
 }

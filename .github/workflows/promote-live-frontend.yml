@@ -79,12 +79,69 @@ jobs:
           fi
 
   # -------------------------------------------------------------------------
-  # promote runs after validate passes.
-  # All secrets are read from the target environment.
+  # Resolve the git SHA that is currently deployed in the source environment.
+  # Runs in the SOURCE environment (its own ROLE_ARN) so it works when source
+  # and target are different AWS accounts (e.g. stg → prod): the target's role
+  # can't read the source account's SSM. deploy-live-frontend.yml writes
+  # github.sha to SSM after every successful deploy — this is the single
+  # source of truth. If the parameter is missing it means deploy-live-frontend
+  # has not run successfully for the source environment yet, which is a
+  # legitimate error: do not promote what has never been deployed.
+  # -------------------------------------------------------------------------
+  source_ref:
+    name: Resolve Source Git Ref
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.source_env }}
+    outputs:
+      git_sha: ${{ steps.resolve.outputs.git_sha }}
+
+    steps:
+      - name: Validate required secrets
+        env:
+          ROLE_ARN: ${{ secrets.ROLE_ARN }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          missing=()
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "Add them to the '${{ inputs.source_env }}' GitHub environment and re-run."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: promote-frontend-source-${{ inputs.source_env }}
+          aws-region: us-east-1
+
+      - name: Resolve source git ref
+        id: resolve
+        run: |
+          RESOLVED=$(aws ssm get-parameter \
+            --region us-east-1 \
+            --name "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
+            --query "Parameter.Value" --output text 2>/dev/null || echo "")
+
+          if [ -z "$RESOLVED" ]; then
+            echo "ERROR: No deployed git SHA found in SSM for source env=${{ inputs.source_env }}."
+            echo "Run deploy-live-frontend for that environment successfully before promoting."
+            exit 1
+          fi
+
+          echo "Promoting git SHA: $RESOLVED"
+          echo "git_sha=$RESOLVED" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------------------------
+  # promote runs once the source SHA is resolved.
+  # All secrets below are read from the target environment.
   # -------------------------------------------------------------------------
   promote:
     name: Promote Live Frontend
-    needs: validate
+    needs: source_ref
     runs-on: ubuntu-latest
     environment: ${{ inputs.target_env }}
 
@@ -116,35 +173,8 @@ jobs:
           role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
           # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
           aws-region: us-east-1
-          # NOTE: this role is the target environment's deploy role. It must have
-          # ssm:GetParameter on source-environment SSM paths (deployed_git_sha,
-          # s3_bucket_name, cloudfront_distribution_id) in addition to the full
-          # set of deploy permissions for the target environment.
-
-      # -------------------------------------------------------------------------
-      # Resolve the git SHA that is currently deployed in the source environment.
-      # deploy-live-frontend.yml writes github.sha to SSM after every successful
-      # deploy — this is the single source of truth. If the parameter is missing
-      # it means deploy-live-frontend has not run successfully for the source
-      # environment yet, which is a legitimate error: do not promote what has
-      # never been deployed.
-      # -------------------------------------------------------------------------
-      - name: Resolve source git ref
-        id: source_ref
-        run: |
-          RESOLVED=$(aws ssm get-parameter \
-            --region us-east-1 \
-            --name "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
-            --query "Parameter.Value" --output text 2>/dev/null || echo "")
-
-          if [ -z "$RESOLVED" ]; then
-            echo "ERROR: No deployed git SHA found in SSM for source env=${{ inputs.source_env }}."
-            echo "Run deploy-live-frontend for that environment successfully before promoting."
-            exit 1
-          fi
-
-          echo "Promoting git SHA: $RESOLVED"
-          echo "git_sha=$RESOLVED" >> "$GITHUB_OUTPUT"
+          # The target environment's deploy role — only target-environment
+          # resources are touched here (the source SHA comes from source_ref).
 
       # -------------------------------------------------------------------------
       # VITE_API_URL is the public CloudFront origin for the TARGET environment.
@@ -205,7 +235,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ steps.source_ref.outputs.git_sha }}
+          ref: ${{ needs.source_ref.outputs.git_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -267,7 +297,7 @@ jobs:
           aws ssm put-parameter \
             --region us-east-1 \
             --name "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
-            --value "${{ steps.source_ref.outputs.git_sha }}" \
+            --value "${{ needs.source_ref.outputs.git_sha }}" \
             --type String \
             --overwrite
-          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: ${{ steps.source_ref.outputs.git_sha }}"
+          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: ${{ needs.source_ref.outputs.git_sha }}"
