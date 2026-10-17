@@ -26,7 +26,7 @@ passes `--region us-east-1`.
 | Parameter | Written by | Read by |
 |---|---|---|
 | `/{app}/{env}/backend/{region}/alb_internal_fqdn` | `infra-live-backend` (that region) | `infra-live-edge` (one CloudFront `/api/*` origin per region in `backend_regions`) |
-| `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI) |
+| `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI), `promote-live-backend` (target push) |
 | `/{app}/{env}/backend/{region}/ecs_cluster_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
 | `/{app}/{env}/backend/{region}/ecs_service_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
 | `/{app}/{env}/backend/{region}/ecs_worker_service_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` (worker) |
@@ -103,7 +103,11 @@ Everything else (env vars, secret references, CPU/memory, roles) is carried over
 `:latest` placeholder never runs after the first deploy.
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
-task definition instead of building one. `restart-live-backend` forces a new deployment of the
+task definition instead of building one: an export job (source environment's role) pulls it, and
+the promote job (target's role) pushes it into the target's own ECR under the same tag before
+registering the revision. The target never references the source's ECR, so source and target can
+be different AWS accounts, and the target is unaffected when the source repo expires the image or
+the source environment is destroyed. `restart-live-backend` forces a new deployment of the
 current revision without registering one.
 
 ### Which workflow to run

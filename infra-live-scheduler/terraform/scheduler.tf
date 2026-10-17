@@ -106,6 +106,10 @@ resource "aws_scheduler_schedule" "start" {
 # Exactly ONE schedule — same reasoning as the start schedule above.
 # ---------------------------------------------------------------------------
 resource "aws_scheduler_schedule" "stop" {
+  # Never created for prod — even a DISABLED schedule there could be switched
+  # on in the console (bypassing schedule_enabled's validation) and destroy
+  # prod overnight.
+  count      = var.environment == "prod" ? 0 : 1
   name       = "${var.app_name}-${var.environment}-stop"
   group_name = aws_scheduler_schedule_group.main.name
   state      = var.schedule_enabled ? "ENABLED" : "DISABLED"

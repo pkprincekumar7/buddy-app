@@ -81,7 +81,7 @@ resource "aws_lambda_function" "jwt_validator" {
   function_name    = "${var.app_name}-${var.environment}-jwt-validator"
   role             = aws_iam_role.jwt_validator_lambda.arn
   handler          = "index.handler"
-  runtime          = "nodejs20.x"
+  runtime          = "nodejs22.x"
   publish          = true
   source_code_hash = data.archive_file.jwt_validator_lambda.output_base64sha256
   memory_size      = 128

@@ -3,11 +3,19 @@
 # Skipped on dev/sbx (var.enable_guardduty = false) to avoid ~$20/mo cost.
 # RUNTIME_MONITORING is enabled so GuardDuty inspects running container
 # behaviour (covers ECS, EKS, EC2) — without this the ECS-related cost line item provides no coverage.
+#
+# Never created in us-east-1: AWS allows one detector per account per region,
+# and infra-live-edge always owns the us-east-1 one (with the same
+# RUNTIME_MONITORING feature), whether or not us-east-1 is a backend region.
 # ---------------------------------------------------------------------------
+
+locals {
+  create_guardduty = var.enable_guardduty && var.aws_region != "us-east-1"
+}
 
 resource "aws_guardduty_detector" "main" {
   #checkov:skip=CKV2_AWS_3:Single-account deployment — AWS Organizations delegation is not used
-  count  = var.enable_guardduty ? 1 : 0
+  count  = local.create_guardduty ? 1 : 0
   enable = true
 
   tags = {
@@ -16,7 +24,7 @@ resource "aws_guardduty_detector" "main" {
 }
 
 resource "aws_guardduty_detector_feature" "ecs_runtime" {
-  count       = var.enable_guardduty ? 1 : 0
+  count       = local.create_guardduty ? 1 : 0
   detector_id = aws_guardduty_detector.main[0].id
   name        = "RUNTIME_MONITORING"
   status      = "ENABLED"

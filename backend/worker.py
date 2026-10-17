@@ -445,13 +445,24 @@ async def emit_metrics() -> None:
                 db[JOBS].count_documents({**_LOCATION_SCOPE, "status": "pending"}),
                 db[JOBS].count_documents({**_LOCATION_SCOPE, "status": "processing"}),
             )
+            # Environment dimension: dev/sbx/stg share one AWS account, so
+            # without it every env's queue would feed the same metric (and
+            # stg's backlog would scale dev's workers). The alarms in
+            # autoscaling.tf/cloudwatch.tf select on the same dimension.
+            dimensions = [{"Name": "Environment", "Value": settings.app_env}]
             await asyncio.to_thread(
                 cloudwatch.put_metric_data,
                 Namespace="Superpower/Worker",
                 MetricData=[
-                    {"MetricName": "PendingJobCount", "Value": pending_count, "Unit": "Count"},
+                    {
+                        "MetricName": "PendingJobCount",
+                        "Dimensions": dimensions,
+                        "Value": pending_count,
+                        "Unit": "Count",
+                    },
                     {
                         "MetricName": "ProcessingJobCount",
+                        "Dimensions": dimensions,
                         "Value": processing_count,
                         "Unit": "Count",
                     },
