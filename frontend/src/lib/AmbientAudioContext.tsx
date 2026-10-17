@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
+import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
 
 const AMBIENT_SRC = '/growth-ambient.mp3';
@@ -37,21 +38,33 @@ const AmbientAudioContext = createContext<AmbientAudioContextValue | null>(null)
 
 export function AmbientAudioProvider({ children }: { children: ReactNode }) {
   const { ttsEnabled } = useTts();
+  const { isAuthenticated } = useAuth();
   const location = useLocation();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [suppressed, setSuppressed] = useState(false);
+  const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
+
+  // A background tab stays silent (same as TTS in Layout.tsx) — otherwise a
+  // journey page left open in another tab keeps looping unseen, even after
+  // signing out in this one (a logout here never reaches that tab).
+  useEffect(() => {
+    const onVisibilityChange = () => setHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   const inScope = useMemo(
     () => IN_SCOPE_PREFIXES.some((prefix) => location.pathname.startsWith(prefix)),
     [location.pathname],
   );
 
-  // Deliberately keyed on [ttsEnabled, inScope, suppressed] rather than the
-  // full pathname — navigating between in-scope pages leaves all three
-  // unchanged, so the same Audio element (and its playback position) survives
-  // the swap instead of restarting on every route change.
+  // Deliberately keyed on these flags rather than the full pathname —
+  // navigating between in-scope pages leaves them all unchanged, so the same
+  // Audio element (and its playback position) survives the swap instead of
+  // restarting on every route change. isAuthenticated stops it on logout
+  // directly, whatever route the sign-out lands on.
   useEffect(() => {
-    if (!ttsEnabled || !inScope || suppressed) {
+    if (!ttsEnabled || !isAuthenticated || !inScope || suppressed || hidden) {
       audioRef.current?.pause();
       return;
     }
@@ -69,7 +82,7 @@ export function AmbientAudioProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [ttsEnabled, inScope, suppressed]);
+  }, [ttsEnabled, isAuthenticated, inScope, suppressed, hidden]);
 
   useEffect(
     () => () => {
