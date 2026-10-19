@@ -170,7 +170,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ⬜ Open |
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ⬜ Open |
-| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ⬜ Open |
+| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | ⬜ Open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | ⬜ Open |
@@ -1654,6 +1654,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 - New `/20`s must not overlap the existing `10.22.1–6.0/24`.
 
 **Acceptance criteria:** Every (environment, region) pair has a unique CIDR; private capacity is ≥ 3× the maximum task count.
+
+> ✅ **v6 (2026-10-19): implemented** before any environment was deployed, so nothing had to be replaced. `vpc_cidrs` in each `tfvars/<env>.tfvars` gives one `/16` per region: dev `10.2–4`, stg `10.12–14`, prod `10.22–24`, sbx `10.32–34`, ap-south-1 first. All three regions are listed even when not deployed, so their blocks are reserved. `vpc.tf` derives public `/24` ×3 (`10.x.1–3.0`) and private `/20` ×3 (`10.x.16/32/48.0`): about 12,270 private IPs per region against a prod peak of about 520. Terraform validates the shape (`10.x.0.0/16`) and uniqueness within an environment; uniqueness across environments follows the numbering plan. **Still to do at DB-01 Stage 1:** set the Atlas project's AWS CIDR for ap-south-1 (outside `10.0.0.0/8`, e.g. `192.168.248.0/21`) **before** creating the first dedicated cluster. It can't be changed afterwards.
 
 ---
 

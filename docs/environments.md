@@ -106,7 +106,7 @@ Settings that matter (backend):
 
 | Setting | Notes |
 |---|---|
-| `vpc_cidr` + the six `*_subnet_*_cidr` | Give each environment its own `/16` (existing: dev `10.2`, stg `10.12`, prod `10.22`, sbx `10.32`), e.g. qa `10.42.0.0/16`. Not required for isolation, but keeps peering/PrivateLink possible later. |
+| `vpc_cidrs` | A map with one `/16` **per region** for this environment, listing all three regions even if not deployed yet, so each block is reserved. Pattern: `10.<base>`, `10.<base+1>`, `10.<base+2>` for ap-south-1, eu-west-1, us-east-1 (existing bases: dev `2`, stg `12`, prod `22`, sbx `32`), e.g. qa `10.42`/`10.43`/`10.44`. Every (environment, region) pair must be unique so VPCs can be peered later (NET-01). Values must be `10.x.0.0/16`; Terraform checks the shape and per-environment uniqueness. Subnets are derived in `vpc.tf` (public `/24` ×3, private `/20` ×3), not configured. |
 | `nat_gateway_count` | 1–3. Each NAT uses one Elastic IP — counts toward the account's per-region EIP quota (section 5). |
 | `elasticache_node_type`, `elasticache_replica_count`, `elasticache_multi_az` | `multi_az = true` needs `replica_count >= 1`. |
 | `task_cpu`/`task_memory`, `worker_*`, `api_min/max_capacity`, `worker_min/max_capacity` | Sizing. Counts toward the account's Fargate vCPU quota (section 5). |
@@ -285,7 +285,7 @@ Create the GitHub Environment (Settings → Environments → New environment →
 **Code (new environment names only)**
 - [ ] Environment added to the workflow choice lists (3.1), incl. promotion paths
 - [ ] Environment added to the four Terraform `variable "environment"` lists (3.2)
-- [ ] `tfvars/<env>.tfvars` for backend, edge, frontend, scheduler (3.3), unique `vpc_cidr`
+- [ ] `tfvars/<env>.tfvars` for backend, edge, frontend, scheduler (3.3), with a `vpc_cidrs` map whose `/16`s don't overlap any other environment's
 
 **AWS account (once per account)**
 - [ ] OIDC provider and deploy role, trust limited to the account's environments (4)

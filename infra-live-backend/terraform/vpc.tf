@@ -3,6 +3,25 @@ data "aws_availability_zones" "available" {
 }
 
 # ---------------------------------------------------------------------------
+# Address plan (NET-01) — derived from this region's /16 in var.vpc_cidrs:
+#
+#   public  /24 ×3   10.x.1.0/24  10.x.2.0/24  10.x.3.0/24   ALB, NAT GWs
+#   private /20 ×3   10.x.16.0/20 10.x.32.0/20 10.x.48.0/20  ECS, Redis, endpoints
+#
+# The public /24s sit inside the first /20 (10.x.0.0/20), which no private
+# subnet uses, so the two ranges can't overlap. ~4,091 usable IPs per private
+# subnet (~12,270 total) leaves well over 3× the prod peak of ~520 (API + worker
+# max tasks, doubled during a deploy, plus endpoint ENIs and Redis nodes) —
+# room for TF-03's smaller tasks. 10.x.64.0–10.x.255.255 is left free.
+# ---------------------------------------------------------------------------
+
+locals {
+  vpc_cidr             = var.vpc_cidrs[var.aws_region]
+  public_subnet_cidrs  = [for i in [1, 2, 3] : cidrsubnet(local.vpc_cidr, 8, i)]
+  private_subnet_cidrs = [for i in [1, 2, 3] : cidrsubnet(local.vpc_cidr, 4, i)]
+}
+
+# ---------------------------------------------------------------------------
 # VPC — backend (ECS, ALB, ElastiCache)
 # ---------------------------------------------------------------------------
 
@@ -10,7 +29,7 @@ resource "aws_vpc" "main" {
   #checkov:skip=CKV2_AWS_11:VPC flow logging disabled — incurs CloudWatch/S3 storage costs; deferred until traffic volume justifies the expense
   #checkov:skip=CKV2_AWS_12:Default SG is not explicitly managed in Terraform; traffic is controlled via dedicated alb_sg and ecs_task_sg security groups
 
-  cidr_block           = var.vpc_cidr
+  cidr_block           = local.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -28,7 +47,7 @@ resource "aws_subnet" "public_1" {
   #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
 
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_1_cidr
+  cidr_block              = local.public_subnet_cidrs[0]
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
@@ -42,7 +61,7 @@ resource "aws_subnet" "public_2" {
   #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
 
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_2_cidr
+  cidr_block              = local.public_subnet_cidrs[1]
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
@@ -56,7 +75,7 @@ resource "aws_subnet" "public_3" {
   #checkov:skip=CKV_AWS_130:map_public_ip_on_launch=true is required for public-facing ALB subnets; ECS tasks run in private subnets and are not affected
 
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_3_cidr
+  cidr_block              = local.public_subnet_cidrs[2]
   availability_zone       = data.aws_availability_zones.available.names[2]
   map_public_ip_on_launch = true
 
@@ -132,7 +151,7 @@ resource "aws_nat_gateway" "nat" {
 
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_1_cidr
+  cidr_block        = local.private_subnet_cidrs[0]
   availability_zone = data.aws_availability_zones.available.names[0]
 
   tags = {
@@ -142,7 +161,7 @@ resource "aws_subnet" "private_1" {
 
 resource "aws_subnet" "private_2" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_2_cidr
+  cidr_block        = local.private_subnet_cidrs[1]
   availability_zone = data.aws_availability_zones.available.names[1]
 
   tags = {
@@ -152,7 +171,7 @@ resource "aws_subnet" "private_2" {
 
 resource "aws_subnet" "private_3" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_3_cidr
+  cidr_block        = local.private_subnet_cidrs[2]
   availability_zone = data.aws_availability_zones.available.names[2]
 
   tags = {

@@ -6,14 +6,14 @@
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 
 # Networking
-vpc_cidr              = "10.12.0.0/16"
-public_subnet_1_cidr  = "10.12.1.0/24"
-public_subnet_2_cidr  = "10.12.2.0/24"
-private_subnet_1_cidr = "10.12.3.0/24"
-private_subnet_2_cidr = "10.12.4.0/24"
-public_subnet_3_cidr  = "10.12.5.0/24"
-private_subnet_3_cidr = "10.12.6.0/24"
-nat_gateway_count     = 2
+# One /16 per region — see vpc_cidrs in variables.tf (NET-01). Subnets are
+# derived in vpc.tf.
+vpc_cidrs = {
+  "ap-south-1" = "10.12.0.0/16"
+  "eu-west-1"  = "10.13.0.0/16"
+  "us-east-1"  = "10.14.0.0/16"
+}
+nat_gateway_count = 2
 
 # ElastiCache
 elasticache_node_type     = "cache.t3.medium"

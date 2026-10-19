@@ -171,7 +171,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 
 #### Networking
 
-> **VPC CIDR layout (not prescribed — use your own ranges).** A typical ap-south-1 layout: VPC `10.0.0.0/16`; public subnets `10.0.0.0/24`, `10.0.1.0/24`, `10.0.2.0/24` (one per AZ); private subnets `10.0.10.0/24`, `10.0.11.0/24`, `10.0.12.0/24` (one per AZ). ECS tasks, ElastiCache, and VPC endpoints all live in private subnets. NAT Gateways live in public subnets.
+> **VPC CIDR layout (as implemented, NET-01).** One `/16` per (environment, region) from `vpc_cidrs` in `tfvars/<env>.tfvars`, e.g. prod ap-south-1 `10.22.0.0/16`. Subnets are derived in `vpc.tf`: public `10.x.1.0/24`, `10.x.2.0/24`, `10.x.3.0/24`; private `10.x.16.0/20`, `10.x.32.0/20`, `10.x.48.0/20` (one of each per AZ). ECS tasks, ElastiCache, and VPC endpoints all live in private subnets. NAT Gateways live in public subnets.
 
 | Terraform resource | Status | Notes |
 |---|---|---|
@@ -561,7 +561,7 @@ resource "mongodbatlas_cloud_backup_schedule" "main" {
 
 **tfvars per environment — complete boolean flags summary:**
 
-dev and sbx carry identical values — `dev.tfvars` and `sbx.tfvars` differ only in VPC CIDR ranges (dev `10.2.x.x`, sbx `10.32.x.x`) and are otherwise byte-for-byte equivalent for all flags below.
+dev and sbx carry identical values — `dev.tfvars` and `sbx.tfvars` differ only in VPC CIDR ranges (`vpc_cidrs`: dev `10.2–10.4`, sbx `10.32–10.34`, one `/16` per region) and are otherwise byte-for-byte equivalent for all flags below.
 
 | Variable | Module | `dev.tfvars` / `sbx.tfvars` | `stg.tfvars` | `prod.tfvars` |
 |---|---|---|---|---|

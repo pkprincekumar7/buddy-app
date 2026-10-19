@@ -25,39 +25,43 @@ variable "environment" {
 
 # -- Networking ---------------------------------------------------------------
 
-variable "vpc_cidr" {
-  description = "CIDR block for the backend VPC"
-  type        = string
-}
+# One /16 per (environment, region), so any two backend VPCs can later be
+# peered or joined by a Transit Gateway — e.g. eu-west-1/us-east-1 reaching
+# the ap-south-1 Atlas cluster privately (DEC-01 = B), or an Atlas Global
+# Cluster (DB-01 Stage 2). Identical CIDRs would rule that out, and changing a
+# VPC or subnet CIDR later replaces everything inside it (NET-01).
+#
+# Every environment lists all supported regions, deployed or not, so each
+# region's block is reserved up front. Plan (10.<env base + region index>):
+#   dev 10.2-4, stg 10.12-14, prod 10.22-24, sbx 10.32-34 — ap-south-1 first.
+# Keep the Atlas project CIDR outside 10.0.0.0/8 (e.g. 192.168.248.0/21).
+# Subnets are derived from the block in vpc.tf; they aren't configurable.
+variable "vpc_cidrs" {
+  description = "Backend VPC CIDR per AWS region, for this environment — a /16 per region, unique across regions (and, by the plan above, across environments). The VPC uses the entry for aws_region; subnets are derived from it with cidrsubnet() in vpc.tf."
+  type        = map(string)
 
-variable "public_subnet_1_cidr" {
-  description = "CIDR for public subnet AZ-1 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition     = contains(keys(var.vpc_cidrs), var.aws_region)
+    error_message = "vpc_cidrs has no entry for aws_region — add this region's /16 to tfvars/<env>.tfvars."
+  }
 
-variable "public_subnet_2_cidr" {
-  description = "CIDR for public subnet AZ-2 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
+    error_message = "vpc_cidrs keys may only be: ap-south-1, eu-west-1, us-east-1."
+  }
 
-variable "public_subnet_3_cidr" {
-  description = "CIDR for public subnet AZ-3 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition = alltrue([
+      for c in values(var.vpc_cidrs) :
+      can(cidrnetmask(c)) && endswith(c, "/16") && can(cidrsubnet(c, 0, 0)) && cidrsubnet(c, 0, 0) == c && startswith(c, "10.")
+    ])
+    error_message = "Every vpc_cidrs value must be a 10.x.0.0/16 network address (e.g. \"10.22.0.0/16\") — the subnet layout in vpc.tf assumes a /16, and 10.0.0.0/8 keeps it clear of the Atlas CIDR."
+  }
 
-variable "private_subnet_1_cidr" {
-  description = "CIDR for private subnet AZ-1 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
-}
-
-variable "private_subnet_2_cidr" {
-  description = "CIDR for private subnet AZ-2 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
-}
-
-variable "private_subnet_3_cidr" {
-  description = "CIDR for private subnet AZ-3 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
+  validation {
+    condition     = length(distinct(values(var.vpc_cidrs))) == length(var.vpc_cidrs)
+    error_message = "vpc_cidrs values must be unique — two regions with the same CIDR can never be peered (NET-01)."
+  }
 }
 
 variable "nat_gateway_count" {
