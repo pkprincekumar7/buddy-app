@@ -149,7 +149,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/buddy360/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
+            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
