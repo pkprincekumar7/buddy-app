@@ -219,7 +219,8 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `SPA_BUCKET_NAME` | This environment's frontend bucket (`us-east-1`) |
 | `JWT_PRIVATE_KEY` | RSA private key, see [jwt-keys.md](jwt-keys.md) |
 | `JWT_PUBLIC_KEYS` | Matching public key map, see [jwt-keys.md](jwt-keys.md) |
-| `ORIGIN_VERIFY_SECRET` | Long random string |
+| `ORIGIN_VERIFY_SECRET` | Long random string with no `*` or `?` (the ALB treats them as wildcards), e.g. `openssl rand -hex 32` |
+| `ORIGIN_VERIFY_SECRET_NEXT` | **Don't create it at setup.** Optional, set only during a rotation; see [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret) |
 | `REDIS_AUTH_TOKEN` | 16–128 printable characters, no spaces, quotes, `@` or `/` |
 | `MONGODB_URI` | This environment's connection string |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | At least one |

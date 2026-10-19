@@ -102,6 +102,11 @@ resource "aws_lb_listener" "https" {
 # infra-live-edge sets the same secret as a custom_header on the alb-backend
 # origin, so only requests that actually passed through this app's
 # CloudFront distribution carry a matching header.
+#
+# values is OR-matched: during a rotation it holds both the current secret and
+# origin_verify_secret_next, so requests still carrying the old value (edge
+# locations the CloudFront change hasn't reached yet) keep working. Outside a
+# rotation compact() drops the empty next value, leaving just the current one.
 # ---------------------------------------------------------------------------
 resource "aws_lb_listener_rule" "from_cloudfront" {
   listener_arn = aws_lb_listener.https.arn
@@ -115,7 +120,7 @@ resource "aws_lb_listener_rule" "from_cloudfront" {
   condition {
     http_header {
       http_header_name = "X-Origin-Verify"
-      values           = [var.origin_verify_secret]
+      values           = distinct(compact([var.origin_verify_secret, var.origin_verify_secret_next]))
     }
   }
 }

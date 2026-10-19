@@ -92,6 +92,9 @@ jobs:
       TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
       TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
       TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+      # Optional — set only during an origin-verify rotation (the ALB then
+      # accepts both values). See docs/infra-operations.md.
+      TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
       # TF_VAR_acm_certificate_arn is resolved per-region in the
       # "Resolve ACM certificate ARN" step below and exported to GITHUB_ENV.
       # TF_VAR_subdomain_internal, TF_VAR_cookie_domain, and TF_VAR_cors_origins
@@ -172,6 +175,15 @@ jobs:
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
+
+      # Not an error — a rotation legitimately runs with it set for a while —
+      # but a forgotten _NEXT leaves CloudFront sending it and every ALB
+      # accepting two values indefinitely. See docs/infra-operations.md
+      # "Rotating the origin-verify secret".
+      - name: Warn if an origin-verify rotation is in progress
+        if: env.TF_VAR_origin_verify_secret_next != ''
+        run: |
+          echo "::warning title=Origin-verify rotation in progress::ORIGIN_VERIFY_SECRET_NEXT is set for '${{ inputs.environment }}'. This ALB will accept it as well as ORIGIN_VERIFY_SECRET. Finish the rotation (promote it to ORIGIN_VERIFY_SECRET, delete _NEXT, re-apply the backend in every region) — see docs/infra-operations.md."
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1

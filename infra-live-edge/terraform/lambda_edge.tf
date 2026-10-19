@@ -16,10 +16,15 @@
 # Lambda@Edge must be provisioned in us-east-1 (enforced by AWS).
 # This module already targets us-east-1 so no provider alias is needed.
 #
-# Public keys, the regional ALB FQDN map, and the origin-verify secret are all
-# injected at deploy time via templatefile() — no code edits are needed for
-# key rotation or for adding a region. The private key never leaves Secrets
-# Manager. See docs/jwt-keys.md for the key-rotation procedure.
+# Public keys and the regional ALB FQDN map are injected at deploy time via
+# templatefile() — no code edits are needed for key rotation or for adding a
+# region. The private key never leaves Secrets Manager. See docs/jwt-keys.md
+# for the key-rotation procedure.
+#
+# The origin-verify secret is deliberately NOT passed in: anything rendered
+# into the template is readable by anyone with lambda:GetFunction. The function
+# copies X-Origin-Verify from the alb-backend origin's custom_header
+# (cloudfront.tf) at request time instead.
 # ---------------------------------------------------------------------------
 
 data "archive_file" "jwt_validator_lambda" {
@@ -30,11 +35,10 @@ data "archive_file" "jwt_validator_lambda" {
     content = templatefile(
       "${path.module}/../functions/jwt-validator-lambda.js.tpl",
       {
-        jwt_public_keys      = var.jwt_public_keys
-        jwt_key_id           = var.jwt_key_id
-        regional_alb_fqdns   = local.regional_alb_fqdns
-        location_to_region   = local.location_to_region
-        origin_verify_secret = var.origin_verify_secret
+        jwt_public_keys    = var.jwt_public_keys
+        jwt_key_id         = var.jwt_key_id
+        regional_alb_fqdns = local.regional_alb_fqdns
+        location_to_region = local.location_to_region
       }
     )
     filename = "index.js"

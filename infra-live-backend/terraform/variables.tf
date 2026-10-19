@@ -77,9 +77,17 @@ variable "redis_auth_token" {
 }
 
 variable "origin_verify_secret" {
-  description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate by updating that secret and re-applying both infra-live-backend and infra-live-edge."
+  description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate with origin_verify_secret_next below — see docs/infra-operations.md \"Rotating the origin-verify secret\"."
   type        = string
   sensitive   = true
+}
+
+variable "origin_verify_secret_next" {
+  description = "Incoming X-Origin-Verify value during a rotation, from the optional ORIGIN_VERIFY_SECRET_NEXT GitHub Environment Secret. When set, the ALB listener rule accepts BOTH it and origin_verify_secret (http_header values are OR-matched), so CloudFront can switch to it with zero 403s. Empty (the default) outside a rotation. See docs/infra-operations.md \"Rotating the origin-verify secret\"."
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
 }
 
 variable "elasticache_replica_count" {

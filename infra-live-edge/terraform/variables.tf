@@ -107,9 +107,17 @@ variable "jwt_key_id" {
 # -- Origin verify --------------------------------------------------------------
 
 variable "origin_verify_secret" {
-  description = "Shared secret sent as the X-Origin-Verify custom header on every CloudFront→ALB origin request (see the alb-backend origin in cloudfront.tf). Must equal infra-live-backend's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret."
+  description = "Shared secret sent as the X-Origin-Verify custom header on every CloudFront→ALB origin request (see the alb-backend origin in cloudfront.tf; the jwt_validator Lambda@Edge copies it from there when it re-routes, so it is never in the function code). Must equal infra-live-backend's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret."
   type        = string
   sensitive   = true
+}
+
+variable "origin_verify_secret_next" {
+  description = "Incoming X-Origin-Verify value during a rotation, from the optional ORIGIN_VERIFY_SECRET_NEXT GitHub Environment Secret. When set, CloudFront sends it instead of origin_verify_secret. Apply infra-live-backend in EVERY backend region with the same value first, so each ALB already accepts it. Empty (the default) outside a rotation. See docs/infra-operations.md \"Rotating the origin-verify secret\"."
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
 }
 
 variable "cloudfront_price_class" {

@@ -167,6 +167,54 @@ same region set) afterwards. Delete the local JSON file once done.
 JWT key rotation has its own procedure, because the Lambda@Edge validator also holds the public
 keys: see [jwt-keys.md](jwt-keys.md).
 
+### Rotating the origin-verify secret
+
+`ORIGIN_VERIFY_SECRET` is the `X-Origin-Verify` header CloudFront sends to every regional ALB.
+Each ALB's listener rule 403s requests without it. It lives in two places only: the
+`alb-backend` origin's `custom_header` (`infra-live-edge/terraform/cloudfront.tf`) and each
+ALB's listener rule (`infra-live-backend/terraform/alb.tf`). The Lambda@Edge copies the header
+from the origin config when it re-routes, so it's **not** in the function code and rotating it
+needs no Lambda redeploy.
+
+Rotation uses an optional second GitHub environment secret, `ORIGIN_VERIFY_SECRET_NEXT`:
+
+| | ALB accepts | CloudFront sends |
+|---|---|---|
+| Normal | `ORIGIN_VERIFY_SECRET` | `ORIGIN_VERIFY_SECRET` |
+| `_NEXT` set | `ORIGIN_VERIFY_SECRET` **or** `ORIGIN_VERIFY_SECRET_NEXT` | `ORIGIN_VERIFY_SECRET_NEXT` |
+
+While `_NEXT` is set, `terraform-live-backend` and `terraform-live-edge` show a "rotation in
+progress" warning on every run, so a half-finished rotation doesn't go unnoticed.
+
+Steps, per environment:
+
+1. **Add the new value.** Generate a long random string with no `*` or `?` (the ALB treats
+   those as wildcards), e.g. `openssl rand -hex 32`. Save it as the `ORIGIN_VERIFY_SECRET_NEXT`
+   environment secret.
+2. **Let every ALB accept it.** Run `terraform-live-backend` (apply) for **every** region in
+   the environment. Each listener rule now accepts both values.
+3. **Switch CloudFront.** Run `terraform-live-edge` (apply) with the full `backend_regions`
+   set and the **same `bootstrap_region`** as the last edge apply. (`bootstrap_region` applies
+   per run: leaving it at `auto` when you'd named a region moves login to the first region in
+   `backend_regions`.) CloudFront now sends the new value. Only do this once step 2 has
+   finished in every region, or the regions you missed return 403. (`terraform-live-all` runs
+   backend before edge, so one full-stack apply covers steps 2 and 3.)
+4. **Wait for CloudFront.** Until the distribution's status is `Deployed`, some edge locations
+   still send the old value. Check with
+   `aws cloudfront get-distribution --id <id> --query Distribution.Status`.
+5. **Promote it.** Set `ORIGIN_VERIFY_SECRET` to the new value and delete
+   `ORIGIN_VERIFY_SECRET_NEXT`.
+6. **Drop the old value.** Run `terraform-live-backend` (apply) for every region again. Each ALB
+   now accepts only the new value. Order with the edge doesn't matter here: CloudFront already
+   sends the new value either way.
+
+The old value is still in older Terraform state versions (see SEC-01 in
+[production-readiness-review.md](production-readiness-review.md)). Before EDGE-02, the secret
+was also baked into the Lambda@Edge code, so **published function versions from before that
+change still contain it.** Rotate once after deploying EDGE-02. You can only delete those old
+versions once CloudFront no longer uses them and their edge replicas are gone, which can take
+hours.
+
 ---
 
 ## Key resource settings

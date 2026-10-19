@@ -405,10 +405,11 @@ Key differences from the plan, all confirmed against the real file:
   (not yet deployed), gets a 503 with an explanatory message — never a silent
   default-region guess. See the corrected location-mapping table above for exactly which
   locations map where (notably: `cn`/`ru` are deliberately excluded, not defaulted).
-- **`X-Origin-Verify` header.** Every resolved origin gets a `customHeaders` entry
-  carrying a shared secret (`ORIGIN_VERIFY_SECRET`, injected via Terraform from the
-  `ORIGIN_VERIFY_SECRET` GitHub Environment Secret — same value on both `infra-live-edge`
-  and `infra-live-backend`). The backend ALB has a listener rule that 403s any request
+- **`X-Origin-Verify` header.** Every resolved origin keeps the `customHeaders` of the
+  distribution's `alb-backend` origin, which carry a shared secret (`ORIGIN_VERIFY_SECRET`,
+  from the GitHub Environment Secret of that name — same value on both `infra-live-edge`
+  and `infra-live-backend`). The Lambda copies the header from `request.origin`; the
+  secret is not a template variable and isn't in the function code (EDGE-02). The backend ALB has a listener rule that 403s any request
   missing or mismatching this header, so traffic reaching the ALB via CloudFront's shared
   IP range but *not* through this app's own distribution (and therefore never through this
   Lambda's JWT check) is rejected before it reaches ECS. The original plan had no
@@ -429,7 +430,8 @@ The recommendation to update resources in-place rather than rename them (Lambda@
 can't be destroyed while CloudFront replicas exist) was followed. The `archive_file`
 source still points at `jwt-validator-lambda.js.tpl` (never renamed — see Change 1) and
 its template variables are `jwt_public_keys`, `jwt_key_id`, `regional_alb_fqdns` (a map,
-not three scalars), and `origin_verify_secret`. `aws_iam_role`,
+not three scalars), and `location_to_region`. (`origin_verify_secret` was removed by
+EDGE-02: the function copies the header from the origin config instead.) `aws_iam_role`,
 `aws_iam_role_policy_attachment`, `aws_lambda_function`, and `time_sleep` are unchanged in
 shape, as predicted. The CloudFront `lambda_function_association` (Change 4) points at
 `aws_lambda_function.jwt_validator.qualified_arn`, exactly as planned.

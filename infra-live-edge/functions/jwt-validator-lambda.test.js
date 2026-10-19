@@ -50,7 +50,11 @@ function b64url(buf) {
 // throwaway temp directory, using the supplied test RSA public key and a
 // small fixed regional_alb_fqdns map. Returns the rendered JS source as a
 // string. Cleans up the temp directory before returning.
-function renderTemplate({ publicKeyPem, regionalAlbFqdns, originVerifySecret = 'test-secret' }) {
+//
+// Deliberately passes no origin_verify_secret: templatefile() errors on any
+// variable the template references but isn't given, so a successful render
+// here proves the secret can't end up in the deployed code (EDGE-02).
+function renderTemplate({ publicKeyPem, regionalAlbFqdns }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jwt-validator-lambda-test-'))
   try {
     const tf = `
@@ -63,7 +67,6 @@ locals {
     jwt_key_id            = "key-v1"
     regional_alb_fqdns    = ${JSON.stringify(regionalAlbFqdns)}
     location_to_region    = ${JSON.stringify(LOCATION_TO_REGION)}
-    origin_verify_secret  = ${JSON.stringify(originVerifySecret)}
   })
 }
 output "rendered" {
@@ -96,7 +99,11 @@ function loadLambda(rendered) {
   }
 }
 
-function mockRequest(uri, { cookies = {}, headers = {} } = {}) {
+// The X-Origin-Verify value the distribution's alb-backend origin carries in
+// these tests — what CloudFront puts in request.origin.custom.customHeaders.
+const ORIGIN_VERIFY_VALUE = 'origin-verify-from-cloudfront-config'
+
+function mockRequest(uri, { cookies = {}, headers = {}, originCustomHeaders } = {}) {
   const cookieHeader = Object.entries(cookies)
     .map(([k, v]) => `${k}=${v}`)
     .join('; ')
@@ -108,7 +115,14 @@ function mockRequest(uri, { cookies = {}, headers = {} } = {}) {
   return {
     uri,
     headers: h,
-    origin: { custom: { domainName: 'placeholder.example.com' } },
+    origin: {
+      custom: {
+        domainName: 'placeholder.example.com',
+        customHeaders: originCustomHeaders || {
+          'x-origin-verify': [{ key: 'X-Origin-Verify', value: ORIGIN_VERIFY_VALUE }],
+        },
+      },
+    },
   }
 }
 
@@ -239,4 +253,68 @@ test('jwt-validator-lambda', { skip: !terraformAvailable() && 'terraform CLI not
     const res = await invoke(lambda, mockRequest('/api/v1/auth/logout'))
     assert.equal(res.origin.custom.domainName, 'placeholder.example.com')
   })
+
+  // -- EDGE-02: X-Origin-Verify comes from the distribution config, not the code --
+
+  await t.test('authenticated re-route carries the configured X-Origin-Verify header over', async () => {
+    const accessToken = signJwt({ location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
+    const res = await invoke(lambda, mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } }))
+    assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
+    assert.deepEqual(res.origin.custom.customHeaders, {
+      'x-origin-verify': [{ key: 'X-Origin-Verify', value: ORIGIN_VERIFY_VALUE }],
+    })
+  })
+
+  await t.test('hint-based re-route (refresh) also carries the X-Origin-Verify header over', async () => {
+    const refreshToken = signJwt({ sub: 'u1', type: 'refresh', jti: 'j1', location: 'eu' })
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/refresh', { cookies: { refresh_token: refreshToken } }))
+    assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
+    assert.equal(res.origin.custom.customHeaders['x-origin-verify'][0].value, ORIGIN_VERIFY_VALUE)
+  })
+
+  await t.test('a rotated value in the distribution config is used as-is (no redeploy needed)', async () => {
+    const accessToken = signJwt({ location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
+    const res = await invoke(
+      lambda,
+      mockRequest('/api/v1/users/me', {
+        cookies: { access_token: accessToken },
+        originCustomHeaders: { 'x-origin-verify': [{ key: 'X-Origin-Verify', value: 'rotated-value' }] },
+      })
+    )
+    assert.equal(res.origin.custom.customHeaders['x-origin-verify'][0].value, 'rotated-value')
+  })
+
+  await t.test('origin with no custom headers: re-route still works and sends none (ALB 403s it)', async () => {
+    const accessToken = signJwt({ location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
+    const req = mockRequest('/api/v1/users/me', { cookies: { access_token: accessToken } })
+    delete req.origin.custom.customHeaders
+    const res = await invoke(lambda, req)
+    assert.equal(res.origin.custom.domainName, 'alb.eu-west-1.example.com')
+    assert.deepEqual(res.origin.custom.customHeaders, {})
+  })
+
+  await t.test('re-route drops a viewer-sent X-Origin-Verify so it cannot collide with the custom header', async () => {
+    const accessToken = signJwt({ location: 'eu' }, { exp: Math.floor(Date.now() / 1000) + 1800 })
+    const res = await invoke(
+      lambda,
+      mockRequest('/api/v1/users/me', {
+        cookies: { access_token: accessToken },
+        headers: { 'X-Origin-Verify': 'viewer-guess' },
+      })
+    )
+    assert.equal(res.headers['x-origin-verify'], undefined)
+    assert.equal(res.origin.custom.customHeaders['x-origin-verify'][0].value, ORIGIN_VERIFY_VALUE)
+  })
+
+  await t.test('bypass paths leave the configured origin (and its header) untouched', async () => {
+    const res = await invoke(lambda, mockRequest('/api/v1/auth/login'))
+    assert.equal(res.origin.custom.customHeaders['x-origin-verify'][0].value, ORIGIN_VERIFY_VALUE)
+  })
+})
+
+test('lambda_edge.tf never passes the origin-verify secret into the template', () => {
+  const tf = fs.readFileSync(path.join(__dirname, '..', 'terraform', 'lambda_edge.tf'), 'utf8')
+  const call = tf.slice(tf.indexOf('templatefile('), tf.indexOf('filename = "index.js"'))
+  assert.ok(call.includes('templatefile('), 'templatefile() call not found in lambda_edge.tf')
+  assert.ok(!/origin_verify/.test(call), 'origin_verify_* must not be a templatefile() variable')
 })

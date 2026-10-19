@@ -46,8 +46,13 @@
 //   regional_alb_fqdns   — map of AWS region => internal ALB FQDN, one entry
 //                          per region currently in var.backend_regions (see
 //                          ../terraform/ssm_read.tf)
-//   origin_verify_secret — shared secret sent as X-Origin-Verify to whichever
-//                          regional ALB is selected below
+//
+// Deliberately NOT a template variable: the X-Origin-Verify secret. Anything
+// rendered here ends up in the function code, readable by anyone with
+// lambda:GetFunction and replicated to every edge region. setOrigin() copies
+// the header from the distribution's own alb-backend origin instead (see
+// originCustomHeaders below), so rotating it is a CloudFront config change
+// only — no Lambda redeploy.
 
 const crypto = require('crypto')
 
@@ -96,8 +101,6 @@ const REGIONAL_ALB_FQDNS = {
   '${region}': ${jsonencode(fqdn)},
 %{ endfor ~}
 }
-
-const ORIGIN_VERIFY_SECRET = ${jsonencode(origin_verify_secret)}
 
 function base64urlDecode(str) {
   return Buffer.from(str.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
@@ -258,7 +261,26 @@ function applyLocationHint(request, hint) {
   return request
 }
 
+// In an origin-request event, request.origin.custom.customHeaders holds the
+// custom headers configured on the distribution's alb-backend origin
+// (cloudfront.tf) — including X-Origin-Verify, which every regional ALB's
+// listener rule requires. Replacing request.origin drops them, so carry them
+// over unchanged. Returns {} if none are configured; the ALB then rejects the
+// request with its default 403, the same as any other unverified caller.
+function originCustomHeaders(request) {
+  const custom = (request.origin && request.origin.custom) || {}
+  return custom.customHeaders || {}
+}
+
 function setOrigin(request, albFqdn) {
+  const customHeaders = originCustomHeaders(request)
+  // A custom header can't share a name with a request header, or CloudFront
+  // rejects the function's output (502). /api/* forwards all viewer headers,
+  // so a viewer-sent X-Origin-Verify would otherwise collide. Drop the
+  // viewer's copy — the configured value is the only one that counts.
+  for (const name of Object.keys(customHeaders)) {
+    delete request.headers[name]
+  }
   request.origin = {
     custom: {
       domainName: albFqdn,
@@ -268,9 +290,7 @@ function setOrigin(request, albFqdn) {
       sslProtocols: ['TLSv1.2'],
       readTimeout: 60,
       keepaliveTimeout: 5,
-      customHeaders: {
-        'x-origin-verify': [{ key: 'X-Origin-Verify', value: ORIGIN_VERIFY_SECRET }],
-      },
+      customHeaders,
     },
   }
   // In an origin-request event, Host already holds the distribution's

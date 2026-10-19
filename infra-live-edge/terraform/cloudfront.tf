@@ -22,6 +22,11 @@ locals {
   # var.bootstrap_region; "auto" means the first region in backend_regions.
   bootstrap_region = var.bootstrap_region == "auto" ? var.backend_regions[0] : var.bootstrap_region
 
+  # The X-Origin-Verify value CloudFront sends: the incoming one during a
+  # rotation, otherwise the current one (see docs/infra-operations.md
+  # "Rotating the origin-verify secret").
+  origin_verify_header_value = var.origin_verify_secret_next != "" ? var.origin_verify_secret_next : var.origin_verify_secret
+
   # S3 upload keys are prefixed by location (build_upload_key in
   # backend/app/services/s3_uploads.py), not by AWS region, so the /uploads/*
   # path-based routing below matches on location. The location → region map is
@@ -93,9 +98,14 @@ resource "aws_cloudfront_distribution" "frontend" {
     # from requests sent straight to the ALB's DNS name via some other
     # CloudFront distribution — both would otherwise pass the ALB security
     # group's CloudFront-prefix-list check equally.
+    #
+    # This is the ONLY place the edge stack puts the secret. The jwt_validator
+    # Lambda@Edge copies this header from request.origin when it re-routes to
+    # another region's ALB, so the value never appears in the function code,
+    # and rotating it needs no Lambda redeploy.
     custom_header {
       name  = "X-Origin-Verify"
-      value = var.origin_verify_secret
+      value = local.origin_verify_header_value
     }
 
     custom_origin_config {
