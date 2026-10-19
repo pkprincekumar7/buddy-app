@@ -89,6 +89,20 @@ def test_user_key_still_uses_an_expired_access_token():
     assert _get_user_id(_request(headers=_bearer(expired))) == "user:u1"
 
 
+def test_user_key_uses_the_kid_aware_decode(monkeypatch, caplog):
+    # APP-02: a token whose kid isn't a verification key falls back to the IP
+    # bucket, exactly like auth rejects it — the limiter can't keep a separate,
+    # fixed-key decode that drifts from auth.
+    monkeypatch.setattr(settings, "behind_proxy", False)
+    token = create_access_token("u1", "eu")
+    monkeypatch.setattr(
+        settings, "jwt_verification_keys", {"some-other-kid": settings.jwt_public_key}
+    )
+    with caplog.at_level(logging.DEBUG, logger="app.limiter"):
+        assert _get_user_id(_request(headers=_bearer(token))) == "ip:203.0.113.9"
+    assert "JWT decode failed (InvalidTokenError)" in caplog.text
+
+
 def test_user_key_falls_back_to_ip(monkeypatch, caplog):
     monkeypatch.setattr(settings, "behind_proxy", False)
     now = datetime.now(UTC)

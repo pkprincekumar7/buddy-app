@@ -12,9 +12,11 @@ data "aws_s3_bucket" "backend" {
   bucket   = var.assets_bucket_name
 }
 
-# Uploads S3 buckets — holds user-generated content (child profile photos,
-# 90-day-plan/tracker photos) under uploads/{location}/; served via CloudFront
-# OAC so no public S3 access is required. One literal block per supported
+# Uploads S3 buckets — hold user-generated content (child profile photos,
+# 90-day-plan/tracker photos) under uploads/{location}/. Private: the browser
+# uploads and downloads with S3 presigned URLs from the API, never through
+# CloudFront (EDGE-05). Looked up here only so the CSP's connect-src can allow
+# each region's bucket host (response_headers.tf). One literal block per supported
 # region (provider aliases can't be for_each'd), each only created when that
 # region is in var.backend_regions. try(...) guards the map lookup so a
 # not-yet-active region's absent key never errors the plan.
@@ -38,8 +40,7 @@ data "aws_s3_bucket" "backend_uploads_us_east_1" {
 
 locals {
   # region => data.aws_s3_bucket, one entry per currently-active backend
-  # region. cloudfront.tf iterates this to build the regional uploads origins
-  # and cache behaviours.
+  # region. response_headers.tf builds the CSP's S3 hosts from it.
   regional_uploads_buckets = merge(
     contains(var.backend_regions, "ap-south-1") ? { "ap-south-1" = data.aws_s3_bucket.backend_uploads_ap_south_1[0] } : {},
     contains(var.backend_regions, "eu-west-1") ? { "eu-west-1" = data.aws_s3_bucket.backend_uploads_eu_west_1[0] } : {},

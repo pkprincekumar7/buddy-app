@@ -58,7 +58,7 @@ services:
       AWS_REGION: ${AWS_REGION:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      UPLOADS_CDN_DOMAIN: ${UPLOADS_CDN_DOMAIN:-}
+      UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
     networks:
       - superpower_net
     ports:

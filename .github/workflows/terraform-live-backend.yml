@@ -92,6 +92,12 @@ jobs:
       TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
       TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
       TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
+      # Same kid → public key map the edge validates with (APP-02). Optional
+      # here: '{}' falls back to verifying with the current signing key only.
+      TF_VAR_jwt_public_keys: ${{ secrets.JWT_PUBLIC_KEYS || '{}' }}
+      # The kid the backend signs with. Must be the JWT_PUBLIC_KEYS entry for
+      # JWT_PRIVATE_KEY — the API refuses to start if they disagree.
+      TF_VAR_jwt_key_id: ${{ secrets.JWT_KEY_ID || 'key-v1' }}
       # Optional — set only during an origin-verify rotation (the ALB then
       # accepts both values). See docs/infra-operations.md.
       TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
@@ -301,6 +307,7 @@ jobs:
           REDIS_AUTH_TOKEN: ${{ secrets.REDIS_AUTH_TOKEN }}
         run: |
           echo "TF_VAR_redis_auth_token=$REDIS_AUTH_TOKEN" >> "$GITHUB_ENV"
+
 
       # -------------------------------------------------------------------------
       # OPS_EMAIL is optional — if absent, no SNS email subscription is created

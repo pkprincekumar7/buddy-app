@@ -215,6 +215,34 @@ change still contain it.** Rotate once after deploying EDGE-02. You can only del
 versions once CloudFront no longer uses them and their edge replicas are gone, which can take
 hours.
 
+### Photo URLs (EDGE-05)
+
+Child photos are private. The uploads bucket has Block Public Access on and **no** bucket policy:
+nothing, not even CloudFront, can read it anonymously. Mongo stores only the S3 **key**
+(`uploads/{location}/{child_id}/…`), and every API read returns an **S3 presigned GET URL**
+(`https://{bucket}.s3.{region}.amazonaws.com/uploads/…?X-Amz-…`) valid for
+`UPLOADS_URL_TTL_SECONDS` (default 1 h). The API fields keep their names (`avatar_url`,
+`photos`) and stay URLs, so released mobile builds keep working. On PATCH the server accepts a
+key or one of its own bucket URLs (as the client received it), keeps only the key, and rejects
+anything outside that child's own prefix with 422 (APP-08).
+
+- **Signed by** the API task role's own temporary credentials. There is no key pair, secret or
+  rotation to manage; the role just needs `s3:GetObject` on `uploads/*` (`iam.tf`).
+- **SigV4 only.** The API's S3 client forces SigV4 and the regional endpoint
+  (`app/services/s3_uploads.py`), because botocore otherwise presigns with SigV2 in some regions,
+  which S3 rejects for newer buckets.
+- **Lifetime.** A URL can end before the TTL if the task role's credentials expire first. The SDK
+  refreshes them shortly before expiry, so in the worst case a URL lives about 15 minutes. A
+  screen left open past that shows a broken image until it refetches.
+- **No caching across reads.** Each response gets a newly signed URL, so the browser downloads
+  the photo again after each refetch. Photos are fetched straight from the regional bucket, not
+  through CloudFront.
+- **Deleted photos** stay reachable through an already-issued URL until it expires; after that
+  no new URL can be minted, because the key is gone from the document. The S3 object itself is
+  still not deleted (APP-07 / PRIV-02).
+- **No setup step.** Environments start with a fresh database and uploads bucket, so there is
+  nothing to migrate.
+
 ---
 
 ## Key resource settings
@@ -228,7 +256,6 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 |---|---|---|---|
 | Default `/*` | S3 frontend (OAC) | `CachingOptimized` | GET/HEAD/OPTIONS, compressed; full security response headers (HSTS 2 y + preload, CSP, frame options…); `spa-rewrite` CloudFront Function (viewer-request) |
 | `/app-assets/*` | S3 assets bucket (OAC) | `CachingOptimized` | Static activity images; minimal headers (nosniff + HSTS) |
-| `/uploads/{location}/*` | That location's regional uploads bucket | `CachingOptimized` | One behaviour per location, from `shared/routing.json` |
 | `/api/*` | Regional ALB (chosen by Lambda@Edge, `origin-request`) | `CachingDisabled` | All methods, not compressed, `AllViewerExceptHostHeader`, its own security-headers policy; `origin_read_timeout = 60` s for slow LLM calls |
 
 - **SPA fallback:** the `spa-rewrite` CloudFront Function (`infra-live-edge/functions/spa-rewrite.js`),

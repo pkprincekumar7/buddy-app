@@ -26,22 +26,6 @@ locals {
   # rotation, otherwise the current one (see docs/infra-operations.md
   # "Rotating the origin-verify secret").
   origin_verify_header_value = var.origin_verify_secret_next != "" ? var.origin_verify_secret_next : var.origin_verify_secret
-
-  # S3 upload keys are prefixed by location (build_upload_key in
-  # backend/app/services/s3_uploads.py), not by AWS region, so the /uploads/*
-  # path-based routing below matches on location. The location → region map is
-  # the same one the Lambda@Edge routes API calls by (local.location_to_region,
-  # from shared/routing.json — see routing.tf).
-  uploads_location_to_region = local.location_to_region
-
-  # Only locations whose mapped region is actually deployed get a behaviour —
-  # a location mapped to a region with no uploads bucket yet simply falls
-  # through to the default behaviour instead of erroring the apply (where
-  # spa_rewrite leaves /uploads/ alone, so the frontend bucket returns 404).
-  active_uploads_locations = {
-    for loc, region in local.uploads_location_to_region : loc => region
-    if contains(keys(local.regional_uploads_buckets), region)
-  }
 }
 
 # SPA fallback, scoped to the default (S3 frontend) behaviour only: rewrites
@@ -84,16 +68,11 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.backend_assets.id
   }
 
-  # One origin per active backend region's uploads bucket. Shared OAC across
-  # all of them — OAC is a signing config, not tied to a specific bucket.
-  dynamic "origin" {
-    for_each = local.regional_uploads_buckets
-    content {
-      origin_id                = "s3-backend-uploads-${origin.key}"
-      domain_name              = origin.value.bucket_regional_domain_name
-      origin_access_control_id = aws_cloudfront_origin_access_control.backend_uploads.id
-    }
-  }
+  # No uploads origins: child photos are private and never served through
+  # CloudFront. The API returns short-lived S3 presigned GET URLs for them
+  # (EDGE-05, backend/app/services/s3_uploads.py), so a photo URL can't be
+  # shared or kept, and /uploads/* here falls through to the default
+  # behaviour — a 404 from the frontend bucket (spa_rewrite leaves it alone).
 
   origin {
     origin_id = "alb-backend"
@@ -147,8 +126,8 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_request_policy_id   = local.origin_request_cors_s3
     response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
 
-    # SPA routing. Only on this behaviour — /api/*, /app-assets/* and
-    # /uploads/<location>/* must return their own 404s/403s unchanged.
+    # SPA routing. Only on this behaviour — /api/* and /app-assets/* must
+    # return their own 404s/403s unchanged.
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.spa_rewrite.arn
@@ -171,31 +150,6 @@ resource "aws_cloudfront_distribution" "frontend" {
     cache_policy_id            = local.cache_policy_optimized
     origin_request_policy_id   = local.origin_request_cors_s3
     response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
-  }
-
-  # -- /uploads/{location}/* behaviours: user-generated photos, one per location
-  # group, routed to whichever region actually holds that location's bucket
-  # (see local.active_uploads_locations above). No Lambda@Edge (no auth check
-  # needed — photos are semi-public once uploaded). Same caching/CORS policy
-  # as /app-assets/*. A location whose mapped region has no uploads bucket
-  # deployed yet has no behaviour here and falls through to the default
-  # behaviour. spa_rewrite never rewrites /uploads/, so that's a clean 404
-  # from the frontend bucket, not index.html.
-
-  dynamic "ordered_cache_behavior" {
-    for_each = local.active_uploads_locations
-    content {
-      path_pattern           = "/uploads/${ordered_cache_behavior.key}/*"
-      target_origin_id       = "s3-backend-uploads-${ordered_cache_behavior.value}"
-      viewer_protocol_policy = "redirect-to-https"
-      allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-      cached_methods         = ["GET", "HEAD"]
-      compress               = true
-
-      cache_policy_id            = local.cache_policy_optimized
-      origin_request_policy_id   = local.origin_request_cors_s3
-      response_headers_policy_id = aws_cloudfront_response_headers_policy.assets.id
-    }
   }
 
   # -- /api/* behaviour: proxy to ALB backend ---------------------------------

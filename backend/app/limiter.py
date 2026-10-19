@@ -7,7 +7,7 @@ import limits as limits_pkg
 from fastapi import HTTPException, Request
 from slowapi import Limiter
 
-from app.auth_utils import extract_token
+from app.auth_utils import decode_verified, extract_token
 from app.settings import settings
 
 log = logging.getLogger(__name__)
@@ -41,12 +41,10 @@ def _get_user_id(request: Request) -> str:
     token = extract_token(request, "access_token")
     if token:
         try:
-            payload = jwt.decode(
-                token,
-                settings.jwt_public_key,
-                algorithms=[settings.jwt_algorithm],
-                options={"verify_exp": False},
-            )
+            # Same kid-aware decode as auth (APP-02): with a single fixed key
+            # here, users holding an old-kid token mid-rotation would silently
+            # drop into IP buckets. Expiry ignored — only the bucket matters.
+            payload = decode_verified(token, verify_exp=False)
             sub = payload.get("sub")
             if sub and payload.get("type") == "access":
                 return f"user:{sub}"

@@ -75,10 +75,16 @@ resource "aws_ecs_task_definition" "backend" {
           { name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name },
           { name = "UPLOADS_BUCKET_NAME", value = var.uploads_bucket_name },
           { name = "AWS_REGION", value = var.aws_region },
-          # Intentionally reuses cookie_domain — uploaded photos are served via the
-          # same CloudFront distribution as the app (via the /uploads/* behaviour).
-          { name = "UPLOADS_CDN_DOMAIN", value = var.cookie_domain },
           { name = "JWT_KEY_ID", value = var.jwt_key_id },
+          # kid → public key map for verification (APP-02); "{}" = current key only.
+          { name = "JWT_PUBLIC_KEYS", value = jsonencode(var.jwt_public_keys) },
+          # iss / aud stamped on and required of every token (EDGE-04). Must equal
+          # the jwt_issuer / jwt_audience infra-live-edge builds the Lambda@Edge
+          # validator with (lambda_edge.tf) — same expressions.
+          { name = "JWT_ISSUER", value = "${var.app_name}-${var.environment}" },
+          { name = "JWT_AUDIENCE", value = "${var.app_name}-api" },
+          # Lifetime of the S3 presigned GET URLs the API returns for photos (EDGE-05).
+          { name = "UPLOADS_URL_TTL_SECONDS", value = tostring(var.uploads_url_ttl_seconds) },
           { name = "CORS_ORIGINS", value = var.cors_origins },
           { name = "COOKIE_DOMAIN", value = var.cookie_domain },
         ]

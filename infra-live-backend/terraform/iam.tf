@@ -227,8 +227,8 @@ resource "aws_iam_role_policy" "worker_task_xray" {
 
 # ---------------------------------------------------------------------------
 # S3 uploads — API task role
-# Grants the API task permission to generate pre-signed PUT URLs for the
-# uploads bucket. Kept separate from ecs_task_s3 (which targets the assets
+# Grants the API task permission to generate pre-signed PUT (upload) and GET
+# (view, EDGE-05) URLs for the uploads bucket. Kept separate from ecs_task_s3 (which targets the assets
 # bucket) so each policy remains single-purpose.
 # s3:GetBucketLocation is required by some AWS SDK versions when signing
 # pre-signed URLs to resolve the bucket's endpoint correctly.
@@ -250,6 +250,14 @@ resource "aws_iam_role_policy" "ecs_task_s3_uploads" {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
         Resource = "arn:aws:s3:::${var.uploads_bucket_name}/*"
+      },
+      {
+        # Presigned GET URLs for photos (EDGE-05): a presigned URL carries the
+        # signer's permissions, so the role itself must be able to read. Scoped
+        # to uploads/ — the only prefix build_upload_key writes.
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "arn:aws:s3:::${var.uploads_bucket_name}/uploads/*"
       }
     ]
   })

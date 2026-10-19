@@ -663,14 +663,15 @@ def test_refresh_token_issued_after_revocation_is_accepted(db, client):
     assert _refresh(client, token).status_code == 200
 
 
-def test_refresh_token_without_iat_is_rejected_once_tokens_were_revoked(db, client):
+def test_refresh_token_without_iat_is_rejected(db, client):
+    # iat is a required claim (EDGE-04) — the revocation check depends on it —
+    # so a token without one fails verification outright, revoked or not.
     _add_user(db, tokens_revoked_at=T0)
     claims = {"sub": "u1", "jti": "j1", "type": "refresh", "location": "eu",
               "exp": datetime.now(UTC) + timedelta(hours=1)}  # fmt: skip
     _session(db, "j1")
     res = _refresh(client, _encode(claims))
-    assert (res.status_code, res.json()["detail"]) == (401, "Session revoked")
-    assert db[models.SESSIONS].docs == []
+    assert (res.status_code, res.json()["detail"]) == (401, "Invalid token")
 
 
 def test_refresh_is_limited_to_20_per_minute(db, client):

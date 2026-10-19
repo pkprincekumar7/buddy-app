@@ -51,12 +51,12 @@ provider "aws" {
   }
 }
 
-# Backend region providers — used to manage each region's uploads S3 bucket
-# policy (see data.tf, s3_uploads_policy.tf). One static alias per supported
+# Backend region providers — used to look up each region's uploads S3 bucket
+# for the CSP (see data.tf). One static alias per supported
 # region — provider aliases can't be generated with for_each/count, so this is
 # a fixed set of 3, matching backend_regions' validated allow-list. A region
 # not present in var.backend_regions simply has no resources created against
-# its alias (see the count guards in data.tf/s3_uploads_policy.tf) — the
+# its alias (see the count guards in data.tf) — the
 # provider block itself is a no-op until then.
 provider "aws" {
   alias  = "ap_south_1"

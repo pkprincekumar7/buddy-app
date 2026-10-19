@@ -34,7 +34,7 @@ variable "acm_certificate_arn_us_east_1" {
 }
 
 variable "backend_regions" {
-  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here. Unless bootstrap_region below names a region, the FIRST entry is the bootstrap region (login, Google sign-in, health, hint-less register). Required — no default, so a run that doesn't pass it (TF_VAR_backend_regions from terraform-live-edge.yml's backend_regions input) fails instead of silently assuming a region."
+  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and response_headers.tf uses it to allow each region's uploads bucket in the CSP. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here. Unless bootstrap_region below names a region, the FIRST entry is the bootstrap region (login, Google sign-in, health, hint-less register). Required — no default, so a run that doesn't pass it (TF_VAR_backend_regions from terraform-live-edge.yml's backend_regions input) fails instead of silently assuming a region."
   type        = list(string)
 
   validation {
@@ -82,7 +82,7 @@ variable "assets_bucket_name" {
 }
 
 variable "uploads_bucket_names" {
-  description = "Pre-existing S3 uploads bucket name per region, keyed by AWS region (e.g. { \"ap-south-1\" = \"...\", \"eu-west-1\" = \"...\" }) — each holds user-generated content under uploads/; served via CloudFront OAC. Must contain an entry for every region in backend_regions."
+  description = "Pre-existing S3 uploads bucket name per region, keyed by AWS region (e.g. { \"ap-south-1\" = \"...\", \"eu-west-1\" = \"...\" }) — each holds user-generated content under uploads/, private and reached only through API-issued S3 presigned URLs (EDGE-05). Used here for the CSP's connect-src. Must contain an entry for every region in backend_regions."
   type        = map(string)
 
   validation {
@@ -94,14 +94,18 @@ variable "uploads_bucket_names" {
 # -- CloudFront ---------------------------------------------------------------
 # -- JWT ----------------------------------------------------------------------
 variable "jwt_public_keys" {
-  description = "Map of JWT key ID → RSA public key PEM (SubjectPublicKeyInfo / PKCS#8). Normally one entry. During key rotation, include both the outgoing and incoming key so CloudFront accepts tokens signed by either. See docs/jwt-keys.md."
+  description = "Map of JWT key ID → RSA public key PEM (SubjectPublicKeyInfo / PKCS#8). Normally one entry. During key rotation, include both the outgoing and incoming key so CloudFront accepts tokens signed by either. A token whose kid isn't a key here is rejected (no default key). The backend reads the same JWT_PUBLIC_KEYS secret. See docs/jwt-keys.md."
   type        = map(string)
-}
 
-variable "jwt_key_id" {
-  description = "JWT key ID (kid) that the backend currently uses for signing. Must be present as a key in jwt_public_keys. Update during key rotation after the new key is live."
-  type        = string
-  default     = "key-v1"
+  validation {
+    condition     = length(var.jwt_public_keys) > 0
+    error_message = "jwt_public_keys must contain at least one kid → PEM entry."
+  }
+
+  validation {
+    condition     = alltrue([for pem in values(var.jwt_public_keys) : can(regex("-----BEGIN PUBLIC KEY-----[A-Za-z0-9+/=\\s]+-----END PUBLIC KEY-----", pem))])
+    error_message = "Every jwt_public_keys value must be a PEM public key (-----BEGIN PUBLIC KEY----- ... -----END PUBLIC KEY-----). See docs/jwt-keys.md."
+  }
 }
 
 # -- Origin verify --------------------------------------------------------------

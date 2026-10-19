@@ -5,6 +5,7 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
     load_pem_private_key,
+    load_pem_public_key,
 )
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +71,45 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "RS256"
     jwt_public_key: str = ""
 
+    # kid → RSA public key PEM, as JSON — the same JWT_PUBLIC_KEYS GitHub
+    # secret the Lambda@Edge validator uses (APP-02). Lets tokens signed with
+    # an outgoing key keep validating during a rotation instead of logging
+    # everyone out. Optional: the current key (jwt_key_id → the public half of
+    # jwt_private_key) is always accepted, so a deployment without it behaves
+    # exactly as before. See docs/jwt-keys.md.
+    jwt_public_keys: dict[str, str] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("JWT_PUBLIC_KEYS", "jwt_public_keys"),
+    )
+    # The key map tokens are actually verified against: jwt_public_keys plus
+    # the current signing key. Derived below; not settable.
+    jwt_verification_keys: dict[str, str] = Field(default_factory=dict)
+
+    # Tolerated clock skew (seconds) for exp/nbf/iat — tokens are minted in the
+    # bootstrap region and verified in the home region. Same value as the
+    # edge's CLOCK_SKEW_LEEWAY_SECONDS.
+    jwt_leeway_seconds: int = Field(
+        default=30,
+        validation_alias=AliasChoices("JWT_LEEWAY_SECONDS", "jwt_leeway_seconds"),
+    )
+
+    # `iss` / `aud` claims (EDGE-04). Every token is stamped with both and every
+    # decode requires both, so a token minted by another environment fails
+    # even if it was (wrongly) signed with the same key. Deployed values come
+    # from Terraform — "<app_name>-<environment>" and "<app_name>-api", the
+    # same expressions the Lambda@Edge validator is built with
+    # (infra-live-backend ecs.tf, infra-live-edge lambda_edge.tf).
+    jwt_issuer: str = Field(
+        default="superpower-local",
+        min_length=1,
+        validation_alias=AliasChoices("JWT_ISSUER", "jwt_issuer"),
+    )
+    jwt_audience: str = Field(
+        default="superpower-api",
+        min_length=1,
+        validation_alias=AliasChoices("JWT_AUDIENCE", "jwt_audience"),
+    )
+
     @model_validator(mode="after")
     def derive_jwt_public_key(self) -> "Settings":
         private_key = load_pem_private_key(self.jwt_private_key.encode(), password=None)
@@ -79,6 +119,25 @@ class Settings(BaseSettings):
             .decode()
         )
         object.__setattr__(self, "jwt_public_key", public_pem)
+
+        keys: dict[str, str] = {}
+        for kid, pem in self.jwt_public_keys.items():
+            pem = pem.replace("\\n", "\n")
+            try:
+                public_key = load_pem_public_key(pem.encode())
+            except Exception as exc:
+                raise ValueError(f"JWT_PUBLIC_KEYS[{kid!r}] is not a valid PEM public key") from exc
+            keys[kid] = public_key.public_bytes(
+                Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+            ).decode()
+        listed = keys.get(self.jwt_key_id)
+        if listed is not None and listed != public_pem:
+            raise ValueError(
+                f"JWT_PUBLIC_KEYS[{self.jwt_key_id!r}] doesn't match JWT_PRIVATE_KEY — the "
+                "signing key's kid must map to its own public key (check JWT_KEY_ID)"
+            )
+        keys[self.jwt_key_id] = public_pem
+        object.__setattr__(self, "jwt_verification_keys", keys)
         return self
 
     openai_api_key: str = Field(
@@ -195,14 +254,15 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AWS_REGION", "aws_region"),
     )
-    # CloudFront domain used to serve uploaded photos (e.g. superpower-dev.example.com).
-    # When set, avatar_url is constructed as https://{uploads_cdn_domain}/uploads/...
-    # so photos are served via CloudFront OAC with no public S3 access required.
-    # Leave blank in local dev — falls back to direct S3 URL (local bucket has
-    # public GetObject policy on uploads/*).
-    uploads_cdn_domain: str = Field(
-        default="",
-        validation_alias=AliasChoices("UPLOADS_CDN_DOMAIN", "uploads_cdn_domain"),
+    # Lifetime (seconds) of the S3 presigned GET URLs the API returns for
+    # photos (EDGE-05; app/services/s3_uploads.py). Photos are private: Mongo
+    # stores only S3 keys and every read presigns them. A URL can end sooner
+    # if the signing credentials (the ECS task role's) expire first.
+    uploads_url_ttl_seconds: int = Field(
+        default=3600,
+        ge=300,
+        le=86400,
+        validation_alias=AliasChoices("UPLOADS_URL_TTL_SECONDS", "uploads_url_ttl_seconds"),
     )
 
     cookie_secure: bool = Field(

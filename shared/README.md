@@ -27,7 +27,7 @@ both mapped and blocked, and labels are safe to embed in code.
 | `backend/app/routing_data.py` | **Generated** (committed) | Registration: `country_code` → `location`; validation; blocked-country 403; worker region scoping; Atlas zone script |
 | `frontend/src/lib/countries.ts`, `frontend-app/src/lib/countries.ts` | **Generated** (committed) | Country selector |
 | `frontend/src/lib/locationHint.ts`, `frontend-app/src/lib/locationHint.ts` | **Generated** (committed) | `X-Client-Location` registration hint |
-| `infra-live-edge/terraform/routing.tf` | **Read directly** (`jsondecode(file(...))`) | Lambda@Edge API routing, CloudFront `/uploads/{location}/*` routing, WAF geo-block list |
+| `infra-live-edge/terraform/routing.tf` | **Read directly** (`jsondecode(file(...))`) | Lambda@Edge API routing, WAF geo-block list |
 | `backend/tools/atlas_zone_ranges.py` | Via `routing_data.py` | Atlas zone ranges for the Global Cluster |
 
 Generated files are committed (not built on the fly) because the web frontend's Docker build

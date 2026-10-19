@@ -199,9 +199,28 @@ variable "cors_origins" {
 }
 
 variable "jwt_key_id" {
-  description = "JWT key ID (kid header claim) — must match the key label in the CloudFront Function PUBLIC_KEYS map. Update during key rotation."
+  description = "JWT key ID (kid header claim) the backend signs with — must be a key in the JWT_PUBLIC_KEYS map that both the Lambda@Edge validator and the backend verify against. Update during key rotation."
   type        = string
   default     = "key-v1"
+}
+
+variable "jwt_public_keys" {
+  description = "Map of JWT key ID → RSA public key PEM the backend verifies tokens against, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). Lets tokens signed with an outgoing key keep validating during a rotation. Empty (the default) = only the current signing key. Public keys only — not a secret."
+  type        = map(string)
+  default     = {}
+}
+
+# -- Photo URLs (EDGE-05) -------------------------------------------------------
+
+variable "uploads_url_ttl_seconds" {
+  description = "How long an S3 presigned GET URL for a photo stays valid (seconds). Also bounds how long a deleted photo stays reachable through an already-issued URL. A URL can end sooner if the task role's temporary credentials expire first."
+  type        = number
+  default     = 3600
+
+  validation {
+    condition     = var.uploads_url_ttl_seconds >= 300 && var.uploads_url_ttl_seconds <= 86400
+    error_message = "uploads_url_ttl_seconds must be between 300 (5 min) and 86400 (24 h)."
+  }
 }
 
 variable "cookie_domain" {

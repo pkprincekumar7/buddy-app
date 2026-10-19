@@ -10,10 +10,10 @@
 //     (/Login, /GrowthAreas/<id>/Activity/<a>) → rewrite to /index.html.
 //   - It has a "." → it's a file (/assets/index-abc.js, /manifest.json) →
 //     pass through; a missing file is a real 404 from S3.
-//   - Never rewritten, whatever the extension: the prefixes below. /api/*,
-//     /app-assets/* and deployed /uploads/<location>/* have their own
-//     behaviours and never reach this function; /assets/* and
-//     /uploads/<undeployed-location>/* do fall through to the default
+//   - Never rewritten, whatever the extension: the prefixes below. /api/* and
+//     /app-assets/* have their own behaviours and never reach this function;
+//     /assets/* and /uploads/* (photos are private, fetched straight from S3
+//     with presigned URLs — EDGE-05) do fall through to the default
 //     behaviour, and must 404, not return the SPA.
 //
 // A future client route with a "." in its last segment would be treated as a

@@ -114,8 +114,8 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 open |
 | EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | 🟡 Code done; rotation runbook not yet exercised (rotate once after deploy) |
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
-| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ⬜ Open |
-| EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ⬜ Open |
+| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
+| EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | ⬜ Open |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ⬜ Open |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open |
@@ -126,13 +126,13 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | ⬜ Open |
-| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ⬜ Open |
+| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ⬜ Open |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ⬜ Open |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ⬜ Open |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ⬜ Open |
 | APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | ⬜ Open |
-| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | ⬜ Open |
+| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ⬜ Open |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ⬜ Open |
 | APP-11 | 🟢 Low | App | Misc backend hygiene | ⬜ Open |
@@ -345,6 +345,8 @@ custom_error_response {
    - The revocation check in `deps.py:70-79` depends on `iat`.
    - PyJWT 2.15 also raises `ImmatureSignatureError` for a future `iat`. Tokens are minted in the bootstrap region and verified elsewhere, so the leeway also absorbs clock skew.
    - Cache the parsed key objects: today PyJWT re-parses the PEM on every encode and up to twice per request.
+> ✅ **v6 (2026-10-19): `iss`/`aud` implemented in one step**, not the three below. Every environment starts with a fresh database, so there are no live sessions to keep. `iss` = `<app_name>-<environment>`, `aud` = `<app_name>-api`, stamped by the backend's `_encode()` and required by `decode_verified()` and the Lambda's `verifyJwt()`. Both values are built by Terraform from the same expressions in `infra-live-backend/terraform/ecs.tf` and `infra-live-edge/terraform/lambda_edge.tf`. Use the three-step order below for an environment that does have live users.
+
 3. **Optional `iss`/`aud` (three-step rollout):**
    1. Deploy decoders that accept tokens **with or without** the claims: `options={"verify_aud": False}`, then check `aud`/`iss` manually when present.
    2. Start issuing tokens with `aud`/`iss`.
@@ -383,6 +385,8 @@ custom_error_response {
 - Deleted photos stay at the edge for up to 24 h, which conflicts with the "delete all data" flow (`auth.py:672`).
 
 > v2 correction: keys are **already unguessable**. `build_upload_key` ends in `uuid.uuid4()` (`backend/app/services/s3_uploads.py:61-62`).
+
+> ✅ **v6 (2026-10-19): implemented with S3 presigned GET URLs instead of CloudFront signed URLs.** CloudFront signing needs its own RSA key pair, key group, a key-ID hand-off between stacks, a staged rollout and its own rotation. Presigned GETs are signed with the API task role's temporary credentials, so there's nothing to manage. Accepted trade-offs: photos aren't edge-cached, each read returns a new URL (no browser cache reuse), and a URL can end early (worst case about 15 min) if the role's credentials expire first. The `/uploads/*` CloudFront behaviours, origins, OAC and bucket policies were removed, so the bucket is readable only through presigned URLs. Keys-only storage, the per-child ownership check (APP-08) and same-named API fields were kept. See `docs/infra-operations.md` "Photo URLs (EDGE-05)".
 
 **Fix (signed URLs recommended):**
 1. **CloudFront signed URLs** with a trusted key group on `/uploads/*`:

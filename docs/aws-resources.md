@@ -186,16 +186,12 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | CloudFront Distribution | `aws_cloudfront_distribution` | ✅ PriceClass_100 | ✅ PriceClass_100 | ✅ PriceClass_100 | ✅ PriceClass_All |
 | CloudFront Origin Access Control (Frontend S3) | `aws_cloudfront_origin_access_control` | ✅ | ✅ | ✅ | ✅ |
 | CloudFront Origin Access Control (Assets S3) | `aws_cloudfront_origin_access_control` | ✅ | ✅ | ✅ | ✅ |
-| CloudFront Origin Access Control (Uploads S3, shared across regions) | `aws_cloudfront_origin_access_control` | ✅ | ✅ | ✅ | ✅ |
 | Response Headers Policy (Frontend) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
 | Response Headers Policy (API) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
 | Response Headers Policy (Assets) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
 | SPA Rewrite Function (default behaviour, viewer-request) | `aws_cloudfront_function` | ✅ | ✅ | ✅ | ✅ |
 | Route53 Public DNS Record | `aws_route53_record` | ✅ | ✅ | ✅ | ✅ |
 | Assets S3 Bucket Policy (CloudFront OAC) | `aws_s3_bucket_policy` | ✅ | ✅ | ✅ | ✅ |
-| Uploads S3 Bucket Policy (CloudFront OAC) ³ | `aws_s3_bucket_policy` | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 |
-
-> ³ One policy per region in `var.backend_regions` (the `terraform-live-edge`/`terraform-live-all` workflow's region-selection input), not per environment — up to 3 (`ap-south-1`, `eu-west-1`, `us-east-1`). Counted as **×1** in the Summary totals below, matching a single-region deployment (e.g. `["ap-south-1"]`; the input is required, with no default).
 
 ### Lambda@Edge
 
@@ -282,24 +278,22 @@ Counts below are for **one backend region** (a single-region deployment, e.g. `[
 | Observability (logs, alarms, X-Ray, SNS) | 6 | 6 | 8 | 21 |
 | Security — backend (GuardDuty, CloudTrail) | 0 | 0 | 3 | 3 |
 | **Backend subtotal (per region)** | **81** | **81** | **99** | **112** |
-| CloudFront + OAC (×3) + response headers + SPA function + DNS + S3 policies (×1 region) | 11 | 11 | 11 | 11 |
+| CloudFront + OAC (×2) + response headers + SPA function + DNS + assets S3 policy | 9 | 9 | 9 | 9 |
 | Lambda@Edge (incl. destroy-only `time_sleep`) | 4 | 4 | 4 | 4 |
 | WAF | 0 | 0 | 1 | 5 |
 | SSM Parameters (edge) | 4 | 4 | 4 | 4 |
 | Security — edge (GuardDuty, CloudTrail) | 0 | 0 | 1 | 2 |
-| **Edge subtotal** | **19** | **19** | **21** | **26** |
+| **Edge subtotal** | **17** | **17** | **19** | **24** |
 | Frontend S3 policy | 1 | 1 | 1 | 1 |
 | Scheduler (Lambda, IAM, EventBridge, Secrets Manager) | 10 | 10 | 10 | 10 |
-| **Total (1 backend region)** | **111** | **111** | **131** | **149** |
+| **Total (1 backend region)** | **109** | **109** | **129** | **147** |
 
 ### Scaling to more backend regions
 
-The **Backend subtotal** is per region and multiplies directly — applying `infra-live-backend` for `eu-west-1` and `us-east-1` in addition to `ap-south-1` adds two more full backend subtotals. The **Edge** module stays at one application per environment, but its uploads-bucket-policy count (folded into the CloudFront row above) grows by one per additional active region — everything else in Edge, Frontend, and Scheduler stays fixed regardless of how many backend regions are active:
+The **Backend subtotal** is per region and multiplies directly — applying `infra-live-backend` for `eu-west-1` and `us-east-1` in addition to `ap-south-1` adds two more full backend subtotals. Edge, Frontend, and Scheduler stay fixed regardless of how many backend regions are active (the edge no longer manages any uploads-bucket policy, EDGE-05):
 
 | Active backend regions | dev/sbx total | stg total | prod total |
 |:---:|:---:|:---:|:---:|
-| 1 (`ap-south-1` only) | 111 | 131 | 149 |
-| 2 (+ `eu-west-1`) | 111 + 81 + 1 = 193 | 131 + 99 + 1 = 231 | 149 + 112 + 1 = 262 |
-| 3 (+ `us-east-1`) | 193 + 81 + 1 = 275 | 231 + 99 + 1 = 331 | 262 + 112 + 1 = 375 |
-
-(`+1` per added region is the extra uploads-bucket S3 bucket policy in the Edge module.)
+| 1 (`ap-south-1` only) | 109 | 129 | 147 |
+| 2 (+ `eu-west-1`) | 109 + 81 = 190 | 129 + 99 = 228 | 147 + 112 = 259 |
+| 3 (+ `us-east-1`) | 190 + 81 = 271 | 228 + 99 = 327 | 259 + 112 = 371 |

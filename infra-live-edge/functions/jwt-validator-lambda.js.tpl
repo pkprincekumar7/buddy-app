@@ -39,13 +39,18 @@
 //                               country_code in the request body.
 //
 // Template variables (injected by Terraform templatefile(), see ../terraform/lambda_edge.tf):
-//   jwt_public_keys      — map of kid => RSA public key PEM
-//   jwt_key_id           — default key ID when JWT header omits kid
+//   jwt_public_keys      — map of kid => RSA public key PEM. A token whose
+//                          header has no kid, or a kid not in this map, is
+//                          rejected — there is no default key.
 //   location_to_region   — map of location => AWS region (shared/routing.json,
 //                          see ../terraform/routing.tf)
 //   regional_alb_fqdns   — map of AWS region => internal ALB FQDN, one entry
 //                          per region currently in var.backend_regions (see
 //                          ../terraform/ssm_read.tf)
+//   jwt_issuer           — required `iss` claim, "<app_name>-<environment>"
+//   jwt_audience         — required `aud` claim, "<app_name>-api" (both built
+//                          from the same expressions as the backend's
+//                          JWT_ISSUER / JWT_AUDIENCE)
 //
 // Deliberately NOT a template variable: the X-Origin-Verify secret. Anything
 // rendered here ends up in the function code, readable by anyone with
@@ -58,11 +63,41 @@ const crypto = require('crypto')
 
 const PUBLIC_KEYS = {
 %{ for kid, pem in jwt_public_keys ~}
-  '${kid}': ${jsonencode(pem)},
+  ${jsonencode(kid)}: ${jsonencode(pem)},
 %{ endfor ~}
 }
 
-const DEFAULT_KID = '${jwt_key_id}'
+// Parsed once per execution environment (at cold start), not per request —
+// crypto.verify() with a PEM string re-parses the key on every call, which
+// roughly doubles the CPU cost of each /api/* request. A malformed entry is
+// skipped (its kid then fails as unknown → 401) instead of throwing here:
+// a throw at module load would fail every /api/* request, login included.
+const PUBLIC_KEY_OBJECTS = {}
+for (const [kid, pem] of Object.entries(PUBLIC_KEYS)) {
+  try {
+    PUBLIC_KEY_OBJECTS[kid] = crypto.createPublicKey(pem)
+  } catch (e) {
+    console.error('jwt_public_keys: ignoring malformed key for kid ' + kid + ': ' + e.message)
+  }
+}
+
+// The only algorithm the backend signs with (settings.jwt_algorithm). Checked
+// explicitly so a token can never pick its own verification algorithm.
+const EXPECTED_ALG = 'RS256'
+
+// Tolerated clock skew between the region that minted a token and this edge
+// location, in seconds — same value as the backend's JWT_LEEWAY_SECONDS.
+const CLOCK_SKEW_LEEWAY_SECONDS = 30
+
+// Every token must name this environment as issuer and this API as audience
+// (EDGE-04), so a token from another environment fails even if it was signed
+// with the same key. `aud` may be a string or a list, as in RFC 7519.
+const EXPECTED_ISS = ${jsonencode(jwt_issuer)}
+const EXPECTED_AUD = ${jsonencode(jwt_audience)}
+
+function audienceMatches(aud) {
+  return Array.isArray(aud) ? aud.includes(EXPECTED_AUD) : aud === EXPECTED_AUD
+}
 
 const COOKIE_NAME = 'access_token'
 const CLIENT_LOCATION_HEADER = 'x-client-location'
@@ -164,16 +199,18 @@ function resolveRegionalOrigin(location) {
 // (expired, but still correctly signed) cookie's location claim is still a
 // trustworthy hint even though it can no longer authenticate anything. The
 // real authenticated /api/* path always calls this with the default (false)
-// — staleness must still reject there.
+// — staleness must still reject there, and `exp` is mandatory.
 function verifyJwt(token, { ignoreExpiry = false } = {}) {
   const parts = token.split('.')
   if (parts.length !== 3) throw new Error('malformed token')
 
   const header = JSON.parse(base64urlDecode(parts[0]).toString('utf8'))
-  const kid = header.kid || DEFAULT_KID
+  if (header.alg !== EXPECTED_ALG) throw new Error('unexpected alg: ' + header.alg)
+  // Every token the backend issues carries a kid; one without is invalid.
+  if (typeof header.kid !== 'string' || !header.kid) throw new Error('missing kid')
 
-  const publicKeyPem = PUBLIC_KEYS[kid]
-  if (!publicKeyPem) throw new Error('unknown kid: ' + kid)
+  const publicKey = PUBLIC_KEY_OBJECTS[header.kid]
+  if (!publicKey) throw new Error('unknown kid: ' + header.kid)
 
   const signingInput = parts[0] + '.' + parts[1]
   const signature = base64urlDecode(parts[2])
@@ -183,7 +220,7 @@ function verifyJwt(token, { ignoreExpiry = false } = {}) {
     valid = crypto.verify(
       'SHA256',
       Buffer.from(signingInput),
-      { key: publicKeyPem, padding: crypto.constants.RSA_PKCS1_PADDING },
+      { key: publicKey, padding: crypto.constants.RSA_PKCS1_PADDING },
       signature
     )
   } catch (_) {
@@ -192,10 +229,17 @@ function verifyJwt(token, { ignoreExpiry = false } = {}) {
   if (!valid) throw new Error('invalid signature')
 
   const payload = JSON.parse(base64urlDecode(parts[1]).toString('utf8'))
+  // Checked even for routing hints: another environment's token must not
+  // steer this environment's traffic either.
+  if (payload.iss !== EXPECTED_ISS) throw new Error('unexpected iss')
+  if (!audienceMatches(payload.aud)) throw new Error('unexpected aud')
   if (!ignoreExpiry) {
     const now = Math.floor(Date.now() / 1000)
-    if (payload.exp && now > payload.exp) throw new Error('expired')
-    if (payload.nbf && now < payload.nbf) throw new Error('not yet valid')
+    if (typeof payload.exp !== 'number') throw new Error('missing exp')
+    if (now > payload.exp + CLOCK_SKEW_LEEWAY_SECONDS) throw new Error('expired')
+    if (typeof payload.nbf === 'number' && now < payload.nbf - CLOCK_SKEW_LEEWAY_SECONDS) {
+      throw new Error('not yet valid')
+    }
   }
 
   return payload
@@ -334,6 +378,10 @@ exports.handler = async (event) => {
   } catch (e) {
     return unauthorized()
   }
+  // Only access tokens authenticate API calls. A refresh token (longer-lived)
+  // must not work as one — the backend rejects it too (deps.py), but failing
+  // here keeps it off the ALB entirely.
+  if (payload.type !== 'access') return unauthorized()
 
   let albFqdn
   try {

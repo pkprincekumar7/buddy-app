@@ -6,7 +6,7 @@ from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBea
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app import models
-from app.auth_utils import decode_token, extract_token
+from app.auth_utils import decode_token_of_type, extract_token
 from app.database import get_db
 from app.routing import location_from_claims
 from app.settings import Settings, get_settings
@@ -39,8 +39,8 @@ async def get_token_claims(
     token = extract_token(request, "access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = decode_token(token)
-    if not payload or not payload.get("sub") or payload.get("type") != "access":
+    payload = decode_token_of_type(token, "access")
+    if not payload or not payload.get("sub"):
         raise HTTPException(status_code=401, detail="Invalid token")
     return payload
 

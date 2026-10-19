@@ -36,9 +36,12 @@ data "archive_file" "jwt_validator_lambda" {
       "${path.module}/../functions/jwt-validator-lambda.js.tpl",
       {
         jwt_public_keys    = var.jwt_public_keys
-        jwt_key_id         = var.jwt_key_id
         regional_alb_fqdns = local.regional_alb_fqdns
         location_to_region = local.location_to_region
+        # Must equal infra-live-backend's JWT_ISSUER / JWT_AUDIENCE (ecs.tf):
+        # same expressions, both stacks get app_name from the APP_NAME secret.
+        jwt_issuer   = "${var.app_name}-${var.environment}"
+        jwt_audience = "${var.app_name}-api"
       }
     )
     filename = "index.js"

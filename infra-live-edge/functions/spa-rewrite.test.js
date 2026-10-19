@@ -54,7 +54,7 @@ test('spa-rewrite', async (t) => {
     assert.equal(rewrite('/assets/no-extension'), '/assets/no-extension')
   })
 
-  await t.test('/uploads/ for an undeployed location is never turned into the SPA', () => {
+  await t.test('/uploads/ (photos are never served via CloudFront) is never turned into the SPA', () => {
     assert.equal(rewrite('/uploads/br/photo.jpg'), '/uploads/br/photo.jpg')
     assert.equal(rewrite('/uploads/br/no-extension'), '/uploads/br/no-extension')
   })
