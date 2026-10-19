@@ -15,7 +15,8 @@ locals {
   # the /uploads/{location}/* behaviours — both must agree, or a user's API
   # calls and photo uploads would land in different regions. Locations not in
   # the file (legacy cn/ru accounts) have no entry: the Lambda answers 503 and
-  # uploads fall through to the default (SPA) behaviour.
+  # uploads fall through to the default behaviour, which 404s them (spa_rewrite
+  # leaves /uploads/ alone).
   location_to_region = merge([
     for region, cfg in local.routing.regions : { for loc in cfg.locations : loc => region }
   ]...)

@@ -190,6 +190,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | Response Headers Policy (Frontend) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
 | Response Headers Policy (API) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
 | Response Headers Policy (Assets) | `aws_cloudfront_response_headers_policy` | ✅ | ✅ | ✅ | ✅ |
+| SPA Rewrite Function (default behaviour, viewer-request) | `aws_cloudfront_function` | ✅ | ✅ | ✅ | ✅ |
 | Route53 Public DNS Record | `aws_route53_record` | ✅ | ✅ | ✅ | ✅ |
 | Assets S3 Bucket Policy (CloudFront OAC) | `aws_s3_bucket_policy` | ✅ | ✅ | ✅ | ✅ |
 | Uploads S3 Bucket Policy (CloudFront OAC) ³ | `aws_s3_bucket_policy` | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 | ✅ ×1–3 |
@@ -281,15 +282,15 @@ Counts below are for **one backend region** (a single-region deployment, e.g. `[
 | Observability (logs, alarms, X-Ray, SNS) | 6 | 6 | 8 | 21 |
 | Security — backend (GuardDuty, CloudTrail) | 0 | 0 | 3 | 3 |
 | **Backend subtotal (per region)** | **81** | **81** | **99** | **112** |
-| CloudFront + OAC (×3) + response headers + DNS + S3 policies (×1 region) | 10 | 10 | 10 | 10 |
+| CloudFront + OAC (×3) + response headers + SPA function + DNS + S3 policies (×1 region) | 11 | 11 | 11 | 11 |
 | Lambda@Edge (incl. destroy-only `time_sleep`) | 4 | 4 | 4 | 4 |
 | WAF | 0 | 0 | 1 | 5 |
 | SSM Parameters (edge) | 4 | 4 | 4 | 4 |
 | Security — edge (GuardDuty, CloudTrail) | 0 | 0 | 1 | 2 |
-| **Edge subtotal** | **18** | **18** | **20** | **25** |
+| **Edge subtotal** | **19** | **19** | **21** | **26** |
 | Frontend S3 policy | 1 | 1 | 1 | 1 |
 | Scheduler (Lambda, IAM, EventBridge, Secrets Manager) | 10 | 10 | 10 | 10 |
-| **Total (1 backend region)** | **110** | **110** | **130** | **148** |
+| **Total (1 backend region)** | **111** | **111** | **131** | **149** |
 
 ### Scaling to more backend regions
 
@@ -297,8 +298,8 @@ The **Backend subtotal** is per region and multiplies directly — applying `inf
 
 | Active backend regions | dev/sbx total | stg total | prod total |
 |:---:|:---:|:---:|:---:|
-| 1 (`ap-south-1` only) | 110 | 130 | 148 |
-| 2 (+ `eu-west-1`) | 110 + 81 + 1 = 192 | 130 + 99 + 1 = 230 | 148 + 112 + 1 = 261 |
-| 3 (+ `us-east-1`) | 192 + 81 + 1 = 274 | 230 + 99 + 1 = 330 | 261 + 112 + 1 = 374 |
+| 1 (`ap-south-1` only) | 111 | 131 | 149 |
+| 2 (+ `eu-west-1`) | 111 + 81 + 1 = 193 | 131 + 99 + 1 = 231 | 149 + 112 + 1 = 262 |
+| 3 (+ `us-east-1`) | 193 + 81 + 1 = 275 | 231 + 99 + 1 = 331 | 262 + 112 + 1 = 375 |
 
 (`+1` per added region is the extra uploads-bucket S3 bucket policy in the Edge module.)

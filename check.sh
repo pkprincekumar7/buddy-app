@@ -180,6 +180,11 @@ run "mutant lists valid (tools/mutate_handlers.py --check)" \
 run "jwt-validator-lambda unit tests (infra-live-edge)" \
     node --test "$ROOT/infra-live-edge/functions/jwt-validator-lambda.test.js"
 
+# The default behaviour's SPA fallback (CloudFront Function, EDGE-03). Plain
+# Node — no terraform needed.
+run "spa-rewrite CloudFront Function unit tests (infra-live-edge)" \
+    node --test "$ROOT/infra-live-edge/functions/spa-rewrite.test.js"
+
 # shared/routing.json → generated backend/app/routing_data.py and the frontends'
 # countries.ts / locationHint.ts. Fails if a generated copy is stale.
 run "routing data in sync (shared/routing.json)" \

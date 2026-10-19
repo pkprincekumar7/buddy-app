@@ -235,6 +235,9 @@ jobs:
       - name: Run jwt-validator-lambda unit tests
         run: node --test infra-live-edge/functions/jwt-validator-lambda.test.js
 
+      - name: Run spa-rewrite CloudFront Function unit tests
+        run: node --test infra-live-edge/functions/spa-rewrite.test.js
+
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest

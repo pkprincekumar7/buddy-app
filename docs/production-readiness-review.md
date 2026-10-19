@@ -113,7 +113,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 |----|----------|------|-------|--------|
 | EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 open |
 | EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | 🟡 Code done; rotation runbook not yet exercised (rotate once after deploy) |
-| EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | ⬜ Open |
+| EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ⬜ Open |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ⬜ Open |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | ⬜ Open |
@@ -302,6 +302,17 @@ custom_error_response {
 - `GET /some/spa/route` → 200 `index.html`.
 - `GET /assets/missing.js` → 404.
 - `GET /uploads/<missing>` → 403/404, never `index.html`.
+- After the first deploy, the published function behaves the same in the real CloudFront runtime as in the Node unit tests (`spa-rewrite.test.js`). `/Login` → `/index.html`; `/assets/x.js` and `/api/v1/x` unchanged:
+  ```bash
+  ETAG=$(aws cloudfront describe-function --name "<app>-<env>-spa-rewrite" --stage LIVE --query ETag --output text)
+  EVT=$(mktemp)
+  for uri in /Login /assets/x.js /api/v1/x; do
+    echo "{\"version\":\"1.0\",\"context\":{\"eventType\":\"viewer-request\"},\"viewer\":{\"ip\":\"198.51.100.1\"},\"request\":{\"method\":\"GET\",\"uri\":\"$uri\",\"querystring\":{},\"headers\":{},\"cookies\":{}}}" > "$EVT"
+    aws cloudfront test-function --name "<app>-<env>-spa-rewrite" --if-match "$ETAG" --stage LIVE \
+      --event-object "fileb://$EVT" --query 'TestResult.FunctionOutput' --output text
+  done
+  rm -f "$EVT"
+  ```
 
 ---
 

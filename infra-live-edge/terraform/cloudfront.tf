@@ -36,11 +36,24 @@ locals {
 
   # Only locations whose mapped region is actually deployed get a behaviour —
   # a location mapped to a region with no uploads bucket yet simply falls
-  # through to the default (SPA) behaviour instead of erroring the apply.
+  # through to the default behaviour instead of erroring the apply (where
+  # spa_rewrite leaves /uploads/ alone, so the frontend bucket returns 404).
   active_uploads_locations = {
     for loc, region in local.uploads_location_to_region : loc => region
     if contains(keys(local.regional_uploads_buckets), region)
   }
+}
+
+# SPA fallback, scoped to the default (S3 frontend) behaviour only: rewrites
+# client-side routes (no file extension) to /index.html at viewer-request, so
+# a missing file is a real 404 and API errors pass through untouched. See
+# ../functions/spa-rewrite.js for the exact rules.
+resource "aws_cloudfront_function" "spa_rewrite" {
+  name    = "${var.app_name}-${var.environment}-spa-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "SPA fallback: extensionless paths -> /index.html (default behaviour only)"
+  publish = true
+  code    = file("${path.module}/../functions/spa-rewrite.js")
 }
 
 resource "aws_cloudfront_distribution" "frontend" {
@@ -133,6 +146,13 @@ resource "aws_cloudfront_distribution" "frontend" {
     cache_policy_id            = local.cache_policy_optimized
     origin_request_policy_id   = local.origin_request_cors_s3
     response_headers_policy_id = aws_cloudfront_response_headers_policy.frontend_security.id
+
+    # SPA routing. Only on this behaviour — /api/*, /app-assets/* and
+    # /uploads/<location>/* must return their own 404s/403s unchanged.
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_rewrite.arn
+    }
   }
 
   # -- /app-assets/* behaviour: static assets from backend S3 bucket ---
@@ -158,8 +178,9 @@ resource "aws_cloudfront_distribution" "frontend" {
   # (see local.active_uploads_locations above). No Lambda@Edge (no auth check
   # needed — photos are semi-public once uploaded). Same caching/CORS policy
   # as /app-assets/*. A location whose mapped region has no uploads bucket
-  # deployed yet has no behaviour here and falls through to the default (SPA)
-  # behaviour — not a clean 404, but that region doesn't serve uploads yet.
+  # deployed yet has no behaviour here and falls through to the default
+  # behaviour. spa_rewrite never rewrites /uploads/, so that's a clean 404
+  # from the frontend bucket, not index.html.
 
   dynamic "ordered_cache_behavior" {
     for_each = local.active_uploads_locations
@@ -207,16 +228,18 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  # -- SPA fallback: S3 returns 404 for missing objects -----------------------
-  # s3:ListBucket is granted to CloudFront OAC (see infra-live-frontend s3_policy.tf)
-  # so S3 returns 404 (not 403) for missing objects. Only 404 is caught here,
-  # which means API 403 responses (e.g. "Registration is not open.") pass
-  # through CloudFront untouched and reach the client correctly.
+  # -- 404 error caching only (no page rewrite) --------------------------------
+  # The SPA fallback is the spa_rewrite function on the default behaviour, not
+  # a custom error page: a distribution-wide 404 → 200 /index.html also turned
+  # API 404s and missing JS/CSS chunks into 200 HTML (production-readiness-
+  # review.md EDGE-03). s3:ListBucket is granted to CloudFront OAC (see
+  # infra-live-frontend s3_policy.tf), so a missing frontend file is a real
+  # 404. This block only stops CloudFront caching that 404 for the default
+  # 10 s, so a chunk uploaded moments later by a deploy is served at once.
+  # /api/* uses CachingDisabled, which never caches errors anyway.
 
   custom_error_response {
     error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
     error_caching_min_ttl = 0
   }
 

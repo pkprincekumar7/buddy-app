@@ -99,6 +99,8 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 
 **Lambda@Edge (✓):** $0.60/million requests + $0.00005001/GB-second (128 MB, ~5 ms avg). Only triggers on `/api/*` requests (70% of total).
 
+**CloudFront Functions (not re-verified, see Pricing Reference):** ~$0.10/million invocations, first 2M/month free. The `spa-rewrite` function (EDGE-03) runs on every request to the default `/*` behaviour, i.e. the 30% that isn't `/api/*` — on cache hits too, since it runs at viewer-request.
+
 ### CloudFront data transfer
 
 | Scale | Total GB | Free 1,024 GB | $0.109 (≤9,216 GB) | $0.085 (≤40,960 GB) | $0.082 (≤102,400 GB) | $0.080 (≤358,400 GB) | **Data cost** |
@@ -127,7 +129,8 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 | CF HTTPS requests | $0 | $0 | $0 | $0 | $0 | $48 | $588 | $5,988 | $59,988 |
 | Lambda@Edge requests ($0.60/M, 70% of req) | $0 | $0 | $0 | $0 | $2 | $21 | $210 | $2,100 | $21,000 |
 | Lambda@Edge compute (128 MB / 5 ms) | $0 | $0 | $0 | $0 | $0 | $1 | $11 | $110 | $1,095 |
-| **Subtotal** | **$0** | **$0** | **$0** | **$0** | **$2** | **$70** | **$915** | **$10,033** | **$98,674** |
+| CloudFront Functions (`spa-rewrite`, $0.10/M, 30% of req, 2M free) | $0 | $0 | $0 | $0 | $0 | $1 | $15 | $150 | $1,500 |
+| **Subtotal** | **$0** | **$0** | **$0** | **$0** | **$2** | **$71** | **$930** | **$10,183** | **$100,174** |
 
 > At 100M MAU, CloudFront HTTPS request charges ($59,988) dominate. This is driven by 50 billion requests/month (100M users × 500 req/MAU). Review request rate assumptions carefully before projecting at this scale. Enabling CloudFront caching for more API responses would reduce this significantly.
 
@@ -263,7 +266,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | 2. ECS Fargate | $38 | $38 | $56 | $112 | $187 | $299 | $1,121 | $2,988 | $2,988 |
 | 3. ALB | $17 | $17 | $18 | $18 | $18 | $19 | $22 | $47 | $297 |
 | 4. ElastiCache | $14 | $14 | $58 | $117 | $304 | $304 | $608 | $1,823 | $3,646 |
-| 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $70 | $915 | $10,033 | $98,674 |
+| 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $71 | $930 | $10,183 | $100,174 |
 | 6. WAF | $0 | $0 | $10 | $10 | $10 | $10 | $14 | $38 | $284 |
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $2 | $7 | $59 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
@@ -272,7 +275,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | 11. GuardDuty | $0 | $0 | $6 | $8 | $13 | $18 | $62 | $169 | $257 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$111** | **$111** | **$325** | **$532** | **$802** | **$1,002** | **$3,198** | **$17,281** | **$125,597** |
+| **Grand Total** | **$111** | **$111** | **$325** | **$532** | **$802** | **$1,003** | **$3,213** | **$17,431** | **$127,097** |
 
 ---
 
@@ -283,9 +286,9 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | dev / sbx | NAT Gateway ($40) | ECS Fargate ($38) | ALB ($17) |
 | stg | NAT + VPC Endpoints ($175) | ElastiCache ($58) | ECS Fargate ($56) |
 | prod 1K–100K | NAT + VPC Endpoints | ElastiCache | ECS Fargate |
-| prod 1M | ECS Fargate ($1,121) | CloudFront ($915) | ElastiCache ($608) |
-| prod 10M | CloudFront+L@E ($10,033) | ECS Fargate ($2,988) | ElastiCache ($1,823) |
-| prod 100M | CloudFront+L@E ($98,674) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
+| prod 1M | ECS Fargate ($1,121) | CloudFront ($930) | ElastiCache ($608) |
+| prod 10M | CloudFront+L@E ($10,183) | ECS Fargate ($2,988) | ElastiCache ($1,823) |
+| prod 100M | CloudFront+L@E ($100,174) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
 
 ---
 
@@ -340,6 +343,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | Service | Estimate | Note |
 |---|---|---|
 | Edge GuardDuty foundational detector (us-east-1) | ~$2/month | Inherited flat estimate; only the ap-south-1 GuardDuty rates (ECS Runtime, VPC Flow Logs) were re-verified against the Price List API this pass |
+| CloudFront Functions invocations | ~$0.10 per million, first 2M/month free | Added with EDGE-03 (`spa-rewrite`); not checked against the Price List API |
 
 **Key caveats:**
 - All ECS costs reflect **minimum task counts**. Peak autoscaling can multiply ECS cost by up to 4× at high MAU scales.

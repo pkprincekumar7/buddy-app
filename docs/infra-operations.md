@@ -226,14 +226,20 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 
 | Behaviour | Origin | Cache policy | Notes |
 |---|---|---|---|
-| Default `/*` | S3 frontend (OAC) | `CachingOptimized` | GET/HEAD/OPTIONS, compressed; full security response headers (HSTS 2 y + preload, CSP, frame options…) |
+| Default `/*` | S3 frontend (OAC) | `CachingOptimized` | GET/HEAD/OPTIONS, compressed; full security response headers (HSTS 2 y + preload, CSP, frame options…); `spa-rewrite` CloudFront Function (viewer-request) |
 | `/app-assets/*` | S3 assets bucket (OAC) | `CachingOptimized` | Static activity images; minimal headers (nosniff + HSTS) |
 | `/uploads/{location}/*` | That location's regional uploads bucket | `CachingOptimized` | One behaviour per location, from `shared/routing.json` |
 | `/api/*` | Regional ALB (chosen by Lambda@Edge, `origin-request`) | `CachingDisabled` | All methods, not compressed, `AllViewerExceptHostHeader`, its own security-headers policy; `origin_read_timeout = 60` s for slow LLM calls |
 
-- **SPA fallback:** only **404** → `/index.html` (200, `error_caching_min_ttl = 0`). OAC has
-  `s3:ListBucket`, so missing files are 404, not 403 — which lets API 403s (e.g. "Registration is
-  not open.") reach the client untouched.
+- **SPA fallback:** the `spa-rewrite` CloudFront Function (`infra-live-edge/functions/spa-rewrite.js`),
+  on the **default behaviour only**. It rewrites a path to `/index.html` when its last segment has
+  no `.` and it doesn't start with `/api/`, `/app-assets/`, `/assets/` or `/uploads/`. Everything
+  else is served as-is: a missing frontend file is a real **404** (OAC has `s3:ListBucket`), and
+  API 404s/403s reach the client untouched. There is no custom error page; the only
+  `custom_error_response` sets `error_caching_min_ttl = 0` for 404s, so a chunk uploaded moments
+  later isn't hidden behind a cached 404. A future client route with a `.` in its last segment,
+  or a dotless file such as `/.well-known/apple-app-site-association`, needs an exception in the
+  function.
 - IPv6 on, `default_root_object = index.html`, minimum TLS `TLSv1.2_2021`.
 - **Price class:** `PriceClass_100` in dev/sbx/stg, `PriceClass_All` in prod.
 
