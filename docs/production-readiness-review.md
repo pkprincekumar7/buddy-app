@@ -111,7 +111,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 
 | ID | Severity | Area | Title | Status |
 |----|----------|------|-------|--------|
-| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | ⬜ Open |
+| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 open |
 | EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | ⬜ Open |
 | EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | ⬜ Open |
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ⬜ Open |
@@ -219,8 +219,10 @@ As it stands it suits a **small/medium production load in one primary region**, 
   - careful handling of non-idempotent `register` during failover.
 - Either way, make the bootstrap list an **explicit variable** (`bootstrap_regions = [...]`) instead of taking `[0]` implicitly.
 > ⏸ **v4: deferred to DB-01 Stage 2 (Global Cluster).** In the near term the DB is an M10/M20 replica set **in ap-south-1 only**, so an ap-south-1 outage is a total outage whatever the edge does. Failing login over to eu-west-1/us-east-1 adds little availability, and it adds cross-region DB latency to every login. Until Stage 2:
-> - keep `ap-south-1` as the bootstrap region **explicitly** (make it a named variable, not `backend_regions[0]`);
+> - make the bootstrap region an apply-time choice (a named variable, not only `backend_regions[0]`);
 > - see DEC-01.
+>
+> ✅ **Stage 1 implemented (2026-10-19):** `var.bootstrap_region` is the `bootstrap_region` input of `terraform-live-edge.yml` / `terraform-live-all.yml`. `auto` (default) keeps the first region in `backend_regions`; a named region must be in `backend_regions`, or plan fails. It is **not** pinned to ap-south-1: the Atlas cluster is reachable from every backend region via its Mongo URI, so any deployed region can serve login (at the cost of cross-region DB latency). The choice is **per run**: a run that doesn't pass it (e.g. the daily scheduler) uses `auto`.
 >
 > Implement the full fix when the Global Cluster exists.
 
@@ -236,7 +238,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 - Lambda@Edge already overrides `request.origin`, which bypasses group failover.
 
 **Acceptance criteria:**
-- **Stage 1 (now, interim):** `cloudfront.tf` uses an explicit `var.bootstrap_region = "ap-south-1"` (no `backend_regions[0]`), and reordering `backend_regions` doesn't change the plan.
+- **Stage 1 (now, interim):** `cloudfront.tf` takes the bootstrap region from `var.bootstrap_region` (default `auto` = `backend_regions[0]`); with a named region, changing the `backend_regions` selection doesn't move it, and a named region outside `backend_regions` fails the plan.
 - **Stage 2:** with the bootstrap region's API scaled to 0 (in stg), login/google/register still succeed via another region.
 - **Stage 2:** the bootstrap region selection is documented in `docs/infra-architecture-multi-region.md`.
 
@@ -635,7 +637,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 - Update `docs/jwt-keys.md`. Note that the backend currently has **no** `JWT_PUBLIC_KEYS` setting at all; `jwt-keys.md:13` lists it as edge-only.
 
 ⚠️ **Pitfalls:**
-- Login tokens are minted in the **bootstrap region** (`var.bootstrap_region`, ap-south-1; EDGE-01 interim) and verified in the **home region**. The `kid` → key map must be identical in **every** region. Switch the signer to the new key only after every region (backend and edge) holds the new public key.
+- Login tokens are minted in the **bootstrap region** (`local.bootstrap_region`: the `bootstrap_region` input, or the first of `backend_regions` when `auto`; EDGE-01 interim) and verified in the **home region**. The `kid` → key map must be identical in **every** region. Switch the signer to the new key only after every region (backend and edge) holds the new public key.
 - Confirm that dev, stg and prod use **different** key pairs. With no `iss`/`aud`, the key is the only thing stopping a dev token from working in prod.
 
 **Acceptance criteria:**

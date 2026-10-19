@@ -34,7 +34,7 @@ variable "acm_certificate_arn_us_east_1" {
 }
 
 variable "backend_regions" {
-  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here. The FIRST entry is the bootstrap region (login, Google sign-in, health, hint-less register). Required — no default, so a run that doesn't pass it (TF_VAR_backend_regions from terraform-live-edge.yml's backend_regions input) fails instead of silently assuming a region."
+  description = "AWS regions with a deployed backend (ALB) — this is the single source of truth for every region-aware resource in this module: the jwt_validator Lambda@Edge (see lambda_edge.tf) uses it to route each /api/* request by the token's location claim with no default region, and cloudfront.tf uses it to decide which regional uploads-bucket origins/behaviours to create. Each entry must already be applied via infra-live-backend (its SSM alb_internal_fqdn parameter must exist, and its uploads bucket name must be present in uploads_bucket_names below) before being added here. Unless bootstrap_region below names a region, the FIRST entry is the bootstrap region (login, Google sign-in, health, hint-less register). Required — no default, so a run that doesn't pass it (TF_VAR_backend_regions from terraform-live-edge.yml's backend_regions input) fails instead of silently assuming a region."
   type        = list(string)
 
   validation {
@@ -45,6 +45,28 @@ variable "backend_regions" {
   validation {
     condition     = alltrue([for r in var.backend_regions : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
     error_message = "backend_regions may only contain: ap-south-1, eu-west-1, us-east-1."
+  }
+}
+
+# The region that serves the jwt_validator Lambda@Edge's PUBLIC_PATHS
+# (register, login, google, health, and refresh/logout when no
+# location-bearing session is found) — every one of those requests genuinely
+# lands on this region's ALB (the alb-backend origin in cloudfront.tf),
+# unlike authenticated /api/* traffic, which is always re-routed by location.
+#
+# Chosen at apply time. "auto" (the default) keeps the original behaviour:
+# whichever region is first in backend_regions. Naming a region pins it, so
+# changing the backend_regions selection can't silently move every login
+# worldwide to another region. Any region works — the Atlas cluster is
+# reachable from every backend region via its Mongo URI.
+variable "bootstrap_region" {
+  description = "AWS region whose ALB serves the bootstrap (unauthenticated) API paths: login, Google sign-in, health, and hint-less register/refresh/logout. \"auto\" (default) uses the first entry of backend_regions; otherwise it must be one of backend_regions. Set via terraform-live-edge.yml's bootstrap_region input (TF_VAR_bootstrap_region)."
+  type        = string
+  default     = "auto"
+
+  validation {
+    condition     = var.bootstrap_region == "auto" || contains(var.backend_regions, var.bootstrap_region)
+    error_message = "bootstrap_region must be \"auto\" or one of backend_regions — its ALB is the origin for login, Google sign-in and health."
   }
 }
 

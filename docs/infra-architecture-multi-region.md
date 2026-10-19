@@ -274,8 +274,10 @@ made in the code, not omissions.
 - `PURE_BYPASS_PATHS` (login, google, health) and any authenticated `/api/*` request
   whose location is unmapped or undeployed never get `request.origin` rewritten by the
   Lambda at all — they fall through to the CloudFront distribution's own statically
-  configured origin, `local.bootstrap_region = var.backend_regions[0]` (the first region
-  in the currently-applied `backend_regions` list; see `infra-live-edge/terraform/cloudfront.tf`).
+  configured origin, `local.bootstrap_region`: the `bootstrap_region` workflow input
+  (`TF_VAR_bootstrap_region`) when it names a region (it must be in `backend_regions`), or
+  the first region in `backend_regions` when it's `auto`, the default; see
+  `infra-live-edge/terraform/variables.tf` and `cloudfront.tf`.
   An authenticated request with an unmapped/undeployed location gets a 503 instead of
   silently landing on the bootstrap region — the bootstrap-region fallback only applies
   to unauthenticated bypass paths.
@@ -397,7 +399,7 @@ Key differences from the plan, all confirmed against the real file:
   `COUNTRY_TO_REGION` map anywhere in the function. The "fallback" for bypass/no-hint
   cases is simply not rewriting `request.origin`, which leaves it at whatever the
   CloudFront distribution's own `alb-backend` origin is statically configured to (see
-  Change 4 below) — currently `var.backend_regions[0]`.
+  Change 4 below) — `var.bootstrap_region`, or `var.backend_regions[0]` when it's `auto`.
 - **Fails closed, no default region.** An authenticated request whose `location` claim
   isn't in `LOCATION_TO_REGION`, or whose mapped region isn't in `REGIONAL_ALB_FQDNS`
   (not yet deployed), gets a 503 with an explanatory message — never a silent
@@ -467,7 +469,7 @@ into the Lambda template variable of the same name (Change 1/2).
 `"viewer-request"` — the move to `origin-request` proposed here never happened (see "Why
 not two separate Lambda@Edge functions?" above for the reconciled rationale). The
 `alb-backend` origin's `domain_name` does reference `local.regional_alb_fqdns[local.bootstrap_region]`
-(`bootstrap_region = var.backend_regions[0]`), matching this section's original intent
+(`var.bootstrap_region`, or `var.backend_regions[0]` when it's `auto`), matching this section's original intent
 that the declared origin only matters as a static fallback, with the Lambda dynamically
 overriding it per request. No new origin blocks were added — confirmed correct as planned.
 

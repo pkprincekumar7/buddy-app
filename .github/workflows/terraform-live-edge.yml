@@ -1,5 +1,5 @@
 name: Terraform Live Edge
-run-name: "Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend regions: ${{ inputs.backend_regions }})"
+run-name: "Terraform Live Edge (${{ inputs.action }}, ${{ inputs.environment }}, us-east-1, Backend regions: ${{ inputs.backend_regions }}, Bootstrap: ${{ inputs.bootstrap_region || 'auto' }})"
 
 on:
   workflow_dispatch:
@@ -49,6 +49,20 @@ on:
           - '["ap-south-1","us-east-1"]'
           - '["eu-west-1","us-east-1"]'
           - '["ap-south-1","eu-west-1","us-east-1"]'
+      # Which region's ALB serves login, Google sign-in, health and hint-less
+      # register/refresh/logout (see infra-live-edge/terraform/variables.tf).
+      # "auto" = first region in backend_regions (the original behaviour).
+      # A named region must also be in backend_regions, or plan fails.
+      bootstrap_region:
+        description: "Region that serves login/health. 'auto' = first of backend_regions; a named region must be in backend_regions."
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - ap-south-1
+          - eu-west-1
+          - us-east-1
   workflow_call:
     inputs:
       action:
@@ -60,6 +74,10 @@ on:
       backend_regions:
         type: string
         required: true
+      bootstrap_region:
+        type: string
+        required: false
+        default: "auto"
 
 permissions:
   id-token: write
@@ -80,6 +98,8 @@ env:
   TF_VERSION: "1.16.4"
   TF_VAR_environment:     ${{ inputs.environment }}
   TF_VAR_backend_regions: ${{ inputs.backend_regions }}
+  # || 'auto' covers any dispatch that omits the input entirely.
+  TF_VAR_bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
 
 jobs:
   terraform:
@@ -247,7 +267,7 @@ jobs:
         if: (inputs.action == 'plan' && steps.ssm.outputs.ready == 'true') || inputs.action == 'apply'
         run: |
           {
-            echo "### Terraform Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend regions: ${{ inputs.backend_regions }}"
+            echo "### Terraform Plan — edge / ${{ inputs.environment }} / us-east-1 / Backend regions: ${{ inputs.backend_regions }} / Bootstrap: ${{ inputs.bootstrap_region || 'auto' }}"
             echo '```'
             terraform show -no-color tfplan.bin | tee tfplan.txt
             echo '```'

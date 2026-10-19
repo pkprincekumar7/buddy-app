@@ -18,12 +18,9 @@ locals {
 
   # The region that actually serves the jwt_validator Lambda@Edge's
   # PUBLIC_PATHS (register, login, google, health, and refresh/logout when no
-  # location-bearing session is found) — every one of those requests
-  # genuinely lands here, unlike authenticated /api/* traffic, which is
-  # always overridden. Deliberately derived from backend_regions rather than
-  # its own separate variable, so there's one less thing to configure — it's
-  # simply whichever region is first in whatever combination is selected.
-  bootstrap_region = var.backend_regions[0]
+  # location-bearing session is found). Picked at apply time via
+  # var.bootstrap_region; "auto" means the first region in backend_regions.
+  bootstrap_region = var.bootstrap_region == "auto" ? var.backend_regions[0] : var.bootstrap_region
 
   # S3 upload keys are prefixed by location (build_upload_key in
   # backend/app/services/s3_uploads.py), not by AWS region, so the /uploads/*
