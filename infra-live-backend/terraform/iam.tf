@@ -44,12 +44,15 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
 }
 
 # ---------------------------------------------------------------------------
-# ECS Task Role
-# Used by the running application container.
+# Task roles — one per entry in local.services (services.tf). The running
+# application assumes it. Names: <app>-<iam_name>-role-<env>-<region>, with
+# iam_name defaulting to "<key>-task".
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "ecs_task_role" {
-  name = "${var.app_name}-ecs-task-role-${var.environment}-${var.aws_region}"
+resource "aws_iam_role" "task" {
+  for_each = local.services
+
+  name = "${var.app_name}-${local.service_iam_name[each.key]}-role-${var.environment}-${var.aws_region}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -61,196 +64,59 @@ resource "aws_iam_role" "ecs_task_role" {
   })
 }
 
-resource "aws_iam_role_policy" "ecs_task_s3" {
-  name = "${var.app_name}-ecs-task-s3-${var.environment}-${var.aws_region}"
-  role = aws_iam_role.ecs_task_role.id
+locals {
+  # service key + policy name part → document, flattened for for_each.
+  service_task_policies = merge([
+    for k, s in local.services : {
+      for p, doc in s.task_policies : "${k}/${p}" => { service = k, name = p, document = doc }
+    }
+  ]...)
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket"]
-        Resource = ["arn:aws:s3:::${var.assets_bucket_name}"]
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-        Resource = ["arn:aws:s3:::${var.assets_bucket_name}/*"]
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
-# Worker Task Role
-# Separate from the API task role — workers do not need S3 access (downloads)
-# but do need CloudWatch PutMetricData for PendingJobCount emission.
-# ---------------------------------------------------------------------------
-
-resource "aws_iam_role" "worker_task_role" {
-  name = "${var.app_name}-worker-task-role-${var.environment}-${var.aws_region}"
-
-  assume_role_policy = jsonencode({
+  # Least privilege for the two optional features: attach the policy only
+  # when the feature is on, to every service (it's per task, not per app).
+  ssm_messages_policy = {
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
+      Effect = "Allow"
+      Action = [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel",
+      ]
+      Resource = "*"
     }]
-  })
+  }
+  xray_policy = {
+    Version   = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"], Resource = "*" }]
+  }
 }
 
-resource "aws_iam_role_policy" "worker_task_cloudwatch" {
-  name = "${var.app_name}-worker-task-cloudwatch-${var.environment}-${var.aws_region}"
-  role = aws_iam_role.worker_task_role.id
+# Each service's own permissions (local.services[*].task_policies).
+resource "aws_iam_role_policy" "task" {
+  for_each = local.service_task_policies
 
-  # PutMetricData requires Resource = "*" (CloudWatch does not support
-  # resource-level ARNs for this action), but the Condition key
-  # "cloudwatch:namespace" IS enforced by the service for PutMetricData,
-  # effectively scoping this permission to the Superpower/Worker namespace only.
-  # Do NOT remove the Condition block assuming it is ineffective — it is the
-  # only constraint preventing the worker from writing to arbitrary namespaces.
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["cloudwatch:PutMetricData"]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "cloudwatch:namespace" = "Superpower/Worker"
-          }
-        }
-      }
-    ]
-  })
+  name   = "${var.app_name}-${local.service_iam_name[each.value.service]}-${each.value.name}-${var.environment}-${var.aws_region}"
+  role   = aws_iam_role.task[each.value.service].id
+  policy = jsonencode(each.value.document)
 }
 
-# Required by ECS Exec (enable_execute_command). Gated on var.enable_execute_command to
-# match intent — the API-side ecs_task_exec_command policy omits this gate and relies on
-# the service-level flag, but defense-in-depth means we shouldn't attach the policy at all
-# when exec is not needed.
-resource "aws_iam_role_policy" "worker_task_exec_command" {
-  count = var.enable_execute_command ? 1 : 0
-  name  = "${var.app_name}-worker-task-exec-command-${var.environment}-${var.aws_region}"
-  role  = aws_iam_role.worker_task_role.id
+# Required by ECS Exec (enable_execute_command). Not attached at all when exec
+# is off — defense in depth over relying on the service-level flag alone.
+resource "aws_iam_role_policy" "task_exec_command" {
+  for_each = var.enable_execute_command ? toset(keys(local.services)) : toset([])
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ssmmessages:CreateControlChannel",
-          "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel",
-          "ssmmessages:OpenDataChannel"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
+  name   = "${var.app_name}-${local.service_iam_name[each.key]}-exec-command-${var.environment}-${var.aws_region}"
+  role   = aws_iam_role.task[each.key].id
+  policy = jsonencode(local.ssm_messages_policy)
 }
 
-# Required by ECS Exec (enable_execute_command). Gated on var.enable_execute_command
-# so the policy is not attached at all when exec is not needed — mirrors the
-# worker_task_exec_command gate added in the same change.
-resource "aws_iam_role_policy" "ecs_task_exec_command" {
-  count = var.enable_execute_command ? 1 : 0
-  name  = "${var.app_name}-ecs-task-exec-command-${var.environment}-${var.aws_region}"
-  role  = aws_iam_role.ecs_task_role.id
+# Required by the ADOT sidecar (enable_adot_sidecar) to export traces to X-Ray.
+resource "aws_iam_role_policy" "task_xray" {
+  for_each = var.enable_adot_sidecar ? toset(keys(local.services)) : toset([])
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ssmmessages:CreateControlChannel",
-          "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel",
-          "ssmmessages:OpenDataChannel"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
-# X-Ray — API task role
-# Required by the ADOT sidecar to export traces to X-Ray. Kept separate from
-# the S3 uploads policy so each policy has a single purpose.
-# ---------------------------------------------------------------------------
-
-resource "aws_iam_role_policy" "ecs_task_xray" {
-  count = var.enable_adot_sidecar ? 1 : 0
-  name  = "${var.app_name}-ecs-task-xray-${var.environment}-${var.aws_region}"
-  role  = aws_iam_role.ecs_task_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
-# X-Ray — worker task role
-# Same actions as the API role; added here once ADOT sidecar is attached to
-# the worker task definition via var.enable_adot_sidecar.
-# ---------------------------------------------------------------------------
-
-resource "aws_iam_role_policy" "worker_task_xray" {
-  count = var.enable_adot_sidecar ? 1 : 0
-  name  = "${var.app_name}-worker-task-xray-${var.environment}-${var.aws_region}"
-  role  = aws_iam_role.worker_task_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
-# S3 uploads — API task role
-# Grants the API task permission to generate pre-signed PUT URLs for the
-# uploads bucket. Kept separate from ecs_task_s3 (which targets the assets
-# bucket) so each policy remains single-purpose.
-# s3:GetBucketLocation is required by some AWS SDK versions when signing
-# pre-signed URLs to resolve the bucket's endpoint correctly.
-# ---------------------------------------------------------------------------
-
-resource "aws_iam_role_policy" "ecs_task_s3_uploads" {
-  name = "${var.app_name}-ecs-task-s3-uploads-${var.environment}-${var.aws_region}"
-  role = aws_iam_role.ecs_task_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["s3:GetBucketLocation"]
-        Resource = "arn:aws:s3:::${var.uploads_bucket_name}"
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::${var.uploads_bucket_name}/*"
-      }
-    ]
-  })
+  name   = "${var.app_name}-${local.service_iam_name[each.key]}-xray-${var.environment}-${var.aws_region}"
+  role   = aws_iam_role.task[each.key].id
+  policy = jsonencode(local.xray_policy)
 }

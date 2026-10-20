@@ -7,7 +7,6 @@ not queued up, so nothing ever reaches AWS.
 """
 
 import logging
-import time
 from urllib.parse import parse_qs, urlsplit
 
 import boto3
@@ -21,6 +20,7 @@ from app.database import get_db
 from app.deps import get_current_parent
 from app.limiter import user_limiter
 from app.main import app
+from app.services.s3_uploads import S3_SIGV4_CONFIG, regional_s3_endpoint
 from app.settings import get_settings, settings
 
 URL = "/api/v1/downloads/apk"
@@ -55,13 +55,22 @@ def isolated_aws(monkeypatch, tmp_path):
 def s3(monkeypatch):
     """The stubbed client the route will get; `.regions` records what it asked for."""
     # A fresh session: boto3's default one caches credentials across tests.
-    client = boto3.session.Session().client("s3", region_name="us-east-1")
+    # Built with the same SigV4 options the route passes, so the URL it signs
+    # is the real one.
+    client = boto3.session.Session().client(
+        "s3",
+        region_name="us-east-1",
+        endpoint_url=regional_s3_endpoint("us-east-1"),
+        config=S3_SIGV4_CONFIG,
+    )
     stubber = Stubber(client)
     stubber.regions = []
+    stubber.client_kwargs = []
 
-    def make_client(service, region_name):
+    def make_client(service, region_name, **kwargs):
         assert service == "s3"
         stubber.regions.append(region_name)
+        stubber.client_kwargs.append(kwargs)
         return client
 
     monkeypatch.setattr(downloads.boto3, "client", make_client)
@@ -133,17 +142,21 @@ def test_returns_a_presigned_link_to_the_newest_apk_across_pages(users, client, 
 
     url = urlsplit(body["url"])
     query = {k: v[0] for k, v in parse_qs(url.query).items()}
-    assert url.scheme == "https" and BUCKET in url.netloc + url.path
-    assert url.path.endswith(f"/{PREFIX}app-release-2026-04-15-08-30-00.apk")
+    # Virtual-hosted on the bucket's regional endpoint, signed with SigV4 —
+    # never legacy SigV2 (AWSAccessKeyId/Signature/Expires), which S3 rejects
+    # for buckets created after June 2020.
+    assert (url.scheme, url.netloc) == ("https", f"{BUCKET}.s3.us-east-1.amazonaws.com")
+    assert url.path == f"/{PREFIX}app-release-2026-04-15-08-30-00.apk"
     assert query["response-content-disposition"] == 'attachment; filename="superpower-android.apk"'
-    # Valid for 5 minutes, whichever signature version botocore picked
-    # (SigV4: X-Amz-Expires=seconds; SigV2: Expires=absolute epoch).
-    if "X-Amz-Expires" in query:
-        assert query["X-Amz-Expires"] == "300"
-    else:
-        assert abs(int(query["Expires"]) - (time.time() + 300)) < 30
-    # The bucket's own region, not the backend's (eu-west-1 here).
+    assert query["X-Amz-Algorithm"] == "AWS4-HMAC-SHA256"
+    assert "/us-east-1/s3/aws4_request" in query["X-Amz-Credential"]
+    assert query["X-Amz-Expires"] == "300"
+    assert "AWSAccessKeyId" not in query
+    # The bucket's own region, not the backend's (eu-west-1 here), with SigV4.
     assert s3.regions == ["us-east-1"]
+    [kwargs] = s3.client_kwargs
+    assert kwargs["config"] is S3_SIGV4_CONFIG
+    assert kwargs["endpoint_url"] == "https://s3.us-east-1.amazonaws.com"
     assert "user=p1 requested APK pre-signed URL filename=superpower-android.apk" in caplog.text
 
 
@@ -191,7 +204,7 @@ def test_presign_failure_is_503(users, client, monkeypatch, caplog):
     monkeypatch.delenv("AWS_ACCESS_KEY_ID")
     monkeypatch.delenv("AWS_SECRET_ACCESS_KEY")
     unsigned = boto3.session.Session().client("s3", region_name="us-east-1")
-    monkeypatch.setattr(downloads.boto3, "client", lambda service, region_name: unsigned)
+    monkeypatch.setattr(downloads.boto3, "client", lambda service, region_name, **kw: unsigned)
     with Stubber(unsigned) as stub:
         _expect_listing(stub, _page("app-release-2026-01-01-00-00-00.apk"))
         with caplog.at_level(logging.ERROR, logger="app.routers.downloads"):

@@ -68,7 +68,9 @@ class ChildResponse(BaseModel):
     pending_personality_vm: dict | None = None
     # Avatar / profile photo — set during onboarding step 2.
     avatar_id: str | None = None  # emoji avatar selection (e.g. "capper-boy")
-    avatar_url: str | None = None  # S3 URL of an uploaded profile photo
+    # Uploaded profile photo: stored as its S3 key, returned as a short-lived
+    # S3 presigned GET URL (EDGE-05, app/services/s3_uploads.py).
+    avatar_url: str | None = None
     # Soft-delete fields — present on all documents; False by default.
     # deleted_at is set when is_deleted is set to True.
     is_deleted: bool = False
@@ -125,9 +127,11 @@ class ChildCreate(BaseModel):
 
     @field_validator("avatar_url")
     @classmethod
-    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
-        if v is not None and not v.startswith("https://"):
-            raise ValueError("avatar_url must be an HTTPS URL")
+    def avatar_url_must_be_https_or_a_key(cls, v: str | None) -> str | None:
+        # Shape check only; the router narrows it to this child's own upload
+        # and stores just the key (EDGE-05 / APP-08).
+        if v is not None and not v.startswith(("https://", "uploads/")):
+            raise ValueError("avatar_url must be an HTTPS URL or an uploads/ key")
         return v
 
     @model_validator(mode="after")
@@ -193,9 +197,11 @@ class ChildPatch(BaseModel):
 
     @field_validator("avatar_url")
     @classmethod
-    def avatar_url_must_be_https(cls, v: str | None) -> str | None:
-        if v is not None and not v.startswith("https://"):
-            raise ValueError("avatar_url must be an HTTPS URL")
+    def avatar_url_must_be_https_or_a_key(cls, v: str | None) -> str | None:
+        # Shape check only; the router narrows it to this child's own upload
+        # and stores just the key (EDGE-05 / APP-08).
+        if v is not None and not v.startswith(("https://", "uploads/")):
+            raise ValueError("avatar_url must be an HTTPS URL or an uploads/ key")
         return v
 
     @model_validator(mode="after")

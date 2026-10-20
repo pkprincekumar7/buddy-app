@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.deps import CurrentParent, SettingsDep
 from app.limiter import rate_limit
+from app.services.s3_uploads import S3_SIGV4_CONFIG, regional_s3_endpoint
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,15 @@ def _resolve_apk_download(bucket: str) -> ApkDownloadResult:
     Raises _ApkError (with an HTTP status code) on failure so the caller never
     needs to inspect error strings to decide which status code to return.
     """
-    s3 = boto3.client("s3", region_name=_S3_BUCKET_REGION)
+    # SigV4 on the regional endpoint: botocore's default presigns with legacy
+    # SigV2 in us-east-1, which S3 rejects for buckets created after June 2020
+    # — the download link would 403. Same config as the uploads client.
+    s3 = boto3.client(
+        "s3",
+        region_name=_S3_BUCKET_REGION,
+        endpoint_url=regional_s3_endpoint(_S3_BUCKET_REGION),
+        config=S3_SIGV4_CONFIG,
+    )
 
     # Step 1 — find the latest APK key.
     try:

@@ -18,8 +18,18 @@ MUTANTS: list[tuple[str, str, str]] = [
     ),
     (
         "lifespan: cleanup task not started",
-        "    cleanup_task = asyncio.create_task(_cleanup_expired_sessions(db))",
-        "    cleanup_task = asyncio.create_task(asyncio.sleep(0))",
+        "asyncio.create_task(_cleanup_expired_sessions(db)) if settings.can_mint_tokens",
+        "asyncio.create_task(asyncio.sleep(0)) if settings.can_mint_tokens",
+    ),
+    (
+        "lifespan: session sweep runs on every component",
+        "_cleanup_expired_sessions(db)) if settings.can_mint_tokens else None",
+        "_cleanup_expired_sessions(db)) if True else None",
+    ),
+    (
+        "lifespan: session sweep only where auth isn't mounted",
+        "_cleanup_expired_sessions(db)) if settings.can_mint_tokens else None",
+        "_cleanup_expired_sessions(db)) if not settings.can_mint_tokens else None",
     ),
     ("lifespan: cleanup task not cancelled", "        cleanup_task.cancel()\n", ""),
     (
@@ -31,8 +41,8 @@ MUTANTS: list[tuple[str, str, str]] = [
     ("lifespan: LLM clients not closed", "        await llm_service.aclose_clients()\n", ""),
     (
         "lifespan: close before cancel",
-        "        cleanup_task.cancel()\n        await asyncio.gather(cleanup_task, return_exceptions=True)\n        client.close()\n",
-        "        client.close()\n        cleanup_task.cancel()\n        await asyncio.gather(cleanup_task, return_exceptions=True)\n",
+        "            cleanup_task.cancel()\n            await asyncio.gather(cleanup_task, return_exceptions=True)\n        client.close()\n",
+        "            client.close()\n            cleanup_task.cancel()\n            await asyncio.gather(cleanup_task, return_exceptions=True)\n",
     ),
     (
         "lifespan: wrong database name",
@@ -122,13 +132,40 @@ MUTANTS: list[tuple[str, str, str]] = [
         'allow_methods=["GET", "PATCH", "DELETE", "OPTIONS"]',
     ),
     ("CORS: any origin", "    allow_origins=_allow_origins,", '    allow_origins=["*"],'),
-    ("admin router not mounted", "app.include_router(admin_router, prefix=API_V1_PREFIX)\n", ""),
-    ("audio router not mounted", "app.include_router(audio_router, prefix=API_V1_PREFIX)\n", ""),
-    ("auth router not mounted", "app.include_router(auth_router, prefix=API_V1_PREFIX)\n", ""),
+    (
+        "admin router missing from all",
+        '"all": [auth_router, admin_router, *_API_ROUTERS]',
+        '"all": [auth_router, *_API_ROUTERS]',
+    ),
+    ("admin component serves nothing", '"admin": [admin_router]', '"admin": []'),
+    (
+        "admin component serves the API too",
+        '"admin": [admin_router]',
+        '"admin": [admin_router, *_API_ROUTERS]',
+    ),
+    ("users router not in the api component", "    users_router,\n", ""),
+    ("audio router not in the api component", "    audio_router,\n", ""),
+    (
+        "auth router missing from all",
+        '"all": [auth_router, admin_router, *_API_ROUTERS]',
+        '"all": [admin_router, *_API_ROUTERS]',
+    ),
+    (
+        "auth component serves the API too",
+        '"auth": [auth_router]',
+        '"auth": [auth_router, *_API_ROUTERS]',
+    ),
+    ("api component serves auth too", '"api": _API_ROUTERS', '"api": [auth_router, *_API_ROUTERS]'),
+    ("worker component serves routers", '"worker": []', '"worker": _API_ROUTERS'),
     (
         "routers mounted without /api/v1",
-        "app.include_router(admin_router, prefix=API_V1_PREFIX)",
-        "app.include_router(admin_router)",
+        "    app.include_router(_router, prefix=API_V1_PREFIX)",
+        "    app.include_router(_router)",
+    ),
+    (
+        "component ignored: always mounts all",
+        "for _router in routers_for(settings.app_component):",
+        'for _router in routers_for("all"):',
     ),
     ("/health wrong body", '    return {"status": "ok"}\n', '    return {"status": "up"}\n'),
     (

@@ -6,23 +6,26 @@
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 
 # Networking
-vpc_cidr              = "10.32.0.0/16"
-public_subnet_1_cidr  = "10.32.1.0/24"
-public_subnet_2_cidr  = "10.32.2.0/24"
-private_subnet_1_cidr = "10.32.3.0/24"
-private_subnet_2_cidr = "10.32.4.0/24"
-public_subnet_3_cidr  = "10.32.5.0/24"
-private_subnet_3_cidr = "10.32.6.0/24"
-nat_gateway_count     = 1
+# One /16 per region — see vpc_cidrs in variables.tf (NET-01). Subnets are
+# derived in vpc.tf.
+vpc_cidrs = {
+  "ap-south-1" = "10.32.0.0/16"
+  "eu-west-1"  = "10.33.0.0/16"
+  "us-east-1"  = "10.34.0.0/16"
+}
+nat_gateway_count = 1
 
 # ElastiCache
 elasticache_node_type     = "cache.t3.micro"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
-# ECS
-task_cpu      = 512
-task_memory   = 1024
+# ECS — every service runs at Fargate's smallest size (0.25 vCPU / 512 MiB):
+# a few testers, one process per task, and no ADOT sidecar here
+# (enable_adot_sidecar = false below — the ecs-service module refuses a
+# sidecar on tasks this small). Each process is ~65–85 MB after import.
+task_cpu      = 256
+task_memory   = 512
 desired_count = 1
 
 # Application
@@ -33,17 +36,31 @@ llm_hourly_limit    = 50
 enable_execute_command = true
 
 # Worker ECS
-worker_task_cpu              = 512
-worker_task_memory           = 1024
+worker_task_cpu              = 256
+worker_task_memory           = 512
 worker_desired_count         = 1
 worker_concurrency           = 2
 worker_poll_interval_seconds = 5
+
+# Auth ECS (login/register are bcrypt-bound — scales on CPU)
+auth_task_cpu      = 256
+auth_task_memory   = 512
+auth_desired_count = 1
+
+# Admin ECS (/api/v1/admin/* — low traffic)
+admin_task_cpu      = 256
+admin_task_memory   = 512
+admin_desired_count = 1
 
 # Autoscaling
 api_min_capacity    = 1
 api_max_capacity    = 3
 worker_min_capacity = 1
 worker_max_capacity = 2
+auth_min_capacity   = 1
+auth_max_capacity   = 2
+admin_min_capacity  = 1
+admin_max_capacity  = 2
 
 # Observability — sbx: same as dev (minimal retention, no alarms, no dashboard, no email alerts)
 log_retention_days         = 7

@@ -630,6 +630,88 @@ def test_patch_rejects_unsafe_payloads(db, client):
     assert db.calls(models.CHILDREN, "find_one_and_update") == []
 
 
+# ── EDGE-05: avatar stored as a key, returned as a presigned GET URL ─────────
+
+AVATAR_KEY = "uploads/eu/c1/9b2f.png"
+
+
+BUCKET_URL = "https://superpower-uploads.s3.eu-west-1.amazonaws.com"
+
+
+def test_patch_avatar_stores_only_the_key_and_returns_a_presigned_url(db, client, s3):
+    _child(db)
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    echoed = f"{BUCKET_URL}/{AVATAR_KEY}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=s"
+    for sent in (AVATAR_KEY, echoed):
+        res = _patch(client, {"avatar_url": sent})
+        assert res.status_code == 200
+        assert _stored(db)["avatar_url"] == AVATAR_KEY
+        assert res.json()["avatar_url"] == f"https://signed.example/{AVATAR_KEY}?sig=1"
+    assert s3.calls[-1] == ("get_object", {"Bucket": "superpower-uploads", "Key": AVATAR_KEY}, 3600)
+
+
+@pytest.mark.parametrize(
+    "avatar_url",
+    [
+        "https://x.example/a.png",  # external host (APP-08)
+        "uploads/eu/c2/9b2f.png",  # another child's photo
+        f"{BUCKET_URL}/uploads/in/c1/9b2f.png",  # another location
+        "https://cdn.x/uploads/eu/c1/9b2f.png",  # not our bucket host
+        "data:image/png;base64,AAAA",
+    ],
+)
+def test_patch_avatar_rejects_anything_but_this_childs_upload(db, client, avatar_url):
+    _child(db)
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    # data: fails the schema's shape check, the rest the router's ownership
+    # check — either way a 422 and nothing written.
+    assert _patch(client, {"avatar_url": avatar_url}).status_code == 422
+    assert db.calls(models.CHILDREN, "find_one_and_update") == []
+
+
+def test_patch_avatar_ownership_error_names_the_rule(db, client):
+    _child(db)
+    res = _patch(client, {"avatar_url": "uploads/eu/c2/9b2f.png"})
+    assert res.json()["detail"] == "avatar_url must be a photo uploaded for this child"
+
+
+def test_patch_avatar_null_still_clears_it(db, client):
+    _child(db, avatar_url=AVATAR_KEY)
+    assert _patch(client, {"avatar_url": None, "avatar_id": "a"}).status_code == 200
+    assert _stored(db)["avatar_url"] is None
+
+
+def test_create_rejects_an_avatar_url(db, client):
+    res = client.post(C, json={"name": "Zoe", "avatar_url": f"{BUCKET_URL}/{AVATAR_KEY}"},
+                      headers=_auth())  # fmt: skip
+    assert res.status_code == 422
+    assert "can't be set on create" in res.json()["detail"]
+    assert db[models.CHILDREN].docs == []
+
+
+def test_reads_presign_every_stored_key(db, client, s3):
+    _child(db, avatar_url=AVATAR_KEY)
+    _child(db, "c2", avatar_url="uploads/eu/c2/other.png")
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    cards = client.get(C, headers=_auth()).json()
+    assert {c["id"]: c["avatar_url"] for c in cards} == {
+        "c1": f"https://signed.example/{AVATAR_KEY}?sig=1",
+        "c2": "https://signed.example/uploads/eu/c2/other.png?sig=1",
+    }
+    assert client.get(f"{C}/c1", headers=_auth()).json()["avatar_url"] == (
+        f"https://signed.example/{AVATAR_KEY}?sig=1"
+    )
+    assert sorted(p["Key"] for m, p, _ in s3.calls if m == "get_object") == sorted(
+        [AVATAR_KEY, "uploads/eu/c2/other.png", AVATAR_KEY]
+    )
+
+
+def test_reads_without_upload_configuration_return_the_key(db, client):
+    _child(db, avatar_url=AVATAR_KEY)
+    app.dependency_overrides[get_settings] = lambda: _upload_settings(uploads_bucket_name="")
+    assert client.get(f"{C}/c1", headers=_auth()).json()["avatar_url"] == AVATAR_KEY
+
+
 # ── POST /children/{id}/progress/{flag} ──────────────────────────────────────
 
 
@@ -733,7 +815,7 @@ def test_delete_twice_is_404(db, client):
 
 def _upload_settings(**overrides):
     values = {"uploads_bucket_name": "superpower-uploads", "aws_region": "eu-west-1",
-              "uploads_cdn_domain": "", **overrides}  # fmt: skip
+              **overrides}  # fmt: skip
     return settings.model_copy(update=values)
 
 
@@ -778,25 +860,17 @@ def test_presign_returns_a_short_lived_put_url_under_the_childs_prefix(
     app.dependency_overrides[get_settings] = lambda: _upload_settings()
     res = _presign(client, content_type)
     assert res.status_code == 200
-    [(method, params, expires)] = s3.calls
+    # A PUT to upload, then a GET so the client can show it straight away (EDGE-05).
+    [(method, params, expires), get] = s3.calls
     assert (method, expires) == ("put_object", 300)
     assert params["Bucket"] == "superpower-uploads" and params["ContentType"] == content_type
     assert params["Key"].startswith("uploads/eu/c1/") and params["Key"].endswith(f".{ext}")
-    assert s3.regions == ["eu-west-1"]
+    assert get == ("get_object", {"Bucket": "superpower-uploads", "Key": params["Key"]}, 3600)
+    assert s3.regions == ["eu-west-1", "eu-west-1"]
     assert res.json() == {
         "upload_url": f"https://signed.example/{params['Key']}?sig=1",
-        "avatar_url": f"https://superpower-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
+        "avatar_url": f"https://signed.example/{params['Key']}?sig=1",
     }
-
-
-def test_presign_uses_the_cdn_domain_when_configured(db, client, s3):
-    _child(db)
-    app.dependency_overrides[get_settings] = lambda: _upload_settings(
-        uploads_cdn_domain="cdn.example.com"
-    )
-    res = _presign(client)
-    key = s3.calls[0][1]["Key"]
-    assert res.json()["avatar_url"] == f"https://cdn.example.com/{key}"
 
 
 def test_presign_keys_are_unique_per_upload(db, client, s3):
@@ -804,7 +878,8 @@ def test_presign_keys_are_unique_per_upload(db, client, s3):
     app.dependency_overrides[get_settings] = lambda: _upload_settings()
     _presign(client)
     _presign(client)
-    assert s3.calls[0][1]["Key"] != s3.calls[1][1]["Key"]
+    puts = [p["Key"] for m, p, _ in s3.calls if m == "put_object"]
+    assert len(puts) == 2 and puts[0] != puts[1]
 
 
 @pytest.mark.parametrize("overrides", [{"uploads_bucket_name": ""}, {"aws_region": ""}])

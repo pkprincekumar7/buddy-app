@@ -1,0 +1,11 @@
+# gitleaks findings that are known false positives, by fingerprint
+# (<commit>:<file>:<rule>:<line>). CI scans the full history, so a fixture
+# flagged in an old commit stays flagged even after the file changes; list it
+# here. Current copies of these lines carry an inline `gitleaks:allow`.
+#
+# 6a63fa1 — fake Redis AUTH token in the Terraform mock-provider tests, and a
+# test_settings.py line whose "api" + `jwt_private_key=""` shape matches
+# generic-api-key. No real secret in any of them.
+6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:backend/tests/test_settings.py:generic-api-key:92
+6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:modules/redis/tests/redis.tftest.hcl:generic-api-key:15
+6a63fa1ba4544363e295a71f26d3cf0d3d25acdb:infra-live-backend/terraform/tests/stack.tftest.hcl:generic-api-key:62

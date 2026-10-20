@@ -7,9 +7,11 @@
       "width": 8,
       "height": 6,
       "properties": {
-        "title": "API CPU Utilization",
+        "title": "API, Auth & Admin CPU Utilization",
         "metrics": [
-          ["AWS/ECS", "CPUUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${api_service_name}"]
+          ["AWS/ECS", "CPUUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${api_service_name}", { "label": "API" }],
+          ["AWS/ECS", "CPUUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${auth_service_name}", { "label": "Auth" }],
+          ["AWS/ECS", "CPUUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${admin_service_name}", { "label": "Admin" }]
         ],
         "period": 300,
         "stat": "Average",
@@ -27,9 +29,11 @@
       "width": 8,
       "height": 6,
       "properties": {
-        "title": "API Memory Utilization",
+        "title": "API, Auth & Admin Memory Utilization",
         "metrics": [
-          ["AWS/ECS", "MemoryUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${api_service_name}"]
+          ["AWS/ECS", "MemoryUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${api_service_name}", { "label": "API" }],
+          ["AWS/ECS", "MemoryUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${auth_service_name}", { "label": "Auth" }],
+          ["AWS/ECS", "MemoryUtilization", "ClusterName", "${cluster_name}", "ServiceName", "${admin_service_name}", { "label": "Admin" }]
         ],
         "period": 300,
         "stat": "Average",
@@ -164,7 +168,9 @@
       "properties": {
         "title": "ALB Requests per Target",
         "metrics": [
-          ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", "${tg_arn_suffix}", "LoadBalancer", "${alb_arn_suffix}"]
+          ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", "${tg_arn_suffix}", "LoadBalancer", "${alb_arn_suffix}", { "label": "API" }],
+          ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", "${auth_tg_arn_suffix}", "LoadBalancer", "${alb_arn_suffix}", { "label": "Auth" }],
+          ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", "${admin_tg_arn_suffix}", "LoadBalancer", "${alb_arn_suffix}", { "label": "Admin" }]
         ],
         "period": 60,
         "stat": "Sum",

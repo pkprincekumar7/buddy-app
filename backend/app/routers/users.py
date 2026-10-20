@@ -26,10 +26,13 @@ from app.schemas.observations import ObservationsPatch, ObservationsResponse
 from app.schemas.preferences import UserPreferences, UserPreferencesPatch
 from app.services.s3_uploads import (
     ALLOWED_IMAGE_CONTENT_TYPES,
-    build_public_url,
     build_upload_key,
+    child_upload_prefix,
     get_s3_client,
+    upload_key_from_ref,
+    upload_url_for,
 )
+from app.settings import Settings
 
 router = APIRouter(tags=["users"])
 log = logging.getLogger(__name__)
@@ -397,7 +400,45 @@ _NINETY_DAY_PLAN_PATCH_FIELDS = (
 )
 
 
-def _doc_to_ninety_day_plan(doc: dict | None) -> NinetyDayPlanResponse:
+def _photos_to_api(photos: object, settings: Settings) -> dict[str, list[str]]:
+    """Stored S3 keys → fresh presigned GET URLs (EDGE-05), skipping anything malformed."""
+    if not isinstance(photos, dict):
+        return {}
+    return {
+        field: [
+            upload_url_for(ref, settings, get_s3_client)
+            for ref in refs
+            if isinstance(ref, str) and ref
+        ]
+        for field, refs in photos.items()
+        if isinstance(refs, list)
+    }
+
+
+def _photos_to_keys(
+    photos: dict[str, list[str]], settings: Settings, location: str, child_id: str
+) -> dict[str, list[str]]:
+    """Client-sent photo refs (keys, or the presigned URLs it was given) → S3 keys
+    under this child's ninety-day-plan prefix. Raises 422 for anything else —
+    external, http:, data: URLs or another child's photo (APP-08): the server
+    presigns whatever is stored, so it must only ever store this child's own."""
+    prefix = f"{child_upload_prefix(location, child_id)}ninety-day-plan/"
+    out: dict[str, list[str]] = {}
+    for field, refs in photos.items():
+        keys = []
+        for ref in refs:
+            key = upload_key_from_ref(ref, settings)
+            if key is None or not key.startswith(prefix):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"photos[{field!r}] must only contain photos uploaded for this plan",
+                )
+            keys.append(key)
+        out[field] = keys
+    return out
+
+
+def _doc_to_ninety_day_plan(doc: dict | None, settings: Settings) -> NinetyDayPlanResponse:
     if not doc:
         return NinetyDayPlanResponse()
     return NinetyDayPlanResponse(
@@ -414,7 +455,7 @@ def _doc_to_ninety_day_plan(doc: dict | None) -> NinetyDayPlanResponse:
         track_done=doc.get("track_done", {}),
         track_inputs=doc.get("track_inputs", {}),
         track_sittings=doc.get("track_sittings", {}),
-        photos=doc.get("photos", {}),
+        photos=_photos_to_api(doc.get("photos", {}), settings),
     )
 
 
@@ -426,6 +467,7 @@ def _doc_to_ninety_day_plan(doc: dict | None) -> NinetyDayPlanResponse:
 )
 async def get_ninety_day_plan(
     request: Request,
+    settings: SettingsDep,
     user: CurrentParent,
     db: Db,
     child_id: str = Query(..., min_length=1, max_length=100),
@@ -434,7 +476,7 @@ async def get_ninety_day_plan(
     doc = await db[models.NINETY_DAY_PLANS].find_one(
         {"_id": child_id, "user_id": user["_id"], "location": user["location"]}
     )
-    return _doc_to_ninety_day_plan(doc)
+    return _doc_to_ninety_day_plan(doc, settings)
 
 
 @router.patch(
@@ -445,6 +487,7 @@ async def get_ninety_day_plan(
 )
 async def patch_ninety_day_plan(
     request: Request,
+    settings: SettingsDep,
     body: NinetyDayPlanPatch,
     user: CurrentParent,
     db: Db,
@@ -469,6 +512,10 @@ async def patch_ninety_day_plan(
     for key in _NINETY_DAY_PLAN_PATCH_FIELDS:
         if key in updates and updates[key] is not None:
             set_fields[key] = updates[key]
+    if "photos" in set_fields:
+        set_fields["photos"] = _photos_to_keys(
+            set_fields["photos"], settings, user["location"], child_id
+        )
 
     # A re-targeted Day-90 event invalidates the tracker generated for the old
     # one — clear it so the client's hasTrackSteps gate sees it as absent and
@@ -493,7 +540,7 @@ async def patch_ninety_day_plan(
         upsert=True,
         return_document=True,
     )
-    return _doc_to_ninety_day_plan(doc)
+    return _doc_to_ninety_day_plan(doc, settings)
 
 
 @router.post(
@@ -564,5 +611,6 @@ async def presign_ninety_day_plan_photo(
             status_code=502, detail="Failed to generate upload URL. Please try again."
         ) from exc
 
-    photo_url = build_public_url(bucket, region, settings.uploads_cdn_domain, key)
+    # A presigned GET, so the client can show it straight away.
+    photo_url = upload_url_for(key, settings, get_s3_client)
     return NinetyDayPlanPhotoPresignResponse(upload_url=upload_url, photo_url=photo_url)

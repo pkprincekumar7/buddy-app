@@ -34,6 +34,8 @@ os.environ.setdefault("JWT_PRIVATE_KEY", _throwaway_jwt_key())
 os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("APP_ENV", "dev")
+# The published spec is the whole API, whichever component this shell is set to.
+os.environ["APP_COMPONENT"] = "all"
 
 # ── import from backend/, but from an empty directory ────────────────────────
 # Settings read ".env" relative to the current directory; an empty temp dir

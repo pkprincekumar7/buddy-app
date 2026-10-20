@@ -4,15 +4,12 @@ run-name: Promote Live Backend (${{ inputs.service }}, ${{ inputs.source_env }} 
 on:
   workflow_dispatch:
     inputs:
+      # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "ECS service(s) to promote"
+        description: "'all', or comma-separated service names from services.tf (e.g. backend,worker)"
         required: true
         default: "all"
-        type: choice
-        options:
-          - all
-          - backend
-          - worker
+        type: string
       source_env:
         description: "Source environment (image currently running here will be promoted)"
         required: true
@@ -55,11 +52,12 @@ permissions:
   id-token: write
   contents: read
 
-# Locked per environment + service (not per region) — same namespace as
-# deploy-live-backend, so deploy/promote/restart can never overlap on the
-# same env+service, whichever regions they hit.
+# Locked per environment (not per service or region): one run at a time per
+# environment across deploy, promote and restart, which share this namespace.
+# Not per service: `service` is free text, so "all", "backend" and
+# "worker, backend" would be different locks over the same ECS services.
 concurrency:
-  group: deploy-live-backend-superpower-${{ inputs.target_env }}-${{ inputs.service }}
+  group: deploy-live-backend-superpower-${{ inputs.target_env }}
   cancel-in-progress: false
 
 env:
@@ -117,6 +115,9 @@ jobs:
     environment: ${{ inputs.source_env }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
       - name: Validate required secrets
         env:
           ROLE_ARN: ${{ secrets.ROLE_ARN }}
@@ -142,147 +143,51 @@ jobs:
           aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
-      # Resolve source ECS cluster/services from SSM.
-      # SSM parameters are written automatically by terraform-live-backend.yml
-      # after every successful apply. All SSM reads go to us-east-1
-      # (control-plane region) regardless of the deployment region.
+      # Read the image each selected service is running RIGHT NOW in the
+      # source (its PRIMARY deployment's task definition) — promote exactly
+      # what is live, not a tag that was built but never reached steady state.
+      # Services come from the source's ecs_services list (terraform-live-backend,
+      # services.tf). Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
-      - name: Resolve source deployment targets
-        id: source
+      - name: Read source images
+        env:
+          SSM_BASE: /${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}
+          SELECTION: ${{ inputs.service }}
         run: |
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
+          source scripts/ecs-services.sh
 
-          SRC_BASE="/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/backend/${{ matrix.aws_region }}"
-          SRC_CLUSTER=$(get_ssm "$SRC_BASE/ecs_cluster_name")
-          SRC_SERVICE=$(get_ssm "$SRC_BASE/ecs_service_name")
-          SRC_WORKER_SERVICE=$(get_ssm "$SRC_BASE/ecs_worker_service_name")
-
-          if [ -z "$SRC_CLUSTER" ]; then
+          CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
+          if [ -z "$CLUSTER" ]; then
             echo "ERROR: Source ECS cluster not found in SSM for env=${{ inputs.source_env }}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
-          if [ -z "$SRC_SERVICE" ]; then
-            echo "ERROR: Source ECS service not found in SSM for env=${{ inputs.source_env }}. Run terraform-live-backend workflow (apply) for that environment first."
-            exit 1
-          fi
+          SERVICES=$(resolve_services "$SSM_BASE" "$SELECTION")
 
-          echo "ecs_cluster=$SRC_CLUSTER"               >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$SRC_SERVICE"                >> "$GITHUB_OUTPUT"
-          echo "ecs_worker_service=$SRC_WORKER_SERVICE"  >> "$GITHUB_OUTPUT"
-          echo "Source cluster:        $SRC_CLUSTER"
-          echo "Source service:        $SRC_SERVICE"
-          echo "Source worker service: ${SRC_WORKER_SERVICE:-<not yet provisioned>}"
-
-      # -------------------------------------------------------------------------
-      # Read the image that is currently PRIMARY (live) in the source ECS service.
-      # Using the live task definition — not a separately stored tag — ensures we
-      # promote exactly what is running, not a tag that was built but never reached
-      # steady state in source.
-      # -------------------------------------------------------------------------
-      - name: Read source images
-        id: source_image
-        env:
-          SRC_CLUSTER:        ${{ steps.source.outputs.ecs_cluster }}
-          SRC_SERVICE:        ${{ steps.source.outputs.ecs_service }}
-          SRC_WORKER_SERVICE: ${{ steps.source.outputs.ecs_worker_service }}
-          SERVICE_INPUT:      ${{ inputs.service }}
-        run: |
-          IMAGE=""
-          WORKER_IMAGE=""
-
-          # API image — read unless promoting worker only
-          if [ "$SERVICE_INPUT" != "worker" ]; then
-            # The JMESPath query returns a list — take the first line only to guard
-            # against the unlikely edge case of multiple PRIMARY deployments returning
-            # multiple ARNs separated by a tab/newline from --output text.
-            TASK_DEF_ARN=$(aws ecs describe-services \
-              --cluster "$SRC_CLUSTER" --services "$SRC_SERVICE" \
-              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
-              --output text | head -n1)
-
-            if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" = "None" ]; then
-              echo "ERROR: Could not determine the active task definition from the source API ECS service."
+          mkdir -p promote
+          IMAGES='[]'
+          while IFS= read -r ENTRY; do
+            NAME=$(jq -r .name <<<"$ENTRY")
+            IMAGE=$(live_image "$CLUSTER" "$(jq -r .service <<<"$ENTRY")" "$(jq -r .container <<<"$ENTRY")")
+            if [[ "$IMAGE" == *@* ]]; then
+              echo "ERROR: $NAME runs $IMAGE, pinned by digest; promote expects tag-based images (as deploy-live-backend pushes)."
               exit 1
             fi
-
-            IMAGE=$(aws ecs describe-task-definition \
-              --task-definition "$TASK_DEF_ARN" \
-              --query 'taskDefinition.containerDefinitions[?name==`backend`].image' \
-              --output text)
-
-            if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
-              echo "ERROR: Could not extract image from API task definition $TASK_DEF_ARN."
-              exit 1
-            fi
-
-            echo "Promoting API image: $IMAGE"
-          else
-            echo "service=worker — skipping API image read."
-          fi
-
-          # Worker image — read unless promoting backend only
-          if [ "$SERVICE_INPUT" != "backend" ] && [ -n "$SRC_WORKER_SERVICE" ]; then
-            WORKER_TD_ARN=$(aws ecs describe-services \
-              --cluster "$SRC_CLUSTER" --services "$SRC_WORKER_SERVICE" \
-              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
-              --output text | head -n1)
-
-            if [ -n "$WORKER_TD_ARN" ] && [ "$WORKER_TD_ARN" != "None" ]; then
-              WORKER_IMAGE=$(aws ecs describe-task-definition \
-                --task-definition "$WORKER_TD_ARN" \
-                --query 'taskDefinition.containerDefinitions[?name==`worker`].image' \
-                --output text)
-            fi
-
-            if [ -n "$WORKER_IMAGE" ]; then
-              echo "Promoting worker image: $WORKER_IMAGE"
-            else
-              echo "Worker service not yet provisioned in source — skipping worker promotion."
-            fi
-          elif [ "$SERVICE_INPUT" = "backend" ]; then
-            echo "service=backend — skipping worker image read."
-          fi
-
-          echo "image=$IMAGE"               >> "$GITHUB_OUTPUT"
-          echo "worker_image=$WORKER_IMAGE" >> "$GITHUB_OUTPUT"
+            echo "Promoting $NAME: $IMAGE"
+            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" '. + [{name: $n, image: $i}]' <<<"$IMAGES")
+          done < <(jq -c '.[]' <<<"$SERVICES")
+          echo "$IMAGES" > promote/images.json
 
       - name: Pull and save source images
-        env:
-          IMAGE:        ${{ steps.source_image.outputs.image }}
-          WORKER_IMAGE: ${{ steps.source_image.outputs.worker_image }}
         run: |
-          mkdir -p promote
-          IMAGES=()
-          for REF in "$IMAGE" "$WORKER_IMAGE"; do
-            [ -z "$REF" ] && continue
-            if [[ "$REF" == *@* ]]; then
-              echo "ERROR: $REF is pinned by digest; promote expects tag-based images (as deploy-live-backend pushes)."
-              exit 1
-            fi
-            [[ " ${IMAGES[*]} " == *" $REF "* ]] || IMAGES+=("$REF")
-          done
-          if [ ${#IMAGES[@]} -eq 0 ]; then
-            echo "ERROR: No source image to promote."
-            exit 1
-          fi
-
+          mapfile -t IMAGES < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
           REGISTRY="${IMAGES[0]%%/*}"   # <account>.dkr.ecr.<region>.amazonaws.com
           aws ecr get-login-password --region "${{ matrix.aws_region }}" \
             | docker login --username AWS --password-stdin "$REGISTRY"
-
           for REF in "${IMAGES[@]}"; do
             docker pull "$REF"
           done
           docker save "${IMAGES[@]}" | gzip -1 > promote/images.tar.gz
-
-          # Source refs, so the promote job knows which loaded image is which.
-          {
-            echo "IMAGE=$IMAGE"
-            echo "WORKER_IMAGE=$WORKER_IMAGE"
-          } > promote/images.env
-          cat promote/images.env
+          cat promote/images.json
 
       - name: Upload source images
         uses: actions/upload-artifact@v7.0.1
@@ -312,6 +217,9 @@ jobs:
     environment: ${{ inputs.target_env }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
       - name: Validate required secrets
         env:
           ROLE_ARN: ${{ secrets.ROLE_ARN }}
@@ -335,41 +243,6 @@ jobs:
           role-session-name: promote-backend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
           aws-region: ${{ matrix.aws_region }}
 
-      - name: Resolve target deployment targets
-        id: target
-        run: |
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
-
-          TGT_BASE="/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ matrix.aws_region }}"
-          TGT_CLUSTER=$(get_ssm "$TGT_BASE/ecs_cluster_name")
-          TGT_SERVICE=$(get_ssm "$TGT_BASE/ecs_service_name")
-          TGT_WORKER_SERVICE=$(get_ssm "$TGT_BASE/ecs_worker_service_name")
-          TGT_ECR=$(get_ssm "$TGT_BASE/ecr_repository_url")
-
-          if [ -z "$TGT_CLUSTER" ]; then
-            echo "ERROR: Target ECS cluster not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
-            exit 1
-          fi
-          if [ -z "$TGT_SERVICE" ]; then
-            echo "ERROR: Target ECS service not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
-            exit 1
-          fi
-          if [ -z "$TGT_ECR" ]; then
-            echo "ERROR: Target ECR repository not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
-            exit 1
-          fi
-
-          echo "ecs_cluster=$TGT_CLUSTER"               >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$TGT_SERVICE"                >> "$GITHUB_OUTPUT"
-          echo "ecs_worker_service=$TGT_WORKER_SERVICE"  >> "$GITHUB_OUTPUT"
-          echo "ecr_repository=$TGT_ECR"                 >> "$GITHUB_OUTPUT"
-          echo "Target cluster:        $TGT_CLUSTER"
-          echo "Target service:        $TGT_SERVICE"
-          echo "Target worker service: ${TGT_WORKER_SERVICE:-<not yet provisioned>}"
-          echo "Target ECR:            $TGT_ECR"
-
       - name: Download source images
         uses: actions/download-artifact@v8.0.2
         with:
@@ -377,226 +250,50 @@ jobs:
           path: promote/
 
       # -------------------------------------------------------------------------
-      # Push each exported image into the target's ECR under its source tag.
-      # IMMUTABLE tags: if the tag already exists there (a re-run, or the same
-      # build promoted before) it is the identical image, so the push is
-      # skipped.
+      # Push each exported image into the target's own ECR under its source
+      # tag (IMMUTABLE tags: an existing tag is the identical image, so the push
+      # is skipped), then roll each service onto it in the target's rollout
+      # order. Only the image changes: env vars, secrets refs, CPU/memory and
+      # logging come from the target's current task definition, exactly as
+      # Terraform set them for that environment. A service promoted from the
+      # source must exist in the target too. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
-      - name: Push images to target ECR
-        id: target_image
+      - name: Promote services
         env:
-          REPO: ${{ steps.target.outputs.ecr_repository }}
+          SSM_BASE: /${{ secrets.APP_NAME }}/${{ inputs.target_env }}/backend/${{ matrix.aws_region }}
         run: |
-          gunzip -c promote/images.tar.gz | docker load
-          # shellcheck disable=SC1091
-          source promote/images.env
+          source scripts/ecs-services.sh
 
+          CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
+          REPO=$(get_ssm "$SSM_BASE/ecr_repository_url")
+          if [ -z "$CLUSTER" ] || [ -z "$REPO" ]; then
+            echo "ERROR: Target ECS cluster or ECR repository not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+            exit 1
+          fi
+          SERVICES=$(resolve_services "$SSM_BASE" "$(jq -r '[.[].name] | join(",")' promote/images.json)")
+
+          gunzip -c promote/images.tar.gz | docker load
           REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
           REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
           aws ecr get-login-password --region "${{ matrix.aws_region }}" \
             | docker login --username AWS --password-stdin "$REGISTRY"
 
-          # Pushes $1 to the target repo under its own tag. Called directly
-          # (not inside $(...), where bash's -e would not stop on a failed push).
-          push() {
-            local SRC="$1" TAG="${1##*:}"
-            if aws ecr describe-images \
-                 --region "${{ matrix.aws_region }}" \
-                 --repository-name "$REPO_NAME" \
-                 --image-ids imageTag="$TAG" \
-                 --output text &>/dev/null; then
+          while IFS= read -r SRC; do
+            TAG="${SRC##*:}"
+            if aws ecr describe-images --region "${{ matrix.aws_region }}" --repository-name "$REPO_NAME" \
+                 --image-ids imageTag="$TAG" --output text &>/dev/null; then
               echo "$REPO:$TAG already exists in target ECR — skipping push."
             else
               docker tag "$SRC" "$REPO:$TAG"
               docker push "$REPO:$TAG"
               echo "Pushed: $REPO:$TAG"
             fi
+          done < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
+
+          # The target-ECR copy of the image exported for this service.
+          target_image() {
+            local src
+            src=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .image' promote/images.json)
+            echo "$REPO:${src##*:}"
           }
-
-          TARGET_IMAGE=""
-          TARGET_WORKER_IMAGE=""
-          if [ -n "$IMAGE" ]; then
-            push "$IMAGE"
-            TARGET_IMAGE="$REPO:${IMAGE##*:}"
-          fi
-          if [ -n "$WORKER_IMAGE" ]; then
-            push "$WORKER_IMAGE"
-            TARGET_WORKER_IMAGE="$REPO:${WORKER_IMAGE##*:}"
-          fi
-
-          echo "image=$TARGET_IMAGE"               >> "$GITHUB_OUTPUT"
-          echo "worker_image=$TARGET_WORKER_IMAGE" >> "$GITHUB_OUTPUT"
-          echo "Target API image:    ${TARGET_IMAGE:-<not promoted>}"
-          echo "Target worker image: ${TARGET_WORKER_IMAGE:-<not promoted>}"
-
-      # -------------------------------------------------------------------------
-      # Register a new task definition for the target environment.
-      # Only the container image is swapped from the source. All other fields
-      # (secrets refs, env vars, CPU/memory limits, log config, volumes) are taken
-      # from the target environment's current task definition so per-environment
-      # configuration is preserved exactly as Terraform defined it.
-      # This mirrors the same jq approach used in deploy-live-backend.yml.
-      # -------------------------------------------------------------------------
-      - name: Register new task definition for target
-        id: register_td
-        if: inputs.service == 'all' || inputs.service == 'backend'
-        env:
-          IMAGE: ${{ steps.target_image.outputs.image }}
-        run: |
-          TASK_FAMILY="${{ secrets.APP_NAME }}-backend-${{ inputs.target_env }}"
-
-          CURRENT_TD=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_FAMILY" \
-            --query 'taskDefinition' --output json)
-
-          # Strip read-only fields that AWS rejects on register-task-definition,
-          # then patch the image for the backend container only.
-          NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
-            --arg img "$IMAGE" \
-            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                 .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-             | .containerDefinitions =
-                 [.containerDefinitions[]
-                  | if .name == "backend" then .image = $img else . end]')
-
-          NEW_TD_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "$NEW_TD_JSON" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-
-          echo "new_td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
-          echo "Registered: $NEW_TD_ARN"
-
-      # -------------------------------------------------------------------------
-      # Update the target ECS service to the new task definition revision.
-      # ECS performs a rolling replacement; the circuit-breaker rolls back
-      # automatically if the new revision fails to reach steady state.
-      # Waits up to 15 minutes using a manual polling loop (aws ecs wait
-      # services-stable has a hard 10-minute ceiling).
-      # -------------------------------------------------------------------------
-      - name: Deploy to target ECS service
-        if: inputs.service == 'all' || inputs.service == 'backend'
-        env:
-          CLUSTER:    ${{ steps.target.outputs.ecs_cluster }}
-          SERVICE:    ${{ steps.target.outputs.ecs_service }}
-          NEW_TD_ARN: ${{ steps.register_td.outputs.new_td_arn }}
-        run: |
-          aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$SERVICE" \
-            --task-definition "$NEW_TD_ARN" \
-            --output json \
-            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-            | cat
-
-          echo "Waiting for service to reach steady state (up to 15 minutes)..."
-          for i in $(seq 1 60); do
-            SERVICE_INFO=$(aws ecs describe-services \
-              --cluster "$CLUSTER" --services "$SERVICE" \
-              --query 'services[0]' --output json)
-            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
-            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
-            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
-            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
-            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
-
-            if [ "$ROLLOUT" = "FAILED" ]; then
-              echo "ERROR: Promotion failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
-              exit 1
-            fi
-
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
-              echo "Promotion complete — service is stable ($RUNNING/$DESIRED tasks running)."
-              break
-            fi
-
-            if [ "$i" -eq 60 ]; then
-              echo "ERROR: Service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
-              exit 1
-            fi
-
-            echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
-            sleep 15
-          done
-
-      # -------------------------------------------------------------------------
-      # Worker promotion — uses the same image read from the source worker service.
-      # Skipped if the worker service is not yet provisioned in source or target.
-      # -------------------------------------------------------------------------
-      - name: Register new worker task definition for target
-        id: register_worker_td
-        if: (inputs.service == 'all' || inputs.service == 'worker') && steps.target_image.outputs.worker_image != ''
-        env:
-          WORKER_IMAGE: ${{ steps.target_image.outputs.worker_image }}
-        run: |
-          TASK_FAMILY="${{ secrets.APP_NAME }}-worker-${{ inputs.target_env }}"
-
-          if ! aws ecs describe-task-definition --task-definition "$TASK_FAMILY" &>/dev/null; then
-            echo "WARNING: Worker task definition '$TASK_FAMILY' not found in target. Apply terraform-live-backend for ${{ inputs.target_env }} first."
-            echo "Skipping worker promotion."
-            echo "new_worker_td_arn=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          CURRENT_TD=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_FAMILY" \
-            --query 'taskDefinition' --output json)
-
-          NEW_TD_JSON=$(echo "$CURRENT_TD" | jq \
-            --arg img "$WORKER_IMAGE" \
-            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                 .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-             | .containerDefinitions =
-                 [.containerDefinitions[]
-                  | if .name == "worker" then .image = $img else . end]')
-
-          NEW_WORKER_TD_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "$NEW_TD_JSON" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-
-          echo "new_worker_td_arn=$NEW_WORKER_TD_ARN" >> "$GITHUB_OUTPUT"
-          echo "Registered worker TD: $NEW_WORKER_TD_ARN"
-
-      - name: Deploy worker to target ECS service
-        if: steps.register_worker_td.outputs.new_worker_td_arn != ''
-        env:
-          CLUSTER:        ${{ steps.target.outputs.ecs_cluster }}
-          WORKER_SERVICE: ${{ steps.target.outputs.ecs_worker_service }}
-          NEW_TD_ARN:     ${{ steps.register_worker_td.outputs.new_worker_td_arn }}
-        run: |
-          aws ecs update-service \
-            --cluster "$CLUSTER" \
-            --service "$WORKER_SERVICE" \
-            --task-definition "$NEW_TD_ARN" \
-            --output json \
-            --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-            | cat
-
-          echo "Waiting for worker service to reach steady state (up to 15 minutes)..."
-          for i in $(seq 1 60); do
-            SERVICE_INFO=$(aws ecs describe-services \
-              --cluster "$CLUSTER" --services "$WORKER_SERVICE" \
-              --query 'services[0]' --output json)
-            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
-            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
-            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
-            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
-            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
-
-            if [ "$ROLLOUT" = "FAILED" ]; then
-              echo "ERROR: Worker promotion failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
-              exit 1
-            fi
-
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
-              echo "Worker promotion complete — service is stable ($RUNNING/$DESIRED tasks running)."
-              break
-            fi
-
-            if [ "$i" -eq 60 ]; then
-              echo "ERROR: Worker service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
-              exit 1
-            fi
-
-            echo "[$i/60] Worker deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
-            sleep 15
-          done
+          deploy_image "$CLUSTER" "$SERVICES" target_image

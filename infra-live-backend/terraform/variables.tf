@@ -25,39 +25,43 @@ variable "environment" {
 
 # -- Networking ---------------------------------------------------------------
 
-variable "vpc_cidr" {
-  description = "CIDR block for the backend VPC"
-  type        = string
-}
+# One /16 per (environment, region), so any two backend VPCs can later be
+# peered or joined by a Transit Gateway — e.g. eu-west-1/us-east-1 reaching
+# the ap-south-1 Atlas cluster privately (DEC-01 = B), or an Atlas Global
+# Cluster (DB-01 Stage 2). Identical CIDRs would rule that out, and changing a
+# VPC or subnet CIDR later replaces everything inside it (NET-01).
+#
+# Every environment lists all supported regions, deployed or not, so each
+# region's block is reserved up front. Plan (10.<env base + region index>):
+#   dev 10.2-4, stg 10.12-14, prod 10.22-24, sbx 10.32-34 — ap-south-1 first.
+# Keep the Atlas project CIDR outside 10.0.0.0/8 (e.g. 192.168.248.0/21).
+# Subnets are derived from the block in vpc.tf; they aren't configurable.
+variable "vpc_cidrs" {
+  description = "Backend VPC CIDR per AWS region, for this environment — a /16 per region, unique across regions (and, by the plan above, across environments). The VPC uses the entry for aws_region; subnets are derived from it with cidrsubnet() in vpc.tf."
+  type        = map(string)
 
-variable "public_subnet_1_cidr" {
-  description = "CIDR for public subnet AZ-1 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition     = contains(keys(var.vpc_cidrs), var.aws_region)
+    error_message = "vpc_cidrs has no entry for aws_region — add this region's /16 to tfvars/<env>.tfvars."
+  }
 
-variable "public_subnet_2_cidr" {
-  description = "CIDR for public subnet AZ-2 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition     = alltrue([for r in keys(var.vpc_cidrs) : contains(["ap-south-1", "eu-west-1", "us-east-1"], r)])
+    error_message = "vpc_cidrs keys may only be: ap-south-1, eu-west-1, us-east-1."
+  }
 
-variable "public_subnet_3_cidr" {
-  description = "CIDR for public subnet AZ-3 (ALB, NAT Gateway)"
-  type        = string
-}
+  validation {
+    condition = alltrue([
+      for c in values(var.vpc_cidrs) :
+      can(cidrnetmask(c)) && endswith(c, "/16") && can(cidrsubnet(c, 0, 0)) && cidrsubnet(c, 0, 0) == c && startswith(c, "10.")
+    ])
+    error_message = "Every vpc_cidrs value must be a 10.x.0.0/16 network address (e.g. \"10.22.0.0/16\") — the subnet layout in vpc.tf assumes a /16, and 10.0.0.0/8 keeps it clear of the Atlas CIDR."
+  }
 
-variable "private_subnet_1_cidr" {
-  description = "CIDR for private subnet AZ-1 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
-}
-
-variable "private_subnet_2_cidr" {
-  description = "CIDR for private subnet AZ-2 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
-}
-
-variable "private_subnet_3_cidr" {
-  description = "CIDR for private subnet AZ-3 (ECS tasks, ElastiCache, VPC endpoints)"
-  type        = string
+  validation {
+    condition     = length(distinct(values(var.vpc_cidrs))) == length(var.vpc_cidrs)
+    error_message = "vpc_cidrs values must be unique — two regions with the same CIDR can never be peered (NET-01)."
+  }
 }
 
 variable "nat_gateway_count" {
@@ -77,9 +81,17 @@ variable "redis_auth_token" {
 }
 
 variable "origin_verify_secret" {
-  description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate by updating that secret and re-applying both infra-live-backend and infra-live-edge."
+  description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate with origin_verify_secret_next below — see docs/infra-operations.md \"Rotating the origin-verify secret\"."
   type        = string
   sensitive   = true
+}
+
+variable "origin_verify_secret_next" {
+  description = "Incoming X-Origin-Verify value during a rotation, from the optional ORIGIN_VERIFY_SECRET_NEXT GitHub Environment Secret. When set, the ALB listener rule accepts BOTH it and origin_verify_secret (http_header values are OR-matched), so CloudFront can switch to it with zero 403s. Empty (the default) outside a rotation. See docs/infra-operations.md \"Rotating the origin-verify secret\"."
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
 }
 
 variable "elasticache_replica_count" {
@@ -191,9 +203,32 @@ variable "cors_origins" {
 }
 
 variable "jwt_key_id" {
-  description = "JWT key ID (kid header claim) — must match the key label in the CloudFront Function PUBLIC_KEYS map. Update during key rotation."
+  description = "JWT key ID (kid header claim) the backend signs with — must be a key in the JWT_PUBLIC_KEYS map that both the Lambda@Edge validator and the backend verify against. Update during key rotation."
   type        = string
   default     = "key-v1"
+}
+
+variable "jwt_public_keys" {
+  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). The API service (APP_COMPONENT=api) has no private key and verifies tokens with these keys ONLY, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
+  type        = map(string)
+
+  validation {
+    condition     = contains(keys(var.jwt_public_keys), var.jwt_key_id)
+    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — the API service verifies with these keys only. See docs/jwt-keys.md."
+  }
+}
+
+# -- Photo URLs (EDGE-05) -------------------------------------------------------
+
+variable "uploads_url_ttl_seconds" {
+  description = "How long an S3 presigned GET URL for a photo stays valid (seconds). Also bounds how long a deleted photo stays reachable through an already-issued URL. A URL can end sooner if the task role's temporary credentials expire first."
+  type        = number
+  default     = 3600
+
+  validation {
+    condition     = var.uploads_url_ttl_seconds >= 300 && var.uploads_url_ttl_seconds <= 86400
+    error_message = "uploads_url_ttl_seconds must be between 300 (5 min) and 86400 (24 h)."
+  }
 }
 
 variable "cookie_domain" {
@@ -257,6 +292,75 @@ variable "worker_max_capacity" {
   description = "Maximum ECS task count for the worker service autoscaling target"
   type        = number
   default     = 5
+}
+
+# -- Auth ECS (APP_COMPONENT=auth: /api/v1/auth/* and DELETE /api/v1/user/me) --
+# Login and register run bcrypt (cost 12), so auth is CPU-bound: it scales on
+# CPU, and its sizing is separate from the API's.
+
+variable "auth_task_cpu" {
+  description = "Fargate task CPU units for the auth service"
+  type        = number
+  default     = 512
+}
+
+variable "auth_task_memory" {
+  description = "Fargate task memory in MiB for the auth service"
+  type        = number
+  default     = 1024
+}
+
+variable "auth_desired_count" {
+  description = "Initial desired count for the auth ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "auth_min_capacity" {
+  description = "Minimum ECS task count for the auth service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "auth_max_capacity" {
+  description = "Maximum ECS task count for the auth service autoscaling target"
+  type        = number
+  default     = 4
+}
+
+# -- Admin ECS (APP_COMPONENT=admin: /api/v1/admin/*) ------------------------
+# Low traffic, scaled on CPU and memory. With the ADOT sidecar on (stg/prod)
+# 512/1024 is the floor — the sidecar alone reserves 256 CPU / 512 MiB and
+# modules/ecs-service refuses smaller; without it (dev/sbx) 256/512 is fine.
+
+variable "admin_task_cpu" {
+  description = "Fargate task CPU units for the admin service"
+  type        = number
+  default     = 512
+}
+
+variable "admin_task_memory" {
+  description = "Fargate task memory in MiB for the admin service"
+  type        = number
+  default     = 1024
+}
+
+variable "admin_desired_count" {
+  description = "Initial desired count for the admin ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "admin_min_capacity" {
+  description = "Minimum ECS task count for the admin service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "admin_max_capacity" {
+  description = "Maximum ECS task count for the admin service autoscaling target"
+  type        = number
+  default     = 2
 }
 
 # -- S3 (managed externally — Terraform configures, does not create) ----------
@@ -355,7 +459,7 @@ variable "enable_alb_access_logs" {
 # -- ADOT sidecar --------------------------------------------------------------
 
 variable "enable_adot_sidecar" {
-  description = "Attach the ADOT collector sidecar to API and worker task definitions for X-Ray tracing. Optional on dev/sbx (omit to save cost), required on stg/prod."
+  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB, X-Ray tracing) to every service's task definition. On in stg/prod; off in dev/sbx, whose 256 / 512 tasks are too small for it — modules/ecs-service refuses the sidecar on tasks under 512 / 1024, so raise those sizes before turning it on there."
   type        = bool
   default     = true
 }

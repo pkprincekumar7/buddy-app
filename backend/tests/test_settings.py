@@ -5,6 +5,7 @@ reads is removed, and the real .env file is skipped), so nothing on the
 developer's machine leaks in.
 """
 
+import json
 import logging
 
 import pytest
@@ -67,9 +68,72 @@ def test_safe_defaults():
     assert s.google_client_id == "" and s.app_env == "local"
 
 
-def test_jwt_private_key_is_required():
-    with pytest.raises(ValidationError, match="JWT_PRIVATE_KEY\n  Field required"):
-        Settings(_env_file=None)
+@pytest.mark.parametrize("component", ["all", "auth"])
+def test_jwt_private_key_is_required_where_tokens_are_minted(component):
+    with pytest.raises(ValidationError, match="JWT_PRIVATE_KEY is required for APP_COMPONENT="):
+        Settings(_env_file=None, app_component=component)
+
+
+# ── APP_COMPONENT (auth/api split) ───────────────────────────────────────────
+
+
+def test_app_component_defaults_to_all_and_loads_from_env(monkeypatch):
+    assert _settings().app_component == "all" and _settings().can_mint_tokens
+    monkeypatch.setenv("APP_COMPONENT", "auth")
+    assert _settings().app_component == "auth" and _settings().can_mint_tokens
+
+
+def test_unknown_app_component_is_rejected():
+    with pytest.raises(ValidationError):
+        _settings(app_component="billing")
+
+
+def test_api_verifies_with_jwt_public_keys_only():
+    s = _settings(
+        app_component="api",
+        jwt_private_key="",
+        jwt_public_keys={"key-v1": PUBLIC},
+    )
+    assert not s.can_mint_tokens
+    assert s.jwt_private_key == "" and s.jwt_public_key == ""
+    assert s.jwt_verification_keys == {"key-v1": PUBLIC}
+
+
+@pytest.mark.parametrize("component", ["admin", "api"])
+def test_verify_only_components_need_jwt_public_keys(component):
+    with pytest.raises(
+        ValidationError, match=f"JWT_PUBLIC_KEYS is required for APP_COMPONENT={component}"
+    ):
+        _settings(app_component=component, jwt_private_key="")
+    s = _settings(app_component=component, jwt_private_key="", jwt_public_keys={"key-v1": PUBLIC})
+    assert not s.can_mint_tokens and s.jwt_verification_keys == {"key-v1": PUBLIC}
+
+
+@pytest.mark.parametrize("component", ["admin", "api"])
+def test_verify_only_components_need_the_signing_kid(component):
+    _, old_public = _pem()
+    with pytest.raises(
+        ValidationError, match="JWT_PUBLIC_KEYS has no entry for JWT_KEY_ID 'key-v2'"
+    ):
+        _settings(
+            app_component=component,
+            jwt_private_key="",
+            jwt_key_id="key-v2",
+            jwt_public_keys={"key-v1": old_public},
+        )
+
+
+@pytest.mark.parametrize("component", ["admin", "api", "worker"])
+def test_non_minting_components_refuse_a_private_key(component):
+    with pytest.raises(
+        ValidationError, match=f"JWT_PRIVATE_KEY must not be set for APP_COMPONENT={component}"
+    ):
+        _settings(app_component=component, jwt_public_keys={"key-v1": PUBLIC})
+
+
+def test_worker_needs_neither_key():
+    s = _settings(app_component="worker", jwt_private_key="")
+    assert not s.can_mint_tokens and s.jwt_verification_keys == {}
 
 
 # ── loading from the environment ─────────────────────────────────────────────
@@ -144,6 +208,60 @@ def test_public_key_cannot_be_supplied_separately():
 def test_invalid_jwt_keys_are_rejected_with_how_to_fix(key):
     with pytest.raises(ValidationError, match="openssl genrsa -out jwt_private.pem 2048"):
         _settings(jwt_private_key=key)
+
+
+def test_verification_keys_default_to_just_the_current_signing_key():
+    s = _settings()
+    assert s.jwt_public_keys == {} and s.jwt_verification_keys == {"key-v1": PUBLIC}
+
+
+def test_jwt_public_keys_load_from_json_env_and_add_rotation_keys(monkeypatch):
+    _, old_public = _pem()
+    monkeypatch.setenv(
+        "JWT_PUBLIC_KEYS",
+        json.dumps({"key-v0": old_public.replace("\n", "\\n"), "key-v1": PUBLIC}),
+    )
+    s = _settings()
+    assert s.jwt_verification_keys == {"key-v0": old_public, "key-v1": PUBLIC}
+
+
+def test_jwt_public_keys_rejects_an_invalid_pem():
+    with pytest.raises(ValidationError, match=r"JWT_PUBLIC_KEYS\['key-v0'\] is not a valid PEM"):
+        _settings(jwt_public_keys={"key-v0": "not a key"})
+
+
+def test_jwt_public_keys_entry_for_the_signing_kid_must_match_the_private_key():
+    _, other_public = _pem()
+    with pytest.raises(ValidationError, match="doesn't match JWT_PRIVATE_KEY"):
+        _settings(jwt_public_keys={"key-v1": other_public})
+
+
+def test_jwt_issuer_and_audience_have_local_defaults_and_load_from_env(monkeypatch):
+    s = _settings()
+    assert (s.jwt_issuer, s.jwt_audience) == ("superpower-local", "superpower-api")
+    monkeypatch.setenv("JWT_ISSUER", "superpower-prod")
+    monkeypatch.setenv("JWT_AUDIENCE", "superpower-api")
+    assert _settings().jwt_issuer == "superpower-prod"
+
+
+@pytest.mark.parametrize("field", ["jwt_issuer", "jwt_audience"])
+def test_jwt_issuer_and_audience_cannot_be_empty(field):
+    with pytest.raises(ValidationError):
+        _settings(**{field: ""})
+
+
+def test_jwt_leeway_defaults_to_30_seconds():
+    assert _settings().jwt_leeway_seconds == 30
+
+
+# ── Photo URL lifetime (EDGE-05) ─────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("ttl", [299, 86401])
+def test_uploads_url_ttl_is_bounded(ttl):
+    with pytest.raises(ValidationError):
+        _settings(uploads_url_ttl_seconds=ttl)
+    assert _settings().uploads_url_ttl_seconds == 3600
 
 
 def test_signed_tokens_verify_with_the_derived_key():

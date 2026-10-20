@@ -4,15 +4,12 @@ run-name: Restart Live Backend (${{ inputs.service }}, ${{ inputs.environment }}
 on:
   workflow_dispatch:
     inputs:
+      # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "ECS service(s) to restart"
+        description: "'all', or comma-separated service names from services.tf (e.g. backend,worker)"
         required: true
         default: "all"
-        type: choice
-        options:
-          - all
-          - backend
-          - worker
+        type: string
       environment:
         description: "Deployment environment"
         required: true
@@ -45,32 +42,35 @@ permissions:
   id-token: write
   contents: read
 
-# Locked per environment + service (not per region) — same namespace as
-# deploy-live-backend, so deploy/promote/restart can never overlap on the
-# same env+service, whichever regions they hit.
+# Locked per environment (not per service or region): one run at a time per
+# environment across deploy, promote and restart, which share this namespace.
+# Not per service: `service` is free text, so "all", "backend" and
+# "worker, backend" would be different locks over the same ECS services.
 concurrency:
-  group: deploy-live-backend-superpower-${{ inputs.environment }}-${{ inputs.service }}
+  group: deploy-live-backend-superpower-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  restart:
-    name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
+  # -------------------------------------------------------------------------
+  # Turn inputs.service into the list of service names to restart, from the
+  # ecs_services list in SSM (terraform-live-backend, services.tf) — so the
+  # restart matrix below needs no edit when a service is added. Read from the
+  # first selected region; each restart instance re-checks its own region.
+  # -------------------------------------------------------------------------
+  resolve:
+    name: Resolve services
     runs-on: ubuntu-latest
-    # One parallel instance per selected region (and per service for 'all').
-    # fail-fast: false — an in-flight rollout must never be cancelled just
-    # because another instance failed.
-    strategy:
-      fail-fast: false
-      matrix:
-        aws_region: ${{ fromJson(inputs.aws_regions) }}
-        # 'all' fans out to one instance per service, restarted in parallel.
-        service: ${{ inputs.service == 'all' && fromJson('["backend","worker"]') || fromJson(format('["{0}"]', inputs.service)) }}
     environment: ${{ inputs.environment }}
+    outputs:
+      services: ${{ steps.list.outputs.services }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
       - name: Validate required secrets
         env:
           ROLE_ARN: ${{ secrets.ROLE_ARN }}
@@ -90,92 +90,70 @@ jobs:
         with:
           role-to-assume: ${{ secrets.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      - name: List services
+        id: list
+        env:
+          FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
+          SELECTION: ${{ inputs.service }}
+        run: |
+          source scripts/ecs-services.sh
+          SERVICES=$(resolve_services "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          echo "services=$(jq -c '[.[].name]' <<<"$SERVICES")" >> "$GITHUB_OUTPUT"
+          echo "Restarting: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
+
+  restart:
+    name: Restart Live Backend (${{ matrix.service }}, ${{ matrix.aws_region }})
+    needs: resolve
+    runs-on: ubuntu-latest
+    # One parallel instance per selected region × service. fail-fast: false —
+    # an in-flight rollout must never be cancelled just because another
+    # instance failed.
+    strategy:
+      fail-fast: false
+      matrix:
+        aws_region: ${{ fromJson(inputs.aws_regions) }}
+        service: ${{ fromJson(needs.resolve.outputs.services) }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-session-name: restart-live-backend-${{ inputs.environment }}
           aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
-      # Resolve ECS targets from SSM (written by terraform-live-backend).
-      # backend → ecs_service_name; worker → ecs_worker_service_name
-      # -------------------------------------------------------------------------
-      - name: Resolve deployment targets
-        id: tf_outputs
-        env:
-          SERVICE_INPUT: ${{ matrix.service }}
-        run: |
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
-
-          SSM_BASE="/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}"
-          CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
-
-          if [ "$SERVICE_INPUT" = "worker" ]; then
-            SERVICE=$(get_ssm "$SSM_BASE/ecs_worker_service_name")
-            SSM_KEY="ecs_worker_service_name"
-          else
-            SERVICE=$(get_ssm "$SSM_BASE/ecs_service_name")
-            SSM_KEY="ecs_service_name"
-          fi
-
-          if [ -z "$CLUSTER" ]; then
-            echo "ERROR: ECS cluster name not found in SSM. Run terraform-live-backend workflow (apply) first."
-            exit 1
-          fi
-          if [ -z "$SERVICE" ]; then
-            echo "ERROR: $SSM_KEY not found in SSM. Run terraform-live-backend workflow (apply) first."
-            exit 1
-          fi
-
-          echo "ecs_cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
-          echo "ecs_service=$SERVICE" >> "$GITHUB_OUTPUT"
-          echo "Cluster: $CLUSTER"
-          echo "Service ($SERVICE_INPUT): $SERVICE"
-
-      # -------------------------------------------------------------------------
-      # Force a new deployment without changing the task definition.
-      # ECS stops existing tasks and starts fresh ones using the current image.
-      # The circuit-breaker rolls back automatically on failure.
-      # Waits up to 15 minutes using a polling loop (aws ecs wait has a 10-minute
-      # hard ceiling so we use the same approach as deploy-live-backend).
+      # Force a new deployment without changing the task definition: ECS
+      # replaces the tasks with fresh ones on the current image (e.g. to pick
+      # up rotated Secrets Manager values). The circuit breaker rolls back on
+      # failure. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
       - name: Force new deployment
         env:
-          CLUSTER: ${{ steps.tf_outputs.outputs.ecs_cluster }}
-          SERVICE: ${{ steps.tf_outputs.outputs.ecs_service }}
+          SSM_BASE: /${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
+          SERVICE_NAME: ${{ matrix.service }}
         run: |
+          source scripts/ecs-services.sh
+
+          CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: ECS cluster name not found in SSM under $SSM_BASE. Run terraform-live-backend workflow (apply) first."
+            exit 1
+          fi
+          SERVICE=$(resolve_services "$SSM_BASE" "$SERVICE_NAME" | jq -r '.[0].service')
+          echo "Cluster: $CLUSTER"
+          echo "Service ($SERVICE_NAME): $SERVICE"
+
           aws ecs update-service \
             --cluster "$CLUSTER" \
             --service "$SERVICE" \
             --force-new-deployment \
-            --output json \
             --query "{serviceName: service.serviceName, status: service.status, desiredCount: service.desiredCount}" \
-            | cat
-
-          echo "Waiting for service to reach steady state (up to 15 minutes)..."
-          for i in $(seq 1 60); do
-            SERVICE_INFO=$(aws ecs describe-services \
-              --cluster "$CLUSTER" --services "$SERVICE" \
-              --query 'services[0]' --output json)
-            DEPLOYMENTS=$(echo "$SERVICE_INFO" | jq '.deployments | length')
-            RUNNING=$(echo  "$SERVICE_INFO" | jq '.runningCount')
-            PENDING=$(echo  "$SERVICE_INFO" | jq '.pendingCount')
-            DESIRED=$(echo  "$SERVICE_INFO" | jq '.desiredCount')
-            ROLLOUT=$(echo  "$SERVICE_INFO" | jq -r '.deployments[0].rolloutState')
-
-            if [ "$ROLLOUT" = "FAILED" ]; then
-              echo "ERROR: Restart failed (rolloutState=FAILED). ECS circuit-breaker has rolled back. Check ECS events and CloudWatch logs."
-              exit 1
-            fi
-
-            if [ "$DEPLOYMENTS" -eq 1 ] && [ "$RUNNING" -eq "$DESIRED" ] && [ "$PENDING" -eq 0 ] && [ "$DESIRED" -gt 0 ]; then
-              echo "Restart complete — service is stable ($RUNNING/$DESIRED tasks running)."
-              break
-            fi
-
-            if [ "$i" -eq 60 ]; then
-              echo "ERROR: Service did not stabilize after 15 minutes (deployments: $DEPLOYMENTS, running: $RUNNING, pending: $PENDING, desired: $DESIRED)."
-              exit 1
-            fi
-
-            echo "[$i/60] Deployments: $DEPLOYMENTS — running: $RUNNING, pending: $PENDING, desired: $DESIRED, rollout: $ROLLOUT — retrying in 15s..."
-            sleep 15
-          done
+            --output json | cat
+          wait_stable "$CLUSTER" "$SERVICE"

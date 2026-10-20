@@ -1,12 +1,15 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import Any, Literal
 
 import bcrypt as _bcrypt
 import jwt
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, load_pem_public_key
 from fastapi import Request, Response
-from jwt.exceptions import PyJWTError
+from jwt.exceptions import InvalidTokenError, PyJWTError
+from jwt.types import Options
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel
 
@@ -50,10 +53,37 @@ async def async_verify_password(plain: str, hashed: str) -> bool:
     return await asyncio.to_thread(verify_password, plain, hashed)
 
 
+# Parsed key objects, cached by PEM: PyJWT re-parses a PEM string on every
+# encode/decode otherwise (EDGE-04). Keyed by the PEM itself, so a test that
+# swaps settings simply gets a fresh entry.
+@lru_cache(maxsize=4)
+def _signing_key(pem: str) -> Any:
+    return load_pem_private_key(pem.encode(), password=None)
+
+
+@lru_cache(maxsize=16)
+def _verification_key(pem: str) -> Any:
+    return load_pem_public_key(pem.encode())
+
+
+class TokenMintingNotAllowed(RuntimeError):
+    """This component has no JWT_PRIVATE_KEY — only auth (or all) mints tokens."""
+
+
 def _encode(payload: dict[str, Any]) -> str:
+    # Always signs with the current key only (APP-02), and stamps this
+    # environment's iss/aud (EDGE-04) — setdefault, so tests can override them.
+    if not settings.can_mint_tokens or not settings.jwt_private_key:
+        raise TokenMintingNotAllowed(
+            f"APP_COMPONENT={settings.app_component} can't mint tokens — only auth (or all) "
+            "holds JWT_PRIVATE_KEY"
+        )
+    payload = {**payload}
+    payload.setdefault("iss", settings.jwt_issuer)
+    payload.setdefault("aud", settings.jwt_audience)
     return jwt.encode(
         payload,
-        settings.jwt_private_key,
+        _signing_key(settings.jwt_private_key),
         algorithm=settings.jwt_algorithm,
         headers={"kid": settings.jwt_key_id},
     )
@@ -74,7 +104,7 @@ def create_access_token(
         "location": location,
     }
     if extra:
-        _reserved = {"sub", "iat", "exp", "type", "location"}
+        _reserved = {"sub", "iat", "exp", "type", "location", "iss", "aud"}
         overlap = _reserved & extra.keys()
         if overlap:
             raise ValueError(f"extra must not override reserved JWT claims: {overlap}")
@@ -99,9 +129,54 @@ def create_refresh_token(sub: str, location: str) -> tuple[str, str]:
     return token, jti
 
 
+# Claims every token must carry, whatever its type. decode_token_of_type adds
+# the per-type ones; the shared decode only requires what both types have.
+# `location` is deliberately not listed: every caller validates it itself
+# (location_from_claims) and logs a precise reason (invalid_location) rather
+# than a generic decode failure.
+_BASE_CLAIMS: tuple[str, ...] = ("exp", "iat", "sub", "type", "iss", "aud")
+_REQUIRED_CLAIMS: dict[str, tuple[str, ...]] = {
+    "access": _BASE_CLAIMS,
+    "refresh": (*_BASE_CLAIMS, "jti"),
+}
+
+
+def decode_verified(
+    token: str, *, require: tuple[str, ...] = _BASE_CLAIMS, verify_exp: bool = True
+) -> dict[str, Any]:
+    """Verify a token's signature and claims, or raise PyJWTError.
+
+    The key is picked by the token's `kid` header from
+    settings.jwt_verification_keys (APP-02) — a missing or unknown kid is
+    rejected, never verified against a default key. `require` claims must be
+    present (even when verify_exp=False, `exp` must still exist). exp/nbf/iat
+    allow settings.jwt_leeway_seconds of clock skew; `iss` and `aud` must equal
+    this environment's jwt_issuer / jwt_audience (EDGE-04). The single place every
+    decode site (here, deps.py via the helpers below, limiter.py) goes
+    through, so they can't drift apart.
+    """
+    kid = jwt.get_unverified_header(token).get("kid")
+    if not isinstance(kid, str) or not kid:
+        raise InvalidTokenError("missing kid")
+    pem = settings.jwt_verification_keys.get(kid)
+    if pem is None:
+        raise InvalidTokenError(f"unknown kid: {kid}")
+    # verify_exp is merged with `require`, never replacing it (EDGE-04).
+    options: Options = {"require": list(require), "verify_exp": verify_exp}
+    return jwt.decode(
+        token,
+        _verification_key(pem),
+        algorithms=[settings.jwt_algorithm],
+        leeway=settings.jwt_leeway_seconds,
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
+        options=options,
+    )
+
+
 def decode_token(token: str) -> dict[str, Any] | None:
     try:
-        return jwt.decode(token, settings.jwt_public_key, algorithms=[settings.jwt_algorithm])
+        return decode_verified(token)
     except PyJWTError:
         return None
 
@@ -109,20 +184,18 @@ def decode_token(token: str) -> dict[str, Any] | None:
 def decode_token_of_type(
     token: str, expected: Literal["access", "refresh"]
 ) -> dict[str, Any] | None:
-    payload = decode_token(token)
-    if not payload or payload.get("type") != expected:
+    try:
+        payload = decode_verified(token, require=_REQUIRED_CLAIMS[expected])
+    except PyJWTError:
+        return None
+    if payload.get("type") != expected:
         return None
     return payload
 
 
 def decode_access_token_ignore_exp(token: str) -> dict[str, Any] | None:
     try:
-        payload = jwt.decode(
-            token,
-            settings.jwt_public_key,
-            algorithms=[settings.jwt_algorithm],
-            options={"verify_exp": False},
-        )
+        payload = decode_verified(token, require=_REQUIRED_CLAIMS["access"], verify_exp=False)
     except PyJWTError:
         return None
     if payload.get("type") != "access":

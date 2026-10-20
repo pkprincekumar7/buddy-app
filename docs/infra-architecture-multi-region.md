@@ -274,8 +274,10 @@ made in the code, not omissions.
 - `PURE_BYPASS_PATHS` (login, google, health) and any authenticated `/api/*` request
   whose location is unmapped or undeployed never get `request.origin` rewritten by the
   Lambda at all — they fall through to the CloudFront distribution's own statically
-  configured origin, `local.bootstrap_region = var.backend_regions[0]` (the first region
-  in the currently-applied `backend_regions` list; see `infra-live-edge/terraform/cloudfront.tf`).
+  configured origin, `local.bootstrap_region`: the `bootstrap_region` workflow input
+  (`TF_VAR_bootstrap_region`) when it names a region (it must be in `backend_regions`), or
+  the first region in `backend_regions` when it's `auto`, the default; see
+  `infra-live-edge/terraform/variables.tf` and `cloudfront.tf`.
   An authenticated request with an unmapped/undeployed location gets a 503 instead of
   silently landing on the bootstrap region — the bootstrap-region fallback only applies
   to unauthenticated bypass paths.
@@ -334,7 +336,7 @@ Phase 5c — terraform-atlas (us-east-1,  Phase 5 run)
            Each reads atlas_vpc_endpoint_id from SSM (written by Phase 2), completes the
            PrivateLink handshake, rotates MONGODB_URI in Secrets Manager to private SRV.
 
-Phase 6  — restart-live-backend (per region, both services)
+Phase 6  — restart-live-backend (per region, service = all: auth, admin, backend, worker)
            Force-restarts ECS tasks so they pick up the private MONGODB_URI.
 ```
 
@@ -397,16 +399,17 @@ Key differences from the plan, all confirmed against the real file:
   `COUNTRY_TO_REGION` map anywhere in the function. The "fallback" for bypass/no-hint
   cases is simply not rewriting `request.origin`, which leaves it at whatever the
   CloudFront distribution's own `alb-backend` origin is statically configured to (see
-  Change 4 below) — currently `var.backend_regions[0]`.
+  Change 4 below) — `var.bootstrap_region`, or `var.backend_regions[0]` when it's `auto`.
 - **Fails closed, no default region.** An authenticated request whose `location` claim
   isn't in `LOCATION_TO_REGION`, or whose mapped region isn't in `REGIONAL_ALB_FQDNS`
   (not yet deployed), gets a 503 with an explanatory message — never a silent
   default-region guess. See the corrected location-mapping table above for exactly which
   locations map where (notably: `cn`/`ru` are deliberately excluded, not defaulted).
-- **`X-Origin-Verify` header.** Every resolved origin gets a `customHeaders` entry
-  carrying a shared secret (`ORIGIN_VERIFY_SECRET`, injected via Terraform from the
-  `ORIGIN_VERIFY_SECRET` GitHub Environment Secret — same value on both `infra-live-edge`
-  and `infra-live-backend`). The backend ALB has a listener rule that 403s any request
+- **`X-Origin-Verify` header.** Every resolved origin keeps the `customHeaders` of the
+  distribution's `alb-backend` origin, which carry a shared secret (`ORIGIN_VERIFY_SECRET`,
+  from the GitHub Environment Secret of that name — same value on both `infra-live-edge`
+  and `infra-live-backend`). The Lambda copies the header from `request.origin`; the
+  secret is not a template variable and isn't in the function code (EDGE-02). The backend ALB has a listener rule that 403s any request
   missing or mismatching this header, so traffic reaching the ALB via CloudFront's shared
   IP range but *not* through this app's own distribution (and therefore never through this
   Lambda's JWT check) is rejected before it reaches ECS. The original plan had no
@@ -427,7 +430,8 @@ The recommendation to update resources in-place rather than rename them (Lambda@
 can't be destroyed while CloudFront replicas exist) was followed. The `archive_file`
 source still points at `jwt-validator-lambda.js.tpl` (never renamed — see Change 1) and
 its template variables are `jwt_public_keys`, `jwt_key_id`, `regional_alb_fqdns` (a map,
-not three scalars), and `origin_verify_secret`. `aws_iam_role`,
+not three scalars), and `location_to_region`. (`origin_verify_secret` was removed by
+EDGE-02: the function copies the header from the origin config instead.) `aws_iam_role`,
 `aws_iam_role_policy_attachment`, `aws_lambda_function`, and `time_sleep` are unchanged in
 shape, as predicted. The CloudFront `lambda_function_association` (Change 4) points at
 `aws_lambda_function.jwt_validator.qualified_arn`, exactly as planned.
@@ -467,7 +471,7 @@ into the Lambda template variable of the same name (Change 1/2).
 `"viewer-request"` — the move to `origin-request` proposed here never happened (see "Why
 not two separate Lambda@Edge functions?" above for the reconciled rationale). The
 `alb-backend` origin's `domain_name` does reference `local.regional_alb_fqdns[local.bootstrap_region]`
-(`bootstrap_region = var.backend_regions[0]`), matching this section's original intent
+(`var.bootstrap_region`, or `var.backend_regions[0]` when it's `auto`), matching this section's original intent
 that the declared origin only matters as a static fallback, with the Lambda dynamically
 overriding it per request. No new origin blocks were added — confirmed correct as planned.
 
@@ -652,6 +656,8 @@ after the existing "Initialise app secrets" step:
 All three paths already include `$REGION` — this step needs no further modification to
 work correctly across all three regions. `terraform output` works without `-chdir`
 because the job's `working-directory` is already `infra-live-backend/terraform`.
+
+> **Superseded (TF-01, 2026-10-19):** the per-region secrets and `case` blocks described in b2–c below have been replaced by three environment variables holding JSON maps keyed by region: `ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES` and `REGIONAL_LOGGING_BUCKET_NAMES` (see `docs/ci-cd.md`). A new region is one more key in each map; the workflows don't change.
 
 **b2. "Validate required secrets" step** — add new region secrets to the `env:` block
 and add corresponding condition checks in the `run:` script:
@@ -855,7 +861,7 @@ a **region-specific path** — `/{app_name}/{env}/atlas/{aws_region}/endpoint_se
 **not** yet provision `aws_vpc_endpoint` for Atlas PrivateLink in any region, including
 ap-south-1 — this needs to be added once, then applies identically to all three
 regions since the module is already region-agnostic. Add to
-`infra-live-backend/terraform/` (e.g. `vpc_endpoints.tf`):
+`modules/network/endpoints.tf` (or `infra-live-backend/terraform/` alongside the `network` module):
 
 ```hcl
 resource "aws_vpc_endpoint" "atlas_privatelink" {

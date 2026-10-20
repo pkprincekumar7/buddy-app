@@ -22,10 +22,12 @@ from app.schemas.children import (
 from app.services.journey_progress import has_completed_growth_area
 from app.services.s3_uploads import (
     ALLOWED_IMAGE_CONTENT_TYPES,
-    build_public_url,
     build_upload_key,
     get_s3_client,
+    require_child_upload_key,
+    upload_url_for,
 )
+from app.settings import Settings
 
 # Fields returned by the child-card list view. Heavy sub-documents
 # (personality scores/traits, full recommendations blob) are excluded and
@@ -121,7 +123,7 @@ _LIFE_PATHWAY_INPUTS = ("age", "gender")
 # ---------------------------------------------------------------------------
 
 
-def _child_to_api(doc: dict) -> dict:
+def _child_to_api(doc: dict, settings: Settings) -> dict:
     out = {
         k: v
         for k, v in doc.items()
@@ -129,14 +131,19 @@ def _child_to_api(doc: dict) -> dict:
     }
     out["id"] = doc["_id"]
     out["created_date"] = doc["created_at"].isoformat() if doc.get("created_at") else ""
+    # Stored as an S3 key (EDGE-05); every response gets a fresh presigned GET URL.
+    if isinstance(out.get("avatar_url"), str) and out["avatar_url"]:
+        out["avatar_url"] = upload_url_for(out["avatar_url"], settings, get_s3_client)
     return out
 
 
-async def _child_to_api_with_progress(doc: dict, db: AsyncIOMotorDatabase, user: dict) -> dict:
+async def _child_to_api_with_progress(
+    doc: dict, db: AsyncIOMotorDatabase, user: dict, settings: Settings
+) -> dict:
     """_child_to_api, plus grow_completed recomputed live from the growth_areas
     collection — never trusted from the stored document. See
     app/services/journey_progress.py for why."""
-    out = _child_to_api(doc)
+    out = _child_to_api(doc, settings)
     out["grow_completed"] = await has_completed_growth_area(
         db, user["_id"], doc["_id"], user["location"]
     )
@@ -156,6 +163,7 @@ async def _child_to_api_with_progress(doc: dict, db: AsyncIOMotorDatabase, user:
 )
 async def list_children(
     request: Request,
+    settings: SettingsDep,
     user: CurrentParent,
     db: Db,
     sort: Literal["created_date", "-created_date", "name", "-name"] | None = Query(
@@ -178,7 +186,7 @@ async def list_children(
         .sort(sort_spec)
         .to_list(limit)
     )
-    return [_child_to_api(d) for d in docs]
+    return [_child_to_api(d, settings) for d in docs]
 
 
 @router.post(
@@ -190,10 +198,19 @@ async def list_children(
 )
 async def create_child(
     request: Request,
+    settings: SettingsDep,
     payload: ChildCreate,
     user: CurrentParent,
     db: Db,
 ):
+    # A photo can only be uploaded for an existing child (the presign endpoint
+    # needs its id), so a create can't carry a legitimate one — and accepting
+    # an arbitrary key here would let the server presign someone else's photo.
+    if payload.avatar_url is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="avatar_url can't be set on create — upload the photo, then PATCH the child",
+        )
     count = await db[models.CHILDREN].count_documents(
         {"user_id": user["_id"], "location": user["location"], "is_deleted": False}
     )
@@ -219,7 +236,7 @@ async def create_child(
         **data,
     }
     await db[models.CHILDREN].insert_one(doc)
-    return _child_to_api(doc)
+    return _child_to_api(doc, settings)
 
 
 @router.get(
@@ -230,6 +247,7 @@ async def create_child(
 )
 async def get_child(
     request: Request,
+    settings: SettingsDep,
     user: CurrentParent,
     db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
@@ -239,7 +257,7 @@ async def get_child(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
-    return await _child_to_api_with_progress(doc, db, user)
+    return await _child_to_api_with_progress(doc, db, user, settings)
 
 
 @router.patch(
@@ -250,6 +268,7 @@ async def get_child(
 )
 async def update_child(
     request: Request,
+    settings: SettingsDep,
     user: CurrentParent,
     db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
@@ -269,6 +288,12 @@ async def update_child(
             if isinstance(v, list):
                 add_to_set_tabs = v
             # None means "no change" — skip rather than nullifying the field.
+        elif k == "avatar_url" and v is not None:
+            # Store the S3 key only (EDGE-05), and only one of this child's own.
+            try:
+                set_fields[k] = require_child_upload_key(v, settings, user["location"], child_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"avatar_url {exc}") from exc
         else:
             set_fields[k] = v
 
@@ -361,7 +386,7 @@ async def update_child(
         except Exception:
             log.exception("life pathway cache invalidation failed child_id=%s", child_id)
 
-    return await _child_to_api_with_progress(doc, db, user)
+    return await _child_to_api_with_progress(doc, db, user, settings)
 
 
 async def _always_true(child: dict, db: AsyncIOMotorDatabase, user: dict, child_id: str) -> bool:
@@ -428,6 +453,7 @@ _PROGRESS_PRECONDITIONS: dict[str, tuple[Callable[..., Awaitable[bool]], str]] =
 )
 async def mark_journey_progress(
     request: Request,
+    settings: SettingsDep,
     user: CurrentParent,
     db: Db,
     child_id: str = Path(..., min_length=1, max_length=100),
@@ -460,7 +486,7 @@ async def mark_journey_progress(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Child not found")
-    return await _child_to_api_with_progress(doc, db, user)
+    return await _child_to_api_with_progress(doc, db, user, settings)
 
 
 @router.delete(
@@ -566,5 +592,7 @@ async def presign_child_avatar(
             status_code=502, detail="Failed to generate upload URL. Please try again."
         ) from exc
 
-    avatar_url = build_public_url(bucket, region, settings.uploads_cdn_domain, key)
+    # A presigned GET, so the client can show the photo straight away;
+    # PATCHing it back stores just the key (upload_key_from_ref).
+    avatar_url = upload_url_for(key, settings, get_s3_client)
     return AvatarPresignResponse(upload_url=upload_url, avatar_url=avatar_url)

@@ -36,3 +36,7 @@ backend/mutants/
 
 # Terraform provider caches (local init)
 .terraform/
+
+# Shared Terraform modules (TF-01) are init'ed only to run their tests; the
+# provider lock file belongs to the root stacks that call them.
+modules/*/.terraform.lock.hcl
