@@ -89,7 +89,11 @@ def test_unknown_app_component_is_rejected():
 
 
 def test_api_verifies_with_jwt_public_keys_only():
-    s = _settings(app_component="api", jwt_private_key="", jwt_public_keys={"key-v1": PUBLIC})
+    s = _settings(
+        app_component="api",
+        jwt_private_key="",
+        jwt_public_keys={"key-v1": PUBLIC},
+    )
     assert not s.can_mint_tokens
     assert s.jwt_private_key == "" and s.jwt_public_key == ""
     assert s.jwt_verification_keys == {"key-v1": PUBLIC}

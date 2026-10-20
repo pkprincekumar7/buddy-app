@@ -59,7 +59,7 @@ variables {
     "us-east-1"  = "10.24.0.0/16"
   }
   nat_gateway_count            = 3
-  redis_auth_token             = "0123456789abcdef0123"
+  redis_auth_token             = "0123456789abcdef0123" # gitleaks:allow — fake token for the mock provider
   origin_verify_secret         = "current-secret"
   elasticache_replica_count    = 2
   elasticache_multi_az         = true

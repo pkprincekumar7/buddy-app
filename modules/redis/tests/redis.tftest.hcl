@@ -12,7 +12,7 @@ variables {
   node_type              = "cache.r6g.4xlarge"
   replica_count          = 2
   multi_az               = true
-  auth_token             = "0123456789abcdef0123"
+  auth_token             = "0123456789abcdef0123" # gitleaks:allow — fake token for the mock provider
 }
 
 run "prod_replicated_and_encrypted" {
