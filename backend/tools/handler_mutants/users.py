@@ -229,9 +229,9 @@ MUTANTS: list[tuple[str, str, str]] = [
         "    except ZeroDivisionError as exc:",
     ),
     (
-        "photo: CDN domain ignored",
-        "photo_url = build_public_url(bucket, region, settings.uploads_cdn_domain, key)",
-        'photo_url = build_public_url(bucket, region, "", key)',
+        "photo: viewable URL replaced by the bare key",
+        "photo_url = upload_url_for(key, settings, get_s3_client)",
+        "photo_url = key",
     ),
     (
         "photo: rate limit 20 -> 200",

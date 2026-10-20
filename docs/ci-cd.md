@@ -11,14 +11,14 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 | `terraform-live-scheduler.yml` | Manual | Provisions per-environment AWS EventBridge Scheduler resources; `environment` input selects dev/sbx/stg/prod; `schedule_enabled` input enables or disables the schedules; `target_aws_regions` input selects the full region set the daily schedules apply/destroy. EventBridge invokes a Lambda function (the "GitHub dispatcher"), which reads a GitHub PAT from Secrets Manager and calls `terraform-live-all.yml`'s `workflow_dispatch` REST endpoint directly — EventBridge itself never talks to the GitHub API. PAT sourced from `GIT_ACTIONS_PAT` environment secret |
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`) |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket policy for frontend assets (always `us-east-1`) |
-| `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to — consumes a pre-existing ACM cert ARN, does not create one |
-| `deploy-live-backend.yml` | Manual / called | Builds Docker image, pushes to ECR, updates ECS service |
+| `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to; `bootstrap_region` input (default `auto` = first of `backend_regions`) picks the region that serves login, Google sign-in and health — consumes a pre-existing ACM cert ARN, does not create one |
+| `deploy-live-backend.yml` | Manual / called | Builds the Docker image once, pushes it to every selected region's ECR, and rolls out the selected services (`service`: `all` or a comma-separated list, e.g. `backend,worker`) in the order of the `ecs_services` SSM list. A service added in `infra-live-backend/terraform/services.tf` needs no workflow change. |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
-| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — an export job (source environment's `ROLE_ARN`) pulls the image live in the source ECS service, then the promote job (target's `ROLE_ARN`) pushes it into the target's own ECR under the same tag and updates the target ECS service. Works across AWS accounts (e.g. stg and prod in different accounts) |
+| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), in the `ecs_services` rollout order. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment, then the promote job (target's `ROLE_ARN`) pushes it into the target's own ECR under the same tag and updates each target ECS service. Works across AWS accounts (e.g. stg and prod in different accounts) |
 | `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev→stg` or `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
 | `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `stg`, `prod`) |
 | `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
-| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes) |
+| `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes). `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. |
 
 ## Code quality workflow (check.yml)
 
@@ -173,7 +173,19 @@ Go to **IAM → Roles → Create role**:
 
 Configure under **Settings → Environments → `<env>` → Secrets** (one set per environment: `dev`, `sbx`, `stg`, `prod`).
 
-Environments in the same AWS account (dev, sbx and stg share one; prod has its own) must each point at their **own** S3 buckets (`ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, `UPLOADS_BUCKET_NAME_*`): the edge and frontend stacks replace each bucket's whole policy with one that trusts only that environment's CloudFront distribution, so a shared bucket breaks the other environment with 403s. For the same reason `GLOBAL_LOGGING_BUCKET_NAME` must be a different bucket from `REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1`.
+Environments in the same AWS account (dev, sbx and stg share one; prod has its own) must each point at their **own** S3 buckets (`ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, and their `UPLOADS_BUCKET_NAMES` entries): the edge and frontend stacks replace each bucket's whole policy with one that trusts only that environment's CloudFront distribution, so a shared bucket breaks the other environment with 403s. For the same reason `GLOBAL_LOGGING_BUCKET_NAME` must be a different bucket from the `us-east-1` entry of `REGIONAL_LOGGING_BUCKET_NAMES`.
+
+### Per-region values — environment **variables**, not secrets (TF-01)
+
+Configure under **Settings → Environments → `<env>` → Variables**. Each is a single-line JSON map keyed by AWS region, with an entry for every region the environment uses (`backend_regions`). Adding a region means adding one key to each map; no workflow changes. A missing or empty entry fails the run before Terraform, naming the variable and region.
+
+| Variable | Value | Used by |
+|---|---|---|
+| `ACM_CERTIFICATE_ARNS` | `{"ap-south-1": "arn:aws:acm:ap-south-1:…", "us-east-1": "arn:aws:acm:us-east-1:…"}`: one ACM cert per region for that region's backend ALB. The **`us-east-1` entry is always required**, because it's also CloudFront's viewer certificate (CloudFront needs its cert in `us-east-1`), so it must cover the public domain too. | `terraform-live-backend` (that region's entry), `terraform-live-edge` (`us-east-1`) |
+| `UPLOADS_BUCKET_NAMES` | `{"ap-south-1": "<uploads bucket>", …}`: the pre-existing, private uploads bucket per region | `terraform-live-backend` (CORS, lifecycle, IAM), `terraform-live-edge` (CSP `connect-src`) |
+| `REGIONAL_LOGGING_BUCKET_NAMES` | `{"ap-south-1": "<logging bucket>", …}`: pre-existing bucket per region for CloudTrail and/or ALB access logs. An entry is **required for every region**, even where `enable_cloudtrail` / `enable_alb_access_logs` are off. | `terraform-live-backend` |
+
+They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS_BUCKET_NAME_<REGION>` and `REGIONAL_LOGGING_BUCKET_NAME_<REGION>`. None of these values is secret. Once the variables are set, delete the old secrets.
 
 ### Infrastructure secrets (Terraform + deploy workflows)
 
@@ -186,19 +198,12 @@ Environments in the same AWS account (dev, sbx and stg share one; prod has its o
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
 | `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app`. The backend/internal subdomain (`{subdomain}-internal`) is derived from this at workflow runtime — there is no separate secret for it. |
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID for this environment's `DOMAIN_NAME`. The zone must be in the **same AWS account** as this environment's `ROLE_ARN` (both the public CloudFront record and the internal ALB records are written into it), so prod's zone lives in the prod account. A subdomain zone needs NS delegation from its parent zone. |
-| `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN for `ap-south-1` (covers that region's backend ALB) |
-| `ACM_CERTIFICATE_ARN_EU_WEST_1` | ACM cert ARN for `eu-west-1` (covers that region's backend ALB) |
-| `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN in `us-east-1`. Dual-purpose: **always** required by `terraform-live-edge` (CloudFront's viewer certificate — CloudFront requires the cert in `us-east-1` regardless of which backend regions are active), and **conditionally** required by `terraform-live-backend` (that region's backend ALB, only when `aws_region` is set to `us-east-1`). If you ever deploy the backend to `us-east-1`, this one cert must cover both the public CloudFront domain and the internal ALB subdomain (as separate SANs). |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
-| `UPLOADS_BUCKET_NAME_AP_SOUTH_1` | Pre-existing S3 uploads bucket in `ap-south-1`. Used by `terraform-live-backend` (CORS/lifecycle config) and `terraform-live-edge` (CloudFront origin + bucket policy) whenever that region is in `backend_regions`. |
-| `UPLOADS_BUCKET_NAME_EU_WEST_1` | Same, for `eu-west-1` |
-| `UPLOADS_BUCKET_NAME_US_EAST_1` | Same, for `us-east-1` |
-| `REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1` | Pre-existing S3 bucket in `ap-south-1` for that region's CloudTrail trail and/or ALB access logs (`terraform-live-backend` only; required whenever `enable_cloudtrail` or `enable_alb_access_logs` is true for that region/environment) |
-| `REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1` | Same, for `eu-west-1` |
-| `REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1` | Same, for `us-east-1` |
 | `GLOBAL_LOGGING_BUCKET_NAME` | Pre-existing S3 bucket in `us-east-1` for the edge module's CloudTrail trail and/or WAF Firehose logs (`terraform-live-edge` only; required whenever `enable_cloudtrail` or `enable_waf_logging` is true) |
 | `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rule rejects anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`. See [docs/jwt-keys.md](jwt-keys.md). |
+| `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`, and passed to the API as `JWT_PUBLIC_KEYS` by `terraform-live-backend` (both verify by `kid`). `terraform-live-backend` fails before apply if `JWT_KEY_ID` isn't one of its keys. See [docs/jwt-keys.md](jwt-keys.md). |
+| `JWT_KEY_ID` | The `kid` the backend signs with (default `key-v1`). Passed to the API by `terraform-live-backend`. |
 | `OPS_EMAIL` | Operator email address for the CloudWatch alarm SNS subscription. Required only when `enable_ops_email = true` (prod by default) — Terraform's own validation enforces this, the workflow does not. |
 | `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
 

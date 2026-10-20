@@ -20,7 +20,7 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 - `GET/POST/DELETE /user/completed-growth-areas?child_id=` — log completed growth areas with child activity results; GET supports `limit` (1–200, default 50) and `offset` (default 0); DELETE clears all for the child and returns 204 No Content (rate-limited: 60/min GET+POST, 10/min DELETE per user)
 - `GET/PATCH /user/observations?child_id=` — LLM-generated observations document for a child (plus parent-entered fields); returns an empty document rather than 404 if the child doesn't exist (query is scoped by `user_id` so no data leaks); PATCH requires `transform_visited` on the child (rate-limited: 60/min GET, 20/min PATCH per user)
 - `GET/PATCH /user/ninety-day-plan?child_id=` — 90-day plan + event tracker document for a child (LLM-generated `plan`/`track_steps` plus parent/child-entered progress fields); same empty-document/`transform_visited` behaviour as observations (rate-limited: 60/min per user)
-- `POST /user/ninety-day-plan/photo-presign` — presigned S3 PUT URL for an achievement/tracker photo; client uploads directly to S3, then PATCHes `/user/ninety-day-plan` with the returned `photo_url` recorded against `field_key` in the `photos` map (rate-limited: 20/min per user)
+- `POST /user/ninety-day-plan/photo-presign` — presigned S3 PUT URL for an achievement/tracker photo; client uploads directly to S3, then PATCHes `/user/ninety-day-plan` with the returned `photo_url` recorded against `field_key` in the `photos` map. Photos are stored as S3 keys and returned as short-lived S3 presigned GET URLs; PATCH accepts a key or one of our own URLs under this child's `ninety-day-plan/` prefix, anything else is 422 (rate-limited: 20/min per user)
 
 ## Children (`/api/v1/children/...`)
 
@@ -30,7 +30,7 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 - `PATCH /children/{child_id}` — update a child profile (rate-limited: 30/min per user)
 - `DELETE /children/{child_id}` — soft-delete a child profile: hidden immediately, retained 30 days for recovery, then purged by a scheduled hard-delete job (returns 204 No Content; rate-limited: 10/min per user)
 - `POST /children/{child_id}/progress/{flag}` — mark a Personality Journey progression flag done; one-way (false→true), one flag per call, gated on the previous step in the chain already being true. Valid flags: `onboarding_profile_completed`, `discover_completed`, `transform_visited`, `release_visited`, `connect_visited` (`grow_completed`/`conversational_onboarding_completed` are derived, not settable here) — this is the only way to set these fields; `PATCH /children/{child_id}` silently ignores them (rate-limited: 30/min per user)
-- `POST /children/{child_id}/avatar/presign` — presigned S3 PUT URL for a child avatar photo; client uploads directly to S3, then PATCHes the child with the returned `avatar_url` (rate-limited: 20/min per user)
+- `POST /children/{child_id}/avatar/presign` — presigned S3 PUT URL for a child avatar photo; client uploads directly to S3, then PATCHes the child with the returned `avatar_url` (rate-limited: 20/min per user). `avatar_url` is stored as the S3 key and returned as a short-lived S3 presigned GET URL; PATCH accepts a key or one of our own URLs for this child, anything else is 422, and `POST /children` rejects it
 
 ## Jobs (`/api/v1/jobs/...`) — async LLM job pipeline
 

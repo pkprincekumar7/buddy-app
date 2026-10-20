@@ -180,6 +180,20 @@ run "mutant lists valid (tools/mutate_handlers.py --check)" \
 run "jwt-validator-lambda unit tests (infra-live-edge)" \
     node --test "$ROOT/infra-live-edge/functions/jwt-validator-lambda.test.js"
 
+# The default behaviour's SPA fallback (CloudFront Function, EDGE-03). Plain
+# Node — no terraform needed.
+run "spa-rewrite CloudFront Function unit tests (infra-live-edge)" \
+    node --test "$ROOT/infra-live-edge/functions/spa-rewrite.test.js"
+
+# Shared helpers of the deploy / restart / promote backend workflows, against a
+# fake aws CLI (no AWS access needed).
+run "ecs-services.sh tests (scripts)" \
+    bash "$ROOT/scripts/ecs-services.test.sh"
+if command -v shellcheck >/dev/null 2>&1; then
+  run "shellcheck (scripts/ecs-services.sh)" \
+      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh"
+fi
+
 # shared/routing.json → generated backend/app/routing_data.py and the frontends'
 # countries.ts / locationHint.ts. Fails if a generated copy is stale.
 run "routing data in sync (shared/routing.json)" \
@@ -296,6 +310,7 @@ run "checkov (Terraform IaC)" \
       -d '$ROOT/infra-live-edge/terraform' \
       -d '$ROOT/infra-live-frontend/terraform' \
       -d '$ROOT/infra-live-scheduler/terraform' \
+      -d '$ROOT/modules' \
       --framework terraform --quiet --compact --skip-download"
 
 if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
@@ -335,6 +350,8 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' config '$ROOT/infra-live-frontend/terraform' --exit-code 1 --severity HIGH,CRITICAL"
   run "trivy config (infra-live-scheduler)" \
       bash -c "'$TRIVY' config '$ROOT/infra-live-scheduler/terraform' --exit-code 1 --severity HIGH,CRITICAL"
+  run "trivy config (modules)" \
+      bash -c "'$TRIVY' config '$ROOT/modules' --exit-code 1 --severity HIGH,CRITICAL"
 
   if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
     DOCKLE=""; _SCAN_IMAGE="superpower-backend:check-scan"; _IMAGE_OK=0
@@ -435,6 +452,12 @@ TERRAFORM=""; TFLINT=""
 if require_tool terraform TERRAFORM "brew install terraform"; then
   run "terraform fmt check" \
       bash -c "cd '$ROOT' && '$TERRAFORM' fmt -check -recursive"
+  # Mock AWS provider — no credentials, nothing created (TF-01).
+  for d in "$ROOT"/modules/*/ "$ROOT/infra-live-backend/terraform/"; do
+    name="${d#"$ROOT/"}"
+    run "terraform test (${name%/})" \
+        bash -c "cd '$d' && '$TERRAFORM' init -backend=false -input=false >/dev/null && '$TERRAFORM' test"
+  done
 fi
 
 if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
@@ -446,6 +469,10 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-frontend/terraform'"
   run "tflint (infra-live-scheduler)" \
       bash -c "'$TFLINT' --chdir='$ROOT/infra-live-scheduler/terraform'"
+  for m in "$ROOT"/modules/*/; do
+    name="${m#"$ROOT/"}"
+    run "tflint (${name%/})" bash -c "'$TFLINT' --chdir='$m'"
+  done
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────

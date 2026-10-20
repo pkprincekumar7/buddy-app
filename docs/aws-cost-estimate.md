@@ -15,15 +15,16 @@ The appropriate resource sizing changes significantly across MAU scales. The pro
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
-| **API task** | 0.5 vCPU / 1 GB | 0.5 vCPU / 1 GB | 0.5 vCPU / 1 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 2 vCPU / 4 GB | 4 vCPU / 8 GB | 4 vCPU / 8 GB |
+| **API task** | 0.25 vCPU / 0.5 GB | 0.25 vCPU / 0.5 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB |
 | **API min tasks** | 1 | 1 | 2 | 2 | 3 | 5 | 10 | 15 | 15 |
-| **Worker task** | 0.5 vCPU / 1 GB | 0.5 vCPU / 1 GB | 0.5 vCPU / 1 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 2 vCPU / 4 GB | 4 vCPU / 8 GB | 4 vCPU / 8 GB |
+| **Worker task** | 0.25 vCPU / 0.5 GB | 0.25 vCPU / 0.5 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB | 1 vCPU / 2 GB |
 | **Worker min tasks** | 1 | 1 | 1 | 1 | 2 | 3 | 5 | 5 | 5 |
 | **ElastiCache** | t4g.micro ×1 | t4g.micro ×1 | t4g.medium ×1 | t4g.medium ×2 | r6g.large ×2 | r6g.large ×2 | r6g.xlarge ×2 | r6g.2xlarge ×3 | r6g.4xlarge ×3 |
 | **NAT Gateways** | 1 | 1 | 2 | 3 | 3 | 3 | 3 | 3 | 3 |
 | **VPC Interface Endpoints** | None | None | 5 svc / 2 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ |
 
-> **Rationale for task sizing:** FastAPI is async/I-O-bound; at small scale, 1 vCPU handles concurrent LLM calls well. From 1M MAU, larger tasks (2–4 vCPU) reduce per-task overhead and improve throughput under sustained concurrency. Worker tasks are sized identically to API tasks at each tier.
+> **Rationale for task sizing (TF-03):** the API runs one uvicorn process per task and the worker one asyncio process, so each can use only about 1 vCPU (the GIL). Bigger tasks add cost, not throughput, and keep task CPU % so low that CPU autoscaling never fires. So every tier from stg up uses 1 vCPU / 2 GB and scales by **task count**. stg/prod also run the ADOT sidecar (256 CPU / 512 MiB of each task), which is why stg is no longer 0.5 vCPU. dev/sbx have no sidecar and only a few testers, so every service there runs at Fargate's smallest size, 0.25 vCPU / 0.5 GB (each process is ~65–85 MB after import). Worker tasks are sized identically to API tasks at each tier.
+> **`auth` and `admin`** (`services.tf`) are costed for dev, sbx and stg from the tfvars: dev/sbx 1 + 1 task at 0.25 vCPU / 0.5 GB; stg 2 auth + 1 admin at 0.5 vCPU / 1 GB. They are **not modeled yet for the prod tiers** (shown as —); add them when those tiers are re-estimated.
 > **Rationale for ElastiCache sizing:** t4g instances are burstable — acceptable for dev/stg/small prod. From 10K MAU, r6g (memory-optimised, dedicated CPU) is used to avoid credit exhaustion under sustained rate-limit traffic. Primary + 1 replica for HA from 1K MAU; 3-node cluster (primary + 2 replicas) from 10M MAU.
 
 ---
@@ -51,6 +52,7 @@ Per-task monthly cost (720 hrs):
 
 | Task size | vCPU cost | Memory cost | Total/task/month |
 |---|---|---|---|
+| 0.25 vCPU / 0.5 GB | $7.66 | $1.68 | **$9.34** |
 | 0.5 vCPU / 1 GB | $15.32 | $3.35 | **$18.67** |
 | 1 vCPU / 2 GB | $30.65 | $6.70 | **$37.35** |
 | 2 vCPU / 4 GB | $61.29 | $13.41 | **$74.70** |
@@ -58,9 +60,10 @@ Per-task monthly cost (720 hrs):
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
-| API tasks (min × cost/task) | $19 | $19 | $37 | $75 | $112 | $187 | $747 | $2,241 | $2,241 |
-| Worker tasks (min × cost/task) | $19 | $19 | $19 | $37 | $75 | $112 | $374 | $747 | $747 |
-| **Subtotal** | **$38** | **$38** | **$56** | **$112** | **$187** | **$299** | **$1,121** | **$2,988** | **$2,988** |
+| API tasks (min × cost/task) | $9 | $9 | $75 | $75 | $112 | $187 | $374 | $560 | $560 |
+| Worker tasks (min × cost/task) | $9 | $9 | $37 | $37 | $75 | $112 | $187 | $187 | $187 |
+| Auth + admin tasks (min × cost/task) | $19 | $19 | $56 | — | — | — | — | — | — |
+| **Subtotal** | **$37** | **$37** | **$168** | **$112** | **$187** | **$299** | **$561** | **$747** | **$747** |
 
 > These are **minimum task** costs (floor). Autoscaling adds cost under load. At prod 100M MAU: api_max=200 + worker_max=50 would cost up to ~14× the floor during peak. The burst ceiling is not shown here.
 
@@ -99,6 +102,8 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 
 **Lambda@Edge (✓):** $0.60/million requests + $0.00005001/GB-second (128 MB, ~5 ms avg). Only triggers on `/api/*` requests (70% of total).
 
+**CloudFront Functions (not re-verified, see Pricing Reference):** ~$0.10/million invocations, first 2M/month free. The `spa-rewrite` function (EDGE-03) runs on every request to the default `/*` behaviour, i.e. the 30% that isn't `/api/*` — on cache hits too, since it runs at viewer-request.
+
 ### CloudFront data transfer
 
 | Scale | Total GB | Free 1,024 GB | $0.109 (≤9,216 GB) | $0.085 (≤40,960 GB) | $0.082 (≤102,400 GB) | $0.080 (≤358,400 GB) | **Data cost** |
@@ -127,7 +132,8 @@ Confirmed prices (✓) ap-south-1: t4g.micro $0.020/hr, t4g.medium $0.081/hr, r6
 | CF HTTPS requests | $0 | $0 | $0 | $0 | $0 | $48 | $588 | $5,988 | $59,988 |
 | Lambda@Edge requests ($0.60/M, 70% of req) | $0 | $0 | $0 | $0 | $2 | $21 | $210 | $2,100 | $21,000 |
 | Lambda@Edge compute (128 MB / 5 ms) | $0 | $0 | $0 | $0 | $0 | $1 | $11 | $110 | $1,095 |
-| **Subtotal** | **$0** | **$0** | **$0** | **$0** | **$2** | **$70** | **$915** | **$10,033** | **$98,674** |
+| CloudFront Functions (`spa-rewrite`, $0.10/M, 30% of req, 2M free) | $0 | $0 | $0 | $0 | $0 | $1 | $15 | $150 | $1,500 |
+| **Subtotal** | **$0** | **$0** | **$0** | **$0** | **$2** | **$71** | **$930** | **$10,183** | **$100,174** |
 
 > At 100M MAU, CloudFront HTTPS request charges ($59,988) dominate. This is driven by 50 billion requests/month (100M users × 500 req/MAU). Review request rate assumptions carefully before projecting at this scale. Enabling CloudFront caching for more API responses would reduce this significantly.
 
@@ -213,23 +219,23 @@ GuardDuty monitors running tasks. vCPU count is based on minimum task counts × 
 
 | Scale | API tasks (min) | Worker tasks (min) | Task vCPUs | Total vCPUs | ECS Runtime cost |
 |---|---|---|---|---|---|
-| stg | 2 | 1 | 0.5 vCPU each | 1.5 vCPU | $3 |
+| stg | 2 | 1 | 1 vCPU each (+ auth 2 × 0.5, admin 1 × 0.5) | 4.5 vCPU | $8 |
 | prod 1K | 2 | 1 | 1 vCPU each | 3 vCPU | $5 |
 | prod 10K | 3 | 2 | 1 vCPU each | 5 vCPU | $9 |
 | prod 100K | 5 | 3 | 1 vCPU each | 8 vCPU | $14 |
-| prod 1M | 10 | 5 | 2 vCPU each | 30 vCPU | $54 |
-| prod 10M | 15 | 5 | 4 vCPU each | 80 vCPU | $145 |
-| prod 100M | 15 | 5 | 4 vCPU each | 80 vCPU | $145 |
+| prod 1M | 10 | 5 | 1 vCPU each | 15 vCPU | $27 |
+| prod 10M | 15 | 5 | 1 vCPU each | 20 vCPU | $36 |
+| prod 100M | 15 | 5 | 1 vCPU each | 20 vCPU | $36 |
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
 | Backend GuardDuty enabled | No | No | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| ECS Runtime Monitoring | $0 | $0 | $3 | $5 | $9 | $14 | $54 | $145 | $145 |
+| ECS Runtime Monitoring | $0 | $0 | $8 | $5 | $9 | $14 | $27 | $36 | $36 |
 | VPC Flow Logs analysis | $0 | $0 | $1 | $1 | $2 | $2 | $6 | $22 | $110 |
 | Edge GuardDuty (us-east-1; stg+prod) | $0 | $0 | $2 | $2 | $2 | $2 | $2 | $2 | $2 |
-| **Subtotal** | **$0** | **$0** | **$6** | **$8** | **$13** | **$18** | **$62** | **$169** | **$257** |
+| **Subtotal** | **$0** | **$0** | **$11** | **$8** | **$13** | **$18** | **$35** | **$60** | **$148** |
 
-> GuardDuty ECS Runtime cost scales with vCPUs in running tasks, not with MAU. At prod 100M MAU, minimum 80 vCPUs (15 API + 5 worker tasks × 4 vCPU) are always monitored.
+> GuardDuty ECS Runtime cost scales with vCPUs in running tasks, not with MAU. At prod 100M MAU, minimum 20 vCPUs (15 API + 5 worker tasks × 1 vCPU) are always monitored.
 
 ---
 
@@ -260,19 +266,19 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | Section | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
 | 1. Networking | $40 | $40 | $175 | $261 | $262 | $267 | $317 | $821 | $5,861 |
-| 2. ECS Fargate | $38 | $38 | $56 | $112 | $187 | $299 | $1,121 | $2,988 | $2,988 |
+| 2. ECS Fargate | $37 | $37 | $168 | $112 | $187 | $299 | $561 | $747 | $747 |
 | 3. ALB | $17 | $17 | $18 | $18 | $18 | $19 | $22 | $47 | $297 |
 | 4. ElastiCache | $14 | $14 | $58 | $117 | $304 | $304 | $608 | $1,823 | $3,646 |
-| 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $70 | $915 | $10,033 | $98,674 |
+| 5. CloudFront + Lambda@Edge | $0 | $0 | $0 | $0 | $2 | $71 | $930 | $10,183 | $100,174 |
 | 6. WAF | $0 | $0 | $10 | $10 | $10 | $10 | $14 | $38 | $284 |
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $2 | $7 | $59 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 9. Secrets Manager | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
 | 10. CloudWatch + X-Ray | $0 | $0 | $0 | $4 | $4 | $13 | $135 | $1,348 | $13,476 |
-| 11. GuardDuty | $0 | $0 | $6 | $8 | $13 | $18 | $62 | $169 | $257 |
+| 11. GuardDuty | $0 | $0 | $11 | $8 | $13 | $18 | $35 | $60 | $148 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$111** | **$111** | **$325** | **$532** | **$802** | **$1,002** | **$3,198** | **$17,281** | **$125,597** |
+| **Grand Total** | **$110** | **$110** | **$442** | **$532** | **$802** | **$1,003** | **$2,626** | **$15,081** | **$124,747** |
 
 ---
 
@@ -280,12 +286,12 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 
 | Scale | Top cost driver | Second | Third |
 |---|---|---|---|
-| dev / sbx | NAT Gateway ($40) | ECS Fargate ($38) | ALB ($17) |
-| stg | NAT + VPC Endpoints ($175) | ElastiCache ($58) | ECS Fargate ($56) |
+| dev / sbx | NAT Gateway ($40) | ECS Fargate ($37) | ALB ($17) |
+| stg | NAT + VPC Endpoints ($175) | ECS Fargate ($168) | ElastiCache ($58) |
 | prod 1K–100K | NAT + VPC Endpoints | ElastiCache | ECS Fargate |
-| prod 1M | ECS Fargate ($1,121) | CloudFront ($915) | ElastiCache ($608) |
-| prod 10M | CloudFront+L@E ($10,033) | ECS Fargate ($2,988) | ElastiCache ($1,823) |
-| prod 100M | CloudFront+L@E ($98,674) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
+| prod 1M | CloudFront ($930) | ElastiCache ($608) | ECS Fargate ($561) |
+| prod 10M | CloudFront+L@E ($10,183) | ElastiCache ($1,823) | CloudWatch + X-Ray ($1,348) |
+| prod 100M | CloudFront+L@E ($100,174) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
 
 ---
 
@@ -340,6 +346,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | Service | Estimate | Note |
 |---|---|---|
 | Edge GuardDuty foundational detector (us-east-1) | ~$2/month | Inherited flat estimate; only the ap-south-1 GuardDuty rates (ECS Runtime, VPC Flow Logs) were re-verified against the Price List API this pass |
+| CloudFront Functions invocations | ~$0.10 per million, first 2M/month free | Added with EDGE-03 (`spa-rewrite`); not checked against the Price List API |
 
 **Key caveats:**
 - All ECS costs reflect **minimum task counts**. Peak autoscaling can multiply ECS cost by up to 4× at high MAU scales.

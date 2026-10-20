@@ -181,11 +181,9 @@ Child profile photos uploaded during onboarding are stored in a **separate uploa
 
 ### Upload and display flow
 
-**Upload (all environments):** The backend generates a presigned S3 PUT URL and the final `avatar_url` (`POST /children/{id}/avatar/presign`). The browser PUTs the file directly to S3 using the presigned URL. The frontend then PATCHes the child record with the returned `avatar_url`. `PutObject` never requires public bucket access.
+**Upload (all environments):** The backend generates a presigned S3 PUT URL and a presigned GET URL for the same key (`POST /children/{id}/avatar/presign`). The browser PUTs the file directly to S3 using the PUT URL. The frontend then PATCHes the child record with the returned `avatar_url`; the backend keeps only the S3 key. `PutObject` never requires public bucket access.
 
-**Display (local dev):** The local bucket has a public `GetObject` policy on `uploads/*`. Photos are served via a direct S3 URL (`https://{bucket}.s3.{region}.amazonaws.com/uploads/...`). All four Block Public Access settings for the two "public bucket policy" categories are unset.
-
-**Display (deployed — dev/stg/prod):** The bucket has **all four Block Public Access settings ON** — no public access whatsoever. Photos are served through CloudFront via a `/uploads/*` behaviour backed by an OAC-signed origin. The `avatar_url` stored in MongoDB is a CloudFront URL (`https://{app-fqdn}/uploads/...`). Terraform in `infra-live-edge` manages the OAC, the `/uploads/*` behaviour, and the bucket policy granting CloudFront SigV4 read access.
+**Display (all environments):** MongoDB stores only the S3 key (`uploads/...`). Each API read returns an **S3 presigned GET URL** (`https://{bucket}.s3.{region}.amazonaws.com/uploads/...?X-Amz-...`, ~1 h) signed with the backend's own AWS credentials (EDGE-05, see [infra-operations.md](infra-operations.md#photo-urls-edge-05)). Deployed buckets have **all four Block Public Access settings ON** and no bucket policy. Photos never go through CloudFront.
 
 ### Local dev environment variables
 
@@ -196,11 +194,11 @@ UPLOADS_BUCKET_NAME=person-local-uploads-bucket-ap-south-1
 AWS_REGION=ap-south-1
 AWS_ACCESS_KEY_ID=your-access-key-id
 AWS_SECRET_ACCESS_KEY=your-secret-access-key
-# Leave UPLOADS_CDN_DOMAIN blank — falls back to direct S3 URL for local bucket
-UPLOADS_CDN_DOMAIN=
+# These credentials also sign the photo GET URLs, so they need s3:GetObject on
+# uploads/* (the local bucket no longer needs a public GetObject policy).
 ```
 
-In ECS (dev/stg/prod) `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left unset — the ECS task role provides credentials automatically via IMDS. `UPLOADS_CDN_DOMAIN` is set automatically by Terraform to the app's CloudFront FQDN (same as `COOKIE_DOMAIN`).
+In ECS (dev/stg/prod) `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left unset — the ECS task role provides credentials automatically via IMDS. Those role credentials sign both the PUT (upload) and GET (view) URLs; the role has `s3:PutObject` and `s3:GetObject` on the uploads bucket.
 
 ### Create and configure the local uploads bucket (one-time)
 
@@ -211,38 +209,38 @@ In ECS (dev/stg/prod) `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left u
 3. Set **AWS Region** to `ap-south-1` (Asia Pacific — Mumbai)
 4. Leave all other settings at their defaults and click **Create bucket**
 
-#### b. Relax Block Public Access and add a bucket policy (GetObject only — local only)
+#### b. Let your local AWS credentials read and write uploads
 
-The local bucket needs public `GetObject` so browsers can load photos via direct S3 URLs. **This step is for the local bucket only** — deployed buckets keep all Block Public Access settings ON and use CloudFront OAC instead (managed by Terraform).
+Photos are private everywhere, local included (EDGE-05): the backend signs both the upload (PUT) and the view (GET) URLs with the AWS credentials in your `.env` (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). So **the bucket keeps all Block Public Access settings ON and needs no bucket policy** — but the IAM user behind those credentials must be allowed to read and write `uploads/*`. A presigned URL only works if its signer could make the same request.
 
-1. Click the bucket → **Permissions** tab → **Block public access (bucket settings)** → **Edit**
-2. Uncheck only these two settings:
-   - **Block public access to buckets and objects granted through new public bucket or access point policies**
-   - **Block public and cross-account access to buckets and objects through any public bucket or access point policies**
-3. Leave the top two checkboxes checked (block ACL-based public access — not used here)
-4. Click **Save changes** → type `confirm` → **Confirm**
-5. Scroll to **Bucket policy** → **Edit** and paste the following (replace `<your-bucket-name>` with your actual bucket name):
+1. Open the [IAM console](https://console.aws.amazon.com/iam/) → **Users** → the user whose access key is in your `.env`
+2. **Permissions** tab → **Add permissions** → **Create inline policy** → **JSON**, and paste (replace `<your-bucket-name>`):
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowPublicGetUploads",
+      "Sid": "LocalUploadsReadWrite",
       "Effect": "Allow",
-      "Principal": "*",
-      "Action": "s3:GetObject",
+      "Action": ["s3:PutObject", "s3:GetObject"],
       "Resource": "arn:aws:s3:::<your-bucket-name>/uploads/*"
     }
   ]
 }
 ```
 
-6. Click **Save changes**
+3. Name it e.g. `superpower-local-uploads` → **Create policy**
+
+If the user already has broader S3 access (e.g. `AmazonS3FullAccess`), nothing to add.
+
+**Upgrading an existing local bucket** set up with the old public-read policy: it still works, but it's no longer needed. To make it private like the deployed buckets, delete the `AllowPublicGetUploads` bucket policy (**Permissions** → **Bucket policy** → **Delete**), then turn the two Block Public Access settings you unchecked back **on**.
+
+**Check:** upload a photo locally, open the image URL from the API response — it loads. Remove everything from `?` onwards and open it again — S3 returns **403 Access Denied**.
 
 #### c. Configure CORS
 
-The browser uploads directly to S3 via presigned URL. Without CORS, the browser blocks the cross-origin PUT request.
+The browser uploads directly to S3 via presigned URL. Without CORS, the browser blocks the cross-origin PUT request. (Viewing photos uses plain `<img>` tags, which don't need CORS.)
 
 1. Still on the **Permissions** tab, scroll to **Cross-origin resource sharing (CORS)** → **Edit**
 2. Paste the following:
@@ -274,6 +272,6 @@ Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_uploa
 For deployed environments (dev/stg/prod), the uploads bucket is also created manually but all access control is managed by Terraform — **do not** relax Block Public Access or add a bucket policy manually. After creating the bucket:
 
 1. Create the bucket in `ap-south-1` with all Block Public Access settings **ON** (the default)
-2. Add the bucket name as the `UPLOADS_BUCKET_NAME_AP_SOUTH_1` GitHub environment secret (already used by `terraform-live-backend.yml` and `terraform-live-edge.yml`)
-3. Apply `infra-live-backend` — sets up CORS (for presigned PUT), lifecycle, and IAM (for presigned URL generation)
-4. Apply `infra-live-edge` — creates the CloudFront OAC, `/uploads/*` behaviour, and bucket policy granting CloudFront SigV4 read access
+2. Add the bucket name to the `UPLOADS_BUCKET_NAMES` GitHub environment **variable** (a JSON map, e.g. `{"ap-south-1": "<bucket>"}`; used by `terraform-live-backend.yml` and `terraform-live-edge.yml`, see [ci-cd.md](ci-cd.md))
+3. Apply `infra-live-backend` — sets up CORS (for presigned PUT), lifecycle, and IAM (`s3:PutObject` and `s3:GetObject` for presigned URL generation)
+4. Apply `infra-live-edge` — adds the bucket's host to the CSP `connect-src` so the browser may PUT to it

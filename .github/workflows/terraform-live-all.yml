@@ -69,6 +69,18 @@ on:
           - '["ap-south-1","us-east-1"]'
           - '["eu-west-1","us-east-1"]'
           - '["ap-south-1","eu-west-1","us-east-1"]'
+      # Passed straight through to terraform-live-edge.yml — see its
+      # bootstrap_region input. "auto" = first region in backend_regions.
+      bootstrap_region:
+        description: "Region that serves login/health. 'auto' = first of backend_regions; a named region must be in backend_regions."
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - ap-south-1
+          - eu-west-1
+          - us-east-1
       deploy:
         description: "Run deploy-backend and deploy-frontend after apply (ignored for plan)"
         required: false
@@ -85,6 +97,10 @@ on:
       backend_regions:
         required: true
         type: string
+      bootstrap_region:
+        required: false
+        type: string
+        default: "auto"
       deploy:
         required: false
         type: boolean
@@ -142,9 +158,10 @@ jobs:
     if: inputs.action == 'plan' || inputs.action == 'apply'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:          ${{ inputs.action }}
-      environment:     ${{ inputs.environment }}
-      backend_regions: ${{ inputs.backend_regions }}
+      action:           ${{ inputs.action }}
+      environment:      ${{ inputs.environment }}
+      backend_regions:  ${{ inputs.backend_regions }}
+      bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------
@@ -213,9 +230,10 @@ jobs:
     if: inputs.action == 'plan-destroy' || inputs.action == 'destroy'
     uses: ./.github/workflows/terraform-live-edge.yml
     with:
-      action:          ${{ inputs.action }}
-      environment:     ${{ inputs.environment }}
-      backend_regions: ${{ inputs.backend_regions }}
+      action:           ${{ inputs.action }}
+      environment:      ${{ inputs.environment }}
+      backend_regions:  ${{ inputs.backend_regions }}
+      bootstrap_region: ${{ inputs.bootstrap_region || 'auto' }}
     secrets: inherit
 
   # ---------------------------------------------------------------------------

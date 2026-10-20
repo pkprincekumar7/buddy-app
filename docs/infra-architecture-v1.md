@@ -171,7 +171,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 
 #### Networking
 
-> **VPC CIDR layout (not prescribed — use your own ranges).** A typical ap-south-1 layout: VPC `10.0.0.0/16`; public subnets `10.0.0.0/24`, `10.0.1.0/24`, `10.0.2.0/24` (one per AZ); private subnets `10.0.10.0/24`, `10.0.11.0/24`, `10.0.12.0/24` (one per AZ). ECS tasks, ElastiCache, and VPC endpoints all live in private subnets. NAT Gateways live in public subnets.
+> **VPC CIDR layout (as implemented, NET-01).** One `/16` per (environment, region) from `vpc_cidrs` in `tfvars/<env>.tfvars`, e.g. prod ap-south-1 `10.22.0.0/16`. Subnets are derived in `modules/network` (called from `vpc.tf`): public `10.x.1.0/24`, `10.x.2.0/24`, `10.x.3.0/24`; private `10.x.16.0/20`, `10.x.32.0/20`, `10.x.48.0/20` (one of each per AZ). ECS tasks, ElastiCache, and VPC endpoints all live in private subnets. NAT Gateways live in public subnets.
 
 | Terraform resource | Status | Notes |
 |---|---|---|
@@ -204,8 +204,8 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 | `aws_security_group` (ALB) | exists | Inbound 443 from CloudFront prefix list only |
 | `aws_security_group` (ECS task — API) | change | Add outbound 443 to VPC Interface Endpoint SG; add outbound 27017 to Atlas PrivateLink endpoint SG |
 | `aws_security_group` (ECS task — worker) | exists | No inbound; unrestricted egress (outbound 0.0.0.0/0 on all ports — covers MongoDB via PrivateLink, Secrets Manager/CloudWatch/X-Ray via VPC endpoints, and LLM API calls via NAT). No Redis egress — the worker does not use ElastiCache. Egress can be tightened once PrivateLink and VPC endpoints are active. |
-| `aws_security_group` (ElastiCache) | exists | Inbound 6379 from API task SG only — the worker does not connect to Redis, so its SG must not be added here |
-| `aws_security_group` (VPC endpoints — AWS services) | exists | Allows inbound 443 from both ECS task SGs (`ecs_task_sg` + `worker_sg`); no egress rule (endpoints do not initiate outbound connections). Shared by all 5 Interface Endpoints (ECR API, ECR DKR, Secrets Manager, CloudWatch Logs, X-Ray). Defined in `vpc_endpoints.tf`. |
+| `aws_security_group` (ElastiCache) | exists | Inbound 6379 only from the task SGs of services with `uses_redis = true` in `services.tf` (auth, admin, API). The worker does not connect to Redis, so its SG is not added. Defined in `modules/redis`. |
+| `aws_security_group` (VPC endpoints — AWS services) | exists | Allows inbound 443 from every ECS task SG (one per service in `services.tf`: auth, admin, API, worker); no egress rule (endpoints do not initiate outbound connections). Shared by all 5 Interface Endpoints (ECR API, ECR DKR, Secrets Manager, CloudWatch Logs, X-Ray). Defined in `modules/network`. |
 | `aws_security_group` (Atlas PrivateLink endpoint) | **missing** | Allows inbound 27017 from both ECS task SGs (API and worker); attached to the Atlas PrivateLink VPC endpoint. Keep this SG separate from the AWS services endpoint SG — port and purpose are different. |
 
 #### Security & Secrets
@@ -228,7 +228,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 |---|---|---|
 | `aws_cloudwatch_log_group` (API) | exists | `retention_in_days = var.log_retention_days`; 7 days (dev/sbx), 30 days (stg), 90 days (prod default). |
 | `aws_cloudwatch_log_group` (worker) | exists | `/ecs/{app_name}/worker/{env}`; `retention_in_days = var.log_retention_days`; same per-env values as API log group. |
-| `aws_sns_topic` | exists | `aws_sns_topic.alerts` provisioned in `autoscaling.tf`; used by worker PendingJobCount and sustained-CPU alarms |
+| `aws_sns_topic` | exists | `aws_sns_topic.alerts` provisioned in `cloudwatch.tf`; used by worker PendingJobCount and sustained-CPU alarms |
 | `aws_sns_topic_subscription` (email) | exists | `count = var.ops_email != "" ? 1 : 0`; operator email alert subscription; set `ops_email` via `OPS_EMAIL` GitHub secret. |
 | `aws_cloudwatch_metric_alarm` (HealthyHostCount) | exists | `count = var.enable_basic_alarms ? 1 : 0`; Minimum HealthyHostCount < 1; `treat_missing_data = "breaching"`; alerts to SNS. Enabled on stg + prod. |
 | `aws_cloudwatch_metric_alarm` (5XX errors) | exists | `count = var.enable_basic_alarms ? 1 : 0`; Sum HTTPCode_Target_5XX_Count > 10 over 3 × 60 s; alerts to SNS. Enabled on stg + prod. |
@@ -251,7 +251,7 @@ Every Terraform resource needed to implement the launch-day architecture. Marked
 
 Bucket is created manually. Terraform manages configuration only, referencing the bucket via `var.uploads_bucket_name`.
 
-> **`variables.tf` additions — all implemented ✅:** `uploads_bucket_name`, `regional_logging_bucket_name`, `log_retention_days` (default 90), `ops_email` (default ""), `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule`, `xray_default_sampling_rate` (default 0.05), `enable_guardduty`, `enable_cloudtrail`, `enable_adot_sidecar`. Set via GitHub secrets (`UPLOADS_BUCKET_NAME_AP_SOUTH_1`, `REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1`, `OPS_EMAIL`) and tfvars files per environment. Still pending: `atlas_endpoint_service_name` (default "") for Atlas PrivateLink.
+> **`variables.tf` additions — all implemented ✅:** `uploads_bucket_name`, `regional_logging_bucket_name`, `log_retention_days` (default 90), `ops_email` (default ""), `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule`, `xray_default_sampling_rate` (default 0.05), `enable_guardduty`, `enable_cloudtrail`, `enable_adot_sidecar`. Set via the GitHub environment variables `UPLOADS_BUCKET_NAMES` and `REGIONAL_LOGGING_BUCKET_NAMES` (JSON maps keyed by region; the workflow picks the run's region), the `OPS_EMAIL` secret, and tfvars files per environment. Still pending: `atlas_endpoint_service_name` (default "") for Atlas PrivateLink.
 
 | Terraform resource | Status | Notes |
 |---|---|---|
@@ -272,7 +272,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_ssm_parameter` (ALB FQDN) | exists | Read by `infra-live-edge` |
-| `aws_ssm_parameter` (ECS worker service name) | exists | Written to `ecs_worker_service_name` path; read by `deploy-live-backend.yml` and `restart-live-backend` (Phase 6) |
+| `aws_ssm_parameter` (ECS services list) | exists | `ecs_services`: JSON array of every service in `services.tf` (`name`, `service`, `family`, `container`) in rollout order. Read by deploy, restart (Phase 6) and promote through `scripts/ecs-services.sh`. Replaces the old per-service `ecs_service_name` / `ecs_worker_service_name` parameters. |
 
 ---
 
@@ -561,7 +561,7 @@ resource "mongodbatlas_cloud_backup_schedule" "main" {
 
 **tfvars per environment — complete boolean flags summary:**
 
-dev and sbx carry identical values — `dev.tfvars` and `sbx.tfvars` differ only in VPC CIDR ranges (dev `10.2.x.x`, sbx `10.32.x.x`) and are otherwise byte-for-byte equivalent for all flags below.
+dev and sbx carry identical values — `dev.tfvars` and `sbx.tfvars` differ only in VPC CIDR ranges (`vpc_cidrs`: dev `10.2–10.4`, sbx `10.32–10.34`, one `/16` per region) and are otherwise byte-for-byte equivalent for all flags below.
 
 | Variable | Module | `dev.tfvars` / `sbx.tfvars` | `stg.tfvars` | `prod.tfvars` |
 |---|---|---|---|---|
@@ -618,8 +618,7 @@ These have no GitHub Actions workflow. Complete all of them first — workflows 
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID (from step 0.1) | terraform-live-backend, terraform-live-edge |
 | `DOMAIN_NAME` | Root domain (e.g. `superpower.example.com`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
 | `SUBDOMAIN` | Subdomain prefix (e.g. `app`) | terraform-live-backend, terraform-live-edge, deploy-live-frontend |
-| `ACM_CERTIFICATE_ARN_AP_SOUTH_1` | ACM cert ARN in ap-south-1 (from step 0.3) | terraform-live-backend |
-| `ACM_CERTIFICATE_ARN_US_EAST_1` | ACM cert ARN in us-east-1 (from step 0.2) | terraform-live-edge |
+| `ACM_CERTIFICATE_ARNS` (environment **variable**, not a secret) | JSON map of region → ACM cert ARN: each backend region's cert (from step 0.3) plus `us-east-1` for CloudFront (from step 0.2) | terraform-live-backend (its region's entry), terraform-live-edge (`us-east-1`) |
 | `SPA_BUCKET_NAME` | SPA assets S3 bucket name (from step 0.4) | terraform-live-edge, terraform-live-frontend |
 | `ASSETS_BUCKET_NAME` | App assets S3 bucket name (from step 0.5) | terraform-live-backend, terraform-live-edge |
 | `MONGODB_URI` | Atlas public SRV connection string. Used to seed Secrets Manager on the **first apply only** — `terraform-live-backend` checks whether `MONGODB_URI` already exists in Secrets Manager before writing; if the key is already present it is left untouched. After Phase 5, `terraform-atlas` updates the Secrets Manager value to the private endpoint URI directly. This GitHub secret is never changed after initial setup. | terraform-live-backend |
@@ -704,14 +703,13 @@ SSM parameters written by this workflow:
 /<APP_NAME>/<ENV>/backend/<REGION>/alb_internal_fqdn         →  <alb-fqdn>
 /<APP_NAME>/<ENV>/backend/<REGION>/ecr_repository_url        →  <ecr-url>
 /<APP_NAME>/<ENV>/backend/<REGION>/ecs_cluster_name          →  <cluster-name>
-/<APP_NAME>/<ENV>/backend/<REGION>/ecs_service_name          →  <api-service-name>
-/<APP_NAME>/<ENV>/backend/<REGION>/ecs_worker_service_name   →  <worker-service-name>
+/<APP_NAME>/<ENV>/backend/<REGION>/ecs_services              →  [{name, service, family, container}, …]  (rollout order)
 /<APP_NAME>/<ENV>/backend/<REGION>/atlas_vpc_endpoint_id     →  <vpc-endpoint-id>
 /<APP_NAME>/<ENV>/backend/<REGION>/nat_eip_addresses         →  <comma-separated-eip-list>
 /<APP_NAME>/<ENV>/backend/<REGION>/secrets_manager_arn       →  <sm-arn>
 ```
 
-`terraform-live-edge` (Phase 3) reads `alb_internal_fqdn`. `terraform-atlas` (Phase 5) reads `atlas_vpc_endpoint_id`, `nat_eip_addresses`, and `secrets_manager_arn`. `restart-live-backend` (Phase 6) reads `ecs_service_name` and `ecs_worker_service_name`.
+`terraform-live-edge` (Phase 3) reads `alb_internal_fqdn`. `terraform-atlas` (Phase 5) reads `atlas_vpc_endpoint_id`, `nat_eip_addresses`, and `secrets_manager_arn`. deploy, restart (Phase 6) and promote read `ecs_services`.
 
 ---
 
@@ -789,7 +787,7 @@ Running ECS tasks still use the old public URI cached in their environment — u
 
 Forces a new ECS deployment without rebuilding or re-pushing the image. Tasks restart, pull the updated `MONGODB_URI` from Secrets Manager, and all MongoDB traffic flows exclusively via PrivateLink from this point on.
 
-**`restart-live-backend` workflow** — implemented at `.github/workflows/restart-live-backend.yml`. Inputs: `service` (choice: `backend` / `worker`), `environment` (dev / sbx / stg / prod), `aws_region`. Resolves the target SSM parameter based on `service`: `backend` → `ecs_service_name`; `worker` → `ecs_worker_service_name`. Calls `aws ecs update-service --force-new-deployment` and polls until steady state (up to 15 minutes). The circuit-breaker rolls back automatically on failure.
+**`restart-live-backend` workflow** — implemented at `.github/workflows/restart-live-backend.yml`. Inputs: `service` (free text: `all` or a comma-separated list such as `auth,backend`), `environment` (dev / sbx / stg / prod), `aws_region`. Resolves the names against the `ecs_services` SSM list (unknown names fail up front with the valid list). Calls `aws ecs update-service --force-new-deployment` and polls until steady state (up to 15 minutes). The circuit-breaker rolls back automatically on failure.
 
 ---
 
@@ -1465,7 +1463,7 @@ Add to `infra-live-backend/terraform/variables.tf`:
 variable "atlas_endpoint_service_name" { default = "" }
 ```
 
-Add the Atlas PrivateLink VPC endpoint resource to `infra-live-backend/terraform/` (e.g. `vpc_endpoints.tf`):
+Add the Atlas PrivateLink VPC endpoint resource to the network module (`modules/network/endpoints.tf`), or alongside it in `infra-live-backend/terraform/`:
 
 ```hcl
 resource "aws_vpc_endpoint" "atlas_privatelink" {

@@ -19,8 +19,8 @@ resource "aws_route53_record" "alb_internal" {
   type    = "A"
 
   alias {
-    name                   = aws_lb.backend.dns_name
-    zone_id                = aws_lb.backend.zone_id
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
     evaluate_target_health = true
   }
 }

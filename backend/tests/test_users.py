@@ -706,12 +706,69 @@ def test_invalid_plan_patches_are_422(db, client, body):
     assert db[models.NINETY_DAY_PLANS].docs == []
 
 
+# ── EDGE-05: plan photos stored as keys, returned as presigned GET URLs ──────
+
+PHOTO_KEY = "uploads/eu/c1/ninety-day-plan/act:m101:sketch/1a2b.webp"
+
+
+BUCKET_URL = "https://superpower-uploads.s3.eu-west-1.amazonaws.com"
+
+
+def test_plan_photos_are_stored_as_keys_and_returned_as_urls(db, client, s3):
+    _child(db, transform_visited=True)
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    # What a client echoes back: the presigned URL it was given, key percent-encoded.
+    echoed = f"{BUCKET_URL}/{PHOTO_KEY.replace(':', '%3A')}?X-Amz-Signature=s"
+    res = _patch_plan(client, photos={"act:m101:sketch": [PHOTO_KEY, echoed]})
+    assert res.status_code == 200
+    [doc] = db[models.NINETY_DAY_PLANS].docs
+    assert doc["photos"] == {"act:m101:sketch": [PHOTO_KEY, PHOTO_KEY]}
+    assert res.json()["photos"] == {
+        "act:m101:sketch": [f"https://signed.example/{PHOTO_KEY}?sig=1"] * 2
+    }
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "https://x.example/a.png",
+        "http://superpower-uploads.s3.eu-west-1.amazonaws.com/uploads/eu/c1/ninety-day-plan/k/a.png",
+        "https://cdn.x/uploads/eu/c1/ninety-day-plan/k/a.png",  # not our bucket host
+        "data:image/png;base64,AAAA",
+        "uploads/eu/c2/ninety-day-plan/k/a.png",  # another child's plan
+        "uploads/eu/c1/9b2f.png",  # this child's avatar, not a plan photo
+    ],
+)
+def test_plan_photos_reject_anything_but_this_plans_uploads(db, client, ref):
+    _child(db, transform_visited=True)
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    res = _patch_plan(client, photos={"k": [ref]})
+    assert res.status_code == 422
+    assert res.json()["detail"] == "photos['k'] must only contain photos uploaded for this plan"
+    assert db[models.NINETY_DAY_PLANS].docs == []
+
+
+def test_plan_read_presigns_photos_and_skips_malformed_entries(db, client, s3):
+    _child(db, transform_visited=True)
+    _plan(db, photos={"k": [PHOTO_KEY, "", 7], "bad": "not-a-list"})
+    app.dependency_overrides[get_settings] = lambda: _upload_settings()
+    res = client.get(f"{PLAN}?child_id=c1", headers=_auth())
+    assert res.json()["photos"] == {"k": [f"https://signed.example/{PHOTO_KEY}?sig=1"]}
+    assert s3.calls == [("get_object", {"Bucket": "superpower-uploads", "Key": PHOTO_KEY}, 3600)]
+
+
+def test_plan_read_with_a_non_dict_photos_value_returns_none(db, client):
+    _child(db, transform_visited=True)
+    _plan(db, photos=["not", "a", "dict"])
+    assert client.get(f"{PLAN}?child_id=c1", headers=_auth()).json()["photos"] == {}
+
+
 # ── 90-day plan photo presign ────────────────────────────────────────────────
 
 
 def _upload_settings(**overrides):
     values = {"uploads_bucket_name": "superpower-uploads", "aws_region": "eu-west-1",
-              "uploads_cdn_domain": "", **overrides}  # fmt: skip
+              **overrides}  # fmt: skip
     return settings.model_copy(update=values)
 
 
@@ -743,22 +800,17 @@ def test_presign_returns_a_put_url_namespaced_by_field(db, client, s3):
     app.dependency_overrides[get_settings] = lambda: _upload_settings()
     res = _presign(client)
     assert res.status_code == 200
-    [(method, params, expires)] = s3.calls
+    # A PUT to upload, then a GET so the client can show it straight away (EDGE-05).
+    [(method, params, expires), get] = s3.calls
     assert (method, expires) == ("put_object", 300)
     assert (params["Bucket"], params["ContentType"]) == ("superpower-uploads", "image/webp")
     assert params["Key"].startswith("uploads/eu/c1/ninety-day-plan/act:m101:sketch/")
     assert params["Key"].endswith(".webp")
+    assert get == ("get_object", {"Bucket": "superpower-uploads", "Key": params["Key"]}, 3600)
     assert res.json() == {
         "upload_url": f"https://signed.example/{params['Key']}?sig=1",
-        "photo_url": f"https://superpower-uploads.s3.eu-west-1.amazonaws.com/{params['Key']}",
+        "photo_url": f"https://signed.example/{params['Key']}?sig=1",
     }
-
-
-def test_presign_uses_the_cdn_when_configured(db, client, s3):
-    _child(db, transform_visited=True)
-    app.dependency_overrides[get_settings] = lambda: _upload_settings(uploads_cdn_domain="cdn.x")
-    res = _presign(client)
-    assert res.json()["photo_url"] == f"https://cdn.x/{s3.calls[0][1]['Key']}"
 
 
 def test_presign_requires_transform(db, client, s3):

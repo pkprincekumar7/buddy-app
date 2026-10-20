@@ -27,7 +27,7 @@ both mapped and blocked, and labels are safe to embed in code.
 | `backend/app/routing_data.py` | **Generated** (committed) | Registration: `country_code` → `location`; validation; blocked-country 403; worker region scoping; Atlas zone script |
 | `frontend/src/lib/countries.ts`, `frontend-app/src/lib/countries.ts` | **Generated** (committed) | Country selector |
 | `frontend/src/lib/locationHint.ts`, `frontend-app/src/lib/locationHint.ts` | **Generated** (committed) | `X-Client-Location` registration hint |
-| `infra-live-edge/terraform/routing.tf` | **Read directly** (`jsondecode(file(...))`) | Lambda@Edge API routing, CloudFront `/uploads/{location}/*` routing, WAF geo-block list |
+| `infra-live-edge/terraform/routing.tf` | **Read directly** (`jsondecode(file(...))`) | Lambda@Edge API routing, WAF geo-block list |
 | `backend/tools/atlas_zone_ranges.py` | Via `routing_data.py` | Atlas zone ranges for the Global Cluster |
 
 Generated files are committed (not built on the fly) because the web frontend's Docker build
@@ -74,7 +74,7 @@ These groupings are engineering defaults, not legal advice.
 |---|---|
 | Add/move a country | Edit `countries`, run the sync, commit. Deploy backend + frontends together. **Existing accounts keep their location** — moving them is a data migration (on a sharded cluster their documents change zone) |
 | New location on an existing region | Add it to that region's `locations` and assign countries to it; sync; apply the edge Terraform; on a Global Cluster, add its zone ranges (`backend/tools/atlas_zone_ranges.py`) |
-| New AWS region | Add it under `regions` (with its `atlas_zone`); sync, commit; deploy the backend there; add it to the edge's `backend_regions` (keep `ap-south-1` first — it's the bootstrap region for login); on a Global Cluster, add the zone |
+| New AWS region | Add it under `regions` (with its `atlas_zone`); sync, commit; deploy the backend there; add it to the edge's `backend_regions` (the bootstrap region for login is the edge workflow's `bootstrap_region` input; `auto` = first of `backend_regions`, a named region must be in `backend_regions`); on a Global Cluster, add the zone |
 | Block/unblock a country | Edit `blocked_countries` (and remove/add it in `countries`); sync; deploy backend + frontends; apply the edge Terraform (WAF) |
 
 The mobile app's copy only updates when users install a new app release.

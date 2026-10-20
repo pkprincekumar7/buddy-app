@@ -70,8 +70,8 @@ MUTANTS: list[tuple[str, str, str]] = [
     # get
     (
         "get: ownership ignored",
-        '        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user)',
-        '        {"_id": child_id}\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user)',
+        '        {"_id": child_id, "user_id": user["_id"], "location": user["location"], "is_deleted": False}\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user, settings)',
+        '        {"_id": child_id}\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user, settings)',
     ),
     # patch
     (
@@ -162,8 +162,8 @@ MUTANTS: list[tuple[str, str, str]] = [
     ),
     (
         "progress: vanished child not 404",
-        '        return_document=True,\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user)\n\n\n@router.delete',
-        '        return_document=True,\n    )\n    return await _child_to_api_with_progress(doc or {"_id": child_id, "created_at": None}, db, user)\n\n\n@router.delete',
+        '        return_document=True,\n    )\n    if not doc:\n        raise HTTPException(status_code=404, detail="Child not found")\n    return await _child_to_api_with_progress(doc, db, user, settings)\n\n\n@router.delete',
+        '        return_document=True,\n    )\n    return await _child_to_api_with_progress(doc or {"_id": child_id, "created_at": None}, db, user, settings)\n\n\n@router.delete',
     ),
     # delete
     (
@@ -225,9 +225,14 @@ MUTANTS: list[tuple[str, str, str]] = [
         "    except ZeroDivisionError as exc:",
     ),
     (
-        "presign: CDN domain ignored",
-        "avatar_url = build_public_url(bucket, region, settings.uploads_cdn_domain, key)",
-        'avatar_url = build_public_url(bucket, region, "", key)',
+        "presign: viewable URL replaced by the bare key",
+        "avatar_url = upload_url_for(key, settings, get_s3_client)",
+        "avatar_url = key",
+    ),
+    (
+        "patch: avatar ownership check skipped (EDGE-05/APP-08)",
+        'set_fields[k] = require_child_upload_key(v, settings, user["location"], child_id)',
+        "set_fields[k] = v",
     ),
     (
         "presign: rate limit 20 -> 200",

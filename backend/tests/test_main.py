@@ -1,10 +1,18 @@
 import asyncio
+import fnmatch
+import json
 import logging
+import os
+import subprocess
+import sys
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
@@ -380,3 +388,140 @@ def test_lifespan_wires_up_and_tears_down(monkeypatch):
         ("close",),
         ("llm-closed",),
     ]
+
+
+def test_lifespan_skips_the_session_sweep_where_auth_isnt_mounted(monkeypatch):
+    class FakeClient:
+        def __init__(self, uri):
+            pass
+
+        def __getitem__(self, name):
+            return SimpleNamespace(name=name)
+
+        def close(self):
+            pass
+
+    async def fake_init_indexes(db):
+        pass
+
+    started = []
+
+    async def fake_cleanup(db):
+        # Record, don't raise: lifespan teardown gathers the task with
+        # return_exceptions=True, which would swallow an exception here.
+        started.append(db.name)
+
+    async def fake_aclose():
+        pass
+
+    monkeypatch.setattr(main, "AsyncIOMotorClient", FakeClient)
+    monkeypatch.setattr(main, "init_indexes", fake_init_indexes)
+    monkeypatch.setattr(main, "_cleanup_expired_sessions", fake_cleanup)
+    monkeypatch.setattr(main.llm_service, "aclose_clients", fake_aclose)
+    monkeypatch.setattr(main.settings, "app_component", "api")
+
+    async def scenario():
+        async with main.lifespan(FastAPI()):
+            for _ in range(3):  # give a created task the chance to run
+                await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert started == [], "the session sweep must not start for APP_COMPONENT=api"
+
+
+# -- APP_COMPONENT router selection ------------------------------------------------
+
+
+# Mirrors http.path_patterns in infra-live-backend/terraform/services.tf, in
+# ALB rule priority order; api is the catch-all for everything else. ALB
+# patterns: '*' matches any characters.
+ALB_PATH_PATTERNS = {
+    "auth": ["/api/v1/auth/*", "/api/v1/user/me"],  # priority 10
+    "admin": ["/api/v1/admin/*"],  # priority 20
+}
+
+
+def _alb_target(path: str) -> str:
+    """The component the ALB forwards `path` to: first matching rule wins."""
+    for component, patterns in ALB_PATH_PATTERNS.items():
+        if any(fnmatch.fnmatchcase(path, p) for p in patterns):
+            return component
+    return "api"
+
+
+def _paths(component: str) -> set[str]:
+    return {
+        f"{main.API_V1_PREFIX}{route.path}"
+        for r in main.routers_for(component)
+        for route in r.routes
+    }
+
+
+@pytest.mark.parametrize("component", ["auth", "admin", "api"])
+def test_the_alb_split_sends_each_route_to_the_component_that_serves_it(component):
+    # /api/v1/user/me is matched exactly, so the users router's other /user/* routes stay on api.
+    paths = _paths(component)
+    assert paths and {_alb_target(p) for p in paths} == {component}
+
+
+def test_the_components_are_disjoint_and_cover_all():
+    parts = [_paths(c) for c in ("auth", "admin", "api")]
+    assert sum(len(p) for p in parts) == len(set().union(*parts))
+    assert set().union(*parts) == _paths("all")
+    assert main.routers_for("worker") == []
+
+
+def test_account_deletion_stays_with_auth():
+    deletes = {
+        f"{main.API_V1_PREFIX}{route.path}"
+        for r in main.routers_for("auth")
+        for route in r.routes
+        if "DELETE" in route.methods
+    }
+    assert f"{main.API_V1_PREFIX}/user/me" in deletes
+
+
+def test_the_default_app_mounts_every_router():
+    mounted = {route.path for route in app.routes}
+    assert _paths("all") <= mounted
+    assert {"/health", "/api/health"} <= mounted
+
+
+@pytest.mark.parametrize("component", ["auth", "admin", "api", "worker"])
+def test_app_component_env_var_decides_what_the_app_mounts(component, tmp_path):
+    # A fresh interpreter, so app.main builds its app from APP_COMPONENT like a
+    # real task does (this process's app is "all"). Runs from an empty
+    # directory so no .env is read.
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode()
+    public = (
+        key.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode()
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("JWT_", "APP_COMPONENT"))}
+    env.update(
+        APP_COMPONENT=component,
+        PYTHONPATH=str(Path(main.__file__).resolve().parents[1]),
+        JWT_PUBLIC_KEYS=json.dumps({"key-v1": public}),
+    )
+    if component == "auth":
+        env["JWT_PRIVATE_KEY"] = private
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, app.main as m; print(json.dumps([r.path for r in m.app.routes]))",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    mounted = set(json.loads(out.strip().splitlines()[-1]))
+    api_paths = {p for p in mounted if p.startswith(main.API_V1_PREFIX)}
+    assert api_paths == _paths(component)
+    assert {"/health", "/api/health"} <= mounted

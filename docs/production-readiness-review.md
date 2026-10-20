@@ -111,11 +111,11 @@ As it stands it suits a **small/medium production load in one primary region**, 
 
 | ID | Severity | Area | Title | Status |
 |----|----------|------|-------|--------|
-| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | ⬜ Open |
-| EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | ⬜ Open |
-| EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | ⬜ Open |
-| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ⬜ Open |
-| EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ⬜ Open |
+| EDGE-01 | 🔴 Critical (⏸ deferred to Global Cluster stage) | Edge | Login/google/health depend on a single region | 🟡 Stage 1 done (per-run `bootstrap_region` input, default `auto`); Stage 2 open |
+| EDGE-02 | 🔴 Critical | Edge | Origin-verify secret is plaintext in Lambda@Edge code | 🟡 Code done; rotation runbook not yet exercised (rotate once after deploy) |
+| EDGE-03 | 🔴 Critical | Edge | 404s rewritten to 200 + `index.html` distribution-wide | 🟡 Code done; acceptance checks need a deployed env |
+| EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
+| EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | ⬜ Open |
 | SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ⬜ Open |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open |
@@ -126,13 +126,13 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | SEC-08 | 🟠 High | Security | GuardDuty Runtime Monitoring doesn't cover Fargate | ⬜ Open |
 | SEC-09 | 🟡 Medium | Security | CloudTrail design: per-region trails, gaps, no `SourceArn` | ⬜ Open |
 | APP-01 | 🟠 High | App | IP rate limits use the spoofable leftmost `X-Forwarded-For` | ⬜ Open |
-| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ⬜ Open |
+| APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | ⬜ Open |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | ⬜ Open |
 | APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ⬜ Open |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | ⬜ Open |
 | APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | ⬜ Open |
-| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | ⬜ Open |
+| APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
 | APP-09 | 🟠 High | App | No request-body size limit; uploads spooled before auth | ⬜ Open |
 | APP-10 | 🟠 High | App | Child documents can grow without bound | ⬜ Open |
 | APP-11 | 🟢 Low | App | Misc backend hygiene | ⬜ Open |
@@ -170,10 +170,10 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ⬜ Open |
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ⬜ Open |
-| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ⬜ Open |
-| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | ⬜ Open |
+| NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
+| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
-| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | ⬜ Open |
+| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Fix 1 done for API and worker (1 vCPU / 2 GB, desired = min); load test, max counts and fixes 2–9 open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | ⬜ Open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ⬜ Open |
@@ -190,7 +190,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ⬜ Open |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | ⬜ Open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | ⬜ Open |
-| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | ⬜ Open |
+| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
@@ -219,8 +219,10 @@ As it stands it suits a **small/medium production load in one primary region**, 
   - careful handling of non-idempotent `register` during failover.
 - Either way, make the bootstrap list an **explicit variable** (`bootstrap_regions = [...]`) instead of taking `[0]` implicitly.
 > ⏸ **v4: deferred to DB-01 Stage 2 (Global Cluster).** In the near term the DB is an M10/M20 replica set **in ap-south-1 only**, so an ap-south-1 outage is a total outage whatever the edge does. Failing login over to eu-west-1/us-east-1 adds little availability, and it adds cross-region DB latency to every login. Until Stage 2:
-> - keep `ap-south-1` as the bootstrap region **explicitly** (make it a named variable, not `backend_regions[0]`);
+> - make the bootstrap region an apply-time choice (a named variable, not only `backend_regions[0]`);
 > - see DEC-01.
+>
+> ✅ **Stage 1 implemented (2026-10-19):** `var.bootstrap_region` is the `bootstrap_region` input of `terraform-live-edge.yml` / `terraform-live-all.yml`. `auto` (default) keeps the first region in `backend_regions`; a named region must be in `backend_regions`, or plan fails. It is **not** pinned to ap-south-1: the Atlas cluster is reachable from every backend region via its Mongo URI, so any deployed region can serve login (at the cost of cross-region DB latency). The choice is **per run**: a run that doesn't pass it (e.g. the daily scheduler) uses `auto`.
 >
 > Implement the full fix when the Global Cluster exists.
 
@@ -236,7 +238,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 - Lambda@Edge already overrides `request.origin`, which bypasses group failover.
 
 **Acceptance criteria:**
-- **Stage 1 (now, interim):** `cloudfront.tf` uses an explicit `var.bootstrap_region = "ap-south-1"` (no `backend_regions[0]`), and reordering `backend_regions` doesn't change the plan.
+- **Stage 1 (now, interim):** `cloudfront.tf` takes the bootstrap region from `var.bootstrap_region` (default `auto` = `backend_regions[0]`); with a named region, changing the `backend_regions` selection doesn't move it, and a named region outside `backend_regions` fails the plan.
 - **Stage 2:** with the bootstrap region's API scaled to 0 (in stg), login/google/register still succeed via another region.
 - **Stage 2:** the bootstrap region selection is documented in `docs/infra-architecture-multi-region.md`.
 
@@ -300,6 +302,17 @@ custom_error_response {
 - `GET /some/spa/route` → 200 `index.html`.
 - `GET /assets/missing.js` → 404.
 - `GET /uploads/<missing>` → 403/404, never `index.html`.
+- After the first deploy, the published function behaves the same in the real CloudFront runtime as in the Node unit tests (`spa-rewrite.test.js`). `/Login` → `/index.html`; `/assets/x.js` and `/api/v1/x` unchanged:
+  ```bash
+  ETAG=$(aws cloudfront describe-function --name "<app>-<env>-spa-rewrite" --stage LIVE --query ETag --output text)
+  EVT=$(mktemp)
+  for uri in /Login /assets/x.js /api/v1/x; do
+    echo "{\"version\":\"1.0\",\"context\":{\"eventType\":\"viewer-request\"},\"viewer\":{\"ip\":\"198.51.100.1\"},\"request\":{\"method\":\"GET\",\"uri\":\"$uri\",\"querystring\":{},\"headers\":{},\"cookies\":{}}}" > "$EVT"
+    aws cloudfront test-function --name "<app>-<env>-spa-rewrite" --if-match "$ETAG" --stage LIVE \
+      --event-object "fileb://$EVT" --query 'TestResult.FunctionOutput' --output text
+  done
+  rm -f "$EVT"
+  ```
 
 ---
 
@@ -332,6 +345,8 @@ custom_error_response {
    - The revocation check in `deps.py:70-79` depends on `iat`.
    - PyJWT 2.15 also raises `ImmatureSignatureError` for a future `iat`. Tokens are minted in the bootstrap region and verified elsewhere, so the leeway also absorbs clock skew.
    - Cache the parsed key objects: today PyJWT re-parses the PEM on every encode and up to twice per request.
+> ✅ **v6 (2026-10-19): `iss`/`aud` implemented in one step**, not the three below. Every environment starts with a fresh database, so there are no live sessions to keep. `iss` = `<app_name>-<environment>`, `aud` = `<app_name>-api`, stamped by the backend's `_encode()` and required by `decode_verified()` and the Lambda's `verifyJwt()`. Both values are built by Terraform from the same expressions in `infra-live-backend/terraform/ecs.tf` and `infra-live-edge/terraform/lambda_edge.tf`. Use the three-step order below for an environment that does have live users.
+
 3. **Optional `iss`/`aud` (three-step rollout):**
    1. Deploy decoders that accept tokens **with or without** the claims: `options={"verify_aud": False}`, then check `aud`/`iss` manually when present.
    2. Start issuing tokens with `aud`/`iss`.
@@ -370,6 +385,8 @@ custom_error_response {
 - Deleted photos stay at the edge for up to 24 h, which conflicts with the "delete all data" flow (`auth.py:672`).
 
 > v2 correction: keys are **already unguessable**. `build_upload_key` ends in `uuid.uuid4()` (`backend/app/services/s3_uploads.py:61-62`).
+
+> ✅ **v6 (2026-10-19): implemented with S3 presigned GET URLs instead of CloudFront signed URLs.** CloudFront signing needs its own RSA key pair, key group, a key-ID hand-off between stacks, a staged rollout and its own rotation. Presigned GETs are signed with the API task role's temporary credentials, so there's nothing to manage. Accepted trade-offs: photos aren't edge-cached, each read returns a new URL (no browser cache reuse), and a URL can end early (worst case about 15 min) if the role's credentials expire first. The `/uploads/*` CloudFront behaviours, origins, OAC and bucket policies were removed, so the bucket is readable only through presigned URLs. Keys-only storage, the per-child ownership check (APP-08) and same-named API fields were kept. See `docs/infra-operations.md` "Photo URLs (EDGE-05)".
 
 **Fix (signed URLs recommended):**
 1. **CloudFront signed URLs** with a trusted key group on `/uploads/*`:
@@ -635,7 +652,7 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 - Update `docs/jwt-keys.md`. Note that the backend currently has **no** `JWT_PUBLIC_KEYS` setting at all; `jwt-keys.md:13` lists it as edge-only.
 
 ⚠️ **Pitfalls:**
-- Login tokens are minted in the **bootstrap region** (`var.bootstrap_region`, ap-south-1; EDGE-01 interim) and verified in the **home region**. The `kid` → key map must be identical in **every** region. Switch the signer to the new key only after every region (backend and edge) holds the new public key.
+- Login tokens are minted in the **bootstrap region** (`local.bootstrap_region`: the `bootstrap_region` input, or the first of `backend_regions` when `auto`; EDGE-01 interim) and verified in the **home region**. The `kid` → key map must be identical in **every** region. Switch the signer to the new key only after every region (backend and edge) holds the new public key.
 - Confirm that dev, stg and prod use **different** key pairs. With no `iss`/`aud`, the key is the only thing stopping a dev token from working in prod.
 
 **Acceptance criteria:**
@@ -1638,6 +1655,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 **Acceptance criteria:** Every (environment, region) pair has a unique CIDR; private capacity is ≥ 3× the maximum task count.
 
+> ✅ **v6 (2026-10-19): implemented** before any environment was deployed, so nothing had to be replaced. `vpc_cidrs` in each `tfvars/<env>.tfvars` gives one `/16` per region: dev `10.2–4`, stg `10.12–14`, prod `10.22–24`, sbx `10.32–34`, ap-south-1 first. All three regions are listed even when not deployed, so their blocks are reserved. `vpc.tf` derives public `/24` ×3 (`10.x.1–3.0`) and private `/20` ×3 (`10.x.16/32/48.0`): about 12,270 private IPs per region against a prod peak of about 520. Terraform validates the shape (`10.x.0.0/16`) and uniqueness within an environment; uniqueness across environments follows the numbering plan. **Still to do at DB-01 Stage 1:** set the Atlas project's AWS CIDR for ap-south-1 (outside `10.0.0.0/8`, e.g. `192.168.248.0/21`) **before** creating the first dedicated cluster. It can't be changed afterwards.
+
 ---
 
 ## Terraform structure & configuration
@@ -1658,6 +1677,25 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
    - the comment at `terraform-live-backend.yml:184` ("does not support dynamic secret references") is wrong.
 4. Replace the dropdown with a comma-separated input validated against the allow-list.
 5. Commit `.terraform.lock.hcl` (`terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`) and use `init -lockfile=readonly` in CI.
+
+> ✅ **v6 (2026-10-19): fixes 3 and 5 done, plus the edge part of 2.**
+> - **Lock files:** a `.terraform.lock.hcl` is committed per stack (linux_amd64, darwin_arm64 and darwin_amd64 hashes), and the four Terraform workflows run `init -lockfile=readonly`.
+> - **Per-region values:** they're now environment **variables** holding JSON maps keyed by region (`ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES`, `REGIONAL_LOGGING_BUCKET_NAMES`), read with `jq`/`fromJSON`. The suggested `vars[format('ACM_CERTIFICATE_ARN_{0}', …)]` **doesn't work**: GitHub expressions have no `upper()`/`replace()` to turn `ap-south-1` into `AP_SOUTH_1`, and variable names can't contain hyphens.
+> - **Edge providers:** `infra-live-edge` no longer has per-region providers or bucket lookups. After EDGE-05 they only built CSP hosts, which now come straight from `uploads_bucket_names`.
+>
+> **Modules (1), v6:** `modules/network`, `modules/ecs-service` (used for both the API and the worker), `modules/alb` and `modules/redis`, called from `infra-live-backend`. AWS names are unchanged; only Terraform addresses moved. No environment had state yet, so no `moved {}` blocks were needed. Each module has `terraform test` coverage against a mock provider, and `infra-live-backend/terraform/tests/stack.tftest.hcl` checks the wiring, including the exact pre-module env var lists. CI and `check.sh` lint, scan and test `modules/`. See `modules/README.md`.
+>
+> **Services, v6:** every ECS service is one entry in `local.services` (`infra-live-backend/terraform/services.tf`). Its task role, security group, log group, ECS service, scaling and alarms are created with `for_each`, and it's listed in the `ecs_services` SSM parameter. The deploy, restart and promote workflows read that list (shared logic in `scripts/ecs-services.sh`, tested against a fake aws CLI), so a new service needs no workflow change. Multi-service ALB routing is deferred until an HTTP service is added; Terraform refuses a second `http` entry until then.
+>
+> **Auth/API split, v7 (2026-10-20):** the ALB now routes to several HTTP services (`modules/alb` `targets`: one target group and listener rule each, path-routed rules first and one catch-all last, all requiring `X-Origin-Verify`). The backend is split into four services from one image, picked by `APP_COMPONENT`:
+> - `auth` serves `/api/v1/auth/*` plus `DELETE /api/v1/user/me` (account deletion stays in auth, on the shared DB). It is the only service that holds `JWT_PRIVATE_KEY` and mints tokens.
+> - `backend` (`api`) is the catch-all. It verifies tokens with `JWT_PUBLIC_KEYS` only, so a compromised API task can't forge tokens.
+> - `admin` serves `/api/v1/admin/*` (ALB priority 20). Like the API, it verifies with `JWT_PUBLIC_KEYS` only, and its only secrets are `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
+> - `worker` has no JWT keys.
+>
+> `JWT_PUBLIC_KEYS` is now required by the backend workflow, which checks that its `JWT_KEY_ID` entry matches `JWT_PRIVATE_KEY`. No edge change is needed.
+>
+> **Still open:** the region-list source (2) and the dropdown (4).
 
 ⚠️ **Pitfall:** use `moved {}` blocks. The refactor plan must show **0 to destroy**.
 
@@ -1692,6 +1730,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ### TF-03 — Prod sizing: single-process uvicorn makes CPU scaling inert 🟠 (v2: raised)
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars`, `backend/Dockerfile:52` (uvicorn, no `--workers`), `ecs.tf:31,151,287`.
+
+> 🟡 **v7 (2026-10-20): fix 1 done for the API and worker.** In stg and prod, `backend` and `worker` are now **1024 / 2048** (one process per task; the ADOT sidecar takes 256 / 512 of that). Prod keeps the same minimums (15 API, 5 worker), so the process count, and so the Mongo connection count, is unchanged.
+> - `desired_count` now equals the minimum for the API, worker and auth (only used on the first apply).
+> - `docs/aws-cost-estimate.md` has been recalculated.
+> - **Still open:**
+>   - the stg load test;
+>   - setting the max counts from DB-02's connection budget (fix 8);
+>   - the same reasoning for `auth`, which is still 2048 / 4096 in prod; bcrypt runs in threads, so measure before shrinking it;
+>   - fixes 2–7 and 9.
 
 **Problems:**
 - **Single-process uvicorn on a 4 vCPU task** uses at most about 1 vCPU, roughly 25% task CPU. The 60% CPU target-tracking policy and the 85% CPU alarms **can never fire**, so scaling happens only on request count and memory. The worker is also one asyncio process on 4 vCPU.
@@ -2108,6 +2155,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 - On a worker failure in `all` mode, either roll the API back or clearly flag the mismatch.
 
 **Acceptance criteria:** A concurrent `all` deploy and `backend` restart are serialised.
+
+> 🟡 **v7 (2026-10-20): first fix done.** deploy, promote and restart now lock on `deploy-live-backend-superpower-<env>` only (promote on the target environment). This matters more now that `service` is free text: `all`, `backend` and `worker, backend` would otherwise be three locks over the same services. **Still open:** a failed rollout part-way through `all` still leaves earlier services (now auth, admin, backend) on the new image and later ones on the old; nothing reconciles or flags it.
 
 ---
 
