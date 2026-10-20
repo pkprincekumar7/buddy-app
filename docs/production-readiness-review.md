@@ -171,9 +171,9 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | ⬜ Open |
 | OBS-03 | 🟡 Medium | Observability | Dead workers raise no alarm | ⬜ Open |
 | NET-01 | 🟠 High if DEC-01 = B / 🟡 Medium if A | Network | Prod VPC CIDRs identical in every region (blocks cross-region private DB access if DEC-01 = B) | ✅ Done (Atlas CIDR to set at cluster creation) |
-| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | ⬜ Open |
+| TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
-| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | ⬜ Open |
+| TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Fix 1 done for API and worker (1 vCPU / 2 GB, desired = min); load test, max counts and fixes 2–9 open |
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | ⬜ Open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ⬜ Open |
@@ -190,7 +190,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | ⬜ Open |
 | CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | ⬜ Open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | ⬜ Open |
-| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | ⬜ Open |
+| CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
 | CI-14 | 🟡 Medium | Pipelines | Promote reads PRIMARY even while it's still rolling out | ⬜ Open |
 | CI-15 | 🟡 Medium | Pipelines | Terraform CI checks thinner than documented | ⬜ Open |
@@ -1678,6 +1678,25 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 4. Replace the dropdown with a comma-separated input validated against the allow-list.
 5. Commit `.terraform.lock.hcl` (`terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`) and use `init -lockfile=readonly` in CI.
 
+> ✅ **v6 (2026-10-19): fixes 3 and 5 done, plus the edge part of 2.**
+> - **Lock files:** a `.terraform.lock.hcl` is committed per stack (linux_amd64, darwin_arm64 and darwin_amd64 hashes), and the four Terraform workflows run `init -lockfile=readonly`.
+> - **Per-region values:** they're now environment **variables** holding JSON maps keyed by region (`ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES`, `REGIONAL_LOGGING_BUCKET_NAMES`), read with `jq`/`fromJSON`. The suggested `vars[format('ACM_CERTIFICATE_ARN_{0}', …)]` **doesn't work**: GitHub expressions have no `upper()`/`replace()` to turn `ap-south-1` into `AP_SOUTH_1`, and variable names can't contain hyphens.
+> - **Edge providers:** `infra-live-edge` no longer has per-region providers or bucket lookups. After EDGE-05 they only built CSP hosts, which now come straight from `uploads_bucket_names`.
+>
+> **Modules (1), v6:** `modules/network`, `modules/ecs-service` (used for both the API and the worker), `modules/alb` and `modules/redis`, called from `infra-live-backend`. AWS names are unchanged; only Terraform addresses moved. No environment had state yet, so no `moved {}` blocks were needed. Each module has `terraform test` coverage against a mock provider, and `infra-live-backend/terraform/tests/stack.tftest.hcl` checks the wiring, including the exact pre-module env var lists. CI and `check.sh` lint, scan and test `modules/`. See `modules/README.md`.
+>
+> **Services, v6:** every ECS service is one entry in `local.services` (`infra-live-backend/terraform/services.tf`). Its task role, security group, log group, ECS service, scaling and alarms are created with `for_each`, and it's listed in the `ecs_services` SSM parameter. The deploy, restart and promote workflows read that list (shared logic in `scripts/ecs-services.sh`, tested against a fake aws CLI), so a new service needs no workflow change. Multi-service ALB routing is deferred until an HTTP service is added; Terraform refuses a second `http` entry until then.
+>
+> **Auth/API split, v7 (2026-10-20):** the ALB now routes to several HTTP services (`modules/alb` `targets`: one target group and listener rule each, path-routed rules first and one catch-all last, all requiring `X-Origin-Verify`). The backend is split into four services from one image, picked by `APP_COMPONENT`:
+> - `auth` serves `/api/v1/auth/*` plus `DELETE /api/v1/user/me` (account deletion stays in auth, on the shared DB). It is the only service that holds `JWT_PRIVATE_KEY` and mints tokens.
+> - `backend` (`api`) is the catch-all. It verifies tokens with `JWT_PUBLIC_KEYS` only, so a compromised API task can't forge tokens.
+> - `admin` serves `/api/v1/admin/*` (ALB priority 20). Like the API, it verifies with `JWT_PUBLIC_KEYS` only, and its only secrets are `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
+> - `worker` has no JWT keys.
+>
+> `JWT_PUBLIC_KEYS` is now required by the backend workflow, which checks that its `JWT_KEY_ID` entry matches `JWT_PRIVATE_KEY`. No edge change is needed.
+>
+> **Still open:** the region-list source (2) and the dropdown (4).
+
 ⚠️ **Pitfall:** use `moved {}` blocks. The refactor plan must show **0 to destroy**.
 
 **Acceptance criteria:** A fourth region is a config-only change; the refactor plan shows only moves.
@@ -1711,6 +1730,15 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 ### TF-03 — Prod sizing: single-process uvicorn makes CPU scaling inert 🟠 (v2: raised)
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars`, `backend/Dockerfile:52` (uvicorn, no `--workers`), `ecs.tf:31,151,287`.
+
+> 🟡 **v7 (2026-10-20): fix 1 done for the API and worker.** In stg and prod, `backend` and `worker` are now **1024 / 2048** (one process per task; the ADOT sidecar takes 256 / 512 of that). Prod keeps the same minimums (15 API, 5 worker), so the process count, and so the Mongo connection count, is unchanged.
+> - `desired_count` now equals the minimum for the API, worker and auth (only used on the first apply).
+> - `docs/aws-cost-estimate.md` has been recalculated.
+> - **Still open:**
+>   - the stg load test;
+>   - setting the max counts from DB-02's connection budget (fix 8);
+>   - the same reasoning for `auth`, which is still 2048 / 4096 in prod; bcrypt runs in threads, so measure before shrinking it;
+>   - fixes 2–7 and 9.
 
 **Problems:**
 - **Single-process uvicorn on a 4 vCPU task** uses at most about 1 vCPU, roughly 25% task CPU. The 60% CPU target-tracking policy and the 85% CPU alarms **can never fire**, so scaling happens only on request count and memory. The worker is also one asyncio process on 4 vCPU.
@@ -2127,6 +2155,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 - On a worker failure in `all` mode, either roll the API back or clearly flag the mismatch.
 
 **Acceptance criteria:** A concurrent `all` deploy and `backend` restart are serialised.
+
+> 🟡 **v7 (2026-10-20): first fix done.** deploy, promote and restart now lock on `deploy-live-backend-superpower-<env>` only (promote on the target environment). This matters more now that `service` is free text: `all`, `backend` and `worker, backend` would otherwise be three locks over the same services. **Still open:** a failed rollout part-way through `all` still leaves earlier services (now auth, admin, backend) on the new image and later ones on the old; nothing reconciles or flags it.
 
 ---
 

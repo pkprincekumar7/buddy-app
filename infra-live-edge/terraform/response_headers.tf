@@ -37,17 +37,17 @@
 # ---------------------------------------------------------------------------
 
 locals {
-  # One entry per active region's uploads bucket, both the global and
-  # region-specific S3 endpoint forms (boto3's presigned URL may use either) —
-  # see data.tf's regional_uploads_buckets. The presigned PUT itself goes
-  # straight from the browser to S3, bypassing CloudFront, so every active
-  # region must be allow-listed here or the browser blocks the upload.
-  uploads_connect_src_origins = flatten([
-    for region, bucket in local.regional_uploads_buckets : [
-      "https://${bucket.bucket}.s3.amazonaws.com",
-      "https://${bucket.bucket}.s3.${region}.amazonaws.com",
-    ]
-  ])
+  # One entry per active region's uploads bucket, on its regional endpoint —
+  # the only form the backend's S3 client presigns (SigV4 + regional endpoint,
+  # backend/app/services/s3_uploads.py). The presigned PUT goes straight from
+  # the browser to S3, bypassing CloudFront, so every active region must be
+  # allow-listed here or the browser blocks the upload. Built from the bucket
+  # names alone: no per-region provider or lookup needed (TF-01), so a new
+  # region is just another key in var.uploads_bucket_names.
+  uploads_connect_src_origins = [
+    for region in var.backend_regions :
+    "https://${var.uploads_bucket_names[region]}.s3.${region}.amazonaws.com"
+  ]
 }
 
 resource "aws_cloudfront_response_headers_policy" "frontend_security" {

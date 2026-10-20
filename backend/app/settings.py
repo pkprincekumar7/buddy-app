@@ -1,5 +1,6 @@
 import logging
 from functools import lru_cache
+from typing import Literal
 
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
@@ -36,13 +37,35 @@ class Settings(BaseSettings):
             )
         return v
 
+    # Which part of the API this process serves — one image, several ECS
+    # services (infra-live-backend/terraform/services.tf):
+    #   auth   — /api/v1/auth/* (register, login, Google, refresh, logout, me)
+    #            and DELETE /api/v1/user/me (account deletion); the ONLY
+    #            component that mints tokens
+    #   admin  — /api/v1/admin/*; verifies tokens with JWT_PUBLIC_KEYS only
+    #   api    — everything else under /api/v1 (the ALB's catch-all); verifies
+    #            tokens with JWT_PUBLIC_KEYS only
+    #   worker — the job worker (worker.py); neither mints nor verifies tokens
+    #   all    — every router, mints and verifies (local dev, tests, single-
+    #            service deployments)
+    app_component: Literal["all", "auth", "admin", "api", "worker"] = Field(
+        default="all",
+        validation_alias=AliasChoices("APP_COMPONENT", "app_component"),
+    )
+
+    # Required where tokens are minted (auth / all) and refused everywhere
+    # else, so a compromised admin, API or worker task can't forge tokens —
+    # even if the secret is mis-scoped onto it.
     jwt_private_key: str = Field(
+        default="",
         validation_alias=AliasChoices("JWT_PRIVATE_KEY", "jwt_private_key"),
     )
 
     @field_validator("jwt_private_key")
     @classmethod
     def validate_jwt_private_key(cls, v: str) -> str:
+        if not v:
+            return ""  # whether that's allowed depends on app_component — see below
         # Docker Compose .env files don't support multiline values.
         # The key may be stored as a single line with literal \n escape sequences.
         v = v.replace("\\n", "\n")
@@ -110,14 +133,31 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("JWT_AUDIENCE", "jwt_audience"),
     )
 
+    @property
+    def can_mint_tokens(self) -> bool:
+        """True for the components that issue tokens (auth, all)."""
+        return self.app_component in ("all", "auth")
+
     @model_validator(mode="after")
     def derive_jwt_public_key(self) -> "Settings":
-        private_key = load_pem_private_key(self.jwt_private_key.encode(), password=None)
-        public_pem = (
-            private_key.public_key()
-            .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
-            .decode()
-        )
+        if self.can_mint_tokens and not self.jwt_private_key:
+            raise ValueError(
+                f"JWT_PRIVATE_KEY is required for APP_COMPONENT={self.app_component} (it mints "
+                "tokens). Generate one with: openssl genrsa -out jwt_private.pem 2048"
+            )
+        if not self.can_mint_tokens and self.jwt_private_key:
+            raise ValueError(
+                f"JWT_PRIVATE_KEY must not be set for APP_COMPONENT={self.app_component} — only "
+                "auth (or all) mints tokens. Remove it from this service's secrets."
+            )
+        public_pem = ""
+        if self.jwt_private_key:
+            private_key = load_pem_private_key(self.jwt_private_key.encode(), password=None)
+            public_pem = (
+                private_key.public_key()
+                .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+                .decode()
+            )
         object.__setattr__(self, "jwt_public_key", public_pem)
 
         keys: dict[str, str] = {}
@@ -130,13 +170,28 @@ class Settings(BaseSettings):
             keys[kid] = public_key.public_bytes(
                 Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
             ).decode()
-        listed = keys.get(self.jwt_key_id)
-        if listed is not None and listed != public_pem:
-            raise ValueError(
-                f"JWT_PUBLIC_KEYS[{self.jwt_key_id!r}] doesn't match JWT_PRIVATE_KEY — the "
-                "signing key's kid must map to its own public key (check JWT_KEY_ID)"
-            )
-        keys[self.jwt_key_id] = public_pem
+        if public_pem:
+            listed = keys.get(self.jwt_key_id)
+            if listed is not None and listed != public_pem:
+                raise ValueError(
+                    f"JWT_PUBLIC_KEYS[{self.jwt_key_id!r}] doesn't match JWT_PRIVATE_KEY — the "
+                    "signing key's kid must map to its own public key (check JWT_KEY_ID)"
+                )
+            keys[self.jwt_key_id] = public_pem
+        elif self.app_component in ("admin", "api"):
+            if not keys:
+                raise ValueError(
+                    f"JWT_PUBLIC_KEYS is required for APP_COMPONENT={self.app_component} — it "
+                    "has no private key to derive a verification key from. See docs/jwt-keys.md."
+                )
+            # Without the current kid's key every token auth issues is a 401
+            # (e.g. JWT_KEY_ID bumped mid-rotation before JWT_PUBLIC_KEYS).
+            if self.jwt_key_id not in keys:
+                raise ValueError(
+                    f"JWT_PUBLIC_KEYS has no entry for JWT_KEY_ID {self.jwt_key_id!r} — "
+                    f"APP_COMPONENT={self.app_component} would reject every token auth signs "
+                    "with it. Add the key before switching JWT_KEY_ID; see docs/jwt-keys.md."
+                )
         object.__setattr__(self, "jwt_verification_keys", keys)
         return self
 
@@ -317,7 +372,7 @@ class Settings(BaseSettings):
         return self
 
 
-settings = Settings()  # type: ignore[call-arg]  # pydantic-settings loads required fields from env
+settings = Settings()
 
 
 @lru_cache

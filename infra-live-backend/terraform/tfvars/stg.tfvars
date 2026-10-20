@@ -20,10 +20,12 @@ elasticache_node_type     = "cache.t3.medium"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
-# ECS
-task_cpu      = 512
-task_memory   = 1024
-desired_count = 1
+# ECS — API. One uvicorn process per task (backend/Dockerfile), so ~1 vCPU is
+# all it can use: scale out with more tasks, not bigger ones (TF-03). The ADOT
+# sidecar takes 256 CPU / 512 MiB of this, leaving the app 768 / 1536.
+task_cpu      = 1024
+task_memory   = 2048
+desired_count = 2 # = api_min_capacity; only used on the first apply
 
 # Application
 llm_timeout_seconds = 60
@@ -35,17 +37,32 @@ llm_hourly_limit    = 100
 enable_execute_command = true
 
 # Worker ECS
-worker_task_cpu              = 512
-worker_task_memory           = 1024
+# One asyncio process, I/O-bound on LLM calls — same sizing reasoning as the API.
+worker_task_cpu              = 1024
+worker_task_memory           = 2048
 worker_desired_count         = 1
 worker_concurrency           = 3
 worker_poll_interval_seconds = 3
+
+# Auth ECS (login/register are bcrypt-bound — scales on CPU)
+auth_task_cpu      = 512
+auth_task_memory   = 1024
+auth_desired_count = 2 # = auth_min_capacity
+
+# Admin ECS (/api/v1/admin/* — low traffic)
+admin_task_cpu      = 512
+admin_task_memory   = 1024
+admin_desired_count = 1
 
 # Autoscaling
 api_min_capacity    = 2
 api_max_capacity    = 10
 worker_min_capacity = 1
 worker_max_capacity = 5
+auth_min_capacity   = 2
+auth_max_capacity   = 4
+admin_min_capacity  = 1
+admin_max_capacity  = 2
 
 # Observability — stg: 30-day retention, ALB alarms only, no dashboard, no email alerts
 log_retention_days         = 30

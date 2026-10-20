@@ -272,6 +272,6 @@ Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_uploa
 For deployed environments (dev/stg/prod), the uploads bucket is also created manually but all access control is managed by Terraform — **do not** relax Block Public Access or add a bucket policy manually. After creating the bucket:
 
 1. Create the bucket in `ap-south-1` with all Block Public Access settings **ON** (the default)
-2. Add the bucket name as the `UPLOADS_BUCKET_NAME_AP_SOUTH_1` GitHub environment secret (already used by `terraform-live-backend.yml` and `terraform-live-edge.yml`)
+2. Add the bucket name to the `UPLOADS_BUCKET_NAMES` GitHub environment **variable** (a JSON map, e.g. `{"ap-south-1": "<bucket>"}`; used by `terraform-live-backend.yml` and `terraform-live-edge.yml`, see [ci-cd.md](ci-cd.md))
 3. Apply `infra-live-backend` — sets up CORS (for presigned PUT), lifecycle, and IAM (`s3:PutObject` and `s3:GetObject` for presigned URL generation)
 4. Apply `infra-live-edge` — adds the bucket's host to the CSP `connect-src` so the browser may PUT to it

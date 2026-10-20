@@ -49,8 +49,10 @@ Example with `SUBDOMAIN=superpower`, `DOMAIN_NAME=example.com`, environment `qa`
 
 - Environment id: lowercase letters/digits, short (`qa`, `perf`, `uat`).
 - `APP_NAME`: lowercase letters, digits and hyphens.
-- **`APP_NAME` + environment id together must be at most 19 characters** — the ALB name
-  `<APP_NAME>-backend-alb-<env>` has a 32-character AWS limit. (`superpower` + `perf` = 14 ✓.)
+- **`APP_NAME` + environment id together must be at most 15 characters.** The longest AWS name
+  is the API's target group, `<APP_NAME>-backend-tg-<env>-xxxx` (a 4-character hash, see
+  `modules/alb`), and target group names have a 32-character limit. Terraform refuses a longer
+  one at plan time. (`superpower` + `perf` = 14 ✓.)
 - Only the literal name `prod` gets prod behaviour (bare hostname, no nightly-destroy schedule).
   Any other name is treated as non-prod.
 
@@ -106,12 +108,12 @@ Settings that matter (backend):
 
 | Setting | Notes |
 |---|---|
-| `vpc_cidrs` | A map with one `/16` **per region** for this environment, listing all three regions even if not deployed yet, so each block is reserved. Pattern: `10.<base>`, `10.<base+1>`, `10.<base+2>` for ap-south-1, eu-west-1, us-east-1 (existing bases: dev `2`, stg `12`, prod `22`, sbx `32`), e.g. qa `10.42`/`10.43`/`10.44`. Every (environment, region) pair must be unique so VPCs can be peered later (NET-01). Values must be `10.x.0.0/16`; Terraform checks the shape and per-environment uniqueness. Subnets are derived in `vpc.tf` (public `/24` ×3, private `/20` ×3), not configured. |
+| `vpc_cidrs` | A map with one `/16` **per region** for this environment, listing all three regions even if not deployed yet, so each block is reserved. Pattern: `10.<base>`, `10.<base+1>`, `10.<base+2>` for ap-south-1, eu-west-1, us-east-1 (existing bases: dev `2`, stg `12`, prod `22`, sbx `32`), e.g. qa `10.42`/`10.43`/`10.44`. Every (environment, region) pair must be unique so VPCs can be peered later (NET-01). Values must be `10.x.0.0/16`; Terraform checks the shape and per-environment uniqueness. Subnets are derived in `modules/network` (public `/24` ×3, private `/20` ×3), not configured. |
 | `nat_gateway_count` | 1–3. Each NAT uses one Elastic IP — counts toward the account's per-region EIP quota (section 5). |
 | `elasticache_node_type`, `elasticache_replica_count`, `elasticache_multi_az` | `multi_az = true` needs `replica_count >= 1`. |
-| `task_cpu`/`task_memory`, `worker_*`, `api_min/max_capacity`, `worker_min/max_capacity` | Sizing. Counts toward the account's Fargate vCPU quota (section 5). |
+| `task_cpu`/`task_memory`, `worker_*`, `auth_*`, `admin_*`, `api_min/max_capacity`, `worker_min/max_capacity` | Sizing for the four services (API, worker, auth, admin). All of them count toward the account's Fargate vCPU quota (section 5). With `enable_adot_sidecar = true` a task must be at least 512 / 1024; dev/sbx run 256 / 512 with it off. |
 | `enable_guardduty` | **See section 5 — at most one environment per AWS account.** |
-| `enable_cloudtrail`, `enable_alb_access_logs` | Write to `REGIONAL_LOGGING_BUCKET_NAME_<REGION>`. |
+| `enable_cloudtrail`, `enable_alb_access_logs` | Write to that region's `REGIONAL_LOGGING_BUCKET_NAMES` entry. |
 | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule` | Observability level. |
 | `enable_ops_email` | `true` requires the `OPS_EMAIL` secret. |
 | `enable_execute_command` | ECS Exec shell access (keep `false` for prod-like data). |
@@ -161,13 +163,13 @@ These are the only things that can collide. Everything else is unique by name au
 
 | Thing | Rule | Why |
 |---|---|---|
-| S3 buckets: `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, `UPLOADS_BUCKET_NAME_<REGION>` | Never share between environments. | The edge/frontend stacks replace the bucket's whole policy with one that trusts only this environment's CloudFront — a shared bucket breaks the other environment with 403s. |
-| `GLOBAL_LOGGING_BUCKET_NAME` | Must differ from that environment's `REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1`. | Both stacks replace that bucket's policy; the edge one has no ALB-log grant. |
+| S3 buckets: `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, the `UPLOADS_BUCKET_NAMES` entries | Never share between environments. | The edge/frontend stacks replace the bucket's whole policy with one that trusts only this environment's CloudFront — a shared bucket breaks the other environment with 403s. |
+| `GLOBAL_LOGGING_BUCKET_NAME` | Must differ from that environment's `us-east-1` entry in `REGIONAL_LOGGING_BUCKET_NAMES`. | Both stacks replace that bucket's policy; the edge one has no ALB-log grant. |
 | `DOMAIN_NAME` + `SUBDOMAIN` + environment | Must produce hostnames no other environment uses. | CloudFront aliases are globally unique across all of AWS. |
 | `MONGODB_URI` / database | Separate database per environment (default name `<APP_NAME>-<env>`). | Shared data. |
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEYS`, `ORIGIN_VERIFY_SECRET`, `REDIS_AUTH_TOKEN` | Generate fresh per environment. | A token from one environment must not be valid in another. |
 
-`REGIONAL_LOGGING_BUCKET_NAME_<REGION>` follows the same rule for every environment that turns
+Each `REGIONAL_LOGGING_BUCKET_NAMES` entry follows the same rule for every environment that turns
 on `enable_cloudtrail` or `enable_alb_access_logs` (its backend stack replaces that bucket's
 policy). Environments that keep both off (e.g. dev) never touch their logging bucket, so those
 may share one — but the secret must still be set (section 6).
@@ -214,11 +216,10 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `DOMAIN_NAME` | e.g. `example.com` |
 | `SUBDOMAIN` | e.g. `superpower` |
 | `HOSTED_ZONE_ID` | Route 53 zone of `DOMAIN_NAME`, in the same account |
-| `ACM_CERTIFICATE_ARN_US_EAST_1` | `us-east-1` certificate |
 | `ASSETS_BUCKET_NAME` | This environment's assets bucket (`us-east-1`) |
 | `SPA_BUCKET_NAME` | This environment's frontend bucket (`us-east-1`) |
 | `JWT_PRIVATE_KEY` | RSA private key, see [jwt-keys.md](jwt-keys.md) |
-| `JWT_PUBLIC_KEYS` | Matching public key map, see [jwt-keys.md](jwt-keys.md); must contain `JWT_KEY_ID` |
+| `JWT_PUBLIC_KEYS` | Matching public key map, see [jwt-keys.md](jwt-keys.md). Required by the backend **and** edge workflows; must contain `JWT_KEY_ID`'s public key, because the API service verifies with these keys only (the backend workflow checks it matches `JWT_PRIVATE_KEY`) |
 | `ORIGIN_VERIFY_SECRET` | Long random string with no `*` or `?` (the ALB treats them as wildcards), e.g. `openssl rand -hex 32` |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Don't create it at setup.** Optional, set only during a rotation; see [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret) |
 | `REDIS_AUTH_TOKEN` | 16–128 printable characters, no spaces, quotes, `@` or `/` |
@@ -228,15 +229,15 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `GOOGLE_CLIENT_ID` | Google OAuth Web client ID |
 | `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
 
-### Required per backend region the environment uses
+### Required per backend region — environment **variables** (TF-01)
 
-`<REGION>` is `AP_SOUTH_1`, `EU_WEST_1` or `US_EAST_1`.
+Under **Settings → Environments → `<env>` → Variables** (not Secrets): three JSON maps keyed by AWS region, each with an entry for every region the environment uses. See [ci-cd.md](ci-cd.md) for the details.
 
-| Secret | Value |
+| Variable | Value |
 |---|---|
-| `ACM_CERTIFICATE_ARN_<REGION>` | Certificate in that region (for `US_EAST_1` this is the same secret as above) |
-| `UPLOADS_BUCKET_NAME_<REGION>` | This environment's uploads bucket in that region |
-| `REGIONAL_LOGGING_BUCKET_NAME_<REGION>` | Logging bucket in that region (required even if logging is off) |
+| `ACM_CERTIFICATE_ARNS` | `{"ap-south-1": "arn:…", "us-east-1": "arn:…"}`: certificate per region. The `us-east-1` entry is **always** required, because CloudFront uses it too. |
+| `UPLOADS_BUCKET_NAMES` | `{"ap-south-1": "<bucket>", …}`: this environment's uploads bucket per region |
+| `REGIONAL_LOGGING_BUCKET_NAMES` | `{"ap-south-1": "<bucket>", …}`: logging bucket per region (required even if logging is off) |
 
 ### Conditional
 

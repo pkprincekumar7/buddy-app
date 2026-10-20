@@ -317,6 +317,27 @@ def test_rotation_old_kid_keeps_validating_until_its_key_is_removed(monkeypatch)
     assert decode_token_of_type(v1_token, "access") is None
 
 
+def test_components_without_a_private_key_verify_but_cannot_mint(monkeypatch):
+    # api: JWT_PUBLIC_KEYS only. Tokens auth minted still verify; minting fails loudly.
+    token = create_access_token("u1", "eu")
+    monkeypatch.setattr(settings, "jwt_private_key", "")
+    monkeypatch.setattr(settings, "app_component", "api")
+    assert decode_token_of_type(token, "access")["sub"] == "u1"
+    with pytest.raises(auth_utils.TokenMintingNotAllowed, match="APP_COMPONENT=api can't mint"):
+        create_access_token("u2", "eu")
+    with pytest.raises(auth_utils.TokenMintingNotAllowed):
+        create_refresh_token("u2", "eu")
+
+
+def test_minting_is_gated_on_the_component_not_just_the_key(monkeypatch):
+    # Defence in depth behind the settings check: a private key on an api
+    # process still can't sign.
+    monkeypatch.setattr(settings, "app_component", "api")
+    assert settings.jwt_private_key
+    with pytest.raises(auth_utils.TokenMintingNotAllowed, match="APP_COMPONENT=api can't mint"):
+        create_access_token("u1", "eu")
+
+
 def test_a_kid_cannot_borrow_another_kids_key(monkeypatch):
     # A token signed by key A but labelled with key B's kid fails: the kid
     # selects the key, and the signature must match that key.

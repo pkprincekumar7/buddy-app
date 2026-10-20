@@ -1,36 +1,42 @@
 # ---------------------------------------------------------------------------
+# SNS topic for operational alarms
+# CloudWatch alarms publish here; subscribe an email or PagerDuty endpoint
+# via the AWS console or a separate Terraform data-source after first apply.
+# ---------------------------------------------------------------------------
+
+#trivy:ignore:AVD-AWS-0095
+resource "aws_sns_topic" "alerts" {
+  #checkov:skip=CKV_AWS_26:SNS topic encryption deferred — no sensitive data in alarm payloads; CMK adds cost without meaningful security uplift at this scale
+  name = "${var.app_name}-alerts-${var.environment}"
+
+  tags = {
+    Name = "${var.app_name}-alerts-${var.environment}"
+  }
+}
+
+# ---------------------------------------------------------------------------
 # CloudWatch — log groups for ECS container logs
 # Retention is parameterised per environment: 7 days (dev/sbx), 30 days (stg),
 # 90 days (prod) via var.log_retention_days.
 # ---------------------------------------------------------------------------
 
-resource "aws_cloudwatch_log_group" "backend" {
+# One per entry in local.services (services.tf): /ecs/<app>/<key>/<env>.
+resource "aws_cloudwatch_log_group" "service" {
   #checkov:skip=CKV_AWS_158:AWS-managed encryption is sufficient for application logs at this scale; CMK adds cost without meaningful security uplift
   #checkov:skip=CKV_AWS_338:Retention is parameterised per environment — 7 days (dev/sbx), 30 days (stg), 90 days (prod) via var.log_retention_days
+  for_each = local.services
 
-  name              = "/ecs/${var.app_name}/backend/${var.environment}"
+  name              = "/ecs/${var.app_name}/${each.key}/${var.environment}"
   retention_in_days = var.log_retention_days
 
   tags = {
-    Name = "${var.app_name}-backend-logs-${var.environment}"
-  }
-}
-
-resource "aws_cloudwatch_log_group" "worker" {
-  #checkov:skip=CKV_AWS_158:AWS-managed encryption is sufficient for application logs at this scale; CMK adds cost without meaningful security uplift
-  #checkov:skip=CKV_AWS_338:Retention is parameterised per environment — 7 days (dev/sbx), 30 days (stg), 90 days (prod) via var.log_retention_days
-
-  name              = "/ecs/${var.app_name}/worker/${var.environment}"
-  retention_in_days = var.log_retention_days
-
-  tags = {
-    Name = "${var.app_name}-worker-logs-${var.environment}"
+    Name = "${var.app_name}-${each.key}-logs-${var.environment}"
   }
 }
 
 # ---------------------------------------------------------------------------
 # SNS email subscription — all environments
-# The SNS topic itself (aws_sns_topic.alerts) lives in autoscaling.tf.
+# The SNS topic itself (aws_sns_topic.alerts) is at the top of this file.
 # After apply, AWS sends a confirmation email — subscription is inactive
 # until the operator clicks the confirmation link.
 # ---------------------------------------------------------------------------
@@ -105,10 +111,11 @@ resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_high" {
 # ALB alerting alarms — enable_basic_alarms (stg + prod)
 # ---------------------------------------------------------------------------
 
+# One per HTTP service (services.tf): each has its own target group.
 resource "aws_cloudwatch_metric_alarm" "alb_healthy_hosts" {
-  count               = var.enable_basic_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-alb-healthy-hosts-${var.environment}"
-  alarm_description   = "ALB has no healthy targets — API service may be down."
+  for_each            = { for k, s in local.http_services : k => s if var.enable_basic_alarms }
+  alarm_name          = "${var.app_name}-alb-healthy-hosts-${each.key}-${var.environment}"
+  alarm_description   = "ALB target group for ${each.value.display_name} has no healthy targets — the ${each.value.display_name} service may be down."
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HealthyHostCount"
   statistic           = "Minimum"
@@ -119,22 +126,22 @@ resource "aws_cloudwatch_metric_alarm" "alb_healthy_hosts" {
   treat_missing_data  = "breaching"
 
   dimensions = {
-    TargetGroup  = aws_lb_target_group.backend.arn_suffix
-    LoadBalancer = aws_lb.backend.arn_suffix
+    TargetGroup  = module.alb.target_group_arn_suffixes[each.key]
+    LoadBalancer = module.alb.arn_suffix
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
   tags = {
-    Name = "${var.app_name}-alb-healthy-hosts-${var.environment}"
+    Name = "${var.app_name}-alb-healthy-hosts-${each.key}-${var.environment}"
   }
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   count               = var.enable_basic_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-alb-5xx-${var.environment}"
-  alarm_description   = "ALB 5XX error spike — check API task logs."
+  alarm_description   = "ALB 5XX error spike (all target groups) — check the API, Auth and Admin task logs."
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HTTPCode_Target_5XX_Count"
   statistic           = "Sum"
@@ -145,7 +152,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    LoadBalancer = aws_lb.backend.arn_suffix
+    LoadBalancer = module.alb.arn_suffix
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
@@ -157,115 +164,10 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
 }
 
 # ---------------------------------------------------------------------------
-# ECS and Redis alerting alarms — enable_all_alarms (prod only)
-# These are single-datapoint (immediate) alarms complementing the sustained
-# alarms in autoscaling.tf. The sustained alarms reduce alert fatigue;
-# these fire faster for dashboards and incident response.
+# Per-service ECS alarms (sustained and immediate CPU/memory) are created by
+# ../../modules/ecs-service from each service's sustained_alarms /
+# immediate_alarms in services.tf. The Redis alarm below is app-wide.
 # ---------------------------------------------------------------------------
-
-resource "aws_cloudwatch_metric_alarm" "api_cpu_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-api-cpu-high-${var.environment}"
-  alarm_description   = "API ECS CPU above 85%."
-  namespace           = "AWS/ECS"
-  metric_name         = "CPUUtilization"
-  statistic           = "Average"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 85
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ClusterName = aws_ecs_cluster.backend.name
-    ServiceName = aws_ecs_service.backend.name
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-api-cpu-high-${var.environment}"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "api_memory_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-api-memory-high-${var.environment}"
-  alarm_description   = "API ECS memory above 85%."
-  namespace           = "AWS/ECS"
-  metric_name         = "MemoryUtilization"
-  statistic           = "Average"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 85
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ClusterName = aws_ecs_cluster.backend.name
-    ServiceName = aws_ecs_service.backend.name
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-api-memory-high-${var.environment}"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "worker_cpu_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-cpu-high-${var.environment}"
-  alarm_description   = "Worker ECS CPU above 85%."
-  namespace           = "AWS/ECS"
-  metric_name         = "CPUUtilization"
-  statistic           = "Average"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 85
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ClusterName = aws_ecs_cluster.backend.name
-    ServiceName = aws_ecs_service.worker.name
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-worker-cpu-high-${var.environment}"
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "worker_memory_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-memory-high-${var.environment}"
-  alarm_description   = "Worker ECS memory above 85%."
-  namespace           = "AWS/ECS"
-  metric_name         = "MemoryUtilization"
-  statistic           = "Average"
-  period              = 60
-  evaluation_periods  = 1
-  threshold           = 85
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ClusterName = aws_ecs_cluster.backend.name
-    ServiceName = aws_ecs_service.worker.name
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-worker-memory-high-${var.environment}"
-  }
-}
 
 # ElastiCache publishes CurrConnections per node (CacheClusterId), never per
 # replication group, so the alarm sums every member node. Member ids are
@@ -274,7 +176,7 @@ resource "aws_cloudwatch_metric_alarm" "worker_memory_high" {
 locals {
   redis_member_ids = [
     for i in range(var.elasticache_replica_count + 1) :
-    format("%s-%03d", aws_elasticache_replication_group.main.id, i + 1)
+    format("%s-%03d", module.redis.replication_group_id, i + 1)
   ]
 }
 
@@ -377,10 +279,14 @@ resource "aws_cloudwatch_dashboard" "main" {
   dashboard_body = templatefile("${path.module}/dashboard.json.tpl", {
     region              = var.aws_region
     cluster_name        = aws_ecs_cluster.backend.name
-    api_service_name    = aws_ecs_service.backend.name
-    worker_service_name = aws_ecs_service.worker.name
-    alb_arn_suffix      = aws_lb.backend.arn_suffix
-    tg_arn_suffix       = aws_lb_target_group.backend.arn_suffix
+    api_service_name    = module.service["backend"].service_name
+    auth_service_name   = module.service["auth"].service_name
+    admin_service_name  = module.service["admin"].service_name
+    worker_service_name = module.service["worker"].service_name
+    alb_arn_suffix      = module.alb.arn_suffix
+    tg_arn_suffix       = module.alb.target_group_arn_suffixes["backend"]
+    auth_tg_arn_suffix  = module.alb.target_group_arn_suffixes["auth"]
+    admin_tg_arn_suffix = module.alb.target_group_arn_suffixes["admin"]
     redis_member_ids    = local.redis_member_ids
     environment         = var.environment
   })

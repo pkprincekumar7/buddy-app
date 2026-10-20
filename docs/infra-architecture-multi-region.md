@@ -336,7 +336,7 @@ Phase 5c — terraform-atlas (us-east-1,  Phase 5 run)
            Each reads atlas_vpc_endpoint_id from SSM (written by Phase 2), completes the
            PrivateLink handshake, rotates MONGODB_URI in Secrets Manager to private SRV.
 
-Phase 6  — restart-live-backend (per region, both services)
+Phase 6  — restart-live-backend (per region, service = all: auth, admin, backend, worker)
            Force-restarts ECS tasks so they pick up the private MONGODB_URI.
 ```
 
@@ -657,6 +657,8 @@ All three paths already include `$REGION` — this step needs no further modific
 work correctly across all three regions. `terraform output` works without `-chdir`
 because the job's `working-directory` is already `infra-live-backend/terraform`.
 
+> **Superseded (TF-01, 2026-10-19):** the per-region secrets and `case` blocks described in b2–c below have been replaced by three environment variables holding JSON maps keyed by region: `ACM_CERTIFICATE_ARNS`, `UPLOADS_BUCKET_NAMES` and `REGIONAL_LOGGING_BUCKET_NAMES` (see `docs/ci-cd.md`). A new region is one more key in each map; the workflows don't change.
+
 **b2. "Validate required secrets" step** — add new region secrets to the `env:` block
 and add corresponding condition checks in the `run:` script:
 
@@ -859,7 +861,7 @@ a **region-specific path** — `/{app_name}/{env}/atlas/{aws_region}/endpoint_se
 **not** yet provision `aws_vpc_endpoint` for Atlas PrivateLink in any region, including
 ap-south-1 — this needs to be added once, then applies identically to all three
 regions since the module is already region-agnostic. Add to
-`infra-live-backend/terraform/` (e.g. `vpc_endpoints.tf`):
+`modules/network/endpoints.tf` (or `infra-live-backend/terraform/` alongside the `network` module):
 
 ```hcl
 resource "aws_vpc_endpoint" "atlas_privatelink" {

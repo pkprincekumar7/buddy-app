@@ -68,9 +68,68 @@ def test_safe_defaults():
     assert s.google_client_id == "" and s.app_env == "local"
 
 
-def test_jwt_private_key_is_required():
-    with pytest.raises(ValidationError, match="JWT_PRIVATE_KEY\n  Field required"):
-        Settings(_env_file=None)
+@pytest.mark.parametrize("component", ["all", "auth"])
+def test_jwt_private_key_is_required_where_tokens_are_minted(component):
+    with pytest.raises(ValidationError, match="JWT_PRIVATE_KEY is required for APP_COMPONENT="):
+        Settings(_env_file=None, app_component=component)
+
+
+# ── APP_COMPONENT (auth/api split) ───────────────────────────────────────────
+
+
+def test_app_component_defaults_to_all_and_loads_from_env(monkeypatch):
+    assert _settings().app_component == "all" and _settings().can_mint_tokens
+    monkeypatch.setenv("APP_COMPONENT", "auth")
+    assert _settings().app_component == "auth" and _settings().can_mint_tokens
+
+
+def test_unknown_app_component_is_rejected():
+    with pytest.raises(ValidationError):
+        _settings(app_component="billing")
+
+
+def test_api_verifies_with_jwt_public_keys_only():
+    s = _settings(app_component="api", jwt_private_key="", jwt_public_keys={"key-v1": PUBLIC})
+    assert not s.can_mint_tokens
+    assert s.jwt_private_key == "" and s.jwt_public_key == ""
+    assert s.jwt_verification_keys == {"key-v1": PUBLIC}
+
+
+@pytest.mark.parametrize("component", ["admin", "api"])
+def test_verify_only_components_need_jwt_public_keys(component):
+    with pytest.raises(
+        ValidationError, match=f"JWT_PUBLIC_KEYS is required for APP_COMPONENT={component}"
+    ):
+        _settings(app_component=component, jwt_private_key="")
+    s = _settings(app_component=component, jwt_private_key="", jwt_public_keys={"key-v1": PUBLIC})
+    assert not s.can_mint_tokens and s.jwt_verification_keys == {"key-v1": PUBLIC}
+
+
+@pytest.mark.parametrize("component", ["admin", "api"])
+def test_verify_only_components_need_the_signing_kid(component):
+    _, old_public = _pem()
+    with pytest.raises(
+        ValidationError, match="JWT_PUBLIC_KEYS has no entry for JWT_KEY_ID 'key-v2'"
+    ):
+        _settings(
+            app_component=component,
+            jwt_private_key="",
+            jwt_key_id="key-v2",
+            jwt_public_keys={"key-v1": old_public},
+        )
+
+
+@pytest.mark.parametrize("component", ["admin", "api", "worker"])
+def test_non_minting_components_refuse_a_private_key(component):
+    with pytest.raises(
+        ValidationError, match=f"JWT_PRIVATE_KEY must not be set for APP_COMPONENT={component}"
+    ):
+        _settings(app_component=component, jwt_public_keys={"key-v1": PUBLIC})
+
+
+def test_worker_needs_neither_key():
+    s = _settings(app_component="worker", jwt_private_key="")
+    assert not s.can_mint_tokens and s.jwt_verification_keys == {}
 
 
 # ── loading from the environment ─────────────────────────────────────────────

@@ -209,9 +209,13 @@ variable "jwt_key_id" {
 }
 
 variable "jwt_public_keys" {
-  description = "Map of JWT key ID → RSA public key PEM the backend verifies tokens against, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). Lets tokens signed with an outgoing key keep validating during a rotation. Empty (the default) = only the current signing key. Public keys only — not a secret."
+  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). The API service (APP_COMPONENT=api) has no private key and verifies tokens with these keys ONLY, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
   type        = map(string)
-  default     = {}
+
+  validation {
+    condition     = contains(keys(var.jwt_public_keys), var.jwt_key_id)
+    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — the API service verifies with these keys only. See docs/jwt-keys.md."
+  }
 }
 
 # -- Photo URLs (EDGE-05) -------------------------------------------------------
@@ -288,6 +292,75 @@ variable "worker_max_capacity" {
   description = "Maximum ECS task count for the worker service autoscaling target"
   type        = number
   default     = 5
+}
+
+# -- Auth ECS (APP_COMPONENT=auth: /api/v1/auth/* and DELETE /api/v1/user/me) --
+# Login and register run bcrypt (cost 12), so auth is CPU-bound: it scales on
+# CPU, and its sizing is separate from the API's.
+
+variable "auth_task_cpu" {
+  description = "Fargate task CPU units for the auth service"
+  type        = number
+  default     = 512
+}
+
+variable "auth_task_memory" {
+  description = "Fargate task memory in MiB for the auth service"
+  type        = number
+  default     = 1024
+}
+
+variable "auth_desired_count" {
+  description = "Initial desired count for the auth ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "auth_min_capacity" {
+  description = "Minimum ECS task count for the auth service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "auth_max_capacity" {
+  description = "Maximum ECS task count for the auth service autoscaling target"
+  type        = number
+  default     = 4
+}
+
+# -- Admin ECS (APP_COMPONENT=admin: /api/v1/admin/*) ------------------------
+# Low traffic, scaled on CPU and memory. With the ADOT sidecar on (stg/prod)
+# 512/1024 is the floor — the sidecar alone reserves 256 CPU / 512 MiB and
+# modules/ecs-service refuses smaller; without it (dev/sbx) 256/512 is fine.
+
+variable "admin_task_cpu" {
+  description = "Fargate task CPU units for the admin service"
+  type        = number
+  default     = 512
+}
+
+variable "admin_task_memory" {
+  description = "Fargate task memory in MiB for the admin service"
+  type        = number
+  default     = 1024
+}
+
+variable "admin_desired_count" {
+  description = "Initial desired count for the admin ECS service (managed by autoscaling after first deploy)"
+  type        = number
+  default     = 1
+}
+
+variable "admin_min_capacity" {
+  description = "Minimum ECS task count for the admin service autoscaling target"
+  type        = number
+  default     = 1
+}
+
+variable "admin_max_capacity" {
+  description = "Maximum ECS task count for the admin service autoscaling target"
+  type        = number
+  default     = 2
 }
 
 # -- S3 (managed externally — Terraform configures, does not create) ----------
@@ -386,7 +459,7 @@ variable "enable_alb_access_logs" {
 # -- ADOT sidecar --------------------------------------------------------------
 
 variable "enable_adot_sidecar" {
-  description = "Attach the ADOT collector sidecar to API and worker task definitions for X-Ray tracing. Optional on dev/sbx (omit to save cost), required on stg/prod."
+  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB, X-Ray tracing) to every service's task definition. On in stg/prod; off in dev/sbx, whose 256 / 512 tasks are too small for it — modules/ecs-service refuses the sidecar on tasks under 512 / 1024, so raise those sizes before turning it on there."
   type        = bool
   default     = true
 }

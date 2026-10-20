@@ -1,53 +1,23 @@
 # ---------------------------------------------------------------------------
-# ALB security group — backend VPC
-# Accepts HTTPS (443) from CloudFront IPs only.
+# Task security groups — one per entry in local.services (services.tf).
+# The ALB's lives in ../../modules/alb, Redis's in ../../modules/redis and the
+# VPC endpoints' in ../../modules/network (TF-01).
+#
+# Unrestricted egress via NAT for LLM APIs and MongoDB Atlas. In stg/prod, AWS
+# service traffic (ECR, Secrets Manager, CloudWatch, X-Ray) routes via VPC
+# Interface Endpoints before reaching NAT; in dev/sbx all of it goes through
+# NAT. Inbound: only the HTTP service, only from the ALB, only on its port.
 # ---------------------------------------------------------------------------
 
 #trivy:ignore:AVD-AWS-0104
-resource "aws_security_group" "alb_sg" {
-  #checkov:skip=CKV_AWS_382:Unrestricted egress is standard for ALB — it needs to forward requests to ECS tasks on dynamic ports
+resource "aws_security_group" "service" {
+  #checkov:skip=CKV_AWS_382:Unrestricted egress required — tasks need outbound to LLM APIs (OpenAI/Anthropic/Gemini) and MongoDB Atlas on arbitrary ports via NAT
+  #checkov:skip=CKV2_AWS_5:Attached to each ECS service via module.service[*]'s security_group_ids (and to Redis/endpoint rules); checkov's graph check doesn't follow module inputs — tests/stack.tftest.hcl asserts the attachment
+  for_each = local.services
 
-  name        = "${var.app_name}-backend-alb-sg-${var.environment}"
-  description = "Allow HTTPS from CloudFront only"
-  vpc_id      = aws_vpc.main.id
-
-  egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.app_name}-backend-alb-sg-${var.environment}"
-  }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
-  description       = "HTTPS from CloudFront"
-  security_group_id = aws_security_group.alb_sg.id
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-  prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
-}
-
-# ---------------------------------------------------------------------------
-# ECS task security group — backend VPC
-# Accepts port 8000 from ALB; unrestricted egress via NAT for LLM APIs and
-# MongoDB Atlas. In stg/prod, AWS service traffic (ECR, Secrets Manager,
-# CloudWatch, X-Ray) routes via VPC Interface Endpoints before reaching NAT.
-# In dev/sbx (no Interface Endpoints) all outbound traffic goes through NAT.
-# ---------------------------------------------------------------------------
-
-#trivy:ignore:AVD-AWS-0104
-resource "aws_security_group" "ecs_task_sg" {
-  #checkov:skip=CKV_AWS_382:Unrestricted egress required — ECS tasks need outbound to LLM APIs (OpenAI/Anthropic/Gemini) and MongoDB Atlas on arbitrary ports via NAT
-
-  name        = "${var.app_name}-ecs-task-sg-${var.environment}"
-  description = "Allow port 8000 from ALB; unrestricted egress via NAT (stg/prod: AWS services via VPC endpoints)"
-  vpc_id      = aws_vpc.main.id
+  name        = "${var.app_name}-${try(each.value.security_group.name, null) != null ? each.value.security_group.name : "${each.key}-sg"}-${var.environment}"
+  description = try(each.value.security_group.description, null) != null ? each.value.security_group.description : "${each.value.display_name} tasks: ${each.value.http != null ? "port ${each.value.http.port} from the ALB" : "no inbound"}; unrestricted egress via NAT"
+  vpc_id      = module.network.vpc_id
 
   egress {
     description = "All outbound traffic via NAT (stg/prod: AWS service calls intercepted by VPC Interface Endpoints before NAT)"
@@ -58,43 +28,17 @@ resource "aws_security_group" "ecs_task_sg" {
   }
 
   tags = {
-    Name = "${var.app_name}-ecs-task-sg-${var.environment}"
+    Name = "${var.app_name}-${try(each.value.security_group.name, null) != null ? each.value.security_group.name : "${each.key}-sg"}-${var.environment}"
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ecs_from_alb" {
-  description                  = "FastAPI from ALB"
-  security_group_id            = aws_security_group.ecs_task_sg.id
+resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
+  for_each = local.http_services
+
+  description                  = "${each.value.display_name} from ALB"
+  security_group_id            = aws_security_group.service[each.key].id
   ip_protocol                  = "tcp"
-  from_port                    = 8000
-  to_port                      = 8000
-  referenced_security_group_id = aws_security_group.alb_sg.id
-}
-
-# ---------------------------------------------------------------------------
-# Worker security group
-# No inbound rules — worker initiates all connections (MongoDB, LLM APIs,
-# CloudWatch). Unrestricted egress is required for the same reasons as the
-# API task SG (ECR, Secrets Manager, MongoDB Atlas, LLM provider APIs).
-# ---------------------------------------------------------------------------
-
-#trivy:ignore:AVD-AWS-0104
-resource "aws_security_group" "worker_sg" {
-  #checkov:skip=CKV_AWS_382:Unrestricted egress required — worker needs outbound via NAT to MongoDB Atlas and LLM APIs (OpenAI/Anthropic/Gemini); in stg/prod AWS service traffic (ECR, Secrets Manager, CloudWatch) routes via VPC Interface Endpoints before NAT; in dev/sbx all traffic traverses NAT
-
-  name        = "${var.app_name}-worker-sg-${var.environment}"
-  description = "Worker: no inbound, unrestricted egress for LLM APIs and MongoDB"
-  vpc_id      = aws_vpc.main.id
-
-  egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.app_name}-worker-sg-${var.environment}"
-  }
+  from_port                    = each.value.http.port
+  to_port                      = each.value.http.port
+  referenced_security_group_id = module.alb.security_group_id
 }

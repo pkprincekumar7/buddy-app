@@ -132,7 +132,12 @@ jobs:
 
       - name: Terraform Init
         run: |
+          # -lockfile=readonly: use exactly the provider versions and hashes in
+          # the committed .terraform.lock.hcl (TF-01). A provider upgrade is a
+          # reviewed commit (terraform init -upgrade + providers lock), never a
+          # silent change in CI.
           terraform init \
+            -lockfile=readonly \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
             -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/frontend/us-east-1/terraform.tfstate"
 

@@ -133,12 +133,17 @@ async def lifespan(app: FastAPI):
     await init_indexes(db)
     app.state.db = db
     log.info("mongodb: connected db=%s", settings.mongodb_db_name)
-    cleanup_task = asyncio.create_task(_cleanup_expired_sessions(db))
+    # Sessions belong to auth; run the sweep only where the auth router is
+    # mounted, so a scaled-out API fleet doesn't run N copies of it.
+    cleanup_task = (
+        asyncio.create_task(_cleanup_expired_sessions(db)) if settings.can_mint_tokens else None
+    )
     try:
         yield
     finally:
-        cleanup_task.cancel()
-        await asyncio.gather(cleanup_task, return_exceptions=True)
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            await asyncio.gather(cleanup_task, return_exceptions=True)
         client.close()
         log.info("mongodb: connection closed")
         await llm_service.aclose_clients()
@@ -253,14 +258,32 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-Id", "X-Client-Location"],
 )
 
-app.include_router(auth_router, prefix=API_V1_PREFIX)
-app.include_router(admin_router, prefix=API_V1_PREFIX)
-app.include_router(users_router, prefix=API_V1_PREFIX)
-app.include_router(children_router, prefix=API_V1_PREFIX)
-app.include_router(jobs_router, prefix=API_V1_PREFIX)
-app.include_router(llm_router, prefix=API_V1_PREFIX)
-app.include_router(audio_router, prefix=API_V1_PREFIX)
-app.include_router(downloads_router, prefix=API_V1_PREFIX)
+# Which routers each APP_COMPONENT serves (see app/settings.py). The ALB sends
+# /api/v1/auth/* (and /api/v1/user/me) to auth, /api/v1/admin/* to admin and
+# everything else to api, so the lists must not overlap. Every component keeps /health and /api/health.
+_API_ROUTERS = [
+    users_router,
+    children_router,
+    jobs_router,
+    llm_router,
+    audio_router,
+    downloads_router,
+]
+ROUTERS_BY_COMPONENT = {
+    "all": [auth_router, admin_router, *_API_ROUTERS],
+    "auth": [auth_router],
+    "admin": [admin_router],
+    "api": _API_ROUTERS,
+    "worker": [],
+}
+
+
+def routers_for(component: str) -> list:
+    return ROUTERS_BY_COMPONENT[component]
+
+
+for _router in routers_for(settings.app_component):
+    app.include_router(_router, prefix=API_V1_PREFIX)
 
 
 @app.get(

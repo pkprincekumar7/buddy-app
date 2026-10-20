@@ -28,8 +28,7 @@ passes `--region us-east-1`.
 | `/{app}/{env}/backend/{region}/alb_internal_fqdn` | `infra-live-backend` (that region) | `infra-live-edge` (one CloudFront `/api/*` origin per region in `backend_regions`) |
 | `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI), `promote-live-backend` (target push) |
 | `/{app}/{env}/backend/{region}/ecs_cluster_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
-| `/{app}/{env}/backend/{region}/ecs_service_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
-| `/{app}/{env}/backend/{region}/ecs_worker_service_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` (worker) |
+| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in rollout order, of `{name, service, family, container}`, one per ECS service |
 | `/{app}/{env}/edge/cloudfront_distribution_id` | `infra-live-edge` | `deploy-live-frontend`, `promote-live-frontend` (cache invalidation) |
 | `/{app}/{env}/edge/cloudfront_arn` | `infra-live-edge` | `infra-live-frontend` (S3 bucket policy) |
 | `/{app}/{env}/edge/s3_bucket_name` | `infra-live-edge` | `infra-live-frontend` (precondition check), `deploy-live-frontend`, `promote-live-frontend` |
@@ -59,7 +58,13 @@ terraform-state-files/{app}/{env}/frontend/us-east-1/terraform.tfstate
 terraform-state-files/{app}/{env}/scheduler/us-east-1/terraform.tfstate
 ```
 
-Locking uses native S3 lock files (`use_lockfile = true`) — there is no DynamoDB table. Each
+**Provider versions are pinned** by a committed `.terraform.lock.hcl` in each stack (TF-01), with hashes for `linux_amd64` (CI), `darwin_arm64` and `darwin_amd64`. CI runs `terraform init -lockfile=readonly`, so it fails rather than pick up a different provider. To upgrade, run this in the stack directory and commit the result:
+
+```bash
+terraform init -upgrade -backend=false && terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64
+```
+
+State locking uses native S3 lock files (`use_lockfile = true`) — there is no DynamoDB table. Each
 backend region has its own state, so regions can be applied in parallel (`terraform-live-all`
 runs them as a matrix). The edge state is a single shared distribution per environment, which is
 why edge always receives the **full** region list.
@@ -68,23 +73,29 @@ why edge always receives the **full** region list.
 
 ## ECS task definitions — what each workflow changes
 
-Each backend region runs two ECS services: the API (`backend` container) and the job worker
-(`worker` container, same image, `python worker.py`).
+Each backend region runs one ECS service per entry in `local.services`
+(`infra-live-backend/terraform/services.tf`). Today that's four, all from the same image:
+`auth` (`APP_COMPONENT=auth`: `/api/v1/auth/*` and account deletion; the only service with
+`JWT_PRIVATE_KEY`), `admin` (`APP_COMPONENT=admin`: `/api/v1/admin/*`), the API (`backend`,
+`APP_COMPONENT=api`: everything else under `/api/v1`) and the job worker (`worker`,
+`python worker.py`). The ALB routes between auth, admin and the API by path (see below). The
+workflows' `service` input takes `all` or a comma-separated list of those names, e.g.
+`auth,admin,backend`; anything else fails up front with the valid list. See [Adding a backend service](#adding-a-backend-service).
 
 ### `terraform-live-backend` (apply)
 
-Terraform manages both task definitions as normal resources. Changing any of the following
+Terraform manages every task definition as a normal resource. Changing any of the following
 registers a **new revision**:
 
 | Category | Examples |
 |---|---|
 | Compute | CPU, memory |
 | Plain env vars | `MONGODB_DB_NAME`, `*_MODEL`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` / `COOKIE_DOMAIN` (derived from `SUBDOMAIN` + env + `DOMAIN_NAME`) |
-| Secret references | Secrets Manager ARN pointers (not values). API: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, the three LLM keys, `REDIS_AUTH_TOKEN`. Worker: `MONGODB_URI`, `JWT_PRIVATE_KEY`, the three LLM keys. |
+| Secret references | Secrets Manager ARN pointers (not values). Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `REDIS_AUTH_TOKEN`. Admin: `MONGODB_URI`, `REDIS_AUTH_TOKEN`. API: `MONGODB_URI`, the three LLM keys, `REDIS_AUTH_TOKEN` (no private key — it verifies with `JWT_PUBLIC_KEYS`). Worker: `MONGODB_URI`, the three LLM keys. |
 | Infrastructure | log group, health check, execution/task role, network mode |
 | Image | always `:latest` — a placeholder; see below |
 
-Both ECS **services** have `ignore_changes = [task_definition, desired_count]`. Terraform
+Every ECS **service** has `ignore_changes = [task_definition, desired_count]`. Terraform
 therefore registers the new revision but never switches a service to it. The revision stays idle
 until the next deploy.
 
@@ -93,14 +104,18 @@ until the next deploy.
 Builds the image once, pushes it as `:<YYYYMMDD>-<short-sha>` to every selected region's ECR, then
 in each region:
 
-1. Reads the **latest active revision** of each task definition family, so it picks up anything
+1. Reads the services to deploy from the region's `ecs_services` SSM list, in rollout order (auth,
+   admin, the API, then the worker, so they're healthy before consumers restart against them). For each service, it reads
+   the **latest active revision** of its task definition family, so it picks up anything
    `terraform apply` just registered.
 2. Patches only the container `image` to the pushed tag, and registers a new revision.
 3. Updates the service to that revision. This is a rolling deployment with circuit-breaker
    rollback, waiting up to 15 minutes for steady state.
 
 Everything else (env vars, secret references, CPU/memory, roles) is carried over unchanged. The
-`:latest` placeholder never runs after the first deploy.
+`:latest` placeholder never runs after the first deploy. If a service fails to stabilise, the
+deploy stops there and the remaining services are not touched. The rollout logic is shared by all
+three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
 task definition instead of building one: an export job (source environment's role) pulls it, and
@@ -118,6 +133,57 @@ current revision without registering one.
 | Env var / model / CPU / memory (tfvars or GitHub secrets that feed env vars) | `terraform-live-backend` apply, **then** `deploy-live-backend` (apply registers, deploy activates) |
 | Secret values in Secrets Manager | `put-secret-value` (below), then `restart-live-backend` |
 
+### Adding a backend service
+
+Add one entry to `local.services` in `infra-live-backend/terraform/services.tf`, for example a
+copy of the `worker` entry with a new key. The key is lowercase with hyphens, and it's the name
+the workflows take. That one entry produces:
+
+| From the entry | Created |
+|---|---|
+| `cpu`, `memory`, `command`, `environment`, `secret_keys`, `health_check` | Task definition and ECS service (`modules/ecs-service`), running the shared backend image |
+| `min_capacity`, `max_capacity`, `target_tracking_policies`, `step_scaling_policies` | Autoscaling |
+| `sustained_alarms`, `immediate_alarms` | CloudWatch alarms (when `enable_all_alarms`) |
+| `task_policies` | Task IAM role `<app>-<key>-task-role-<env>-<region>` with those policies (plus ECS Exec / X-Ray policies when those features are on) |
+| — | Security group `<app>-<key>-sg-<env>` (reaches the VPC endpoints; Redis too if `uses_redis`), log group `/ecs/<app>/<key>/<env>` |
+| `deploy_order` | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow change.** |
+
+Then:
+1. Apply `terraform-live-backend` in every region of the environment.
+2. Run `deploy-live-backend` with `service` = the new key (or `all`).
+
+New secrets go into the backend-secrets JSON (see [Rotating a value](#rotating-a-value)) and are
+listed in `secret_keys`.
+
+**HTTP services.** An entry with `http` set also gets its own ALB target group, listener rule,
+ingress from the ALB SG and `alb-healthy-hosts-<key>` alarm (`modules/alb`). Exactly one HTTP
+service leaves `http.path_patterns` empty: the catch-all (`backend`). Any other lists the paths it
+owns and a unique `http.priority`:
+
+```hcl
+http = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = ["/api/v1/reports/*"], priority = 20 }
+```
+
+- Lower priority is matched first; the catch-all is always last (50000).
+- Each rule also requires `X-Origin-Verify`, and AWS allows **5 condition values per rule**: the
+  origin-verify values (2 during a rotation) plus the path patterns. So keep it to 3 patterns;
+  Terraform refuses more.
+- Target group names are `<app>-<key>-tg-<env>-<hash>`, at most 32 characters. The 4-character
+  hash covers port, protocol, target type and VPC, which can't change in place. So a port change
+  creates a new group (`create_before_destroy`), moves the listener rule and ECS service to it,
+  and only then deletes the old one.
+- CloudFront and Lambda@Edge need no change: they send all of `/api/*` to the ALB, which splits it.
+  No service discovery is needed either; services share data through MongoDB, not by calling
+  each other.
+- An `ALBRequestCountPerTarget` scaling policy tracks the service's own target group (`ecs.tf`
+  fills in its `resource_label`).
+- A backend router moving to a new service also needs `APP_COMPONENT` support in
+  `backend/app/main.py` (`ROUTERS_BY_COMPONENT`), and `backend/tests/test_main.py` checks the
+  path patterns against the real routes.
+
+**Not automatic yet:**
+- **Dashboard.** `dashboard.json.tpl` has widgets for auth, admin, the API and the worker only.
+
 ### Scaling
 
 - **`desired_count` is ignored after the first apply.** A manual
@@ -125,7 +191,13 @@ current revision without registering one.
   it either. Scale back explicitly.
 - **The API service is also under App Auto Scaling** (`api_min_capacity` / `api_max_capacity`,
   with CPU, memory and ALB-request target-tracking policies). Change its range through those
-  tfvars, not just `desired_count`. The worker service is not autoscaled.
+  tfvars, not just `desired_count`. **Auth** scales on CPU and memory (`auth_min_capacity` /
+  `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`).
+- **Task size floor.** In dev/sbx every service is 256 / 512 (Fargate's smallest), which works
+  only because the ADOT sidecar is off there. The sidecar reserves 256 CPU / 512 MiB of its task,
+  so with `enable_adot_sidecar = true` a task needs at least 512 / 1024: `modules/ecs-service`
+  refuses smaller at plan time. Raise the sizes before turning the sidecar on in dev/sbx. The worker scales on queue depth
+  (`worker_min_capacity` / `worker_max_capacity`).
 
 ---
 
@@ -172,7 +244,7 @@ keys: see [jwt-keys.md](jwt-keys.md).
 `ORIGIN_VERIFY_SECRET` is the `X-Origin-Verify` header CloudFront sends to every regional ALB.
 Each ALB's listener rule 403s requests without it. It lives in two places only: the
 `alb-backend` origin's `custom_header` (`infra-live-edge/terraform/cloudfront.tf`) and each
-ALB's listener rule (`infra-live-backend/terraform/alb.tf`). The Lambda@Edge copies the header
+ALB's listener rule (`modules/alb`, called from `infra-live-backend/terraform/alb.tf`). The Lambda@Edge copies the header
 from the origin config when it re-routes, so it's **not** in the function code and rotating it
 needs no Lambda redeploy.
 
@@ -289,7 +361,7 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 | ECS | Container Insights on; container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
 | ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
 | ElastiCache Redis 7.1 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx/stg, 2 replicas with Multi-AZ failover in prod. Holds rate-limit counters and locks only |
-| CloudWatch Logs | API and worker log groups, retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
+| CloudWatch Logs | One log group per service, `/ecs/<app>/<key>/<env>` (auth, admin, backend, worker); retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
 
 ### Frontend deploy (`deploy-live-frontend.yml`)
 

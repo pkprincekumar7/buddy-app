@@ -66,9 +66,18 @@ def _verification_key(pem: str) -> Any:
     return load_pem_public_key(pem.encode())
 
 
+class TokenMintingNotAllowed(RuntimeError):
+    """This component has no JWT_PRIVATE_KEY — only auth (or all) mints tokens."""
+
+
 def _encode(payload: dict[str, Any]) -> str:
     # Always signs with the current key only (APP-02), and stamps this
     # environment's iss/aud (EDGE-04) — setdefault, so tests can override them.
+    if not settings.can_mint_tokens or not settings.jwt_private_key:
+        raise TokenMintingNotAllowed(
+            f"APP_COMPONENT={settings.app_component} can't mint tokens — only auth (or all) "
+            "holds JWT_PRIVATE_KEY"
+        )
     payload = {**payload}
     payload.setdefault("iss", settings.jwt_issuer)
     payload.setdefault("aud", settings.jwt_audience)

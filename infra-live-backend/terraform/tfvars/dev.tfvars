@@ -20,9 +20,12 @@ elasticache_node_type     = "cache.t3.micro"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
-# ECS
-task_cpu      = 512
-task_memory   = 1024
+# ECS — every service runs at Fargate's smallest size (0.25 vCPU / 512 MiB):
+# a few testers, one process per task, and no ADOT sidecar here
+# (enable_adot_sidecar = false below — the ecs-service module refuses a
+# sidecar on tasks this small). Each process is ~65–85 MB after import.
+task_cpu      = 256
+task_memory   = 512
 desired_count = 1
 
 # Application
@@ -33,17 +36,31 @@ llm_hourly_limit    = 50
 enable_execute_command = true
 
 # Worker ECS
-worker_task_cpu              = 512
-worker_task_memory           = 1024
+worker_task_cpu              = 256
+worker_task_memory           = 512
 worker_desired_count         = 1
 worker_concurrency           = 2
 worker_poll_interval_seconds = 5
+
+# Auth ECS (login/register are bcrypt-bound — scales on CPU)
+auth_task_cpu      = 256
+auth_task_memory   = 512
+auth_desired_count = 1
+
+# Admin ECS (/api/v1/admin/* — low traffic)
+admin_task_cpu      = 256
+admin_task_memory   = 512
+admin_desired_count = 1
 
 # Autoscaling
 api_min_capacity    = 1
 api_max_capacity    = 3
 worker_min_capacity = 1
 worker_max_capacity = 2
+auth_min_capacity   = 1
+auth_max_capacity   = 2
+admin_min_capacity  = 1
+admin_max_capacity  = 2
 
 # Observability — dev: minimal retention, no alarms, no dashboard, no email alerts
 log_retention_days         = 7

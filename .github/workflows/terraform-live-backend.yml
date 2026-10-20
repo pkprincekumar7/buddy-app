@@ -92,11 +92,11 @@ jobs:
       TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
       TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
       TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
-      # Same kid → public key map the edge validates with (APP-02). Optional
-      # here: '{}' falls back to verifying with the current signing key only.
-      TF_VAR_jwt_public_keys: ${{ secrets.JWT_PUBLIC_KEYS || '{}' }}
-      # The kid the backend signs with. Must be the JWT_PUBLIC_KEYS entry for
-      # JWT_PRIVATE_KEY — the API refuses to start if they disagree.
+      # Same kid → public key map the edge validates with (APP-02). Required:
+      # the API service has no private key and verifies with these keys only.
+      TF_VAR_jwt_public_keys: ${{ secrets.JWT_PUBLIC_KEYS }}
+      # The kid the auth service signs with. Must be the JWT_PUBLIC_KEYS entry
+      # for JWT_PRIVATE_KEY — checked below, and auth refuses to start if not.
       TF_VAR_jwt_key_id: ${{ secrets.JWT_KEY_ID || 'key-v1' }}
       # Optional — set only during an origin-verify rotation (the ALB then
       # accepts both values). See docs/infra-operations.md.
@@ -127,20 +127,12 @@ jobs:
           ROLE_ARN:                            ${{ secrets.ROLE_ARN }}
           APP_NAME:                            ${{ secrets.APP_NAME }}
           STATE_BUCKET:                        ${{ secrets.STATE_BUCKET }}
-          ACM_CERTIFICATE_ARN_AP_SOUTH_1:      ${{ secrets.ACM_CERTIFICATE_ARN_AP_SOUTH_1 }}
-          ACM_CERTIFICATE_ARN_EU_WEST_1:       ${{ secrets.ACM_CERTIFICATE_ARN_EU_WEST_1 }}
-          ACM_CERTIFICATE_ARN_US_EAST_1:       ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
           SUBDOMAIN:                           ${{ secrets.SUBDOMAIN }}
           DOMAIN_NAME:                         ${{ secrets.DOMAIN_NAME }}
           HOSTED_ZONE_ID:                      ${{ secrets.HOSTED_ZONE_ID }}
           ASSETS_BUCKET_NAME:                  ${{ secrets.ASSETS_BUCKET_NAME }}
-          UPLOADS_BUCKET_NAME_AP_SOUTH_1:      ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
-          UPLOADS_BUCKET_NAME_EU_WEST_1:       ${{ secrets.UPLOADS_BUCKET_NAME_EU_WEST_1 }}
-          UPLOADS_BUCKET_NAME_US_EAST_1:       ${{ secrets.UPLOADS_BUCKET_NAME_US_EAST_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1 }}
           JWT_PRIVATE_KEY:                     ${{ secrets.JWT_PRIVATE_KEY }}
+          JWT_PUBLIC_KEYS:                     ${{ secrets.JWT_PUBLIC_KEYS }}
           MONGODB_URI:                         ${{ secrets.MONGODB_URI }}
           OPENAI_API_KEY:                      ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
@@ -155,20 +147,12 @@ jobs:
           [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
           [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME")
           [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET")
-          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$ACM_CERTIFICATE_ARN_AP_SOUTH_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_AP_SOUTH_1")
-          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$UPLOADS_BUCKET_NAME_AP_SOUTH_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_AP_SOUTH_1")
-          [[ "${{ matrix.aws_region }}" == "ap-south-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1")
-          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$ACM_CERTIFICATE_ARN_EU_WEST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_EU_WEST_1")
-          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$UPLOADS_BUCKET_NAME_EU_WEST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_EU_WEST_1")
-          [[ "${{ matrix.aws_region }}" == "eu-west-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1")
-          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$ACM_CERTIFICATE_ARN_US_EAST_1"      ]] && missing+=("ACM_CERTIFICATE_ARN_US_EAST_1")
-          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$UPLOADS_BUCKET_NAME_US_EAST_1"      ]] && missing+=("UPLOADS_BUCKET_NAME_US_EAST_1")
-          [[ "${{ matrix.aws_region }}" == "us-east-1" && -z "$REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1" ]] && missing+=("REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1")
           [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
           [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
           [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
           [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
           [[ -z "$JWT_PRIVATE_KEY"                ]] && missing+=("JWT_PRIVATE_KEY")
+          [[ -z "$JWT_PUBLIC_KEYS"                ]] && missing+=("JWT_PUBLIC_KEYS")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
           [[ -z "$OPENAI_API_KEY$ANTHROPIC_API_KEY$GEMINI_API_KEY" ]] && missing+=("one of OPENAI_API_KEY/ANTHROPIC_API_KEY/GEMINI_API_KEY")
           [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
@@ -181,6 +165,33 @@ jobs:
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
+
+      # The API verifies with JWT_PUBLIC_KEYS only (auth/API split), so a wrong
+      # or missing entry for the signing kid means every request is a 401 —
+      # catch it here rather than after the rollout. Compares DER, so PEM
+      # line wrapping and literal \n escapes don't matter.
+      - name: Check JWT_PUBLIC_KEYS holds JWT_PRIVATE_KEY's public key
+        env:
+          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
+          JWT_PUBLIC_KEYS: ${{ secrets.JWT_PUBLIC_KEYS }}
+        run: |
+          set -euo pipefail
+          JWT_KEY_ID="$TF_VAR_jwt_key_id"
+          if ! listed=$(jq -er --arg kid "$JWT_KEY_ID" '.[$kid] // empty' <<<"$JWT_PUBLIC_KEYS" 2>/dev/null); then
+            echo "ERROR: JWT_PUBLIC_KEYS is not a JSON object with an entry for JWT_KEY_ID '$JWT_KEY_ID'. See docs/jwt-keys.md."
+            exit 1
+          fi
+          # %b turns literal \n escapes (single-line secrets) into newlines.
+          if ! derived=$(printf '%b' "$JWT_PRIVATE_KEY" | openssl pkey -pubout -outform DER 2>/dev/null | sha256sum) ||
+             ! given=$(printf '%b' "$listed" | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum); then
+            echo "ERROR: JWT_PRIVATE_KEY or JWT_PUBLIC_KEYS['$JWT_KEY_ID'] is not a valid PEM key. See docs/jwt-keys.md."
+            exit 1
+          fi
+          if [[ "$derived" != "$given" ]]; then
+            echo "ERROR: JWT_PUBLIC_KEYS['$JWT_KEY_ID'] is not JWT_PRIVATE_KEY's public key — the API would reject every token auth issues. See docs/jwt-keys.md."
+            exit 1
+          fi
+          echo "JWT_PUBLIC_KEYS['$JWT_KEY_ID'] matches JWT_PRIVATE_KEY."
 
       # Not an error — a rotation legitimately runs with it set for a while —
       # but a forgotten _NEXT leaves CloudFront sending it and every ALB
@@ -199,66 +210,43 @@ jobs:
           aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
-      # GitHub Actions does not support dynamic secret references, so the
-      # regional ACM certificate ARN is surfaced as an env var and written to
-      # GITHUB_ENV as TF_VAR_acm_certificate_arn for all subsequent Terraform
-      # steps. Add a new case entry here when expanding to additional regions.
+      # Per-region values (TF-01): three GitHub environment **variables**, each a
+      # JSON map keyed by AWS region — they aren't secret, so variables (visible,
+      # editable in the UI) are the right home. Adding a region is one more key
+      # in each map; nothing in this workflow changes. e.g.
+      #   ACM_CERTIFICATE_ARNS          {"ap-south-1": "arn:aws:acm:ap-south-1:…", …}
+      #   UPLOADS_BUCKET_NAMES          {"ap-south-1": "superpower-uploads-…", …}
+      #   REGIONAL_LOGGING_BUCKET_NAMES {"ap-south-1": "superpower-logs-…", …}
+      # REGIONAL_LOGGING_BUCKET_NAMES needs an entry for every region in every
+      # environment; whether the bucket is actually used is up to tfvars
+      # (enable_cloudtrail / enable_alb_access_logs). See docs/ci-cd.md.
       # -------------------------------------------------------------------------
-      - name: Resolve ACM certificate ARN for backend region
+      - name: Resolve region-specific values
         env:
-          ACM_ARN_AP_SOUTH_1: ${{ secrets.ACM_CERTIFICATE_ARN_AP_SOUTH_1 }}
-          ACM_ARN_EU_WEST_1:  ${{ secrets.ACM_CERTIFICATE_ARN_EU_WEST_1 }}
-          ACM_ARN_US_EAST_1:  ${{ secrets.ACM_CERTIFICATE_ARN_US_EAST_1 }}
+          REGION:                        ${{ matrix.aws_region }}
+          ACM_CERTIFICATE_ARNS:          ${{ vars.ACM_CERTIFICATE_ARNS }}
+          UPLOADS_BUCKET_NAMES:          ${{ vars.UPLOADS_BUCKET_NAMES }}
+          REGIONAL_LOGGING_BUCKET_NAMES: ${{ vars.REGIONAL_LOGGING_BUCKET_NAMES }}
         run: |
-          case "${{ matrix.aws_region }}" in
-            ap-south-1) echo "TF_VAR_acm_certificate_arn=$ACM_ARN_AP_SOUTH_1" >> "$GITHUB_ENV" ;;
-            eu-west-1)  echo "TF_VAR_acm_certificate_arn=$ACM_ARN_EU_WEST_1" >> "$GITHUB_ENV" ;;
-            us-east-1)  echo "TF_VAR_acm_certificate_arn=$ACM_ARN_US_EAST_1" >> "$GITHUB_ENV" ;;
-            *) echo "ERROR: No ACM certificate configured for region '${{ matrix.aws_region }}'. Add the secret and a case entry to this workflow."; exit 1 ;;
-          esac
-
-      # -------------------------------------------------------------------------
-      # Region-specific S3 bucket names follow the same pattern as ACM certs:
-      # secrets are suffixed with the region (e.g. _AP_SOUTH_1) and resolved
-      # here into plain TF_VAR_* names that Terraform consumes.
-      # Add a new case entry for each variable when expanding to new regions.
-      # REGIONAL_LOGGING_BUCKET_NAME is required for every environment (the
-      # bucket exists in all of them — see "Validate required secrets" above,
-      # which enforces this per-region regardless of environment). Whether it
-      # actually gets used is controlled entirely by tfvars, not by this
-      # secret: enable_cloudtrail/enable_alb_access_logs (see
-      # infra-live-backend/terraform/tfvars/*.tfvars) gate the Terraform count
-      # guard that creates the bucket policy and CloudTrail resources — both
-      # false on dev/sbx today, so the bucket name is resolved but unused
-      # there.
-      # -------------------------------------------------------------------------
-      - name: Resolve region-specific S3 bucket names
-        env:
-          UPLOADS_BUCKET_NAME_AP_SOUTH_1:          ${{ secrets.UPLOADS_BUCKET_NAME_AP_SOUTH_1 }}
-          UPLOADS_BUCKET_NAME_EU_WEST_1:           ${{ secrets.UPLOADS_BUCKET_NAME_EU_WEST_1 }}
-          UPLOADS_BUCKET_NAME_US_EAST_1:           ${{ secrets.UPLOADS_BUCKET_NAME_US_EAST_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1: ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1 }}
-          REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:  ${{ secrets.REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1 }}
-        run: |
-          case "${{ matrix.aws_region }}" in
-            ap-south-1)
-              echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_AP_SOUTH_1"                   >> "$GITHUB_ENV"
-              echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_AP_SOUTH_1:-}" >> "$GITHUB_ENV"
-              ;;
-            eu-west-1)
-              echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_EU_WEST_1"                   >> "$GITHUB_ENV"
-              echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_EU_WEST_1:-}" >> "$GITHUB_ENV"
-              ;;
-            us-east-1)
-              echo "TF_VAR_uploads_bucket_name=$UPLOADS_BUCKET_NAME_US_EAST_1"                   >> "$GITHUB_ENV"
-              echo "TF_VAR_regional_logging_bucket_name=${REGIONAL_LOGGING_BUCKET_NAME_US_EAST_1:-}" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "ERROR: No S3 bucket names configured for region '${{ matrix.aws_region }}'. Add secrets and case entries to this workflow."
-              exit 1
-              ;;
-          esac
+          # lookup NAME JSON → the non-empty string at JSON[REGION], or an error
+          # naming the variable and region.
+          lookup() {
+            local value
+            if ! value=$(jq -er --arg r "$REGION" '.[$r] | select(type == "string" and length > 0)' <<<"${2:-}" 2>/dev/null); then
+              echo "ERROR: GitHub environment variable $1 has no entry for '$REGION' (or isn't a JSON object)." >&2
+              echo "Set it in the '${{ inputs.environment }}' environment, e.g. {\"$REGION\": \"…\"} — see docs/ci-cd.md." >&2
+              return 1
+            fi
+            printf '%s' "$value"
+          }
+          acm=$(lookup ACM_CERTIFICATE_ARNS "$ACM_CERTIFICATE_ARNS") || exit 1
+          uploads=$(lookup UPLOADS_BUCKET_NAMES "$UPLOADS_BUCKET_NAMES") || exit 1
+          logging=$(lookup REGIONAL_LOGGING_BUCKET_NAMES "$REGIONAL_LOGGING_BUCKET_NAMES") || exit 1
+          {
+            echo "TF_VAR_acm_certificate_arn=$acm"
+            echo "TF_VAR_uploads_bucket_name=$uploads"
+            echo "TF_VAR_regional_logging_bucket_name=$logging"
+          } >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Several values are derived from SUBDOMAIN + environment + DOMAIN_NAME
@@ -327,7 +315,12 @@ jobs:
 
       - name: Terraform Init
         run: |
+          # -lockfile=readonly: use exactly the provider versions and hashes in
+          # the committed .terraform.lock.hcl (TF-01). A provider upgrade is a
+          # reviewed commit (terraform init -upgrade + providers lock), never a
+          # silent change in CI.
           terraform init \
+            -lockfile=readonly \
             -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
             -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/terraform.tfstate"
 

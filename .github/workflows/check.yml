@@ -238,6 +238,14 @@ jobs:
       - name: Run spa-rewrite CloudFront Function unit tests
         run: node --test infra-live-edge/functions/spa-rewrite.test.js
 
+      # The deploy / restart / promote backend workflows' shared helpers,
+      # against a fake aws CLI (no AWS access).
+      - name: Run ecs-services.sh tests
+        run: bash scripts/ecs-services.test.sh
+
+      - name: ShellCheck ecs-services.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh
+
   terraform-lint:
     name: Terraform Lint
     runs-on: ubuntu-latest
@@ -271,6 +279,24 @@ jobs:
 
       - name: TFLint (infra-live-scheduler)
         run: tflint --chdir=infra-live-scheduler/terraform
+
+      # Shared modules (TF-01) — linted on their own as well as through the
+      # stacks that call them.
+      - name: TFLint (modules)
+        run: |
+          for m in modules/*/; do
+            echo "── tflint $m"
+            tflint --chdir="$m"
+          done
+
+      # terraform test against a mock AWS provider: no credentials, nothing is
+      # created. Each module's own tests, plus the backend stack's wiring test.
+      - name: Terraform test (modules + infra-live-backend)
+        run: |
+          for d in modules/*/ infra-live-backend/terraform/; do
+            echo "── terraform test $d"
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform test)
+          done
 
   security-scan:
     name: Security Scan
@@ -350,6 +376,7 @@ jobs:
             -d infra-live-edge/terraform \
             -d infra-live-frontend/terraform \
             -d infra-live-scheduler/terraform \
+            -d modules \
             --framework terraform --quiet --compact --skip-download
 
       # ── Node.js security tools ───────────────────────────────────────────────
@@ -557,6 +584,11 @@ jobs:
         continue-on-error: true
         run: trivy config infra-live-scheduler/terraform --exit-code 1 --severity HIGH,CRITICAL
 
+      - name: Trivy config (modules)
+        id: trivy_config_modules
+        continue-on-error: true
+        run: trivy config modules --exit-code 1 --severity HIGH,CRITICAL
+
       # ── Docker image scan (OS-level CVEs inside the built image) ────────────
       # GIT_SHA is the Dockerfile's apt-layer cache-bust key, so `apt-get upgrade`
       # re-runs and the scan sees current Debian security patches even if a layer
@@ -666,6 +698,7 @@ jobs:
           [[ "${{ steps.trivy_config_edge.outcome }}"      == "failure" ]] && FAILED_CHECKS+=(trivy-config-edge)
           [[ "${{ steps.trivy_config_frontend.outcome }}"  == "failure" ]] && FAILED_CHECKS+=(trivy-config-frontend)
           [[ "${{ steps.trivy_config_scheduler.outcome }}" == "failure" ]] && FAILED_CHECKS+=(trivy-config-scheduler)
+          [[ "${{ steps.trivy_config_modules.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(trivy-config-modules)
           [[ "${{ steps.trivy_image.outcome }}"            == "failure" ]] && FAILED_CHECKS+=(trivy-image)
           [[ "${{ steps.dockle.outcome }}"                == "failure" ]] && FAILED_CHECKS+=(dockle)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
