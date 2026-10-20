@@ -94,7 +94,7 @@ jobs:
         working-directory: infra-live-scheduler/terraform
     env:
       TF_IN_AUTOMATION: "1"
-      TF_VAR_app_name:            ${{ secrets.APP_NAME }}
+      TF_VAR_app_name:            ${{ vars.APP_NAME }}
       TF_VAR_environment:         ${{ inputs.environment }}
       TF_VAR_github_pat:          ${{ secrets.GIT_ACTIONS_PAT }}
       TF_VAR_schedule_enabled:    ${{ inputs.schedule_enabled }}
@@ -110,27 +110,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN:        ${{ secrets.ROLE_ARN }}
-          APP_NAME:        ${{ secrets.APP_NAME }}
-          STATE_BUCKET:    ${{ secrets.STATE_BUCKET }}
+          ROLE_ARN:        ${{ vars.ROLE_ARN }}
+          APP_NAME:        ${{ vars.APP_NAME }}
+          STATE_BUCKET:    ${{ vars.STATE_BUCKET }}
           GIT_ACTIONS_PAT: ${{ secrets.GIT_ACTIONS_PAT }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN"        ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME"        ]] && missing+=("APP_NAME")
-          [[ -z "$STATE_BUCKET"    ]] && missing+=("STATE_BUCKET")
+          [[ -z "$ROLE_ARN"        ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME"        ]] && missing+=("APP_NAME (variable)")
+          [[ -z "$STATE_BUCKET"    ]] && missing+=("STATE_BUCKET (variable)")
           [[ -z "$GIT_ACTIONS_PAT" ]] && missing+=("GIT_ACTIONS_PAT")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             exit 1
           fi
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: terraform-live-scheduler-${{ inputs.environment }}
           aws-region: us-east-1
 
@@ -153,8 +153,8 @@ jobs:
           # silent change in CI.
           terraform init \
             -lockfile=readonly \
-            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/scheduler/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive

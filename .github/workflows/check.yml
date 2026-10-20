@@ -243,8 +243,13 @@ jobs:
       - name: Run ecs-services.sh tests
         run: bash scripts/ecs-services.test.sh
 
+      # The service names in deploy/restart/promote's `service` input
+      # descriptions (help text) must match services.tf, in deploy_order.
+      - name: Service lists match services.tf
+        run: bash scripts/check-service-lists.sh
+
       - name: ShellCheck ecs-services.sh
-        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh
+        run: shellcheck -x scripts/ecs-services.sh scripts/ecs-services.test.sh scripts/check-service-lists.sh
 
   terraform-lint:
     name: Terraform Lint

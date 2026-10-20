@@ -48,7 +48,7 @@ env:
 
 jobs:
   # -------------------------------------------------------------------------
-  # Validate runs first, before any environment secrets are loaded, so bad
+  # Validate runs first, before any environment secrets or variables are loaded, so bad
   # inputs are rejected up front.
   # -------------------------------------------------------------------------
   validate:
@@ -97,16 +97,16 @@ jobs:
       git_sha: ${{ steps.resolve.outputs.git_sha }}
 
     steps:
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
-          APP_NAME: ${{ secrets.APP_NAME }}
+          ROLE_ARN: ${{ vars.ROLE_ARN }}
+          APP_NAME: ${{ vars.APP_NAME }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.source_env }}' GitHub environment and re-run."
             exit 1
           fi
@@ -114,7 +114,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-frontend-source-${{ inputs.source_env }}
           aws-region: us-east-1
 
@@ -123,7 +123,7 @@ jobs:
         run: |
           RESOLVED=$(aws ssm get-parameter \
             --region us-east-1 \
-            --name "/${{ secrets.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
+            --name "/${{ vars.APP_NAME }}/${{ inputs.source_env }}/edge/deployed_git_sha" \
             --query "Parameter.Value" --output text 2>/dev/null || echo "")
 
           if [ -z "$RESOLVED" ]; then
@@ -146,22 +146,22 @@ jobs:
     environment: ${{ inputs.target_env }}
 
     steps:
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN:              ${{ secrets.ROLE_ARN }}
-          APP_NAME:              ${{ secrets.APP_NAME }}
-          SUBDOMAIN:             ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME:           ${{ secrets.DOMAIN_NAME }}
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          ROLE_ARN:              ${{ vars.ROLE_ARN }}
+          APP_NAME:              ${{ vars.APP_NAME }}
+          SUBDOMAIN:             ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME:           ${{ vars.DOMAIN_NAME }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME")
-          [[ -z "$SUBDOMAIN"             ]] && missing+=("SUBDOMAIN")
-          [[ -z "$DOMAIN_NAME"           ]] && missing+=("DOMAIN_NAME")
-          [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID")
+          [[ -z "$ROLE_ARN"              ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME"              ]] && missing+=("APP_NAME (variable)")
+          [[ -z "$SUBDOMAIN"             ]] && missing+=("SUBDOMAIN (variable)")
+          [[ -z "$DOMAIN_NAME"           ]] && missing+=("DOMAIN_NAME (variable)")
+          [[ -z "$VITE_GOOGLE_CLIENT_ID" ]] && missing+=("VITE_GOOGLE_CLIENT_ID (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.target_env }}' GitHub environment and re-run."
             exit 1
           fi
@@ -169,7 +169,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: promote-frontend-${{ inputs.source_env }}-to-${{ inputs.target_env }}
           # Frontend assets (S3) and CloudFront are always in us-east-1 / global.
           aws-region: us-east-1
@@ -185,8 +185,8 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Resolve derived values
         env:
-          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
         run: |
           if [[ "${{ inputs.target_env }}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
@@ -210,8 +210,8 @@ jobs:
             aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
           }
 
-          S3_BUCKET=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/s3_bucket_name")
-          CF_DIST_ID=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/cloudfront_distribution_id")
+          S3_BUCKET=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/s3_bucket_name")
+          CF_DIST_ID=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/cloudfront_distribution_id")
 
           if [ -z "$S3_BUCKET" ]; then
             echo "ERROR: S3 bucket not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-edge workflow (apply) for that environment first."
@@ -252,7 +252,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL:          ${{ env.VITE_API_URL }}
-          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
       - name: Sync to S3
@@ -296,7 +296,7 @@ jobs:
         run: |
           aws ssm put-parameter \
             --region us-east-1 \
-            --name "/${{ secrets.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
+            --name "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
             --value "${{ needs.source_ref.outputs.git_sha }}" \
             --type String \
             --overwrite

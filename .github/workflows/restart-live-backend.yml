@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "'all', or comma-separated service names from services.tf (e.g. backend,worker)"
+        description: "Services to restart: all, or a comma-separated list of: auth, admin, backend, worker (e.g. backend,worker). Restarted in parallel."
         required: true
         default: "all"
         type: string
@@ -71,16 +71,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
-          APP_NAME: ${{ secrets.APP_NAME }}
+          ROLE_ARN: ${{ vars.ROLE_ARN }}
+          APP_NAME: ${{ vars.APP_NAME }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
@@ -88,7 +88,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
           aws-region: us-east-1
 
@@ -99,7 +99,7 @@ jobs:
           SELECTION: ${{ inputs.service }}
         run: |
           source scripts/ecs-services.sh
-          SERVICES=$(resolve_services "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
           echo "services=$(jq -c '[.[].name]' <<<"$SERVICES")" >> "$GITHUB_OUTPUT"
           echo "Restarting: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 
@@ -124,7 +124,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: restart-live-backend-${{ inputs.environment }}
           aws-region: ${{ matrix.aws_region }}
 
@@ -136,7 +136,7 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Force new deployment
         env:
-          SSM_BASE: /${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
+          SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
           SERVICE_NAME: ${{ matrix.service }}
         run: |
           source scripts/ecs-services.sh

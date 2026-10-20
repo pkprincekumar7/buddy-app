@@ -12,9 +12,9 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Redis, ECR, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`) |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket policy for frontend assets (always `us-east-1`) |
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to; `bootstrap_region` input (default `auto` = first of `backend_regions`) picks the region that serves login, Google sign-in and health — consumes a pre-existing ACM cert ARN, does not create one |
-| `deploy-live-backend.yml` | Manual / called | Builds the Docker image once, pushes it to every selected region's ECR, and rolls out the selected services (`service`: `all` or a comma-separated list, e.g. `backend,worker`) in the order of the `ecs_services` SSM list. A service added in `infra-live-backend/terraform/services.tf` needs no workflow change. |
+| `deploy-live-backend.yml` | Manual / called | Builds the Docker image once, pushes it to every selected region's ECR, and rolls out the selected services (`service`: `all` or a comma-separated list of `auth`, `admin`, `backend`, `worker`) in parallel; a failed service doesn't stop the others, and the run fails naming it. A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its name added to the help text of the `service` input (CI checks it matches). |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
-| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), in the `ecs_services` rollout order. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment, then the promote job (target's `ROLE_ARN`) pushes it into the target's own ECR under the same tag and updates each target ECS service. Works across AWS accounts (e.g. stg and prod in different accounts) |
+| `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), all in parallel. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment, then the promote job (target's `ROLE_ARN`) pushes it into the target's own ECR under the same tag and updates each target ECS service. Works across AWS accounts (e.g. stg and prod in different accounts) |
 | `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev→stg` or `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
 | `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `stg`, `prod`) |
 | `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
@@ -167,17 +167,21 @@ Go to **IAM → Roles → Create role**:
    - Operator: `StringLike`
    - Value: `repo:YOUR_GITHUB_ORG/buddy-app:*` (or `repo:...:environment:dev` per env)
 5. Attach the `AdministratorAccess` managed policy (or a scoped policy covering ECS, ECR, ELB, VPC, CloudFront, WAF, S3, Route 53, ACM, Secrets Manager, SSM, IAM, GuardDuty, CloudTrail, EventBridge Scheduler, and Lambda).
-6. Name the role and copy the **Role ARN** — this becomes the `ROLE_ARN` secret.
+6. Name the role and copy the **Role ARN** — this becomes the `ROLE_ARN` environment variable.
 
-## Required GitHub secrets
+## Required GitHub environment variables and secrets
 
-Configure under **Settings → Environments → `<env>` → Secrets** (one set per environment: `dev`, `sbx`, `stg`, `prod`).
+Configure both under **Settings → Environments → `<env>`**, one set per environment: `dev`, `sbx`, `stg`, `prod`.
+- **Variables** (`vars.*`): everything that isn't a credential, such as names, IDs, ARNs, model names and public keys. They're readable in the UI and show unmasked in logs, so a run is easy to check.
+- **Secrets** (`secrets.*`): credentials only. They're write-only and masked in logs.
 
-Environments in the same AWS account (dev, sbx and stg share one; prod has its own) must each point at their **own** S3 buckets (`ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, and their `UPLOADS_BUCKET_NAMES` entries): the edge and frontend stacks replace each bucket's whole policy with one that trusts only that environment's CloudFront distribution, so a shared bucket breaks the other environment with 403s. For the same reason `GLOBAL_LOGGING_BUCKET_NAME` must be a different bucket from the `us-east-1` entry of `REGIONAL_LOGGING_BUCKET_NAMES`.
+Both are scoped to the environment the same way, so each job sees its own environment's values. In promote, the export job sees the source environment and the promote job the target. A missing value fails the run up front; the error tags each missing variable with `(variable)`.
 
-### Per-region values — environment **variables**, not secrets (TF-01)
+Environments in the same AWS account (dev, sbx and stg share one; prod has its own) must each point at their **own** S3 buckets (`ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, and their `UPLOADS_BUCKET_NAMES` entries). The edge and frontend stacks replace each bucket's whole policy with one that trusts only that environment's CloudFront distribution, so a shared bucket breaks the other environment with 403s. For the same reason `GLOBAL_LOGGING_BUCKET_NAME` must be a different bucket from the `us-east-1` entry of `REGIONAL_LOGGING_BUCKET_NAMES`.
 
-Configure under **Settings → Environments → `<env>` → Variables**. Each is a single-line JSON map keyed by AWS region, with an entry for every region the environment uses (`backend_regions`). Adding a region means adding one key to each map; no workflow changes. A missing or empty entry fails the run before Terraform, naming the variable and region.
+### Variables — per-region values (TF-01)
+
+Each is a single-line JSON map keyed by AWS region, with an entry for every region the environment uses (`backend_regions`). Adding a region means adding one key to each map; no workflow changes. A missing or empty entry fails the run before Terraform, naming the variable and region.
 
 | Variable | Value | Used by |
 |---|---|---|
@@ -185,55 +189,57 @@ Configure under **Settings → Environments → `<env>` → Variables**. Each is
 | `UPLOADS_BUCKET_NAMES` | `{"ap-south-1": "<uploads bucket>", …}`: the pre-existing, private uploads bucket per region | `terraform-live-backend` (CORS, lifecycle, IAM), `terraform-live-edge` (CSP `connect-src`) |
 | `REGIONAL_LOGGING_BUCKET_NAMES` | `{"ap-south-1": "<logging bucket>", …}`: pre-existing bucket per region for CloudTrail and/or ALB access logs. An entry is **required for every region**, even where `enable_cloudtrail` / `enable_alb_access_logs` are off. | `terraform-live-backend` |
 
-They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS_BUCKET_NAME_<REGION>` and `REGIONAL_LOGGING_BUCKET_NAME_<REGION>`. None of these values is secret. Once the variables are set, delete the old secrets.
+They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS_BUCKET_NAME_<REGION>` and `REGIONAL_LOGGING_BUCKET_NAME_<REGION>`.
 
-### Infrastructure secrets (Terraform + deploy workflows)
+### Variables — infrastructure (Terraform + deploy workflows)
 
-| Secret | Value |
+| Variable | Value |
 |---|---|
-| `ROLE_ARN` | ARN of the IAM OIDC role |
-| `APP_NAME` | App identifier used as SSM parameter prefix, e.g. `superpower` |
+| `ROLE_ARN` | ARN of the IAM OIDC role. Not a credential: the role's trust policy decides who can assume it. It does show the AWS account ID in logs. |
+| `APP_NAME` | App identifier used as resource-name and SSM parameter prefix, e.g. `superpower` |
 | `STATE_BUCKET` | S3 bucket name for Terraform remote state |
-| `ASSETS_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var injection) and `terraform-live-edge` (CloudFront origin + bucket policy). |
+| `ASSETS_BUCKET_NAME` | Pre-existing S3 bucket name (in `us-east-1`) used to store static assets under `app-assets/` and to hold any backend-generated files. Used by `terraform-live-backend` (ECS env var `ASSETS_BUCKET_NAME`), `terraform-live-edge` (CloudFront origin + bucket policy) and the mobile builds. |
 | `DOMAIN_NAME` | Root domain, e.g. `example.com` |
-| `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app`. The backend/internal subdomain (`{subdomain}-internal`) is derived from this at workflow runtime — there is no separate secret for it. |
+| `SUBDOMAIN` | Frontend subdomain prefix, e.g. `app`. The backend/internal subdomain (`{subdomain}-internal`) is derived from this at workflow runtime; there is no separate value for it. |
 | `HOSTED_ZONE_ID` | Route 53 hosted zone ID for this environment's `DOMAIN_NAME`. The zone must be in the **same AWS account** as this environment's `ROLE_ARN` (both the public CloudFront record and the internal ALB records are written into it), so prod's zone lives in the prod account. A subdomain zone needs NS delegation from its parent zone. |
 | `SPA_BUCKET_NAME` | Pre-existing S3 bucket name for the compiled frontend assets — used by `terraform-live-edge` to configure the CloudFront origin pointing to the frontend S3 bucket. |
-| `GLOBAL_LOGGING_BUCKET_NAME` | Pre-existing S3 bucket in `us-east-1` for the edge module's CloudTrail trail and/or WAF Firehose logs (`terraform-live-edge` only; required whenever `enable_cloudtrail` or `enable_waf_logging` is true) |
-| `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rule rejects anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
-| `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — embedded in the Lambda@Edge JWT validator by `terraform-live-edge`, and passed to the API as `JWT_PUBLIC_KEYS` by `terraform-live-backend` (both verify by `kid`). `terraform-live-backend` fails before apply if `JWT_KEY_ID` isn't one of its keys. See [docs/jwt-keys.md](jwt-keys.md). |
-| `JWT_KEY_ID` | The `kid` the backend signs with (default `key-v1`). Passed to the API by `terraform-live-backend`. |
-| `OPS_EMAIL` | Operator email address for the CloudWatch alarm SNS subscription. Required only when `enable_ops_email = true` (prod by default) — Terraform's own validation enforces this, the workflow does not. |
-| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
+| `GLOBAL_LOGGING_BUCKET_NAME` | Pre-existing S3 bucket in `us-east-1` for the edge module's CloudTrail trail and/or WAF Firehose logs (`terraform-live-edge` only; required on prod, and whenever `enable_cloudtrail` or `enable_waf_logging` is true) |
+| `JWT_PUBLIC_KEYS` | JSON map of kid → RSA public key PEM — public keys only, by design. Embedded in the Lambda@Edge JWT validator by `terraform-live-edge`, and passed to auth, admin and the API by `terraform-live-backend` (admin and the API verify with these keys only). **Required**: `terraform-live-backend` fails before apply unless its `JWT_KEY_ID` entry is the public half of `JWT_PRIVATE_KEY`. See [docs/jwt-keys.md](jwt-keys.md). |
+| `JWT_KEY_ID` | The `kid` auth signs with. Optional: defaults to `key-v1` when unset. Change it only during a key rotation (see [docs/jwt-keys.md](jwt-keys.md)). |
+| `OPS_EMAIL` | Operator (preferably team/distribution-list) email for the CloudWatch alarm SNS subscription. Required only when `enable_ops_email = true` (prod by default) — Terraform's own validation enforces this, the workflow does not. Shows in logs, so keep it a team address. |
 
-### Application secrets (injected into ECS task environment by `terraform-live-backend.yml`)
+### Variables — application config (injected into ECS task environment by `terraform-live-backend.yml`)
+
+| Variable | Value |
+|---|---|
+| `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In). Public by nature: the browser sees it. Also used by the mobile builds. |
+| `OPENAI_MODEL` | Required, e.g. `gpt-5.4-mini` |
+| `ANTHROPIC_MODEL` | Required, e.g. `claude-sonnet-4-6` |
+| `GEMINI_MODEL` | Required, e.g. `gemini-3-flash` |
+
+### Variables — frontend build (baked into the bundle by `deploy-live-frontend.yml` / `promote-live-frontend.yml`)
+
+| Variable | Value |
+|---|---|
+| `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID`. Anything baked into the bundle is public. |
+
+`VITE_API_URL` is **not** configured: it's computed in the workflow from `SUBDOMAIN` and `DOMAIN_NAME` and injected into the build environment at runtime.
+
+### Secrets — credentials only
 
 | Secret | Value |
 |---|---|
-| `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions |
-| `GOOGLE_CLIENT_ID` | OAuth 2.0 Web client ID (leave empty to disable Google Sign-In) |
+| `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions. Reaches only the auth service. |
 | `MONGODB_URI` | `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/` |
 | `REDIS_AUTH_TOKEN` | AUTH token for the ElastiCache Redis replication group (required — no default). Must be 16–128 printable ASCII characters, no spaces/quotes/`@`/`/`. |
 | `OPENAI_API_KEY` | OpenAI key — at least one of `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY` is required (the backend refuses to start without one) |
-| `OPENAI_MODEL` | Required, e.g. `gpt-5.4-mini` |
 | `ANTHROPIC_API_KEY` | Anthropic key (see `OPENAI_API_KEY`) |
-| `ANTHROPIC_MODEL` | Required, e.g. `claude-sonnet-4-6` |
 | `GEMINI_API_KEY` | Google Gemini key (see `OPENAI_API_KEY`) |
-| `GEMINI_MODEL` | Required, e.g. `gemini-3-flash` |
-| `ASSETS_BUCKET_NAME` | S3 bucket name injected into the ECS task environment; available to the backend for any S3 operations (e.g. future direct uploads). Also declared as an infrastructure secret above — a single GitHub secret drives both Terraform and the ECS environment. |
+| `ORIGIN_VERIFY_SECRET` | Shared secret CloudFront attaches as the `X-Origin-Verify` header on every request to the backend ALB; the ALB listener rules reject anything without a matching header, so a request that reaches the ALB via CloudFront's shared IP range but bypassed this app's own distribution (and therefore its Lambda@Edge JWT check) gets a fixed 403. **Must be identical** between `terraform-live-backend` and `terraform-live-edge` — both read it from this same secret. |
+| `ORIGIN_VERIFY_SECRET_NEXT` | **Optional — set only during a rotation.** While set, every ALB accepts it as well as `ORIGIN_VERIFY_SECRET`, and CloudFront sends it instead. See [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret). |
+| `GIT_ACTIONS_PAT` | GitHub Personal Access Token used by the scheduler's Lambda dispatcher to call the `workflow_dispatch` REST endpoint; requires classic token with `repo` + `workflow` scopes (or fine-grained Actions: Read and Write). Used by `terraform-live-scheduler.yml`. |
 
-There is no `JWT_KEY_ID` secret — it's a Terraform variable with `default = "key-v1"` in both `infra-live-backend` and `infra-live-edge`; nothing to configure unless you're rotating keys (see [docs/jwt-keys.md](jwt-keys.md)).
-
-### Frontend build secrets (baked into the bundle by `deploy-live-frontend.yml`)
-
-| Secret | Value |
-|---|---|
-| `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
-
-`VITE_API_URL` is **not** a GitHub secret — it is computed dynamically in the workflow from `SUBDOMAIN` and `DOMAIN_NAME` and injected into the build environment at runtime.
-
-### Mobile build secrets (`build-ios-ipa.yml`)
+### Secrets — mobile build (`build-ios-ipa.yml`)
 
 | Secret | Value |
 |---|---|
@@ -243,6 +249,12 @@ There is no `JWT_KEY_ID` secret — it's a Terraform variable with `default = "k
 | `IOS_PROVISIONING_PROFILE_BASE64` | Base64-encoded mobile provisioning profile |
 | `IOS_APPLE_TEAM_ID` | Apple Developer Team ID used for code signing |
 
-`build-android-apk.yml` needs no Android-specific secrets beyond ones already listed above (`SUBDOMAIN`, `DOMAIN_NAME`, `GOOGLE_CLIENT_ID`, `ROLE_ARN`, `ASSETS_BUCKET_NAME`).
+`build-android-apk.yml` needs no Android-specific values beyond ones already listed above (`SUBDOMAIN`, `DOMAIN_NAME`, `GOOGLE_CLIENT_ID`, `ROLE_ARN`, `ASSETS_BUCKET_NAME` — all variables).
+
+### Moving an existing environment from secrets to variables
+
+1. Add every value in the variable tables above as an environment **variable**, with the same name and value as the old secret.
+2. Merge the workflow change.
+3. Once each workflow has run successfully in that environment, delete the old secrets of the same names. A secret and a variable with the same name don't conflict, because workflows read only `vars.*` for these.
 
 At least one LLM API key must be set to enable LLM features.

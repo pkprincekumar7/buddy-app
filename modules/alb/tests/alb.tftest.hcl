@@ -64,6 +64,10 @@ run "single_catch_all_target" {
     error_message = "The catch-all rule matches the header only, at the lowest priority."
   }
   assert {
+    condition     = aws_lb_target_group.service["backend"].deregistration_delay == "300"
+    error_message = "Without an override the target group keeps AWS's 300 s drain."
+  }
+  assert {
     condition     = keys(output.target_group_arns) == ["backend"] && keys(output.target_group_arn_suffixes) == ["backend"]
     error_message = "One target group per target, in the output maps."
   }
@@ -233,4 +237,31 @@ run "target_group_name_on_another_port" {
     condition     = aws_lb_target_group.service["backend"].name == "superpower-backend-tg-prod-${substr(sha1(jsonencode([8080, "HTTP", "ip", "vpc-1"])), 0, 4)}" && aws_lb_target_group.service["backend"].name != "superpower-backend-tg-prod-${substr(sha1(jsonencode([8000, "HTTP", "ip", "vpc-1"])), 0, 4)}"
     error_message = "A different port gives a different name."
   }
+}
+
+run "deregistration_delay_is_configurable" {
+  command = plan
+
+  variables {
+    deregistration_delay_seconds = 120
+    targets = {
+      auth    = { port = 8000, path_patterns = ["/api/v1/auth/*"], priority = 10 }
+      backend = { port = 8000 }
+    }
+  }
+
+  assert {
+    condition     = alltrue([for tg in values(aws_lb_target_group.service) : tg.deregistration_delay == "120"])
+    error_message = "Every target group drains for deregistration_delay_seconds."
+  }
+}
+
+run "deregistration_delay_must_be_in_range" {
+  command = plan
+
+  variables {
+    deregistration_delay_seconds = 3601
+  }
+
+  expect_failures = [var.deregistration_delay_seconds]
 }

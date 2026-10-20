@@ -16,7 +16,7 @@ output "ecs_cluster_name" {
 }
 
 output "ecs_services" {
-  description = "Every ECS service (services.tf) in rollout order: name, ECS service, task family, container — the same list written to SSM for the deploy workflows."
+  description = "Every ECS service (services.tf) in deploy_order: name, ECS service, task family, container — the same list written to SSM for the deploy workflows."
   value       = local.ecs_services_manifest
 }
 

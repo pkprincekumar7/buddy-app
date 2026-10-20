@@ -272,7 +272,7 @@ Bucket is created manually. Terraform manages the bucket policy only, referencin
 | Terraform resource | Status | Notes |
 |---|---|---|
 | `aws_ssm_parameter` (ALB FQDN) | exists | Read by `infra-live-edge` |
-| `aws_ssm_parameter` (ECS services list) | exists | `ecs_services`: JSON array of every service in `services.tf` (`name`, `service`, `family`, `container`) in rollout order. Read by deploy, restart (Phase 6) and promote through `scripts/ecs-services.sh`. Replaces the old per-service `ecs_service_name` / `ecs_worker_service_name` parameters. |
+| `aws_ssm_parameter` (ECS services list) | exists | `ecs_services`: JSON array of every service in `services.tf` (`name`, `service`, `family`, `container`) in `deploy_order`. Read by deploy, restart (Phase 6) and promote through `scripts/ecs-services.sh`. Replaces the old per-service `ecs_service_name` / `ecs_worker_service_name` parameters. |
 
 ---
 
@@ -703,7 +703,7 @@ SSM parameters written by this workflow:
 /<APP_NAME>/<ENV>/backend/<REGION>/alb_internal_fqdn         →  <alb-fqdn>
 /<APP_NAME>/<ENV>/backend/<REGION>/ecr_repository_url        →  <ecr-url>
 /<APP_NAME>/<ENV>/backend/<REGION>/ecs_cluster_name          →  <cluster-name>
-/<APP_NAME>/<ENV>/backend/<REGION>/ecs_services              →  [{name, service, family, container}, …]  (rollout order)
+/<APP_NAME>/<ENV>/backend/<REGION>/ecs_services              →  [{name, service, family, container}, …]  (deploy_order)
 /<APP_NAME>/<ENV>/backend/<REGION>/atlas_vpc_endpoint_id     →  <vpc-endpoint-id>
 /<APP_NAME>/<ENV>/backend/<REGION>/nat_eip_addresses         →  <comma-separated-eip-list>
 /<APP_NAME>/<ENV>/backend/<REGION>/secrets_manager_arn       →  <sm-arn>
@@ -1185,7 +1185,7 @@ env:
   TF_VERSION: "1.9.0"
   TF_VAR_environment:        ${{ inputs.environment }}
   TF_VAR_aws_region:         ${{ inputs.aws_region }}
-  TF_VAR_app_name:           ${{ secrets.APP_NAME }}
+  TF_VAR_app_name:           ${{ vars.APP_NAME }}
   TF_VAR_atlas_public_key:   ${{ secrets.ATLAS_PUBLIC_KEY }}
   TF_VAR_atlas_private_key:  ${{ secrets.ATLAS_PRIVATE_KEY }}
   TF_VAR_atlas_project_id:   ${{ secrets.ATLAS_PROJECT_ID }}
@@ -1210,9 +1210,9 @@ jobs:
 
       - name: Validate required secrets
         env:
-          ROLE_ARN:           ${{ secrets.ROLE_ARN }}
-          APP_NAME:           ${{ secrets.APP_NAME }}
-          STATE_BUCKET:       ${{ secrets.STATE_BUCKET }}
+          ROLE_ARN:           ${{ vars.ROLE_ARN }}
+          APP_NAME:           ${{ vars.APP_NAME }}
+          STATE_BUCKET:       ${{ vars.STATE_BUCKET }}
           ATLAS_PUBLIC_KEY:   ${{ secrets.ATLAS_PUBLIC_KEY }}
           ATLAS_PRIVATE_KEY:  ${{ secrets.ATLAS_PRIVATE_KEY }}
           ATLAS_PROJECT_ID:   ${{ secrets.ATLAS_PROJECT_ID }}
@@ -1245,7 +1245,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: terraform-atlas-${{ inputs.environment }}
           aws-region: us-east-1
 
@@ -1253,7 +1253,7 @@ jobs:
         if: inputs.action == 'plan' || inputs.action == 'apply'
         id: ssm
         run: |
-          APP="${{ secrets.APP_NAME }}"
+          APP="${{ vars.APP_NAME }}"
           ENV="${{ inputs.environment }}"
           REGION="${{ inputs.aws_region }}"
 
@@ -1294,8 +1294,8 @@ jobs:
       - name: Terraform Init
         run: |
           terraform init \
-            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/atlas/${{ inputs.aws_region }}/terraform.tfstate" \
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/atlas/${{ inputs.aws_region }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
 
       - name: Import existing cluster (first run only)
@@ -1346,7 +1346,7 @@ jobs:
       - name: Write SSM outputs
         if: inputs.action == 'apply'
         run: |
-          APP="${{ secrets.APP_NAME }}"
+          APP="${{ vars.APP_NAME }}"
           ENV="${{ inputs.environment }}"
 
           # Always write endpoint_service_name (available from Phase 1 onward)
@@ -1435,7 +1435,7 @@ Add this step in `.github/workflows/terraform-live-backend.yml` after the existi
       - name: Resolve Atlas SSM inputs
         if: inputs.action == 'plan' || inputs.action == 'apply'
         run: |
-          APP="${{ secrets.APP_NAME }}"
+          APP="${{ vars.APP_NAME }}"
           ENV="${{ inputs.environment }}"
           REGION="${{ inputs.aws_region }}"
 
@@ -1509,7 +1509,7 @@ Add this step in `.github/workflows/terraform-live-backend.yml` after the existi
       - name: Write Atlas and infra SSM outputs
         if: inputs.action == 'apply'
         run: |
-          APP="${{ secrets.APP_NAME }}"
+          APP="${{ vars.APP_NAME }}"
           ENV="${{ inputs.environment }}"
           REGION="${{ inputs.aws_region }}"
 

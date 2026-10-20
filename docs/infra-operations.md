@@ -9,7 +9,7 @@ For the architecture and deployment sequence see
 inventory see [aws-resources.md](aws-resources.md), and for workflows and GitHub secrets see
 [ci-cd.md](ci-cd.md).
 
-Placeholders used below: `{app}` = `APP_NAME` secret (e.g. `superpower`), `{env}` = `dev` / `sbx` /
+Placeholders used below: `{app}` = `APP_NAME` environment variable (e.g. `superpower`), `{env}` = `dev` / `sbx` /
 `stg` / `prod`, `{region}` = a backend region (`ap-south-1` / `eu-west-1` / `us-east-1`).
 
 ---
@@ -28,7 +28,7 @@ passes `--region us-east-1`.
 | `/{app}/{env}/backend/{region}/alb_internal_fqdn` | `infra-live-backend` (that region) | `infra-live-edge` (one CloudFront `/api/*` origin per region in `backend_regions`) |
 | `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI), `promote-live-backend` (target push) |
 | `/{app}/{env}/backend/{region}/ecs_cluster_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
-| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in rollout order, of `{name, service, family, container}`, one per ECS service |
+| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in `deploy_order` order, of `{name, service, family, container}`, one per ECS service |
 | `/{app}/{env}/edge/cloudfront_distribution_id` | `infra-live-edge` | `deploy-live-frontend`, `promote-live-frontend` (cache invalidation) |
 | `/{app}/{env}/edge/cloudfront_arn` | `infra-live-edge` | `infra-live-frontend` (S3 bucket policy) |
 | `/{app}/{env}/edge/s3_bucket_name` | `infra-live-edge` | `infra-live-frontend` (precondition check), `deploy-live-frontend`, `promote-live-frontend` |
@@ -104,8 +104,9 @@ until the next deploy.
 Builds the image once, pushes it as `:<YYYYMMDD>-<short-sha>` to every selected region's ECR, then
 in each region:
 
-1. Reads the services to deploy from the region's `ecs_services` SSM list, in rollout order (auth,
-   admin, the API, then the worker, so they're healthy before consumers restart against them). For each service, it reads
+1. Reads the services to deploy from the region's `ecs_services` SSM list and rolls them all out
+   **in parallel**: each is an independent ECS service, so the deploy takes as long as the
+   slowest one. Log lines are prefixed with the service name. For each service, it reads
    the **latest active revision** of its task definition family, so it picks up anything
    `terraform apply` just registered.
 2. Patches only the container `image` to the pushed tag, and registers a new revision.
@@ -114,7 +115,10 @@ in each region:
 
 Everything else (env vars, secret references, CPU/memory, roles) is carried over unchanged. The
 `:latest` placeholder never runs after the first deploy. If a service fails to stabilise, the
-deploy stops there and the remaining services are not touched. The rollout logic is shared by all
+ECS circuit breaker rolls it back and the others carry on. The step then fails, naming the services
+left on their previous image and the `service=` value to re-run them with. Because the services
+are rolled out together, any change must keep working while some services still run the previous
+image (e.g. the API and the worker must both handle a job written by the other version). The rollout logic is shared by all
 three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.test.sh`).
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
@@ -146,7 +150,7 @@ the workflows take. That one entry produces:
 | `sustained_alarms`, `immediate_alarms` | CloudWatch alarms (when `enable_all_alarms`) |
 | `task_policies` | Task IAM role `<app>-<key>-task-role-<env>-<region>` with those policies (plus ECS Exec / X-Ray policies when those features are on) |
 | — | Security group `<app>-<key>-sg-<env>` (reaches the VPC endpoints; Redis too if `uses_redis`), log group `/ecs/<app>/<key>/<env>` |
-| `deploy_order` | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow change.** |
+| `deploy_order` | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow logic change.** Add the key to the name list in the `service` input description of `deploy-`, `restart-` and `promote-live-backend.yml` (in `deploy_order` order). That list is only help text, but CI (`scripts/check-service-lists.sh`) fails if it doesn't match. |
 
 Then:
 1. Apply `terraform-live-backend` in every region of the environment.
@@ -357,7 +361,7 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 | Resource | Setting |
 |---|---|
 | Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
-| ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy) |
+| ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy); deregistration delay `llm_timeout_seconds` + 30 s (90 s dev/sbx/stg, 120 s prod), so a rollout waits that long at most for old tasks' in-flight requests instead of AWS's 300 s default |
 | ECS | Container Insights on; container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
 | ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
 | ElastiCache Redis 7.1 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx/stg, 2 replicas with Multi-AZ failover in prod. Holds rate-limit counters and locks only |

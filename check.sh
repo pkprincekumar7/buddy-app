@@ -189,9 +189,13 @@ run "spa-rewrite CloudFront Function unit tests (infra-live-edge)" \
 # fake aws CLI (no AWS access needed).
 run "ecs-services.sh tests (scripts)" \
     bash "$ROOT/scripts/ecs-services.test.sh"
+# The service names listed in those workflows' `service` input descriptions
+# must match services.tf (they're the help text people pick names from).
+run "service lists match services.tf (scripts)" \
+    bash "$ROOT/scripts/check-service-lists.sh"
 if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
-      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh"
+      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh"
 fi
 
 # shared/routing.json → generated backend/app/routing_data.py and the frontends'
