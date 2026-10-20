@@ -13,7 +13,9 @@ mkdir -p "$FAKE/bin" "$FAKE/ssm"
 
 # -- fake aws ------------------------------------------------------------------
 # Answers only the calls ecs-services.sh makes, from files under $FAKE, and
-# logs every call to $FAKE/calls.
+# logs every call to $FAKE/calls. State is per service / family (deploys run
+# in parallel): states-<service> (else states), polls-<service>,
+# registered-<family>.json.
 cat > "$FAKE/bin/aws" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE/calls"
@@ -28,14 +30,17 @@ case "$1 $2" in
     else jq -r --arg c "$(sed -n "s/.*name=='\([^']*\)'.*/\1/p" <<<"$q")" \
            '[.containerDefinitions[] | select(.name == $c) | .image][0] // "None"' "$FAKE/td-live.json"; fi ;;
   "ecs register-task-definition")
-    arg --cli-input-json "$@" > "$FAKE/registered.json"
-    echo "arn:aws:ecs:ap-south-1:1:task-definition/$(jq -r .family "$FAKE/registered.json"):99" ;;
+    j="$(arg --cli-input-json "$@")"; fam="$(jq -r .family <<<"$j")"
+    printf '%s' "$j" > "$FAKE/registered-$fam.json"
+    echo "arn:aws:ecs:ap-south-1:1:task-definition/$fam:99" ;;
   "ecs describe-services")
     if [ "$(arg --query "$@")" = "services[0]" ]; then
       # One state per call; the last one repeats.
-      n=$(( $(cat "$FAKE/polls" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE/polls"
-      total=$(wc -l < "$FAKE/states"); [ "$n" -gt "$total" ] && n=$total
-      sed -n "${n}p" "$FAKE/states"
+      svc="$(arg --services "$@")"; st="$FAKE/states-$svc"; [ -f "$st" ] || st="$FAKE/states"
+      [ -n "${FAKE_POLL_SECONDS:-}" ] && sleep "$FAKE_POLL_SECONDS"
+      n=$(( $(cat "$FAKE/polls-$svc" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE/polls-$svc"
+      total=$(wc -l < "$st"); [ "$n" -gt "$total" ] && n=$total
+      sed -n "${n}p" "$st"
     else echo "arn:aws:ecs:ap-south-1:1:task-definition/live:7"; fi ;;
   "ecs update-service") echo '{"serviceName":"x"}' ;;
   *) echo "fake aws: unexpected call: $*" >&2; exit 1 ;;
@@ -59,7 +64,7 @@ echo "$MANIFEST" > "$FAKE/ssm/$(tr '/' '_' <<<"$BASE/ecs_services")"
 STABLE='{"deployments":[{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":0,"desiredCount":2}'
 ROLLING='{"deployments":[{"rolloutState":"IN_PROGRESS"},{"rolloutState":"COMPLETED"}],"runningCount":2,"pendingCount":1,"desiredCount":2}'
 FAILED='{"deployments":[{"rolloutState":"FAILED"}],"runningCount":1,"pendingCount":0,"desiredCount":2}'
-reset_polls() { rm -f "$FAKE/polls" "$FAKE/calls"; }
+reset_polls() { rm -f "$FAKE"/polls-* "$FAKE"/states-* "$FAKE/calls"; }
 
 # -- resolve_services ----------------------------------------------------------
 check "all → every service, rollout order" "$(resolve_services "$BASE" all | jq -r '[.[].name] | join(",")')" "backend,worker,reports"
@@ -78,9 +83,10 @@ cat > "$FAKE/td-superpower-backend-prod.json" <<'EOF'
 EOF
 arn=$(register_with_image superpower-backend-prod backend repo:new)
 check "register returns the new revision" "$arn" "arn:aws:ecs:ap-south-1:1:task-definition/superpower-backend-prod:99"
-check "only the named container's image changes" "$(jq -c '[.containerDefinitions[].image]' "$FAKE/registered.json")" '["repo:new","otel:v0.40.0"]'
-check "everything else is kept" "$(jq -c '[.cpu, .containerDefinitions[0].environment]' "$FAKE/registered.json")" '["4096",[{"name":"A","value":"1"}]]'
-check "read-only fields are stripped" "$(jq -c '[has("taskDefinitionArn"), has("revision"), has("status"), has("registeredAt"), has("compatibilities")]' "$FAKE/registered.json")" '[false,false,false,false,false]'
+REG="$FAKE/registered-superpower-backend-prod.json"
+check "only the named container's image changes" "$(jq -c '[.containerDefinitions[].image]' "$REG")" '["repo:new","otel:v0.40.0"]'
+check "everything else is kept" "$(jq -c '[.cpu, .containerDefinitions[0].environment]' "$REG")" '["4096",[{"name":"A","value":"1"}]]'
+check "read-only fields are stripped" "$(jq -c '[has("taskDefinitionArn"), has("revision"), has("status"), has("registeredAt"), has("compatibilities")]' "$REG")" '[false,false,false,false,false]'
 if out=$(register_with_image superpower-backend-prod nope repo:new 2>&1); then fail "unknown container is an error"; else
   [[ "$out" == *"has no container named 'nope'"* ]] && ok "unknown container is an error" || fail "unknown container message" "$out"; fi
 
@@ -91,13 +97,13 @@ if live_image cluster superpower-backend-prod nope >/dev/null 2>&1; then fail "l
 
 # -- wait_stable ---------------------------------------------------------------
 reset_polls; printf '%s\n%s\n' "$ROLLING" "$STABLE" > "$FAKE/states"
-wait_stable cluster svc 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls")" "2" || fail "waits through a rollout until stable"
+wait_stable cluster svc 5 0 >/dev/null && check "waits through a rollout until stable" "$(cat "$FAKE/polls-svc")" "2" || fail "waits through a rollout until stable"
 reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"
 if out=$(wait_stable cluster svc 5 0 2>&1); then fail "FAILED rollout is an error"; else
   [[ "$out" == *"rollout FAILED"* ]] && ok "FAILED rollout fails at once" || fail "FAILED message" "$out"; fi
 reset_polls; printf '%s\n' "$ROLLING" > "$FAKE/states"
 if out=$(wait_stable cluster svc 3 0 2>&1); then fail "timeout is an error"; else
-  [[ "$out" == *"did not stabilise"* ]] && check "gives up after ATTEMPTS polls" "$(cat "$FAKE/polls")" "3" || fail "timeout message" "$out"; fi
+  [[ "$out" == *"did not stabilise"* ]] && check "gives up after ATTEMPTS polls" "$(cat "$FAKE/polls-svc")" "3" || fail "timeout message" "$out"; fi
 
 # -- deploy_image --------------------------------------------------------------
 for s in worker reports; do
@@ -105,13 +111,35 @@ for s in worker reports; do
     "$FAKE/td-superpower-backend-prod.json" > "$FAKE/td-superpower-$s-prod.json"
 done
 image_for() { echo "repo:sha-$(jq -r .name <<<"$1")"; }
+ALL="$(resolve_services "$BASE" all)"
+updated() { grep -o 'update-service --cluster cluster --service [a-z-]*' "$FAKE/calls" | awk '{print $NF}' | sort | paste -sd, -; }
+
 reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
-deploy_image cluster "$(resolve_services "$BASE" all)" image_for >/dev/null
-check "deploys every selected service, in order" "$(grep -o 'update-service --cluster cluster --service [a-z-]*' "$FAKE/calls" | awk '{print $NF}' | paste -sd, -)" "superpower-backend-prod,superpower-worker-prod,superpower-reports-prod"
-check "each gets its own image" "$(jq -r '.containerDefinitions[0].image' "$FAKE/registered.json")" "repo:sha-reports"
-reset_polls; printf '%s\n' "$FAILED" > "$FAKE/states"
-if deploy_image cluster "$(resolve_services "$BASE" all)" image_for >/dev/null 2>&1; then fail "a failed rollout stops the deploy"; else
-  check "a failed rollout stops before the next service" "$(grep -c 'update-service' "$FAKE/calls")" "1"; fi
+out=$(deploy_image cluster "$ALL" image_for 2>&1)
+check "deploys every selected service" "$(updated)" "superpower-backend-prod,superpower-reports-prod,superpower-worker-prod"
+check "each gets its own image" "$(for s in backend worker reports; do jq -r '.containerDefinitions[0].image' "$FAKE/registered-superpower-$s-prod.json"; done | paste -sd, -)" "repo:sha-backend,repo:sha-worker,repo:sha-reports"
+[[ "$out" == *"[worker] Registered arn:aws:ecs:ap-south-1:1:task-definition/superpower-worker-prod:99"* && "$out" == *"[backend] superpower-backend-prod is stable"* ]] \
+  && ok "output lines are prefixed with the service name" || fail "output prefix" "$out"
+
+# Each status poll takes 2 s: one after another would be >= 6 s for three services.
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+start=$SECONDS
+FAKE_POLL_SECONDS=2 deploy_image cluster "$ALL" image_for >/dev/null 2>&1
+elapsed=$((SECONDS - start))
+[ "$elapsed" -lt 5 ] && ok "services roll out in parallel (${elapsed}s for three 2s rollouts)" || fail "services roll out in parallel" "took ${elapsed}s"
+
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"; printf '%s\n' "$FAILED" > "$FAKE/states-superpower-worker-prod"
+if out=$(deploy_image cluster "$ALL" image_for 2>&1); then fail "a failed rollout fails the deploy"; else
+  check "a failed rollout doesn't stop the others" "$(updated)" "superpower-backend-prod,superpower-reports-prod,superpower-worker-prod"
+  [[ "$out" == *"rollout failed for: worker."* && "$out" == *"service=worker"* && "$out" == *"Rolled out: backend reports"* ]] \
+    && ok "the failure names the failed service and how to re-run it" || fail "failure summary" "$out"
+fi
+
+reset_polls; printf '%s\n' "$STABLE" > "$FAKE/states"
+broken_image() { [ "$(jq -r .name <<<"$1")" = "reports" ] && return 1; echo "repo:x"; }
+if out=$(deploy_image cluster "$ALL" broken_image 2>&1); then fail "an IMAGE_FOR failure fails the deploy"; else
+  [[ "$out" == *"rollout failed for: reports."* ]] && check "an IMAGE_FOR failure skips only that service" "$(updated)" "superpower-backend-prod,superpower-worker-prod" || fail "IMAGE_FOR failure" "$out"
+fi
 
 echo
 echo "$PASS passed, $FAIL failed"

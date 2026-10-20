@@ -12,8 +12,10 @@
 #
 # To add a service: copy the worker entry, give it a new key (lowercase,
 # hyphens — it's the name you pass to the workflows' `service` input), set
-# its container, sizing, permissions and scaling, apply terraform-live-backend,
-# then deploy.
+# its container, sizing, permissions and scaling, add its key to the service
+# list in the `service` input description of deploy-, restart- and
+# promote-live-backend.yml (scripts/check-service-lists.sh checks it), apply
+# terraform-live-backend, then deploy.
 #
 # HTTP services (`http` set) each get their own ALB target group and listener
 # rule (../../modules/alb). One of them leaves path_patterns empty: the
@@ -23,8 +25,11 @@
 #
 # All services run the same image (the backend ECR repo); `command` picks the
 # entry point and APP_COMPONENT which routers it serves (backend/app/main.py).
-# deploy_order decides the order deploys roll them out (lower first) — auth,
-# admin and the API go first so they're healthy before consumers restart.
+# deploy_order is the order services are listed in (the ecs_services SSM
+# list, the workflows' `service` help text). Deploy, promote and restart roll
+# all selected services out in parallel, so it isn't a rollout order: every
+# service must work against the previous image of the others while a deploy
+# is in flight (e.g. no API change the old worker can't handle).
 #
 # Only auth holds JWT_PRIVATE_KEY and mints tokens. Admin and the API verify
 # with JWT_PUBLIC_KEYS only, and the worker needs neither.

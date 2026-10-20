@@ -5,10 +5,10 @@
 # Source it:  source scripts/ecs-services.sh
 #
 # The list of ECS services comes from the SSM parameter terraform-live-backend
-# writes — /<app>/<env>/backend/<region>/ecs_services, a JSON array in rollout
-# order of { name, service, family, container } (see
+# writes — /<app>/<env>/backend/<region>/ecs_services, a JSON array (in
+# deploy_order) of { name, service, family, container } (see
 # infra-live-backend/terraform/services.tf). So adding a service in Terraform
-# needs no workflow change: these helpers loop over whatever is listed.
+# needs no workflow logic change: these helpers loop over whatever is listed.
 #
 # Needs: aws (credentials configured), jq. All SSM reads go to us-east-1 (the
 # control-plane region), whatever region the services run in.
@@ -21,7 +21,7 @@ get_ssm() {
 }
 
 # resolve_services SSM_BASE SELECTION → JSON array of the selected services, in
-# rollout order. SSM_BASE is /<app>/<env>/backend/<region>. SELECTION is "all"
+# deploy_order (services.tf) — the order they're listed in. SSM_BASE is /<app>/<env>/backend/<region>. SELECTION is "all"
 # or a comma-separated list of service names (e.g. "backend,worker"); unknown
 # names are an error that lists the valid ones.
 resolve_services() {
@@ -46,7 +46,7 @@ resolve_services() {
     echo "ERROR: no service selected. Valid: all, $(jq -r '[.[].name] | join(", ")' <<<"$manifest")." >&2
     return 1
   fi
-  # Keep the manifest's rollout order, not the order they were typed in.
+  # Keep the manifest's deploy_order, not the order they were typed in.
   jq -c --argjson w "$wanted" '[.[] | select(.name as $n | $w | index($n))]' <<<"$manifest"
 }
 
@@ -131,21 +131,57 @@ roll_out() {
   wait_stable "$cluster" "$service"
 }
 
-# deploy_image CLUSTER SERVICES_JSON IMAGE_FOR — for each service in
-# SERVICES_JSON (rollout order), register its family with the image
-# IMAGE_FOR prints for it and roll it out; stops at the first failure.
+# deploy_one CLUSTER SERVICE_ENTRY_JSON IMAGE_FOR — register one service's
+# family with the image IMAGE_FOR prints for it, and roll it out.
+deploy_one() {
+  local cluster="$1" entry="$2" image_for="$3" service family container image td
+  service=$(jq -r '.service' <<<"$entry")
+  family=$(jq -r '.family' <<<"$entry")
+  container=$(jq -r '.container' <<<"$entry")
+  image=$("$image_for" "$entry") || return 1
+  echo "Image: $image"
+  td=$(register_with_image "$family" "$container" "$image") || return 1
+  echo "Registered $td"
+  roll_out "$cluster" "$service" "$td"
+}
+
+# deploy_image CLUSTER SERVICES_JSON IMAGE_FOR — roll every service in
+# SERVICES_JSON onto the image IMAGE_FOR prints for it, all at once: each
+# service is an independent ECS service, so they don't wait for each other
+# and the deploy takes as long as the slowest one. Output lines are prefixed
+# with the service name. A failure doesn't stop the others; the function
+# returns non-zero naming the failed services (each was already rolled back
+# by the ECS circuit breaker), which leaves them on the previous image while
+# the rest run the new one.
 # IMAGE_FOR is a function name, called as: IMAGE_FOR <service-entry-json>.
 deploy_image() {
-  local cluster="$1" services="$2" image_for="$3" entry name service family container image td
+  local cluster="$1" services="$2" image_for="$3" entry name status_dir i
+  local -a names=() pids=() failed=() succeeded=()
+  status_dir=$(mktemp -d)
   while IFS= read -r entry; do
     name=$(jq -r '.name' <<<"$entry")
-    service=$(jq -r '.service' <<<"$entry")
-    family=$(jq -r '.family' <<<"$entry")
-    container=$(jq -r '.container' <<<"$entry")
-    image=$("$image_for" "$entry") || return 1
-    echo "── $name: $image"
-    td=$(register_with_image "$family" "$container" "$image") || return 1
-    echo "Registered $td"
-    roll_out "$cluster" "$service" "$td" || return 1
+    names+=("$name")
+    (
+      rc=0
+      deploy_one "$cluster" "$entry" "$image_for" 2>&1 || rc=$?
+      echo "$rc" > "$status_dir/$name"
+    ) | while IFS= read -r line; do printf '[%s] %s\n' "$name" "$line"; done &
+    pids+=($!)
   done < <(jq -c '.[]' <<<"$services")
+
+  for i in "${!pids[@]}"; do
+    wait "${pids[$i]}" || true
+    if [ "$(cat "$status_dir/${names[$i]}" 2>/dev/null || echo 1)" = "0" ]; then
+      succeeded+=("${names[$i]}")
+    else
+      failed+=("${names[$i]}")
+    fi
+  done
+  rm -rf "$status_dir"
+
+  echo "Rolled out: ${succeeded[*]:-none}"
+  if [ "${#failed[@]}" -gt 0 ]; then
+    echo "ERROR: rollout failed for: ${failed[*]}. Those services are back on their previous image (ECS circuit breaker); the others run the new one. Fix and re-run with service=$(IFS=,; echo "${failed[*]}")." >&2
+    return 1
+  fi
 }

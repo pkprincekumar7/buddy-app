@@ -85,19 +85,21 @@ jobs:
     env:
       TF_IN_AUTOMATION: "1"
       TF_VAR_aws_region: ${{ matrix.aws_region }}
-      # Resolved from GitHub Environment Secrets so dev/stg/prod each use their own values.
-      TF_VAR_app_name:            ${{ secrets.APP_NAME }}
-      TF_VAR_mongodb_db_name:     ${{ secrets.APP_NAME }}-${{ inputs.environment }}
-      TF_VAR_domain_name:         ${{ secrets.DOMAIN_NAME }}
-      TF_VAR_hosted_zone_id:      ${{ secrets.HOSTED_ZONE_ID }}
-      TF_VAR_assets_bucket_name: ${{ secrets.ASSETS_BUCKET_NAME }}
+      # Resolved per GitHub environment, so dev/sbx/stg/prod each use their own values:
+      # vars.* = environment variables (non-sensitive names, IDs, ARNs, public
+      # keys), secrets.* = environment secrets (credentials only). See docs/ci-cd.md.
+      TF_VAR_app_name:            ${{ vars.APP_NAME }}
+      TF_VAR_mongodb_db_name:     ${{ vars.APP_NAME }}-${{ inputs.environment }}
+      TF_VAR_domain_name:         ${{ vars.DOMAIN_NAME }}
+      TF_VAR_hosted_zone_id:      ${{ vars.HOSTED_ZONE_ID }}
+      TF_VAR_assets_bucket_name: ${{ vars.ASSETS_BUCKET_NAME }}
       TF_VAR_origin_verify_secret: ${{ secrets.ORIGIN_VERIFY_SECRET }}
       # Same kid → public key map the edge validates with (APP-02). Required:
       # the API service has no private key and verifies with these keys only.
-      TF_VAR_jwt_public_keys: ${{ secrets.JWT_PUBLIC_KEYS }}
+      TF_VAR_jwt_public_keys: ${{ vars.JWT_PUBLIC_KEYS }}
       # The kid the auth service signs with. Must be the JWT_PUBLIC_KEYS entry
       # for JWT_PRIVATE_KEY — checked below, and auth refuses to start if not.
-      TF_VAR_jwt_key_id: ${{ secrets.JWT_KEY_ID || 'key-v1' }}
+      TF_VAR_jwt_key_id: ${{ vars.JWT_KEY_ID || 'key-v1' }}
       # Optional — set only during an origin-verify rotation (the ALB then
       # accepts both values). See docs/infra-operations.md.
       TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
@@ -122,46 +124,46 @@ jobs:
       # when enable_ops_email = true — Terraform's own validation enforces
       # that) are optional, so they are not checked here.
       # -------------------------------------------------------------------------
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN:                            ${{ secrets.ROLE_ARN }}
-          APP_NAME:                            ${{ secrets.APP_NAME }}
-          STATE_BUCKET:                        ${{ secrets.STATE_BUCKET }}
-          SUBDOMAIN:                           ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME:                         ${{ secrets.DOMAIN_NAME }}
-          HOSTED_ZONE_ID:                      ${{ secrets.HOSTED_ZONE_ID }}
-          ASSETS_BUCKET_NAME:                  ${{ secrets.ASSETS_BUCKET_NAME }}
+          ROLE_ARN:                            ${{ vars.ROLE_ARN }}
+          APP_NAME:                            ${{ vars.APP_NAME }}
+          STATE_BUCKET:                        ${{ vars.STATE_BUCKET }}
+          SUBDOMAIN:                           ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME:                         ${{ vars.DOMAIN_NAME }}
+          HOSTED_ZONE_ID:                      ${{ vars.HOSTED_ZONE_ID }}
+          ASSETS_BUCKET_NAME:                  ${{ vars.ASSETS_BUCKET_NAME }}
           JWT_PRIVATE_KEY:                     ${{ secrets.JWT_PRIVATE_KEY }}
-          JWT_PUBLIC_KEYS:                     ${{ secrets.JWT_PUBLIC_KEYS }}
+          JWT_PUBLIC_KEYS:                     ${{ vars.JWT_PUBLIC_KEYS }}
           MONGODB_URI:                         ${{ secrets.MONGODB_URI }}
           OPENAI_API_KEY:                      ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_MODEL:                        ${{ secrets.OPENAI_MODEL }}
-          ANTHROPIC_MODEL:                     ${{ secrets.ANTHROPIC_MODEL }}
-          GEMINI_MODEL:                        ${{ secrets.GEMINI_MODEL }}
+          OPENAI_MODEL:                        ${{ vars.OPENAI_MODEL }}
+          ANTHROPIC_MODEL:                     ${{ vars.ANTHROPIC_MODEL }}
+          GEMINI_MODEL:                        ${{ vars.GEMINI_MODEL }}
           REDIS_AUTH_TOKEN:                    ${{ secrets.REDIS_AUTH_TOKEN }}
           ORIGIN_VERIFY_SECRET:                ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME")
-          [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET")
-          [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN")
-          [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME")
-          [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID")
-          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
+          [[ -z "$ROLE_ARN"                       ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME"                       ]] && missing+=("APP_NAME (variable)")
+          [[ -z "$STATE_BUCKET"                   ]] && missing+=("STATE_BUCKET (variable)")
+          [[ -z "$SUBDOMAIN"                      ]] && missing+=("SUBDOMAIN (variable)")
+          [[ -z "$DOMAIN_NAME"                    ]] && missing+=("DOMAIN_NAME (variable)")
+          [[ -z "$HOSTED_ZONE_ID"                 ]] && missing+=("HOSTED_ZONE_ID (variable)")
+          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME (variable)")
           [[ -z "$JWT_PRIVATE_KEY"                ]] && missing+=("JWT_PRIVATE_KEY")
-          [[ -z "$JWT_PUBLIC_KEYS"                ]] && missing+=("JWT_PUBLIC_KEYS")
+          [[ -z "$JWT_PUBLIC_KEYS"                ]] && missing+=("JWT_PUBLIC_KEYS (variable)")
           [[ -z "$MONGODB_URI"                    ]] && missing+=("MONGODB_URI")
           [[ -z "$OPENAI_API_KEY$ANTHROPIC_API_KEY$GEMINI_API_KEY" ]] && missing+=("one of OPENAI_API_KEY/ANTHROPIC_API_KEY/GEMINI_API_KEY")
-          [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL")
-          [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL")
-          [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL")
+          [[ -z "$OPENAI_MODEL"                   ]] && missing+=("OPENAI_MODEL (variable)")
+          [[ -z "$ANTHROPIC_MODEL"                ]] && missing+=("ANTHROPIC_MODEL (variable)")
+          [[ -z "$GEMINI_MODEL"                   ]] && missing+=("GEMINI_MODEL (variable)")
           [[ -z "$REDIS_AUTH_TOKEN"               ]] && missing+=("REDIS_AUTH_TOKEN")
           [[ -z "$ORIGIN_VERIFY_SECRET"           ]] && missing+=("ORIGIN_VERIFY_SECRET")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
@@ -173,7 +175,7 @@ jobs:
       - name: Check JWT_PUBLIC_KEYS holds JWT_PRIVATE_KEY's public key
         env:
           JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
-          JWT_PUBLIC_KEYS: ${{ secrets.JWT_PUBLIC_KEYS }}
+          JWT_PUBLIC_KEYS: ${{ vars.JWT_PUBLIC_KEYS }}
         run: |
           set -euo pipefail
           JWT_KEY_ID="$TF_VAR_jwt_key_id"
@@ -205,7 +207,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: terraform-live-backend-${{ inputs.environment }}
           aws-region: ${{ matrix.aws_region }}
 
@@ -258,12 +260,12 @@ jobs:
       # cookie_domain       — public CloudFront FQDN (browser cookie scope)
       # cors_origins        — allowed browser origin: https://{fqdn}
       #
-      # None of these need to be maintained as separate GitHub secrets.
+      # None of these need to be maintained as separate GitHub secrets or variables.
       # -------------------------------------------------------------------------
       - name: Resolve derived values
         env:
-          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
         run: |
           echo "TF_VAR_subdomain_internal=${SUBDOMAIN}-internal" >> "$GITHUB_ENV"
           if [[ "${{ inputs.environment }}" == "prod" ]]; then
@@ -275,16 +277,16 @@ jobs:
           echo "TF_VAR_cors_origins=https://${FQDN}"   >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
-      # Export AI model identifiers from GitHub Environment Secrets.
+      # Export AI model identifiers from GitHub environment variables.
       # All three are required (validated above) — model names are non-sensitive
-      # config that may differ per environment, so they live as secrets rather
+      # config that may differ per environment, so they live as variables rather
       # than tfvars to allow changes without a code commit.
       # -------------------------------------------------------------------------
       - name: Resolve model variables
         env:
-          OPENAI_MODEL:    ${{ secrets.OPENAI_MODEL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          GEMINI_MODEL:    ${{ secrets.GEMINI_MODEL }}
+          OPENAI_MODEL:    ${{ vars.OPENAI_MODEL }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          GEMINI_MODEL:    ${{ vars.GEMINI_MODEL }}
         run: |
           echo "TF_VAR_openai_model=$OPENAI_MODEL"       >> "$GITHUB_ENV"
           echo "TF_VAR_anthropic_model=$ANTHROPIC_MODEL" >> "$GITHUB_ENV"
@@ -304,7 +306,7 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Resolve ops email
         env:
-          OPS_EMAIL: ${{ secrets.OPS_EMAIL }}
+          OPS_EMAIL: ${{ vars.OPS_EMAIL }}
         run: |
           echo "TF_VAR_ops_email=${OPS_EMAIL:-}" >> "$GITHUB_ENV"
 
@@ -321,8 +323,8 @@ jobs:
           # silent change in CI.
           terraform init \
             -lockfile=readonly \
-            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/terraform.tfstate"
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -372,7 +374,7 @@ jobs:
         if: inputs.action == 'apply'
         env:
           JWT_PRIVATE_KEY:   ${{ secrets.JWT_PRIVATE_KEY }}
-          GOOGLE_CLIENT_ID:  ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_ID:  ${{ vars.GOOGLE_CLIENT_ID }}
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}

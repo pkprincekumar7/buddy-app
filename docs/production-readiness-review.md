@@ -2156,7 +2156,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 **Acceptance criteria:** A concurrent `all` deploy and `backend` restart are serialised.
 
-> 🟡 **v7 (2026-10-20): first fix done.** deploy, promote and restart now lock on `deploy-live-backend-superpower-<env>` only (promote on the target environment). This matters more now that `service` is free text: `all`, `backend` and `worker, backend` would otherwise be three locks over the same services. **Still open:** a failed rollout part-way through `all` still leaves earlier services (now auth, admin, backend) on the new image and later ones on the old; nothing reconciles or flags it.
+> 🟡 **v7 (2026-10-20): first fix done.** deploy, promote and restart now lock on `deploy-live-backend-superpower-<env>` only (promote on the target environment). This matters more now that `service` is free text: `all`, `backend` and `worker, backend` would otherwise be three locks over the same services. **v7 update:** deploy and promote now roll all selected services out **in parallel**, not one by one. A failed service no longer stops the rest: the ECS circuit breaker rolls it back, the others finish, and the step fails naming the services left on their previous image and the `service=` value to re-run them with. **Still open:** nothing re-runs or rolls back automatically, so the environment stays on mixed images until someone re-runs. Every change must therefore work across versions while a deploy is in flight.
 
 ---
 

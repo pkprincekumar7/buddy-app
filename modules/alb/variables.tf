@@ -74,6 +74,17 @@ variable "targets" {
   }
 }
 
+variable "deregistration_delay_seconds" {
+  description = "How long the ALB waits for a deregistering target's in-flight requests to finish (it sends it no new ones, and finishes sooner once none are left). Set it a little above the longest request the services serve. AWS's default is 300 s, which every rolling deploy can wait through for old tasks."
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.deregistration_delay_seconds >= 0 && var.deregistration_delay_seconds <= 3600 && floor(var.deregistration_delay_seconds) == var.deregistration_delay_seconds
+    error_message = "deregistration_delay_seconds must be a whole number of seconds from 0 to 3600."
+  }
+}
+
 variable "enable_access_logs" {
   description = "Write ALB access logs to access_logs_bucket (prefix alb-logs)."
   type        = bool

@@ -41,32 +41,32 @@ jobs:
       # Validate that all required secrets exist in the selected GitHub environment
       # before doing any real work — mirrors the pattern in build-android-apk.yml.
       # -------------------------------------------------------------------------
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          SUBDOMAIN:                       ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME:                     ${{ secrets.DOMAIN_NAME }}
-          GOOGLE_CLIENT_ID:                ${{ secrets.GOOGLE_CLIENT_ID }}
+          SUBDOMAIN:                       ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME:                     ${{ vars.DOMAIN_NAME }}
+          GOOGLE_CLIENT_ID:                ${{ vars.GOOGLE_CLIENT_ID }}
           IOS_CLIENT_ID:                   ${{ secrets.IOS_CLIENT_ID }}
-          ROLE_ARN:                        ${{ secrets.ROLE_ARN }}
-          ASSETS_BUCKET_NAME:             ${{ secrets.ASSETS_BUCKET_NAME }}
+          ROLE_ARN:                        ${{ vars.ROLE_ARN }}
+          ASSETS_BUCKET_NAME:             ${{ vars.ASSETS_BUCKET_NAME }}
           IOS_CERTIFICATE_P12_BASE64:      ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
           IOS_CERTIFICATE_PASSWORD:        ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
           IOS_APPLE_TEAM_ID:               ${{ secrets.IOS_APPLE_TEAM_ID }}
         run: |
           missing=()
-          [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN")
-          [[ -z "$DOMAIN_NAME"                     ]] && missing+=("DOMAIN_NAME")
-          [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID")
+          [[ -z "$SUBDOMAIN"                       ]] && missing+=("SUBDOMAIN (variable)")
+          [[ -z "$DOMAIN_NAME"                     ]] && missing+=("DOMAIN_NAME (variable)")
+          [[ -z "$GOOGLE_CLIENT_ID"                ]] && missing+=("GOOGLE_CLIENT_ID (variable)")
           [[ -z "$IOS_CLIENT_ID"                   ]] && missing+=("IOS_CLIENT_ID")
-          [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN")
-          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME")
+          [[ -z "$ROLE_ARN"                        ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$ASSETS_BUCKET_NAME"             ]] && missing+=("ASSETS_BUCKET_NAME (variable)")
           [[ -z "$IOS_CERTIFICATE_P12_BASE64"      ]] && missing+=("IOS_CERTIFICATE_P12_BASE64")
           [[ -z "$IOS_CERTIFICATE_PASSWORD"        ]] && missing+=("IOS_CERTIFICATE_PASSWORD")
           [[ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]] && missing+=("IOS_PROVISIONING_PROFILE_BASE64")
           [[ -z "$IOS_APPLE_TEAM_ID"               ]] && missing+=("IOS_APPLE_TEAM_ID")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
@@ -78,8 +78,8 @@ jobs:
       # -------------------------------------------------------------------------
       - name: Resolve CloudFront FQDN
         env:
-          SUBDOMAIN:   ${{ secrets.SUBDOMAIN }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          SUBDOMAIN:   ${{ vars.SUBDOMAIN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}
         run: |
           if [[ "${{ inputs.environment }}" == "prod" ]]; then
             FQDN="${SUBDOMAIN}.${DOMAIN_NAME}"
@@ -115,7 +115,7 @@ jobs:
       - name: Write .env for react-native-config
         working-directory: frontend-app
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           IOS_CLIENT_ID:    ${{ secrets.IOS_CLIENT_ID }}
         run: |
           {
@@ -329,13 +329,13 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: build-ios-ipa-${{ inputs.environment }}
           aws-region: us-east-1
 
       - name: Push IPA to S3
         env:
-          ASSETS_BUCKET_NAME: ${{ secrets.ASSETS_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME: ${{ vars.ASSETS_BUCKET_NAME }}
         run: |
           # Discover the IPA dynamically — xcodebuild names it after the scheme,
           # which may differ from "Superpower.ipa" depending on Xcode version / settings.
