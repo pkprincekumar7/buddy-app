@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Placeholder app icon: a lightning bolt in the brand teal (primary #2dd4bf
+       to primary-action #0d9488, src/index.css) on the app background
+       (#0a0a0a). Replace with the real logo when there is one. -->
+  <defs>
+    <linearGradient id="bolt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0a0a0a"/>
+  <path d="M37 6 15 36h14l-4 22 25-32H36l5-20z" fill="url(#bolt)"/>
+</svg>
