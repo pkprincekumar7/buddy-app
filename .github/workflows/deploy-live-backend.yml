@@ -6,9 +6,11 @@ on:
     inputs:
       # Free text, not a dropdown, so a service added in
       # infra-live-backend/terraform/services.tf is deployable with no workflow
-      # change. Checked against the ecs_services list in SSM.
+      # logic change. Checked against the ecs_services list in SSM. The names in
+      # the description are only help text, but scripts/check-service-lists.sh
+      # (CI) fails if they don't match services.tf, in deploy_order.
       service:
-        description: "'all', or comma-separated service names from services.tf (e.g. backend,worker)"
+        description: "Services to deploy: all, or a comma-separated list of: auth, admin, backend, worker (e.g. auth,backend). Rolled out in parallel."
         required: true
         default: "all"
         type: string
@@ -86,16 +88,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN: ${{ secrets.ROLE_ARN }}
-          APP_NAME: ${{ secrets.APP_NAME }}
+          ROLE_ARN: ${{ vars.ROLE_ARN }}
+          APP_NAME: ${{ vars.APP_NAME }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME")
+          [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME" ]] && missing+=("APP_NAME (variable)")
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
@@ -105,7 +107,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: deploy-live-backend-${{ inputs.environment }}
           aws-region: us-east-1
 
@@ -124,7 +126,7 @@ jobs:
 
           : > ecr_targets.txt
           for REGION in $(echo "$REGIONS" | jq -r '.[]'); do
-            ECR_URL=$(get_ssm "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/$REGION/ecr_repository_url")
+            ECR_URL=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$REGION/ecr_repository_url")
             if [ -z "$ECR_URL" ]; then
               echo "ERROR: ECR repository URL for $REGION not found in SSM. Run terraform-live-backend workflow (apply) for $REGION first."
               exit 1
@@ -213,23 +215,24 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: deploy-live-backend-${{ inputs.environment }}
           aws-region: ${{ matrix.aws_region }}
 
       # -------------------------------------------------------------------------
       # Every service in this region's ecs_services list (written by
       # terraform-live-backend from services.tf), narrowed to inputs.service,
-      # rolled out one after another in the list's order — the API first, so
-      # it's healthy before job consumers restart against it. Each gets a new
-      # revision of its task definition with only its container's image
-      # swapped; the ECS circuit breaker rolls back a revision that fails to
-      # reach steady state, and the deploy stops there. Helpers:
-      # scripts/ecs-services.sh.
+      # rolled out all at once (each is an independent ECS service, so the
+      # deploy takes as long as the slowest one; log lines are prefixed with
+      # the service name). Each gets a new revision of its task definition
+      # with only its container's image swapped; the ECS circuit breaker rolls
+      # back a revision that fails to reach steady state. A failure doesn't
+      # stop the others: the step fails at the end, naming the services left
+      # on their previous image. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
       - name: Deploy services
         env:
-          SSM_BASE: /${{ secrets.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
+          SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         run: |

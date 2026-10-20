@@ -111,23 +111,25 @@ jobs:
         working-directory: infra-live-edge/terraform
     env:
       TF_IN_AUTOMATION: "1"
-      # Resolved from GitHub Environment Secrets so dev/stg/prod each use their own values.
-      TF_VAR_app_name:                      ${{ secrets.APP_NAME }}
-      TF_VAR_domain_name:                   ${{ secrets.DOMAIN_NAME }}
-      TF_VAR_subdomain:                     ${{ secrets.SUBDOMAIN }}
-      TF_VAR_hosted_zone_id:                ${{ secrets.HOSTED_ZONE_ID }}
+      # Resolved per GitHub environment, so dev/sbx/stg/prod each use their own values:
+      # vars.* = environment variables (non-sensitive names, IDs, ARNs, public
+      # keys), secrets.* = environment secrets (credentials only). See docs/ci-cd.md.
+      TF_VAR_app_name:                      ${{ vars.APP_NAME }}
+      TF_VAR_domain_name:                   ${{ vars.DOMAIN_NAME }}
+      TF_VAR_subdomain:                     ${{ vars.SUBDOMAIN }}
+      TF_VAR_hosted_zone_id:                ${{ vars.HOSTED_ZONE_ID }}
       # CloudFront's certificate is always in us-east-1: the us-east-1 entry of
       # the ACM_CERTIFICATE_ARNS variable (TF-01; the same certificate the
       # us-east-1 backend ALB uses, as before). '{}' → empty → caught below.
       TF_VAR_acm_certificate_arn_us_east_1: ${{ fromJSON(vars.ACM_CERTIFICATE_ARNS || '{}')['us-east-1'] }}
-      TF_VAR_spa_bucket_name:          ${{ secrets.SPA_BUCKET_NAME }}
-      TF_VAR_assets_bucket_name:       ${{ secrets.ASSETS_BUCKET_NAME }}
-      TF_VAR_jwt_public_keys:          ${{ secrets.JWT_PUBLIC_KEYS }}
+      TF_VAR_spa_bucket_name:          ${{ vars.SPA_BUCKET_NAME }}
+      TF_VAR_assets_bucket_name:       ${{ vars.ASSETS_BUCKET_NAME }}
+      TF_VAR_jwt_public_keys:          ${{ vars.JWT_PUBLIC_KEYS }}
       TF_VAR_origin_verify_secret:     ${{ secrets.ORIGIN_VERIFY_SECRET }}
       # Optional — set only during an origin-verify rotation; CloudFront then
       # sends it instead. See docs/infra-operations.md.
       TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
-      TF_VAR_global_logging_bucket_name: ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
+      TF_VAR_global_logging_bucket_name: ${{ vars.GLOBAL_LOGGING_BUCKET_NAME }}
       # TF_VAR_uploads_bucket_names is not set here — it is a JSON map built
       # from whichever regions are in inputs.backend_regions and written to
       # GITHUB_ENV by the "Resolve uploads bucket names" step below.
@@ -136,42 +138,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
-      - name: Validate required secrets
+      - name: Validate required secrets and variables
         env:
-          ROLE_ARN:                      ${{ secrets.ROLE_ARN }}
-          APP_NAME:                      ${{ secrets.APP_NAME }}
-          STATE_BUCKET:                  ${{ secrets.STATE_BUCKET }}
-          DOMAIN_NAME:                   ${{ secrets.DOMAIN_NAME }}
-          SUBDOMAIN:                     ${{ secrets.SUBDOMAIN }}
-          HOSTED_ZONE_ID:                ${{ secrets.HOSTED_ZONE_ID }}
+          ROLE_ARN:                      ${{ vars.ROLE_ARN }}
+          APP_NAME:                      ${{ vars.APP_NAME }}
+          STATE_BUCKET:                  ${{ vars.STATE_BUCKET }}
+          DOMAIN_NAME:                   ${{ vars.DOMAIN_NAME }}
+          SUBDOMAIN:                     ${{ vars.SUBDOMAIN }}
+          HOSTED_ZONE_ID:                ${{ vars.HOSTED_ZONE_ID }}
           ACM_CERTIFICATE_ARN_US_EAST_1: ${{ fromJSON(vars.ACM_CERTIFICATE_ARNS || '{}')['us-east-1'] }}
-          SPA_BUCKET_NAME:               ${{ secrets.SPA_BUCKET_NAME }}
-          ASSETS_BUCKET_NAME:            ${{ secrets.ASSETS_BUCKET_NAME }}
-          JWT_PUBLIC_KEYS:               ${{ secrets.JWT_PUBLIC_KEYS }}
-          GLOBAL_LOGGING_BUCKET_NAME:    ${{ secrets.GLOBAL_LOGGING_BUCKET_NAME }}
+          SPA_BUCKET_NAME:               ${{ vars.SPA_BUCKET_NAME }}
+          ASSETS_BUCKET_NAME:            ${{ vars.ASSETS_BUCKET_NAME }}
+          JWT_PUBLIC_KEYS:               ${{ vars.JWT_PUBLIC_KEYS }}
+          GLOBAL_LOGGING_BUCKET_NAME:    ${{ vars.GLOBAL_LOGGING_BUCKET_NAME }}
           ORIGIN_VERIFY_SECRET:          ${{ secrets.ORIGIN_VERIFY_SECRET }}
         run: |
           missing=()
-          [[ -z "$ROLE_ARN"                      ]] && missing+=("ROLE_ARN")
-          [[ -z "$APP_NAME"                      ]] && missing+=("APP_NAME")
-          [[ -z "$STATE_BUCKET"                  ]] && missing+=("STATE_BUCKET")
-          [[ -z "$DOMAIN_NAME"                   ]] && missing+=("DOMAIN_NAME")
-          [[ -z "$SUBDOMAIN"                     ]] && missing+=("SUBDOMAIN")
-          [[ -z "$HOSTED_ZONE_ID"                ]] && missing+=("HOSTED_ZONE_ID")
+          [[ -z "$ROLE_ARN"                      ]] && missing+=("ROLE_ARN (variable)")
+          [[ -z "$APP_NAME"                      ]] && missing+=("APP_NAME (variable)")
+          [[ -z "$STATE_BUCKET"                  ]] && missing+=("STATE_BUCKET (variable)")
+          [[ -z "$DOMAIN_NAME"                   ]] && missing+=("DOMAIN_NAME (variable)")
+          [[ -z "$SUBDOMAIN"                     ]] && missing+=("SUBDOMAIN (variable)")
+          [[ -z "$HOSTED_ZONE_ID"                ]] && missing+=("HOSTED_ZONE_ID (variable)")
           [[ -z "$ACM_CERTIFICATE_ARN_US_EAST_1" ]] && missing+=("ACM_CERTIFICATE_ARNS (variable) entry for us-east-1")
-          [[ -z "$SPA_BUCKET_NAME"               ]] && missing+=("SPA_BUCKET_NAME")
-          [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME")
+          [[ -z "$SPA_BUCKET_NAME"               ]] && missing+=("SPA_BUCKET_NAME (variable)")
+          [[ -z "$ASSETS_BUCKET_NAME"            ]] && missing+=("ASSETS_BUCKET_NAME (variable)")
           # The UPLOADS_BUCKET_NAMES variable is checked per region in the
           # "Resolve uploads bucket names" step below, since which entries are
           # required depends on inputs.backend_regions.
-          [[ -z "$JWT_PUBLIC_KEYS"               ]] && missing+=("JWT_PUBLIC_KEYS")
+          [[ -z "$JWT_PUBLIC_KEYS"               ]] && missing+=("JWT_PUBLIC_KEYS (variable)")
           [[ -z "$ORIGIN_VERIFY_SECRET"          ]] && missing+=("ORIGIN_VERIFY_SECRET")
           # GLOBAL_LOGGING_BUCKET_NAME required on prod (CloudTrail us-east-1 + WAF logging)
           if [[ "${{ inputs.environment }}" == "prod" && -z "$GLOBAL_LOGGING_BUCKET_NAME" ]]; then
-            missing+=("GLOBAL_LOGGING_BUCKET_NAME")
+            missing+=("GLOBAL_LOGGING_BUCKET_NAME (variable)")
           fi
           if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "ERROR: Required GitHub environment secrets are not set: ${missing[*]}"
+            echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
@@ -188,7 +190,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
-          role-to-assume: ${{ secrets.ROLE_ARN }}
+          role-to-assume: ${{ vars.ROLE_ARN }}
           role-session-name: terraform-live-edge-${{ inputs.environment }}
           aws-region: us-east-1
 
@@ -240,7 +242,7 @@ jobs:
             fi
             echo "OK: $name"
           }
-          APP="${{ secrets.APP_NAME }}"
+          APP="${{ vars.APP_NAME }}"
           ENV="${{ inputs.environment }}"
 
           # backend_regions (JSON array) drives the Lambda@Edge routing map —
@@ -268,8 +270,8 @@ jobs:
           # silent change in CI.
           terraform init \
             -lockfile=readonly \
-            -backend-config="bucket=${{ secrets.STATE_BUCKET }}" \
-            -backend-config="key=terraform-state-files/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/us-east-1/terraform.tfstate"
+            -backend-config="bucket=${{ vars.STATE_BUCKET }}" \
+            -backend-config="key=terraform-state-files/${{ vars.APP_NAME }}/${{ inputs.environment }}/edge/us-east-1/terraform.tfstate"
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
@@ -340,4 +342,4 @@ jobs:
         run: |
           aws ssm delete-parameter \
             --region us-east-1 \
-            --name "/${{ secrets.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" || true
+            --name "/${{ vars.APP_NAME }}/${{ inputs.environment }}/edge/deployed_git_sha" || true

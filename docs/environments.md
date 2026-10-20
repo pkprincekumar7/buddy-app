@@ -115,7 +115,7 @@ Settings that matter (backend):
 | `enable_guardduty` | **See section 5 — at most one environment per AWS account.** |
 | `enable_cloudtrail`, `enable_alb_access_logs` | Write to that region's `REGIONAL_LOGGING_BUCKET_NAMES` entry. |
 | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule` | Observability level. |
-| `enable_ops_email` | `true` requires the `OPS_EMAIL` secret. |
+| `enable_ops_email` | `true` requires the `OPS_EMAIL` variable. |
 | `enable_execute_command` | ECS Exec shell access (keep `false` for prod-like data). |
 | `enable_adot_sidecar` | Tracing sidecar (costs 0.25 vCPU / 512 MiB per task). |
 
@@ -148,9 +148,9 @@ Do this once in every AWS account that hosts at least one environment.
    Attach `AdministratorAccess` (or a scoped policy covering ECS, ECR, ELB, EC2/VPC, ElastiCache,
    CloudFront, WAF, Lambda, S3, Route 53, ACM, Secrets Manager, SSM, IAM, CloudWatch, SNS,
    X-Ray, GuardDuty, CloudTrail, Kinesis Firehose, EventBridge Scheduler). Its ARN is the
-   `ROLE_ARN` secret of every environment in this account.
+   `ROLE_ARN` variable of every environment in this account.
 3. **Terraform state bucket** in `us-east-1` (versioning on). One per account is enough —
-   state keys already include `APP_NAME` and environment. Its name is the `STATE_BUCKET` secret.
+   state keys already include `APP_NAME` and environment. Its name is the `STATE_BUCKET` variable.
 4. **Service quotas** (Service Quotas console, per region) — see section 5 for what to sum.
 
 ---
@@ -202,13 +202,13 @@ Raise anything that would exceed its quota **before** the first apply.
 
 ---
 
-## 6. GitHub Environment secrets
+## 6. GitHub Environment variables and secrets
 
-Create the GitHub Environment (Settings → Environments → New environment → `qa`) and add:
+Create the GitHub Environment (Settings → Environments → New environment → `qa`) and add the following. Names, IDs and public values go in **Variables**; only credentials go in **Secrets**. See [ci-cd.md](ci-cd.md) for the full list.
 
-### Required for every environment
+### Variables — required for every environment
 
-| Secret | Value |
+| Variable | Value |
 |---|---|
 | `ROLE_ARN` | Deploy role of the account this environment lives in (section 4) |
 | `APP_NAME` | e.g. `superpower` (section 2 length rule) |
@@ -218,16 +218,22 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `HOSTED_ZONE_ID` | Route 53 zone of `DOMAIN_NAME`, in the same account |
 | `ASSETS_BUCKET_NAME` | This environment's assets bucket (`us-east-1`) |
 | `SPA_BUCKET_NAME` | This environment's frontend bucket (`us-east-1`) |
+| `JWT_PUBLIC_KEYS` | Public key map matching `JWT_PRIVATE_KEY`, see [jwt-keys.md](jwt-keys.md). Required by the backend **and** edge workflows; must contain `JWT_KEY_ID`'s public key, because admin and the API verify with these keys only (the backend workflow checks it matches `JWT_PRIVATE_KEY`) |
+| `JWT_KEY_ID` | Optional, defaults to `key-v1` |
+| `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL` | All three |
+| `GOOGLE_CLIENT_ID` | Google OAuth Web client ID |
+| `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
+
+### Secrets — required for every environment
+
+| Secret | Value |
+|---|---|
 | `JWT_PRIVATE_KEY` | RSA private key, see [jwt-keys.md](jwt-keys.md) |
-| `JWT_PUBLIC_KEYS` | Matching public key map, see [jwt-keys.md](jwt-keys.md). Required by the backend **and** edge workflows; must contain `JWT_KEY_ID`'s public key, because the API service verifies with these keys only (the backend workflow checks it matches `JWT_PRIVATE_KEY`) |
 | `ORIGIN_VERIFY_SECRET` | Long random string with no `*` or `?` (the ALB treats them as wildcards), e.g. `openssl rand -hex 32` |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Don't create it at setup.** Optional, set only during a rotation; see [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret) |
 | `REDIS_AUTH_TOKEN` | 16–128 printable characters, no spaces, quotes, `@` or `/` |
 | `MONGODB_URI` | This environment's connection string |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | At least one |
-| `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL` | All three |
-| `GOOGLE_CLIENT_ID` | Google OAuth Web client ID |
-| `VITE_GOOGLE_CLIENT_ID` | Same value as `GOOGLE_CLIENT_ID` |
 
 ### Required per backend region — environment **variables** (TF-01)
 
@@ -241,12 +247,12 @@ Under **Settings → Environments → `<env>` → Variables** (not Secrets): thr
 
 ### Conditional
 
-| Secret | When |
+| Name (kind) | When |
 |---|---|
-| `GLOBAL_LOGGING_BUCKET_NAME` | Always for `prod`; for others when edge `enable_cloudtrail` or `enable_waf_logging` is `true` |
-| `OPS_EMAIL` | When backend `enable_ops_email = true` |
-| `GIT_ACTIONS_PAT` | When using the scheduler (`terraform-live-scheduler.yml`) — GitHub PAT with `repo` + `workflow` scopes |
-| `IOS_CLIENT_ID`, `IOS_APPLE_TEAM_ID`, `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64` | Only for building iOS IPAs (`build-ios-ipa.yml`) |
+| `GLOBAL_LOGGING_BUCKET_NAME` (variable) | Always for `prod`; for others when edge `enable_cloudtrail` or `enable_waf_logging` is `true` |
+| `OPS_EMAIL` (variable) | When backend `enable_ops_email = true`. Use a team address, since variables show in logs. |
+| `GIT_ACTIONS_PAT` (secret) | When using the scheduler (`terraform-live-scheduler.yml`) — GitHub PAT with `repo` + `workflow` scopes |
+| `IOS_CLIENT_ID`, `IOS_APPLE_TEAM_ID`, `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64` (secrets) | Only for building iOS IPAs (`build-ios-ipa.yml`) |
 
 ---
 

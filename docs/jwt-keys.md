@@ -2,15 +2,15 @@
 
 The **auth** service signs JWTs with a 2048-bit RSA private key (RS256). Auth, **admin** and the **API** service verify them by `kid` against the `JWT_PUBLIC_KEYS` map (APP-02). Only auth holds the private key: admin and the API verify with `JWT_PUBLIC_KEYS` alone and the worker has no key at all (see "Which service holds which key" below). The same map is embedded in a Lambda@Edge function that validates `/api/*` requests at the edge before they reach the ALB — not every one, though: `login`/`google`/`health` are bypassed entirely (no check at all), and `refresh`/`logout`/`register` only read an unverified location *hint* from an existing token, never requiring or blocking on one. Full signature verification (the thing this document is about managing keys for) applies to every other `/api/*` request. See `infra-architecture-multi-region.md`'s Lambda@Edge section for the full path breakdown.
 
-## GitHub Actions secrets inventory
+## GitHub Actions secrets and variables inventory
 
-Three secrets are required per GitHub environment (`dev`, `sbx`, `stg`, `prod`):
+Three values per GitHub environment (`dev`, `sbx`, `stg`, `prod`). Only the private key is a **secret**; the key ID and the public keys aren't confidential, so they're environment **variables**:
 
-| Secret | Format | Used by |
+| Name (kind) | Format | Used by |
 |---|---|---|
-| `JWT_PRIVATE_KEY` | Single-line PEM (`\n` escaped) | Backend workflow → Secrets Manager (first apply only; rotate with `put-secret-value`, see Step 3) → **auth** service only |
-| `JWT_KEY_ID` | Plain string, e.g. `key-v1` | Backend workflow → ECS env var (`JWT_KEY_ID`) on auth, admin and the API; defaults to `key-v1` if unset |
-| `JWT_PUBLIC_KEYS` | JSON map of kid → single-line public key PEM | Edge workflow → Lambda@Edge, **and** backend workflow → ECS env var (`JWT_PUBLIC_KEYS`) on auth, admin and the API. **Required by both workflows** |
+| `JWT_PRIVATE_KEY` (secret) | Single-line PEM (`\n` escaped) | Backend workflow → Secrets Manager (first apply only; rotate with `put-secret-value`, see Step 3) → **auth** service only |
+| `JWT_KEY_ID` (variable) | Plain string, e.g. `key-v1` | Backend workflow → ECS env var (`JWT_KEY_ID`) on auth, admin and the API; defaults to `key-v1` if unset |
+| `JWT_PUBLIC_KEYS` (variable) | JSON map of kid → single-line public key PEM | Edge workflow → Lambda@Edge, **and** backend workflow → ECS env var (`JWT_PUBLIC_KEYS`) on auth, admin and the API. **Required by both workflows** |
 
 Rules both sides enforce (EDGE-04 / APP-02):
 
@@ -123,7 +123,7 @@ either key; existing sessions are unaffected.
 
 Do these together — auth refuses to start if `JWT_KEY_ID` and `JWT_PRIVATE_KEY` disagree (and the backend workflow's key check fails first). Admin and the API need nothing new here: they already have `key-v2` from Step 2.
 
-1. Set the GitHub secrets **`JWT_PRIVATE_KEY`** → single-line `jwt_private_v2.pem`, and **`JWT_KEY_ID`** → `key-v2`.
+1. Set the GitHub secret **`JWT_PRIVATE_KEY`** → single-line `jwt_private_v2.pem`, and the GitHub variable **`JWT_KEY_ID`** → `key-v2`.
 2. In **every active region**, write the new private key into Secrets Manager. The workflow only fills that secret on the first apply, so the GitHub secret alone doesn't reach a running environment. `put-secret-value` replaces the whole JSON, so send every key (see `infra-operations.md` → "Rotating a value").
 3. Run the **backend workflow** (`apply`) for every active region. This updates the `JWT_KEY_ID` env var and restarts the auth tasks with the new private key.
 

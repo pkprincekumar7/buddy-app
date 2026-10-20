@@ -37,9 +37,9 @@ resource "aws_ssm_parameter" "ecs_cluster_name" {
   tags = { Name = "${var.app_name}-backend-ecs-cluster-${var.environment}-${var.aws_region}" }
 }
 
-# Every ECS service in local.services (services.tf), in rollout order — the
+# Every ECS service in local.services (services.tf), in deploy_order — the
 # deploy, restart and promote workflows read this instead of one parameter
-# per service, so a new service needs no workflow change. JSON array of
+# per service, so a new service needs no workflow logic change. JSON array of
 #   { name, service, family, container }
 # name = the workflows' `service` input; container = whose image a deploy swaps.
 resource "aws_ssm_parameter" "ecs_services" {

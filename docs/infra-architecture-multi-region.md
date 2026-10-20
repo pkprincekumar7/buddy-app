@@ -591,7 +591,7 @@ Terraform"):
 - name: Resolve Atlas SSM inputs
   if: inputs.action == 'plan' || inputs.action == 'apply'
   run: |
-    APP="${{ secrets.APP_NAME }}"
+    APP="${{ vars.APP_NAME }}"
     ENV="${{ inputs.environment }}"
     REGION="${{ inputs.aws_region }}"
 
@@ -621,7 +621,7 @@ after the existing "Initialise app secrets" step:
 - name: Write Atlas and infra SSM outputs
   if: inputs.action == 'apply'
   run: |
-    APP="${{ secrets.APP_NAME }}"
+    APP="${{ vars.APP_NAME }}"
     ENV="${{ inputs.environment }}"
     REGION="${{ inputs.aws_region }}"
 

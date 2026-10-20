@@ -33,6 +33,12 @@ module "alb" {
     }
   }
 
+  # During a rollout the ALB stops sending old tasks new requests and waits
+  # up to this long for their in-flight ones to finish. The longest a request runs is an LLM call (LLM_TIMEOUT_SECONDS),
+  # so that plus a margin, rather than AWS's 300 s default that every deploy
+  # would otherwise wait through.
+  deregistration_delay_seconds = var.llm_timeout_seconds + 30
+
   # Independent of enable_cloudtrail — see enable_alb_access_logs's description.
   enable_access_logs = var.enable_alb_access_logs
   access_logs_bucket = var.regional_logging_bucket_name

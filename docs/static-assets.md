@@ -9,7 +9,7 @@ Activity-game images (used by the `ChildActivityGame` component) and avatar stag
 | Environment | Bucket | Path | How it works |
 |---|---|---|---|
 | **Local dev** | dedicated local bucket (set via `ASSETS_BUCKET_NAME` in `.env`) | `/app-assets/<path>` via Vite proxy (web) | `vite.config.ts` proxies `/app-assets/*` to `https://<bucket>.s3.us-east-1.amazonaws.com`. The bucket has a public `s3:GetObject` policy on `app-assets/*` — no AWS credentials required. |
-| **Deployed (dev/stg/prod)** | per-environment bucket (set via `ASSETS_BUCKET_NAME` GitHub secret) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
+| **Deployed (dev/stg/prod)** | per-environment bucket (set via the `ASSETS_BUCKET_NAME` GitHub environment variable) | `/app-assets/<path>` via CloudFront | CloudFront `/app-assets/*` behaviour proxies to the bucket using OAC (SigV4 signing). No public S3 access needed. |
 
 The Vite-proxy row above is web-only — the mobile app talks to the same S3 buckets over their regular `https://<bucket>.s3.<region>.amazonaws.com` URL directly, no dev-server proxy involved.
 
