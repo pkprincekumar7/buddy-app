@@ -79,5 +79,5 @@ enable_cloudtrail = false
 # enable_cloudtrail above (see enable_alb_access_logs's own description)
 enable_alb_access_logs = false
 
-# ADOT sidecar — optional on dev to save cost
+# ADOT sidecar — off in every environment (see stg/prod tfvars)
 enable_adot_sidecar = false

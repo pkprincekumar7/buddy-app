@@ -23,7 +23,7 @@ The appropriate resource sizing changes significantly across MAU scales. The pro
 | **NAT Gateways** | 1 | 1 | 2 | 3 | 3 | 3 | 3 | 3 | 3 |
 | **VPC Interface Endpoints** | None | None | 5 svc / 2 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ | 5 svc / 3 AZ |
 
-> **Rationale for task sizing (TF-03):** the API runs one uvicorn process per task and the worker one asyncio process, so each can use only about 1 vCPU (the GIL). Bigger tasks add cost, not throughput, and keep task CPU % so low that CPU autoscaling never fires. So every tier from stg up uses 1 vCPU / 2 GB and scales by **task count**. stg/prod also run the ADOT sidecar (256 CPU / 512 MiB of each task), which is why stg is no longer 0.5 vCPU. dev/sbx have no sidecar and only a few testers, so every service there runs at Fargate's smallest size, 0.25 vCPU / 0.5 GB (each process is ~65–85 MB after import). Worker tasks are sized identically to API tasks at each tier.
+> **Rationale for task sizing (TF-03):** the API runs one uvicorn process per task and the worker one asyncio process, so each can use only about 1 vCPU (the GIL). Bigger tasks add cost, not throughput, and keep task CPU % so low that CPU autoscaling never fires. So every tier from stg up uses 1 vCPU / 2 GB and scales by **task count**. stg uses the same 1 vCPU / 2 GB as prod so load tests there are representative. The ADOT sidecar, which used to take 256 CPU / 512 MiB of each stg/prod task, is now **off everywhere**, because the app isn't instrumented. That doesn't change these costs: Fargate bills by task size, and the app now gets the whole task. dev/sbx have only a few testers, so every service there runs at Fargate's smallest size, 0.25 vCPU / 0.5 GB (each process is ~65–85 MB after import). Worker tasks are sized identically to API tasks at each tier.
 > **`auth` and `admin`** (`services.tf`) are costed for dev, sbx and stg from the tfvars: dev/sbx 1 + 1 task at 0.25 vCPU / 0.5 GB; stg 2 auth + 1 admin at 0.5 vCPU / 1 GB. They are **not modeled yet for the prod tiers** (shown as —); add them when those tiers are re-estimated.
 > **Rationale for ElastiCache sizing:** t4g instances are burstable — acceptable for dev/stg/small prod. From 10K MAU, r6g (memory-optimised, dedicated CPU) is used to avoid credit exhaustion under sustained rate-limit traffic. Primary + 1 replica for HA from 1K MAU; 3-node cluster (primary + 2 replicas) from 10M MAU.
 
@@ -188,13 +188,13 @@ Confirmed (✓): $0.40/secret/month. **2 secrets per environment** — corrected
 
 ---
 
-## 10. CloudWatch (Logs, Alarms, Dashboard, X-Ray)
+## 10. CloudWatch (Logs, Alarms, Dashboard; X-Ray)
 
 Confirmed (✓): Log ingestion $0.67/GB, Standard log class (first 5 GB/account/month free) — corrected from a previous $0.50/GB estimate. Alarms $0.10/alarm/month. Dashboard $3/month (confirmed via multiple current AWS-pricing-sourced references; not independently found under a distinct SKU in the Price List API). X-Ray: 100K traces free/month, then $5/million.
 
 Log volume: ~175 KB/MAU/month (350 API requests × ~500 bytes/entry) — corrected from a previous "~190 KB" that didn't match its own stated formula (350 × 500 bytes = 175,000 bytes = 175 KB decimal).
 
-X-Ray sampling rate: dev/sbx/stg = 5%; prod = 1% (per tfvars `xray_default_sampling_rate = 0.01`). Only API requests (70% of total) generate traces.
+**X-Ray: $0 today.** The backend has no OpenTelemetry/X-Ray instrumentation and the ADOT sidecar is off, so no traces are sent, even though the sampling rules exist. The figures in the note below show what tracing would cost once it's added ([auth-users-split.md](auth-users-split.md) 15.5), with sampling at 5% in dev/sbx/stg and 1% in prod (`xray_default_sampling_rate`). Only API requests (70% of total) would generate traces.
 
 | Resource | dev | sbx | stg | prod (1K) | prod (10K) | prod (100K) | prod (1M) | prod (10M) | prod (100M) |
 |---|---|---|---|---|---|---|---|---|---|
@@ -203,11 +203,11 @@ X-Ray sampling rate: dev/sbx/stg = 5%; prod = 1% (per tfvars `xray_default_sampl
 | Alarms — basic (2 ALB; stg+prod) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | Alarms — all (13 additional; prod only) | $0 | $0 | $0 | $1 | $1 | $1 | $1 | $1 | $1 |
 | Dashboard (prod only; ✓ $3/month per backend region — one per region) | $0 | $0 | $0 | $3 | $3 | $3 | $3 | $3 | $3 |
-| X-Ray traces | $0 | $0 | $0 | $0 | $0 | $1 | $17 | $175 | $1,750 |
-| **Subtotal** | **$0** | **$0** | **$0** | **$4** | **$4** | **$13** | **$135** | **$1,348** | **$13,476** |
+| X-Ray traces (not instrumented yet) | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
+| **Subtotal** | **$0** | **$0** | **$0** | **$4** | **$4** | **$12** | **$118** | **$1,173** | **$11,726** |
 
 > Log ingestion at 100M MAU: 100M × 175 KB = 17,500 GB → (17,500 − 5) × $0.67 = $11,722. This assumes request-level logging for all API calls. Reducing log verbosity (e.g. log only errors + summaries) would drop this substantially.
-> X-Ray at 100M MAU (1% sampling): 100M × 350 API req × 0.01 = 350M traces → (350M − 100K) / 1M × $5 = $1,750.
+> X-Ray **once tracing is added**, at 100M MAU (1% sampling): 100M × 350 API req × 0.01 = 350M traces → (350M − 100K) / 1M × $5 = $1,750. That's $1, $17 and $175 at 100K, 1M and 10M MAU. Not included in the totals above.
 
 ---
 
@@ -274,11 +274,11 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $2 | $7 | $59 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 9. Secrets Manager | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
-| 10. CloudWatch + X-Ray | $0 | $0 | $0 | $4 | $4 | $13 | $135 | $1,348 | $13,476 |
+| 10. CloudWatch (+ X-Ray, $0 today) | $0 | $0 | $0 | $4 | $4 | $12 | $118 | $1,173 | $11,726 |
 | 11. GuardDuty | $0 | $0 | $11 | $8 | $13 | $18 | $35 | $60 | $148 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$110** | **$110** | **$442** | **$532** | **$802** | **$1,003** | **$2,626** | **$15,081** | **$124,747** |
+| **Grand Total** | **$110** | **$110** | **$442** | **$532** | **$802** | **$1,002** | **$2,609** | **$14,906** | **$122,997** |
 
 ---
 
@@ -290,7 +290,7 @@ S3 Standard (✓, confirmed via AWS Price List API): $0.025/GB/month, ap-south-1
 | stg | NAT + VPC Endpoints ($175) | ECS Fargate ($168) | ElastiCache ($58) |
 | prod 1K–100K | NAT + VPC Endpoints | ElastiCache | ECS Fargate |
 | prod 1M | CloudFront ($930) | ElastiCache ($608) | ECS Fargate ($561) |
-| prod 10M | CloudFront+L@E ($10,183) | ElastiCache ($1,823) | CloudWatch + X-Ray ($1,348) |
+| prod 10M | CloudFront+L@E ($10,183) | ElastiCache ($1,823) | CloudWatch ($1,173) |
 | prod 100M | CloudFront+L@E ($100,174) | CloudWatch logs ($11,722) | NAT + networking ($5,861) |
 
 ---

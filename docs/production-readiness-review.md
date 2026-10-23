@@ -1731,7 +1731,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 **Where:** `infra-live-backend/terraform/tfvars/prod.tfvars`, `backend/Dockerfile:52` (uvicorn, no `--workers`), `ecs.tf:31,151,287`.
 
-> 🟡 **v7 (2026-10-20): fix 1 done for the API and worker.** In stg and prod, `backend` and `worker` are now **1024 / 2048** (one process per task; the ADOT sidecar takes 256 / 512 of that). Prod keeps the same minimums (15 API, 5 worker), so the process count, and so the Mongo connection count, is unchanged.
+> 🟡 **v7 (2026-10-20): fix 1 done for the API and worker.** In stg and prod, `backend` and `worker` are now **1024 / 2048** (one process per task; the ADOT sidecar takes 256 / 512 of that). Prod keeps the same minimums (15 API, 5 worker), so the process count, and so the Mongo connection count, is unchanged. **2026-10-23:** the ADOT sidecar is now off in stg and prod, so the app gets the whole 1024 / 2048 task. That's a capacity gain, not a saving: Fargate bills by task size, and 1024 can't drop to 768.
 > - `desired_count` now equals the minimum for the API, worker and auth (only used on the first apply).
 > - `docs/aws-cost-estimate.md` has been recalculated.
 > - **Still open:**
@@ -2278,7 +2278,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 | L6 | `infra-live-backend/terraform/variables.tf:194` | `jwt_key_id` description says "CloudFront Function" | Say "Lambda@Edge" |
 | L7 | `jwt-validator-lambda.js.tpl:151,155,322` | 503 body leaks the location/region name | Generic message; log details |
 | L8 | `elasticache.tf:68` | `engine_version = "7.1"` hard-coded | Variable (Appendix A) |
-| L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current |
+| L9 | `ecs.tf:123,259` | ADOT image `v0.40.0` hard-coded twice | Variable/local; keep current. **v7:** the image now lives in one place (`modules/ecs-service`), and the sidecar is **off everywhere** because the app isn't instrumented; see [auth-users-split.md](auth-users-split.md) 15.5. |
 | L10 | `vpc.tf:10` | VPC flow logs disabled (CKV2_AWS_11) | Enable in prod (S3, Parquet) |
 | L11 | `autoscaling.tf` | SNS topic unencrypted (CKV_AWS_26) | **Customer-managed** KMS key whose policy allows `cloudwatch.amazonaws.com`. The AWS-managed `alias/aws/sns` key **can't** be used with CloudWatch alarms (v1's suggestion was wrong) |
 | L12 | `ecs.tf` (API + worker) | No `readonlyRootFilesystem`, no `stopTimeout`. The container is already non-root (`Dockerfile:42-45`) | Read-only root plus a task-level ephemeral `volume` (no host path) mounted at `/tmp`; Fargate doesn't support `linuxParameters.tmpfs`. `stopTimeout` ≤ 120 (the Fargate maximum); worker see APP-06 |

@@ -160,8 +160,8 @@ run "prod_stack_wiring" {
     error_message = "The API is APP_COMPONENT=api and gets no JWT_PRIVATE_KEY (or GOOGLE_CLIENT_ID) — it verifies with JWT_PUBLIC_KEYS only."
   }
   assert {
-    condition     = [for c in jsondecode(module.service["backend"].container_definitions) : c.name] == ["backend", "aws-otel-collector"]
-    error_message = "ADOT sidecar is on by default (enable_adot_sidecar)."
+    condition     = [for c in jsondecode(module.service["backend"].container_definitions) : c.name] == ["backend"]
+    error_message = "ADOT sidecar is off by default (enable_adot_sidecar): the app isn't instrumented."
   }
   assert {
     condition     = jsondecode(module.service["backend"].container_definitions)[0].secrets[0] == { name = "MONGODB_URI", valueFrom = "arn:aws:secretsmanager:ap-south-1:111111111111:secret:superpower/prod/backend-secrets-AbCdEf:MONGODB_URI::" }
@@ -267,8 +267,8 @@ run "prod_stack_wiring" {
     error_message = "Each service keeps exactly its own task policies, with the old names."
   }
   assert {
-    condition     = length(aws_iam_role_policy.task_xray) == 4 && aws_iam_role_policy.task_xray["worker"].name == "superpower-worker-task-xray-prod-ap-south-1" && length(aws_iam_role_policy.task_exec_command) == 0
-    error_message = "X-Ray policy on every service when ADOT is on; no ECS Exec policy when exec is off."
+    condition     = length(aws_iam_role_policy.task_xray) == 0 && length(aws_iam_role_policy.task_exec_command) == 0
+    error_message = "No X-Ray policy while the ADOT sidecar is off; no ECS Exec policy when exec is off."
   }
   assert {
     condition     = jsondecode(aws_iam_role_policy.task["worker/cloudwatch"].policy).Statement[0].Condition.StringEquals["cloudwatch:namespace"] == "Superpower/Worker"
@@ -339,4 +339,23 @@ run "jwt_public_keys_must_hold_the_signing_key" {
   }
 
   expect_failures = [var.jwt_public_keys]
+}
+
+run "adot_sidecar_when_turned_on" {
+  # Off by default; turning it on must add the sidecar and its X-Ray policy to
+  # every service (all test task sizes are >= 512 / 1024).
+  command = plan
+
+  variables {
+    enable_adot_sidecar = true
+  }
+
+  assert {
+    condition     = alltrue([for k in ["admin", "auth", "backend", "worker"] : contains([for c in jsondecode(module.service[k].container_definitions) : c.name], "aws-otel-collector")])
+    error_message = "Every service gets the sidecar when enable_adot_sidecar is on."
+  }
+  assert {
+    condition     = length(aws_iam_role_policy.task_xray) == 4 && aws_iam_role_policy.task_xray["worker"].name == "superpower-worker-task-xray-prod-ap-south-1"
+    error_message = "X-Ray policy on every service when the sidecar is on."
+  }
 }

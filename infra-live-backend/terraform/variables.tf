@@ -329,9 +329,8 @@ variable "auth_max_capacity" {
 }
 
 # -- Admin ECS (APP_COMPONENT=admin: /api/v1/admin/*) ------------------------
-# Low traffic, scaled on CPU and memory. With the ADOT sidecar on (stg/prod)
-# 512/1024 is the floor — the sidecar alone reserves 256 CPU / 512 MiB and
-# modules/ecs-service refuses smaller; without it (dev/sbx) 256/512 is fine.
+# Low traffic, scaled on CPU and memory. 256/512 is enough with the ADOT
+# sidecar off; with it on, 512/1024 is the floor (modules/ecs-service).
 
 variable "admin_task_cpu" {
   description = "Fargate task CPU units for the admin service"
@@ -459,8 +458,8 @@ variable "enable_alb_access_logs" {
 # -- ADOT sidecar --------------------------------------------------------------
 
 variable "enable_adot_sidecar" {
-  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB, X-Ray tracing) to every service's task definition. On in stg/prod; off in dev/sbx, whose 256 / 512 tasks are too small for it — modules/ecs-service refuses the sidecar on tasks under 512 / 1024, so raise those sizes before turning it on there."
+  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB) to every service's task definition. Off everywhere: the collector only forwards what the app sends it (OTLP, X-Ray segments, StatsD), and the backend isn't instrumented. Turn it on only after adding OpenTelemetry to the app, and prefer a shared collector (docs/auth-users-split.md 15.5). modules/ecs-service refuses the sidecar on tasks under 512 / 1024."
   type        = bool
-  default     = true
+  default     = false
 }
 

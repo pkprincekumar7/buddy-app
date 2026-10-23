@@ -120,8 +120,9 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | Worker Task CloudWatch Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
 | ECS Exec Policy (API) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
 | ECS Exec Policy (Worker) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
-| X-Ray Policy (API) | `aws_iam_role_policy` | ❌ | ❌ | ✅ | ✅ |
-| X-Ray Policy (Worker) | `aws_iam_role_policy` | ❌ | ❌ | ✅ | ✅ |
+| X-Ray Policy (one per service) | `aws_iam_role_policy` | ❌ | ❌ | ❌ | ❌ |
+
+X-Ray policies are created only with `enable_adot_sidecar = true`, which is off everywhere (the app isn't instrumented). The X-Ray sampling rules below still exist, and cost nothing while no traces are sent.
 
 ### Secrets & Config
 

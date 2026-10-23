@@ -196,12 +196,13 @@ http = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = ["
 - **The API service is also under App Auto Scaling** (`api_min_capacity` / `api_max_capacity`,
   with CPU, memory and ALB-request target-tracking policies). Change its range through those
   tfvars, not just `desired_count`. **Auth** scales on CPU and memory (`auth_min_capacity` /
-  `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`).
-- **Task size floor.** In dev/sbx every service is 256 / 512 (Fargate's smallest), which works
-  only because the ADOT sidecar is off there. The sidecar reserves 256 CPU / 512 MiB of its task,
-  so with `enable_adot_sidecar = true` a task needs at least 512 / 1024: `modules/ecs-service`
-  refuses smaller at plan time. Raise the sizes before turning the sidecar on in dev/sbx. The worker scales on queue depth
+  `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`). The worker scales on queue depth
   (`worker_min_capacity` / `worker_max_capacity`).
+- **ADOT sidecar: off in every environment.** The collector only forwards traces and metrics the
+  app sends it, and the backend has no OpenTelemetry/X-Ray instrumentation. Container Insights
+  already provides CPU and memory metrics. If it's ever turned on, it reserves 256 CPU / 512 MiB
+  of each task, so a task needs at least 512 / 1024: `modules/ecs-service` refuses smaller at plan
+  time. Tracing plan: [auth-users-split.md](auth-users-split.md) 15.5.
 
 ---
 
