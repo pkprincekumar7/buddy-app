@@ -95,7 +95,7 @@ variable "origin_verify_secret_next" {
 }
 
 variable "elasticache_replica_count" {
-  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica; 2 = primary + 2 replicas). dev/sbx/stg: 0, prod: 2."
+  description = "Number of replica nodes (0 = primary only; 1 = primary + 1 replica; 2 = primary + 2 replicas). dev/sbx/stg: 0, prod: 1."
   type        = number
 
   validation {
@@ -148,7 +148,7 @@ variable "mongodb_db_name" {
 # -- ElastiCache ---------------------------------------------------------------
 
 variable "elasticache_node_type" {
-  description = "ElastiCache node type"
+  description = "ElastiCache (Valkey) node type. dev/sbx: cache.t4g.micro, stg: cache.t4g.small, prod: cache.t4g.medium."
   type        = string
 }
 

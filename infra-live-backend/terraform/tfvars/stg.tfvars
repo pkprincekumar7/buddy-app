@@ -15,8 +15,10 @@ vpc_cidrs = {
 }
 nat_gateway_count = 2
 
-# ElastiCache
-elasticache_node_type     = "cache.t3.medium"
+# ElastiCache (Valkey) — holds only rate-limit counters and a lock, a few MB
+# to a few GB even at high traffic. The app falls back to per-task in-memory
+# limits if it's unavailable, so it isn't on the critical path.
+elasticache_node_type     = "cache.t4g.small"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 

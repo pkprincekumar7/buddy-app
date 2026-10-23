@@ -15,9 +15,13 @@ vpc_cidrs = {
 }
 nat_gateway_count = 3
 
-# ElastiCache
-elasticache_node_type     = "cache.r6g.4xlarge"
-elasticache_replica_count = 2
+# ElastiCache (Valkey) — holds only rate-limit counters and a lock, a few MB
+# to a few GB even at high traffic. The app falls back to per-task in-memory
+# limits if it's unavailable, so it isn't on the critical path.
+# Primary + 1 replica across AZs for automatic failover. Move to
+# cache.r7g.large when sustained load needs dedicated (non-burstable) CPU.
+elasticache_node_type     = "cache.t4g.medium"
+elasticache_replica_count = 1
 elasticache_multi_az      = true
 
 # ECS — API. One uvicorn process per task (backend/Dockerfile), so ~1 vCPU is

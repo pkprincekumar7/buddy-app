@@ -61,9 +61,9 @@ variables {
   nat_gateway_count            = 3
   redis_auth_token             = "0123456789abcdef0123" # gitleaks:allow — fake token for the mock provider
   origin_verify_secret         = "current-secret"
-  elasticache_replica_count    = 2
+  elasticache_replica_count    = 1
   elasticache_multi_az         = true
-  elasticache_node_type        = "cache.r6g.4xlarge"
+  elasticache_node_type        = "cache.t4g.medium"
   subdomain_internal           = "superpower-internal"
   domain_name                  = "example.com"
   hosted_zone_id               = "Z0000000000000"
@@ -129,8 +129,8 @@ run "prod_stack_wiring" {
 
   # -- Redis ------------------------------------------------------------------
   assert {
-    condition     = toset(module.redis.client_security_group_ids) == toset([for k in ["admin", "auth", "backend"] : aws_security_group.service[k].id]) && module.redis.node_count == 3
-    error_message = "Redis reachable from the admin, auth and API task SGs only; primary + 2 replicas in prod."
+    condition     = toset(module.redis.client_security_group_ids) == toset([for k in ["admin", "auth", "backend"] : aws_security_group.service[k].id]) && module.redis.node_count == 2
+    error_message = "Redis reachable from the admin, auth and API task SGs only; primary + 1 replica in prod."
   }
 
   # -- API service ------------------------------------------------------------

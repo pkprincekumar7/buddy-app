@@ -1,11 +1,11 @@
 # ---------------------------------------------------------------------------
-# ElastiCache — Redis 7, encrypted at rest and in transit with AUTH token
-# (../../modules/redis, TF-01)
+# ElastiCache — Valkey 8 (Redis-protocol compatible), encrypted at rest and
+# in transit with an AUTH token (../../modules/redis, TF-01)
 #
-# Node count and multi-AZ are controlled per environment via variables:
-#   dev/sbx  — 1 node, no replica, no multi-AZ
-#   stg      — 1 node, no replica, no multi-AZ (downtime ok)
-#   prod     — primary + replicas, multi-AZ enabled
+# Node type, count and multi-AZ are controlled per environment via variables:
+#   dev/sbx  — cache.t4g.micro, 1 node, no replica, no multi-AZ
+#   stg      — cache.t4g.small, 1 node, no replica, no multi-AZ (downtime ok)
+#   prod     — cache.t4g.medium, primary + 1 replica, multi-AZ
 #
 # Lives in the backend VPC's private subnets and only accepts services with
 # uses_redis = true in services.tf (auth, admin and the API; not the worker).

@@ -1,6 +1,9 @@
 # ---------------------------------------------------------------------------
-# redis — ElastiCache Redis, encrypted at rest and in transit with an AUTH
-# token, reachable only from the given client security groups (TF-01).
+# redis — ElastiCache running the Valkey engine (open-source, Redis-protocol
+# compatible: the app's Redis clients and Lua scripts work unchanged),
+# encrypted at rest and in transit with an AUTH token, reachable only from
+# the given client security groups (TF-01). Resource names still say "redis"
+# so existing replication groups and security groups aren't replaced.
 #
 # Node count and multi-AZ come from the caller per environment. Destroying
 # the backend stack destroys Redis too — intentional, since Redis only holds
@@ -37,20 +40,33 @@ resource "aws_vpc_security_group_ingress_rule" "from_client" {
   referenced_security_group_id = each.value.id
 }
 
+# The family must match the engine's major version; the name carries it, so a
+# family change creates a new group. create_before_destroy makes Terraform
+# create the new group and move the replication group onto it before deleting
+# the old one; deleting first fails while the cluster still uses it.
 resource "aws_elasticache_parameter_group" "this" {
-  name   = "${var.app_name}-backend-redis7-${var.environment}"
-  family = "redis7"
+  name   = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
+  family = local.parameter_group_family
 
   tags = {
-    Name = "${var.app_name}-backend-redis7-${var.environment}"
+    Name = "${var.app_name}-backend-${local.parameter_group_family}-${var.environment}"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+locals {
+  # "8.0" → "valkey8"
+  parameter_group_family = "valkey${split(".", var.engine_version)[0]}"
 }
 
 resource "aws_elasticache_replication_group" "this" {
   #checkov:skip=CKV_AWS_191:AWS-managed AES-256 at-rest encryption is sufficient for ephemeral rate-limit counters; CMK not required at this scale
 
   replication_group_id = "${var.app_name}-backend-redis-${var.environment}"
-  description          = "Redis for ${var.app_name} LLM rate limiter (${var.environment})"
+  description          = "Valkey for ${var.app_name} rate limiters (${var.environment})"
 
   node_type = var.node_type
 
@@ -58,6 +74,7 @@ resource "aws_elasticache_replication_group" "this" {
   automatic_failover_enabled = var.multi_az
   multi_az_enabled           = var.multi_az
 
+  engine               = "valkey"
   engine_version       = var.engine_version
   parameter_group_name = aws_elasticache_parameter_group.this.name
   port                 = 6379

@@ -174,7 +174,7 @@ As it stands it suits a **small/medium production load in one primary region**, 
 | TF-01 | 🟠 High | Terraform | No reusable modules; adding a region is manual everywhere | 🟡 Modules, lock files, per-region variables, edge providers done; region input and allow-list open |
 | TF-02 | 🟡 Medium | Terraform | Task definition `:latest` bootstrap and config drift | ⬜ Open |
 | TF-03 | 🟠 High | Terraform | Prod sizing: single-process uvicorn makes CPU scaling inert | 🟡 Fix 1 done for API and worker (1 vCPU / 2 GB, desired = min); load test, max counts and fixes 2–9 open |
-| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | ⬜ Open |
+| TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ⬜ Open |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | ⬜ Open |
@@ -1789,6 +1789,8 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 - The engine version is a variable.
 - The node-type comment at `elasticache.tf:4-12` matches the tfvars.
 
+> ✅ **Partly done 2026-10-23:** the engine is Valkey, `engine_version` is a variable (default `"8.0"`, parameter group family derived from it, `create_before_destroy`), and nodes are right-sized for the current keys: dev/sbx `cache.t4g.micro`, stg `cache.t4g.small`, prod `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ). The `elasticache.tf` comment matches the tfvars. Still open: set `maxmemory-policy` explicitly, and confirm the working set with a load test before moving prod to `cache.r7g.large`.
+
 ---
 
 ### TF-05 — Bucket policies: no TLS-only deny; manual buckets 🟡
@@ -2254,8 +2256,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 | `docs/infra-operations.md:128` | Worker isn't autoscaled | It is (`autoscaling.tf:159`) |
 | `GLOBAL_ROUTING_MONGO*.md`, `docs/infra-architecture-multi-region.md` | Per-location data residency | All data is in ap-south-1 until DB-01 Stage 2 (PRIV-03) |
 | `docs/static-assets.md:264` | Production CSP from `frontend/nginx.conf` | Prod is S3 + CloudFront; CSP comes from `response_headers.tf`. `frontend/Dockerfile` is only used by `docker-compose.yml` and CI lint |
-| `infra-live-backend/terraform/elasticache.tf:4-12` | Prod t4g.medium, 2 nodes | Tfvars: r6g.4xlarge, 3 nodes |
-| `docs/aws-cost-estimate.md` | t4g Redis nodes; stg CloudTrail off; GuardDuty runtime coverage | Tfvars use `cache.t3.*` in dev/sbx/stg (t4g is cheaper); `stg.tfvars:63` enables CloudTrail; Fargate runtime coverage isn't active (SEC-08) |
+| `infra-live-backend/terraform/elasticache.tf:4-12` | Prod t4g.medium, 2 nodes | Tfvars: r6g.4xlarge, 3 nodes  ✅ **Fixed 2026-10-23:** prod tfvars now use `cache.t4g.medium` × 2, matching the comment (TF-04). |
+| `docs/aws-cost-estimate.md` | t4g Redis nodes; stg CloudTrail off; GuardDuty runtime coverage | Tfvars use `cache.t3.*` in dev/sbx/stg (t4g is cheaper); `stg.tfvars:63` enables CloudTrail; Fargate runtime coverage isn't active (SEC-08)  ✅ **Fixed 2026-10-23:** the estimate was rewritten from the current tfvars: `cache.t3.*` prices, stg CloudTrail on, GuardDuty Runtime Monitoring at $0 with the SEC-08 gap noted, auth/admin tasks, prod fixed at its tfvars, WAF request and logging fees, Container Insights, public IPv4 and log storage. |
 | `infra-live-scheduler/terraform/lambda.tf:67` | CKV_AWS_116 skip reason | Inaccurate (SCH-01) |
 | `backend/app/routers/children.py:473`, `docs/api.md:31` | Soft-deleted children "purged by a scheduled hard-delete job" | No such job exists (PRIV-02) |
 | `backend/worker.py:487` | `cleanup_expired_jobs` is "atomic, no race" | Races with late workers; no fencing (JOB-01) |
@@ -2290,7 +2292,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 | L18 | `ecs.tf:240` | Worker receives `JWT_PRIVATE_KEY` it doesn't need (shared `Settings` requires it) | Make it optional for the worker, and don't inject it. `derive_jwt_public_key` and `validate_jwt_private_key` (`settings.py:42-82`) parse it unconditionally, so they must skip an empty key |
 | L19 | `ecr.tf` | Basic scan-on-push only; no continuous rescanning | `aws_ecr_registry_scanning_configuration { scan_type = "ENHANCED" }` with a repository filter, in the prod account. It's registry-level (per account and region, not in `ecr.tf`) and replaces basic scan-on-push |
 | L20 | `vpc.tf:1` | `aws_availability_zones` doesn't filter `opt-in-status`; opting into a Local Zone would reorder the AZs and shift all subnets | Filter `opt-in-not-required`, or pin AZ IDs |
-| L21 | `tfvars/{dev,sbx,stg}.tfvars` | `cache.t3.*` Redis nodes | Switch to `cache.t4g.*` (cheaper, Graviton) |
+| L21 | `tfvars/{dev,sbx,stg}.tfvars` | `cache.t3.*` Redis nodes | Switch to `cache.t4g.*` (cheaper, Graviton)  ✅ **Done 2026-10-23:** all environments use Valkey `cache.t4g.*` (TF-04) |
 
 ---
 
@@ -2325,6 +2327,8 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 ### Current state (verified v2)
 
 - `aws_elasticache_replication_group.main`: Redis OSS `7.1`, cluster mode disabled. Prod runs `cache.r6g.4xlarge` × 3 nodes (1 primary + 2 replicas) with multi-AZ (`prod.tfvars:19-21`). Dev/sbx/stg use `cache.t3.*` nodes.
+
+  > **Update 2026-10-23:** now Valkey `8.0`, still cluster mode disabled. Prod runs `cache.t4g.medium` × 2 (primary + 1 replica, multi-AZ); stg `cache.t4g.small`; dev/sbx `cache.t4g.micro`. The "right now" recommendation below is done on burstable `t4g` nodes; `cache.r7g.large` is the next step when sustained load needs it.
 - **What's in Redis today:**
   - LLM sliding-window counters (`app/llm_rate_limiter.py`)
   - slowapi per-route IP/user limits (`app/limiter.py:68-89`)
