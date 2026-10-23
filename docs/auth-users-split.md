@@ -176,7 +176,7 @@ flowchart TB
     end
 
     subgraph data["MongoDB Atlas (global)"]
-        dbs[("One database per service<br/>data + outbox + inbox + jobs + local copies")]
+        dbs[("One database per service<br/>data + outbox + jobs + local copies")]
     end
 
     llm["LLM providers"]
@@ -199,7 +199,7 @@ flowchart TB
     circlew -->|"8 publish"| sns
     sns -->|"9 fan out by event_type filter"| sqs
     sqs -->|"10 long poll"| circlew
-    circlew -->|"11 update local copy + inbox (one transaction)"| dbs
+    circlew -->|"11 version-checked update of the local copy"| dbs
 
     circlew -->|"generation jobs"| llm
     platform -->|"speech-to-text"| llm
@@ -223,7 +223,7 @@ flowchart TB
 | 6 | The few synchronous calls go directly to the callee's task IPs through Cloud Map, on port 8001: read-through on a missing copy, confirm-before-deny on a stale one, and the registration saga (7.5, 13.2). |
 | 7–8 | The worker's relay sees this region's outbox rows and publishes each one to SNS. |
 | 9–10 | SNS copies the message into every queue whose filter matches. Each consuming service's worker long-polls its own queue (7.2). |
-| 11 | The consumer updates its local copy and records the event in its inbox, in one transaction, so a duplicate is skipped (7.3, 7.4). Pages then read local data only. |
+| 11 | The consumer updates its local copy only if the event's version is newer, so a duplicate or late event changes nothing (7.4). Pages then read local data only. |
 | Side flows | Generating workers and platform call the LLM providers (8). `auth-worker` keeps the authz cache current from the auth change stream and collects `user.data_deleted` confirmations (10.3). Traces go through the collector to X-Ray; logs and the 16 alarm metrics go straight to CloudWatch (15.5). |
 
 ### Ownership rules
@@ -253,7 +253,8 @@ Why not `ObjectId`:
 - **Timestamps:** MongoDB doesn't generate `created_at` / `updated_at`. The owning service sets them on insert and on every write.
 - **`schema_version`** (int) on every document. Code can then handle old and new shapes side by side when a schema changes.
 - **Per-child documents carry `user_id`, `child_id` and `location`.** A query filtered by all three returns nothing for someone else's child, so ownership checks cost no extra read (section 12.3).
-- **Every service with events** has `outbox` and `inbox` collections (section 7.3), and every generating service a `jobs` collection (section 8).
+- **Every service that publishes events** has an `outbox` collection (section 7.3), and every generating service a `jobs` collection (section 8). An `inbox` exists only where a consumer has a side effect that can't safely run twice (7.3).
+- **Every event handler is safe to run twice** (7.4). That's what makes at-least-once delivery harmless without an inbox.
 
 ### 4.1 Shared collection shapes
 
@@ -274,7 +275,7 @@ These collections appear in several databases with the same shape. `common` owns
 | `created_at` | date | ✅ | |
 | `published_at` | date \| null | — | Set by the relay; TTL deletes the row 7 days later |
 
-**`inbox`** (every service that consumes, 7.3):
+**`inbox`** (opt-in: only for a consumer whose handler can't safely run twice, 7.3). No service needs one yet:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -510,15 +511,31 @@ A service must never save a change and then fail to publish its event, or the re
    - If a region is down, its unpublished rows wait. An operator can let another region's relay take them over by changing their `region`.
 3. **`outbox` has a TTL index** on `published_at`: rows are deleted 7 days after publishing.
 
-Consumers make duplicates harmless:
-- **`inbox`:** `{_id: event_id, processed_at}`, written in the same transaction as the consumer's update. An event already in `inbox` is acknowledged and skipped.
-- **TTL** of 15 days, longer than SQS's maximum message retention (14 days), so a redelivered message is always recognised.
+Consumers make duplicates harmless. The outbox and SQS both deliver **at least once**, so any event can arrive twice.
+- **The rule: every handler is safe to run twice** (7.4). Then a duplicate changes nothing, and no extra bookkeeping is needed.
+- **`inbox`, opt-in:** only for a handler with a side effect that can't be repeated safely, such as sending an email or notification, or incrementing a counter.
+  - It's `{_id: event_id, event_type, processed_at}`, written in the same transaction as the handler's change. An event already there is acknowledged and skipped.
+  - TTL of 15 days, longer than SQS's maximum message retention (14 days), so a redelivered message is always recognised.
+  - Turned on per handler in `common.events`, e.g. `@consumer("user.role_changed", dedupe=True)`. That creates the collection in that service only.
+  - **No service needs it yet.** Every handler in the event catalogue (7.6) is a version-checked upsert, a one-way flag, a set operation or a delete.
 
 ### 7.4 Versions and ordering
 
 - Every event carries the owner's **`version`** for that record: a counter incremented on every write.
 - A consumer applies an event only if its `version` is higher than the one stored on its local copy. Older or duplicate events are ignored.
 - **Tombstones:** a deletion event carries the final version too, so a late update can't resurrect deleted data.
+
+**Every handler is safe to run twice.** It must be one of these kinds, and a test replays each event twice to check it:
+
+| Kind | Example | Why a duplicate is harmless |
+|---|---|---|
+| Version-checked upsert | Update `child_access` or `personality_inputs` from `child.updated` / `discover.personality_finalised` | Applied only if the event's `version` is newer than the stored one |
+| One-way flag | Children sets `progress.discover = true` | Setting `true` again changes nothing |
+| Set operation | Auth adds the service to `deletions.confirmed` (`$addToSet`) | A set can't hold the same value twice |
+| Delete | A circle deletes a child's data on `child.deleted` | Deleting again finds nothing to delete |
+
+- **Follow-up events only on a real change:** a handler publishes a follow-up event only if its update actually modified the document. For example, children publishes `child.progress_changed` only when a flag goes from `false` to `true`, so a duplicate `discover.personality_finalised` doesn't create a second event.
+- **Anything else** (an email, a notification, a counter) uses the opt-in `inbox` (7.3).
 
 **One event, end to end** (discover finishes a personality; grow, transform and children need it):
 
@@ -546,11 +563,11 @@ sequenceDiagram
     SNS-->>QC: copy (filter matches)
     Note over SNS: release-events isn't subscribed to discover.*, so it gets nothing
     GW->>QG: long-poll ReceiveMessage
-    GW->>GW: skip if event_id is in inbox or version is not newer
-    GW->>GW: one transaction: update personality_inputs + inbox row
+    GW->>GW: skip if version is not newer (duplicate or out of order)
+    GW->>GW: update personality_inputs (version-checked upsert)
     GW->>QG: DeleteMessage
     CW->>QC: long-poll ReceiveMessage
-    CW->>CW: one transaction: progress.discover = true + outbox child.progress_changed
+    CW->>CW: one transaction: progress.discover = true, plus outbox child.progress_changed only if the flag changed
     CW->>QC: DeleteMessage
     Note over QG,GW: on failure the message reappears after the visibility timeout, and after 5 tries it moves to the DLQ and an alarm fires
 ```
@@ -919,12 +936,12 @@ The permission check is the single place every request passes, so it writes the 
 
 | Service | Database: collections | Main fields (from today's `children`, `growth_areas`, …) |
 |---|---|---|
-| children | `children`: `children`, `outbox`, `inbox` | `_id` (child id), `user_id`, `location`, `name`, `age`, `gender`, `school`, `avatar_id` (emoji avatar), `avatar_key` (S3 key of an uploaded photo), `progress {profile, conversation, discover, grow, transform, release, connect}`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`, `version` |
-| onboarding | `onboarding`: `conversations`, `child_access`, `outbox`, `inbox` | One `conversations` document per child: the seven answers, the resume step, status and completion time (fields below) |
-| discover | `discover`: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox` | `view_model`, raw `analysis`, `status` (`generating` / `ready` / `failed`), `finalised_at` (fields below) |
-| grow | `grow`: `growth_areas`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`, `inbox` | Per area: answers, `parent_questions`, `child_rounds`, recommendations, child activity, `life_pathway_milestones`, status |
-| transform | `transform`: `plans`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`, `inbox` | **One document per child:** `ask`, `plan` (main page and 3-month plan), `track_steps`, `track_done`, `track_inputs`, `track_sittings`, `applied`, `act_inputs`, `act_counts`, `feedback`, `event_name`, `event_date`, `photos` (S3 keys) |
-| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `inbox` | `source`, `items`, `watching`, `span`, `started_at`, `status`, `visited_at` (fields below) |
+| children | `children`: `children`, `outbox` | `_id` (child id), `user_id`, `location`, `name`, `age`, `gender`, `school`, `avatar_id` (emoji avatar), `avatar_key` (S3 key of an uploaded photo), `progress {profile, conversation, discover, grow, transform, release, connect}`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`, `version` |
+| onboarding | `onboarding`: `conversations`, `child_access`, `outbox` | One `conversations` document per child: the seven answers, the resume step, status and completion time (fields below) |
+| discover | `discover`: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox` | `view_model`, raw `analysis`, `status` (`generating` / `ready` / `failed`), `finalised_at` (fields below) |
+| grow | `grow`: `growth_areas`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox` | Per area: answers, `parent_questions`, `child_rounds`, recommendations, child activity, `life_pathway_milestones`, status |
+| transform | `transform`: `plans`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox` | **One document per child:** `ask`, `plan` (main page and 3-month plan), `track_steps`, `track_done`, `track_inputs`, `track_sittings`, `applied`, `act_inputs`, `act_counts`, `feedback`, `event_name`, `event_date`, `photos` (S3 keys) |
+| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox` | `source`, `items`, `watching`, `span`, `started_at`, `status`, `visited_at` (fields below) |
 | connect | `connect` (when built) | TBD |
 
 **Today's child fields that change:**
@@ -958,7 +975,7 @@ The permission check is the single place every request passes, so it writes the 
 | `created_at`, `updated_at`, `schema_version` | | ✅ | Conventions (section 4) |
 | `version` | int | ✅ | Incremented on every write; carried by `child.*` events (7.4) |
 
-Children also has `outbox` and `inbox` (7.3). It has no `jobs`: it generates nothing.
+Children also has `outbox` (7.3). It has no `jobs` (it generates nothing) and no `inbox` (its handlers are one-way flags, 7.4).
 
 **`onboarding` database:**
 
@@ -966,7 +983,7 @@ Children also has `outbox` and `inbox` (7.3). It has no `jobs`: it generates not
 |---|---|
 | `conversations` | One document per child: the conversation (below) |
 | `child_access` | Local copy of the child: `child_id`, `user_id`, `location`, `name`, `age`, `gender`, `is_deleted`, `progress` (7.7) |
-| `outbox`, `inbox` | Events (7.3) |
+| `outbox` | Events (7.3) |
 
 No `profiles` collection: the profile step's data is the child in children. No `jobs` collection: onboarding doesn't call the LLM; the personality analysis that follows the conversation is discover's job (section 8).
 
@@ -1009,7 +1026,7 @@ No `profiles` collection: the profile step's data is the child in children. No `
 | `finalised_at` | date | — | Publishes `discover.personality_finalised` |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
-Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox`.
+Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`.
 
 **`grow` database, `growth_areas` collection** (one per child per area, as today):
 
@@ -1033,7 +1050,7 @@ Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox`
 | `completed_at` | date | — | Publishes `grow.area_completed`; the first one also `grow.completed` |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
-Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client today, or only by the deleted `RecommendationsPhase.tsx` / `ChildActivityGame.tsx`): `selected_activity`, `parent_liked`, `want_child_activity`, `interactive_step`, `interactive_answers`, `interactive_draft`, `generated_activity`, `show_game`, `pending_child_activity`. Grow also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`, `inbox`.
+Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client today, or only by the deleted `RecommendationsPhase.tsx` / `ChildActivityGame.tsx`): `selected_activity`, `parent_liked`, `want_child_activity`, `interactive_step`, `interactive_answers`, `interactive_draft`, `generated_activity`, `show_game`, `pending_child_activity`. Grow also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`.
 
 **`transform` database, `plans` collection** (one per child; today's `ninety_day_plans`):
 
@@ -1056,7 +1073,7 @@ Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client
 | `visited_at` | date | — | First `POST …/transform/visit`; publishes `transform.visited` (12.4) |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
-Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64 KB. Transform also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`, `inbox`.
+Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64 KB. Transform also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`.
 
 **`release` database, `observations` collection** (one per child):
 
@@ -1074,7 +1091,7 @@ Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64
 | `visited_at` | date | — | First visit; publishes `release.visited` (12.4) |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
-`items` ≤ 64 KB, as today. Release also has `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `inbox`.
+`items` ≤ 64 KB, as today. Release also has `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`.
 
 Two other changes from today:
 - **Discover's AI personality leaves the child document**, so onboarding stores only the answers. Discover starts generating the moment the conversation completes (on `onboarding.conversation_completed`), so its page opens quickly, but the result is stored in discover's own database.
@@ -1210,7 +1227,7 @@ It has no database and doesn't publish events. Like every service, it also serve
 | every `child_access` / `*_inputs` copy | `{location, _id}` unique (`_id` = child id; `{child_id}:{area_id}` for `growth_inputs`) · `{location, user_id}` (user deletion) · `growth_inputs` also `{location, child_id}` |
 | every `jobs` | `{location, _id}` unique · `{location, child_id, type, status}` · TTL on finished jobs |
 | every `outbox` | `{region, published_at}` (relay polling fallback, own region only) · TTL 7 days after `published_at` |
-| every `inbox` | `_id` · TTL 15 days on `processed_at` |
+| every `inbox` (opt-in, 7.3) | `_id` · TTL 15 days on `processed_at` |
 
 **Unsharded in a Global Cluster:** `email_index`, `allowed_emails` and `deletions` live on their database's primary shard in one region. They hold HMAC keys or ids only. Login does one cross-region read.
 
@@ -1425,7 +1442,7 @@ backend/
 │   ├── auth.py            JWT verify, authz cache, require(), require_self_or() → FastAPI deps
 │   ├── permissions.py     role → permission table
 │   ├── audit.py           audit events from the permission check
-│   ├── events/            outbox, relay, SNS publisher, SQS consumer, inbox, schemas/*.json
+│   ├── events/            outbox, relay, SNS publisher, SQS consumer, opt-in inbox, schemas/*.json
 │   ├── generation/        job model, LLM client, per-user Redis LLM limit, prompt helper
 │   ├── deletion.py        PARTICIPANTS
 │   ├── internal_client.py service tokens, Cloud Map DNS client (random IP, retry once, short keep-alive)
@@ -1445,7 +1462,7 @@ backend/
 | Step | What | Done when |
 |---|---|---|
 | **0. Platform** | Dedicated Atlas cluster (M10+), the `modules/alb` no-catch-all change (13.1), the Cloud Map namespace, service registrations and `internal-callers` group (13.2), Redis RBAC users (9.3), the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service ECR repositories, secrets and roles, per-service image builds in the workflows (15.2), the pepper, docker-compose | A hello-world service builds its own image, deploys, and can publish and consume an event in dev |
-| **1. `common`** | Auth deps, permissions, audit, events (outbox, relay, inbox, schemas, contract test harness), generation, internal client, telemetry | Unit- and contract-tested on its own |
+| **1. `common`** | Auth deps, permissions, audit, events (outbox, relay, opt-in inbox, schemas, contract test harness, replay-twice test), generation, internal client, telemetry | Unit- and contract-tested on its own |
 | **2. auth + users** | Sections 5, 6, 9, 10.1 and 11; `auth-worker` with change stream and reaper | Login, register, Google sign-in, refresh rotation, lock, allow-list, profiles; route-policy and ownership test matrices pass |
 | **3. children** | The child and progress; `child.*` events; soft delete and purge | Home lists children with progress, from one query |
 | **4. onboarding, discover** | Each with its database and events; discover with server-side generation. Discover consumes onboarding's events. | Completing the conversation makes Discover's personality appear without the browser building prompts |
@@ -1472,7 +1489,7 @@ backend/
 | 8 | **No admin service, no `/admin/` URLs.** Resource URLs plus permission checks through FastAPI dependencies, deny by default, with an audit trail. | 11 |
 | 9 | **Profiles:** one endpoint for owner and admin | 11.1 |
 | 10 | **Every circle is its own service and database:** onboarding, discover, grow, transform, release, connect, plus children (child + progress) and platform (stateless) | 2, 12 |
-| 11 | **Cross-service data by events into local copies:** SNS + SQS per region, outbox and inbox, versions, read-through on a miss | 7 |
+| 11 | **Cross-service data by events into local copies:** SNS + SQS per region, outbox, handlers safe to run twice (inbox only where a side effect needs it), versions, read-through on a miss | 7 |
 | 12 | **Server-side AI generation per circle;** `/llm/invoke` removed | 8 |
 | 13 | **Per-service Atlas users, secrets, execution roles and images** | 15.1 |
 | 14 | **Greenfield:** no data migration | 16 |
