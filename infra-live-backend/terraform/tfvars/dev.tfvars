@@ -15,8 +15,10 @@ vpc_cidrs = {
 }
 nat_gateway_count = 1
 
-# ElastiCache
-elasticache_node_type     = "cache.t3.micro"
+# ElastiCache (Valkey) — holds only rate-limit counters and a lock, a few MB
+# to a few GB even at high traffic. The app falls back to per-task in-memory
+# limits if it's unavailable, so it isn't on the critical path.
+elasticache_node_type     = "cache.t4g.micro"
 elasticache_replica_count = 0
 elasticache_multi_az      = false
 
@@ -79,5 +81,10 @@ enable_cloudtrail = false
 # enable_cloudtrail above (see enable_alb_access_logs's own description)
 enable_alb_access_logs = false
 
-# ADOT sidecar — optional on dev to save cost
+# ADOT sidecar — off in every environment (see stg/prod tfvars)
 enable_adot_sidecar = false
+
+# Container Insights — off. Only a few testers use this environment, and
+# autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
+# would only add ~$34/month of task-level metrics nobody reads.
+enable_container_insights = false

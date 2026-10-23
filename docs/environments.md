@@ -117,7 +117,7 @@ Settings that matter (backend):
 | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule` | Observability level. |
 | `enable_ops_email` | `true` requires the `OPS_EMAIL` variable. |
 | `enable_execute_command` | ECS Exec shell access (keep `false` for prod-like data). |
-| `enable_adot_sidecar` | Tracing sidecar (costs 0.25 vCPU / 512 MiB per task). |
+| `enable_adot_sidecar` | Tracing sidecar (takes 0.25 vCPU / 512 MiB of every task). **`false` everywhere**: the app isn't instrumented, so it would collect nothing. See [auth-users-split.md](auth-users-split.md) 15.5 for the tracing plan. |
 
 Settings that matter (edge):
 

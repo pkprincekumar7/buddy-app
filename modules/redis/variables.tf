@@ -47,13 +47,18 @@ variable "multi_az" {
 }
 
 variable "auth_token" {
-  description = "Redis AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /)."
+  description = "AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /). Valkey accepts the same token as Redis."
   type        = string
   sensitive   = true
 }
 
 variable "engine_version" {
-  description = "Redis engine version."
+  description = "Valkey engine version (major.minor, e.g. \"8.0\"). The parameter group family is derived from the major version."
   type        = string
-  default     = "7.1"
+  default     = "8.0"
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+$", var.engine_version))
+    error_message = "engine_version must be major.minor, e.g. \"8.0\"."
+  }
 }

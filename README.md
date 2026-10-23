@@ -20,6 +20,7 @@ Web frontend: **Tailwind CSS v3** + **shadcn/ui** (Radix UI primitives), **TanSt
 | Per-service AWS cost breakdown and hourly rates | [docs/aws-cost-estimate.md](docs/aws-cost-estimate.md) |
 | AWS resource inventory (all Terraform-managed resources) | [docs/aws-resources.md](docs/aws-resources.md) |
 | Infra operations — SSM hand-off, state paths, ECS task-definition behaviour, secret rotation, DNS names | [docs/infra-operations.md](docs/infra-operations.md) |
+| Proposal: splitting the backend into services with their own databases — auth, users, children and each journey circle — with events, sagas, authorization and build order | [docs/auth-users-split.md](docs/auth-users-split.md) |
 
 ## Product notes
 

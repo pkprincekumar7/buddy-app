@@ -61,9 +61,9 @@ variables {
   nat_gateway_count            = 3
   redis_auth_token             = "0123456789abcdef0123" # gitleaks:allow — fake token for the mock provider
   origin_verify_secret         = "current-secret"
-  elasticache_replica_count    = 2
+  elasticache_replica_count    = 1
   elasticache_multi_az         = true
-  elasticache_node_type        = "cache.r6g.4xlarge"
+  elasticache_node_type        = "cache.t4g.medium"
   subdomain_internal           = "superpower-internal"
   domain_name                  = "example.com"
   hosted_zone_id               = "Z0000000000000"
@@ -129,8 +129,8 @@ run "prod_stack_wiring" {
 
   # -- Redis ------------------------------------------------------------------
   assert {
-    condition     = toset(module.redis.client_security_group_ids) == toset([for k in ["admin", "auth", "backend"] : aws_security_group.service[k].id]) && module.redis.node_count == 3
-    error_message = "Redis reachable from the admin, auth and API task SGs only; primary + 2 replicas in prod."
+    condition     = toset(module.redis.client_security_group_ids) == toset([for k in ["admin", "auth", "backend"] : aws_security_group.service[k].id]) && module.redis.node_count == 2
+    error_message = "Redis reachable from the admin, auth and API task SGs only; primary + 1 replica in prod."
   }
 
   # -- API service ------------------------------------------------------------
@@ -160,8 +160,12 @@ run "prod_stack_wiring" {
     error_message = "The API is APP_COMPONENT=api and gets no JWT_PRIVATE_KEY (or GOOGLE_CLIENT_ID) — it verifies with JWT_PUBLIC_KEYS only."
   }
   assert {
-    condition     = [for c in jsondecode(module.service["backend"].container_definitions) : c.name] == ["backend", "aws-otel-collector"]
-    error_message = "ADOT sidecar is on by default (enable_adot_sidecar)."
+    condition     = [for c in jsondecode(module.service["backend"].container_definitions) : c.name] == ["backend"]
+    error_message = "ADOT sidecar is off by default (enable_adot_sidecar): the app isn't instrumented."
+  }
+  assert {
+    condition     = one([for x in aws_ecs_cluster.backend.setting : x.value if x.name == "containerInsights"]) == "enabled"
+    error_message = "Prod: Container Insights on (enable_container_insights defaults to true)."
   }
   assert {
     condition     = jsondecode(module.service["backend"].container_definitions)[0].secrets[0] == { name = "MONGODB_URI", valueFrom = "arn:aws:secretsmanager:ap-south-1:111111111111:secret:superpower/prod/backend-secrets-AbCdEf:MONGODB_URI::" }
@@ -267,8 +271,8 @@ run "prod_stack_wiring" {
     error_message = "Each service keeps exactly its own task policies, with the old names."
   }
   assert {
-    condition     = length(aws_iam_role_policy.task_xray) == 4 && aws_iam_role_policy.task_xray["worker"].name == "superpower-worker-task-xray-prod-ap-south-1" && length(aws_iam_role_policy.task_exec_command) == 0
-    error_message = "X-Ray policy on every service when ADOT is on; no ECS Exec policy when exec is off."
+    condition     = length(aws_iam_role_policy.task_xray) == 0 && length(aws_iam_role_policy.task_exec_command) == 0
+    error_message = "No X-Ray policy while the ADOT sidecar is off; no ECS Exec policy when exec is off."
   }
   assert {
     condition     = jsondecode(aws_iam_role_policy.task["worker/cloudwatch"].policy).Statement[0].Condition.StringEquals["cloudwatch:namespace"] == "Superpower/Worker"
@@ -313,8 +317,13 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     elasticache_replica_count = 0
     elasticache_multi_az      = false
     enable_all_alarms         = false
+    enable_container_insights = false
   }
 
+  assert {
+    condition     = one([for x in aws_ecs_cluster.backend.setting : x.value if x.name == "containerInsights"]) == "disabled"
+    error_message = "Dev: Container Insights off (enable_container_insights = false)."
+  }
   assert {
     condition     = length(module.network.interface_endpoint_ids) == 0 && module.network.nat_gateway_count == 1 && module.network.endpoint_client_security_group_ids == []
     error_message = "Dev: one NAT, no interface endpoints or endpoint rules."
@@ -339,4 +348,23 @@ run "jwt_public_keys_must_hold_the_signing_key" {
   }
 
   expect_failures = [var.jwt_public_keys]
+}
+
+run "adot_sidecar_when_turned_on" {
+  # Off by default; turning it on must add the sidecar and its X-Ray policy to
+  # every service (all test task sizes are >= 512 / 1024).
+  command = plan
+
+  variables {
+    enable_adot_sidecar = true
+  }
+
+  assert {
+    condition     = alltrue([for k in ["admin", "auth", "backend", "worker"] : contains([for c in jsondecode(module.service[k].container_definitions) : c.name], "aws-otel-collector")])
+    error_message = "Every service gets the sidecar when enable_adot_sidecar is on."
+  }
+  assert {
+    condition     = length(aws_iam_role_policy.task_xray) == 4 && aws_iam_role_policy.task_xray["worker"].name == "superpower-worker-task-xray-prod-ap-south-1"
+    error_message = "X-Ray policy on every service when the sidecar is on."
+  }
 }

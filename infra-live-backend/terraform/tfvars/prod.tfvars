@@ -15,14 +15,17 @@ vpc_cidrs = {
 }
 nat_gateway_count = 3
 
-# ElastiCache
-elasticache_node_type     = "cache.r6g.4xlarge"
-elasticache_replica_count = 2
+# ElastiCache (Valkey) — holds only rate-limit counters and a lock, a few MB
+# to a few GB even at high traffic. The app falls back to per-task in-memory
+# limits if it's unavailable, so it isn't on the critical path.
+# Primary + 1 replica across AZs for automatic failover. Move to
+# cache.r7g.large when sustained load needs dedicated (non-burstable) CPU.
+elasticache_node_type     = "cache.t4g.medium"
+elasticache_replica_count = 1
 elasticache_multi_az      = true
 
 # ECS — API. One uvicorn process per task (backend/Dockerfile), so ~1 vCPU is
-# all it can use: scale out with more tasks, not bigger ones (TF-03). The ADOT
-# sidecar takes 256 CPU / 512 MiB of this, leaving the app 768 / 1536.
+# all it can use: scale out with more tasks, not bigger ones (TF-03).
 task_cpu      = 1024
 task_memory   = 2048
 desired_count = 15 # = api_min_capacity; only used on the first apply
@@ -81,5 +84,13 @@ enable_cloudtrail = true
 # above (see enable_alb_access_logs's own description); shares the same bucket
 enable_alb_access_logs = true
 
-# ADOT sidecar enabled on prod
-enable_adot_sidecar = true
+# ADOT sidecar — off. The backend has no OpenTelemetry/X-Ray instrumentation,
+# so a collector would receive nothing, and ECS already publishes per-service
+# CPU/memory metrics (AWS/ECS). The app now gets the whole task
+# (the sidecar reserved 256 CPU / 512 MiB of it); task size, and so cost, are
+# unchanged. Tracing plan: docs/auth-users-split.md section 15.5.
+enable_adot_sidecar = false
+
+# Container Insights — on in prod only: task-level metrics, task counts and
+# performance log events for investigating incidents (~$34/month per cluster).
+enable_container_insights = true
