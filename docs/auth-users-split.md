@@ -16,7 +16,7 @@ The code below exists, but nothing it has written needs to be kept. This section
 |---|---|
 | Code | One FastAPI app. `APP_COMPONENT` (`auth` / `admin` / `api` / `worker`, plus `all` for local runs) picks which routers a task mounts, but all components share every module and **one database**. |
 | User data | One `users` document holds both credentials and profile: `email`, `password_hash`, `full_name`, `role`, `country_code`, `location`, `preferences {tts_enabled, last_visited_path}`, `is_locked`, `tokens_revoked_at`, `is_being_deleted`, `created_at`, `updated_at`. |
-| Child data | One `children` document mixes the child (name, age, gender, school, avatar) with **onboarding** answers and traits, the **discover** AI personality (`personality`, `pending_personality_vm`), seven journey progress flags and the jobs lock (`active_jobs`). The flags can be set by any signed-in client through `PATCH /api/v1/children/{id}`. Only grow completion is derived from real data (`services/journey_progress.py`), which is why the unlock checks don't trust the stored flags. |
+| Child data | One `children` document mixes the child (name, age, gender, school, avatar) with **onboarding** answers and traits, the **discover** AI personality (`personality`, `pending_personality_vm`), the journey progress flags and the jobs lock (`active_jobs`). Six flags are stored; `grow_completed` is derived live from `growth_areas` (`services/journey_progress.py`). `PATCH /api/v1/children/{id}` refuses the flags, but they're still **client-reported**: `POST /children/{id}/progress/{flag}` sets them one-way after a precondition check, and `conversational_onboarding_completed` is set when the client PATCHes `onboarding_completed = true`. |
 | Circle data | `growth_areas` (grow), `ninety_day_plans` (transform: main page, tracking, 3-month plan in one document), `observations` (release), `jobs` (all AI generation). |
 | AI prompts | **Built in the browser** (`ninetyDayPlanPrompt.ts`, `growthQuestionsPrompt.ts`, `lifePathwayPrompt.ts`, …) and sent to `/llm/invoke` or `/jobs`. A signed-in user can send any prompt, at your cost. |
 | Ids | `_id` is a **UUIDv4 string** (`str(uuid.uuid4())`). Every other collection stores it as `user_id`. |
@@ -55,7 +55,7 @@ These dependencies are why cross-service data moves by events into **local copie
 | **auth** | Credentials, roles, sessions, email lookup, allow-list | `auth` (HTTP), `auth-worker` (authz change stream, sagas, outbox relay, reaper) |
 | **users** | User profile: names, address, preferences | `users`, `users-worker` (outbox relay, deletion events) |
 | **children** | The child (name, age, gender, school, avatar) and **journey progress** | `children`, `children-worker` (events) |
-| **onboarding** | Profile circle and conversational onboarding: answers, traits | `onboarding`, `onboarding-worker` (generation, events) |
+| **onboarding** | Conversational onboarding: the seven answers (traits) and the conversation's progress. The profile step's data (name, age, gender, school, avatar) is the child itself, so children owns it. | `onboarding`, `onboarding-worker` (outbox relay, events; **no AI generation**) |
 | **discover** | AI personality | `discover`, `discover-worker` |
 | **grow** | Growth areas: questions, answers, recommendations, child activity, life pathway | `grow`, `grow-worker` |
 | **transform** | 90-day plan: main page, tracking, 3-month plan, event, photos | `transform`, `transform-worker` |
@@ -90,7 +90,7 @@ flowchart LR
     alb -->|"/children/*/growth-areas*"| grow
     alb -->|"/children/*/transform*"| transform
     alb -->|"/children/*/observations*"| release
-    alb -->|"/api/v1/speech/*, /downloads/*"| platform
+    alb -->|"/api/v1/speech/*, /downloads/*, /api/health"| platform
 
     subgraph mongo["MongoDB Atlas (one database per service, one DB user each)"]
         authdb[("auth DB<br/>auth, sessions, email_index (HMAC),<br/>allowed_emails, deletions, audit")]
@@ -115,14 +115,116 @@ flowchart LR
     bus["SNS topic per env per region<br/>→ one SQS queue + DLQ per consumer"]
     services <-->|"publish via outbox / consume into local copies"| bus
 
-    authdb -->|"change stream (auth-worker)"| redis[("Redis per region<br/>authz:{user_id} cache")]
+    authdb -->|"change stream (auth-worker)"| redis[("Valkey per region<br/>authz:{user_id} cache, rate limits")]
     services -.->|"every request: role, locked, revoked"| redis
 
-    ialb["Internal ALB<br/>/internal/{service}/*"]
-    services -.->|"read-through, registration saga, authz fill"| ialb
+    cmap["Cloud Map DNS<br/>{service}.{app}-{env}.internal:8001"]
+    services -.->|"read-through, confirm-before-deny, registration saga, authz fill (direct to task IPs)"| cmap
+
+    llm["LLM providers"]
+    services -->|"generating workers, platform speech-to-text"| llm
+
+    otel["otel-collector<br/>(shared, per region)"]
+    services -.->|"OTLP traces"| otel
+    otel -.-> xray["X-Ray"]
 ```
 
-Labelled arrows from the public ALB are request routes (section 13.1). Plain lines to the databases show that each service uses only its own. The two-way arrow is events (section 7). Dotted arrows are the per-request authz check (9.3) and the internal calls (13.2).
+Labelled arrows from the public ALB are request routes (section 13.1). Each service box includes its worker, which runs from the same image. Plain lines to the databases show that each service uses only its own. The two-way arrow is events (section 7). Dotted arrows are the per-request authz check (9.3), the internal calls (13.2) and traces (15.5).
+
+### Components and flow (one region)
+
+The same system as a request and event flow, for one environment in one backend region. Other regions repeat everything inside the "Backend region" box; MongoDB Atlas and the edge are shared.
+
+```mermaid
+flowchart TB
+    user["Browser / mobile app"]
+
+    subgraph edge["Edge (global)"]
+        cf["CloudFront + WAF"]
+        lae["Lambda@Edge<br/>JWT check, route by token location"]
+    end
+
+    subgraph region["Backend region (e.g. ap-south-1)"]
+        alb["Public ALB<br/>path rule per service, port 8000"]
+
+        subgraph http["HTTP services (ECS Fargate)"]
+            auth["auth"]
+            users["users"]
+            children["children"]
+            onboarding["onboarding"]
+            discover["discover"]
+            grow["grow"]
+            transform["transform"]
+            release["release"]
+            platform["platform<br/>speech, downloads, /api/health"]
+        end
+
+        subgraph workers["Workers (same image as their service)"]
+            authw["auth-worker<br/>change stream, sagas, reaper"]
+            circlew["users / children / onboarding /<br/>discover / grow / transform / release workers<br/>generation, outbox relay, consumers"]
+        end
+
+        cmap["Cloud Map DNS<br/>service.app-env.internal:8001"]
+        redis[("Valkey<br/>authz cache, rate limits")]
+
+        subgraph bus["Events"]
+            sns["SNS topic<br/>app-env-events"]
+            sqs["SQS queue + DLQ<br/>per consuming service"]
+        end
+
+        otel["otel-collector"]
+    end
+
+    subgraph data["MongoDB Atlas (global)"]
+        dbs[("One database per service<br/>data + outbox + inbox + jobs + local copies")]
+    end
+
+    llm["LLM providers"]
+    obs["CloudWatch + X-Ray"]
+
+    user -->|"1 HTTPS request"| cf
+    cf --> lae
+    lae -->|"2 to the user's home region"| alb
+    alb -->|"3 route by path"| http
+
+    http -->|"4 authz check on every request"| redis
+    http -.->|"4a cache miss: authz fill"| cmap
+    cmap -.-> auth
+
+    http -->|"5 read / write own DB, plus outbox row"| dbs
+
+    http -.->|"6 sync only: read-through, confirm-before-deny, registration saga"| cmap
+
+    dbs -->|"7 change stream: outbox rows for this region"| circlew
+    circlew -->|"8 publish"| sns
+    sns -->|"9 fan out by event_type filter"| sqs
+    sqs -->|"10 long poll"| circlew
+    circlew -->|"11 update local copy + inbox (one transaction)"| dbs
+
+    circlew -->|"generation jobs"| llm
+    platform -->|"speech-to-text"| llm
+
+    dbs -->|"auth change stream"| authw
+    authw -->|"refresh authz entries"| redis
+    sqs -->|"user.data_deleted"| authw
+
+    http -.->|"OTLP traces"| otel
+    circlew -.->|"OTLP traces"| otel
+    otel -.-> obs
+    http -.->|"logs, PutMetricData"| obs
+    circlew -.->|"logs, PutMetricData"| obs
+```
+
+| Steps | Flow |
+|---|---|
+| 1–3 | A request goes through CloudFront and WAF, then Lambda@Edge checks the JWT and sends it to the user's home region. The ALB passes it to the service that owns the path (13.1). |
+| 4, 4a | Every request checks `authz:{user_id}` in Valkey. On a miss, the service asks auth through Cloud Map, and auth refills the cache (9.3). |
+| 5 | The service reads and writes only its own database. If others need to know about a change, it writes the change and an outbox row in one transaction (7.3). **The response goes back to the browser here.** |
+| 6 | The few synchronous calls go directly to the callee's task IPs through Cloud Map, on port 8001: read-through on a missing copy, confirm-before-deny on a stale one, and the registration saga (7.5, 13.2). |
+| 7–8 | The worker's relay sees this region's outbox rows and publishes each one to SNS. |
+| 9–10 | SNS copies the message into every queue whose filter matches. Each consuming service's worker long-polls its own queue (7.2). |
+| 11 | The consumer updates its local copy and records the event in its inbox, in one transaction, so a duplicate is skipped (7.3, 7.4). Pages then read local data only. |
+| Side flows | Generating workers and platform call the LLM providers (8). `auth-worker` keeps the authz cache current from the auth change stream and collects `user.data_deleted` confirmations (10.3). Traces go through the collector to X-Ray; logs and the 16 alarm metrics go straight to CloudWatch (15.5). |
 
 ### Ownership rules
 
@@ -153,6 +255,80 @@ Why not `ObjectId`:
 - **Per-child documents carry `user_id`, `child_id` and `location`.** A query filtered by all three returns nothing for someone else's child, so ownership checks cost no extra read (section 12.3).
 - **Every service with events** has `outbox` and `inbox` collections (section 7.3), and every generating service a `jobs` collection (section 8).
 
+### 4.1 Shared collection shapes
+
+These collections appear in several databases with the same shape. `common` owns their models, validators and indexes.
+
+**`outbox`** (every service that publishes, 7.3):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The event id |
+| `event_type` | string | ✅ | e.g. `child.updated`; the SNS filter attribute |
+| `schema` | string | ✅ | e.g. `child.updated.v1` (7.8) |
+| `aggregate_id` | string | ✅ | The record the event is about (child id, user id, …) |
+| `version` | int | ✅ | The record's version after this write (7.4) |
+| `payload` | object | ✅ | Only what consumers need (7.6) |
+| `region` | string | ✅ | Region of the task that wrote it; each relay publishes only its own (7.3) |
+| `traceparent` | string | — | Trace context, sent as an SNS message attribute (15.5) |
+| `created_at` | date | ✅ | |
+| `published_at` | date \| null | — | Set by the relay; TTL deletes the row 7 days later |
+
+**`inbox`** (every service that consumes, 7.3):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The event id; a duplicate is skipped |
+| `event_type` | string | ✅ | |
+| `processed_at` | date | ✅ | TTL 15 days |
+
+**`child_access`** (every circle; one per child, fed by `child.*`, 7.7):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The child id |
+| `user_id`, `location` | string | ✅ | Ownership check (12.3) |
+| `name`, `age`, `gender` | | — | For page headings and generation prompts |
+| `progress` | object | ✅ | Same shape as children's `progress`; unlock checks (12.4) |
+| `is_deleted` | bool | ✅ | |
+| `version` | int | ✅ | Children's version; older events are ignored (7.4) |
+| `updated_at` | date | ✅ | |
+
+**`*_inputs`** (local copies of other circles' data, 7.7). Each is keyed by the child, carries `user_id`, `location`, the owner's `version` and `updated_at`, and holds only these fields:
+
+| Collection | `_id` | Fields | From |
+|---|---|---|---|
+| `onboarding_inputs` | child id | The seven answers: `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` | `onboarding.conversation_completed`, `onboarding.answers_updated` |
+| `personality_inputs` | child id | `traits` (summary), `strengths` | `discover.personality_finalised` |
+| `growth_inputs` | `{child_id}:{area_id}` (one per area) | `child_id`, `area_id`, `area_name`, `answers_summary`, `recommendations` | `grow.area_completed`, `grow.area_updated` |
+
+**`jobs`** (every generating service: discover, grow, transform, release; section 8):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The job id the page polls |
+| `user_id`, `child_id`, `location` | string | ✅ | |
+| `type` | enum | ✅ | The service's own job types only (below) |
+| `target` | object | — | Which of the service's own documents receives the result, e.g. `{area_id}` for grow |
+| `status` | enum `pending` / `processing` / `completed` / `failed` | ✅ | Today's `result_ready` disappears: the server validates and stores the result itself |
+| `input_version` | int | ✅ | Version of the local inputs the prompt was built from |
+| `llm_attempt`, `max_llm_attempts` | int | ✅ | Retries with backoff, as today |
+| `retry_after` | date | — | |
+| `claimed_at` | date | — | Set when a worker takes the job |
+| `error` | string | — | Short reason; never the prompt or user data |
+| `created_at`, `updated_at`, `completed_at` | date | | TTL deletes finished jobs (section 14) |
+
+Gone from today's jobs: the client-supplied `payload` (the prompt), `write_back` and the cross-collection allow-list. The server builds the prompt from its own data, and the job can write only to its own service's documents.
+
+| Service | Job types (today's names) |
+|---|---|
+| discover | `generate_personality_analysis` |
+| grow | `generate_growth_parent_questions`, `generate_growth_child_rounds`, `generate_recommendations`, `generate_life_pathway` |
+| transform | `generate_ninety_day_plan`, `generate_event_tracker` |
+| release | `generate_observations` |
+
+`generate_activity` is dropped: only `ChildActivityGame.tsx` uses it, and that component is deleted (section 8).
+
 ---
 
 ## 5. Auth and users
@@ -175,13 +351,59 @@ Why not `ObjectId`:
 
 ### 5.2 Other `auth` collections
 
-| Collection | Fields |
-|---|---|
-| `sessions` | `_id` (refresh `jti`), `user_id`, `location`, `family_id` (rotation chain, 9.1), `expires_at`, `created_at` |
-| `email_index` | `_id` = `HMAC-SHA256(pepper, normalised_email)` hex, `key_version`, `user_id`, `location`, `status` (`reserved` / `active`), `reserved_at` |
-| `allowed_emails` | `_id` = HMAC hex, `key_version`, `email_hint` (masked, e.g. `j***@example.com`), `added_by`, `created_at` |
-| `deletions` | One per user deletion in progress: `_id` = user id, `requested_at`, `expected` (services that must confirm), `confirmed` (those that have) (section 10) |
-| `audit` | Privileged-action events from auth (section 11.3) |
+**`sessions`** (one per refresh token):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The refresh token's `jti` |
+| `user_id`, `location` | string | ✅ | |
+| `family_id` | string (UUIDv4) | ✅ | Rotation chain; reuse of a rotated token revokes the whole family (9.1) |
+| `expires_at` | date | ✅ | TTL index deletes the row when it passes (section 14), replacing today's cleanup task |
+| `created_at` | date | ✅ | |
+
+**`email_index`** (one per email, unsharded):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (64 hex) | ✅ | `HMAC-SHA256(pepper, normalised email)` (section 6) |
+| `key_version` | int | ✅ | Pepper version used (6.5) |
+| `user_id`, `location` | string | ✅ | Where the account lives |
+| `status` | enum `reserved` / `active` | ✅ | Login needs `active` (10.1) |
+| `reserved_at` | date | ✅ | A `reserved` row older than 15 min is reclaimed by the reaper |
+
+**`allowed_emails`** (the allow-list, unsharded):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (64 hex) | ✅ | HMAC key, as in `email_index` |
+| `key_version` | int | ✅ | |
+| `email_hint` | string | ✅ | Masked, e.g. `j***@example.com`, so admins can tell entries apart |
+| `added_by` | string (UUIDv4) | ✅ | Admin's user id |
+| `created_at` | date | ✅ | |
+
+**`deletions`** (one per account deletion in progress, unsharded):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The user id |
+| `location` | string | ✅ | |
+| `requested_at` | date | ✅ | The alert fires after 24 h (10.3) |
+| `expected` | string[] | ✅ | From `common.deletion.PARTICIPANTS` |
+| `confirmed` | string[] | ✅ | Services that sent `user.data_deleted` |
+
+**`audit`** (privileged actions and denials handled by auth, section 11.3):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `actor_id`, `actor_role` | string | ✅ | Who acted |
+| `permission` | string | ✅ | e.g. `accounts:lock` |
+| `subject_id` | string | — | Whose account |
+| `privileged` | bool | ✅ | Allowed only because of the role |
+| `outcome`, `status_code` | string, int | ✅ | `allowed` / `denied` |
+| `request_id`, `source_ip`, `route` | string | ✅ | |
+| `changed_fields` | string[] | — | Field **names** only, never values |
+| `created_at` | date | ✅ | TTL at the agreed audit retention (section 14) |
 
 ### 5.3 `users.users` — profile
 
@@ -333,14 +555,27 @@ sequenceDiagram
     Note over QG,GW: on failure the message reappears after the visibility timeout, and after 5 tries it moves to the DLQ and an alarm fires
 ```
 
-### 7.5 Cache misses: read-through
+### 7.5 Missing or stale copies: read-through
 
-A local copy can lag by a second, for example right after a child is created, when its onboarding page opens before `child.created` has arrived. When a needed local copy is missing:
+The frontend never waits for events: an API call returns as soon as the service has saved its own data and outbox row, and events reach other services afterwards, usually within a second. A local copy can therefore be **missing** or **behind** for a moment, for example right after a child is created or a circle is completed.
+
+**Missing copy:** for example, the onboarding page opens before `child.created` has arrived.
 1. The service calls the owner's internal API once (`GET /internal/children/{id}`, …).
 2. It stores the result with the owner's `version`.
 3. It continues. Later events with higher versions overwrite it.
 
-This keeps the user experience immediate while events stay the normal path.
+**Stale copy: confirm before you deny.** A local copy may be used to **allow** something, but never on its own to **refuse** it, because a "no" may only mean the copy is behind.
+1. If a check against a local copy would refuse the request (circle locked, item not found, not yet completed), the service asks the **owner of that fact** once, over Cloud Map (13.2).
+2. If the owner says yes, the service stores the owner's answer with its `version` and continues as if the copy had been current.
+3. Only a "no" from the owner returns the refusal (403, 404 or 409).
+4. If the owner is unreachable, the service returns **503** with `Retry-After`, not the refusal, so a short outage doesn't show the parent a wrong "locked" screen. The frontend retries once, then shows a "try again" message.
+
+This costs one internal call only in the rare case where the copy is behind; normal page loads still read local data only.
+
+**Out of scope for this rule:**
+- **Revocations** (lock, logout everywhere, deletion, role change) don't depend on local copies. They're enforced through the authz cache on every request (9.3).
+- **Stale "allow" answers** are accepted. For example, a child deleted a second ago may still pass a `child_access` check for that second. Its data is being deleted anyway, and only its own parent could make the request.
+- **Display-only staleness**, such as Home's progress rings or another circle's summary a second behind, is accepted. The next load shows the update.
 
 ### 7.6 Event catalogue
 
@@ -353,8 +588,7 @@ This keeps the user experience immediate while events stay the normal path.
 | `child.created`, `child.updated` | children | `user_id`, `name`, `age`, `gender`, `school` | onboarding, discover, grow, transform, release, connect |
 | `child.deleted` | children | `user_id` | every circle (delete that child's data) |
 | `child.progress_changed` | children | the seven progress flags | every circle (unlock checks, 12.4) |
-| `onboarding.profile_completed`, `onboarding.answers_updated` | onboarding | `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour`, `concerns` | discover, grow, transform, release; children (progress) |
-| `onboarding.conversation_completed` | onboarding | — | children (progress), discover |
+| `onboarding.conversation_completed`, `onboarding.answers_updated` | onboarding | `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` (today's seven answers; add new ones as optional fields, 7.8) | discover, grow, transform, release; children (progress) |
 | `discover.personality_finalised` | discover | `traits` (summary), `strengths` | grow, transform; children (progress) |
 | `grow.area_completed`, `grow.area_updated` | grow | `area_id`, `area_name`, answer summary, recommendations | transform, release |
 | `grow.completed` | grow | — | children (progress) |
@@ -366,7 +600,7 @@ This keeps the user experience immediate while events stay the normal path.
 
 | Service | Local copies (collection) | From |
 |---|---|---|
-| every circle | `child_access {child_id, user_id, location, name, age, gender, is_deleted, progress}` | `child.*` |
+| every circle | `child_access {_id = child id, user_id, location, name, age, gender, is_deleted, progress}` (fields in 4.1) | `child.*` |
 | discover | `onboarding_inputs` | `onboarding.*` |
 | grow | `onboarding_inputs`, `personality_inputs` | `onboarding.*`, `discover.*` |
 | transform | `onboarding_inputs`, `personality_inputs`, `growth_inputs` | `onboarding.*`, `discover.*`, `grow.*` |
@@ -382,7 +616,7 @@ Local copies:
 
 ```mermaid
 flowchart LR
-    P["Profile + Conversation<br/>(onboarding)"] --> D["Discover<br/>(personality)"]
+    P["Profile (children) +<br/>Conversation (onboarding)"] --> D["Discover<br/>(personality)"]
     D --> G["Grow<br/>(growth areas)"]
     G --> T["Transform<br/>(90-day plan)"]
     T --> RL["Release<br/>(observations)"]
@@ -438,7 +672,7 @@ Results the client used to "finalise" (for example `pending_personality_vm` → 
 
 **`/llm/invoke` is removed.** Nothing sends raw prompts to the backend.
 
-**LLM keys** are injected only into the workers of services that generate (onboarding, discover, grow, transform and release), plus platform, whose speech-to-text uses OpenAI (`OPENAI_API_KEY`), as `/audio/transcribe` does today.
+**LLM keys** are injected only into the workers of services that generate (discover, grow, transform and release; onboarding only collects answers), plus platform, whose speech-to-text uses OpenAI (`OPENAI_API_KEY`), as `/audio/transcribe` does today.
 
 **Removing `/llm/invoke` breaks no live page.** Its only synchronous callers are `RecommendationsPhase.tsx` and `ChildActivityGame.tsx`, and neither is rendered: nothing imports `RecommendationsPhase`, and `ChildActivityGame` is used only by it. Delete both components along with the endpoint.
 
@@ -535,7 +769,7 @@ sequenceDiagram
     S->>S: verify JWT signature, iss, aud, exp
     S->>R: GET authz:{sub}
     alt cache miss
-        S->>A: GET /internal/authz/{user_id} (internal ALB)
+        S->>A: GET /internal/authz/{user_id} (Cloud Map DNS, port 8001)
         A->>R: refill authz:{user_id}
     end
     alt auth also unreachable
@@ -685,16 +919,165 @@ The permission check is the single place every request passes, so it writes the 
 
 | Service | Database: collections | Main fields (from today's `children`, `growth_areas`, …) |
 |---|---|---|
-| children | `children`: `children`, `outbox`, `inbox` | `_id` (child id), `user_id`, `location`, `name`, `age`, `gender`, `school`, `avatar_id`, `avatar_key` (S3), `progress {profile, conversation, discover, grow, transform, release, connect}`, `is_deleted`, `deleted_at`, `version` |
-| onboarding | `onboarding`: `profiles`, `conversations`, `jobs`, `child_access`, `outbox`, `inbox` | `onboarding_phase`, `current_phase`, `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour`, conversational answers |
-| discover | `discover`: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox` | `view_model`, raw analysis, status (`pending` / `ready`), `finalised_at` |
+| children | `children`: `children`, `outbox`, `inbox` | `_id` (child id), `user_id`, `location`, `name`, `age`, `gender`, `school`, `avatar_id` (emoji avatar), `avatar_key` (S3 key of an uploaded photo), `progress {profile, conversation, discover, grow, transform, release, connect}`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`, `version` |
+| onboarding | `onboarding`: `conversations`, `child_access`, `outbox`, `inbox` | One `conversations` document per child: the seven answers, the resume step, status and completion time (fields below) |
+| discover | `discover`: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox` | `view_model`, raw `analysis`, `status` (`generating` / `ready` / `failed`), `finalised_at` (fields below) |
 | grow | `grow`: `growth_areas`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`, `inbox` | Per area: answers, `parent_questions`, `child_rounds`, recommendations, child activity, `life_pathway_milestones`, status |
 | transform | `transform`: `plans`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`, `inbox` | **One document per child:** `ask`, `plan` (main page and 3-month plan), `track_steps`, `track_done`, `track_inputs`, `track_sittings`, `applied`, `act_inputs`, `act_counts`, `feedback`, `event_name`, `event_date`, `photos` (S3 keys) |
-| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `inbox` | `source`, `items`, `watching`, `span`, `started_at` |
+| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `inbox` | `source`, `items`, `watching`, `span`, `started_at`, `status`, `visited_at` (fields below) |
 | connect | `connect` (when built) | TBD |
 
-Two changes from today:
-- **Discover's AI personality leaves the child document**, so onboarding stores only answers and traits. Discover can still start generating the moment onboarding completes (on `onboarding.profile_completed`), so its page opens instantly, but the result is stored in discover's own database.
+**Today's child fields that change:**
+
+| Today (`children`) | New | Why |
+|---|---|---|
+| `avatar_url` (stores the S3 key; the API swaps it for a presigned URL on read) | `avatar_key` in children. The API still returns a short-lived `avatar_url`, built on read as today. | The stored value is a key, not a URL, so the name says so |
+| `created_date` (an API alias of `created_at`; lists sort by `-created_date`) | `created_at` in the API too; lists sort by `-created_at` | One name for one field |
+| `onboarding_completed` (set by the client with `PATCH`; the backend then sets `conversational_onboarding_completed`) | Onboarding's own `completed_at`, set **by the onboarding service** when the seventh answer is saved. It publishes `onboarding.conversation_completed`, and children sets `progress.conversation`. | The client no longer reports its own completion |
+| `onboarding_phase` (1 / 2 / 3), `current_phase` (always `"foundation"`) | **Dropped.** Children's `progress` says which stage a child is at, and `conversations.current_step` says where to resume the chat. | The phase number duplicated progress; `current_phase` never changes |
+| `strengths` … `emotional_behaviour` on the child | `conversations.answers` in onboarding | The answers belong to the circle that collects them |
+| `onboarding_profile_completed` (set by `POST …/progress/{flag}`) | Children sets `progress.profile` itself, when `name`, `age` and `gender` are first all present after a create or update | The profile step's data is the child, so children can derive it without being told |
+| `visited_tabs` (initialised and `$addToSet` by `PATCH`, read by no client) | **Dropped**, with its handling in `routers/children.py` | Unused, like `last_visited_path` |
+| `active_jobs`, `pending_personality_vm` | An `active` field on each circle's own document; discover's server-side result (section 8) | The jobs lock and draft results belong to the circle that generates them |
+
+**`children` database, `children` collection** (one document per child):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | The child id; `child_id` everywhere else |
+| `user_id` | string (UUIDv4) | ✅ | The parent; every query filters by it (12.3) |
+| `location` | string | ✅ | Copied from the parent at create; immutable (shard key, section 14) |
+| `name` | string, ≤ 255 | ✅ | |
+| `age` | int | — | Required before `progress.profile` is set |
+| `gender` | string | — | Required before `progress.profile` is set |
+| `school` | string, ≤ 300 | — | |
+| `avatar_id` | string, ≤ 100 | — | Emoji avatar (e.g. `capper-boy`). Mutually exclusive with `avatar_key`. |
+| `avatar_key` | string | — | S3 key of an uploaded photo under the child's prefix. The API returns a short-lived `avatar_url` built from it. |
+| `progress` | object | ✅ | `{profile, conversation, discover, grow, transform, release, connect}`, all bool, default `false`, one-way (12.4). `profile` is set by children itself; the rest follow completion and visit events. |
+| `is_deleted`, `deleted_at` | bool, date | — | Soft delete (10.2) |
+| `created_at`, `updated_at`, `schema_version` | | ✅ | Conventions (section 4) |
+| `version` | int | ✅ | Incremented on every write; carried by `child.*` events (7.4) |
+
+Children also has `outbox` and `inbox` (7.3). It has no `jobs`: it generates nothing.
+
+**`onboarding` database:**
+
+| Collection | Holds |
+|---|---|
+| `conversations` | One document per child: the conversation (below) |
+| `child_access` | Local copy of the child: `child_id`, `user_id`, `location`, `name`, `age`, `gender`, `is_deleted`, `progress` (7.7) |
+| `outbox`, `inbox` | Events (7.3) |
+
+No `profiles` collection: the profile step's data is the child in children. No `jobs` collection: onboarding doesn't call the LLM; the personality analysis that follows the conversation is discover's job (section 8).
+
+**`conversations` document:**
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `user_id`, `child_id`, `location` | string | ✅ | Unique `{location, user_id, child_id}`: one conversation per child (section 14) |
+| `status` | enum `in_progress` / `completed` | ✅ | |
+| `current_step` | int, 0–7 | ✅ | Number of questions answered; the chat resumes here, as today's resume summary does |
+| `answers.strengths` | string[] | — | Question 1 |
+| `answers.hobbies` | string[] | — | Question 2 |
+| `answers.thinking_pattern` | string | — | Question 3 |
+| `answers.communication_style` | string | — | Question 4 |
+| `answers.energy_level` | string | — | Question 5 |
+| `answers.social_behaviour` | string | — | Question 6 |
+| `answers.emotional_behaviour` | string | — | Question 7 |
+| `answered_at` | object | — | Per-answer timestamps, keyed by field name |
+| `started_at` | date | ✅ | First answer saved |
+| `completed_at` | date | — | Set by the service when the seventh answer is saved; publishes `onboarding.conversation_completed` |
+| `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | Conventions; `version` is carried by `onboarding.*` events |
+
+- **Saving:** each answer is a `PATCH /api/v1/children/{id}/onboarding` with one field, so a parent can leave and resume. Today the chat holds answers in the browser and saves them on the child at the end.
+- **Editing later:** changing an answer after completion publishes `onboarding.answers_updated` with the new values.
+- **Validation:** the seven fields and their allowed values live in `onboarding`'s schema. Chat wording and UI stay in the clients.
+
+**`discover` database, `personalities` collection** (one per child):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `user_id`, `child_id`, `location` | string | ✅ | Unique per child |
+| `status` | enum `generating` / `ready` / `failed` | ✅ | The page shows "generating…" until `ready` |
+| `view_model` | object | — | What the Discover page renders. Today's `personality.view_model`, now **built and validated by the server** instead of by the browser's `adaptAiPersonalityToViewModel` |
+| `analysis` | object | — | The raw LLM output (today's `pending_personality_vm`). Kept for regeneration and support; never returned to clients |
+| `source` | enum `llm` | ✅ | As today's `personality.source` |
+| `input_version` | int | ✅ | `onboarding_inputs` version it was built from; a newer one marks it stale |
+| `active_job_id` | string | — | The jobs lock (one generation per child) |
+| `finalised_at` | date | — | Publishes `discover.personality_finalised` |
+| `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
+
+Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `inbox`.
+
+**`grow` database, `growth_areas` collection** (one per child per area, as today):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `user_id`, `child_id`, `location` | string | ✅ | Unique with `area_id` |
+| `area_id` | string, ≤ 50 | ✅ | |
+| `area_name` | string, ≤ 100 | ✅ | |
+| `status` | enum `in_progress` / `completed` | ✅ | Today's legacy rows without it are treated as completed; greenfield rows always have it |
+| `step` | string, ≤ 100 | — | Wizard step while `in_progress` |
+| `parent_questions` | object | — | Generated once per area (`generate_growth_parent_questions`) |
+| `child_rounds` | object | — | Generated once per area (`generate_growth_child_rounds`) |
+| `answers` | map of question id → string (≤ 1,000), ≤ 100 keys | ✅ | Parent's answers, keyed by ids from `parent_questions` |
+| `child_activity` | object | — | `{selections: string[] ≤ 50, results: {summary ≤ 2,000, strengths ≤ 20, suggested_activities ≤ 20}}`. Replaces today's duplicate `child_activity_selections` |
+| `recommendations` | string[], ≤ 50 | — | |
+| `ai_three_month_recommendations` | array | — | Generated (`generate_recommendations`) and stored directly; today's `pending_recommendations` staging is gone |
+| `feedback` | string, ≤ 2,000 | — | |
+| `life_pathway_milestones` | object | — | Generated (`generate_life_pathway`); cleared when `age` or `gender` changes, as today |
+| `active_jobs` | map of job type → job id | — | One generation per type per area |
+| `completed_at` | date | — | Publishes `grow.area_completed`; the first one also `grow.completed` |
+| `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
+
+Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client today, or only by the deleted `RecommendationsPhase.tsx` / `ChildActivityGame.tsx`): `selected_activity`, `parent_liked`, `want_child_activity`, `interactive_step`, `interactive_answers`, `interactive_draft`, `generated_activity`, `show_game`, `pending_child_activity`. Grow also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`, `inbox`.
+
+**`transform` database, `plans` collection** (one per child; today's `ninety_day_plans`):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `user_id`, `child_id`, `location` | string | ✅ | Unique per child |
+| `ask` | string, ≤ 2,000 | — | The parent's goal for the 90 days |
+| `plan` | object | — | Main page and 3-month plan, generated (`generate_ninety_day_plan`) |
+| `track_steps` | object | — | Event tracker, generated (`generate_event_tracker`) once the event is set |
+| `applied` | map → bool | — | Tips the parent marked as applied |
+| `act_inputs`, `act_counts` | map → string, map → int | — | "Act" section entries and counters |
+| `track_done`, `track_inputs`, `track_sittings` | map → bool, map → string, map → bool | — | Tracker progress |
+| `feedback` | map → object | — | Per-item feedback |
+| `event_name` | string, ≤ 200 | — | |
+| `event_date` | date | — | Today a string (≤ 32); stored as a date |
+| `event_set` | bool | ✅ | Default `false` |
+| `photos` | map of field key → string[] | — | S3 keys under the child's plan-photo prefix; the API returns short-lived URLs |
+| `active_jobs` | map of job type → job id | — | |
+| `visited_at` | date | — | First `POST …/transform/visit`; publishes `transform.visited` (12.4) |
+| `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
+
+Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64 KB. Transform also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`, `inbox`.
+
+**`release` database, `observations` collection** (one per child):
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `_id` | string (UUIDv4) | ✅ | |
+| `user_id`, `child_id`, `location` | string | ✅ | Unique per child |
+| `status` | enum `generating` / `ready` / `failed` | ✅ | |
+| `source` | string, ≤ 50 | — | |
+| `items` | object[], ≤ 8 | — | Observation patterns, validated by the server (icon and source enums) instead of by the client; today's `pending_observations` staging is gone |
+| `watching` | string[] (≤ 100 each), ≤ 8 | — | Patterns the parent chose to watch |
+| `span` | string, ≤ 50 | — | |
+| `started_at` | date | — | Today a string (≤ 64); stored as a date |
+| `active_job_id` | string | — | |
+| `visited_at` | date | — | First visit; publishes `release.visited` (12.4) |
+| `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
+
+`items` ≤ 64 KB, as today. Release also has `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `inbox`.
+
+Two other changes from today:
+- **Discover's AI personality leaves the child document**, so onboarding stores only the answers. Discover starts generating the moment the conversation completes (on `onboarding.conversation_completed`), so its page opens quickly, but the result is stored in discover's own database.
 - **Transform stays one document per child.** Its sections load together, and targeted `$set`s update one section at a time. Split a section out only if it grows large or another page needs it on its own.
 
 ### 12.2 One request per page, one read per stage
@@ -702,7 +1085,7 @@ Two changes from today:
 | Page | Endpoint | Service | Database reads |
 |---|---|---|---|
 | Home (children and progress) | `GET /api/v1/children` | children | 1 query |
-| Onboarding | `GET /api/v1/children/{id}/onboarding` | onboarding | 1 (`profiles`; child name from `child_access` in the same database) |
+| Onboarding | `GET /api/v1/children/{id}/onboarding` | onboarding | 1 (`conversations`; child name from `child_access` in the same database) |
 | Discover | `GET /api/v1/children/{id}/personality` | discover | 1–2 |
 | Grow, Life Pathway | `GET /api/v1/children/{id}/growth-areas` | grow | 1 query |
 | Transform | `GET /api/v1/children/{id}/transform` | transform | 1 (the whole plan document) |
@@ -719,6 +1102,19 @@ Pages no longer gather other circles' data, because generation happens server-si
 
 - **Owner:** children owns progress, set by completion events (`discover.personality_finalised` → `discover`, `grow.completed` → `grow`, …).
 - **Checks:** each circle checks its unlock condition against `child.progress_changed` in its own `child_access` copy (e.g. grow requires `discover`), with read-through on a miss (7.5).
+- **Confirm before deny (7.5):** if the copy says "locked", the circle asks the **previous circle**, which owns the completion fact. It doesn't ask children, whose progress is itself an event behind that circle.
+
+  | Circle | Unlocks when | If its copy says "locked", it asks |
+  |---|---|---|
+  | discover | conversational onboarding completed | onboarding: `GET /internal/onboarding/children/{id}/status` |
+  | grow | personality finalised | discover: `GET /internal/discover/children/{id}/status` |
+  | transform | a growth area completed | grow: `GET /internal/grow/children/{id}/status` |
+  | release | transform visited | transform: `GET /internal/transform/children/{id}/status` |
+  | connect | release visited | release: `GET /internal/release/children/{id}/status` |
+
+  - Each `…/status` returns `{completed or visited, version}` from the circle's own database: one indexed read.
+  - Example: the parent finishes Discover and clicks Grow within a second. Grow's copy still says `discover = false`, so grow asks discover, gets "finalised", updates its copy and opens normally. Without this step the parent would wrongly see a locked circle.
+  - A circle can also check its own copy of the completion event first. Grow, for instance, consumes `discover.personality_finalised` directly into `personality_inputs`, so either that or the progress flag counts as unlocked.
 - **Rule:** one-way and in order, exactly as `mark_journey_progress` enforces today.
 - **"Visited" circles** (transform, release, connect): the page calls `POST /api/v1/children/{id}/<circle>/visit` once, on its circle service, which publishes `<circle>.visited`. A `GET` never has that side effect. This replaces today's `POST /children/{id}/progress/{flag}` for those three flags.
 
@@ -759,25 +1155,27 @@ Notes:
 
 ### 13.2 Internal calls
 
-Internal endpoints live under `/internal/*`, on a separate port. **The public ALB never routes them**; only the internal ALB below does. They're used only for read-through (7.5), the registration saga and the authz fill.
-- **Transport: one internal ALB per environment per region,** not ECS Service Connect.
-  - The ALB is internal (private subnets, no public address), at a private DNS name such as `internal.{app}-{env}.{region}`, with one path rule per service: `/internal/children/*` → children's internal target group, and so on.
-  - **Why not Service Connect:** it adds an Envoy proxy container to every task, and AWS recommends reserving about 256 CPU / 64 MiB for it. That doesn't fit the agreed 256 / 512 tasks in dev and sbx: they'd have to double in size (about +$160 a month per region). In prod it would reserve a quarter vCPU in every one of dozens of tasks. An internal ALB costs about **$17 a month per environment per region** plus a little LCU, and needs no sidecar.
-- **Network:** the internal ALB's security group admits traffic only from the services' task security groups. Each service's task security group admits its internal port only from the internal ALB.
-- **`modules/alb` changes for an internal instance.** Today the module is built only for the public ALB:
+Internal endpoints live under `/internal/*`, on a **separate port (8001)**. **The public ALB never routes them**: its target groups use port 8000 only. Internal calls go straight to the callee's tasks, found through **AWS Cloud Map DNS**. They're used only for read-through and confirm-before-deny checks (7.5, 12.4), the registration saga and the authz fill. Everything else between services is events (section 7).
 
-  | Today (public only) | Needed for `internal = true` |
-  |---|---|
-  | `internal = false`, in `public_subnet_ids` | An `internal` variable, and a `subnet_ids` input that takes the private subnets |
-  | Ingress only from CloudFront's origin-facing prefix list | Ingress from the given task security groups |
-  | `origin_verify_values` required (validation: at least one); every rule matches `X-Origin-Verify` | Optional. Internal rules match path only, and the service token is the caller check |
-  | Exactly one catch-all target | No catch-all; a fixed 404 (the same change as the public ALB) |
-  | HTTPS listener with the public certificate | HTTPS listener with its own certificate (below) |
+- **Transport: ECS service discovery with Cloud Map DNS,** not an internal ALB and not ECS Service Connect.
+  - **Namespace:** one private DNS namespace per environment per region, e.g. `{app}-{env}.internal`, attached to the VPC. Cloud Map creates it as a Route 53 private hosted zone.
+  - **Registration:** every service with internal endpoints has a `service_registries` block on its ECS service. ECS registers each task's private IP when it starts and removes it when it stops. Names look like `children.{app}-{env}.internal`, `auth.{app}-{env}.internal`. The shared `otel-collector` (15.5) is registered too, for OTLP on 4318. Workers and platform aren't: they serve no internal endpoints.
+  - **Records:** `A` records with a **10-second TTL**, answered as multivalue, so each lookup returns up to 8 healthy task IPs. Only tasks whose container health check passes are returned.
+  - **Why not an internal ALB:** it costs about $17 a month per environment per region, and needs an internal mode in `modules/alb` (other subnets, security group sources, no origin-verify header, its own certificate). The internal call volume (cache misses and sagas) doesn't need a load balancer.
+  - **Why not Service Connect:** it adds an Envoy proxy container to every task, and AWS recommends reserving about 256 CPU / 64 MiB for it. That doesn't fit the agreed 256 / 512 tasks in dev and sbx: they'd have to double in size (about +$160 a month per region). In prod it would reserve a quarter vCPU in every one of dozens of tasks.
+- **Client (`common.internal_client`)**, because DNS does none of what a load balancer would:
+  - **Load spreading:** resolve the name, then pick a random IP from the answer for each new connection.
+  - **Stale addresses:** a task that just stopped may still be in a cached answer for up to the TTL. Use a 2-second connect timeout, and retry once on a connection error against a different IP. Only idempotent calls retry, and every internal call is idempotent: reads, and saga upserts keyed by id.
+  - **Pooled connections:** expire idle keep-alive connections after 30 s, so traffic moves to new tasks after a deploy.
+  - **Deploys:** ECS deregisters a task from Cloud Map when it starts stopping. The app keeps serving in-flight requests during its stop timeout, as it does for the public ALB.
+- **Network:** a shared `internal-callers` security group is attached to every task that makes internal calls. Each registered service's task security group admits port 8001 **only from `internal-callers`**. The public ALB's security group can still reach port 8000 only.
+- **Encryption:** plain HTTP on port 8001, inside the VPC only, with three protections:
+  - the security group rule above, so only the app's own tasks can connect;
+  - a **service token** on every call (below), audience-bound and short-lived, so a captured token is useful for minutes only and only against one service;
+  - no user tokens, passwords or emails in internal requests. Calls carry ids, and auth returns authz flags, not credentials.
 
-- **Certificate:** a **public ACM certificate** for `internal.<domain>` (or `*.internal.<domain>`), validated by a DNS record in the existing public hosted zone. It's free and renews itself.
-  - The ALB's name resolves only through a **Route 53 private hosted zone** attached to the VPC, so the name is public but the address isn't reachable from outside.
-  - Not **AWS Private CA**: about $400 a month per CA, for nothing a public certificate doesn't already give here.
-  - Not plain HTTP: service tokens would then cross the VPC in clear text.
+  Add mTLS later if a compliance requirement asks for encryption on every hop. That would mean a certificate per service, from ACM exportable certificates or a private CA, so it isn't worth it before then.
+- **Metrics:** with no ALB there are no free `AWS/ApplicationELB` metrics for internal calls. Their rate, errors and latency come from the traces (15.5) and from Logs Insights on the client's structured log line.
 - **Identity:** a short-lived **service token** (JWT, `aud = "<service>-internal"`, `sub = "<caller>"`), minted with a separate key.
 - **Tracing:** every internal call and every event carries the W3C `traceparent` header and `X-Request-Id`, so one user action can be followed across services (15.5).
 
@@ -808,8 +1206,8 @@ It has no database and doesn't publish events. Like every service, it also serve
 | `auth.audit` | `{actor_id, created_at}` · `{subject_id, created_at}` · TTL on `created_at` at the agreed audit retention (e.g. 1 year) |
 | `users.users` | `{location, _id}` unique · optional `{location, last_name, first_name}` for admin search |
 | `children.children` | `{location, _id}` unique · `{location, user_id, is_deleted}` (Home list) |
-| circle documents (`profiles`, `personalities`, `growth_areas`, `plans`, `observations`) | `{location, _id}` unique · **unique `{location, user_id, child_id}`** (one per child; `growth_areas` adds `area_id`) |
-| every `child_access` / `*_inputs` copy | `{location, _id}` unique (`_id` = child id) · `{location, user_id}` (user deletion) |
+| circle documents (`conversations`, `personalities`, `growth_areas`, `plans`, `observations`) | `{location, _id}` unique · **unique `{location, user_id, child_id}`** (one per child; `growth_areas` adds `area_id`) |
+| every `child_access` / `*_inputs` copy | `{location, _id}` unique (`_id` = child id; `{child_id}:{area_id}` for `growth_inputs`) · `{location, user_id}` (user deletion) · `growth_inputs` also `{location, child_id}` |
 | every `jobs` | `{location, _id}` unique · `{location, child_id, type, status}` · TTL on finished jobs |
 | every `outbox` | `{region, published_at}` (relay polling fallback, own region only) · TTL 7 days after `published_at` |
 | every `inbox` | `_id` · TTL 15 days on `processed_at` |
@@ -849,7 +1247,7 @@ It has no database and doesn't publish events. Like every service, it also serve
 - **New Terraform:**
   - an `events` module: SNS topic, SQS queue + DLQ per consumer, filter policies, alarms on DLQ depth and oldest-message age;
   - per-service ECR repositories, secrets and roles;
-  - the internal ALB: a second `modules/alb` instance with `internal = true` and `/internal/<service>/*` rules, after the module changes in 13.2, plus its certificate and private hosted zone record;
+  - service discovery: a Cloud Map private DNS namespace per environment per region, a Cloud Map service plus a `service_registries` block for each registered ECS service (an optional `service_discovery` input on `modules/ecs-service`), and the `internal-callers` security group (13.2);
   - `modules/redis` RBAC users and user group (9.3).
 
 ### 15.3 Rough cost of the split
@@ -862,7 +1260,7 @@ What the split adds to today's bill in [aws-cost-estimate.md](aws-cost-estimate.
 |---|---|---|
 | dev / sbx | 17 runtimes + 1 collector, all 256 / 512 × 1 | 4 services at 256 / 512 |
 | stg | 8 HTTP services and 8 workers at 512 / 1024 × 1; auth 512 / 1024 × 2; collector 256 / 512 × 2 | API 2, worker 1, auth 2, admin 1 |
-| prod, **HA** | 8 HTTP services at 1 vCPU / 2 GB × 2 (two, for availability); auth 2 vCPU / 4 GB × 3; 5 generating workers at 1 vCPU / 2 GB × 2; 3 other workers (auth, users, children) at 512 / 1024 × 2; collector 256 / 512 × 2 | API 15, worker 5, auth 3, admin 1 |
+| prod, **HA** | 8 HTTP services at 1 vCPU / 2 GB × 2 (two, for availability); auth 2 vCPU / 4 GB × 3; 4 generating workers (discover, grow, transform, release) at 1 vCPU / 2 GB × 2; 4 other workers (auth, users, children, onboarding) at 512 / 1024 × 2; collector 256 / 512 × 2 | API 15, worker 5, auth 3, admin 1 |
 | prod, **lean** | As HA, but **1 task per worker** | — |
 
 These are minimum counts; autoscaling adds tasks above them as today. Prod's HTTP capacity stays close to today's: 16 tasks of 1 vCPU across 8 services, against 15 API tasks now.
@@ -871,27 +1269,27 @@ These are minimum counts; autoscaling adds tasks above them as today. Prod's HTT
 
 | Item | dev | sbx | stg | prod (HA) | prod (lean) | Notes |
 |---|---|---|---|---|---|---|
-| ECS Fargate | +$131 | +$131 | +$187 | +$336 | +$93 | $168 / $168 / $355 / $1,326 / $1,083, against $37 / $37 / $168 / $990 today |
+| ECS Fargate | +$131 | +$131 | +$187 | +$298 | +$74 | $168 / $168 / $355 / $1,288 / $1,064, against $37 / $37 / $168 / $990 today |
 | **Container Insights** (prod only, `enable_container_insights`) | $0 | $0 | $0 | +$105 | +$105 | Metrics grow with the service count: 12 + 25 per service, so 112 → 462 metrics at $0.30. Off in dev/sbx/stg |
-| Custom metrics (15.5) | +$5 | +$5 | +$5 | +$5 | +$5 | 18 alarm and scaling metrics at $0.30; everything else uses free AWS metrics or Logs Insights |
-| Internal ALB (13.2) | +$17 | +$17 | +$17 | +$17 | +$17 | Hourly charge; its LCUs are small, because only misses and sagas use it |
+| Custom metrics (15.5) | +$5 | +$5 | +$5 | +$5 | +$5 | 16 alarm and scaling metrics at $0.30; everything else uses free AWS metrics or Logs Insights |
+| Cloud Map service discovery (13.2) | +$2 | +$2 | +$2 | +$3 | +$3 | Namespace (private hosted zone, $0.50) plus $0.10 per registered task a month; DNS lookups are a few cents at this volume |
 | CloudWatch alarms | +$5 | +$5 | +$8 | +$14 | +$14 | About 68 / 68 / 103 / 182 alarms, against 18 / 18 / 22 / 40 today: scaling alarms per runtime, 24 event alarms, per-runtime CPU/memory alarms in prod |
 | Secrets Manager (9 secrets instead of 1) | +$3 | +$3 | +$3 | +$3 | +$3 | $0.40 per secret |
 | SQS idle long polling | ≈ $0 | ≈ $0 | ≈ $0 | +$1 | ≈ $0 | Mostly inside the 1M free requests |
-| **Total** | **+$161** | **+$161** | **+$220** | **+$481** | **+$237** | |
+| **Total** | **+$146** | **+$146** | **+$205** | **+$429** | **+$204** | |
 | Optional: SNS + SQS interface endpoints | — | — | +$37 | +$56 | +$56 | Only if the queues' traffic should avoid NAT, as the other AWS APIs already do in stg and prod |
 
 **New totals at 1K MAU:**
 
 | Env | Today | With the split |
 |---|---|---|
-| dev | $124 | **≈ $285** |
-| sbx | $124 | **≈ $285** |
-| stg | $420 | **≈ $640** (≈ $677 with endpoints) |
-| prod (HA) | $1,440 | **≈ $1,921** (≈ $1,977 with endpoints) |
-| prod (lean) | $1,440 | **≈ $1,677** (≈ $1,733 with endpoints) |
+| dev | $124 | **≈ $270** |
+| sbx | $124 | **≈ $270** |
+| stg | $420 | **≈ $625** (≈ $662 with endpoints) |
+| prod (HA) | $1,440 | **≈ $1,869** (≈ $1,925 with endpoints) |
+| prod (lean) | $1,440 | **≈ $1,644** (≈ $1,700 with endpoints) |
 
-With the non-prod schedule (about 7 h a day), the increase is about +$47 for dev and sbx and +$64 for stg, giving about $85 / $85 / $191.
+With the non-prod schedule (about 7 h a day), the increase is about +$43 for dev and sbx and +$60 for stg, giving about $81 / $81 / $187.
 
 **What grows with traffic (prod):**
 
@@ -907,14 +1305,13 @@ Unbatched SQS calls would cost about 3× the SNS + SQS row.
 - **MongoDB Atlas** (not an AWS cost): change streams and transactions need a dedicated cluster, M10 or larger, at around $57 a month per cluster. Every environment needs one; it's already planned in DB-01.
 - **Valkey:** every request now reads `authz:{user_id}`. The current `cache.t4g.medium` × 2 is enough at first. Move prod to `cache.r7g.large` (about +$165 a month) around 10M MAU, or earlier if CPU credits run low.
 - **ECR:** 9 repositories instead of 1, about $2 a month with lifecycle policies.
-- **Internal ALB name:** the private hosted zone is $0.50 a month per environment; the ACM certificate is free (13.2).
 - **Logs:** volume follows requests rather than service count, so it changes little.
 
 **Where the money goes:**
-- **Extra Fargate tasks** are the largest increase. In prod, the choice between HA and lean workers alone is $243 a month per region. Lean is fine for workers, because SQS holds messages while a task is replaced.
+- **Extra Fargate tasks** are the largest increase. In prod, the choice between HA and lean workers alone is $224 a month per region. Lean is fine for workers, because SQS holds messages while a task is replaced.
 - **Container Insights** is the second largest in prod and is easy to miss. It's already off in dev, sbx and stg (`enable_container_insights = false`): ECS still publishes the free per-service `CPUUtilization` and `MemoryUtilization` metrics that autoscaling, alarms and the dashboard use.
 - **The event system itself** costs little until about 10M MAU.
-- **Every extra prod region** repeats the fixed increase: about +$481 (HA) or +$237 (lean).
+- **Every extra prod region** repeats the fixed increase: about +$429 (HA) or +$204 (lean).
 
 ### 15.4 Local development
 
@@ -947,7 +1344,7 @@ Unbatched SQS calls would cost about 3× the SNS + SQS row.
 
 | Option | How | Cost shape | Use it when |
 |---|---|---|---|
-| **Shared collector** (recommended) | One small ADOT collector ECS service per environment per region (1 task in dev/sbx, 2 in stg/prod for availability), reached over the internal ALB (13.2) on OTLP/HTTP (4318). Apps export OTLP traces to it, and it exports them to X-Ray. Scaling and alarm metrics don't go through it (safeguard 1 under step 5). | A few small tasks per environment per region, whatever the number of app tasks | Default. The collector also does **tail sampling**: keep 100% of error and slow traces, and a small share of the rest. Only a collector can decide that after seeing the whole trace. |
+| **Shared collector** (recommended) | One small ADOT collector ECS service per environment per region (1 task in dev/sbx, 2 in stg/prod for availability), reached at `otel-collector.{app}-{env}.internal:4318` through Cloud Map DNS (13.2), on OTLP/HTTP. Apps export OTLP traces to it, and it exports them to X-Ray. Scaling and alarm metrics don't go through it (safeguard 1 under step 5). | A few small tasks per environment per region, whatever the number of app tasks | Default. The collector also does **tail sampling**: keep 100% of error and slow traces, and a small share of the rest. Only a collector can decide that after seeing the whole trace. |
 | Direct OTLP to AWS | Apps send OTLP straight to the X-Ray / CloudWatch OTLP endpoints (signed with the task role), with no collector | Nothing to run | Fine where head sampling (decided at the start of a request) is enough. **Check current OTLP-endpoint support in each region before choosing it.** |
 | ~~Sidecar in every task~~ | — | 256 CPU / 512 MiB in **every** task, so it grows with task count | Don't. That's why it was removed. |
 
@@ -957,12 +1354,12 @@ Unbatched SQS calls would cost about 3× the SNS + SQS row.
 
 **5. Metrics:** publish a custom metric **only when an alarm or a scaling policy needs it**. Each one costs $0.30 a month per distinct label combination, and AWS already publishes most of what's needed for free.
 
-*Custom metrics: 18 per environment per region, published straight to CloudWatch, not through the collector (see the safeguards below).*
+*Custom metrics: 16 per environment per region, published straight to CloudWatch, not through the collector (see the safeguards below).*
 
 | Metric | Label | Count | Drives |
 |---|---|---|---|
-| Pending generation jobs (`PendingJobCount`, as the worker publishes today) | service (5 generating) | 5 | Generating-worker step scaling; the "pending jobs high" alarm |
-| Age of the oldest running job | service (5 generating) | 5 | "Processing stuck" alarm (a job or worker hung) |
+| Pending generation jobs (`PendingJobCount`, as the worker publishes today) | service (4 generating) | 4 | Generating-worker step scaling; the "pending jobs high" alarm |
+| Age of the oldest running job | service (4 generating) | 4 | "Processing stuck" alarm (a job or worker hung) |
 | Age of the oldest unpublished `outbox` row | service (8 that own data) | 8 | "Outbox stale" alarm (relay down or SNS failing) |
 
 *Free AWS metrics, no custom metric needed:*
@@ -970,7 +1367,7 @@ Unbatched SQS calls would cost about 3× the SNS + SQS row.
 | Need | Metric |
 |---|---|
 | Event lag and stuck events | `AWS/SQS` `ApproximateAgeOfOldestMessage` and `ApproximateNumberOfMessagesVisible` per queue and DLQ. They drive the DLQ alarms and, if needed, consumer scaling. |
-| Request rate, errors, latency per service | `AWS/ApplicationELB` per target group, on the public and internal ALBs |
+| Request rate, errors, latency per service | `AWS/ApplicationELB` per target group, on the public ALB. Internal calls have no ALB: their rate and errors come from traces and Logs Insights (13.2). |
 | Task CPU and memory | `AWS/ECS` per service |
 | Cache health | `AWS/ElastiCache` `CacheHits`, `CacheMisses`, `CPUUtilization` (cluster-wide) |
 | Event publish failures | `AWS/SNS` `NumberOfNotificationsFailed` |
@@ -998,12 +1395,12 @@ A query costs $0.005 per GB scanned, so a weekly report over a month of prod log
    - Dead consumers are caught by the `ApproximateAgeOfOldestMessage` alarm. A message arriving makes the queue active again, so its age is reported and keeps growing.
 3. **Missing-metric alarms**, so a silent publisher isn't mistaken for an idle one:
    - **Outbox stale:** the alarm on the oldest unpublished `outbox` row uses **`treat_missing_data = "breaching"`**. A dead relay then alarms after 10 minutes without data. A healthy relay publishes `0` every minute, even when it's idle.
-   - **Pending jobs missing:** one alarm per generating service on the `SampleCount` of `PendingJobCount`, `< 1` for 10 minutes, with `treat_missing_data = "breaching"`. That's 5 extra alarms, about $0.50 a month, within the rounding of 15.3.
+   - **Pending jobs missing:** one alarm per generating service on the `SampleCount` of `PendingJobCount`, `< 1` for 10 minutes, with `treat_missing_data = "breaching"`. That's 4 extra alarms, about $0.40 a month, within the rounding of 15.3.
    - Both are on in stg and prod, where alarms are enabled. Scaling keeps working without them; they only say that a signal it depends on has stopped.
 4. **SQS-depth scaling for consumers:**
    - **Step scaling** on `ApproximateNumberOfMessagesVisible` for each worker's queue, with `ApproximateAgeOfOldestMessage` as a second scale-out trigger.
    - Not target tracking on backlog per task: that needs the running task count, which only Container Insights publishes, and that's off outside prod.
-   - **Workers that both generate and consume** (onboarding, discover, grow, transform, release) have scale-out policies on both `PendingJobCount` and queue depth. App Auto Scaling applies the larger scale-out when both fire.
+   - **Workers that both generate and consume** (discover, grow, transform, release) have scale-out policies on both `PendingJobCount` and queue depth. App Auto Scaling applies the larger scale-out when both fire.
    - They have **one scale-in alarm** built with metric math, `IF(pending <= 10 AND visible <= 10, 1, 0)`, so one signal going quiet can't remove tasks the other still needs.
    - `min_capacity` stays at 1 or more, so a consumer is always polling. Scale-out isn't needed to start draining a queue.
 
@@ -1012,11 +1409,11 @@ A query costs $0.005 per GB scanned, so a weekly report over a month of prod log
 - Keep logs at INFO and above, with shorter retention outside prod: logs are the largest CloudWatch cost at scale (`aws-cost-estimate.md` section 10).
 
 **7. Infrastructure:**
-- **Collector:** an `otel-collector` entry in `services.tf`, with no public ALB route, a task role allowed `xray:PutTraceSegments` / `PutTelemetryRecords`, and an internal-ALB listener on 4318.
+- **Collector:** an `otel-collector` entry in `services.tf`, with no public ALB route, a task role allowed `xray:PutTraceSegments` / `PutTelemetryRecords`, and a Cloud Map registration. Its security group admits 4318 only from `internal-callers`, which every app task joins.
 - **App tasks** need no X-Ray permissions, because only the collector talks to X-Ray.
 - **`enable_adot_sidecar` stays `false`.**
 
-**Cost:** X-Ray is $5 per million traces after 100K free a month. At 1% of about 500 requests per user that's about $2, $24, $250 and $2,500 a month at 100K, 1M, 10M and 100M MAU. Add the collector's few tasks and the 18 custom metrics, about $5 a month per environment per region (15.3).
+**Cost:** X-Ray is $5 per million traces after 100K free a month. At 1% of about 500 requests per user that's about $2, $24, $250 and $2,500 a month at 100K, 1M, 10M and 100M MAU. Add the collector's few tasks and the 16 custom metrics, about $5 a month per environment per region (15.3).
 
 ---
 
@@ -1031,7 +1428,7 @@ backend/
 │   ├── events/            outbox, relay, SNS publisher, SQS consumer, inbox, schemas/*.json
 │   ├── generation/        job model, LLM client, per-user Redis LLM limit, prompt helper
 │   ├── deletion.py        PARTICIPANTS
-│   ├── internal_client.py service tokens, internal-ALB HTTP client
+│   ├── internal_client.py service tokens, Cloud Map DNS client (random IP, retry once, short keep-alive)
 │   ├── telemetry.py       OpenTelemetry setup and instrumentations, trace context in events (15.5)
 │   ├── emails.py, names.py, routing.py, limiter.py, logging.py, settings_base.py
 │   └── tests/
@@ -1047,14 +1444,14 @@ backend/
 
 | Step | What | Done when |
 |---|---|---|
-| **0. Platform** | Dedicated Atlas cluster (M10+), the `modules/alb` changes and the internal ALB (13.2), Redis RBAC users (9.3), the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service ECR repositories, secrets and roles, per-service image builds in the workflows (15.2), the pepper, docker-compose | A hello-world service builds its own image, deploys, and can publish and consume an event in dev |
+| **0. Platform** | Dedicated Atlas cluster (M10+), the `modules/alb` no-catch-all change (13.1), the Cloud Map namespace, service registrations and `internal-callers` group (13.2), Redis RBAC users (9.3), the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service ECR repositories, secrets and roles, per-service image builds in the workflows (15.2), the pepper, docker-compose | A hello-world service builds its own image, deploys, and can publish and consume an event in dev |
 | **1. `common`** | Auth deps, permissions, audit, events (outbox, relay, inbox, schemas, contract test harness), generation, internal client, telemetry | Unit- and contract-tested on its own |
 | **2. auth + users** | Sections 5, 6, 9, 10.1 and 11; `auth-worker` with change stream and reaper | Login, register, Google sign-in, refresh rotation, lock, allow-list, profiles; route-policy and ownership test matrices pass |
 | **3. children** | The child and progress; `child.*` events; soft delete and purge | Home lists children with progress, from one query |
-| **4. onboarding, discover** | Each with its database, server-side generation and events. Discover consumes onboarding's events. | Completing onboarding makes Discover's personality appear without the browser building prompts |
+| **4. onboarding, discover** | Each with its database and events; discover with server-side generation. Discover consumes onboarding's events. | Completing the conversation makes Discover's personality appear without the browser building prompts |
 | **5. grow, transform, release** | Same pattern, with their local copies | Each page loads with one request; `/llm/invoke` is gone |
 | **6. platform** | Speech and downloads | Voice input works in every circle |
-| **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec;<br>– `/user/me` → `/users/me/profile` and `/auth/account`;<br>– admin screens → `/auth/accounts…`;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`;<br>– `POST …/progress/{flag}` → `…/visit`;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. The mobile build is released together with the backend, before the first real users: store review means an installed app can't be updated at once. |
+| **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec;<br>– `/user/me` → `/users/me/profile` and `/auth/account`;<br>– admin screens → `/auth/accounts…`;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`;<br>– `POST …/progress/{flag}` → `…/visit`; `onboarding_completed` reads (e.g. `ChildCard`) → `progress.conversation`;<br>– `-created_date` sort → `-created_at`; `avatar_url` stays in responses;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. The mobile build is released together with the backend, before the first real users: store review means an installed app can't be updated at once. |
 | **8. Deletion** | 10.2 and 10.3 end to end, with a deletion-age alert | Killing any service mid-deletion still converges after a restart (test it) |
 | **9. Global Cluster** (DB-01's later stage) | Shard per section 14 and map zones | Writes land in the user's zone; login is still two point reads |
 | **Later: connect** | Its own service and database from the start | — |
@@ -1079,19 +1476,19 @@ backend/
 | 12 | **Server-side AI generation per circle;** `/llm/invoke` removed | 8 |
 | 13 | **Per-service Atlas users, secrets, execution roles and images** | 15.1 |
 | 14 | **Greenfield:** no data migration | 16 |
-| 15 | **Service-to-service calls through an internal ALB**, not ECS Service Connect (no sidecar, fits 256 / 512 tasks) | 13.2 |
+| 15 | **Synchronous service-to-service calls go directly to task IPs through Cloud Map DNS**, not an internal ALB or ECS Service Connect: no sidecar, fits 256 / 512 tasks, about $2 instead of $17 a month. Everything else is events (decision 11). | 13.2 |
 | 16 | **SNS + SQS, not MSK,** until about 1,000 events per second or a need for replay | 7.2 |
 | 17 | **No ADOT sidecar.** OpenTelemetry in `common`, exported to a shared collector per cluster (or directly to AWS over OTLP) | 15.5 |
 
 ## 18. Risks
 
 - **Distributed-system complexity:** 17 runtimes, 8 databases (9 with connect), an event bus and internal auth. Everything in section 16's step 0–1 (compose, contract tests, tracing) exists to keep that manageable. Build it before the circles.
-- **Eventual consistency:** local copies lag by up to a few seconds. Read-through (7.5) covers the "just created" cases. Pages must still tolerate a "generating…" state, which they already do.
+- **Eventual consistency:** local copies lag by up to a few seconds. Read-through covers missing copies, and "confirm before deny" covers stale ones, so a parent never sees a wrong "locked" or "not found" (7.5, 12.4). Pages must still tolerate a "generating…" state, which they already do.
 - **Event schema drift with parallel deploys:** additive-only changes, versioned schemas and contract tests in CI (7.8).
 - **Stuck events:** alarm on DLQ depth, oldest-message age and stale `outbox` rows. A message in a DLQ means some copy is wrong until it's redriven.
 - **Duplicated personal data in local copies:** keep payloads minimal (7.6). Copies are deleted on `child.deleted` and `user.deletion_requested`, and the deletion saga waits for every service.
 - **Two clients to move:** the web app and the React Native app both change almost every API call (16, step 7). An old installed mobile build would break against the new API, so ship the mobile release before real users arrive.
 - **Redis outage:** authz falls back to calls to auth with a 30-second local cache, so auth's load rises and locks take up to 30 s to apply (9.3). Alarm on it.
-- **Cost:** about +$161 a month each for dev and sbx, +$220 for stg and +$237 to +$481 for prod, per region, before traffic. The extra Fargate tasks account for most of it, and Container Insights metrics in prod (15.3).
+- **Cost:** about +$146 a month each for dev and sbx, +$205 for stg and +$204 to +$429 for prod, per region, before traffic. The extra Fargate tasks account for most of it, and Container Insights metrics in prod (15.3).
 - **The pepper is a single point of failure** (6.4). **Inconsistent email normalisation** creates duplicate accounts. Use only `common.emails.normalise()`.
 - **Authorization bugs on shared resource endpoints:** a missing or wrong check exposes another family's data. Deny-by-default routers, the route-policy test and the ownership test matrix (11.2) guard it.
