@@ -164,6 +164,10 @@ run "prod_stack_wiring" {
     error_message = "ADOT sidecar is off by default (enable_adot_sidecar): the app isn't instrumented."
   }
   assert {
+    condition     = one([for x in aws_ecs_cluster.backend.setting : x.value if x.name == "containerInsights"]) == "enabled"
+    error_message = "Prod: Container Insights on (enable_container_insights defaults to true)."
+  }
+  assert {
     condition     = jsondecode(module.service["backend"].container_definitions)[0].secrets[0] == { name = "MONGODB_URI", valueFrom = "arn:aws:secretsmanager:ap-south-1:111111111111:secret:superpower/prod/backend-secrets-AbCdEf:MONGODB_URI::" }
     error_message = "Secrets reference <secret ARN>:<key>::."
   }
@@ -313,8 +317,13 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     elasticache_replica_count = 0
     elasticache_multi_az      = false
     enable_all_alarms         = false
+    enable_container_insights = false
   }
 
+  assert {
+    condition     = one([for x in aws_ecs_cluster.backend.setting : x.value if x.name == "containerInsights"]) == "disabled"
+    error_message = "Dev: Container Insights off (enable_container_insights = false)."
+  }
   assert {
     condition     = length(module.network.interface_endpoint_ids) == 0 && module.network.nat_gateway_count == 1 && module.network.endpoint_client_security_group_ids == []
     error_message = "Dev: one NAT, no interface endpoints or endpoint rules."

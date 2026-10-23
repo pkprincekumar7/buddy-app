@@ -26,7 +26,7 @@
 | **Public IPv4 addresses** (NAT EIPs + public ALB, one per AZ) | 1 + 3 | 1 + 3 | 2 + 3 | 3 + 3 | NAT count; ALB in 3 public subnets |
 | ALBs | 1 public | 1 public | 1 public | 1 public | `modules/alb` |
 | CloudWatch: basic / all alarms, dashboard | off / off, off | off / off, off | on / off, off | on / on, on | `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard` |
-| Container Insights | on | on | on | on | `ecs.tf` (cluster setting) |
+| Container Insights | off | off | off | on | `enable_container_insights` |
 | Log retention | 7 d | 7 d | 30 d | 90 d | `log_retention_days` |
 | GuardDuty (backend region / edge us-east-1) | off / off | off / off | on / on | on / on | `enable_guardduty` (backend, edge tfvars) |
 | CloudTrail (backend regional trail / edge us-east-1 trail) | off / off | off / off | on / off | on / on | `enable_cloudtrail` (backend, edge tfvars) |
@@ -218,12 +218,12 @@ Prices (✓, re-verified 2026-10-23, ap-south-1): log ingestion $0.67/GB (Standa
 - **`enable_all_alarms`, prod:** +18. Worker processing-stuck, pending-jobs-high, Redis connections, plus 7 sustained and 8 immediate CPU/memory alarms.
 - **Totals:** dev ≈ 18, sbx ≈ 18, stg ≈ 22, prod ≈ 40. dev, sbx and stg share one account, so one set of 10 free alarms covers all three.
 
-**Container Insights** is enabled on every cluster. With 4 services and 4 task-definition families, it publishes about **112 custom metrics per cluster**:
+**Container Insights** is on in prod only (`enable_container_insights`). Nothing in the stack reads its metrics: autoscaling, alarms and the dashboard use the free `AWS/ECS` and `AWS/ApplicationELB` metrics, which ECS publishes either way. With 4 services and 4 task-definition families, it publishes about **112 custom metrics per cluster**:
 - 10 metrics × (cluster + 4 services + 4 families);
 - 5 service-only metrics × 4 services;
 - 2 cluster-only metrics.
 
-That's $33.60/month per environment per region, plus a little log ingestion for its performance events.
+That's $33.60/month per region in prod, plus a little log ingestion for its performance events. dev, sbx and stg save the same amount each.
 
 **X-Ray: $0.** The app has no tracing instrumentation and the ADOT sidecar is off, so no traces are sent. The X-Ray sampling rules exist but cost nothing.
 
@@ -233,9 +233,9 @@ That's $33.60/month per environment per region, plus a little log ingestion for 
 | Log storage (prod: 90-day retention, upper bound) | $0 | $0 | $0 | $0 | $0 | $2 | $16 | $158 | $1,575 |
 | Alarms (≈18 / 18 / 22 / 40, before the free 10) | $2 | $2 | $2 | $4 | $4 | $4 | $4 | $4 | $4 |
 | Dashboard (prod only, one per region) | $0 | $0 | $0 | $3 | $3 | $3 | $3 | $3 | $3 |
-| Container Insights (~112 metrics) | $34 | $34 | $34 | $34 | $34 | $34 | $34 | $34 | $34 |
+| Container Insights (~112 metrics; prod only) | $0 | $0 | $0 | $34 | $34 | $34 | $34 | $34 | $34 |
 | X-Ray traces | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
-| **Subtotal** | **$36** | **$36** | **$36** | **$41** | **$41** | **$51** | **$171** | **$1,368** | **$13,338** |
+| **Subtotal** | **$2** | **$2** | **$2** | **$41** | **$41** | **$51** | **$171** | **$1,368** | **$13,338** |
 
 > **Log ingestion** at 100M MAU: 100M × 175 KB = 17,500 GB → (17,500 − 5) × $0.67 = $11,722. That assumes a log line per API request; error-and-summary logging would cut it sharply.
 > **Log storage** is an upper bound: 3 months of ingested volume at $0.03/GB-month. CloudWatch stores logs compressed, so the real figure is lower. dev/sbx keep logs 7 days and stg 30 days.
@@ -312,11 +312,11 @@ The row below is uploads and assets storage. Log storage depends on each logging
 | 7. Route 53 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
 | 8. ECR | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 9. Secrets Manager | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 | $1 |
-| 10. CloudWatch | $36 | $36 | $36 | $41 | $41 | $51 | $171 | $1,368 | $13,338 |
+| 10. CloudWatch | $2 | $2 | $2 | $41 | $41 | $51 | $171 | $1,368 | $13,338 |
 | 11. GuardDuty | $0 | $0 | $3 | $3 | $4 | $4 | $8 | $24 | $112 |
 | 12. CloudTrail | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 | $0 |
 | 13. S3 | $0 | $0 | $0 | $0 | $0 | $0 | $1 | $6 | $54 |
-| **Grand Total** | **$158** | **$158** | **$454** | **$1,440** | **$1,448** | **$1,566** | **$2,938** | **$17,291** | **$158,203** |
+| **Grand Total** | **$124** | **$124** | **$420** | **$1,440** | **$1,448** | **$1,566** | **$2,938** | **$17,291** | **$158,203** |
 
 ---
 
@@ -330,15 +330,15 @@ The schedules are off by default (`schedule_enabled` input). When they're on, th
 - NAT, endpoints and public IPv4;
 - Fargate, ALB and ElastiCache (Valkey);
 - the WAF fixed fee;
-- alarms and Container Insights metrics (both prorated hourly).
+- alarms (prorated hourly).
 
 The hosted zone and secrets don't change.
 
 | Environment | Always on | Scheduled (≈ 7 h/day) |
 |---|---|---|
-| dev | $158 | **≈ $48** |
-| sbx | $158 | **≈ $48** |
-| stg | $454 | **≈ $136** |
+| dev | $124 | **≈ $38** |
+| sbx | $124 | **≈ $38** |
+| stg | $420 | **≈ $127** |
 
 ---
 
@@ -346,8 +346,8 @@ The hosted zone and secrets don't change.
 
 | Scale | Top cost driver | Second | Third |
 |---|---|---|---|
-| dev / sbx | Networking ($54: NAT $40, public IPv4 $14) | ECS Fargate ($37) | CloudWatch ($36, almost all Container Insights) |
-| stg | Networking ($193: NAT $81, endpoints $94) | ECS Fargate ($168) | CloudWatch ($36) |
+| dev / sbx | Networking ($54: NAT $40, public IPv4 $14) | ECS Fargate ($37) | ALB ($17) |
+| stg | Networking ($193: NAT $81, endpoints $94) | ECS Fargate ($168) | ElastiCache ($24) |
 | prod 1K–100K | ECS Fargate ($990) | Networking ($283–289) | ElastiCache ($93) |
 | prod 1M | ECS Fargate ($990) | CloudFront + Lambda@Edge ($930) | WAF ($382) |
 | prod 10M | CloudFront + Lambda@Edge ($10,183) | WAF ($3,735, requests + logging) | CloudWatch ($1,368) |

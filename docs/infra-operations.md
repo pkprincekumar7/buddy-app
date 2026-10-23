@@ -199,8 +199,8 @@ http = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = ["
   `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`). The worker scales on queue depth
   (`worker_min_capacity` / `worker_max_capacity`).
 - **ADOT sidecar: off in every environment.** The collector only forwards traces and metrics the
-  app sends it, and the backend has no OpenTelemetry/X-Ray instrumentation. Container Insights
-  already provides CPU and memory metrics. If it's ever turned on, it reserves 256 CPU / 512 MiB
+  app sends it, and the backend has no OpenTelemetry/X-Ray instrumentation. ECS already
+  publishes per-service CPU and memory metrics (`AWS/ECS`). If it's ever turned on, it reserves 256 CPU / 512 MiB
   of each task, so a task needs at least 512 / 1024: `modules/ecs-service` refuses smaller at plan
   time. Tracing plan: [auth-users-split.md](auth-users-split.md) 15.5.
 
@@ -363,7 +363,7 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 |---|---|
 | Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
 | ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy); deregistration delay `llm_timeout_seconds` + 30 s (90 s dev/sbx/stg, 120 s prod), so a rollout waits that long at most for old tasks' in-flight requests instead of AWS's 300 s default |
-| ECS | Container Insights on; container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
+| ECS | Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
 | ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
 | ElastiCache Valkey 8.0 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters and locks only |
 | CloudWatch Logs | One log group per service, `/ecs/<app>/<key>/<env>` (auth, admin, backend, worker); retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |

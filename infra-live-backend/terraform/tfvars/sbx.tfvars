@@ -83,3 +83,8 @@ enable_alb_access_logs = false
 
 # ADOT sidecar — off in every environment (see stg/prod tfvars)
 enable_adot_sidecar = false
+
+# Container Insights — off. Only a few testers use this environment, and
+# autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
+# would only add ~$34/month of task-level metrics nobody reads.
+enable_container_insights = false

@@ -435,6 +435,12 @@ variable "xray_default_sampling_rate" {
   default     = 0.05
 }
 
+variable "enable_container_insights" {
+  description = "Turn on ECS Container Insights for the backend cluster (task-level CPU/memory/network/storage, task counts, performance log events). It costs $0.30 per metric per month, and a cluster publishes about 12 + 25 × (number of services) metrics. Nothing in this stack depends on it: autoscaling, alarms and the dashboard use the free AWS/ECS and AWS/ApplicationELB metrics. prod: true; dev/sbx/stg: false."
+  type        = bool
+  default     = true
+}
+
 # -- Security ------------------------------------------------------------------
 
 variable "enable_guardduty" {

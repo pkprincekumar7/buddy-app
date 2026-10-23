@@ -806,19 +806,66 @@ It has no database and doesn't publish events.
 
 ### 15.3 Rough cost of the split
 
-List prices, to be confirmed with the AWS Pricing Calculator before budgeting, like the rest of [aws-cost-estimate.md](aws-cost-estimate.md).
+What the split adds to today's bill in [aws-cost-estimate.md](aws-cost-estimate.md). The figures are for one region at on-demand list prices (ap-south-1, 720 h), with the same rates and traffic assumptions as that file. Confirm with the AWS Pricing Calculator before budgeting.
 
-| Item | Cost |
-|---|---|
-| **Fargate:** 17 runtimes (19 with connect) | dev/sbx at 256 / 512: about **$160 a month per region**, against about $37 for today's four. stg/prod: scale the per-task figures in `aws-cost-estimate.md`. |
-| **Internal ALB** (13.2) | About $17 a month per environment per region, plus a little LCU |
-| **Extra secrets** (one per service, about 9 instead of 1) | About $3.20 a month per environment per region |
-| **Alarms** (DLQ depth and oldest message per queue, outbox staleness per service: about 24) | About $2.40 a month per environment per region, where alarms are on (stg, prod) |
-| **SQS idle polling** (8 consumer queues, long polling) | About $0.40 a month per environment per region |
-| **SNS + SQS per user** (about 50 events per active user per month, about 3 consumers each, batched receives and deletes) | About $5 a month at 100K MAU, $50 at 1M, $500 at 10M, $5,000 at 100M. Unbatched, about 3× that. |
-| **Atlas M10+** (change streams, transactions) | Atlas pricing, around $57 a month per M10 cluster; planned in DB-01 anyway |
+**Sizing assumed:**
 
-The event system's own cost is small. The extra Fargate tasks are the main new cost.
+| Env | Runtimes | Today |
+|---|---|---|
+| dev / sbx | 17 runtimes + 1 collector, all 256 / 512 × 1 | 4 services at 256 / 512 |
+| stg | 8 HTTP services and 8 workers at 512 / 1024 × 1; auth 512 / 1024 × 2; collector 256 / 512 × 2 | API 2, worker 1, auth 2, admin 1 |
+| prod, **HA** | 8 HTTP services at 1 vCPU / 2 GB × 2 (two, for availability); auth 2 vCPU / 4 GB × 3; 5 generating workers at 1 vCPU / 2 GB × 2; 3 other workers (auth, users, children) at 512 / 1024 × 2; collector 256 / 512 × 2 | API 15, worker 5, auth 3, admin 1 |
+| prod, **lean** | As HA, but **1 task per worker** | — |
+
+These are minimum counts; autoscaling adds tasks above them as today. Prod's HTTP capacity stays close to today's: 16 tasks of 1 vCPU across 8 services, against 15 API tasks now.
+
+**Fixed monthly increase, per environment per region:**
+
+| Item | dev | sbx | stg | prod (HA) | prod (lean) | Notes |
+|---|---|---|---|---|---|---|
+| ECS Fargate | +$131 | +$131 | +$187 | +$336 | +$93 | $168 / $168 / $355 / $1,326 / $1,083, against $37 / $37 / $168 / $990 today |
+| **Container Insights** (prod only, `enable_container_insights`) | $0 | $0 | $0 | +$105 | +$105 | Metrics grow with the service count: 12 + 25 per service, so 112 → 462 metrics at $0.30. Off in dev/sbx/stg |
+| Custom metrics (15.5) | +$5 | +$5 | +$5 | +$5 | +$5 | 18 alarm and scaling metrics at $0.30; everything else uses free AWS metrics or Logs Insights |
+| Internal ALB (13.2) | +$17 | +$17 | +$17 | +$17 | +$17 | Hourly charge; its LCUs are small, because only misses and sagas use it |
+| CloudWatch alarms | +$5 | +$5 | +$8 | +$14 | +$14 | About 68 / 68 / 103 / 182 alarms, against 18 / 18 / 22 / 40 today: scaling alarms per runtime, 24 event alarms, per-runtime CPU/memory alarms in prod |
+| Secrets Manager (9 secrets instead of 1) | +$3 | +$3 | +$3 | +$3 | +$3 | $0.40 per secret |
+| SQS idle long polling | ≈ $0 | ≈ $0 | ≈ $0 | +$1 | ≈ $0 | Mostly inside the 1M free requests |
+| **Total** | **+$161** | **+$161** | **+$220** | **+$481** | **+$237** | |
+| Optional: SNS + SQS interface endpoints | — | — | +$37 | +$56 | +$56 | Only if the queues' traffic should avoid NAT, as the other AWS APIs already do in stg and prod |
+
+**New totals at 1K MAU:**
+
+| Env | Today | With the split |
+|---|---|---|
+| dev | $124 | **≈ $285** |
+| sbx | $124 | **≈ $285** |
+| stg | $420 | **≈ $640** (≈ $677 with endpoints) |
+| prod (HA) | $1,440 | **≈ $1,921** (≈ $1,977 with endpoints) |
+| prod (lean) | $1,440 | **≈ $1,677** (≈ $1,733 with endpoints) |
+
+With the non-prod schedule (about 7 h a day), the increase is about +$47 for dev and sbx and +$64 for stg, giving about $85 / $85 / $191.
+
+**What grows with traffic (prod):**
+
+| MAU | 100K | 1M | 10M | 100M |
+|---|---|---|---|---|
+| SNS + SQS (about 50 events per active user, about 3 consumers each, batched receives and deletes) | +$4 | +$37 | +$370 | +$3,700 |
+| X-Ray (1% of about 500 requests per user; 100K traces free) | +$2 | +$24 | +$250 | +$2,500 |
+| **Total** | **+$6** | **+$61** | **+$620** | **+$6,200** |
+
+Unbatched SQS calls would cost about 3× the SNS + SQS row.
+
+**Not in the totals:**
+- **MongoDB Atlas** (not an AWS cost): change streams and transactions need a dedicated cluster, M10 or larger, at around $57 a month per cluster. Every environment needs one; it's already planned in DB-01.
+- **Valkey:** every request now reads `authz:{user_id}`. The current `cache.t4g.medium` × 2 is enough at first. Move prod to `cache.r7g.large` (about +$165 a month) around 10M MAU, or earlier if CPU credits run low.
+- **ECR:** 9 repositories instead of 1, about $2 a month with lifecycle policies.
+- **Logs:** volume follows requests rather than service count, so it changes little.
+
+**Where the money goes:**
+- **Extra Fargate tasks** are the largest increase. In prod, the choice between HA and lean workers alone is $243 a month per region. Lean is fine for workers, because SQS holds messages while a task is replaced.
+- **Container Insights** is the second largest in prod and is easy to miss. It's already off in dev, sbx and stg (`enable_container_insights = false`): ECS still publishes the free per-service `CPUUtilization` and `MemoryUtilization` metrics that autoscaling, alarms and the dashboard use.
+- **The event system itself** costs little until about 10M MAU.
+- **Every extra prod region** repeats the fixed increase: about +$481 (HA) or +$237 (lean).
 
 ### 15.4 Local development
 
@@ -826,7 +873,7 @@ The event system's own cost is small. The extra Fargate tasks are the main new c
 
 ### 15.5 Tracing and metrics
 
-**Today:** the backend has **no OpenTelemetry or X-Ray instrumentation**. The ADOT sidecar was therefore removed from every environment (`enable_adot_sidecar = false`): AWS's default collector config only *forwards* what the app sends it. Container Insights already provides task CPU and memory metrics, and logs go to CloudWatch Logs. With many services and events, tracing becomes worth having, and this is the plan for it.
+**Today:** the backend has **no OpenTelemetry or X-Ray instrumentation**. The ADOT sidecar was therefore removed from every environment (`enable_adot_sidecar = false`): AWS's default collector config only *forwards* what the app sends it. ECS already publishes per-service CPU and memory metrics (`AWS/ECS`; Container Insights adds task-level ones in prod), and logs go to CloudWatch Logs. With many services and events, tracing becomes worth having, and this is the plan for it.
 
 **1. Instrument once, in `common.telemetry`**, so every service gets it by importing one module:
 
@@ -851,7 +898,7 @@ The event system's own cost is small. The extra Fargate tasks are the main new c
 
 | Option | How | Cost shape | Use it when |
 |---|---|---|---|
-| **Shared collector** (recommended) | One small ADOT collector ECS service per environment per region (1 task in dev/sbx, 2 in stg/prod for availability), reached over the internal ALB (13.2) on OTLP/HTTP (4318). Apps export OTLP to it, and it exports to X-Ray (traces) and CloudWatch (metrics, via EMF). | A few small tasks per environment per region, whatever the number of app tasks | Default. The collector also does **tail sampling**: keep 100% of error and slow traces, and a small share of the rest. Only a collector can decide that after seeing the whole trace. |
+| **Shared collector** (recommended) | One small ADOT collector ECS service per environment per region (1 task in dev/sbx, 2 in stg/prod for availability), reached over the internal ALB (13.2) on OTLP/HTTP (4318). Apps export OTLP traces to it, and it exports them to X-Ray. Scaling and alarm metrics don't go through it (safeguard 1 under step 5). | A few small tasks per environment per region, whatever the number of app tasks | Default. The collector also does **tail sampling**: keep 100% of error and slow traces, and a small share of the rest. Only a collector can decide that after seeing the whole trace. |
 | Direct OTLP to AWS | Apps send OTLP straight to the X-Ray / CloudWatch OTLP endpoints (signed with the task role), with no collector | Nothing to run | Fine where head sampling (decided at the start of a request) is enough. **Check current OTLP-endpoint support in each region before choosing it.** |
 | ~~Sidecar in every task~~ | — | 256 CPU / 512 MiB in **every** task, so it grows with task count | Don't. That's why it was removed. |
 
@@ -859,24 +906,68 @@ The event system's own cost is small. The extra Fargate tasks are the main new c
 - **Head sampling:** parent-based, at `xray_default_sampling_rate` (5% non-prod, 1% prod), applied in the SDK.
 - **Tail sampling:** the shared collector adds "always keep errors and slow traces". That replaces today's X-Ray error rule, which only works when X-Ray decides the sampling itself.
 
-**5. Metrics:** OpenTelemetry metrics → collector → CloudWatch, for what dashboards and alarms need:
-- event lag (oldest message per queue, outbox backlog);
-- generation jobs (queued, running, failed, duration);
-- **LLM tokens and cost per circle and model;**
-- authz cache hit ratio.
+**5. Metrics:** publish a custom metric **only when an alarm or a scaling policy needs it**. Each one costs $0.30 a month per distinct label combination, and AWS already publishes most of what's needed for free.
 
-**Keep labels low-cardinality** (service, circle, model, outcome), **never `user_id` or `child_id`**: CloudWatch charges per distinct metric, and per-user labels would create millions.
+*Custom metrics: 18 per environment per region, published straight to CloudWatch, not through the collector (see the safeguards below).*
+
+| Metric | Label | Count | Drives |
+|---|---|---|---|
+| Pending generation jobs (`PendingJobCount`, as the worker publishes today) | service (5 generating) | 5 | Generating-worker step scaling; the "pending jobs high" alarm |
+| Age of the oldest running job | service (5 generating) | 5 | "Processing stuck" alarm (a job or worker hung) |
+| Age of the oldest unpublished `outbox` row | service (8 that own data) | 8 | "Outbox stale" alarm (relay down or SNS failing) |
+
+*Free AWS metrics, no custom metric needed:*
+
+| Need | Metric |
+|---|---|
+| Event lag and stuck events | `AWS/SQS` `ApproximateAgeOfOldestMessage` and `ApproximateNumberOfMessagesVisible` per queue and DLQ. They drive the DLQ alarms and, if needed, consumer scaling. |
+| Request rate, errors, latency per service | `AWS/ApplicationELB` per target group, on the public and internal ALBs |
+| Task CPU and memory | `AWS/ECS` per service |
+| Cache health | `AWS/ElastiCache` `CacheHits`, `CacheMisses`, `CPUUtilization` (cluster-wide) |
+| Event publish failures | `AWS/SNS` `NumberOfNotificationsFailed` |
+
+*Logs Insights queries, for investigation and reports (no alarm):*
+- **LLM tokens and cost per circle and model:** every LLM call logs one structured line (`circle`, `model`, `input_tokens`, `output_tokens`, `duration_ms`, `outcome`), and a saved query sums it.
+- **Generation outcomes:** failed jobs and duration percentiles per circle, from the job-finished log line.
+- **Authz cache hit ratio per service:** from a `cache_hit` field on the request log line.
+
+A query costs $0.005 per GB scanned, so a weekly report over a month of prod logs is cents at 1M MAU. Promote one of these to a metric only when someone wants an alarm on it, for example a daily LLM-spend limit.
+
+**Keep labels low-cardinality** (service, circle, model, outcome), **never `user_id` or `child_id`**: CloudWatch charges per distinct metric, and per-user labels would create millions. Put per-user detail in logs instead.
+
+**Scaling and alarm safeguards:**
+
+1. **Scaling and alarm metrics bypass the collector.** The collector carries traces only, so if it's down you lose traces, not scaling or alerts.
+   - Services call `PutMetricData` themselves, batched once a minute, as `worker.py` does today. That costs about $0.01 per 1,000 calls: cents a month per publisher.
+   - Each task role gets `cloudwatch:PutMetricData`, restricted to its own namespace with the `cloudwatch:namespace` condition, as the worker's role is today.
+   - **`PendingJobCount` is published by one leader per region in the circle's HTTP service** (a Redis lock, as session cleanup uses), not by its workers. The HTTP service creates the jobs, so the count keeps arriving when every worker has crashed. That's the OBS-03 fix.
+   - **The outbox-age metric is published by the relay** in the worker. If the relay dies, the metric stops, and safeguard 3 catches that.
+2. **SQS metric gaps.**
+   - `AWS/SQS` metrics arrive about a minute late. AWS stops sending them for a queue that has had no messages and no API calls for six hours.
+   - Long-polling consumers count as API calls, so a queue only goes silent when its consumers are down as well.
+   - Set **`treat_missing_data = "notBreaching"`** on every SQS depth and age alarm and on the SQS scaling alarms. A missing datapoint then means "nothing to do", not an alert or a scale-out.
+   - Dead consumers are caught by the `ApproximateAgeOfOldestMessage` alarm. A message arriving makes the queue active again, so its age is reported and keeps growing.
+3. **Missing-metric alarms**, so a silent publisher isn't mistaken for an idle one:
+   - **Outbox stale:** the alarm on the oldest unpublished `outbox` row uses **`treat_missing_data = "breaching"`**. A dead relay then alarms after 10 minutes without data. A healthy relay publishes `0` every minute, even when it's idle.
+   - **Pending jobs missing:** one alarm per generating service on the `SampleCount` of `PendingJobCount`, `< 1` for 10 minutes, with `treat_missing_data = "breaching"`. That's 5 extra alarms, about $0.50 a month, within the rounding of 15.3.
+   - Both are on in stg and prod, where alarms are enabled. Scaling keeps working without them; they only say that a signal it depends on has stopped.
+4. **SQS-depth scaling for consumers:**
+   - **Step scaling** on `ApproximateNumberOfMessagesVisible` for each worker's queue, with `ApproximateAgeOfOldestMessage` as a second scale-out trigger.
+   - Not target tracking on backlog per task: that needs the running task count, which only Container Insights publishes, and that's off outside prod.
+   - **Workers that both generate and consume** (onboarding, discover, grow, transform, release) have scale-out policies on both `PendingJobCount` and queue depth. App Auto Scaling applies the larger scale-out when both fire.
+   - They have **one scale-in alarm** built with metric math, `IF(pending <= 10 AND visible <= 10, 1, 0)`, so one signal going quiet can't remove tasks the other still needs.
+   - `min_capacity` stays at 1 or more, so a consumer is always polling. Scale-out isn't needed to start draining a queue.
 
 **6. Logs:**
 - Structured JSON with `trace_id`, `span_id` and `request_id` on every line (OBS-04), so a log line in CloudWatch jumps to its trace in X-Ray.
 - Keep logs at INFO and above, with shorter retention outside prod: logs are the largest CloudWatch cost at scale (`aws-cost-estimate.md` section 10).
 
 **7. Infrastructure:**
-- **Collector:** an `otel-collector` entry in `services.tf`, with no public ALB route, a task role allowed `xray:PutTraceSegments` / `PutTelemetryRecords` and `cloudwatch:PutMetricData`, and an internal-ALB listener on 4318.
+- **Collector:** an `otel-collector` entry in `services.tf`, with no public ALB route, a task role allowed `xray:PutTraceSegments` / `PutTelemetryRecords`, and an internal-ALB listener on 4318.
 - **App tasks** need no X-Ray permissions, because only the collector talks to X-Ray.
 - **`enable_adot_sidecar` stays `false`.**
 
-**Cost:** X-Ray is $5 per million traces after 100K free a month. At 1% sampling that's about $1, $17, $175 and $1,750 a month at 100K, 1M, 10M and 100M MAU ([aws-cost-estimate.md](aws-cost-estimate.md) section 10). Add the collector's few tasks and the custom metrics, at about $0.30 per metric per month.
+**Cost:** X-Ray is $5 per million traces after 100K free a month. At 1% of about 500 requests per user that's about $2, $24, $250 and $2,500 a month at 100K, 1M, 10M and 100M MAU. Add the collector's few tasks and the 18 custom metrics, about $5 a month per environment per region (15.3).
 
 ---
 
@@ -949,6 +1040,6 @@ backend/
 - **Event schema drift with parallel deploys:** additive-only changes, versioned schemas and contract tests in CI (7.8).
 - **Stuck events:** alarm on DLQ depth, oldest-message age and stale `outbox` rows. A message in a DLQ means some copy is wrong until it's redriven.
 - **Duplicated personal data in local copies:** keep payloads minimal (7.6). Copies are deleted on `child.deleted` and `user.deletion_requested`, and the deletion saga waits for every service.
-- **Cost:** about 4× today's minimum Fargate footprint in dev and sbx, plus an internal ALB per environment per region (15.3).
+- **Cost:** about +$161 a month each for dev and sbx, +$220 for stg and +$237 to +$481 for prod, per region, before traffic. The extra Fargate tasks account for most of it, and Container Insights metrics in prod (15.3).
 - **The pepper is a single point of failure** (6.4). **Inconsistent email normalisation** creates duplicate accounts. Use only `common.emails.normalise()`.
 - **Authorization bugs on shared resource endpoints:** a missing or wrong check exposes another family's data. Deny-by-default routers, the route-policy test and the ownership test matrix (11.2) guard it.

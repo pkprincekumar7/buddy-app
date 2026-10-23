@@ -15,12 +15,18 @@
 # in the module).
 # ---------------------------------------------------------------------------
 
+# Container Insights is per environment (var.enable_container_insights): on in
+# prod, off in dev/sbx/stg. Nothing in this stack reads its ECS/ContainerInsights
+# metrics: autoscaling, alarms and the dashboard use the free AWS/ECS and
+# AWS/ApplicationELB metrics, which ECS publishes either way.
+#trivy:ignore:AVD-AWS-0034
 resource "aws_ecs_cluster" "backend" {
+  #checkov:skip=CKV_AWS_65:Container Insights is set per environment via var.enable_container_insights — on in prod; off in dev/sbx/stg, which only a few testers use and where autoscaling, alarms and the dashboard rely on the free AWS/ECS metrics (~$34/month per cluster saved)
   name = "${var.app_name}-backend-${var.environment}"
 
   setting {
     name  = "containerInsights"
-    value = "enabled"
+    value = var.enable_container_insights ? "enabled" : "disabled"
   }
 
   tags = {

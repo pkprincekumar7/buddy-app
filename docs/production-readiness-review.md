@@ -1623,7 +1623,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 **Problem:** If workers crash-loop, no metric arrives, so nothing alarms and nothing scales out. The queue silently grows.
 
 **Fix:**
-- Alarm on ECS `RunningTaskCount < worker_min_capacity` (Container Insights).
+- Alarm on ECS `RunningTaskCount < worker_min_capacity` (Container Insights, which is on in prod only: `enable_container_insights`).
 - Emit `PendingJobCount` from **one leader per region** (a Redis lock, like session cleanup), not from all 15–200 API tasks. Use the same region scoping as the worker (`locations_for_region(settings.aws_region)`). A small scheduled Lambda also works.
 - Use `treat_missing_data = "breaching"` on a dedicated "metric missing" alarm.
 - Note that the first datapoint only arrives after the worker's first 60 s sleep (`worker.py:438`), so allow for that in startup alarms.

@@ -85,8 +85,13 @@ enable_cloudtrail = true
 enable_alb_access_logs = true
 
 # ADOT sidecar — off. The backend has no OpenTelemetry/X-Ray instrumentation,
-# so a collector would receive nothing, and Container Insights (cluster
-# setting) already provides CPU/memory metrics. The app now gets the whole task
+# so a collector would receive nothing, and ECS already publishes per-service
+# CPU/memory metrics (AWS/ECS). The app now gets the whole task
 # (the sidecar reserved 256 CPU / 512 MiB of it); task size, and so cost, are
 # unchanged. Tracing plan: docs/auth-users-split.md section 15.5.
 enable_adot_sidecar = false
+
+# Container Insights — off. Only a few testers use this environment, and
+# autoscaling, alarms and the dashboard use the free AWS/ECS metrics, so it
+# would only add ~$34/month of task-level metrics nobody reads.
+enable_container_insights = false
