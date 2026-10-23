@@ -9,7 +9,7 @@ declare provider *requirements* only, never `provider` blocks.
 | [`network`](network) | VPC, 3 public `/24` + 3 private `/20` subnets (from the region's `/16`, NET-01), IGW, NAT Gateways (`nat_gateway_count`), route tables, S3 gateway endpoint, interface endpoints (stg/prod) and their security group | `infra-live-backend` |
 | [`ecs-service`](ecs-service) | One Fargate service: task definition (main container + optional ADOT sidecar), service, autoscaling target, target-tracking and step-scaling policies, step alarms, sustained and immediate saturation alarms | `infra-live-backend`, once per entry in `services.tf` (`module.service["<key>"]`) |
 | [`alb`](alb) | ALB, one target group + listener rule per HTTP service (`targets`: path-routed rules first, one catch-all last, every rule requires `X-Origin-Verify`), HTTPS listener (default 403), ALB security group (CloudFront prefix list only) | `infra-live-backend` |
-| [`redis`](redis) | ElastiCache Redis replication group, subnet group, parameter group, security group + ingress from the given clients | `infra-live-backend` |
+| [`redis`](redis) | ElastiCache Valkey replication group (engine version is a variable, default `8.0`), subnet group, parameter group (family derived from the version), security group + ingress from the given clients | `infra-live-backend` |
 
 Resource **names** (AWS names and `Name` tags) are the same as before the refactor. Only the
 Terraform addresses changed, e.g. `aws_subnet.private_1` → `module.network.aws_subnet.private["1"]`,

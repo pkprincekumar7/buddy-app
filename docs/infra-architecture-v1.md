@@ -434,7 +434,7 @@ The resource inventory above is written at prod scale. This section documents ev
 | `worker_concurrency` | `2` | `3` | `5` |
 | `worker_poll_interval_seconds` | `5` | `3` | `2` |
 | `enable_execute_command` | `true` | `true` | `false` |
-| ADOT sidecar | optional (can omit to save cost) | ✓ | ✓ |
+| ADOT sidecar | ✗ | ✗ (was ✓) | ✗ (was ✓) — off: the app isn't instrumented, see [auth-users-split.md](auth-users-split.md) 15.5 |
 
 ---
 

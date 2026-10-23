@@ -88,7 +88,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 |----------|----------|:---:|:---:|:---:|:----:|
 | Subnet Group | `aws_elasticache_subnet_group` | ✅ | ✅ | ✅ | ✅ |
 | Parameter Group | `aws_elasticache_parameter_group` | ✅ | ✅ | ✅ | ✅ |
-| Replication Group | `aws_elasticache_replication_group` | ✅ `cache.t3.micro` ×0 replicas | ✅ `cache.t3.micro` ×0 replicas | ✅ `cache.t3.medium` ×0 replicas | ✅ `cache.r6g.4xlarge` ×2 replicas |
+| Replication Group | `aws_elasticache_replication_group` | ✅ Valkey 8.0 `cache.t4g.micro` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.micro` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.small` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.medium` ×1 replica, multi-AZ |
 | ElastiCache Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
 | ElastiCache SG Ingress: from ECS Tasks | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
 
@@ -120,8 +120,9 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | Worker Task CloudWatch Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
 | ECS Exec Policy (API) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
 | ECS Exec Policy (Worker) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
-| X-Ray Policy (API) | `aws_iam_role_policy` | ❌ | ❌ | ✅ | ✅ |
-| X-Ray Policy (Worker) | `aws_iam_role_policy` | ❌ | ❌ | ✅ | ✅ |
+| X-Ray Policy (one per service) | `aws_iam_role_policy` | ❌ | ❌ | ❌ | ❌ |
+
+X-Ray policies are created only with `enable_adot_sidecar = true`, which is off everywhere (the app isn't instrumented). The X-Ray sampling rules below still exist, and cost nothing while no traces are sent.
 
 ### Secrets & Config
 

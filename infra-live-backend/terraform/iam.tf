@@ -113,6 +113,7 @@ resource "aws_iam_role_policy" "task_exec_command" {
 }
 
 # Required by the ADOT sidecar (enable_adot_sidecar) to export traces to X-Ray.
+# Created only while the sidecar is on (off everywhere today).
 resource "aws_iam_role_policy" "task_xray" {
   for_each = var.enable_adot_sidecar ? toset(keys(local.services)) : toset([])
 
