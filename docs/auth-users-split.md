@@ -14,9 +14,9 @@ The code below exists, but nothing it has written needs to be kept. This section
 
 | Area | Today |
 |---|---|
-| Code | One FastAPI app. `APP_COMPONENT` (`auth` / `admin` / `api` / `worker`) picks which routers a task mounts, but all components share every module and **one database**. |
+| Code | One FastAPI app. `APP_COMPONENT` (`auth` / `admin` / `api` / `worker`, plus `all` for local runs) picks which routers a task mounts, but all components share every module and **one database**. |
 | User data | One `users` document holds both credentials and profile: `email`, `password_hash`, `full_name`, `role`, `country_code`, `location`, `preferences {tts_enabled, last_visited_path}`, `is_locked`, `tokens_revoked_at`, `is_being_deleted`, `created_at`, `updated_at`. |
-| Child data | One `children` document mixes the child (name, age, gender, school, avatar) with **onboarding** answers and traits, the **discover** AI personality (`personality`, `pending_personality_vm`), seven journey progress flags and the jobs lock (`active_jobs`). |
+| Child data | One `children` document mixes the child (name, age, gender, school, avatar) with **onboarding** answers and traits, the **discover** AI personality (`personality`, `pending_personality_vm`), seven journey progress flags and the jobs lock (`active_jobs`). The flags can be set by any signed-in client through `PATCH /api/v1/children/{id}`. Only grow completion is derived from real data (`services/journey_progress.py`), which is why the unlock checks don't trust the stored flags. |
 | Circle data | `growth_areas` (grow), `ninety_day_plans` (transform: main page, tracking, 3-month plan in one document), `observations` (release), `jobs` (all AI generation). |
 | AI prompts | **Built in the browser** (`ninetyDayPlanPrompt.ts`, `growthQuestionsPrompt.ts`, `lifePathwayPrompt.ts`, …) and sent to `/llm/invoke` or `/jobs`. A signed-in user can send any prompt, at your cost. |
 | Ids | `_id` is a **UUIDv4 string** (`str(uuid.uuid4())`). Every other collection stores it as `user_id`. |
@@ -27,6 +27,9 @@ The code below exists, but nothing it has written needs to be kept. This section
 | Account deletion | `DELETE /api/v1/user/me` deletes from seven collections directly. It doesn't delete the user's `jobs` or their S3 uploads. |
 | `last_visited_path` | Written on every navigation by both frontends, **never read back**. |
 | Secrets | One `backend-secrets` JSON and **one shared ECS execution role**, which can read every key. |
+| Image and deploys | **One `backend` image** in one ECR repository per environment and region (`ecr_repository_url` in SSM). The deploy workflow builds it once and rolls it out to every selected service. |
+| Health routes | `/health` (the container and target-group check) and `/api/health` (build metadata). `/api/health` sits outside `/api/v1`, reaches the backend through the ALB's catch-all rule, and is in the edge's `PURE_BYPASS_PATHS`. |
+| Redis access | One shared AUTH token (`REDIS_AUTH_TOKEN`) for every task. If Redis is unreachable, the app falls back to per-task in-memory rate limits. |
 | Email in logs | `sha256(email)[:16]`: unkeyed, so it can be matched against a list of candidate emails. |
 
 ### How the circles depend on each other
@@ -464,7 +467,7 @@ Login runs in the bootstrap region (edge PURE_BYPASS); step 2 may be one cross-r
 | `iss`, `aud`, `iat`, `exp`, `type` | ✅ | ✅ | As today; access 30 min, refresh 24 h |
 | `sub` | ✅ | ✅ | The user id |
 | `location` | ✅ | ✅ | The edge routes on it; services use it for targeted queries |
-| `role` | ✅ | — | For cheap coarse checks only; the cached role is authoritative (9.3) |
+| `role` | ✅ | — | **New:** today's access token has no `role`. For cheap coarse checks only; the cached role is authoritative (9.3) |
 | `jti`, `family_id` | — | ✅ | |
 | `email`, names | ❌ | ❌ | A JWT is signed, not encrypted: anyone holding the cookie can read it |
 
@@ -492,6 +495,19 @@ TTL 25 h
 - **Change stream:** an `auth-worker` in each region watches `auth.auth` for users whose `location` maps to that region, and updates that region's Redis. It stores a resume token, and needs a dedicated Atlas cluster (M10+).
 - **Eviction:** the default `volatile-lru` can evict entries. That's safe, because a miss refills.
 - **Redis RBAC users:** every service can read `authz:*`; only `auth` and `auth-worker` can write.
+  - **Today** every task shares one AUTH token. ElastiCache RBAC replaces it: a user group on the replication group, one ElastiCache user per service, each with an access string limiting its key patterns and commands. For example `on ~authz:* +get` for a reader, and `~authz:*` write commands for auth.
+  - A replication group uses either an AUTH token or a user group, not both. So `modules/redis` swaps `auth_token` for `user_group_ids`, plus a new `aws_elasticache_user` / `aws_elasticache_user_group` per service. The same RBAC users also control the rate-limit and LLM-limit keys (15.1).
+  - **IAM authentication** for those users (Valkey 7+): each task gets a short-lived token from its task role, so there are no Redis passwords to store or rotate. Use passwords in Secrets Manager only if IAM auth turns out not to fit the client.
+
+**When Redis is unreachable:**
+- **The authz check still works, at a cost:**
+  - Every request then misses and asks auth (`GET /internal/authz/{user_id}`), and auth reads `auth.auth`.
+  - Each service keeps a **small in-process cache** of those answers for **30 seconds**, so one user's burst of requests costs one internal call, not one per request.
+  - A lock, revocation or deletion therefore takes effect within 30 s while Redis is down, rather than at once.
+- **Auth must carry that load:** it scales on CPU, and its `/internal/authz` endpoint is a single indexed read. The "Redis unreachable" alarm (an ElastiCache health or connection-error metric) tells operators the slower mode is on.
+- **Fail closed still applies:** only if Redis and auth are both unavailable does a request get **503**.
+- **Rate limits** fall back to per-task in-memory limits, as today. The cross-service hourly LLM limit becomes per task until Redis returns.
+- **Login's per-email throttle** (9.1) also falls back to per task, so a short Redis outage weakens it rather than blocking logins.
 
 **Login, then a later request:**
 
@@ -726,14 +742,19 @@ Circle endpoints sit under `/api/v1/children/{id}/…`, and ALB path patterns ac
 | 110 | users | `/api/v1/users/*` |
 | 120 | auth | `/api/v1/auth/*` |
 | 130 | platform | `/api/v1/speech/*`, `/api/v1/downloads/*` |
+| 140 | platform | `/api/health` |
 | 50000 | — | fixed 404 (no catch-all service) |
 
 Notes:
 - **Generation and job status** for a circle sit under that circle's path (`/api/v1/children/{id}/personality/generation`, `…/generation/{job_id}`), so they route with it.
-- **Condition values:** every rule has at most 2 patterns + 2 origin-verify values, under AWS's limit of 5. There are 10 rules, far below the ALB's 100.
-- **`modules/alb`:** it needs two changes:
-  - allow **no catch-all target**, with a fixed-response default instead;
-  - allow `*` mid-path, which ALB supports. The module's `path_patterns` already pass any string.
+- **Health:**
+  - **`/api/health`** (build metadata) moves to platform. Today it reaches the backend through the catch-all, and without a catch-all it would get the fixed 404. The edge keeps it in `PURE_BYPASS_PATHS`, unchanged.
+  - **`/health`** stays on every service, for its own target group's health check. The ALB calls it on the task directly, so it needs no listener rule.
+- **Edge:** the JWT validator needs no path changes. Login, Google sign-in, refresh, logout, register and `/api/health` keep their paths, and every other new path is ordinary authenticated `/api/*` traffic.
+- **Condition values:** every rule has at most 2 patterns + 2 origin-verify values, under AWS's limit of 5. There are 11 rules, far below the ALB's 100.
+- **`modules/alb`:** its validation requires exactly one catch-all target today. It needs:
+  - **no catch-all target** allowed, with a fixed-response 404 at priority 50000 instead;
+  - nothing for `*` mid-path: ALB supports it, and the module's `path_patterns` already pass any string.
 - **Tests:** a test in each service checks its route paths against these patterns, as `test_main.py` does today.
 
 ### 13.2 Internal calls
@@ -741,18 +762,33 @@ Notes:
 Internal endpoints live under `/internal/*`, on a separate port. **The public ALB never routes them**; only the internal ALB below does. They're used only for read-through (7.5), the registration saga and the authz fill.
 - **Transport: one internal ALB per environment per region,** not ECS Service Connect.
   - The ALB is internal (private subnets, no public address), at a private DNS name such as `internal.{app}-{env}.{region}`, with one path rule per service: `/internal/children/*` → children's internal target group, and so on.
-  - **Why not Service Connect:** it adds an Envoy proxy container to every task, and AWS recommends reserving about 256 CPU / 64 MiB for it. That doesn't fit the agreed 256 / 512 tasks in dev and sbx: they'd have to double in size (about +$160 a month per region). In prod it would reserve a quarter vCPU in every one of dozens of tasks. An internal ALB costs about **$17 a month per environment per region** plus a little LCU, needs no sidecar, and is a pattern `modules/alb` already implements.
+  - **Why not Service Connect:** it adds an Envoy proxy container to every task, and AWS recommends reserving about 256 CPU / 64 MiB for it. That doesn't fit the agreed 256 / 512 tasks in dev and sbx: they'd have to double in size (about +$160 a month per region). In prod it would reserve a quarter vCPU in every one of dozens of tasks. An internal ALB costs about **$17 a month per environment per region** plus a little LCU, and needs no sidecar.
 - **Network:** the internal ALB's security group admits traffic only from the services' task security groups. Each service's task security group admits its internal port only from the internal ALB.
+- **`modules/alb` changes for an internal instance.** Today the module is built only for the public ALB:
+
+  | Today (public only) | Needed for `internal = true` |
+  |---|---|
+  | `internal = false`, in `public_subnet_ids` | An `internal` variable, and a `subnet_ids` input that takes the private subnets |
+  | Ingress only from CloudFront's origin-facing prefix list | Ingress from the given task security groups |
+  | `origin_verify_values` required (validation: at least one); every rule matches `X-Origin-Verify` | Optional. Internal rules match path only, and the service token is the caller check |
+  | Exactly one catch-all target | No catch-all; a fixed 404 (the same change as the public ALB) |
+  | HTTPS listener with the public certificate | HTTPS listener with its own certificate (below) |
+
+- **Certificate:** a **public ACM certificate** for `internal.<domain>` (or `*.internal.<domain>`), validated by a DNS record in the existing public hosted zone. It's free and renews itself.
+  - The ALB's name resolves only through a **Route 53 private hosted zone** attached to the VPC, so the name is public but the address isn't reachable from outside.
+  - Not **AWS Private CA**: about $400 a month per CA, for nothing a public certificate doesn't already give here.
+  - Not plain HTTP: service tokens would then cross the VPC in clear text.
 - **Identity:** a short-lived **service token** (JWT, `aud = "<service>-internal"`, `sub = "<caller>"`), minted with a separate key.
 - **Tracing:** every internal call and every event carries the W3C `traceparent` header and `X-Request-Id`, so one user action can be followed across services (15.5).
 
 ### 13.3 The platform service
 
 These capabilities are used by many circles and hold no data:
-- `POST /api/v1/speech/transcriptions`: today's `/audio/transcribe`, used by the shared voice-input component.
-- `GET /api/v1/downloads/apk`: today's `/downloads/apk`.
+- `POST /api/v1/speech/transcriptions`: today's `/api/v1/audio/transcribe`, used by the shared voice-input component.
+- `GET /api/v1/downloads/apk`: the same path as today.
+- `GET /api/health`: build metadata, as today (13.1).
 
-It has no database and doesn't publish events.
+It has no database and doesn't publish events. Like every service, it also serves `/health` for its target group.
 
 ---
 
@@ -795,14 +831,26 @@ It has no database and doesn't publish events.
 | ECS execution role | Can read only that service's secret |
 | ECS task role | Only that service's AWS access (e.g. children: its avatar prefix; transform: its plan-photo prefix; publishers: `sns:Publish` on the topic for their own event types; consumers: their own queue) |
 | ECR repository | One image per service (`SERVICE` build argument); each ships only its own dependencies |
-| Redis RBAC user | Read `authz:*` (and the LLM-limit keys for generating services) |
+| Redis RBAC user | One ElastiCache user per service (IAM auth), replacing today's shared AUTH token (9.3). Reads `authz:*`; auth also writes it. Rate-limit keys under the service's own prefix, plus the shared LLM-limit keys for generating services. |
 
 ### 15.2 `services.tf` and workflows
 
 - **Runtimes:** one entry per runtime (plus the shared `otel-collector`, 15.5): `auth`, `auth-worker`, `users`, `users-worker`, `children`, `children-worker`, `onboarding`, `onboarding-worker`, `discover`, `discover-worker`, `grow`, `grow-worker`, `transform`, `transform-worker`, `release`, `release-worker` and `platform` (plus `connect` and `connect-worker` later). The existing `admin`, `backend` and `worker` entries are removed.
 - **Entry fields:** each entry gains `image_repository` and `secret_name`.
-- **Workflows:** the deploy, restart and promote workflows already handle any number of services, in parallel. Update their `service` help text, which `scripts/check-service-lists.sh` checks.
-- **New Terraform:** an `events` module (SNS topic, SQS queue + DLQ per consumer, filter policies, alarms on DLQ depth and oldest-message age); per-service secrets and roles; the internal ALB (a second `modules/alb` instance, `internal = true`, with `/internal/<service>/*` rules).
+- **Workflows:** restart and the roll-out step of deploy and promote already handle any number of services, in parallel. **Building and copying images doesn't** yet. Today there's one `backend` image and one ECR repository per environment and region, and deploy builds once.
+  - **Deploy:** a build matrix over the selected services, each `docker build --build-arg SERVICE=<name>` into **that service's** ECR repository (`<app>/<env>/<service>`). Each roll-out then uses its own image.
+  - **Workers** share their service's image and repository (section 2). The matrix builds one image per service, not per runtime.
+  - **Promote:** copies each selected service's image tag between that service's repositories in the two environments.
+  - **SSM manifest:** each `ecs_services` entry gains its `ecr_repository_url`, replacing the single `ecr_repository_url` parameter.
+  - **Help text:** update the `service` input descriptions, which `scripts/check-service-lists.sh` checks.
+- **CI:**
+  - `check.yml`'s "openapi.json up to date" and spectral steps run once per service spec (`tools/export-openapi` writes one each).
+  - The import-linter contract (section 2) and the event contract tests (7.8) are added to the backend job.
+- **New Terraform:**
+  - an `events` module: SNS topic, SQS queue + DLQ per consumer, filter policies, alarms on DLQ depth and oldest-message age;
+  - per-service ECR repositories, secrets and roles;
+  - the internal ALB: a second `modules/alb` instance with `internal = true` and `/internal/<service>/*` rules, after the module changes in 13.2, plus its certificate and private hosted zone record;
+  - `modules/redis` RBAC users and user group (9.3).
 
 ### 15.3 Rough cost of the split
 
@@ -859,6 +907,7 @@ Unbatched SQS calls would cost about 3× the SNS + SQS row.
 - **MongoDB Atlas** (not an AWS cost): change streams and transactions need a dedicated cluster, M10 or larger, at around $57 a month per cluster. Every environment needs one; it's already planned in DB-01.
 - **Valkey:** every request now reads `authz:{user_id}`. The current `cache.t4g.medium` × 2 is enough at first. Move prod to `cache.r7g.large` (about +$165 a month) around 10M MAU, or earlier if CPU credits run low.
 - **ECR:** 9 repositories instead of 1, about $2 a month with lifecycle policies.
+- **Internal ALB name:** the private hosted zone is $0.50 a month per environment; the ACM certificate is free (13.2).
 - **Logs:** volume follows requests rather than service count, so it changes little.
 
 **Where the money goes:**
@@ -998,15 +1047,16 @@ backend/
 
 | Step | What | Done when |
 |---|---|---|
-| **0. Platform** | Dedicated Atlas cluster (M10+), the internal ALB, the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service secrets and roles, the pepper, docker-compose | A hello-world service can publish and consume an event in dev |
+| **0. Platform** | Dedicated Atlas cluster (M10+), the `modules/alb` changes and the internal ALB (13.2), Redis RBAC users (9.3), the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service ECR repositories, secrets and roles, per-service image builds in the workflows (15.2), the pepper, docker-compose | A hello-world service builds its own image, deploys, and can publish and consume an event in dev |
 | **1. `common`** | Auth deps, permissions, audit, events (outbox, relay, inbox, schemas, contract test harness), generation, internal client, telemetry | Unit- and contract-tested on its own |
 | **2. auth + users** | Sections 5, 6, 9, 10.1 and 11; `auth-worker` with change stream and reaper | Login, register, Google sign-in, refresh rotation, lock, allow-list, profiles; route-policy and ownership test matrices pass |
 | **3. children** | The child and progress; `child.*` events; soft delete and purge | Home lists children with progress, from one query |
 | **4. onboarding, discover** | Each with its database, server-side generation and events. Discover consumes onboarding's events. | Completing onboarding makes Discover's personality appear without the browser building prompts |
 | **5. grow, transform, release** | Same pattern, with their local copies | Each page loads with one request; `/llm/invoke` is gone |
 | **6. platform** | Speech and downloads | Voice input works in every circle |
-| **7. Deletion** | 10.2 and 10.3 end to end, with a deletion-age alert | Killing any service mid-deletion still converges after a restart (test it) |
-| **8. Global Cluster** (DB-01's later stage) | Shard per section 14 and map zones | Writes land in the user's zone; login is still two point reads |
+| **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec;<br>– `/user/me` → `/users/me/profile` and `/auth/account`;<br>– admin screens → `/auth/accounts…`;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`;<br>– `POST …/progress/{flag}` → `…/visit`;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. The mobile build is released together with the backend, before the first real users: store review means an installed app can't be updated at once. |
+| **8. Deletion** | 10.2 and 10.3 end to end, with a deletion-age alert | Killing any service mid-deletion still converges after a restart (test it) |
+| **9. Global Cluster** (DB-01's later stage) | Shard per section 14 and map zones | Writes land in the user's zone; login is still two point reads |
 | **Later: connect** | Its own service and database from the start | — |
 
 ---
@@ -1035,11 +1085,13 @@ backend/
 
 ## 18. Risks
 
-- **Distributed-system complexity:** 17 runtimes, 9 databases, an event bus and internal auth. Everything in section 16's step 0–1 (compose, contract tests, tracing) exists to keep that manageable. Build it before the circles.
+- **Distributed-system complexity:** 17 runtimes, 8 databases (9 with connect), an event bus and internal auth. Everything in section 16's step 0–1 (compose, contract tests, tracing) exists to keep that manageable. Build it before the circles.
 - **Eventual consistency:** local copies lag by up to a few seconds. Read-through (7.5) covers the "just created" cases. Pages must still tolerate a "generating…" state, which they already do.
 - **Event schema drift with parallel deploys:** additive-only changes, versioned schemas and contract tests in CI (7.8).
 - **Stuck events:** alarm on DLQ depth, oldest-message age and stale `outbox` rows. A message in a DLQ means some copy is wrong until it's redriven.
 - **Duplicated personal data in local copies:** keep payloads minimal (7.6). Copies are deleted on `child.deleted` and `user.deletion_requested`, and the deletion saga waits for every service.
+- **Two clients to move:** the web app and the React Native app both change almost every API call (16, step 7). An old installed mobile build would break against the new API, so ship the mobile release before real users arrive.
+- **Redis outage:** authz falls back to calls to auth with a 30-second local cache, so auth's load rises and locks take up to 30 s to apply (9.3). Alarm on it.
 - **Cost:** about +$161 a month each for dev and sbx, +$220 for stg and +$237 to +$481 for prod, per region, before traffic. The extra Fargate tasks account for most of it, and Container Insights metrics in prod (15.3).
 - **The pepper is a single point of failure** (6.4). **Inconsistent email normalisation** creates duplicate accounts. Use only `common.emails.normalise()`.
 - **Authorization bugs on shared resource endpoints:** a missing or wrong check exposes another family's data. Deny-by-default routers, the route-policy test and the ownership test matrix (11.2) guard it.
