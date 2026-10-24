@@ -133,7 +133,7 @@ Creates a parent account with email and password, creates its profile, and signs
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `email` | string | ✅ | ≤ 255 characters, a valid address (no deliverability check). Normalised with `common.emails.normalise()`: trimmed and lower-cased, nothing else (proposal 6.3). |
+| `email` | string | ✅ | ≤ 255 characters, a valid address (no deliverability check). Normalised with `auth.emails.normalise()`: trimmed and lower-cased, nothing else (proposal 6.3). |
 | `password` | string | ✅ | 8–128 characters, at least one letter and one digit, not one character repeated. Same policy as today. |
 | `first_name` | string | ✅ | 1–100 characters after trimming |
 | `middle_name` | string | — | ≤ 100 characters |
@@ -229,7 +229,7 @@ The `409` tells the caller that an account exists. That's accepted, as today, be
 | `full_name` (optional, defaults to `"Parent"`) | `first_name` (required), `middle_name`, `last_name` | Proposal 5.3 |
 | No address fields | `address_line_one` / `_two` / `_three` (optional) | Proposal 5.3 |
 | Allow-list and `email_index` keyed by the plaintext email | Keyed by `HMAC-SHA256(pepper, email)` | Proposal 6 |
-| Email normalised by the `email-validator` library | `common.emails.normalise()`: trim and lower-case only, the same function everywhere | Proposal 6.3 |
+| Email normalised by the `email-validator` library | `auth.emails.normalise()`: trim and lower-case only, the same function everywhere | Proposal 6.3 |
 | One `users` document holds credentials and profile | `auth.auth` (credentials) plus users' profile, created through the saga | Proposal 5 |
 | `email_index` has no status; an orphaned row is reclaimed if no `users` document exists | `reserved` → `active`, stale reservations reclaimed after 15 minutes, and a reaper for leftovers | Proposal 10.1 |
 | A failed users insert returns `500` | A failed or unreachable users service returns `503` with `Retry-After` | The failure is temporary; a retry should work |
@@ -256,7 +256,7 @@ Signs in with email and password.
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `email` | string | ✅ | ≤ 255; normalised with `common.emails.normalise()`. An invalid address isn't a `422`: it just won't match, so the response doesn't reveal what's valid. |
+| `email` | string | ✅ | ≤ 255; normalised with `auth.emails.normalise()`. An invalid address isn't a `422`: it just won't match, so the response doesn't reveal what's valid. |
 | `password` | string | ✅ | ≤ 128 |
 
 ### Processing
@@ -597,7 +597,7 @@ Finds one account by email. For admins. It's a `POST` so the email travels in th
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `email` | string | ✅ | ≤ 255; normalised with `common.emails.normalise()` |
+| `email` | string | ✅ | ≤ 255; normalised with `auth.emails.normalise()` |
 
 ### Processing
 
@@ -800,7 +800,7 @@ Adds an email to the allow-list. For admins.
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `email` | string | ✅ | ≤ 255, a valid address; normalised with `common.emails.normalise()` |
+| `email` | string | ✅ | ≤ 255, a valid address; normalised with `auth.emails.normalise()` |
 
 ### Processing
 
