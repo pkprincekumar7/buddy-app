@@ -57,10 +57,10 @@ These dependencies are why cross-service data moves by events into **local copie
 | **children** | The child (name, age, gender, school, avatar) and **journey progress** | `children`, `children-worker` (events) |
 | **onboarding** | Conversational onboarding: the seven answers (traits) and the conversation's progress. The profile step's data (name, age, gender, school, avatar) is the child itself, so children owns it. | `onboarding`, `onboarding-worker` (outbox relay, events; **no AI generation**) |
 | **discover** | AI personality | `discover`, `discover-worker` |
-| **grow** | Growth areas: questions, answers, recommendations, child activity, life pathway | `grow`, `grow-worker` |
-| **transform** | 90-day plan: main page, tracking, 3-month plan, event, photos | `transform`, `transform-worker` |
+| **grow** | Growth areas: questions, answers, recommendations, child activity | `grow`, `grow-worker` |
+| **transform** | The Transform circle's page: the Life Pathway (milestones per completed growth area) and the 90-day plan (main page, tracking, 3-month plan, event, photos) | `transform`, `transform-worker` |
 | **release** | Observations | `release`, `release-worker` |
-| **connect** | Connect circle (future) | `connect`, `connect-worker` (when built) |
+| **connect** | Connect circle (future). Its page has no data of its own yet, so until it does, children records the visit (13.4) and no connect service, database or queue exists. | `connect`, `connect-worker` (when built) |
 | **platform** | Stateless shared capabilities: speech-to-text (voice input is used by several circles) and app downloads. **No database.** | `platform` |
 
 The `-worker` runtimes come from the same image as their service. They run AI generation, the outbox relay and event consumers, so slow LLM work never competes with page requests. Every service that owns data has one, because it must at least relay its own events and handle `user.deletion_requested`. Platform, which owns no data, doesn't.
@@ -301,7 +301,7 @@ These collections appear in several databases with the same shape. `common` owns
 |---|---|---|---|
 | `onboarding_inputs` | child id | The seven answers: `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` | `onboarding.conversation_completed`, `onboarding.answers_updated` |
 | `personality_inputs` | child id | `traits` (summary), `strengths` | `discover.personality_finalised` |
-| `growth_inputs` | `{child_id}:{area_id}` (one per area) | `child_id`, `area_id`, `area_name`, `answers_summary`, `recommendations` | `grow.area_completed`, `grow.area_updated` |
+| `growth_inputs` | `{child_id}:{area_id}` (one per area) | `child_id`, `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations` (what the Life Pathway and observation prompts need) | `grow.area_completed`, `grow.area_updated` |
 
 **`jobs`** (every generating service: discover, grow, transform, release; section 8):
 
@@ -309,7 +309,7 @@ These collections appear in several databases with the same shape. `common` owns
 |---|---|---|---|
 | `_id` | string (UUIDv4) | ✅ | The job id the page polls |
 | `user_id`, `child_id`, `location` | string | ✅ | |
-| `type` | enum | ✅ | The service's own job types only (below) |
+| `type` | enum | ✅ | The service's own job types only (below). The API calls it `kind`, with a short name (`plan` for `generate_ninety_day_plan`, …). |
 | `target` | object | — | Which of the service's own documents receives the result, e.g. `{area_id}` for grow |
 | `status` | enum `pending` / `processing` / `completed` / `failed` | ✅ | Today's `result_ready` disappears: the server validates and stores the result itself |
 | `input_version` | int | ✅ | Version of the local inputs the prompt was built from |
@@ -324,8 +324,8 @@ Gone from today's jobs: the client-supplied `payload` (the prompt), `write_back`
 | Service | Job types (today's names) |
 |---|---|
 | discover | `generate_personality_analysis` |
-| grow | `generate_growth_parent_questions`, `generate_growth_child_rounds`, `generate_recommendations`, `generate_life_pathway` |
-| transform | `generate_ninety_day_plan`, `generate_event_tracker` |
+| grow | `generate_growth_parent_questions`, `generate_growth_child_rounds`, `generate_recommendations` |
+| transform | `generate_life_pathway`, `generate_ninety_day_plan`, `generate_event_tracker` |
 | release | `generate_observations` |
 
 `generate_activity` is dropped: only `ChildActivityGame.tsx` uses it, and that component is deleted (section 8).
@@ -360,6 +360,7 @@ Gone from today's jobs: the client-supplied `payload` (the prompt), `write_back`
 | `user_id`, `location` | string | ✅ | |
 | `family_id` | string (UUIDv4) | ✅ | Rotation chain; reuse of a rotated token revokes the whole family (9.1) |
 | `expires_at` | date | ✅ | TTL index deletes the row when it passes (section 14), replacing today's cleanup task |
+| `rotated_at`, `replaced_by` | date, string | — | Set when the token is refreshed, instead of deleting the row, so a reuse can be recognised (9.1) |
 | `created_at` | date | ✅ | |
 
 **`email_index`** (one per email, unsharded):
@@ -421,6 +422,7 @@ Gone from today's jobs: the client-supplied `payload` (the prompt), `write_back`
 **Deliberately absent:**
 - **`email`:** auth holds it. A service that needs it calls auth's internal API.
 - **`full_name`:** it's gone from storage, APIs and tokens. Code that needs a display name uses `common.names.full_name(first, middle, last)`, which joins the non-empty parts with single spaces.
+- **`dark_mode`:** stored today, but neither app reads or writes it: the web theme is locked to dark on purpose (`frontend/src/lib/theme.tsx`). Add it back when theming is turned on.
 - **`last_visited_path`:** it's written but never read today. Remove it, along with its writes in `frontend/src/lib/AuthContext.tsx`, `frontend/src/hooks/useStartOver.ts` and the same two files in `frontend-app/`.
 
 ---
@@ -534,10 +536,10 @@ Consumers make duplicates harmless. The outbox and SQS both deliver **at least o
 | Set operation | Auth adds the service to `deletions.confirmed` (`$addToSet`) | A set can't hold the same value twice |
 | Delete | A circle deletes a child's data on `child.deleted` | Deleting again finds nothing to delete |
 
-- **Follow-up events only on a real change:** a handler publishes a follow-up event only if its update actually modified the document. For example, children publishes `child.progress_changed` only when a flag goes from `false` to `true`, so a duplicate `discover.personality_finalised` doesn't create a second event.
+- **Follow-up events only on a real change:** a handler publishes a follow-up event only if its update actually modified the document. For example, children publishes `child.progress_changed` only when a flag goes from `false` to `true`, so a duplicate `discover.completed` doesn't create a second event.
 - **Anything else** (an email, a notification, a counter) uses the opt-in `inbox` (7.3).
 
-**One event, end to end** (discover finishes a personality; grow, transform and children need it):
+**One event, end to end** (discover finishes a personality; grow and transform need it, and children later marks Discover done when the parent passes the reveal):
 
 ```mermaid
 sequenceDiagram
@@ -548,24 +550,30 @@ sequenceDiagram
     participant SNS as SNS topic
     participant QG as SQS grow-events
     participant QT as SQS transform-events
-    participant QC as SQS children-events
     participant GW as grow-worker
+    participant B as Browser
+    participant DS as discover
+    participant QC as SQS children-events
     participant CW as children-worker
 
     DW->>LLM: run the personality generation job (prompt built server-side)
     LLM-->>DW: analysis
-    DW->>DDB: one transaction: validate + save personality, job done, outbox row (region = this region)
+    DW->>DDB: one transaction: validate + save personality (status ready), job done, outbox row (region = this region)
     DW->>DDB: relay: change stream sees the outbox row for my region
     DW->>SNS: Publish(event_type = discover.personality_finalised)
     DW->>DDB: set published_at
     SNS-->>QG: copy (filter matches)
     SNS-->>QT: copy (filter matches)
-    SNS-->>QC: copy (filter matches)
-    Note over SNS: release-events isn't subscribed to discover.*, so it gets nothing
+    Note over SNS: children and release aren't subscribed to discover.personality_finalised
     GW->>QG: long-poll ReceiveMessage
     GW->>GW: skip if version is not newer (duplicate or out of order)
     GW->>GW: update personality_inputs (version-checked upsert)
     GW->>QG: DeleteMessage
+    B->>DS: parent passes the reveal splash: POST /children/{id}/personality/viewed
+    DS->>DDB: one transaction: viewed_at (only if status is ready) + outbox discover.completed
+    DS-->>B: 200
+    DW->>SNS: relay publishes discover.completed
+    SNS-->>QC: copy (filter matches)
     CW->>QC: long-poll ReceiveMessage
     CW->>CW: one transaction: progress.discover = true, plus outbox child.progress_changed only if the flag changed
     CW->>QC: DeleteMessage
@@ -600,16 +608,22 @@ This costs one internal call only in the rare case where the copy is behind; nor
 |---|---|---|---|
 | `user.deletion_requested` | auth | — | every service holding user data |
 | `user.data_deleted` | each service | `service` | auth (deletion saga) |
-| `user.role_changed` | auth | `role` | audit, notifications |
-| `user.profile_updated` | users | `first_name`, `middle_name`, `last_name` | connect (display names) |
-| `child.created`, `child.updated` | children | `user_id`, `name`, `age`, `gender`, `school` | onboarding, discover, grow, transform, release, connect |
-| `child.deleted` | children | `user_id` | every circle (delete that child's data) |
+| `user.role_changed` | auth | `role` | **Reserved, not published yet:** no service consumes it. Role changes are already audited in auth's `audit` collection and alarmed (11.3). Publish it when a consumer exists, such as a notification sender. |
+| `user.profile_updated` | users | `first_name`, `middle_name`, `last_name` | **Reserved, not published yet:** its only planned consumer is connect (display names), which doesn't exist. Publish it when connect is built. |
+| `child.created`, `child.updated` | children | `user_id`, `name`, `age`, `gender`, `school`, `is_deleted` (soft delete, 10.2) | onboarding, discover, grow, transform, release (and connect once built) |
+| `child.deleted` | children | `user_id` | every circle (delete that child's data; published by the purge, 30 days after the soft delete) |
 | `child.progress_changed` | children | the seven progress flags | every circle (unlock checks, 12.4) |
-| `onboarding.conversation_completed`, `onboarding.answers_updated` | onboarding | `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` (today's seven answers; add new ones as optional fields, 7.8) | discover, grow, transform, release; children (progress) |
-| `discover.personality_finalised` | discover | `traits` (summary), `strengths` | grow, transform; children (progress) |
-| `grow.area_completed`, `grow.area_updated` | grow | `area_id`, `area_name`, answer summary, recommendations | transform, release |
+| `onboarding.conversation_completed` | onboarding | `strengths`, `hobbies`, `thinking_pattern`, `communication_style`, `energy_level`, `social_behaviour`, `emotional_behaviour` (today's seven answers; add new ones as optional fields, 7.8) | discover (starts the personality), grow, transform, release; children (progress) |
+| `onboarding.answers_updated` | onboarding | the same seven answers | grow, transform, release. Not discover: the personality isn't regenerated when answers change (12.1). |
+| `discover.personality_finalised` | discover | `traits` (summary), `strengths` | grow, transform (copies) |
+| `discover.completed` | discover | — | children (progress): the parent has passed the reveal splash |
+| `grow.area_completed`, `grow.area_updated` | grow | `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations` | transform (Life Pathway; an update clears that area's milestones), release |
 | `grow.completed` | grow | — | children (progress) |
-| `transform.visited`, `release.visited`, `connect.visited` | each | — | children (progress) |
+| `transform.completed` | transform | — | children (progress) |
+| `release.completed` | release | — | children (progress) |
+| `connect.visited` | connect | — | children (progress) |
+
+**An event is published only once a service consumes it:** an outbox write and a publish with no subscriber cost something and help nothing. Reserved events stay in the catalogue so their names and payloads are agreed in advance.
 
 **Payloads carry only what consumers need.** Each payload field is someone's local copy, so fewer fields means less duplicated personal data.
 
@@ -618,7 +632,7 @@ This costs one internal call only in the rare case where the copy is behind; nor
 | Service | Local copies (collection) | From |
 |---|---|---|
 | every circle | `child_access {_id = child id, user_id, location, name, age, gender, is_deleted, progress}` (fields in 4.1) | `child.*` |
-| discover | `onboarding_inputs` | `onboarding.*` |
+| discover | `onboarding_inputs` | `onboarding.conversation_completed` |
 | grow | `onboarding_inputs`, `personality_inputs` | `onboarding.*`, `discover.*` |
 | transform | `onboarding_inputs`, `personality_inputs`, `growth_inputs` | `onboarding.*`, `discover.*`, `grow.*` |
 | release | `onboarding_inputs`, `growth_inputs` | `onboarding.*`, `grow.*` |
@@ -652,8 +666,8 @@ flowchart LR
     P -- "completed" --> CH
     D -- "completed" --> CH
     G -- "completed" --> CH
-    T -- "visited" --> CH
-    RL -- "visited" --> CH
+    T -- "completed" --> CH
+    RL -- "completed" --> CH
     C -- "visited" --> CH
     CH -. "child.* events to every circle" .-> P
 ```
@@ -706,8 +720,10 @@ Results the client used to "finalise" (for example `pending_personality_vm` → 
 5. Verify the password, issue tokens, create a `sessions` row with a new `family_id`, and warm the authz cache.
 
 **Refresh-token rotation with reuse detection:**
-- Each refresh issues a new refresh token in the same `family_id` and deletes the old session.
-- If an already-used refresh token is presented again, it was stolen: revoke the whole family, and set `tokens_revoked_at`.
+- Each refresh issues a new refresh token in the same `family_id`, and marks the old session `rotated_at` / `replaced_by` instead of deleting it.
+- If a rotated token is presented again **within 30 seconds**, it's a concurrent refresh (two tabs at once): issue another pair in the same family.
+- **Later than that**, the token was stolen: delete every session in the family, and set `tokens_revoked_at`.
+- **Log out everywhere:** `POST /api/v1/auth/logout-all` sets `tokens_revoked_at` and deletes all the user's sessions.
 
 Login runs in the bootstrap region (edge PURE_BYPASS); step 2 may be one cross-region read.
 
@@ -822,9 +838,11 @@ sequenceDiagram
 ### 10.2 Child deletion
 
 `DELETE /api/v1/children/{id}`:
-1. The children service soft-deletes the child and publishes `child.deleted`.
-2. Each circle deletes its data for that child, plus its S3 objects (avatar, plan photos), and drops the child from its `child_access` copy.
-3. A purge job hard-deletes the child after the soft-delete window.
+1. **Soft delete:** the children service sets `is_deleted` and publishes `child.updated {is_deleted: true}`. Each circle marks its `child_access` copy deleted, so the child disappears everywhere at once, but its data is kept for **30 days**, as today's soft delete promises.
+2. **Purge:** after 30 days, the `children-worker` purge job hard-deletes the child and its avatar, and publishes `child.deleted`.
+3. **Each circle then deletes** its data for that child, plus its S3 objects (plan photos), and drops the child from its `child_access` copy.
+
+There's no restore endpoint; within the 30 days, support can restore a child by clearing `is_deleted`. Account deletion (10.3) skips the 30 days and deletes everything at once.
 
 ### 10.3 Account deletion
 
@@ -884,8 +902,8 @@ URLs name **resources**; permission checks decide **who** may act on them. There
 
 | Resource | Endpoint | Permission |
 |---|---|---|
-| Own account | `GET /api/v1/auth/me`, `DELETE /api/v1/auth/account` | signed in |
-| Accounts (list, find by email) | `GET /api/v1/auth/accounts`, `GET /api/v1/auth/accounts?email=…` | `accounts:list` |
+| Own account | `GET /api/v1/auth/me`, `POST /api/v1/auth/logout-all`, `DELETE /api/v1/auth/account` | signed in |
+| Accounts (list, find by email) | `GET /api/v1/auth/accounts`, `POST /api/v1/auth/accounts/search` (email in the body, never in a URL) | `accounts:list` |
 | Lock, unlock | `POST /api/v1/auth/accounts/{id}/lock`, `…/unlock` | `accounts:lock` |
 | Role | `PATCH /api/v1/auth/accounts/{id}/role` | `accounts:role` |
 | Allow-list | `GET/POST/DELETE /api/v1/auth/allowed-emails…` | `allowed_emails:read` / `:write` |
@@ -937,11 +955,11 @@ The permission check is the single place every request passes, so it writes the 
 | Service | Database: collections | Main fields (from today's `children`, `growth_areas`, …) |
 |---|---|---|
 | children | `children`: `children`, `outbox` | `_id` (child id), `user_id`, `location`, `name`, `age`, `gender`, `school`, `avatar_id` (emoji avatar), `avatar_key` (S3 key of an uploaded photo), `progress {profile, conversation, discover, grow, transform, release, connect}`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`, `version` |
-| onboarding | `onboarding`: `conversations`, `child_access`, `outbox` | One `conversations` document per child: the seven answers, the resume step, status and completion time (fields below) |
+| onboarding | `onboarding`: `conversations`, `child_access`, `outbox` | One `conversations` document per child, created when the chat is finished: the seven answers and the completion time (fields below) |
 | discover | `discover`: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox` | `view_model`, raw `analysis`, `status` (`generating` / `ready` / `failed`), `finalised_at` (fields below) |
-| grow | `grow`: `growth_areas`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox` | Per area: answers, `parent_questions`, `child_rounds`, recommendations, child activity, `life_pathway_milestones`, status |
+| grow | `grow`: `growth_areas`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox` | Per area: answers, `parent_questions`, `child_rounds`, recommendations, child activity, status |
 | transform | `transform`: `plans`, `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox` | **One document per child:** `ask`, `plan` (main page and 3-month plan), `track_steps`, `track_done`, `track_inputs`, `track_sittings`, `applied`, `act_inputs`, `act_counts`, `feedback`, `event_name`, `event_date`, `photos` (S3 keys) |
-| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox` | `source`, `items`, `watching`, `span`, `started_at`, `status`, `visited_at` (fields below) |
+| release | `release`: `observations`, `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox` | `source`, `items`, `watching`, `span`, `started_at`, `status`, `completed_at` (fields below) |
 | connect | `connect` (when built) | TBD |
 
 **Today's child fields that change:**
@@ -950,8 +968,8 @@ The permission check is the single place every request passes, so it writes the 
 |---|---|---|
 | `avatar_url` (stores the S3 key; the API swaps it for a presigned URL on read) | `avatar_key` in children. The API still returns a short-lived `avatar_url`, built on read as today. | The stored value is a key, not a URL, so the name says so |
 | `created_date` (an API alias of `created_at`; lists sort by `-created_date`) | `created_at` in the API too; lists sort by `-created_at` | One name for one field |
-| `onboarding_completed` (set by the client with `PATCH`; the backend then sets `conversational_onboarding_completed`) | Onboarding's own `completed_at`, set **by the onboarding service** when the seventh answer is saved. It publishes `onboarding.conversation_completed`, and children sets `progress.conversation`. | The client no longer reports its own completion |
-| `onboarding_phase` (1 / 2 / 3), `current_phase` (always `"foundation"`) | **Dropped.** Children's `progress` says which stage a child is at, and `conversations.current_step` says where to resume the chat. | The phase number duplicated progress; `current_phase` never changes |
+| `onboarding_completed` (set by the client with `PATCH`; the backend then sets `conversational_onboarding_completed`) | Onboarding's own `completed_at`, set **by the onboarding service** when the chat's answers are saved at the end. It publishes `onboarding.conversation_completed`, and children sets `progress.conversation`. | The client no longer reports its own completion |
+| `onboarding_phase` (1 / 2 / 3), `current_phase` (always `"foundation"`) | **Dropped.** Children's `progress` says which stage a child is at. While the chat is in progress, its place is kept in the app, as today. | The phase number duplicated progress; `current_phase` never changes |
 | `strengths` … `emotional_behaviour` on the child | `conversations.answers` in onboarding | The answers belong to the circle that collects them |
 | `onboarding_profile_completed` (set by `POST …/progress/{flag}`) | Children sets `progress.profile` itself, when `name`, `age` and `gender` are first all present after a create or update | The profile step's data is the child, so children can derive it without being told |
 | `visited_tabs` (initialised and `$addToSet` by `PATCH`, read by no client) | **Dropped**, with its handling in `routers/children.py` | Unused, like `last_visited_path` |
@@ -970,7 +988,7 @@ The permission check is the single place every request passes, so it writes the 
 | `school` | string, ≤ 300 | — | |
 | `avatar_id` | string, ≤ 100 | — | Emoji avatar (e.g. `capper-boy`). Mutually exclusive with `avatar_key`. |
 | `avatar_key` | string | — | S3 key of an uploaded photo under the child's prefix. The API returns a short-lived `avatar_url` built from it. |
-| `progress` | object | ✅ | `{profile, conversation, discover, grow, transform, release, connect}`, all bool, default `false`, one-way (12.4). `profile` is set by children itself; the rest follow completion and visit events. |
+| `progress` | object | ✅ | `{profile, conversation, discover, grow, transform, release, connect}`, all bool, default `false`, one-way (12.4). `profile` is set by children itself; the rest follow each circle's completion event (connect: its visit event). |
 | `is_deleted`, `deleted_at` | bool, date | — | Soft delete (10.2) |
 | `created_at`, `updated_at`, `schema_version` | | ✅ | Conventions (section 4) |
 | `version` | int | ✅ | Incremented on every write; carried by `child.*` events (7.4) |
@@ -993,22 +1011,19 @@ No `profiles` collection: the profile step's data is the child in children. No `
 |---|---|---|---|
 | `_id` | string (UUIDv4) | ✅ | |
 | `user_id`, `child_id`, `location` | string | ✅ | Unique `{location, user_id, child_id}`: one conversation per child (section 14) |
-| `status` | enum `in_progress` / `completed` | ✅ | |
-| `current_step` | int, 0–7 | ✅ | Number of questions answered; the chat resumes here, as today's resume summary does |
-| `answers.strengths` | string[] | — | Question 1 |
-| `answers.hobbies` | string[] | — | Question 2 |
-| `answers.thinking_pattern` | string | — | Question 3 |
-| `answers.communication_style` | string | — | Question 4 |
-| `answers.energy_level` | string | — | Question 5 |
-| `answers.social_behaviour` | string | — | Question 6 |
-| `answers.emotional_behaviour` | string | — | Question 7 |
-| `answered_at` | object | — | Per-answer timestamps, keyed by field name |
-| `started_at` | date | ✅ | First answer saved |
-| `completed_at` | date | — | Set by the service when the seventh answer is saved; publishes `onboarding.conversation_completed` |
+| `answers.strengths` | string[] | ✅ | Question 1 |
+| `answers.hobbies` | string[] | ✅ | Question 2 |
+| `answers.thinking_pattern` | string | ✅ | Question 3 |
+| `answers.communication_style` | string | ✅ | Question 4 |
+| `answers.energy_level` | string | ✅ | Question 5 |
+| `answers.social_behaviour` | string | ✅ | Question 6 |
+| `answers.emotional_behaviour` | string | ✅ | Question 7 |
+| `completed_at` | date | ✅ | When the chat was finished; publishes `onboarding.conversation_completed` |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | Conventions; `version` is carried by `onboarding.*` events |
 
-- **Saving:** each answer is a `PATCH /api/v1/children/{id}/onboarding` with one field, so a parent can leave and resume. Today the chat holds answers in the browser and saves them on the child at the end.
-- **Editing later:** changing an answer after completion publishes `onboarding.answers_updated` with the new values.
+- **Saving: once, at the end.** The chat keeps the answers in the app while the parent goes through it, as today. When the seventh is given, it sends all seven in one `PUT /api/v1/children/{id}/onboarding`. That's one call per conversation instead of seven, and the document exists only once the conversation is complete, so there's no `in_progress` state on the server.
+- **Leaving mid-chat:** the place is kept in the app, as today's resume summary does. Nothing is stored on the server until the end, so another device starts the chat again.
+- **Editing later:** sending all seven answers again after completion publishes `onboarding.answers_updated` with the new values. The personality isn't regenerated.
 - **Validation:** the seven fields and their allowed values live in `onboarding`'s schema. Chat wording and UI stay in the clients.
 
 **`discover` database, `personalities` collection** (one per child):
@@ -1019,14 +1034,16 @@ No `profiles` collection: the profile step's data is the child in children. No `
 | `user_id`, `child_id`, `location` | string | ✅ | Unique per child |
 | `status` | enum `generating` / `ready` / `failed` | ✅ | The page shows "generating…" until `ready` |
 | `view_model` | object | — | What the Discover page renders. Today's `personality.view_model`, now **built and validated by the server** instead of by the browser's `adaptAiPersonalityToViewModel` |
-| `analysis` | object | — | The raw LLM output (today's `pending_personality_vm`). Kept for regeneration and support; never returned to clients |
+| `analysis` | object | — | The raw LLM output (today's `pending_personality_vm`). Kept for support; never returned to clients |
 | `source` | enum `llm` | ✅ | As today's `personality.source` |
-| `input_version` | int | ✅ | `onboarding_inputs` version it was built from; a newer one marks it stale |
 | `active_job_id` | string | — | The jobs lock (one generation per child) |
 | `finalised_at` | date | — | Publishes `discover.personality_finalised` |
+| `viewed_at` | date | — | Set by `POST …/personality/viewed` when the parent passes the reveal splash, only if `status` is `ready`; publishes `discover.completed` |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
 Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`.
+
+**No regeneration:** a personality is generated once, from the answers at the end of the conversation. Changing an answer later doesn't regenerate it or mark it out of date, so Discover needs no extra screen for that. A new generation happens only after a failure, or after "Start over", which deletes the child.
 
 **`grow` database, `growth_areas` collection** (one per child per area, as today):
 
@@ -1045,7 +1062,6 @@ Discover also has `jobs`, `child_access`, `onboarding_inputs`, `outbox`.
 | `recommendations` | string[], ≤ 50 | — | |
 | `ai_three_month_recommendations` | array | — | Generated (`generate_recommendations`) and stored directly; today's `pending_recommendations` staging is gone |
 | `feedback` | string, ≤ 2,000 | — | |
-| `life_pathway_milestones` | object | — | Generated (`generate_life_pathway`); cleared when `age` or `gender` changes, as today |
 | `active_jobs` | map of job type → job id | — | One generation per type per area |
 | `completed_at` | date | — | Publishes `grow.area_completed`; the first one also `grow.completed` |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
@@ -1058,6 +1074,7 @@ Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client
 |---|---|---|---|
 | `_id` | string (UUIDv4) | ✅ | |
 | `user_id`, `child_id`, `location` | string | ✅ | Unique per child |
+| `life_pathway` | map of area id → object | — | Life Pathway milestones per completed growth area, generated (`generate_life_pathway`). An area's entry is cleared when the child's `age` or `gender` changes (as today) or that area's answers change (`grow.area_updated`). Moved here from grow: the Life Pathway page is the Transform circle's page. |
 | `ask` | string, ≤ 2,000 | — | The parent's goal for the 90 days |
 | `plan` | object | — | Main page and 3-month plan, generated (`generate_ninety_day_plan`) |
 | `track_steps` | object | — | Event tracker, generated (`generate_event_tracker`) once the event is set |
@@ -1070,7 +1087,7 @@ Whole document ≤ 64 KB, as today's request cap. **Dropped** (read by no client
 | `event_set` | bool | ✅ | Default `false` |
 | `photos` | map of field key → string[] | — | S3 keys under the child's plan-photo prefix; the API returns short-lived URLs |
 | `active_jobs` | map of job type → job id | — | |
-| `visited_at` | date | — | First `POST …/transform/visit`; publishes `transform.visited` (12.4) |
+| `completed_at` | date | — | Set when `plan` exists and `event_set` is true, whichever happens last; publishes `transform.completed` (12.4) |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
 Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64 KB. Transform also has `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`.
@@ -1088,7 +1105,7 @@ Map keys follow today's pattern `^[a-zA-Z0-9:_-]{1,100}$`; whole document ≤ 64
 | `span` | string, ≤ 50 | — | |
 | `started_at` | date | — | Today a string (≤ 64); stored as a date |
 | `active_job_id` | string | — | |
-| `visited_at` | date | — | First visit; publishes `release.visited` (12.4) |
+| `completed_at` | date | — | Set when `watching` first becomes non-empty; publishes `release.completed` (12.4) |
 | `created_at`, `updated_at`, `schema_version`, `version` | | ✅ | |
 
 `items` ≤ 64 KB, as today. Release also has `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`.
@@ -1104,8 +1121,8 @@ Two other changes from today:
 | Home (children and progress) | `GET /api/v1/children` | children | 1 query |
 | Onboarding | `GET /api/v1/children/{id}/onboarding` | onboarding | 1 (`conversations`; child name from `child_access` in the same database) |
 | Discover | `GET /api/v1/children/{id}/personality` | discover | 1–2 |
-| Grow, Life Pathway | `GET /api/v1/children/{id}/growth-areas` | grow | 1 query |
-| Transform | `GET /api/v1/children/{id}/transform` | transform | 1 (the whole plan document) |
+| Grow | `GET /api/v1/children/{id}/growth-areas` | grow | 1 query |
+| Transform (Life Pathway and 90-day plan) | `GET /api/v1/children/{id}/transform` | transform | 1–2 (the plan document, and `growth_inputs` for the area list) |
 | Release | `GET /api/v1/children/{id}/observations` | release | 1 |
 
 Pages no longer gather other circles' data, because generation happens server-side (section 8).
@@ -1117,23 +1134,37 @@ Pages no longer gather other circles' data, because generation happens server-si
 
 ### 12.4 Unlocking circles
 
-- **Owner:** children owns progress, set by completion events (`discover.personality_finalised` → `discover`, `grow.completed` → `grow`, …).
+- **Owner:** children owns progress, set by completion events: `discover.completed` → `discover`, `grow.completed` → `grow`, `transform.completed` → `transform`, `release.completed` → `release`, `connect.visited` → `connect`.
 - **Checks:** each circle checks its unlock condition against `child.progress_changed` in its own `child_access` copy (e.g. grow requires `discover`), with read-through on a miss (7.5).
 - **Confirm before deny (7.5):** if the copy says "locked", the circle asks the **previous circle**, which owns the completion fact. It doesn't ask children, whose progress is itself an event behind that circle.
 
   | Circle | Unlocks when | If its copy says "locked", it asks |
   |---|---|---|
+  | onboarding | the profile step done (`progress.profile`) | children: `GET /internal/children/{id}` |
   | discover | conversational onboarding completed | onboarding: `GET /internal/onboarding/children/{id}/status` |
-  | grow | personality finalised | discover: `GET /internal/discover/children/{id}/status` |
+  | grow | Discover done (personality ready and the reveal passed) | discover: `GET /internal/discover/children/{id}/status` |
   | transform | a growth area completed | grow: `GET /internal/grow/children/{id}/status` |
-  | release | transform visited | transform: `GET /internal/transform/children/{id}/status` |
-  | connect | release visited | release: `GET /internal/release/children/{id}/status` |
+  | release | transform completed (90-day plan generated and event date set) | transform: `GET /internal/transform/children/{id}/status` |
+  | connect | release completed (at least one pattern being watched) | release: `GET /internal/release/children/{id}/status` |
 
-  - Each `…/status` returns `{completed or visited, version}` from the circle's own database: one indexed read.
-  - Example: the parent finishes Discover and clicks Grow within a second. Grow's copy still says `discover = false`, so grow asks discover, gets "finalised", updates its copy and opens normally. Without this step the parent would wrongly see a locked circle.
-  - A circle can also check its own copy of the completion event first. Grow, for instance, consumes `discover.personality_finalised` directly into `personality_inputs`, so either that or the progress flag counts as unlocked.
+  - Each `…/status` returns `{completed, version}` from the circle's own database: one indexed read.
+  - Example: the parent passes the Discover reveal and clicks Grow within a second. Grow's copy still says `discover = false`, so grow asks discover, gets `completed`, updates its copy and opens normally. Without this step the parent would wrongly see a locked circle.
 - **Rule:** one-way and in order, exactly as `mark_journey_progress` enforces today.
-- **"Visited" circles** (transform, release, connect): the page calls `POST /api/v1/children/{id}/<circle>/visit` once, on its circle service, which publishes `<circle>.visited`. A `GET` never has that side effect. This replaces today's `POST /children/{id}/progress/{flag}` for those three flags.
+- **What "done" means for each circle.** The circle's service decides it from its own data. Discover and Connect also need one action from the parent (passing the reveal, opening Connect), and the server accepts it only when the data condition holds, so it can't be used to skip ahead:
+
+  | Circle | Done when | Event | Today |
+  |---|---|---|---|
+  | discover | **The personality is ready and the parent has passed the reveal splash** (`POST …/personality/viewed`, refused unless `status` is `ready`) | `discover.completed` | `discover_completed`, set by the client on the same splash, with no check that a personality exists |
+  | grow | The first growth area reaches `completed` | `grow.completed` | `grow_completed`, already derived from `growth_areas` |
+  | transform | **The 90-day plan is generated (`plan` set) and the parent has set the Day-90 event (`event_set = true`, with `event_date`)** | `transform.completed` | `transform_visited`, set on first visit |
+  | release | **The parent picks at least one observation pattern to watch (`watching` goes from empty to non-empty)** | `release.completed` | `release_visited`, set on first visit |
+  | connect | Opened for the first time (no completion state yet) | None while children records the visit itself; `connect.visited` once a connect service exists | `connect_visited`, set on first visit |
+
+  - **Product change:** today Release unlocks as soon as Transform is opened, and Connect as soon as Release is opened. Now each needs the previous circle's real work done.
+  - **Where it's set:** transform sets `completed_at` in the same transaction as the write that makes the condition true, whichever comes last: the plan job finishing, or the `PATCH` that sets the event. Release does the same on the `PATCH` that first adds a pattern to `watching`. That write also adds the outbox row.
+  - **One-way:** clearing the event or un-watching every pattern later doesn't re-lock the next circle.
+  - **Connect** keeps a visit endpoint, `POST /api/v1/children/{id}/connect/visit`, until it has a completion state of its own; then it follows the same pattern. A `GET` never has that side effect.
+  - This replaces today's `POST /children/{id}/progress/{flag}` for every flag.
 
 ---
 
@@ -1205,6 +1236,99 @@ These capabilities are used by many circles and hold no data:
 
 It has no database and doesn't publish events. Like every service, it also serves `/health` for its target group.
 
+### 13.4 Full API list
+
+Every endpoint in the plan, by service. Request, response and error details per endpoint are in [auth-users-split-api.md](auth-users-split-api.md). **✳** marks an endpoint first defined here: the rest of this document implies it, through today's equivalent or a feature it describes, but doesn't spell it out. Each public path falls under one ALB rule in 13.1.
+
+**Public API** (port 8000, through CloudFront and the public ALB):
+
+| Service | Method | URL | Today's equivalent |
+|---|---|---|---|
+| auth | POST | `/api/v1/auth/register` | same |
+| auth | POST | `/api/v1/auth/login` | same |
+| auth | POST | `/api/v1/auth/google` | same |
+| auth | POST | `/api/v1/auth/refresh` | same |
+| auth | POST | `/api/v1/auth/logout` | same |
+| auth | POST | `/api/v1/auth/logout-all` ✳ | none |
+| auth | GET | `/api/v1/auth/me` | same |
+| auth | DELETE | `/api/v1/auth/account` | `DELETE /api/v1/user/me` |
+| auth | GET | `/api/v1/auth/accounts` | `GET /api/v1/admin/users` |
+| auth | POST | `/api/v1/auth/accounts/search` ✳ (email in the body) | `GET /api/v1/admin/users/by-email/{email}` |
+| auth | POST | `/api/v1/auth/accounts/{id}/lock` | `PATCH /api/v1/admin/users/{id}/lock` |
+| auth | POST | `/api/v1/auth/accounts/{id}/unlock` | `PATCH /api/v1/admin/users/{id}/unlock` |
+| auth | PATCH | `/api/v1/auth/accounts/{id}/role` | none (role set by hand in mongosh) |
+| auth | GET | `/api/v1/auth/allowed-emails` | `GET /api/v1/admin/allowed-emails` |
+| auth | POST | `/api/v1/auth/allowed-emails/search` ✳ (email in the body) | `GET /api/v1/admin/allowed-emails/{email}` |
+| auth | POST | `/api/v1/auth/allowed-emails` | `POST /api/v1/admin/allowed-emails` |
+| auth | DELETE | `/api/v1/auth/allowed-emails/{key}` ✳ | `DELETE /api/v1/admin/allowed-emails/{email}` |
+| users | GET | `/api/v1/users/{user_id}/profile` (`me` allowed) | none (names are on `GET /auth/me` today) |
+| users | PATCH | `/api/v1/users/{user_id}/profile` | none |
+| users | GET | `/api/v1/users/{user_id}/preferences` | `GET /api/v1/user/preferences` |
+| users | PATCH | `/api/v1/users/{user_id}/preferences` | `PATCH /api/v1/user/preferences` |
+| users | GET | `/api/v1/users/profiles` ✳ (`?ids=…`; admins: names for up to 100 accounts) | none (`full_name` is on today's admin user list) |
+| children | GET | `/api/v1/children` (`?sort=-created_at`; `?user_id=` for admin tools only) | same |
+| children | POST | `/api/v1/children` | same |
+| children | GET | `/api/v1/children/{id}` | same |
+| children | PATCH | `/api/v1/children/{id}` | same, without the onboarding and personality fields |
+| children | DELETE | `/api/v1/children/{id}` | same |
+| children | POST | `/api/v1/children/{id}/avatar/presign` ✳ | same path |
+| onboarding | GET | `/api/v1/children/{id}/onboarding` | the trait fields of `GET /children/{id}` |
+| onboarding | PUT | `/api/v1/children/{id}/onboarding` (all seven answers, once at the end of the chat) | the trait fields of `PATCH /children/{id}`, also sent once at the end |
+| discover | GET | `/api/v1/children/{id}/personality` | `personality` on `GET /children/{id}` |
+| discover | POST | `/api/v1/children/{id}/personality/generation` | `POST /api/v1/jobs` (personality analysis) |
+| discover | GET | `/api/v1/children/{id}/personality/generation/{job_id}` | `GET /api/v1/jobs/{job_id}` |
+| discover | POST | `/api/v1/children/{id}/personality/viewed` ✳ | `POST /children/{id}/progress/discover_completed` |
+| grow | GET | `/api/v1/children/{id}/growth-areas` | `GET /api/v1/user/completed-growth-areas` |
+| grow | PUT | `/api/v1/children/{id}/growth-areas/{area_id}` ✳ | `POST /api/v1/user/completed-growth-areas` (upsert one area) |
+| grow | POST | `/api/v1/children/{id}/growth-areas/{area_id}/generation` ✳ (body `kind`: `parent_questions`, `child_rounds`, `recommendations`) | `POST /api/v1/jobs` |
+| grow | GET | `/api/v1/children/{id}/growth-areas/{area_id}/generation/{job_id}` ✳ | `GET /api/v1/jobs/{job_id}` |
+| transform | GET | `/api/v1/children/{id}/transform` | `GET /api/v1/user/ninety-day-plan` |
+| transform | PATCH | `/api/v1/children/{id}/transform` ✳ | `PATCH /api/v1/user/ninety-day-plan` |
+| transform | POST | `/api/v1/children/{id}/transform/generation` ✳ (body `kind`: `life_pathway` with `area_id`, `plan`, `event_tracker`) | `POST /api/v1/jobs` |
+| transform | GET | `/api/v1/children/{id}/transform/generation/{job_id}` ✳ | `GET /api/v1/jobs/{job_id}` |
+| transform | POST | `/api/v1/children/{id}/transform/photos/presign` ✳ | `POST /api/v1/user/ninety-day-plan/photo-presign` |
+| release | GET | `/api/v1/children/{id}/observations` | `GET /api/v1/user/observations` |
+| release | PATCH | `/api/v1/children/{id}/observations` ✳ | `PATCH /api/v1/user/observations` |
+| release | POST | `/api/v1/children/{id}/observations/generation` ✳ | `POST /api/v1/jobs` |
+| release | GET | `/api/v1/children/{id}/observations/generation/{job_id}` ✳ | `GET /api/v1/jobs/{job_id}` |
+| children (connect, until it's built) | POST | `/api/v1/children/{id}/connect/visit` | `POST /children/{id}/progress/connect_visited` |
+| platform | POST | `/api/v1/speech/transcriptions` | `POST /api/v1/audio/transcribe` |
+| platform | GET | `/api/v1/downloads/apk` (signed in) | same |
+| platform | GET | `/api/health` | same |
+
+**Removed:** `POST /api/v1/llm/invoke` and `GET /api/v1/llm/providers` (no replacement: prompts are built server-side). Also removed, with their replacements in the table above:
+- `POST /api/v1/jobs` and `GET /api/v1/jobs/{job_id}`: each circle's `…/generation`;
+- `DELETE /api/v1/user/completed-growth-areas`: no replacement. Neither app calls it; "Start over" deletes the whole child.
+- `POST /api/v1/children/{id}/progress/{flag}`: progress follows each circle's completion event, discover's `…/personality/viewed` and connect's visit endpoint;
+- every `/api/v1/admin/*` and `/api/v1/user/*` path: auth, users and the circle services.
+
+**Health** (port 8000, called by each target group directly, not routed): `GET /health` on every HTTP service.
+
+**Internal API** (port 8001, through Cloud Map only, with a service token, 13.2):
+
+| Service | Method | URL | Used for |
+|---|---|---|---|
+| auth | GET | `/internal/authz/{user_id}` | Authz cache fill (9.3) |
+| auth | GET | `/internal/auth/users/{user_id}/email` ✳ | A service that needs a user's email (5.3) |
+| users | PUT | `/internal/users/{user_id}` | Registration saga: create the profile (10.1) |
+| users | DELETE | `/internal/users/{user_id}` ✳ | Registration saga: undo step 4 (10.1) |
+| children | GET | `/internal/children/{id}` | Read-through of `child_access` (7.5) |
+| onboarding | GET | `/internal/onboarding/children/{id}/status` | Confirm-before-deny for discover (12.4) |
+| onboarding | GET | `/internal/onboarding/children/{id}/answers` ✳ | Read-through of `onboarding_inputs` (7.5) |
+| discover | GET | `/internal/discover/children/{id}/status` | Confirm-before-deny for grow (`completed` = personality ready and reveal passed) |
+| discover | GET | `/internal/discover/children/{id}/summary` ✳ | Read-through of `personality_inputs` |
+| grow | GET | `/internal/grow/children/{id}/status` | Confirm-before-deny for transform |
+| grow | GET | `/internal/grow/children/{id}/areas` ✳ | Read-through of `growth_inputs` |
+| transform | GET | `/internal/transform/children/{id}/status` | Confirm-before-deny for release |
+| release | GET | `/internal/release/children/{id}/status` | Confirm-before-deny for connect |
+
+Each `…/status` returns `{completed, version}`; each read-through endpoint returns exactly the fields of the local copy it fills (4.1), with the owner's `version`.
+
+**Routing check:**
+- every public path falls under one ALB rule in 13.1;
+- `…/avatar/presign` doesn't match a circle prefix, so it reaches children;
+- `…/transform/photos/presign` and every `…/generation` path reach their circle.
+
 ---
 
 ## 14. Indexes and the Global Cluster
@@ -1244,7 +1368,7 @@ It has no database and doesn't publish events. Like every service, it also serve
 | Atlas database user | Read/write on its own database only |
 | Secrets Manager secret | Its own `MONGODB_URI`, plus only its keys. JWT private key and pepper: auth only. LLM keys: generating workers and platform only. |
 | ECS execution role | Can read only that service's secret |
-| ECS task role | Only that service's AWS access (e.g. children: its avatar prefix; transform: its plan-photo prefix; publishers: `sns:Publish` on the topic for their own event types; consumers: their own queue) |
+| ECS task role | Only that service's AWS access. For example:<br>– children: its avatar prefix;<br>– transform: its plan-photo prefix;<br>– platform: `s3:ListBucket` and `s3:GetObject` on `app-assets/applications/android/` in the assets bucket (us-east-1), for the APK link;<br>– publishers: `sns:Publish` on the topic for their own event types;<br>– consumers: their own queue. |
 | ECR repository | One image per service (`SERVICE` build argument); each ships only its own dependencies |
 | Redis RBAC user | One ElastiCache user per service (IAM auth), replacing today's shared AUTH token (9.3). Reads `authz:*`; auth also writes it. Rate-limit keys under the service's own prefix, plus the shared LLM-limit keys for generating services. |
 
@@ -1468,7 +1592,7 @@ backend/
 | **4. onboarding, discover** | Each with its database and events; discover with server-side generation. Discover consumes onboarding's events. | Completing the conversation makes Discover's personality appear without the browser building prompts |
 | **5. grow, transform, release** | Same pattern, with their local copies | Each page loads with one request; `/llm/invoke` is gone |
 | **6. platform** | Speech and downloads | Voice input works in every circle |
-| **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec;<br>– `/user/me` → `/users/me/profile` and `/auth/account`;<br>– admin screens → `/auth/accounts…`;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`;<br>– `POST …/progress/{flag}` → `…/visit`; `onboarding_completed` reads (e.g. `ChildCard`) → `progress.conversation`;<br>– `-created_date` sort → `-created_at`; `avatar_url` stays in responses;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. The mobile build is released together with the backend, before the first real users: store review means an installed app can't be updated at once. |
+| **7. Web and mobile clients** | `frontend` (web) and `frontend-app` (React Native) move to the new API, alongside steps 2–6 rather than after them:<br>– a generated client per service spec;<br>– `/user/me` → `/users/me/profile` and `/auth/account`;<br>– admin screens (`AdminAllowedEmails.tsx`, `Admin.tsx`) → `/auth/accounts…` and `/auth/allowed-emails…`; finding an account or checking one email uses `POST …/search` with the email in the body (never in a URL), and removing an entry uses its `key`;<br>– **new on the admin screen:** a role control (parent / admin) per account → `PATCH /auth/accounts/{id}/role`, refusing the last admin; names in the account list come from one `GET /users/profiles?ids=…` per page of accounts, not one call per account (today `full_name` is on the account itself);<br>– **new profile screen** in account settings: edit first, middle and last name and the three address lines → `GET` / `PATCH /users/me/profile`. The header and welcome screens read the first name from the same profile, replacing `user.full_name` from `/auth/me`;<br>– **new in account settings:** a "Sign out of all devices" button → `POST /auth/logout-all`, then back to the sign-in screen;<br>– `/jobs` and `InvokeLLM` → per-circle `…/generation`; the clients send no prompts and do no write-back, so `useJob`'s enqueue payload and the `*Prompt.ts` builders go;<br>– **onboarding (conversational chat):** answers stay in the app during the chat, as today. At the end, one `PUT …/onboarding` with all seven replaces the single `Child.update` with the trait fields, `onboarding_phase` and `onboarding_completed`. `GET …/onboarding` tells the app whether the chat is already done;<br>– **discover (Personality Journey and Profile):** read `GET …/personality` and show its `status`. The apps **no longer start the personality job** after the chat (discover does it on `onboarding.conversation_completed`), no longer adapt the result (`adaptAiPersonalityToViewModel` goes), and no longer save it with `Child.update`. `POST …/personality/generation` is used only for the retry button after a failure, and when the page opens with `not_started`. When the parent passes the reveal splash, the app calls `POST …/personality/viewed` instead of `markProgress('discover_completed')`;<br>– **grow (Growth Areas and Life Pathway):** `completedGrowthAreas.list` / `append` → `GET …/growth-areas` / `PUT …/growth-areas/{area_id}`. Questions, activity rounds and recommendations come from `POST …/{area_id}/generation` with a `kind`, with no `pending_recommendations` step to finalise. `completedGrowthAreas.clear` is deleted;<br>– **transform (Life Pathway and 90-day plan):** one `GET …/transform` replaces `ninetyDayPlan.get` plus the growth-areas list. Life Pathway milestones come from `POST …/transform/generation` with `kind: "life_pathway"` and an `area_id`; the plan and event tracker use `kind: "plan"` / `"event_tracker"`. `PATCH …/transform` and `…/transform/photos/presign` replace the `/user/ninety-day-plan` calls, sending photo **keys**. The page no longer marks `transform_visited`;<br>– **release (Observations):** `GET` / `PATCH …/observations` replace `/user/observations`. "Start tracking" sends only `watching` and `span`. Patterns come from `POST …/observations/generation`, with no client promote step;<br>– **connect:** the Connect page calls `POST …/connect/visit` (served by children for now) instead of `markProgress('connect_visited')`;<br>– `POST …/progress/{flag}` → `…/personality/viewed` for discover, nothing for grow, transform and release (the server derives completion), `…/connect/visit` for connect; `onboarding_completed` reads (e.g. `ChildCard`) → `progress.conversation`;<br>– `-created_date` sort → `-created_at`; `avatar_url` stays in responses, but after an upload the client PATCHes the `avatar_key` from avatar/presign instead of the URL;<br>– `/audio/transcribe` → `/speech/transcriptions`.<br>Delete the prompt builders (`*Prompt.ts`), `RecommendationsPhase.tsx`, `ChildActivityGame.tsx` and the `last_visited_path` writes. | Both clients pass their tests against the new services in dev, with no call to a removed path. The mobile build is released together with the backend, before the first real users: store review means an installed app can't be updated at once. |
 | **8. Deletion** | 10.2 and 10.3 end to end, with a deletion-age alert | Killing any service mid-deletion still converges after a restart (test it) |
 | **9. Global Cluster** (DB-01's later stage) | Shard per section 14 and map zones | Writes land in the user's zone; login is still two point reads |
 | **Later: connect** | Its own service and database from the start | — |
