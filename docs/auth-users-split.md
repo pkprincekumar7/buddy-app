@@ -1558,30 +1558,123 @@ A query costs $0.005 per GB scanned, so a weekly report over a month of prod log
 
 ---
 
-## 16. Backend folder layout and build order
+## 16. Repository layout and build order
+
+The whole repository after the split. **[new]** is added, **[changed]** is edited, **[removed]** is deleted; anything unmarked stays as it is. Connect gets no folder until it has data of its own (13.4).
 
 ```text
-backend/
-├── common/            # the ONLY shared code
-│   ├── auth.py            JWT verify, authz cache, require(), require_self_or() → FastAPI deps
-│   ├── permissions.py     role → permission table
-│   ├── audit.py           audit events from the permission check
-│   ├── events/            outbox, relay, SNS publisher, SQS consumer, opt-in inbox, schemas/*.json
-│   ├── generation/        job model, LLM client, per-user Redis LLM limit, prompt helper
-│   ├── deletion.py        PARTICIPANTS
-│   ├── internal_client.py service tokens, Cloud Map DNS client (random IP, retry once, short keep-alive)
-│   ├── telemetry.py       OpenTelemetry setup and instrumentations, trace context in events (15.5)
-│   ├── emails.py, names.py, routing.py, limiter.py, logging.py, settings_base.py
-│   └── tests/
-├── auth/  users/  children/  onboarding/  discover/  grow/  transform/  release/  platform/  connect/
-│   ├── app/            HTTP: routers, models, db.py (own database + indexes)
-│   ├── worker/         generation jobs, outbox relay, event consumers (+ auth: change stream, sagas, reaper)
-│   ├── events.py       events it publishes and consumes
-│   ├── tests/          incl. the route-policy test and event contract tests
-│   └── requirements.txt
-├── tools/             export-openapi (one spec per service), promote-admin
-└── Dockerfile         --build-arg SERVICE=<name>
+buddy-app/
+├── backend/
+│   ├── common/                          [new]  the ONLY code shared between services
+│   │   ├── auth.py                             JWT verify (JWT_PUBLIC_KEYS), authz cache with 30 s local fallback, require(), require_self_or() as FastAPI deps (9.3, 11.2)
+│   │   ├── permissions.py                      role → permission table (11.2)
+│   │   ├── audit.py                            audit events written by the permission check (11.3)
+│   │   ├── routers.py                          deny-by-default router: refuses a route without a policy (11.2)
+│   │   ├── events/                             outbox, relay (own-region rows), SNS publisher, SQS consumer, opt-in inbox (7.3)
+│   │   │   └── schemas/                        versioned JSON Schemas, e.g. child.updated.v1.json (7.8)
+│   │   ├── generation/                         job model and queue, LLM client, per-user hourly LLM limit, prompt helper (8)
+│   │   ├── deletion.py                         PARTICIPANTS for the deletion saga (10.3)
+│   │   ├── internal_client.py                  service tokens, Cloud Map DNS client: random IP, retry once, 30 s keep-alive (13.2)
+│   │   ├── telemetry.py                        OpenTelemetry setup, trace context in events (15.5)
+│   │   ├── metrics.py                          PutMetricData for the 16 alarm and scaling metrics (15.5)
+│   │   ├── uploads.py                          presign, key prefixes, HeadObject check with the 5 MB limit (from today's services/s3_uploads.py)
+│   │   ├── emails.py                           normalise() and the HMAC key (6.3)
+│   │   ├── names.py                            full_name(first, middle, last) (5.3)
+│   │   ├── routing.py                          COUNTRY_TO_REGION, BLOCKED_COUNTRIES, resolve_region (from today's app/routing.py)
+│   │   ├── limiter.py                          slowapi rate limits in Valkey (from today's app/limiter.py)
+│   │   ├── logging.py                          JSON logs with trace_id and request_id (15.5)
+│   │   ├── settings_base.py                    settings every service shares
+│   │   └── tests/
+│   │
+│   ├── auth/                            [new]  public: register, login, google, refresh, logout(-all), me, account, accounts, allowed-emails
+│   │   ├── app/                                routers, models, db.py (auth database and indexes, section 14), internal router (port 8001)
+│   │   ├── worker/                             authz change stream, deletion saga, reservation reaper, outbox relay
+│   │   ├── events.py                           publishes user.deletion_requested; consumes user.data_deleted
+│   │   ├── tests/                              route-policy test, ownership matrix, event contract tests
+│   │   └── requirements.txt
+│   ├── users/                           [new]  profile, preferences, batch profile lookup; internal PUT/DELETE for the saga
+│   │   └── app/  worker/  events.py  tests/  requirements.txt
+│   ├── children/                        [new]  children, avatar presign, Connect visit (until connect exists); internal read-through
+│   │   └── app/  worker/  events.py  tests/  requirements.txt      worker also runs the 30-day purge (10.2)
+│   ├── onboarding/                      [new]  the conversation (PUT once at the end); internal status and answers
+│   │   └── app/  worker/  events.py  tests/  requirements.txt      no generation/: onboarding calls no LLM
+│   ├── discover/                        [new]  personality, generation, viewed; internal status and summary
+│   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
+│   ├── grow/                            [new]  growth areas, three generation kinds; internal status and areas
+│   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
+│   ├── transform/                       [new]  Life Pathway, 90-day plan, photos; internal status
+│   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
+│   ├── release/                         [new]  observations; internal status
+│   │   └── app/  worker/  generation/  events.py  tests/  requirements.txt
+│   ├── platform/                        [new]  speech-to-text, APK link, /api/health; no database, no worker
+│   │   └── app/  tests/  requirements.txt
+│   │
+│   ├── app/                             [removed]  today's single FastAPI app; its code moves into common/ and the services above
+│   ├── worker.py                        [removed]  today's shared jobs worker; each generating service has its own worker/
+│   ├── tests/                           [removed]  today's tests, rewritten into each service's tests/ and common/tests/
+│   ├── tools/
+│   │   ├── export-openapi.py            [changed]  writes one spec per service: openapi/<service>.json
+│   │   ├── promote-admin.py             [new]      first admin per environment (11.4)
+│   │   ├── atlas_zone_ranges.py                    unchanged (Global Cluster zones, section 14)
+│   │   └── mutate_handlers.py, handler_mutants/   [changed]  pointed at the new services
+│   ├── openapi/                         [new]  auth.json, users.json, children.json, … (replaces the root openapi.json)
+│   ├── Dockerfile                       [changed]  --build-arg SERVICE=<name>; installs common/ plus that service only
+│   ├── pyproject.toml                   [changed]  import-linter contract: services import only common (section 2)
+│   └── requirements*.txt                [changed]  split: common, then each service's own requirements.txt
+│
+├── openapi.json                         [removed]  replaced by backend/openapi/<service>.json
+├── docker-compose.yml                   [changed]  every runtime, MongoDB as a replica set, Valkey, LocalStack (SNS/SQS), seeded data (15.4)
+│
+├── modules/
+│   ├── alb/                             [changed]  allow no catch-all target, with a fixed 404 at priority 50000 (13.1)
+│   ├── ecs-service/                     [changed]  optional service_discovery input (Cloud Map registration), internal port 8001
+│   ├── redis/                           [changed]  RBAC: user group and one ElastiCache user per service with IAM auth, instead of auth_token (9.3)
+│   ├── network/                                    unchanged (optional SNS/SQS interface endpoints are a variable, 15.3)
+│   └── events/                          [new]  SNS topic, SQS queue + DLQ per consumer, filter policies, DLQ and age alarms (7.2)
+│
+├── infra-live-backend/terraform/
+│   ├── services.tf                      [changed]  one entry per runtime (17 + otel-collector), with image_repository and secret_name
+│   ├── ecs.tf                           [changed]  per-service execution and task roles
+│   ├── ecr.tf                           [changed]  one repository per service
+│   ├── secrets.tf                       [changed]  one secret per service, plus the HMAC pepper (auth only)
+│   ├── iam.tf                           [changed]  per-service policies: S3 prefixes, sns:Publish, own queue, cloudwatch:PutMetricData by namespace
+│   ├── alb.tf                           [changed]  the rules in 13.1; no catch-all
+│   ├── elasticache.tf                   [changed]  RBAC users instead of REDIS_AUTH_TOKEN
+│   ├── events.tf                        [new]      modules/events instance per region
+│   ├── service_discovery.tf             [new]      Cloud Map private DNS namespace and the internal-callers security group (13.2)
+│   ├── cloudwatch.tf                    [changed]  event, outbox, missing-metric and per-runtime alarms (15.5)
+│   ├── ssm_write.tf                     [changed]  ecs_services manifest with each service's ecr_repository_url
+│   └── tests/stack.tftest.hcl           [changed]
+│
+├── infra-live-edge/                            unchanged: the JWT validator's paths stay the same (13.1)
+├── infra-live-frontend/, infra-live-scheduler/ unchanged
+│
+├── .github/workflows/
+│   ├── deploy-live-backend.yml          [changed]  build matrix: one image per selected service into its own repository (15.2)
+│   ├── promote-live-backend.yml         [changed]  copy each service's image between its repositories
+│   ├── restart-live-backend.yml         [changed]  service help text only
+│   └── check.yml                        [changed]  per-service OpenAPI and spectral, import-linter, event contract tests, replay-twice test
+├── scripts/
+│   ├── ecs-services.sh                  [changed]  per-service repository URLs from the SSM manifest
+│   └── check-service-lists.sh           [changed]  the new runtime names
+├── check.sh                             [changed]  mirrors check.yml
+├── shared/routing.json                         unchanged
+│
+├── frontend/  (web)                     [changed]
+│   └── src/
+│       ├── api/                         [changed]  a generated client per service spec, replacing the hand-written client.ts calls
+│       ├── lib/*Prompt.ts, prompts.ts   [removed]  prompts are built by the services (8)
+│       ├── components/onboarding/RecommendationsPhase.tsx, ChildActivityGame.tsx  [removed]  unused (8)
+│       ├── components/shared/PersonalityAnalysis.tsx  [changed]  adaptAiPersonalityToViewModel removed; the server builds the view model
+│       ├── pages/                       [changed]  each circle calls its own service (step 7)
+│       ├── pages/AccountSettings.tsx    [new]      profile editing and "Sign out of all devices"
+│       └── lib/AuthContext.tsx, hooks/useStartOver.ts  [changed]  no last_visited_path writes
+│
+└── frontend-app/  (React Native)        [changed]  the same changes as frontend/: generated clients, no prompt builders,
+                                                  new AccountSettings screen, admin role control, circle screens on their services
 ```
+
+**Build order:**
 
 | Step | What | Done when |
 |---|---|---|
