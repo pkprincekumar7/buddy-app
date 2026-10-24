@@ -232,6 +232,18 @@ flowchart TB
 - **One Atlas database user per service**, with access to its own database only.
 - **One Secrets Manager secret and one ECS execution role per service** (section 15.1). Only auth can read the JWT private key and the HMAC pepper. Only generating workers and platform (speech-to-text) get LLM provider keys.
 - **Services import only `common`**, never each other. CI enforces this with `import-linter`.
+- **`common` is the protocol layer, not shared business logic.** Services stay isolated in data, runtime and access; `common` is a library built into each image, never something they share while running. It holds only code that **must behave identically in every service**, where copies would drift into security holes or broken events:
+  - token and authz checks, and the permission table;
+  - the event envelope, outbox, versions, tombstones and topic check;
+  - the internal-call client and service tokens;
+  - telemetry, logging and metrics conventions.
+
+  Code used by one service lives in that service, even if another might want it one day. Code used by a few (uploads; generation) is an **optional extra** that only those services install.
+- **Rules for `common`:**
+  - **Versioned:** each service pins a `common` version, so a change to `common` doesn't force all 17 runtimes to redeploy at once.
+  - **Backward-compatible changes only,** like event schemas (7.8). A breaking change is a new function next to the old one, until every service has moved.
+  - **No circle rules:** anything about one circle belongs in that circle.
+  - **One owner and full test coverage:** a bug there affects every service, so every change is reviewed by its owner.
 
 ---
 
@@ -444,7 +456,7 @@ Users also has `outbox` and `tombstones` (4.1): it publishes `user.data_deleted`
 
 **Deliberately absent:**
 - **`email`:** auth holds it. A service that needs it calls auth's internal API.
-- **`full_name`:** it's gone from storage, APIs and tokens. Code that needs a display name uses `common.names.full_name(first, middle, last)`, which joins the non-empty parts with single spaces.
+- **`full_name`:** it's gone from storage, APIs and tokens. The apps join the non-empty name parts with single spaces where they show a name; no service needs a full name.
 - **`dark_mode`:** stored today, but neither app reads or writes it: the web theme is locked to dark on purpose (`frontend/src/lib/theme.tsx`). Add it back when theming is turned on.
 - **`last_visited_path`:** it's written but never read today. Remove it, along with its writes in `frontend/src/lib/AuthContext.tsx`, `frontend/src/hooks/useStartOver.ts` and the same two files in `frontend-app/`.
 
@@ -484,7 +496,7 @@ email_index: { _id: key, key_version: 1, user_id, location, status }
 | Find an account by email (admin) | Normalise → HMAC → `email_index` → `auth.auth` |
 | Logs | Log `key[:16]` instead of today's unkeyed `sha256(email)[:16]` |
 
-**Normalisation must be identical everywhere:** one function, `common.emails.normalise()`, which trims and lower-cases and nothing else. No Gmail dot or `+tag` stripping, because that changes which mailbox the address means. Any difference between code paths silently creates duplicate accounts.
+**Normalisation must be identical everywhere:** one function, `auth.emails.normalise()` (only auth handles emails, so it lives in auth), which trims and lower-cases and nothing else. No Gmail dot or `+tag` stripping, because that changes which mailbox the address means. Any difference between code paths silently creates duplicate accounts.
 
 ### 6.4 The pepper
 
@@ -1614,28 +1626,30 @@ The whole repository after the split. **[new]** is added, **[changed]** is edite
 ```text
 buddy-app/
 ├── backend/
-│   ├── common/                          [new]  the ONLY code shared between services
-│   │   ├── auth.py                             JWT verify (JWT_PUBLIC_KEYS), authz cache with 30 s local fallback, require(), require_self_or() as FastAPI deps (9.3, 11.2)
+│   ├── common/                          [new]  the protocol layer, versioned and pinned by each service (section 2)
+│   │   ├── authz.py                            JWT verify (JWT_PUBLIC_KEYS), authz cache with 30 s local fallback, require(), require_self_or() as FastAPI deps (9.3, 11.2)
 │   │   ├── permissions.py                      role → permission table (11.2)
 │   │   ├── audit.py                            audit events written by the permission check (11.3)
 │   │   ├── routers.py                          deny-by-default router: refuses a route without a policy (11.2)
 │   │   ├── events/                             outbox, relay (own-region rows), SNS publisher, SQS consumer, opt-in inbox (7.3)
 │   │   │   └── schemas/                        versioned JSON Schemas, e.g. child.changed.v1.json (7.8)
-│   │   ├── generation/                         job model and queue, LLM client, per-user hourly LLM limit, prompt helper (8)
+│   │   ├── generation/                         [extra: discover, grow, transform, release]  job model and queue, LLM client, per-user hourly LLM limit, prompt helper (8)
 │   │   ├── deletion.py                         PARTICIPANTS for the deletion saga (10.3)
 │   │   ├── internal_client.py                  service tokens, Cloud Map DNS client: random IP, retry once, 30 s keep-alive (13.2)
 │   │   ├── telemetry.py                        OpenTelemetry setup, trace context in events (15.5)
 │   │   ├── metrics.py                          PutMetricData for the 16 alarm and scaling metrics (15.5)
-│   │   ├── uploads.py                          presign, key prefixes, HeadObject check with the 5 MB limit (from today's services/s3_uploads.py)
-│   │   ├── emails.py                           normalise() and the HMAC key (6.3)
-│   │   ├── names.py                            full_name(first, middle, last) (5.3)
-│   │   ├── routing.py                          COUNTRY_TO_REGION, BLOCKED_COUNTRIES, resolve_region (from today's app/routing.py)
+│   │   ├── uploads.py                          [extra: children, transform]  presign, key prefixes, HeadObject check with the 5 MB limit (from today's services/s3_uploads.py)
+│   │   ├── regions.py                          location ↔ region ↔ Atlas zone lookups and locations_for_region: workers and relays scope by region (4.1, 7.3)
+│   │   ├── regions_data.py                     [generated by scripts/sync-routing.mjs from shared/routing.json; don't edit]
 │   │   ├── limiter.py                          slowapi rate limits in Valkey (from today's app/limiter.py)
 │   │   ├── logging.py                          JSON logs with trace_id and request_id (15.5)
 │   │   ├── settings_base.py                    settings every service shares
 │   │   └── tests/
 │   │
 │   ├── auth/                            [new]  public: register, login, google, refresh, logout(-all), me, account, accounts, allowed-emails
+│   │   ├── emails.py                           normalise() and the HMAC key (6.3): only auth handles emails
+│   │   ├── countries.py                        resolve_region and the blocked-country check (from today's app/routing.py): only registration resolves a location
+│   │   ├── countries_data.py                   [generated by scripts/sync-routing.mjs: COUNTRY_TO_REGION, BLOCKED_COUNTRIES; don't edit]
 │   │   ├── app/                                routers, models, db.py (auth database and indexes, section 14), internal router (port 8001)
 │   │   ├── worker/                             authz change stream, deletion saga, reservation reaper, outbox relay
 │   │   ├── events.py                           publishes user.deletion_requested; consumes user.data_deleted
@@ -1664,11 +1678,11 @@ buddy-app/
 │   ├── tools/
 │   │   ├── export-openapi.py            [changed]  writes one spec per service: openapi/<service>.json
 │   │   ├── promote-admin.py             [new]      first admin per environment (11.4)
-│   │   ├── atlas_zone_ranges.py                    unchanged (Global Cluster zones, section 14)
+│   │   ├── atlas_zone_ranges.py         [changed]  Global Cluster zones (section 14): imports ATLAS_ZONE_FOR_REGION and REGION_TO_LOCATIONS from common.regions instead of app.routing, and each database's collections from its service's db.py instead of app.models
 │   │   └── mutate_handlers.py, handler_mutants/   [changed]  pointed at the new services
 │   ├── openapi/                         [new]  auth.json, users.json, children.json, … (replaces the root openapi.json)
-│   ├── Dockerfile                       [changed]  --build-arg SERVICE=<name>; installs common/ plus that service only
-│   ├── pyproject.toml                   [changed]  import-linter contract: services import only common (section 2)
+│   ├── Dockerfile                       [changed]  --build-arg SERVICE=<name>; installs the pinned common version (with that service's extras) plus that service only
+│   ├── pyproject.toml                   [changed]  import-linter contract: services import only common (section 2); common published as a versioned package with optional extras ([generation], [uploads])
 │   └── requirements*.txt                [changed]  split: common, then each service's own requirements.txt
 │
 ├── openapi.json                         [removed]  replaced by backend/openapi/<service>.json
@@ -1706,6 +1720,7 @@ buddy-app/
 │   └── check.yml                        [changed]  per-service OpenAPI and spectral, import-linter, event contract tests, replay-twice test
 ├── scripts/
 │   ├── ecs-services.sh                  [changed]  per-service repository URLs from the SSM manifest
+│   ├── sync-routing.mjs                 [changed]  writes backend/common/regions_data.py and backend/auth/countries_data.py instead of backend/app/routing_data.py; the frontend files it generates are unchanged; CI's --check covers the new outputs
 │   └── check-service-lists.sh           [changed]  the new runtime names
 ├── check.sh                             [changed]  mirrors check.yml
 ├── shared/routing.json                         unchanged
@@ -1729,7 +1744,7 @@ buddy-app/
 | Step | What | Done when |
 |---|---|---|
 | **0. Platform** | Dedicated Atlas cluster (M10+), the `modules/alb` no-catch-all change (13.1), the Cloud Map namespace, service registrations and `internal-callers` group (13.2), Redis RBAC users (9.3), the shared OpenTelemetry collector (15.5), the `events` Terraform module, per-service ECR repositories, secrets and roles, per-service image builds in the workflows (15.2), the pepper, docker-compose | A hello-world service builds its own image, deploys, and can publish and consume an event in dev |
-| **1. `common`** | Auth deps, permissions, audit, events (outbox, relay, opt-in inbox, schemas, contract test harness, replay-twice test), generation, internal client, telemetry | Unit- and contract-tested on its own |
+| **1. `common`** | The protocol layer only (section 2), versioned: auth deps, permissions, audit, events (outbox, relay, opt-in inbox, schemas, contract test harness, replay-twice test), generation, internal client, telemetry | Unit- and contract-tested on its own |
 | **2. auth + users** | Sections 5, 6, 9, 10.1 and 11; `auth-worker` with change stream and reaper | Login, register, Google sign-in, refresh rotation, lock, allow-list, profiles; route-policy and ownership test matrices pass |
 | **3. children** | The child and progress; `child.changed` / `child.deleted`; soft delete and purge | Home lists children with progress, from one query |
 | **4. onboarding, discover** | Each with its database and events; discover with server-side generation. Discover consumes onboarding's events. | Completing the conversation makes Discover's personality appear without the browser building prompts |
@@ -1774,5 +1789,5 @@ buddy-app/
 - **Two clients to move:** the web app and the React Native app both change almost every API call (16, step 7). An old installed mobile build would break against the new API, so ship the mobile release before real users arrive.
 - **Redis outage:** authz falls back to calls to auth with a 30-second local cache, so auth's load rises and locks take up to 30 s to apply (9.3). Alarm on it.
 - **Cost:** about +$146 a month each for dev and sbx, +$205 for stg and +$223 to +$448 for prod, per region, before traffic. The extra Fargate tasks account for most of it, and Container Insights metrics in prod (15.3).
-- **The pepper is a single point of failure** (6.4). **Inconsistent email normalisation** creates duplicate accounts. Use only `common.emails.normalise()`.
+- **The pepper is a single point of failure** (6.4). **Inconsistent email normalisation** creates duplicate accounts. Use only `auth.emails.normalise()`.
 - **Authorization bugs on shared resource endpoints:** a missing or wrong check exposes another family's data. Deny-by-default routers, the route-policy test and the ownership test matrix (11.2) guard it.

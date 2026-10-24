@@ -15,3 +15,10 @@ CVE-2026-93687
 # verification — no fixed release exists. Only via @expo/cli (developer CLI / code-signing
 # helper) — not bundled into the app. Remove once node-forge publishes a fix.
 CVE-2026-85393
+
+# CVE-2023-54404 / GHSA-mrhx-c7xc-m3w5: zod <4.6.6 DoS via unbounded array validation.
+# Only via @expo/cli (pinned to zod 3, so the 4.x fix can't be forced) and
+# eslint-plugin-react-hooks: developer tooling, not bundled into the APK or IPA.
+# The web frontend, which ships zod, is upgraded to 4.6.7 instead.
+# Remove once @expo/cli moves to zod >=4.6.6.
+CVE-2023-54404
