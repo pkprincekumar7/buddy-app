@@ -445,10 +445,13 @@ jobs:
         # Also ignored (no fixed release exists; remove once one ships):
         #   1240992 (GHSA-vfj7-8cjw-p6xm) — braces <=3.0.3 DoS; build/test tooling only.
         #   1240912 (GHSA-86w9-cpqp-85rv) — node-forge <=1.4.0; only via @expo/cli (dev CLI).
+        # Also ignored (fix needs a major upgrade the dev tools don't support yet):
+        #   1243066 (GHSA-mrhx-c7xc-m3w5) — zod <4.6.6 DoS; only via @expo/cli (zod 3) and
+        #   eslint-plugin-react-hooks. Dev tooling, not in the APK/IPA. Remove once both use zod >=4.6.6.
         run: |
           yarn audit --json 2>/dev/null | python3 -c "
           import json,sys
-          IGNORED_IDS={1124334,1240992,1240912}
+          IGNORED_IDS={1124334,1240992,1240912,1243066}
           high=0
           for line in sys.stdin:
               line=line.strip()

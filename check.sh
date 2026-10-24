@@ -247,13 +247,16 @@ sys.exit(1 if bad else 0)
 #     (tailwindcss, @react-native-community/cli, jest), not in the APK/IPA bundle.
 #   1240912 (GHSA-86w9-cpqp-85rv) — node-forge <=1.4.0 RSA signature verification;
 #     only via @expo/cli (dev CLI), not bundled into the app.
+# Ignored (fix needs a major upgrade the dev tools don't support yet):
+#   1243066 (GHSA-mrhx-c7xc-m3w5) — zod <4.6.6 DoS; only via @expo/cli (zod 3) and
+#     eslint-plugin-react-hooks, not in the APK/IPA. Remove once both use zod >=4.6.6.
 # image-size's GHSA-5p2g-fcmc-qvqq/GHSA-w3rx-r6r6-pgpr (formerly flagged as advisory
 # IDs 1138808/1138809, now 1239765/1239766) is fixed by forcing image-size to ^2.0.4
 # via frontend-app/package.json's resolutions/overrides — no ignore needed any more.
 run "yarn audit (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && yarn audit --json 2>/dev/null | python3 -c \"
 import json,sys
-IGNORED_IDS={1124334,1240992,1240912}
+IGNORED_IDS={1124334,1240992,1240912,1243066}
 high=0
 for line in sys.stdin:
     line=line.strip()
