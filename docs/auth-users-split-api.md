@@ -4,12 +4,13 @@
 **Scope:** one entry per endpoint in [section 13.4](auth-users-split.md#134-full-api-list) of the proposal, with what it accepts, what it does and what it returns. Entries are added one at a time; the list in 13.4 stays the index.
 
 **Conventions for every entry:**
+- **Authz changes** (logout-all, refresh reuse detection, lock, unlock, role change, account deletion) are one `findOneAndUpdate` with `$inc: {authz_version: 1}` on `auth.auth`. The cache entry `authz:{id}` is then written with the returned version, through the versioned write (proposal 9.3).
 - **Paths** are relative to the site origin. Public endpoints sit under `/api/v1/` on port 8000; internal ones under `/internal/` on port 8001 (proposal 13.2).
 - **Errors** use FastAPI's shape, `{"detail": …}`. Where the client must tell errors apart, `detail` is `{"code": "…", "msg": "…"}`.
 - **"Today"** notes describe the current backend (`backend/app/routers/…`), so the differences are visible.
 - **Circle endpoints** (`/api/v1/children/{id}/…`) share these rules:
-  - **Ownership:** only the child's parent; an admin with `children:read:any` can read, from admin tools only. Anyone else, or a child that doesn't exist or is soft-deleted, gets `404 child_not_found`. The check uses the circle's `child_access` copy, with read-through on a miss (proposal 7.5).
-  - **Unlock:** a circle that isn't unlocked yet returns `403 circle_locked`, but only after confirm-before-deny with the previous circle (proposal 12.4).
+  - **Ownership:** only the child's parent; an admin with `children:read:any` can read, from admin tools only. **An admin read must pass `?location=`** (the child's owner's location, from the account listing): the admin's own token location may be another zone, and every read is targeted by location. Anyone else, or a child that doesn't exist or is soft-deleted, gets `404 child_not_found`. The check uses the circle's `child_access` copy, with read-through on a miss (proposal 7.5).
+  - **Unlock:** a circle that isn't unlocked yet returns `403 circle_locked`, but only after confirm-before-deny with the previous circle (proposal 12.4). A confirmed answer is stored as `child_access.confirmed.<circle>`, never over `progress` or `version`.
 - **Generation endpoints** (`…/generation`) share these rules:
   - **Start:** `POST` returns `202 Accepted` with `{"job_id", "status"}`. The server builds the prompt from its own data and local copies; the client sends no prompt (proposal 8).
   - **One at a time:** if the same kind is already `pending` or `processing` for that child (and area), the existing job is returned with `200 OK` instead of starting another.
@@ -160,10 +161,11 @@ The registration saga (proposal 10.1). Each numbered step either succeeds or the
 2. **Allow-list:** `key = HMAC-SHA256(pepper, normalised email)`. If `allowed_emails` has no row with `_id = key`, return `403 registration_closed`.
 3. **Country:** if `country_code` is in `BLOCKED_COUNTRIES`, return `403 country_not_supported`. Otherwise `location = resolve_region(country_code)`.
 4. **Reserve the email:** insert into `email_index` `{_id: key, key_version, user_id: <new UUIDv4>, location, status: "reserved", reserved_at: now}`.
+   - **During a pepper rotation** (proposal 6.5), first check the email's key under **every** active pepper version. If any version has a row, the email is taken, so a second account can't be created while v1 and v2 rows coexist.
    - **Duplicate key, row is `active`:** run a dummy bcrypt check (so timing doesn't reveal the outcome), then return `409 email_taken`.
-   - **Duplicate key, row is `reserved` and older than 15 minutes:** a stale attempt. Take it over with a conditional update that matches its old `user_id` and `reserved_at`, then continue. If that update matches nothing, another attempt got there first: `409 email_taken`.
+   - **Duplicate key, row is `reserved` and older than 15 minutes:** a stale attempt. Take it over with a conditional update that matches its old `user_id` and `reserved_at`. **Then delete what the old attempt may have left:** its `auth.auth` document and its profile (`DELETE /internal/users/{old_user_id}`, idempotent). Then continue. If that update matches nothing, another attempt got there first: `409 email_taken`.
    - **Duplicate key, row is `reserved` and newer:** another registration for this email is in progress, so `409 email_taken`.
-5. **Credentials:** insert `auth.auth` `{_id: user_id, email, password_hash (bcrypt, cost 12), role: "parent", country_code, location, auth_provider: "password", tokens_revoked_at: null, is_locked: false, is_being_deleted: false, created_at, updated_at, schema_version}`.
+5. **Credentials:** insert `auth.auth` `{_id: user_id, email, password_hash (bcrypt, cost 12), role: "parent", country_code, location, auth_provider: "password", tokens_revoked_at: null, is_locked: false, is_being_deleted: false, authz_version: 1, created_at, updated_at, schema_version}`.
 6. **Profile:** call users' `PUT /internal/users/{user_id}` through Cloud Map, with a service token (`aud = "users-internal"`). The body has the names, `location` and the address fields, and **no email**. It's an upsert, so a retry is harmless.
 7. **Activate:** set `email_index.status = "active"`. A conditional update on `{_id: key, user_id, status: "reserved"}`, so a reaper that cleaned up the row in the meantime is detected; the saga is then undone and `503` is returned.
 8. **Sign in:**
@@ -176,7 +178,7 @@ The registration saga (proposal 10.1). Each numbered step either succeeds or the
 | Fails at | Undo | Response |
 |---|---|---|
 | Step 5 | Delete the `email_index` reservation | `500 registration_failed` |
-| Step 6 (users unreachable, or it returns 5xx) | Delete `auth.auth`, then the reservation | `503 registration_unavailable`, with `Retry-After: 5` |
+| Step 6 (users unreachable, or it returns 5xx) | Call `DELETE /internal/users/{user_id}` (users may have created the profile before the call timed out), then delete `auth.auth`, then the reservation. If the users call fails too, keep the reservation, so the reaper can clean up from it. | `503 registration_unavailable`, with `Retry-After: 5` |
 | Step 7 | As step 6, plus delete the users profile with `DELETE /internal/users/{user_id}` | `503 registration_unavailable` |
 | Step 8 (Valkey) | None: the account exists. The first request fills the cache from auth (proposal 9.3). | `201` as normal |
 | An undo step itself | Leave it. The `auth-worker` reaper removes `reserved` rows older than 15 minutes, and the `auth.auth` and users documents left behind (users through `DELETE /internal/users/{user_id}`). Login needs an `active` row, so a half-made account can't sign in. | As in the row above |
@@ -204,7 +206,7 @@ The tokens are in the body for the mobile app, which has no cookie jar. The web 
 | `access_token` | `/` | 1,800 s (30 min) | `HttpOnly`; `Secure`, `SameSite` and `Domain` from `COOKIE_SECURE`, `COOKIE_SAMESITE` and `COOKIE_DOMAIN` |
 | `refresh_token` | `/api/v1/auth/` | 86,400 s (24 h) | Same |
 
-The access token carries `sub`, `location`, `role` (`"parent"`), `iss`, `aud`, `iat`, `exp` and `type`. The refresh token adds `jti` and `family_id` (proposal 9.2). The client loads the profile with `GET /api/v1/users/me/profile`.
+The access token carries `sub`, `location`, `role` (`"parent"`), `iss`, `aud`, `iat`, `iat_ms`, `exp` and `type`. The refresh token adds `jti` and `family_id` (proposal 9.2). The client loads the profile with `GET /api/v1/users/me/profile`.
 
 ### Errors
 
@@ -246,7 +248,7 @@ Signs in with email and password.
 | **Service** | auth |
 | **Routing** | Edge: `PURE_BYPASS_PATHS`, so it lands in the bootstrap region with no location check. ALB: rule 120 (`/api/v1/auth/*`). |
 | **Access** | Public |
-| **Rate limit** | 10 per minute per IP, as today. Also **5 failures per 15 minutes per email key**: after that, attempts for that email are refused for 15 minutes (proposal 9.1). Counters are in Valkey; if Valkey is down they fall back to per task (9.3). |
+| **Rate limit** | 10 per minute per IP, as today. Also **5 failures per 15 minutes per email key and IP**: after that, attempts for that email from that IP are refused for 15 minutes (proposal 9.1). Counting per key *and* IP stops anyone from locking a known user out from elsewhere. Counters are in Valkey; if Valkey is down they fall back to per task (9.3). |
 | **Success** | `200 OK` |
 | **Today** | Same path and body; reads `email_index` then `users` |
 
@@ -259,11 +261,11 @@ Signs in with email and password.
 
 ### Processing
 
-1. `key = HMAC(pepper, normalised email)`. If the per-key failure counter is at its limit, return `429 too_many_attempts` (before any lookup).
+1. `key = HMAC(pepper, normalised email)`. If the failure counter for this key and IP is at its limit, return `429 too_many_attempts` (before any lookup).
 2. Read `email_index {_id: key}`. If there's no row, or it isn't `active`: run the dummy bcrypt check, count a failure, return `401 invalid_credentials`.
 3. Read `auth.auth {_id: user_id, location}`. This can be one cross-region read, because login runs in the bootstrap region (9.1).
-4. If `is_being_deleted`: dummy check, `401 invalid_credentials`. If `is_locked`: dummy check, `403 account_locked`.
-5. Verify the password with bcrypt. On a mismatch, count a failure and return `401 invalid_credentials`.
+4. Verify the password with bcrypt (the dummy hash if the account is being deleted). On a mismatch, count a failure and return `401 invalid_credentials`.
+5. **Only with the right password:** if `is_being_deleted`, return `401 invalid_credentials`; if `is_locked`, return `403 account_locked`. So the lock status isn't revealed to someone who doesn't know the password. Today it's checked first.
 6. Reset the failure counter; sign in as in register step 8: tokens, a `sessions` row with a **new** `family_id`, and `authz:{user_id}` written.
 
 Google-only accounts have an unusable random password, so password login fails for them with `401` like any wrong password.
@@ -279,9 +281,9 @@ Google-only accounts have an unusable random password, so password login fails f
 | `401` | `invalid_credentials` | Unknown email, wrong password, or an account being deleted |
 | `403` | `account_locked` | The account is locked by an admin |
 | `422` | (validation list) | A field is missing or too long |
-| `429` | `too_many_attempts` | IP limit, or 5 failures for this email in 15 minutes |
+| `429` | `too_many_attempts` | IP limit, or 5 failures for this email key from this IP in 15 minutes |
 
-**Differences from today:** the HMAC lookup; the per-email failure limit is new; error codes; the access token gains `role` and the refresh token `family_id`.
+**Differences from today:** the HMAC lookup; the per-key-and-IP failure limit is new; the password is checked before the lock; error codes; the access token gains `role` and the refresh token `family_id`.
 
 ---
 
@@ -310,7 +312,7 @@ Signs in with a Google ID token, creating the account on first use.
 1. Verify the ID token with Google's keys: signature, audience (`GOOGLE_CLIENT_ID`), issuer and expiry. It must carry an email with `email_verified = true`; otherwise `400 google_email_unverified`.
 2. `key = HMAC(pepper, normalised email)`, then read `email_index`.
 3. **Existing account** (an `active` row):
-   - if `is_being_deleted`, return `409 account_unavailable`; if `is_locked`, return `403 account_locked`;
+   - if `is_being_deleted`, return `401 account_unavailable`; if `is_locked`, return `403 account_locked`;
    - otherwise sign in as in login step 6.
    - This works whatever the account's `auth_provider`: a verified Google email proves ownership, so a password account can also sign in with Google. `auth_provider` keeps its original value.
 4. **New account:**
@@ -331,7 +333,7 @@ Signs in with a Google ID token, creating the account on first use.
 | `403` | `registration_closed` | New account, email not on the allow-list |
 | `403` | `country_not_supported` | New account, blocked country |
 | `403` | `account_locked` | Existing account is locked |
-| `409` | `account_unavailable` | Existing account is being deleted |
+| `401` | `account_unavailable` | Existing account is being deleted, as for password login |
 | `422` | `country_code_required` | New account without `country_code` |
 | `429` | — | Rate limit |
 | `503` | `registration_unavailable` | New account, and the users service didn't respond (as in register) |
@@ -365,7 +367,7 @@ No body. If an access token is also sent (cookie or header), its `sub` must matc
    - **Found and already rotated** (`rotated_at` is set):
      - **within 30 seconds of `rotated_at`:** a concurrent refresh, for example two tabs at once. Issue a new pair in the same family and continue.
      - **later:** the token was reused, so treat it as stolen. Delete every session in `family_id`, set `auth.auth.tokens_revoked_at = now` (which logs the user out everywhere, proposal 9.1) and update `authz:{user_id}`. Return `401 session_revoked` and clear the cookies.
-3. Read `auth.auth`. If it's missing, `is_being_deleted` or `is_locked`, delete the session and return `401` / `403 account_locked`. If `tokens_revoked_at >= iat`, return `401 session_revoked`.
+3. Read `auth.auth`. If it's missing, `is_being_deleted` or `is_locked`, delete the session and return `401` / `403 account_locked`. If `tokens_revoked_at` (in milliseconds) `>=` the refresh token's `iat_ms`, return `401 session_revoked` (proposal 9.3).
 4. **Rotate:**
    - insert the new session (new `jti`, same `family_id`);
    - mark the old one `{rotated_at: now, replaced_by: <new jti>}` rather than deleting it, so a reuse can be recognised. The TTL index still removes it at `expires_at`.
@@ -489,14 +491,14 @@ Deletes the signed-in user's account and all their data, through the deletion sa
 ### Processing
 
 1. Normalise `confirm_email` and compare it with `auth.auth.email`. A mismatch returns `400 confirmation_mismatch`.
-2. If the user is the **last active admin**, return `409 last_admin` (proposal 10.3).
-3. In one transaction:
+2. If the user is an admin **and isn't locked**, take one off the admin counter with the conditional decrement; if it's the **last active admin**, that fails and the call returns `409 last_admin` (proposal 10.3). A locked admin was already taken off when locked.
+3. In one transaction, in the user's zone:
    - set `is_being_deleted = true` and `tokens_revoked_at = now`;
    - delete all sessions;
-   - insert `deletions {_id: user_id, location, requested_at, expected: common.deletion.PARTICIPANTS, confirmed: []}`;
    - insert the outbox row `user.deletion_requested`.
-4. Update `authz:{user_id}` to `deleting: true`, so every service rejects the user at once.
-5. Clear the cookies and return `202`.
+4. Outside the transaction, upsert `deletions {_id: user_id, location, requested_at, expected: common.deletion.PARTICIPANTS, confirmed: []}`. It's unsharded, so it can't join a zone's transaction without making it cross-region (proposal section 14). If a crash skips it, the `auth-worker` creates it when the first `user.data_deleted` arrives.
+5. Update `authz:{user_id}` to `deleting: true`, so every service rejects the user at once.
+6. Clear the cookies and return `202`.
 
 Then, asynchronously:
 - each service deletes the user's data, local copies and S3 objects, and publishes `user.data_deleted`;
@@ -632,9 +634,9 @@ Locks an account: signs it out everywhere and blocks login. For admins.
 
 ### Processing
 
-1. An admin locking themselves gets `400 cannot_lock_self`, as today. Locking the last active admin gets `409 last_admin`.
+1. An admin locking themselves gets `400 cannot_lock_self`, as today. Locking an admin goes through the admin counter's conditional decrement, so locking the last active admin gets `409 last_admin`, even when two admins act at once (proposal 10.3).
 2. Set `is_locked = true`, `tokens_revoked_at = now` and `updated_at`, and delete the account's sessions.
-3. Update `authz:{id}` at once; the change stream also updates other regions.
+3. Update `authz:{id}` in this region at once. Every other region's `auth-worker` updates its own entry from the change stream, if it holds one (proposal 9.3).
 4. Write the audit event.
 
 ### Response
@@ -668,7 +670,7 @@ Same path and `location` query as lock.
 
 ### Processing
 
-1. Set `is_locked = false` and `updated_at`.
+1. Set `is_locked = false` and `updated_at`. If the account is an admin, increment the admin counter afterwards (it counts unlocked admins, proposal 10.3).
 2. **Keep `tokens_revoked_at`.** Today's unlock sets it back to `null`, which makes tokens issued before the lock valid again if they haven't expired yet. Leaving it means the user simply signs in again.
 3. Update `authz:{id}` and write the audit event.
 
@@ -706,7 +708,7 @@ Path `id`, query `location` as in lock, and this body:
 
 ### Processing
 
-1. Demoting the last active admin gets `409 last_admin`. An admin may demote themselves only if another admin remains.
+1. Demoting an admin goes through the admin counter's conditional decrement (proposal 10.3), so demoting the last active admin gets `409 last_admin`, even when two admins act at once. An admin may demote themselves only if another admin remains. Demoting a locked admin doesn't touch the counter (they were taken off when locked). Promoting increments it, unless the account is locked.
 2. Set `role`, set `tokens_revoked_at = now` (so no token still carries the old `role` claim) and delete the account's sessions.
 3. Update `authz:{id}` and write the audit event. `user.role_changed` isn't published yet: no service consumes it (proposal 7.6).
 
@@ -853,15 +855,15 @@ Returns a user's authorisation state, and refills the Valkey authz cache. Called
 ### Processing
 
 1. Read `auth.auth {_id, location}`: one indexed read.
-2. Write `authz:{user_id}` to this region's Valkey (TTL 25 h), unless Valkey is down. Callers then keep the answer in their own 30-second in-process cache (9.3).
+2. Write `authz:{user_id}` to this region's Valkey (TTL 1 h) through the versioned write, so it can't overwrite a newer entry (proposal 9.3), unless Valkey is down. Callers then keep the answer in their own 30-second in-process cache (9.3).
 
 ### Response
 
 ```json
-{ "role": "parent", "locked": false, "deleting": false, "revoked_at": 1792500000 }
+{ "ver": 42, "role": "parent", "locked": false, "deleting": false, "revoked_at_ms": 1792500000123 }
 ```
 
-`revoked_at` is a Unix time in seconds, or `null`.
+`revoked_at_ms` is a Unix time in **milliseconds**, or `null`; services compare it with the token's `iat_ms` (proposal 9.3).
 
 ### Errors
 
@@ -907,7 +909,7 @@ Returns a user's profile: names and address.
 |---|---|
 | **Service** | users |
 | **Routing** | ALB rule 110, `/api/v1/users/*` |
-| **Access** | The user themself (`{user_id}` = their id, or `me`), or permission `profiles:read:any` (admins). Anyone else gets `404`, so ids can't be probed (proposal 11.2). Reads by an admin of someone else's profile are audited. |
+| **Access** | The user themself (`{user_id}` = their id, or `me`), or permission `profiles:read:any` (admins). Anyone else gets `404`, so ids can't be probed (proposal 11.2). Reads by an admin of someone else's profile are audited, and must pass `?location=` (the owner's, from the account listing). |
 | **Rate limit** | 60 per minute per user |
 | **Success** | `200 OK` |
 | **Today** | None: `full_name` comes from `GET /api/v1/auth/me` |
@@ -1023,7 +1025,7 @@ Returns app preferences.
 | | |
 |---|---|
 | **Service** | users |
-| **Access** | The user themself (`me`), or `profiles:read:any`. Others get `404`. |
+| **Access** | The user themself (`me`), or `profiles:read:any` (with `?location=`, the owner's). Others get `404`. |
 | **Rate limit** | 60 per minute per user, as today |
 | **Success** | `200 OK` |
 | **Today** | `GET /api/v1/user/preferences` |
@@ -1045,7 +1047,7 @@ Updates app preferences.
 | | |
 |---|---|
 | **Service** | users |
-| **Access** | The user themself, or `profiles:write:any`. Others get `404`. |
+| **Access** | The user themself, or `profiles:write:any` (with `?location=`, the owner's). Others get `404`. |
 | **Rate limit** | 30 per minute per user, as today |
 | **Success** | `200 OK` with all preferences |
 | **Today** | `PATCH /api/v1/user/preferences` |
@@ -1124,6 +1126,7 @@ Lists the signed-in parent's children, with their journey progress, for the Home
 | `sort` | enum `created_at`, `-created_at`, `name`, `-name` | `-created_at` | |
 | `limit` | int | 50 | 1–200 |
 | `user_id` | string | — | Admins only; anyone else sending it gets `403` |
+| `location` | string | With `user_id` | The owner's location, from the account listing, so the read stays in the owner's zone |
 
 ### Processing
 
@@ -1163,7 +1166,7 @@ Adds a child.
 
 1. Refuse if the parent already has 10 children that aren't deleted (`422 child_limit`), as today.
 2. Insert the child with `_id` (new UUIDv4), the parent's `user_id` and `location`, all `progress` flags `false`, and `version: 1`. If `name`, `age` and `gender` are all present, set `progress.profile = true` (proposal 12.1).
-3. In the same transaction, publish `child.created`, and `child.progress_changed` if `progress.profile` became `true`.
+3. In the same transaction, publish one `child.changed` with the full snapshot, including `progress` (proposal 7.4).
 
 ### Response
 
@@ -1182,7 +1185,7 @@ Returns one child.
 | | |
 |---|---|
 | **Service** | children |
-| **Access** | The child's parent, or `children:read:any` (audited; admin tools only for now, as in the list). Anyone else gets `404`. |
+| **Access** | The child's parent, or `children:read:any` (audited; admin tools only for now, as in the list; the admin passes `?location=`, the owner's). Anyone else gets `404`. |
 | **Rate limit** | 60 per minute per user, as today |
 | **Success** | `200 OK` |
 | **Today** | Same path; also returns the onboarding answers, personality, jobs lock and the old progress flags |
@@ -1247,13 +1250,10 @@ Unknown fields are `422`.
 ### Processing
 
 1. **Checking `avatar_key`:**
-   - it must start with this child's prefix, `uploads/{location}/{child_id}/` (`422 invalid_avatar_key`);
+   - it must start with this child's **avatar** prefix, `uploads/{location}/{child_id}/avatar/` (`422 invalid_avatar_key`). Plan photos live under `…/ninety-day-plan/`, so a plan photo can't be set as the avatar, and replacing the avatar can never delete transform's object;
    - `HeadObject` must find it, with an allowed image type and at most **5 MB** (`422 avatar_not_uploaded` or `avatar_too_large`). A presigned PUT can't limit size, so this check is where the limit is enforced.
 2. **Update:** apply the changes and increment `version`. If `name`, `age` and `gender` are now all present for the first time, set `progress.profile = true`.
-3. **Events, in the same transaction:**
-   - `child.updated` if `name`, `age`, `gender` or `school` changed. Transform clears the child's Life Pathway milestones when `age` or `gender` changes, as today's `_LIFE_PATHWAY_INPUTS` does.
-   - `child.progress_changed` if `progress.profile` changed.
-   - An avatar change alone publishes nothing: no other service holds the avatar.
+3. **Event, in the same transaction:** one `child.changed` with the full snapshot, if `name`, `age`, `gender` or `progress` changed (proposal 7.4). Transform clears the child's Life Pathway milestones when `age` or `gender` differs from its copy, as today's `_LIFE_PATHWAY_INPUTS` does. A `school` or avatar change alone publishes nothing: no other service holds them.
 
 A replaced or cleared photo's old object is deleted from S3 after the update commits.
 
@@ -1277,11 +1277,11 @@ Deletes a child. Hidden at once, kept for 30 days, then purged.
 
 ### Processing
 
-1. **Soft delete:** set `is_deleted = true`, `deleted_at` and `updated_at`, increment `version`, and publish `child.updated {is_deleted: true}`. Each circle marks its `child_access` copy deleted, so the child disappears everywhere and its pages return `404`. Circle data is kept.
+1. **Soft delete:** set `is_deleted = true`, `deleted_at` and `updated_at`, increment `version`, and publish `child.changed` (with `is_deleted: true`). Each circle marks its `child_access` copy deleted, so the child disappears everywhere and its pages return `404`. Circle data is kept.
 2. **Purge, after 30 days:** the `children-worker` purge job hard-deletes the child and its avatar object, then publishes `child.deleted`. Each circle then deletes its data and S3 objects for that child (proposal 10.2).
 3. **Account deletion** doesn't wait for the 30 days: `user.deletion_requested` deletes everything at once (10.3).
 
-There's no restore endpoint. Within the 30 days, support can restore a child by clearing `is_deleted` (and publishing `child.updated`).
+There's no restore endpoint. Within the 30 days, support can restore a child by clearing `is_deleted` (and publishing `child.changed`).
 
 ### Errors
 
@@ -1313,7 +1313,7 @@ Returns a URL for uploading a child's photo straight to S3.
 ```json
 {
   "upload_url": "https://<bucket>.s3.<region>.amazonaws.com/uploads/…?X-Amz-…",
-  "avatar_key": "uploads/ap-south-1/c0ffee00-…/9f8e….jpg",
+  "avatar_key": "uploads/ap-south-1/c0ffee00-…/avatar/9f8e….jpg",
   "avatar_url": "https://…?X-Amz-…"
 }
 ```
@@ -1323,7 +1323,7 @@ The flow:
 2. **Save:** it then sends `PATCH /api/v1/children/{id}` with `{"avatar_key": …}`.
 3. **Preview:** `avatar_url` is a short-lived GET URL, so the photo can be shown at once.
 
-The key is created with `build_upload_key`, under the child's prefix, as today.
+The key is created with `build_upload_key` under `uploads/{location}/{child_id}/avatar/`. Today avatars sit directly under the child's prefix, which also contains the plan photos; the `avatar/` sub-prefix keeps each service's objects, and its IAM access, apart.
 
 ### Errors
 
@@ -1456,10 +1456,10 @@ Confirm-before-deny for discover (proposal 12.4).
 |---|---|
 | **Service** | onboarding |
 | **Routing** | Cloud Map, `onboarding.{app}-{env}.internal:8001` |
-| **Access** | A service token with `aud = "onboarding-internal"` |
+| **Access** | A service token with `aud = "onboarding-internal"`. Callers: **discover** (confirm-before-deny) |
 | **Success** | `200 OK` |
 
-Query `location` is required. The response is `{"completed": true, "version": 9}`: `completed` is `true` once the conversation is completed. A child with no conversation returns `{"completed": false, "version": 0}`.
+Query `location` is required. The response is `{"completed": true}`: `completed` is `true` once the conversation is completed. A child with no conversation returns `{"completed": false}`.
 
 ---
 
@@ -1471,7 +1471,7 @@ Read-through for the `onboarding_inputs` copies in discover, grow, transform and
 |---|---|
 | **Service** | onboarding |
 | **Routing** | Cloud Map, port 8001 |
-| **Access** | A service token with `aud = "onboarding-internal"` |
+| **Access** | A service token with `aud = "onboarding-internal"`. Callers: **discover, grow, transform, release** (read-through) |
 | **Success** | `200 OK` |
 
 Query `location` is required. The response has the `onboarding_inputs` fields (proposal 4.1): `child_id`, `user_id`, `location`, the seven answers and `version`. It returns `404` until the conversation is completed, because the copies exist only after `onboarding.conversation_completed`.
@@ -1506,7 +1506,7 @@ Returns the child's AI personality for the Discover page.
 
 | `status` | Meaning | What the page shows |
 |---|---|---|
-| `not_started` | No generation yet. Rare: discover starts one when the conversation completes. | Offers to generate (`POST …/generation`) |
+| `not_started` | No generation yet. Usually only for a moment: discover starts one as soon as `onboarding.conversation_completed` arrives, and the page may open first. | Calls `POST …/generation`, which returns the automatic job if it has started meanwhile |
 | `generating` | A job is running; `job_id` is set | "Generating…", polling the job |
 | `ready` | `view_model` is set | The personality |
 | `failed` | The last job failed | A retry button (`POST …/generation`) |
@@ -1519,7 +1519,7 @@ Returns the child's AI personality for the Discover page.
 
 ## POST /api/v1/children/{id}/personality/generation
 
-Starts the personality generation when there's none. Discover starts it on its own when the conversation completes, so this endpoint is only for a **retry after `failed`**, or the rare `not_started` case (for example, the automatic start couldn't store its job).
+Starts the personality generation when there's none. Discover starts it on its own when the conversation completes, so this endpoint is for a **retry after `failed`**, and for the page opening while the status is still `not_started` (common: the app opens Discover right after the onboarding `PUT`).
 
 | | |
 |---|---|
@@ -1537,8 +1537,8 @@ No body. `kind` is always `personality`.
 ### Processing
 
 1. If the personality is `ready`, return `409 already_generated`: there's no regeneration (proposal 12.1).
-2. Create the job `generate_personality_analysis` and set `status: "generating"` and `active_job_id` on the personality.
-3. **The worker:**
+   - **Starting is atomic:** both this endpoint and the automatic start run **one transaction** (same database, same zone) with two writes: the upsert on `{_id: child_id, location, status: {$in: ["not_started", "failed"]}}`, setting `status: "generating"` and a new `active_job_id`, and the insert of that job. Either both happen or neither does, so a personality can't be left `generating` with no job. No document yet means the upsert creates it. A **duplicate-key error** means the document exists with another status: the caller lost the race, reads the document and returns its `active_job_id` (`200`), or `409` if it's `ready`. Two jobs can never start for one child.
+2. **The worker** (job type `generate_personality_analysis`):
    - builds the prompt from `onboarding_inputs` and `child_access` (name, age, gender);
    - calls the LLM, and checks the answer against the expected schema;
    - builds `view_model`, stores it with `analysis`, and sets `status: "ready"`;
@@ -1591,13 +1591,13 @@ Circle errors; `409 personality_not_ready`.
 
 ## GET /internal/discover/children/{id}/status
 
-Confirm-before-deny for grow (proposal 12.4). Cloud Map, port 8001, service token `aud = "discover-internal"`, query `location`. Returns `{"completed": true, "version": 4}`: `completed` is `true` once the personality is ready **and** the parent has passed the reveal (`viewed_at` set).
+Confirm-before-deny for grow (proposal 12.4). Cloud Map, port 8001, service token `aud = "discover-internal"` (caller: **grow**), query `location`. Returns `{"completed": true}`: `completed` is `true` once the personality is ready **and** the parent has passed the reveal (`viewed_at` set).
 
 ---
 
 ## GET /internal/discover/children/{id}/summary
 
-Read-through for the `personality_inputs` copies in grow and transform (proposal 7.5). Cloud Map, port 8001, service token `aud = "discover-internal"`, query `location`. Returns the `personality_inputs` fields (proposal 4.1), `traits` and `strengths`, with `version`; or `404` until a personality is finalised.
+Read-through for the `personality_inputs` copies in grow and transform (proposal 7.5). Cloud Map, port 8001, service token `aud = "discover-internal"` (callers: **grow, transform**), query `location`. Returns the `personality_inputs` fields (proposal 4.1), `traits` and `strengths`, with `version`; or `404` until a personality is finalised.
 
 ---
 
@@ -1621,8 +1621,8 @@ Returns all of the child's growth areas, with their questions, answers and recom
 {
   "areas": [
     {
-      "area_id": "emotional-growth",
-      "area_name": "Emotional growth",
+      "area_id": "self_care",
+      "area_name": "Self care",
       "status": "completed",
       "step": null,
       "parent_questions": { "...": "…" },
@@ -1661,7 +1661,7 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 
 ### Request
 
-`area_id` (path): 1–50 characters, `^[a-z0-9-]+$`. Body:
+`area_id` (path): `^[a-z0-9_-]{1,50}$`, as today's ids (`self_care`, `life_ambition`, …). It must not start with another circle's path word (`onboarding`, `personality`, `growth-areas`, `transform`, `observations`, `connect`), so the ALB's mid-path patterns can't send it to the wrong service (proposal 13.1). Body:
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
@@ -1678,10 +1678,10 @@ Saves one growth area: the parent's progress through its wizard, and its complet
 
 ### Processing
 
-1. **Save:** upsert `{location, user_id, child_id, area_id}` and increment `version`.
+1. **Save:** upsert `{location, _id: "{child_id}:{area_id}"}` (one document per area, proposal section 14) and increment `version`.
 2. **Completing an area** (`status` becomes `completed`), in the same transaction:
    - set `completed_at` and clear `step`;
-   - publish `grow.area_completed` with `area_id`, `area_name`, the answers, the child-activity results and the recommendations;
+   - publish `grow.area_completed` with `area_id`, `area_name`, the answers, the child-activity results, `recommendations` and `ai_three_month_recommendations`;
    - if it's the child's first completed area, also publish `grow.completed`. Children then sets `progress.grow`, which unlocks Transform.
 3. **Editing a completed area** publishes `grow.area_updated`. Transform then clears that area's Life Pathway milestones, which were built from the old answers.
 
@@ -1723,11 +1723,12 @@ Generates one of an area's AI parts.
 2. **The worker:**
    - builds the prompt from the area document and grow's local copies: `child_access` (name, age, gender), `onboarding_inputs` and `personality_inputs`;
    - calls the LLM, and checks the answer against the kind's schema;
-   - writes the result to the area's field (as in the table above). No event is published: no other service uses these fields.
+   - writes the result to the area's field (as in the table above).
+   - **For `recommendations` on a completed area,** it also publishes `grow.area_updated`, because transform's Life Pathway prompt uses `ai_three_month_recommendations` first, as today's `useLifePathwayArea` does. The question sets publish nothing: no other service uses them.
 
 ### Errors
 
-Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_answers` / `needs_completed_area`; `429 llm_limit`.
+Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_answers`; `429 llm_limit`.
 
 ---
 
@@ -1739,19 +1740,19 @@ Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an are
 
 ## GET /internal/grow/children/{id}/status
 
-Confirm-before-deny for transform (proposal 12.4). Cloud Map, `grow.{app}-{env}.internal:8001`, service token `aud = "grow-internal"`, query `location`. Returns `{"completed": true, "version": 12}`: `completed` is `true` once any growth area is completed.
+Confirm-before-deny for transform (proposal 12.4). Cloud Map, `grow.{app}-{env}.internal:8001`, service token `aud = "grow-internal"` (caller: **transform**), query `location`. Returns `{"completed": true}`: `completed` is `true` once any growth area is completed.
 
 ---
 
 ## GET /internal/grow/children/{id}/areas
 
-Read-through for the `growth_inputs` copies in transform and release (proposal 7.5). Cloud Map, port 8001, service token `aud = "grow-internal"`, query `location`. Returns the completed areas in the `growth_inputs` shape (proposal 4.1): `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, each with its `version`. It's an empty list until an area is completed.
+Read-through for the `growth_inputs` copies in transform and release (proposal 7.5). Cloud Map, port 8001, service token `aud = "grow-internal"` (callers: **transform, release**), query `location`. Returns the completed areas in the `growth_inputs` shape (proposal 4.1): `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations`, each with its `version`. It's an empty list until an area is completed.
 
 ---
 
 ## Not in the grow API
 
-Two endpoints listed earlier in proposal 13.4 are left out, because neither app would call them:
+Two endpoints that an earlier draft of proposal 13.4 planned are left out, because neither app would call them:
 - **`DELETE …/growth-areas`** (today's `DELETE /api/v1/user/completed-growth-areas`): the client method `completedGrowthAreas.clear` exists in both apps but is never called. "Start over" deletes the whole child instead.
 - **`GET …/growth-areas/{area_id}`**: every page loads the full list, which is one query.
 
@@ -1777,10 +1778,10 @@ Returns everything the Transform circle shows: the Life Pathway (milestones per 
 {
   "areas": [
     {
-      "area_id": "emotional-growth",
-      "area_name": "Emotional growth",
+      "area_id": "self_care",
+      "area_name": "Self care",
       "life_pathway_milestones": { "...": "…" },
-      "generating": false
+      "life_pathway_generating": false
     }
   ],
   "ask": "Help him handle frustration calmly",
@@ -1793,15 +1794,15 @@ Returns everything the Transform circle shows: the Life Pathway (milestones per 
   "event_name": "School play",
   "event_date": "2027-01-20",
   "event_set": true,
-  "photos": { "act:week-1": ["https://…?X-Amz-…"] },
+  "photos": { "act:week-1": [{ "key": "uploads/ap-south-1/c0ffee00-…/ninety-day-plan/….jpg", "url": "https://…?X-Amz-…" }] },
   "generating": [],
   "completed_at": null
 }
 ```
 
 - `areas` lists the completed growth areas from transform's `growth_inputs` copy, with each area's Life Pathway milestones (stored in transform, below). It's one read, plus the copy, in the same database (proposal 12.2).
-- `photos` holds short-lived GET URLs, built from the stored S3 keys, as today.
-- `generating` lists the kinds with a job running.
+- `photos` gives each photo's stored S3 `key` and a short-lived GET `url`. The client needs the keys to add or remove one photo without dropping the others (PATCH below).
+- `generating` lists the plan-level kinds with a job running (`plan`, `event_tracker`); each area's `life_pathway_generating` says whether its milestones are being generated.
 
 ---
 
@@ -1835,7 +1836,7 @@ Any subset; each field sent replaces the stored one. Map keys match `^[a-zA-Z0-9
 | `event_name` | string | ≤ 200 |
 | `event_date` | date (`YYYY-MM-DD`) | Today any string ≤ 32 |
 | `event_set` | bool | |
-| `photos` | map of field key → string[] | S3 **keys** from [photos/presign](#post-apiv1childrenidtransformphotospresign) |
+| `photos` | map of field key → string[] | S3 **keys**. Each field key sent replaces that field's list, so to add a photo the client sends the existing keys (from GET) plus the new one from [photos/presign](#post-apiv1childrenidtransformphotospresign); field keys not sent are left alone |
 | `clear_track_steps` | bool | `true` clears `track_steps`, as today, when the event is retargeted |
 
 `plan`, `track_steps` and the Life Pathway can't be set here: jobs write them. The body must be ≤ 64 KB, as today.
@@ -1889,7 +1890,7 @@ The worker:
 3. writes the field.
    - A finished `plan` can complete Transform, if the event is already set (see PATCH).
    - **Life Pathway milestones are cleared,** so the page offers to generate them again, when:
-     - the child's `age` or `gender` changes (`child.updated`, as today's `_LIFE_PATHWAY_INPUTS`);
+     - the child's `age` or `gender` changes (`child.changed`, as today's `_LIFE_PATHWAY_INPUTS`);
      - or that area's answers change (`grow.area_updated`).
 
 ### Errors
@@ -1947,7 +1948,7 @@ Circle errors; `415 unsupported_image_type`; `502 upload_url_failed`; `503 uploa
 
 ## GET /internal/transform/children/{id}/status
 
-Confirm-before-deny for release (proposal 12.4). Cloud Map, `transform.{app}-{env}.internal:8001`, service token `aud = "transform-internal"`, query `location`. Returns `{"completed": true, "version": 15}`: `completed` is `true` once `completed_at` is set (plan generated and Day-90 event set).
+Confirm-before-deny for release (proposal 12.4). Cloud Map, `transform.{app}-{env}.internal:8001`, service token `aud = "transform-internal"` (caller: **release**), query `location`. Returns `{"completed": true}`: `completed` is `true` once `completed_at` is set (plan generated and Day-90 event set).
 
 ---
 
@@ -2036,6 +2037,8 @@ Generates the observation patterns.
 
 No body. `kind` is always `observations`.
 
+Starting is atomic, as for the personality: one transaction with the upsert on `{_id: child_id, location, status: {$in: ["not_started", "failed", "ready"]}}` that sets `status: "generating"`, and the job insert. A duplicate-key error means a job is already running, and its `job_id` is returned.
+
 ### Processing
 
 The worker:
@@ -2061,7 +2064,7 @@ Circle errors; `429 llm_limit`.
 
 ## GET /internal/release/children/{id}/status
 
-Confirm-before-deny for connect (proposal 12.4). Cloud Map, `release.{app}-{env}.internal:8001`, service token `aud = "release-internal"`, query `location`. Returns `{"completed": true, "version": 3}`: `completed` is `true` once `completed_at` is set (a pattern watched).
+Confirm-before-deny for connect (proposal 12.4). Cloud Map, `release.{app}-{env}.internal:8001`, service token `aud = "release-internal"` (caller: **children**, for the Connect visit until connect exists; then connect), query `location`. Returns `{"completed": true}`: `completed` is `true` once `completed_at` is set (a pattern watched).
 
 ---
 
@@ -2082,7 +2085,7 @@ Records that the parent has opened the Connect circle.
 ### Processing
 
 1. Refuse with `403 circle_locked` if Release isn't done.
-2. Set `progress.connect = true` (one-way) and increment `version`. If it changed, publish `child.progress_changed` in the same transaction.
+2. Set `progress.connect = true` (one-way) and increment `version`. If it changed, publish `child.changed` (the full snapshot) in the same transaction.
 
 **Connect isn't a service yet.** The page has no data of its own today, so there's nothing for a connect service to own. Until it's built:
 - children serves this one endpoint, and sets the flag directly;
@@ -2142,7 +2145,7 @@ Returns a short-lived link to the latest Android APK.
 |---|---|
 | **Service** | platform |
 | **Routing** | ALB rule 130, `/api/v1/downloads/*` |
-| **Access** | Signed in (any role). Today the backend route has no auth check, but the edge already rejects it without a token: `/api/v1/downloads/apk` isn't in the JWT validator's bypass lists. Platform now checks the token too, so the rule doesn't depend on the edge alone. |
+| **Access** | Signed in, **parents only** (admins get `403`), as today: the route requires `CurrentParent`, and the edge also rejects it without a token. |
 | **Rate limit** | 10 per minute per user |
 | **Success** | `200 OK` |
 | **Used by** | The "Download the Android app" button on Home in the web app (`api.downloads.getApkUrl`) |
@@ -2160,7 +2163,7 @@ List the APKs under `app-assets/applications/android/` in the assets bucket (`us
 
 ### Errors
 
-`401`; `404 apk_not_available` (no build yet); `429`; `503 downloads_not_configured`.
+`401`; `403 parents_only`; `404 apk_not_available` (no build yet); `429`; `503 downloads_not_configured`.
 
 ---
 
