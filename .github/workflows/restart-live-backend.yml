@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "Services to restart: all, or a comma-separated list of: auth, admin, backend, worker (e.g. backend,worker). Restarted in parallel."
+        description: "Services to restart: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, platform (e.g. users,users-worker). Restarted in parallel."
         required: true
         default: "all"
         type: string
@@ -44,8 +44,8 @@ permissions:
 
 # Locked per environment (not per service or region): one run at a time per
 # environment across deploy, promote and restart, which share this namespace.
-# Not per service: `service` is free text, so "all", "backend" and
-# "worker, backend" would be different locks over the same ECS services.
+# Not per service: `service` is free text, so "all", "users" and
+# "users-worker, users" would be different locks over the same ECS services.
 concurrency:
   group: deploy-live-backend-superpower-${{ inputs.environment }}
   cancel-in-progress: false

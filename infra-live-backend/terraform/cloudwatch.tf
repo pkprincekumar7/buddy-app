@@ -49,62 +49,95 @@ resource "aws_sns_topic_subscription" "ops_email" {
 }
 
 # ---------------------------------------------------------------------------
-# Worker alerting alarms — enable_all_alarms (prod only)
+# Job and event alarms — enable_all_alarms (docs/auth-users-split.md, 15.5)
+#
+# Each service publishes its metrics to its own namespace, Superpower/<service>,
+# with an Environment dimension:
+#   - PendingJobCount and OldestRunningJobAgeSeconds (the 4 generating services,
+#     from one leader per region in the HTTP runtime);
+#   - OldestUnpublishedOutboxAgeSeconds (the 8 data services' relays, 0 when idle).
 # ---------------------------------------------------------------------------
 
-# ProcessingJobCount > 0 for 10+ consecutive minutes means jobs are stuck in
-# "processing" state (worker slots claimed them but never finished). This
-# usually indicates a worker crash-loop or a MongoDB connectivity problem.
-resource "aws_cloudwatch_metric_alarm" "worker_processing_stuck" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-processing-stuck-${var.environment}"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 10 # 10 × 60s = 10 minutes
-  metric_name         = "ProcessingJobCount"
-  namespace           = "Superpower/Worker"
-  period              = 60
-  statistic           = "Maximum"
-  threshold           = 0
-  treat_missing_data  = "notBreaching"
-
-  alarm_description = "Worker jobs stuck in processing for >10 minutes — check ECS logs and MongoDB connectivity."
-
-  dimensions = {
-    Environment = var.environment
-  }
-
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
-
-  tags = {
-    Name = "${var.app_name}-worker-processing-stuck-${var.environment}"
-  }
+locals {
+  alarm_actions     = [aws_sns_topic.alerts.arn]
+  generating_alarms = var.enable_all_alarms ? toset(local.generating_services) : toset([])
+  outbox_alarms     = var.enable_all_alarms ? toset(local.worker_services) : toset([])
 }
 
-# PendingJobCount sustained high — jobs are not being consumed fast enough.
-resource "aws_cloudwatch_metric_alarm" "worker_pending_jobs_high" {
-  count               = var.enable_all_alarms ? 1 : 0
-  alarm_name          = "${var.app_name}-worker-pending-jobs-high-${var.environment}"
-  alarm_description   = "Job queue backlog is high — worker may need manual scaling or investigation."
-  namespace           = "Superpower/Worker"
+# Jobs waiting faster than workers take them.
+resource "aws_cloudwatch_metric_alarm" "pending_jobs_high" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-pending-jobs-high-${var.environment}"
+  alarm_description   = "${each.key}'s generation backlog is over 100 for 5 minutes: its worker may need more tasks, or is failing."
+  namespace           = "Superpower/${each.key}"
   metric_name         = "PendingJobCount"
-  statistic           = "Average"
+  statistic           = "Maximum"
   period              = 300
   evaluation_periods  = 1
   threshold           = 100
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
 
-  dimensions = {
-    Environment = var.environment
-  }
+# A job running this long means a hung job or worker.
+resource "aws_cloudwatch_metric_alarm" "processing_stuck" {
+  for_each = local.generating_alarms
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
+  alarm_name          = "${var.app_name}-${each.key}-processing-stuck-${var.environment}"
+  alarm_description   = "A ${each.key} job has been running over 10 minutes: a hung job or worker; check the worker's logs."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestRunningJobAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 600
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
 
-  tags = {
-    Name = "${var.app_name}-worker-pending-jobs-high-${var.environment}"
-  }
+# The leader stopped publishing PendingJobCount: scaling has lost its signal.
+resource "aws_cloudwatch_metric_alarm" "pending_jobs_missing" {
+  for_each = local.generating_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-pending-jobs-missing-${var.environment}"
+  alarm_description   = "No PendingJobCount from ${each.key} for 10 minutes: its HTTP runtime's metrics leader is down, so the worker can't scale on its backlog."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "PendingJobCount"
+  statistic           = "SampleCount"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+# The relay publishes 0 every minute when idle, so missing data means a dead relay.
+resource "aws_cloudwatch_metric_alarm" "outbox_stale" {
+  for_each = local.outbox_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-outbox-stale-${var.environment}"
+  alarm_description   = "${each.key}'s oldest unpublished event is over 10 minutes old, or its relay stopped reporting: events aren't reaching other services."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = "OldestUnpublishedOutboxAgeSeconds"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 600
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "breaching"
+  dimensions          = { Environment = var.environment }
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
 }
 
 # ---------------------------------------------------------------------------
@@ -141,7 +174,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_healthy_hosts" {
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   count               = var.enable_basic_alarms ? 1 : 0
   alarm_name          = "${var.app_name}-alb-5xx-${var.environment}"
-  alarm_description   = "ALB 5XX error spike (all target groups) — check the API, Auth and Admin task logs."
+  alarm_description   = "ALB 5XX error spike (all target groups) — check the HTTP services' task logs."
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HTTPCode_Target_5XX_Count"
   statistic           = "Sum"
@@ -221,73 +254,79 @@ resource "aws_cloudwatch_metric_alarm" "redis_connections" {
 }
 
 # ---------------------------------------------------------------------------
-# X-Ray sampling rules
-# dev/sbx/stg: 1 rule at var.xray_default_sampling_rate (5%)
-# prod:        1 rule at var.xray_default_sampling_rate (1%) + 1 error rule at 100%
-# ---------------------------------------------------------------------------
-
-resource "aws_xray_sampling_rule" "default" {
-  rule_name      = "${var.app_name}-default-${var.environment}"
-  priority       = 9999
-  version        = 1
-  reservoir_size = 1
-  fixed_rate     = var.xray_default_sampling_rate
-  host           = "*"
-  http_method    = "*"
-  url_path       = "*"
-  service_name   = "*"
-  service_type   = "*"
-  resource_arn   = "*"
-
-  tags = {
-    Name = "${var.app_name}-xray-default-${var.environment}"
-  }
-}
-
-# Captures 100% of traces where X-Ray detects an error/fault response.
-# Priority 1 means it is evaluated before the default rule.
-resource "aws_xray_sampling_rule" "errors" {
-  count          = var.enable_xray_error_rule ? 1 : 0
-  rule_name      = "${var.app_name}-errors-${var.environment}"
-  priority       = 1
-  version        = 1
-  reservoir_size = 5
-  fixed_rate     = 1.0
-  host           = "*"
-  http_method    = "*"
-  url_path       = "*"
-  service_name   = "*"
-  service_type   = "*"
-  resource_arn   = "*"
-
-  tags = {
-    Name = "${var.app_name}-xray-errors-${var.environment}"
-  }
-}
-
-# ---------------------------------------------------------------------------
 # CloudWatch dashboard — enable_dashboard (prod, optional stg)
-# Template file lives alongside this module as dashboard.json.tpl.
+#
+# Built from the runtime list, so a new service appears without editing it:
+# CPU and memory per runtime, requests and 5XX per HTTP service, the job and
+# outbox metrics, event-queue age and Valkey connections. (X-Ray sampling is the
+# collector's tail sampling now, otel_collector.tf, so there are no sampling rules.)
 # ---------------------------------------------------------------------------
+
+locals {
+  dashboard_runtimes = sort(keys(local.services))
+  dashboard_widgets = [
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "CPU by runtime", region = var.aws_region, stat = "Average", period = 300
+        metrics = [for k in local.dashboard_runtimes : ["AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.backend.name, "ServiceName", module.service[k].service_name, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Memory by runtime", region = var.aws_region, stat = "Average", period = 300
+        metrics = [for k in local.dashboard_runtimes : ["AWS/ECS", "MemoryUtilization", "ClusterName", aws_ecs_cluster.backend.name, "ServiceName", module.service[k].service_name, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Requests per target", region = var.aws_region, stat = "Sum", period = 60
+        metrics = [for k in sort(keys(local.http_services)) : ["AWS/ApplicationELB", "RequestCountPerTarget", "TargetGroup", module.alb.target_group_arn_suffixes[k], "LoadBalancer", module.alb.arn_suffix, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "5XX by service", region = var.aws_region, stat = "Sum", period = 60
+        metrics = [for k in sort(keys(local.http_services)) : ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "TargetGroup", module.alb.target_group_arn_suffixes[k], "LoadBalancer", module.alb.arn_suffix, { label = k }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Pending generation jobs", region = var.aws_region, stat = "Maximum", period = 60
+        metrics = [for s in local.generating_services : ["Superpower/${s}", "PendingJobCount", "Environment", var.environment, { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Oldest unpublished event (s)", region = var.aws_region, stat = "Maximum", period = 60
+        metrics = [for s in local.worker_services : ["Superpower/${s}", "OldestUnpublishedOutboxAgeSeconds", "Environment", var.environment, { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Oldest event waiting in each queue (s)", region = var.aws_region, stat = "Maximum", period = 300
+        metrics = [for s in sort(keys(module.events.queue_urls)) : ["AWS/SQS", "ApproximateAgeOfOldestMessage", "QueueName", "${var.app_name}-${var.environment}-${s}-events", { label = s }]]
+      }
+    },
+    {
+      type = "metric", width = 12, height = 6
+      properties = {
+        title   = "Valkey connections", region = var.aws_region, stat = "Maximum", period = 300
+        metrics = [for id in local.redis_member_ids : ["AWS/ElastiCache", "CurrConnections", "CacheClusterId", id]]
+      }
+    },
+  ]
+}
 
 resource "aws_cloudwatch_dashboard" "main" {
   count = var.enable_dashboard ? 1 : 0
-  # Region-qualified: CloudWatch dashboard names are account-global, so one
-  # name per env would make every region's apply overwrite the same dashboard.
+  # Region-qualified: dashboard names are account-global.
   dashboard_name = "${var.app_name}-${var.environment}-${var.aws_region}"
-
-  dashboard_body = templatefile("${path.module}/dashboard.json.tpl", {
-    region              = var.aws_region
-    cluster_name        = aws_ecs_cluster.backend.name
-    api_service_name    = module.service["backend"].service_name
-    auth_service_name   = module.service["auth"].service_name
-    admin_service_name  = module.service["admin"].service_name
-    worker_service_name = module.service["worker"].service_name
-    alb_arn_suffix      = module.alb.arn_suffix
-    tg_arn_suffix       = module.alb.target_group_arn_suffixes["backend"]
-    auth_tg_arn_suffix  = module.alb.target_group_arn_suffixes["auth"]
-    admin_tg_arn_suffix = module.alb.target_group_arn_suffixes["admin"]
-    redis_member_ids    = local.redis_member_ids
-    environment         = var.environment
-  })
+  dashboard_body = jsonencode({ widgets = local.dashboard_widgets })
 }

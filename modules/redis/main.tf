@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------------------
 # redis — ElastiCache running the Valkey engine (open-source, Redis-protocol
 # compatible: the app's Redis clients and Lua scripts work unchanged),
-# encrypted at rest and in transit with an AUTH token, reachable only from
-# the given client security groups (TF-01). Resource names still say "redis"
+# encrypted at rest and in transit, reachable only from the given client
+# security groups (TF-01). Clients sign in either with one shared AUTH token
+# (today's stack) or as one RBAC user per service with IAM authentication
+# (rbac_services, docs/auth-users-split.md 9.3 and 15.1). Resource names still say "redis"
 # so existing replication groups and security groups aren't replaced.
 #
 # Node count and multi-AZ come from the caller per environment. Destroying
@@ -85,16 +87,112 @@ resource "aws_elasticache_replication_group" "this" {
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
   transit_encryption_mode    = "required"
-  auth_token                 = var.auth_token
+
+  # One or the other (a replication group can't take both).
+  auth_token     = local.rbac ? null : var.auth_token
+  user_group_ids = local.rbac ? [aws_elasticache_user_group.this[0].user_group_id] : null
 
   lifecycle {
     precondition {
       condition     = !(var.multi_az && var.replica_count == 0)
       error_message = "elasticache_multi_az = true requires elasticache_replica_count >= 1."
     }
+    precondition {
+      condition     = local.rbac != (var.auth_token != null)
+      error_message = "Set exactly one of auth_token (one shared token) or rbac_services (one IAM user per service)."
+    }
   }
 
   tags = {
     Name = "${var.app_name}-backend-redis-${var.environment}"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# RBAC: one IAM-authenticated user per service (9.3, 15.1)
+#
+# IAM authentication needs the user ID and user name to be the same, so both are
+# "<app>-<env>-<service>". A task connects as that user with a short-lived token
+# from its task role (elasticache:Connect on the replication group and the user).
+#
+# Key permissions: "%R~" is read-only (Redis 7 / Valkey ACL syntax), "~" read and
+# write. Commands: reads, writes and scripts (the limiters and the authz CAS are
+# Lua), but nothing in @dangerous.
+# ---------------------------------------------------------------------------
+locals {
+  rbac = length(var.rbac_services) > 0
+
+  rbac_user_id = { for k, _ in var.rbac_services : k => "${var.app_name}-${var.environment}-${k}" }
+
+  access_string = {
+    for k, s in var.rbac_services : k => join(" ", concat(
+      ["on"],
+      [
+        "~LIMITS:LIMITER/${k}/*",
+        "~leader:${k}:*",
+        s.writes_authz ? "~authz:*" : "%R~authz:*",
+      ],
+      s.llm_limit ? ["~llm:hourly:*"] : [],
+      ["-@all", "+@read", "+@write", "+@scripting", "+@connection", "-@dangerous"],
+    ))
+  }
+}
+
+resource "aws_elasticache_user" "service" {
+  for_each = var.rbac_services
+
+  engine        = "valkey"
+  user_id       = local.rbac_user_id[each.key]
+  user_name     = local.rbac_user_id[each.key]
+  access_string = local.access_string[each.key]
+
+  authentication_mode {
+    type = "iam"
+  }
+
+  tags = {
+    Name    = local.rbac_user_id[each.key]
+    Service = each.key
+  }
+
+  lifecycle {
+    precondition {
+      condition     = length(local.rbac_user_id[each.key]) <= 40
+      error_message = "ElastiCache user ID ${local.rbac_user_id[each.key]} is over 40 characters."
+    }
+  }
+}
+
+# A disabled "default" user: some engines require one in every user group. "off"
+# means it can't sign in, and -@all that it could run nothing if it did.
+resource "aws_elasticache_user" "default" {
+  count = local.rbac && var.include_default_user ? 1 : 0
+
+  engine        = "valkey"
+  user_id       = "${var.app_name}-${var.environment}-default"
+  user_name     = "default"
+  access_string = "off -@all"
+
+  authentication_mode {
+    type = "no-password-required"
+  }
+
+  tags = {
+    Name = "${var.app_name}-${var.environment}-default"
+  }
+}
+
+resource "aws_elasticache_user_group" "this" {
+  count = local.rbac ? 1 : 0
+
+  engine        = "valkey"
+  user_group_id = "${var.app_name}-backend-valkey-users-${var.environment}"
+  user_ids = concat(
+    [for u in aws_elasticache_user.service : u.user_id],
+    [for u in aws_elasticache_user.default : u.user_id],
+  )
+
+  tags = {
+    Name = "${var.app_name}-backend-valkey-users-${var.environment}"
   }
 }

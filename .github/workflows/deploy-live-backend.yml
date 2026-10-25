@@ -10,9 +10,17 @@ on:
       # the description are only help text, but scripts/check-service-lists.sh
       # (CI) fails if they don't match services.tf, in deploy_order.
       service:
-        description: "Services to deploy: all, or a comma-separated list of: auth, admin, backend, worker (e.g. auth,backend). Rolled out in parallel."
+        description: "Services to deploy: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, platform (e.g. users,users-worker). Rolled out in parallel."
         required: true
         default: "all"
+        type: string
+      # Optional: build this backend service's code into every selected
+      # service's repository instead of its own (a placeholder image before a
+      # service has code: hello in build plan 2.7). Empty = each its own.
+      build_from:
+        description: "Optional: build every selected image from this backend service's code instead of its own (e.g. hello, for placeholder images). Empty = each service's own code."
+        required: false
+        default: ""
         type: string
       environment:
         description: "Deployment environment"
@@ -47,11 +55,15 @@ on:
         type: string
         required: false
         default: "all"
+      build_from:
+        type: string
+        required: false
+        default: ""
       environment:
         type: string
         required: true
       # JSON array, e.g. '["ap-south-1","eu-west-1"]' — same shape as the
-      # workflow_dispatch choice. The image is built once and pushed to every
+      # workflow_dispatch choice. Each image is built once and pushed to every
       # region in it.
       aws_regions:
         type: string
@@ -63,8 +75,8 @@ permissions:
 
 # Locked per environment (not per service or region): one run at a time per
 # environment across deploy, promote and restart, which share this namespace.
-# Not per service: `service` is free text, so "all", "backend" and
-# "worker, backend" would be different locks over the same ECS services.
+# Not per service: `service` is free text, so "all", "users" and
+# "users-worker, users" would be different locks over the same ECS services.
 concurrency:
   group: deploy-live-backend-superpower-${{ inputs.environment }}
   cancel-in-progress: false
@@ -74,15 +86,22 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Build the image once and push the identical image to every selected
-  # region's ECR repository, so all regions run byte-for-byte the same build.
+  # Resolve once, before building: which runtimes the selection covers, which
+  # images they need (one per service: a worker runs its service's), and the
+  # image tag every build pushes. Read from the first selected region's
+  # ecs_services list; each deploy instance re-checks its own region.
   # ---------------------------------------------------------------------------
-  build:
-    name: Build & Push Image
+  resolve:
+    name: Resolve services and images
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     outputs:
+      images: ${{ steps.list.outputs.images }}
       image_tag: ${{ steps.git_meta.outputs.image_tag }}
+      sha: ${{ steps.git_meta.outputs.sha }}
+      branch: ${{ steps.git_meta.outputs.branch }}
+      committed_at: ${{ steps.git_meta.outputs.committed_at }}
+      tag: ${{ steps.git_meta.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -92,6 +111,7 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
+          BUILD_FROM: ${{ inputs.build_from }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
@@ -101,9 +121,12 @@ jobs:
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
             exit 1
           fi
+          if [[ -n "$BUILD_FROM" && ! "$BUILD_FROM" =~ ^[a-z][a-z0-9_]{0,30}$ ]]; then
+            echo "ERROR: build_from '$BUILD_FROM' is not a backend service name."
+            exit 1
+          fi
 
-      # us-east-1 is the control-plane region (SSM); ECR calls below pass
-      # --region explicitly for each target region.
+      # us-east-1 is the control-plane region (SSM).
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.1
         with:
@@ -111,67 +134,113 @@ jobs:
           role-session-name: deploy-live-backend-${{ inputs.environment }}
           aws-region: us-east-1
 
-      # -------------------------------------------------------------------------
-      # Resolve every region's ECR repository up front (SSM parameters written
-      # by terraform-live-backend.yml) so a missing region fails before the
-      # build, not halfway through the pushes.
-      # -------------------------------------------------------------------------
-      - name: Resolve ECR repositories
+      - name: List services and images
+        id: list
         env:
-          REGIONS: ${{ inputs.aws_regions }}
+          FIRST_REGION: ${{ fromJson(inputs.aws_regions)[0] }}
+          SELECTION: ${{ inputs.service }}
         run: |
-          get_ssm() {
-            aws ssm get-parameter --region us-east-1 --name "$1" --query "Parameter.Value" --output text 2>/dev/null || echo ""
-          }
+          source scripts/ecs-services.sh
+          SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$FIRST_REGION" "$SELECTION")
+          SERVICES=$(image_runtimes "$SERVICES" "$SELECTION")
+          IMAGES=$(image_services "$SERVICES")
+          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+          echo "Deploying: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
+          echo "Building:  $(jq -r 'join(", ")' <<<"$IMAGES")"
 
-          : > ecr_targets.txt
-          for REGION in $(echo "$REGIONS" | jq -r '.[]'); do
-            ECR_URL=$(get_ssm "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$REGION/ecr_repository_url")
-            if [ -z "$ECR_URL" ]; then
-              echo "ERROR: ECR repository URL for $REGION not found in SSM. Run terraform-live-backend workflow (apply) for $REGION first."
-              exit 1
-            fi
-            echo "$REGION $ECR_URL" >> ecr_targets.txt
-            echo "ECR ($REGION): $ECR_URL"
-          done
-
-      # -------------------------------------------------------------------------
-      # Build once, push to each region's ECR.
-      # Tagged with :<date>-<git-sha> only — ECR repositories use IMMUTABLE
-      # tags so each tag can only be pushed once. :latest is intentionally
-      # omitted; the SHA tag provides full traceability and safe rollbacks
-      # without ever needing to overwrite a tag.
-      # Git metadata is resolved here and passed as build args so the image
-      # can serve it from /api/health without needing .git or the git binary.
-      # -------------------------------------------------------------------------
+      # Resolved once so every build pushes the same tag, and so the image can
+      # serve its git metadata from /health without .git or the git binary.
+      # Tagged :<date>-<git-sha> only: the repositories use IMMUTABLE tags, so
+      # a tag is pushed once and never overwritten (no :latest).
       - name: Resolve git metadata
         id: git_meta
         run: |
-          echo "sha=$(git rev-parse --short HEAD)"                                   >> "$GITHUB_OUTPUT"
-          echo "branch=$(git rev-parse --abbrev-ref HEAD)"                           >> "$GITHUB_OUTPUT"
-          echo "committed_at=$(git log -1 --format=%cI)"                             >> "$GITHUB_OUTPUT"
-          echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')" >> "$GITHUB_OUTPUT"
-          echo "image_tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"         >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$(git rev-parse --short HEAD)"
+            echo "branch=$(git rev-parse --abbrev-ref HEAD)"
+            echo "committed_at=$(git log -1 --format=%cI)"
+            echo "tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo '')"
+            echo "image_tag=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker image
+  # ---------------------------------------------------------------------------
+  # One image per selected service (docs/auth-users-split.md 15.2): built once
+  # with --build-arg SERVICE=<service> and pushed to that service's repository
+  # in every selected region, so all regions run byte-for-byte the same build.
+  # fail-fast: false lets the other images finish; the deploy waits for all.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build & Push (${{ matrix.image_service }})
+    needs: resolve
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image_service: ${{ fromJson(needs.resolve.outputs.images) }}
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.1
+        with:
+          role-to-assume: ${{ vars.ROLE_ARN }}
+          role-session-name: deploy-live-backend-${{ inputs.environment }}
+          aws-region: us-east-1
+
+      # Every region's repository for this service, from its ecs_services list
+      # (terraform-live-backend), up front, so a missing region fails before
+      # the build, not halfway through the pushes.
+      - name: Resolve ECR repositories
+        env:
+          REGIONS: ${{ inputs.aws_regions }}
+          IMAGE_SERVICE: ${{ matrix.image_service }}
         run: |
+          source scripts/ecs-services.sh
+          : > ecr_targets.txt
+          for REGION in $(jq -r '.[]' <<<"$REGIONS"); do
+            SERVICES=$(resolve_services "/${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/$REGION" all)
+            REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
+            echo "$REGION $REPO" >> ecr_targets.txt
+            echo "ECR ($REGION): $REPO"
+          done
+
+      # build_from (optional) builds another service's code into this
+      # service's repository: the placeholder image before a service has code
+      # (build plan 2.7, hello).
+      - name: Build Docker image
+        env:
+          IMAGE_SERVICE: ${{ matrix.image_service }}
+          BUILD_FROM: ${{ inputs.build_from }}
+          TAG: ${{ needs.resolve.outputs.image_tag }}
+          GIT_SHA: ${{ needs.resolve.outputs.sha }}
+          GIT_BRANCH: ${{ needs.resolve.outputs.branch }}
+          GIT_COMMITTED_AT: ${{ needs.resolve.outputs.committed_at }}
+          GIT_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          SERVICE="${BUILD_FROM:-$IMAGE_SERVICE}"
+          echo "Building backend/$SERVICE for $IMAGE_SERVICE"
           docker build \
             --platform linux/amd64 \
-            --build-arg GIT_SHA="${{ steps.git_meta.outputs.sha }}" \
-            --build-arg GIT_BRANCH="${{ steps.git_meta.outputs.branch }}" \
-            --build-arg GIT_COMMITTED_AT="${{ steps.git_meta.outputs.committed_at }}" \
-            --build-arg GIT_TAG="${{ steps.git_meta.outputs.tag }}" \
-            -t "backend:${{ steps.git_meta.outputs.image_tag }}" \
+            --build-arg SERVICE="$SERVICE" \
+            --build-arg GIT_SHA="$GIT_SHA" \
+            --build-arg GIT_BRANCH="$GIT_BRANCH" \
+            --build-arg GIT_COMMITTED_AT="$GIT_COMMITTED_AT" \
+            --build-arg GIT_TAG="$GIT_TAG" \
+            -t "$IMAGE_SERVICE:$TAG" \
             -f backend/Dockerfile \
             .
 
       - name: Push image to each region's ECR
         env:
-          TAG: ${{ steps.git_meta.outputs.image_tag }}
+          IMAGE_SERVICE: ${{ matrix.image_service }}
+          TAG: ${{ needs.resolve.outputs.image_tag }}
         run: |
           while read -r REGION REPO; do
             REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
-            REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
+            REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
             IMAGE="$REPO:$TAG"
 
             aws ecr get-login-password --region "$REGION" \
@@ -187,20 +256,20 @@ jobs:
                  --output text &>/dev/null; then
               echo "Image $IMAGE already exists in ECR — skipping push."
             else
-              docker tag "backend:$TAG" "$IMAGE"
+              docker tag "$IMAGE_SERVICE:$TAG" "$IMAGE"
               docker push "$IMAGE"
               echo "Pushed: $IMAGE"
             fi
           done < ecr_targets.txt
 
   # ---------------------------------------------------------------------------
-  # Roll the pushed image out to ECS, one parallel instance per region.
+  # Roll the pushed images out to ECS, one parallel instance per region.
   # fail-fast: false — an in-flight rollout in one region must never be
   # cancelled just because another region's instance failed.
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy Live Backend (${{ matrix.aws_region }})
-    needs: build
+    needs: [resolve, build]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -225,32 +294,37 @@ jobs:
       # rolled out all at once (each is an independent ECS service, so the
       # deploy takes as long as the slowest one; log lines are prefixed with
       # the service name). Each gets a new revision of its task definition
-      # with only its container's image swapped; the ECS circuit breaker rolls
-      # back a revision that fails to reach steady state. A failure doesn't
-      # stop the others: the step fails at the end, naming the services left
-      # on their previous image. Helpers: scripts/ecs-services.sh.
+      # with only its container's image swapped for its service's new image;
+      # the ECS circuit breaker rolls back a revision that fails to reach
+      # steady state. A failure doesn't stop the others: the step fails at the
+      # end, naming the services left on their previous image. The collector
+      # (a pinned image) isn't deployed. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
       - name: Deploy services
         env:
           SSM_BASE: /${{ vars.APP_NAME }}/${{ inputs.environment }}/backend/${{ matrix.aws_region }}
           SELECTION: ${{ inputs.service }}
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
         run: |
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
-          ECR_URL=$(get_ssm "$SSM_BASE/ecr_repository_url")
-          if [ -z "$CLUSTER" ] || [ -z "$ECR_URL" ]; then
-            echo "ERROR: ECS cluster or ECR repository not found in SSM under $SSM_BASE. Run terraform-live-backend workflow (apply) first."
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: ECS cluster not found in SSM under $SSM_BASE. Run terraform-live-backend workflow (apply) first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$SELECTION")
+          SERVICES=$(image_runtimes "$SERVICES" "$SELECTION")
 
-          IMAGE="$ECR_URL:$IMAGE_TAG"
-          echo "Image:    $IMAGE"
+          echo "Tag:      $IMAGE_TAG"
           echo "Cluster:  $CLUSTER"
           echo "Services: $(jq -r '[.[].name] | join(", ")' <<<"$SERVICES")"
 
-          # Every service runs the same build; its command picks the entry point.
-          same_image() { echo "$IMAGE"; }
-          deploy_image "$CLUSTER" "$SERVICES" same_image
+          # Each runtime runs its service's image from its service's repository.
+          service_image() {
+            local repo
+            repo=$(jq -r '.ecr_repository_url' <<<"$1")
+            [ -n "$repo" ] && [ "$repo" != "null" ] || { echo "ERROR: no ECR repository for $(jq -r .name <<<"$1")." >&2; return 1; }
+            echo "$repo:$IMAGE_TAG"
+          }
+          deploy_image "$CLUSTER" "$SERVICES" service_image

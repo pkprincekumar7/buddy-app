@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "Services to promote: all, or a comma-separated list of: auth, admin, backend, worker (e.g. backend,worker). Promoted in parallel."
+        description: "Services to promote: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, platform (e.g. users,users-worker). Promoted in parallel."
         required: true
         default: "all"
         type: string
@@ -54,8 +54,8 @@ permissions:
 
 # Locked per environment (not per service or region): one run at a time per
 # environment across deploy, promote and restart, which share this namespace.
-# Not per service: `service` is free text, so "all", "backend" and
-# "worker, backend" would be different locks over the same ECS services.
+# Not per service: `service` is free text, so "all", "users" and
+# "users-worker, users" would be different locks over the same ECS services.
 concurrency:
   group: deploy-live-backend-superpower-${{ inputs.target_env }}
   cancel-in-progress: false
@@ -147,7 +147,8 @@ jobs:
       # source (its PRIMARY deployment's task definition) — promote exactly
       # what is live, not a tag that was built but never reached steady state.
       # Services come from the source's ecs_services list (terraform-live-backend,
-      # services.tf). Helpers: scripts/ecs-services.sh.
+      # services.tf); the collector (a pinned image Terraform sets) isn't
+      # promoted. Helpers: scripts/ecs-services.sh.
       # -------------------------------------------------------------------------
       - name: Read source images
         env:
@@ -162,6 +163,7 @@ jobs:
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$SELECTION")
+          SERVICES=$(image_runtimes "$SERVICES" "$SELECTION")
 
           mkdir -p promote
           IMAGES='[]'
@@ -173,7 +175,7 @@ jobs:
               exit 1
             fi
             echo "Promoting $NAME: $IMAGE"
-            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" '. + [{name: $n, image: $i}]' <<<"$IMAGES")
+            IMAGES=$(jq -c --arg n "$NAME" --arg i "$IMAGE" --arg s "$(jq -r .image_service <<<"$ENTRY")" '. + [{name: $n, image: $i, image_service: $s}]' <<<"$IMAGES")
           done < <(jq -c '.[]' <<<"$SERVICES")
           echo "$IMAGES" > promote/images.json
 
@@ -250,9 +252,10 @@ jobs:
           path: promote/
 
       # -------------------------------------------------------------------------
-      # Push each exported image into the target's own ECR under its source
-      # tag (IMMUTABLE tags: an existing tag is the identical image, so the push
-      # is skipped), then roll every service onto it at once (as in
+      # Push each exported image into its service's repository in the target
+      # (a worker's is its service's) under its source tag (IMMUTABLE tags: an
+      # existing tag is the identical image, so the push is skipped), then
+      # roll every service onto it at once (as in
       # deploy-live-backend; a failure doesn't stop the others and fails the
       # step at the end, naming them). Only the image changes: env vars,
       # secrets refs, CPU/memory and logging come from the target's current
@@ -267,21 +270,23 @@ jobs:
           source scripts/ecs-services.sh
 
           CLUSTER=$(get_ssm "$SSM_BASE/ecs_cluster_name")
-          REPO=$(get_ssm "$SSM_BASE/ecr_repository_url")
-          if [ -z "$CLUSTER" ] || [ -z "$REPO" ]; then
-            echo "ERROR: Target ECS cluster or ECR repository not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
+          if [ -z "$CLUSTER" ]; then
+            echo "ERROR: Target ECS cluster not found in SSM for env=${{ inputs.target_env }}. Run terraform-live-backend workflow (apply) for that environment first."
             exit 1
           fi
           SERVICES=$(resolve_services "$SSM_BASE" "$(jq -r '[.[].name] | join(",")' promote/images.json)")
 
           gunzip -c promote/images.tar.gz | docker load
-          REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
-          REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/backend
-          aws ecr get-login-password --region "${{ matrix.aws_region }}" \
-            | docker login --username AWS --password-stdin "$REGISTRY"
 
-          while IFS= read -r SRC; do
+          # One push per (service, source image): a service and its worker
+          # usually run the same one.
+          while IFS=$'\t' read -r IMAGE_SERVICE SRC; do
+            REPO=$(repository_for "$SERVICES" "$IMAGE_SERVICE")
+            REGISTRY="${REPO%%/*}"    # <account>.dkr.ecr.<region>.amazonaws.com
+            REPO_NAME="${REPO#*/}"    # strip registry host, keep <app>/<env>/<service>
             TAG="${SRC##*:}"
+            aws ecr get-login-password --region "${{ matrix.aws_region }}" \
+              | docker login --username AWS --password-stdin "$REGISTRY"
             if aws ecr describe-images --region "${{ matrix.aws_region }}" --repository-name "$REPO_NAME" \
                  --image-ids imageTag="$TAG" --output text &>/dev/null; then
               echo "$REPO:$TAG already exists in target ECR — skipping push."
@@ -290,12 +295,15 @@ jobs:
               docker push "$REPO:$TAG"
               echo "Pushed: $REPO:$TAG"
             fi
-          done < <(jq -r '[.[].image] | unique | .[]' promote/images.json)
+          done < <(jq -r 'map([.image_service, .image]) | unique | .[] | @tsv' promote/images.json)
 
-          # The target-ECR copy of the image exported for this service.
+          # The target-ECR copy of the image exported for this service: its
+          # own repository, the source's tag.
           target_image() {
-            local src
+            local src repo
             src=$(jq -r --arg n "$(jq -r .name <<<"$1")" '.[] | select(.name == $n) | .image' promote/images.json)
-            echo "$REPO:${src##*:}"
+            repo=$(jq -r '.ecr_repository_url' <<<"$1")
+            [ -n "$repo" ] && [ "$repo" != "null" ] || { echo "ERROR: no ECR repository for $(jq -r .name <<<"$1") in the target." >&2; return 1; }
+            echo "$repo:${src##*:}"
           }
           deploy_image "$CLUSTER" "$SERVICES" target_image

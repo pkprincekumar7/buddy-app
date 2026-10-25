@@ -1251,7 +1251,9 @@ Notes:
 - **Mid-path patterns:** `*` also matches `/`, so `/api/v1/children/*/onboarding*` would catch a growth-area path whose `area_id` starts with `onboarding`. Grow therefore refuses area ids that start with another circle's path word (the API reference has the list).
 - **`modules/alb`:** its validation requires exactly one catch-all target today. It needs:
   - **no catch-all target** allowed, with a fixed-response 404 at priority 50000 instead;
-  - nothing for `*` mid-path: ALB supports it, and the module's `path_patterns` already pass any string.
+  - nothing for `*` mid-path: ALB supports it, and the module's `path_patterns` already pass any string;
+  - several rules for one target (platform at 130 and 140): a `routes` input mirroring `shared/service-routes.json` (build plan 2.1);
+  - shorter target group names, `<app>-<service>-<env>-<hash>`: with `-tg-`, `onboarding` and `transform` are over AWS's 32 characters.
 - **Tests:** a test in each service checks its route paths against these patterns, as `test_main.py` does today.
 
 ### 13.2 Internal calls

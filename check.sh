@@ -244,6 +244,10 @@ run "spa-rewrite CloudFront Function unit tests (infra-live-edge)" \
 # fake aws CLI (no AWS access needed).
 run "ecs-services.sh tests (scripts)" \
     bash "$ROOT/scripts/ecs-services.test.sh"
+# terraform-live-backend's first-apply fill of the per-service secrets, against
+# a fake aws CLI (fake values only).
+run "fill-service-secrets.sh tests (scripts)" \
+    bash "$ROOT/scripts/fill-service-secrets.test.sh"
 # The service names listed in those workflows' `service` input descriptions
 # must match services.tf (they're the help text people pick names from).
 run "service lists match services.tf (scripts)" \
@@ -251,6 +255,7 @@ run "service lists match services.tf (scripts)" \
 if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
       shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
+        "$ROOT/scripts/fill-service-secrets.sh" "$ROOT/scripts/fill-service-secrets.test.sh" \
         "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh"
 fi
 

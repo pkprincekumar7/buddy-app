@@ -113,6 +113,44 @@ variable "load_balancer" {
   default = null
 }
 
+variable "internal_port" {
+  description = "A second container port for internal traffic, reached through Cloud Map rather than the ALB: 8001 for a service's /internal/* API, 4318 for the OpenTelemetry collector (docs/auth-users-split.md, 13.2, 15.5). Null for none."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.internal_port == null || (var.internal_port >= 1 && var.internal_port <= 65535 && floor(coalesce(var.internal_port, 0)) == coalesce(var.internal_port, 0))
+    error_message = "internal_port must be a TCP port (1-65535)."
+  }
+}
+
+variable "service_discovery" {
+  description = <<-EOT
+    Register each task's IP in Cloud Map (13.2), or null for a service with no
+    internal endpoints (workers, platform). Callers resolve
+    "<name>.<namespace>" and get up to 8 healthy task IPs (multivalue A records);
+    only tasks whose container health check passes are answered.
+      namespace_id — the private DNS namespace ({app}-{env}.internal, 2.5)
+      name         — the DNS label; defaults to role
+      dns_ttl      — seconds; 10 so a stopped task drops out quickly
+  EOT
+  type = object({
+    namespace_id = string
+    name         = optional(string)
+    dns_ttl      = optional(number, 10)
+  })
+  default = null
+
+  validation {
+    condition     = var.service_discovery == null || can(regex("^[a-z][a-z0-9-]{0,62}$", coalesce(try(var.service_discovery.name, null), "x")))
+    error_message = "service_discovery.name must be a DNS label: lowercase letters, digits and hyphens."
+  }
+  validation {
+    condition     = var.service_discovery == null || (try(var.service_discovery.dns_ttl, 10) >= 1 && try(var.service_discovery.dns_ttl, 10) <= 300)
+    error_message = "service_discovery.dns_ttl must be 1-300 seconds."
+  }
+}
+
 variable "health_check_grace_period_seconds" {
   description = "Grace period before load balancer health checks count. Only meaningful with load_balancer."
   type        = number

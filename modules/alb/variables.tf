@@ -37,10 +37,13 @@ variable "origin_verify_values" {
 variable "targets" {
   description = <<-EOT
     HTTP services behind the ALB, keyed by service (services.tf) — one target
-    group and one listener rule each.
+    group each.
       port              — container port (plain HTTP inside the VPC)
-      path_patterns     — ALB path patterns this service owns ('*' wildcard).
-                          Exactly one target leaves it empty: the catch-all.
+      path_patterns     — ALB path patterns this service owns ('*' wildcard,
+                          also mid-path: /api/v1/children/*/onboarding*).
+                          At most one target leaves it empty: the catch-all.
+                          With no catch-all, unknown paths get a fixed 404.
+                          Leave empty on every target when using routes.
       priority          — listener rule priority (1-49999, unique), required
                           when path_patterns is set; lower is evaluated first
       health_check_path — target group health check path
@@ -52,10 +55,8 @@ variable "targets" {
     health_check_path = optional(string, "/health")
   }))
 
-  validation {
-    condition     = length([for t in values(var.targets) : t if length(t.path_patterns) == 0]) == 1
-    error_message = "Exactly one target must have no path_patterns (the catch-all for everything else)."
-  }
+  # The checks that also read var.routes are preconditions on the target groups
+  # (main.tf): two variables' validations can't refer to each other.
   validation {
     condition = alltrue([
       for t in values(var.targets) : length(t.path_patterns) == 0 || (coalesce(t.priority, 0) >= 1 && coalesce(t.priority, 0) < 50000)
@@ -71,6 +72,41 @@ variable "targets" {
   validation {
     condition     = alltrue([for k in keys(var.targets) : can(regex("^[a-z0-9-]+$", k))])
     error_message = "Target keys become target group names: lowercase letters, digits and hyphens only."
+  }
+}
+
+variable "routes" {
+  description = <<-EOT
+    Path rules, when a service needs several (docs/auth-users-split.md, 13.1):
+    platform has /api/v1/speech/* and /api/v1/downloads/* at 130 and /api/health
+    at 140. Mirrors shared/service-routes.json, which the stack reads. There's no
+    catch-all: an unknown path gets the fixed 404 at priority 50000.
+      priority      — 1-49999, unique; lower is evaluated first
+      target        — a key of targets
+      path_patterns — 1-3 ALB path patterns
+  EOT
+  type = list(object({
+    priority      = number
+    target        = string
+    path_patterns = list(string)
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for r in var.routes : r.priority >= 1 && r.priority < 50000 && floor(r.priority) == r.priority])
+    error_message = "Route priorities must be whole numbers from 1 to 49999 (50000 is the fixed 404)."
+  }
+  validation {
+    condition     = length(distinct([for r in var.routes : r.priority])) == length(var.routes)
+    error_message = "Route priorities must be unique."
+  }
+  validation {
+    condition     = alltrue([for r in var.routes : contains(keys(var.targets), r.target)])
+    error_message = "Every route's target must be a key of targets."
+  }
+  validation {
+    condition     = alltrue([for r in var.routes : length(r.path_patterns) >= 1 && length(r.path_patterns) <= 3])
+    error_message = "Each route has 1-3 path patterns (AWS allows 5 condition values per rule; 2 go to X-Origin-Verify)."
   }
 }
 

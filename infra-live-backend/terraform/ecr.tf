@@ -1,18 +1,19 @@
 # ---------------------------------------------------------------------------
-# ECR — private Docker image registry for the backend
+# ECR — one repository per service (docs/auth-users-split.md, 15.2)
 #
-# The deploy workflow builds the backend image, tags it with the git SHA,
-# pushes it here, and then updates the ECS task definition to use the new
-# image URI. IMMUTABLE tags prevent overwriting an existing image tag —
-# every push must use a unique tag (git SHA). The initial task definition
-# in ecs.tf references :latest as a bootstrap placeholder only; the first
-# deploy immediately replaces it with a SHA-tagged revision.
+# The deploy workflow builds each selected service's image
+# (docker build --build-arg SERVICE=<service>), tags it with the git SHA and
+# pushes it to that service's repository; the service's worker runs the same
+# image. IMMUTABLE tags: every push uses a new tag. The task definitions start on
+# :latest as a bootstrap placeholder; the first deploy replaces it.
+# The OpenTelemetry collector runs a public image (var.otel_collector_image).
 # ---------------------------------------------------------------------------
 
-resource "aws_ecr_repository" "backend" {
+resource "aws_ecr_repository" "service" {
   #checkov:skip=CKV_AWS_136:AWS-managed AES-256 encryption is sufficient for container images at this scale; CMK adds cost and operational overhead without meaningful additional security
+  for_each = toset(local.split_services)
 
-  name                 = "${var.app_name}/${var.environment}/backend"
+  name                 = "${var.app_name}/${var.environment}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
 
@@ -25,14 +26,16 @@ resource "aws_ecr_repository" "backend" {
   }
 
   tags = {
-    Name = "${var.app_name}-backend-ecr"
+    Name    = "${var.app_name}-${each.key}-ecr"
+    Service = each.key
   }
 }
 
-# Lifecycle policy — keep the last 30 tagged images; remove untagged images
-# older than 7 days to prevent unbounded storage growth.
-resource "aws_ecr_lifecycle_policy" "backend" {
-  repository = aws_ecr_repository.backend.name
+# Keep the last 30 tagged images; remove untagged images after 7 days.
+resource "aws_ecr_lifecycle_policy" "service" {
+  for_each = aws_ecr_repository.service
+
+  repository = each.value.name
 
   policy = jsonencode({
     rules = [

@@ -41,7 +41,8 @@
 
 Settle these before any code.
 
-- [ ] **P.1 Branch strategy.** Decide: merge phase by phase into `develop` (safe, because nothing runs), or one long-lived feature branch. Record the choice here.
+- [x] **P.1 Branch strategy.** Decide: merge phase by phase into `develop` (safe, because nothing runs), or one long-lived feature branch. Record the choice here.
+  - **Decided (2026-10-25): one long-lived feature branch** (today `feature/develop-changes-2`), merged into `develop` once everything is done. Tasks marked "done locally, waiting for review and merge" are pushed on that branch; they're ticked when it merges.
 - [ ] **P.2 Tickets.** One ticket per task (or per phase). Record the ticket prefix here; branch and PR names use it.
 - [ ] **P.3 Atlas tiers and access.**
   - dev, sbx and stg on **Atlas M0 (free)**, one Atlas project each (one free cluster per project);
@@ -216,16 +217,36 @@ Design section 2 rules apply: protocol code only, versioned, backward-compatible
 
 Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terraform test` for what changed; checkov and trivy config at the gate.
 
-- [ ] **2.1 `modules/alb`.** Needs: P. Allow no catch-all target; fixed 404 at priority 50000 (13.1). **Check:** module tests, including mid-path patterns.
-- [ ] **2.2 `modules/ecs-service`.** Needs: P. *Parallel.* An optional `service_discovery` input (Cloud Map registration) and an internal port (8001). **Check:** module tests with and without registration.
-- [ ] **2.3 `modules/redis`.** Needs: P. *Parallel.* RBAC: a user group and one ElastiCache user per service with IAM authentication, instead of `auth_token` (9.3). **Check:** module tests; the access string per user matches 15.1.
-- [ ] **2.4 `modules/events` (new).** Needs: P. *Parallel.*
+- [ ] **2.1 `modules/alb`.** Needs: P. Allow no catch-all target; fixed 404 at priority 50000 (13.1). **Check:** module tests, including mid-path patterns. *(in progress: done locally, waiting for review and merge)*
+  - **As built:**
+    - **No catch-all:** at most one catch-all target (before: exactly one). With none, a `not_found` rule at 50000 answers origin-verified requests with a JSON 404; requests without the header still get the listener's 403.
+    - **A new `routes` input** (priority, target, 1–3 path patterns) gives one target several rules. It maps one-to-one onto `shared/service-routes.json`, for 2.5. Route rules are keyed `route-<priority>`, and the `targets`-style rules keep their keys, so today's stack is unchanged.
+    - **Target group names** are `<app>-<service>-<env>-<hash>`, without `-tg`.
+- [ ] **2.2 `modules/ecs-service`.** Needs: P. *Parallel.* An optional `service_discovery` input (Cloud Map registration) and an internal port (8001). **Check:** module tests with and without registration. *(in progress: done locally, waiting for review and merge)*
+  - **As built:**
+    - **`internal_port`**, a second container port: 8001, or 4318 for the collector, which has no public port.
+    - **`service_discovery`** (`namespace_id`, optional `name` = role, `dns_ttl` = 10) creates an `aws_service_discovery_service` with multivalue `A` records and ECS-reported health, and attaches it to the ECS service with `service_registries`.
+    - **New outputs:** `service_discovery_arn`, `service_discovery_name` and `internal_port`.
+    - The namespace and the `internal-callers` security group come in 2.5.
+- [ ] **2.3 `modules/redis`.** Needs: P. *Parallel.* RBAC: a user group and one ElastiCache user per service with IAM authentication, instead of `auth_token` (9.3). **Check:** module tests; the access string per user matches 15.1. *(in progress: done locally, waiting for review and merge)*
+  - **As built:**
+    - `rbac_services` (per service: `writes_authz`, auth only; `llm_limit`) creates one `aws_elasticache_user` each (engine valkey, IAM authentication, user ID = user name = `<app>-<env>-<service>`), an optional disabled `default` user, and a user group. The replication group then takes `user_group_ids` instead of `auth_token`; setting both is refused.
+    - **Outputs:** `replication_group_arn`, `rbac_user_names`, `rbac_user_arns` (for each task role's `elasticache:Connect`, 2.5) and `rbac_access_strings`.
+    - Today's `auth_token` mode is unchanged.
+- [ ] **2.4 `modules/events` (new).** Needs: P. *Parallel.* *(in progress: done locally, waiting for review and merge)*
   - One SNS topic per producing service;
   - one SQS queue + DLQ per consumer, subscribed to the topics it needs, with **raw delivery off**;
   - queue policies allowing `sqs:SendMessage` only from those topics;
   - filter policies, and alarms on DLQ depth and oldest-message age (7.2, 15.5).
   - **Source of truth:** `backend/common/events/catalogue.json` (`jsondecode(file(...))`), so Terraform and the services' TopicArn check can't drift. `python -m common.events.topology --prefix <app>-<env>` prints the topics, queues and per-topic filter lists the module should build.
   - **Check:** module tests.
+  - **As built:** `modules/events` reads the catalogue (`catalogue_path`, defaulting to the repo's file).
+    - **Topics:** one per producer (9, hello included), encrypted with the environment's customer-managed KMS key (rotating).
+    - **Queues:** one per consumer, with a DLQ after `max_receive_count` (5); SSE-SQS, 20 s long polling, 14-day DLQ retention, and only the service's own queue may redrive into its DLQ.
+    - **Subscriptions:** one per (consumer, producer topic), with the `event_type` filter on message attributes and raw delivery off.
+    - **Queue policies:** `sqs:SendMessage` only from the subscribed topics (`aws:SourceArn`).
+    - **Alarms (`enable_alarms`):** DLQ depth > 0, and oldest message > 10 min, both `notBreaching`.
+    - **Outputs:** `topic_arns`, `queue_urls`, `queue_arns`, `dlq_arns`, `subscriptions`, `key_arn` and `prefix`.
 - [ ] **2.5 `infra-live-backend` stack.** Needs: 2.1–2.4, 0.4.
   - `services.tf`: one entry per runtime (17 plus `otel-collector`), with `image_repository` and `secret_name`; the dev/sbx/stg/prod sizes from 15.3.
   - `ecs.tf`: per-service execution and task roles. `iam.tf`: per-service policies:
@@ -243,11 +264,55 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
   - `ssm_write.tf`: the `ecs_services` manifest with each service's `ecr_repository_url`.
   - `tests/stack.tftest.hcl` updated.
   - **Check:** `terraform test`; `terraform plan` for dev shows only additions.
+  - *(in progress: done locally, waiting for review and merge; the dev `terraform plan` is 2.7's, with the workflows from 2.6)*
+  - **As built:**
+    - **`services.tf`** derives the runtimes from `split_services` and `generating_services` instead of listing them: 9 HTTP runtimes, 8 workers (`<service>-worker`, none for platform) and `otel-collector`. Each runtime's size comes from one of five tiers in the new `runtime_sizes` variable (`http`, `auth`, `worker`, `generating-worker`, `collector`), which replaces the per-service sizing variables. The tfvars carry 15.3's sizes; prod uses the **lean** variant (one task per worker, decided in 2.5).
+    - **Environment:** every service runtime gets `SERVICE_NAME`, its own `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE` (5), `REDIS_URL` + `REDIS_USERNAME` (its RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS` and `OTEL_EXPORTER_OTLP_ENDPOINT`. Workers also get their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`; the generating services get the LLM settings.
+    - **Secrets:** one `<app>/<env>/<service>-secrets` per service with REPLACE_ME placeholders. A generating circle's HTTP runtime doesn't get the LLM keys; only its worker does.
+    - **Service-token keys (decided in 2.5: Terraform generates them):** `service_tokens.tf` makes one `tls_private_key` (Ed25519) per service. The private key goes into an SSM SecureString in the region, injected as `INTERNAL_SIGNING_KEY`; the public map goes to every runtime and to `/<app>/<env>/backend/<region>/internal_public_keys`. The kid is `<service>-v<n>`, and bumping `service_token_key_versions[service]` rotates it. The private keys are also in Terraform state. The `hashicorp/tls` provider was added.
+    - **IAM:** one execution and one task role per runtime. The execution role reads only its service's secret and signing key. Task policies: `valkey` (`elasticache:Connect` as its own user), `metrics` (`PutMetricData` in `Superpower/<service>`), `s3-uploads` (children's and transform's prefixes), `events` (workers: publish to its own topic with the KMS key, consume its own queue), `s3-apk` (platform) and `xray` (collector only).
+    - **Cloud Map:** the `<app>-<env>.internal` namespace. HTTP services register on 8001, the collector as `otel-collector` on 4318, and they admit those ports only from the `internal-callers` group, which every service runtime joins.
+    - **Collector:** `otel_collector.tf` is the ADOT config (`AOT_CONFIG_CONTENT`). It tail-samples (errors, latency > 2 s, then `xray_default_sampling_rate`) and exports to X-Ray. The X-Ray sampling rules, `enable_adot_sidecar` and `enable_xray_error_rule` were removed.
+    - **Events:** `modules/events` gets a new `services` input, which builds only events between the deployed services. The catalogue still holds hello's demo event, which the stack must not create. The stack passes `split_services`.
+    - **Scaling:**
+      - HTTP runtimes scale on CPU, memory and ALB requests;
+      - workers have a CPU floor (no scale-in), plus step scaling on queue depth (out at > 100, in at ≤ 10 for 5 min) and, for the generating ones, `PendingJobCount`;
+      - the collector scales on CPU.
+    - **Alarms:** `pending_jobs_high`, `processing_stuck` and `pending_jobs_missing` per generating service, and `outbox_stale` per worker. The dashboard is built in HCL (`dashboard.json.tpl` was removed).
+    - **SSM / outputs:** the `ecs_services` manifest adds `image_service` and `ecr_repository_url` per runtime, with empty values for the collector, and the single `ecr_repository_url` parameter was removed. New outputs: `ecr_repository_urls`, `service_secret_arns`, `internal_dns_namespace`, `event_topic_arns` and `event_queue_urls`.
+    - **Checked:**
+      - `terraform validate`, `terraform test` (stack 5/5, events 6/6) and tflint;
+      - checkov and trivy config: 0 failed. New skip: CKV_AWS_337 on the signing keys, which use the AWS-managed key like the secrets.
+    - **Deviations:**
+      - Worker scale-in is a separate queue-low step policy, not 15.5's combined metric-math alarm.
+      - The collector's tail sampling sees a whole trace only when one task gets all of its spans. With 2 collector tasks (stg/prod), a trace's spans can be split between them, so a load-balancing exporter tier is needed before relying on the sampling there.
+    - **Follow-ups:**
+      - **Valkey clients:** the services' Redis clients need an IAM-token credential provider (`REDIS_USERNAME` + a SigV4 token) before they can connect in AWS (Phase 3, with `common`).
+      - **Workflows:** done in 2.6.
+      - **hello in 2.7:** the hello image has no `<service>.worker` modules, so the worker runtimes can't start on it as-is.
 - [ ] **2.6 Workflows and scripts.** Needs: 2.5.
   - `deploy-live-backend.yml`: a build matrix with one image per selected service into its own repository (15.2).
   - `promote-live-backend.yml`: copy each service's image between its repositories.
   - `restart-live-backend.yml`: service help text.
   - `scripts/ecs-services.sh`: per-service repository URLs from the SSM manifest. `scripts/check-service-lists.sh`: the new runtime names.
+  - *Done early in 2.5:* `check-service-lists.sh` now derives the runtime list from `split_services` (the stack test asserts the real manifest order), and the three workflows' `service` help text lists the 18 runtimes.
+  - *(in progress: done locally, waiting for review and merge)*
+  - **As built:**
+    - **Deploy:**
+      - a `resolve` job lists the selected runtimes and their images (`image_services`: one per service) and fixes the tag once;
+      - a `build` matrix builds each with `--build-arg SERVICE=<service>` and pushes it to that service's repository in every selected region (`repository_for`, from the manifest);
+      - the per-region `deploy` rolls each runtime onto its own repository's image.
+      The collector runs the pinned `otel_collector_image`: `all` skips it, and naming it is an error (`image_runtimes`). A new optional `build_from` input builds every image from one service's code, the hello placeholder for 2.7.
+    - **Promote:** the export records each runtime's `image_service`; the promote job pushes each (service, image) pair into that service's target repository, and rolls each runtime onto its own. The collector isn't promoted.
+    - **Restart:** no logic change (help text only). It still restarts the collector.
+    - **`terraform-live-backend.yml`:**
+      - `REDIS_AUTH_TOKEN`, `TF_VAR_redis_auth_token`, `TF_VAR_mongodb_db_name` and the single-secret fill were removed;
+      - `MONGODB_URIS` (a JSON object, service → its own URI) and `EMAIL_HMAC_PEPPER` are new required secrets;
+      - the new `scripts/fill-service-secrets.sh` fills every service's secret on its first apply. It takes the keys from the secret itself, never overwrites a filled one, and writes nothing unless every secret that needs filling can be.
+    - **Tests:**
+      - `scripts/fill-service-secrets.test.sh` is new (12 cases, fake `aws`, fake values);
+      - `ecs-services.test.sh` gains the three new helpers (29 pass);
+      - both run in `check.sh` and CI, with shellcheck.
   - **Check:** `scripts/ecs-services.test.sh`, `check-service-lists.sh`, shellcheck.
 - [ ] **2.7 First dev apply.** Needs: 2.6, 0.4.
   - Fresh `terraform apply` in dev, with the `hello` image deployed for each runtime.
@@ -681,3 +746,53 @@ Record decisions taken during the build here, with the date, so the plan and the
     - hello's tests (15, 100% coverage) also pass as its CI job runs them: a fresh venv with hello installed alone, live MongoDB and Valkey, and skips counted as failures.
     - The spec regenerates in sync and passes Spectral.
     - The full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack): **75 of 75 passed**.
+- 2026-10-25: P.1 decided: one long-lived feature branch, merged into `develop` at the end. Phase 0, Phase 1 and Gate 1 are pushed on `feature/develop-changes-2`.
+- 2026-10-25: 2.1 built.
+  - **Found by the new test that feeds the real `shared/service-routes.json` through the module:** with the old `<app>-<key>-tg-<env>-<hash>` names, `onboarding` (34 characters) and `transform` (33) are over AWS's 32-character limit for target group names. Without the fix, the module's precondition would refuse the 2.5 plan. The fix drops `-tg`: `superpower-onboarding-prod-xxxx` is 31. Nothing is deployed, so the rename is free. `docs/environments.md` (app name + environment ≤ 15 characters, now because of `onboarding`) and `docs/infra-operations.md` say so.
+  - **How the checks are split:** Terraform can't have two variables' validations refer to each other. So `routes` validates its own rules (priorities 1–49999 and unique, targets known, 1–3 patterns), and the checks on `targets` that depend on `routes` are target-group preconditions: at most one catch-all, no `path_patterns` with routes, every target routed.
+  - **Checked locally:** `modules/alb` `terraform test`: 23 passed. Five runs are new: the 404 without a catch-all, none with one, the full shared route list (10 rules to 9 target groups, the mid-path `/api/v1/children/*/onboarding*` passed through unchanged, circle rules before children's, platform's two rules), plus the six refusals. `infra-live-backend` `terraform test`: 4 passed, so today's stack is unaffected. tflint, checkov (19 passed, 0 failed) and trivy config are clean; `terraform fmt` is clean.
+- 2026-10-25: 2.2 built.
+  - **Registration requires `internal_port`:** only services with internal endpoints register (13.2). The internal port must also differ from the public one. Both are checked as ECS-service preconditions.
+  - **Health:** ECS reports task health to Cloud Map from the container health check, so a starting, unhealthy or stopping task isn't answered. `failure_threshold` is deprecated in AWS provider 6 (AWS always uses 1), so the custom health-check block is empty.
+  - **Checked locally:**
+    - `modules/ecs-service` `terraform test`: 14 passed. The 6 existing runs are unchanged, so today's services are unaffected.
+    - 8 runs are new: a registered service on 8000 + 8001 behind the ALB; the collector on 4318 only, with a custom name and TTL; an unregistered service with null outputs; and the refusals (registration without an internal port, the same port twice, a non-DNS name, a TTL over 300, a port over 65535).
+    - `infra-live-backend` `terraform test`: 4 passed. tflint, checkov (9 passed, 0 failed), trivy config and `terraform fmt` are clean.
+- 2026-10-25: 2.3 built.
+  - **Access strings, built by the module:** `on ~LIMITS:LIMITER/<service>/* ~leader:<service>:* %R~authz:* [~llm:hourly:*] -@all +@read +@write +@scripting +@connection -@dangerous`, with `~authz:*` (read-write) for auth only.
+  - **The key names are the code's own:** `common.limiter` writes `LIMITS:LIMITER/<prefix>/…`, the LLM limit `llm:hourly:<user>`, and leader locks use `leader:<service>:…`. Services must use their own name as the limiter prefix and in leader-lock keys.
+  - **Proven on the local stand-in** (Redis 7.4, the same ACL syntax as Valkey 8), with temporary users that were deleted afterwards. A reader can `GET authz:*` but `SET` and a Lua write are denied; auth can do both. A service reaches its own limiter and leader keys but not another's. Only `llm_limit` services reach `llm:hourly:*`. Other keys, `KEYS`, `FLUSHALL` and `CONFIG` are denied.
+  - **To confirm at the first dev apply (2.7):** whether ElastiCache's Valkey user groups still require a `default` user. The module adds a disabled one (`off -@all`, no password) by default, and `include_default_user = false` drops it if AWS doesn't need it. Also confirm that ElastiCache accepts `%R~` key permissions in access strings, as Valkey does.
+  - **Follow-up in `common`, before any service connects in AWS:** IAM authentication means the Redis clients sign in with a short-lived token (SigV4 for `elasticache:Connect`, valid 15 min, refreshed). The services' Valkey clients need that credential provider (redis-py's `credential_provider`). Locally they keep plain `redis://`. That belongs with 2.5 / the first service (3.1).
+  - **Checked locally:** `modules/redis` `terraform test`: 11 passed. The 4 existing runs are unchanged; 7 are new: per-service users with their exact access strings, no default user, no RBAC resources in token mode, and the refusals (both modes at once, neither, a non-auth `writes_authz`, a bad service name). `infra-live-backend` `terraform test`: 4 passed. tflint, checkov (15 passed, 0 failed), trivy config and `terraform fmt` are clean.
+- 2026-10-25: 2.4 built.
+  - **Same plan as the code:** the module's subscriptions were compared with `common.events.topology.plan("superpower-prod")` through `terraform console`: 33 (consumer, producer) subscriptions, identical event types, the same topics. Both read the same catalogue.
+  - **Topic encryption:** trivy flagged the AWS-managed SNS key (AWS-0136, HIGH). Events carry personal data (`child.changed` has the child's name and age), so the topics use one customer-managed key per environment and region (about $1 a month each): rotation on, a 7-day deletion window, and a key policy for the account plus SNS for this account's topics only. **Publishers' task roles need `kms:GenerateDataKey` and `kms:Decrypt` on `key_arn` (2.5).** The queues use SSE-SQS, so SNS can deliver without a key grant. Checkov's three key-policy findings (`Resource "*"`, which in a key policy means the key itself) are suppressed on the policy document, with reasons.
+  - **Checked locally:** `modules/events` `terraform test`: 5 passed. They cover the topics, queues, DLQs, redrive, filters and queue policy against the real catalogue, hello's demo subscription, auth hearing `user.data_deleted` from every data service, the alarms, the refusal without an alarm topic, and reserved events creating nothing (a fixture catalogue). tflint, checkov (34 passed, 3 skipped with reasons) and trivy config are clean. `check.sh` and CI loop over `modules/*/`, so the new module runs everywhere with no wiring. The lock file and `.terraform/` are git-ignored, as for every module.
+- 2026-10-25: Phase 2's module tasks (2.1–2.4) are built locally. Next is 2.5, the `infra-live-backend` stack, which wires them together. It needs P.3 (Atlas) only for the MongoDB URIs, but it does need `services.tf` per runtime, per-service IAM (S3 prefixes, own topic and queue, the events KMS key, `elasticache:Connect` on the replication group and the service's user) and the Cloud Map namespace. Then 2.6 (workflows) and 2.7 (first dev apply, yours).
+- 2026-10-25: 2.5 built.
+  - **Decided:**
+    - Terraform generates the service-token key pairs (`tls_private_key`), so no person handles a private key, and rotation is a version bump.
+    - Prod workers run **lean**: one task per worker. SQS holds messages while a task is replaced, and this saves about $224 a month per region (15.3).
+  - **Found by the stack test:** the catalogue still has hello's demo event, so the events module would have created a hello topic and queue that no runtime uses. `modules/events` now takes `services`, and the stack passes `split_services`. The module's new run checks that only events between the deployed services are built, and that `user.data_deleted` comes only from the deployed data services.
+  - **The worker list is derived, not typed:** `services.tf` builds the 18 runtimes from `split_services`. `check-service-lists.sh` derives the same order from that line, and the stack test pins the real `ecs_services` manifest to it, so the help text, the script and Terraform can't drift apart.
+  - **Checked locally:**
+    - `infra-live-backend`: `terraform validate` and `terraform test` (5 passed: prod wiring with 50 assertions, dev, the JWT key check, the `runtime_sizes` tiers, key rotation);
+    - `modules/events`: `terraform test`, 6 passed;
+    - `check-service-lists.sh`, `ecs-services.test.sh` (23 passed) and shellcheck;
+    - tflint; checkov (0 failed); trivy config (0 misconfigurations); `terraform fmt`.
+  - **Not run:** a `terraform plan` against the real dev account. It's 2.7's, after 2.6 updates the workflows that supply the variables.
+- 2026-10-25: 2.6 built.
+  - **Found by the new fill test:** platform's secret holds only `OPENAI_API_KEY`, one of the optional LLM keys. So a "required key still REPLACE_ME" rule would never fill it. A secret whose keys are all still REPLACE_ME now counts as needing a fill too.
+  - **Secrets you add to each GitHub environment before the first apply:**
+    - `MONGODB_URIS`: one entry per service with a database (every service but platform). It needs P.3's Atlas users, one per service.
+    - `EMAIL_HMAC_PEPPER`: `openssl rand -hex 32`, backed up.
+    - Delete `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
+  - **Also fixed:** two older shellcheck SC2129 style findings that actionlint reports, in deploy (git metadata) and terraform-live-backend (model variables).
+  - **Checked locally:**
+    - actionlint on the four backend workflows and `terraform-live-all.yml` (an older SC2012 info in `check.yml` remains, untouched);
+    - shellcheck;
+    - `ecs-services.test.sh` (29 passed), `fill-service-secrets.test.sh` (12 passed) and `check-service-lists.sh`.
+  - **Not run:** the workflows themselves; their first run is 2.7.
+  - **Still open for 2.7:** hello has no `<service>.worker` modules, so the 8 worker runtimes won't start on the hello placeholder (`build_from=hello`). Either deploy only the HTTP runtimes and the collector in 2.7, or give hello's image those modules first.
+- 2026-10-25: Gate 2, code half: the full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack) passed **78 of 78**. That includes checkov, trivy config, every module and stack `terraform test`, tflint, and the new `fill-service-secrets.sh` tests. The other half, a running dev environment, waits for 2.7.

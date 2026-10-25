@@ -74,12 +74,6 @@ variable "nat_gateway_count" {
   }
 }
 
-variable "redis_auth_token" {
-  description = "AUTH token for ElastiCache Redis. Must be 16–128 printable ASCII chars (no spaces, quotes, @, or /). Injected via TF_VAR_redis_auth_token from GitHub Environment Secrets."
-  type        = string
-  sensitive   = true
-}
-
 variable "origin_verify_secret" {
   description = "Shared secret CloudFront attaches as the X-Origin-Verify header on every request to this ALB (see infra-live-edge's alb-backend origin custom_header). The listener rule in alb.tf rejects any request missing or mismatching it with a fixed 403, so traffic that reaches this ALB via the shared AWS CloudFront IP range but did not pass through this app's own CloudFront distribution — and therefore never hit the Lambda@Edge JWT check — is rejected before reaching ECS. Must equal infra-live-edge's origin_verify_secret; both are set from the same ORIGIN_VERIFY_SECRET GitHub Environment Secret. Rotate with origin_verify_secret_next below — see docs/infra-operations.md \"Rotating the origin-verify secret\"."
   type        = string
@@ -140,11 +134,6 @@ variable "assets_bucket_name" {
 
 # -- Database ------------------------------------------------------------------
 
-variable "mongodb_db_name" {
-  description = "MongoDB database name (passed to backend as MONGODB_DB_NAME); include the environment suffix, e.g. superpower-dev"
-  type        = string
-}
-
 # -- ElastiCache ---------------------------------------------------------------
 
 variable "elasticache_node_type" {
@@ -154,19 +143,54 @@ variable "elasticache_node_type" {
 
 # -- ECS / Fargate -------------------------------------------------------------
 
-variable "task_cpu" {
-  description = "Fargate task CPU units (256 = 0.25 vCPU, 512 = 0.5 vCPU, 1024 = 1 vCPU)"
-  type        = number
+variable "runtime_sizes" {
+  description = <<-EOT
+    Task size and count per runtime tier (docs/auth-users-split.md, 15.3). Every
+    runtime in services.tf uses one tier:
+      http              — the HTTP services except auth (users, children, the circles, platform)
+      auth              — auth's HTTP service (bcrypt makes it CPU-bound)
+      worker            — auth, users, children and onboarding workers
+      generating-worker — discover, grow, transform and release workers (LLM jobs)
+      collector         — the OpenTelemetry collector
+    desired_count is the initial count (deploys and autoscaling own it after);
+    min_capacity / max_capacity bound autoscaling.
+  EOT
+  type = map(object({
+    cpu           = number
+    memory        = number
+    desired_count = number
+    min_capacity  = number
+    max_capacity  = number
+  }))
+
+  validation {
+    condition     = length(setsubtract(["http", "auth", "worker", "generating-worker", "collector"], keys(var.runtime_sizes))) == 0
+    error_message = "runtime_sizes needs every tier: http, auth, worker, generating-worker, collector."
+  }
+  validation {
+    condition = alltrue([
+      for t in values(var.runtime_sizes) : t.min_capacity >= 1 && t.min_capacity <= t.desired_count && t.desired_count <= t.max_capacity
+    ])
+    error_message = "Each tier needs 1 <= min_capacity <= desired_count <= max_capacity (a consumer always keeps one task polling, 15.5)."
+  }
 }
 
-variable "task_memory" {
-  description = "Fargate task memory in MiB"
-  type        = number
+variable "otel_collector_image" {
+  description = "The OpenTelemetry collector's image (AWS Distro for OpenTelemetry), pinned. It reads its configuration from AOT_CONFIG_CONTENT (otel_collector.tf)."
+  type        = string
+  default     = "public.ecr.aws/aws-observability/aws-otel-collector:v0.40.0"
 }
 
-variable "desired_count" {
-  description = "Number of ECS tasks to run"
+variable "mongodb_max_pool_size" {
+  description = "MongoDB connections per task (MONGODB_MAX_POOL_SIZE). Atlas M0 (dev, sbx, stg) allows 500 connections per cluster across every task: 5 keeps a busy environment inside it (15.3)."
   type        = number
+  default     = 5
+}
+
+variable "service_token_key_versions" {
+  description = "Service-token key version per service (default 1): bump one to rotate that service's Ed25519 key pair and kid (service_tokens.tf)."
+  type        = map(number)
+  default     = {}
 }
 
 variable "enable_execute_command" {
@@ -236,132 +260,6 @@ variable "cookie_domain" {
   type        = string
 }
 
-# -- Worker ECS ---------------------------------------------------------------
-
-variable "worker_task_cpu" {
-  description = "Fargate task CPU units for the worker service"
-  type        = number
-  default     = 512
-}
-
-variable "worker_task_memory" {
-  description = "Fargate task memory in MiB for the worker service"
-  type        = number
-  default     = 1024
-}
-
-variable "worker_desired_count" {
-  description = "Initial desired count for the worker ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "worker_concurrency" {
-  description = "Number of parallel LLM job slots per worker task (WORKER_CONCURRENCY env var)"
-  type        = number
-  default     = 5
-}
-
-variable "worker_poll_interval_seconds" {
-  description = "Idle poll interval in seconds for the worker (WORKER_POLL_INTERVAL_SECONDS env var)"
-  type        = number
-  default     = 2
-}
-
-# -- Autoscaling ---------------------------------------------------------------
-
-variable "api_min_capacity" {
-  description = "Minimum ECS task count for the API service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "api_max_capacity" {
-  description = "Maximum ECS task count for the API service autoscaling target"
-  type        = number
-  default     = 10
-}
-
-variable "worker_min_capacity" {
-  description = "Minimum ECS task count for the worker service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "worker_max_capacity" {
-  description = "Maximum ECS task count for the worker service autoscaling target"
-  type        = number
-  default     = 5
-}
-
-# -- Auth ECS (APP_COMPONENT=auth: /api/v1/auth/* and DELETE /api/v1/user/me) --
-# Login and register run bcrypt (cost 12), so auth is CPU-bound: it scales on
-# CPU, and its sizing is separate from the API's.
-
-variable "auth_task_cpu" {
-  description = "Fargate task CPU units for the auth service"
-  type        = number
-  default     = 512
-}
-
-variable "auth_task_memory" {
-  description = "Fargate task memory in MiB for the auth service"
-  type        = number
-  default     = 1024
-}
-
-variable "auth_desired_count" {
-  description = "Initial desired count for the auth ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "auth_min_capacity" {
-  description = "Minimum ECS task count for the auth service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "auth_max_capacity" {
-  description = "Maximum ECS task count for the auth service autoscaling target"
-  type        = number
-  default     = 4
-}
-
-# -- Admin ECS (APP_COMPONENT=admin: /api/v1/admin/*) ------------------------
-# Low traffic, scaled on CPU and memory. 256/512 is enough with the ADOT
-# sidecar off; with it on, 512/1024 is the floor (modules/ecs-service).
-
-variable "admin_task_cpu" {
-  description = "Fargate task CPU units for the admin service"
-  type        = number
-  default     = 512
-}
-
-variable "admin_task_memory" {
-  description = "Fargate task memory in MiB for the admin service"
-  type        = number
-  default     = 1024
-}
-
-variable "admin_desired_count" {
-  description = "Initial desired count for the admin ECS service (managed by autoscaling after first deploy)"
-  type        = number
-  default     = 1
-}
-
-variable "admin_min_capacity" {
-  description = "Minimum ECS task count for the admin service autoscaling target"
-  type        = number
-  default     = 1
-}
-
-variable "admin_max_capacity" {
-  description = "Maximum ECS task count for the admin service autoscaling target"
-  type        = number
-  default     = 2
-}
-
 # -- S3 (managed externally — Terraform configures, does not create) ----------
 
 variable "uploads_bucket_name" {
@@ -423,14 +321,8 @@ variable "enable_dashboard" {
   default     = false
 }
 
-variable "enable_xray_error_rule" {
-  description = "Add a second X-Ray sampling rule that captures 100%% of error traces. true only on prod."
-  type        = bool
-  default     = false
-}
-
 variable "xray_default_sampling_rate" {
-  description = "Fixed sampling rate for the default X-Ray rule. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
+  description = "Share of ordinary traces the OpenTelemetry collector keeps (tail sampling, otel_collector.tf); every error and slow trace is kept regardless. 0.05 (5%%) for dev/sbx/stg, 0.01 (1%%) for prod."
   type        = number
   default     = 0.05
 }
@@ -457,14 +349,6 @@ variable "enable_cloudtrail" {
 
 variable "enable_alb_access_logs" {
   description = "Enable ALB access logs to regional_logging_bucket_name (see alb.tf's access_logs block). Independent of enable_cloudtrail — both happen to be set the same way per environment today (false on dev/sbx, true on stg/prod), but either can be flipped on its own without affecting the other. Both share the same bucket/policy resource (see s3.tf), so either flag being true is enough to create the policy."
-  type        = bool
-  default     = false
-}
-
-# -- ADOT sidecar --------------------------------------------------------------
-
-variable "enable_adot_sidecar" {
-  description = "Attach the ADOT collector sidecar (256 CPU / 512 MiB) to every service's task definition. Off everywhere: the collector only forwards what the app sends it (OTLP, X-Ray segments, StatsD), and the backend isn't instrumented. Turn it on only after adding OpenTelemetry to the app, and prefer a shared collector (docs/auth-users-split.md 15.5). modules/ecs-service refuses the sidecar on tasks under 512 / 1024."
   type        = bool
   default     = false
 }

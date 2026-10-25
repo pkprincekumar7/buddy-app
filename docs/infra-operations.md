@@ -26,9 +26,9 @@ passes `--region us-east-1`.
 | Parameter | Written by | Read by |
 |---|---|---|
 | `/{app}/{env}/backend/{region}/alb_internal_fqdn` | `infra-live-backend` (that region) | `infra-live-edge` (one CloudFront `/api/*` origin per region in `backend_regions`) |
-| `/{app}/{env}/backend/{region}/ecr_repository_url` | `infra-live-backend` | `deploy-live-backend` (build job: push targets; deploy job: image URI), `promote-live-backend` (target push) |
 | `/{app}/{env}/backend/{region}/ecs_cluster_name` | `infra-live-backend` | `deploy-`, `promote-` and `restart-live-backend` |
-| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in `deploy_order` order, of `{name, service, family, container}`, one per ECS service |
+| `/{app}/{env}/backend/{region}/ecs_services` | `infra-live-backend` (from `services.tf`) | `deploy-`, `promote-` and `restart-live-backend`: a JSON array, in `deploy_order` order, of `{name, service, family, container, image_service, ecr_repository_url}`, one per ECS service. A worker's `image_service` and repository are its service's; the collector's are empty (public image) |
+| `/{app}/{env}/backend/{region}/internal_public_keys` | `infra-live-backend` (`service_tokens.tf`) | — (the service-token public keys, `{service: {kid: PEM}}`, for anything outside the tasks that verifies them; the tasks get the same map as `INTERNAL_PUBLIC_KEYS`) |
 | `/{app}/{env}/edge/cloudfront_distribution_id` | `infra-live-edge` | `deploy-live-frontend`, `promote-live-frontend` (cache invalidation) |
 | `/{app}/{env}/edge/cloudfront_arn` | `infra-live-edge` | `infra-live-frontend` (S3 bucket policy) |
 | `/{app}/{env}/edge/s3_bucket_name` | `infra-live-edge` | `infra-live-frontend` (precondition check), `deploy-live-frontend`, `promote-live-frontend` |
@@ -73,14 +73,22 @@ why edge always receives the **full** region list.
 
 ## ECS task definitions — what each workflow changes
 
-Each backend region runs one ECS service per entry in `local.services`
-(`infra-live-backend/terraform/services.tf`). Today that's four, all from the same image:
-`auth` (`APP_COMPONENT=auth`: `/api/v1/auth/*` and account deletion; the only service with
-`JWT_PRIVATE_KEY`), `admin` (`APP_COMPONENT=admin`: `/api/v1/admin/*`), the API (`backend`,
-`APP_COMPONENT=api`: everything else under `/api/v1`) and the job worker (`worker`,
-`python worker.py`). The ALB routes between auth, admin and the API by path (see below). The
-workflows' `service` input takes `all` or a comma-separated list of those names, e.g.
-`auth,admin,backend`; anything else fails up front with the valid list. See [Adding a backend service](#adding-a-backend-service).
+Each backend region runs one ECS service per runtime in `local.services`
+(`infra-live-backend/terraform/services.tf`), 18 in all, derived from `local.split_services`:
+
+- **9 HTTP runtimes**, one per service (auth, users, children, onboarding, discover, grow, transform,
+  release, platform): the public API on 8000 behind the ALB, and (all but platform) the internal API
+  on 8001, registered in Cloud Map as `<service>.<app>-<env>.internal`.
+- **8 workers**, `<service>-worker` (no platform worker): the same image as their service, with the
+  command `python -m <service>.worker` (outbox relay, event consumer, and for discover, grow,
+  transform and release the LLM job worker).
+- **`otel-collector`**: the AWS Distro for OpenTelemetry image (`otel_collector_image`), on 4318
+  in Cloud Map. Every runtime sends it traces; it tail-samples them into X-Ray (`otel_collector.tf`).
+
+A service and its worker share one ECR repository (`<app>/<env>/<service>`), one secret, one
+service-token key and one Valkey user. The ALB routes by path from `shared/service-routes.json`.
+The workflows' `service` input takes `all` or a comma-separated list of runtime names, e.g.
+`users,users-worker`; anything else fails up front with the valid list. See [Adding a backend service](#adding-a-backend-service).
 
 ### `terraform-live-backend` (apply)
 
@@ -90,10 +98,10 @@ registers a **new revision**:
 | Category | Examples |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | `MONGODB_DB_NAME`, `*_MODEL`, `APP_ENV`, `REDIS_URL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`, `ASSETS_BUCKET_NAME`, `CORS_ORIGINS` / `COOKIE_DOMAIN` (derived from `SUBDOMAIN` + env + `DOMAIN_NAME`) |
-| Secret references | Secrets Manager ARN pointers (not values). Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `REDIS_AUTH_TOKEN`. Admin: `MONGODB_URI`, `REDIS_AUTH_TOKEN`. API: `MONGODB_URI`, the three LLM keys, `REDIS_AUTH_TOKEN` (no private key — it verifies with `JWT_PUBLIC_KEYS`). Worker: `MONGODB_URI`, the three LLM keys. |
+| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_ENV`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, the `JWT_*` verification settings. HTTP runtimes: `BEHIND_PROXY`, `CORS_ORIGINS`; auth's cookie settings. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform: the uploads bucket; platform: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
+| Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Platform: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
 | Infrastructure | log group, health check, execution/task role, network mode |
-| Image | always `:latest` — a placeholder; see below |
+| Image | the service's repository at `:latest` — a placeholder; see below (the collector: the pinned `otel_collector_image`) |
 
 Every ECS **service** has `ignore_changes = [task_definition, desired_count]`. Terraform
 therefore registers the new revision but never switches a service to it. The revision stays idle
@@ -101,15 +109,19 @@ until the next deploy.
 
 ### `deploy-live-backend`
 
-Builds the image once, pushes it as `:<YYYYMMDD>-<short-sha>` to every selected region's ECR, then
-in each region:
+A `resolve` job lists the selected runtimes and the images they need: one per service, since a
+worker runs its service's. The collector runs the pinned `otel_collector_image`, so `all` skips it,
+and naming it is an error. A build matrix then builds each image once
+(`--build-arg SERVICE=<service>`, or the `build_from` service's code for a placeholder image) and
+pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every selected region.
+Then, in each region:
 
 1. Reads the services to deploy from the region's `ecs_services` SSM list and rolls them all out
    **in parallel**: each is an independent ECS service, so the deploy takes as long as the
    slowest one. Log lines are prefixed with the service name. For each service, it reads
    the **latest active revision** of its task definition family, so it picks up anything
    `terraform apply` just registered.
-2. Patches only the container `image` to the pushed tag, and registers a new revision.
+2. Patches only the container `image` to its service's repository at the pushed tag, and registers a new revision.
 3. Updates the service to that revision. This is a rolling deployment with circuit-breaker
    rollback, waiting up to 15 minutes for steady state.
 
@@ -123,8 +135,8 @@ three workflows in `scripts/ecs-services.sh` (tested by `scripts/ecs-services.te
 
 `promote-live-backend` does the same, but takes the image from the source environment's running
 task definition instead of building one: an export job (source environment's role) pulls it, and
-the promote job (target's role) pushes it into the target's own ECR under the same tag before
-registering the revision. The target never references the source's ECR, so source and target can
+the promote job (target's role) pushes it into its service's repository in the target under the
+same tag before registering the revision. The target never references the source's ECR, so source and target can
 be different AWS accounts, and the target is unaffected when the source repo expires the image or
 the source environment is destroyed. `restart-live-backend` forces a new deployment of the
 current revision without registering one.
@@ -139,107 +151,116 @@ current revision without registering one.
 
 ### Adding a backend service
 
-Add one entry to `local.services` in `infra-live-backend/terraform/services.tf`, for example a
-copy of the `worker` entry with a new key. The key is lowercase with hyphens, and it's the name
-the workflows take. That one entry produces:
+Add the service's name to `local.split_services` in `infra-live-backend/terraform/services.tf`
+(and to `generating_services` if it runs LLM jobs). Its place in the list is its deploy order; the
+name is lowercase with hyphens. That produces two runtimes, `<service>` and `<service>-worker`
+(exclude it on the `worker_services` line if it has no database or events, as platform does), each
+with:
 
-| From the entry | Created |
+| From | Created |
 |---|---|
-| `cpu`, `memory`, `command`, `environment`, `secret_keys`, `health_check` | Task definition and ECS service (`modules/ecs-service`), running the shared backend image |
-| `min_capacity`, `max_capacity`, `target_tracking_policies`, `step_scaling_policies` | Autoscaling |
-| `sustained_alarms`, `immediate_alarms` | CloudWatch alarms (when `enable_all_alarms`) |
-| `task_policies` | Task IAM role `<app>-<key>-task-role-<env>-<region>` with those policies (plus ECS Exec / X-Ray policies when those features are on) |
-| — | Security group `<app>-<key>-sg-<env>` (reaches the VPC endpoints; Redis too if `uses_redis`), log group `/ecs/<app>/<key>/<env>` |
-| `deploy_order` | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow logic change.** Add the key to the name list in the `service` input description of `deploy-`, `restart-` and `promote-live-backend.yml` (in `deploy_order` order). That list is only help text, but CI (`scripts/check-service-lists.sh`) fails if it doesn't match. |
+| `runtime_sizes` (its tier) | Task definition and ECS service (`modules/ecs-service`); autoscaling between the tier's `min_capacity` and `max_capacity` |
+| The environment and secret locals | Its env vars and secret keys: add the service's own extras to `service_http_environment`, `service_worker_environment` and `secret_keys` |
+| `task_policies` | Execution role (`<app>-<runtime>-exec-role-<env>-<region>`: only its service's secret and signing key) and task role (`<app>-<runtime>-task-role-<env>-<region>`: Valkey as its own user, metrics in `Superpower/<service>`, its own topic and queue for the worker, plus whatever is added here) |
+| — | ECR repository and secret (one per service), a service-token key pair, a Valkey RBAC user, its security group `<app>-<runtime>-sg-<env>`, its log group `/ecs/<app>/<runtime>/<env>`, Cloud Map registration on 8001 (if in `internal_services`), alarms (when `enable_all_alarms`) |
+| `deploy_order` (from the list) | Its place in the `ecs_services` SSM list, which the deploy / restart / promote workflows read. **No workflow logic change.** Add both runtime names to the name list in the `service` input description of `deploy-`, `restart-` and `promote-live-backend.yml`. That list is only help text, but CI (`scripts/check-service-lists.sh`) fails if it doesn't match. |
+
+Then add its routes to `shared/service-routes.json` (the ALB and the local gateway both read it) and
+its events to `backend/common/events/catalogue.json` (topics, queues and subscriptions follow,
+`modules/events`).
 
 Then:
-1. Apply `terraform-live-backend` in every region of the environment.
-2. Run `deploy-live-backend` with `service` = the new key (or `all`).
+1. Apply `terraform-live-backend` in every region of the environment, and fill the new service's
+   secret (see [Secrets Manager](#secrets-manager--service-secrets)).
+2. Run `deploy-live-backend` with `service` = the new runtimes (or `all`).
 
-New secrets go into the backend-secrets JSON (see [Rotating a value](#rotating-a-value)) and are
-listed in `secret_keys`.
+**HTTP routing.** Each HTTP runtime gets its own ALB target group, ingress from the ALB SG and
+`alb-healthy-hosts-<runtime>` alarm (`modules/alb`). The listener rules come from
+`shared/service-routes.json`: each rule has a priority, a target and 1–3 path patterns. There's
+no catch-all: an origin-verified request matching no rule gets a JSON 404 from the fixed rule
+at 50000.
 
-**HTTP services.** An entry with `http` set also gets its own ALB target group, listener rule,
-ingress from the ALB SG and `alb-healthy-hosts-<key>` alarm (`modules/alb`). Exactly one HTTP
-service leaves `http.path_patterns` empty: the catch-all (`backend`). Any other lists the paths it
-owns and a unique `http.priority`:
-
-```hcl
-http = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = ["/api/v1/reports/*"], priority = 20 }
-```
-
-- Lower priority is matched first; the catch-all is always last (50000).
+- Lower priority is matched first.
 - Each rule also requires `X-Origin-Verify`, and AWS allows **5 condition values per rule**: the
   origin-verify values (2 during a rotation) plus the path patterns. So keep it to 3 patterns;
   Terraform refuses more.
-- Target group names are `<app>-<key>-tg-<env>-<hash>`, at most 32 characters. The 4-character
+- Target group names are `<app>-<runtime>-<env>-<hash>`, at most 32 characters (no `-tg`: with it,
+  `superpower-onboarding-tg-prod-xxxx` would be 34). The 4-character
   hash covers port, protocol, target type and VPC, which can't change in place. So a port change
   creates a new group (`create_before_destroy`), moves the listener rule and ECS service to it,
   and only then deletes the old one.
 - CloudFront and Lambda@Edge need no change: they send all of `/api/*` to the ALB, which splits it.
-  No service discovery is needed either; services share data through MongoDB, not by calling
-  each other.
 - An `ALBRequestCountPerTarget` scaling policy tracks the service's own target group (`ecs.tf`
   fills in its `resource_label`).
-- A backend router moving to a new service also needs `APP_COMPONENT` support in
-  `backend/app/main.py` (`ROUTERS_BY_COMPONENT`), and `backend/tests/test_main.py` checks the
-  path patterns against the real routes.
 
-**Not automatic yet:**
-- **Dashboard.** `dashboard.json.tpl` has widgets for auth, admin, the API and the worker only.
+**Internal calls.** Services call each other's `/internal/*` endpoints directly, at
+`http://<service>.<app>-<env>.internal:8001` (Cloud Map, `service_discovery.tf`). Each
+registered runtime admits its internal port only from the `internal-callers` security group,
+which every service runtime joins. Each call carries a token signed with the caller's own
+Ed25519 key (`service_tokens.tf`).
 
 ### Scaling
 
 - **`desired_count` is ignored after the first apply.** A manual
   `aws ecs update-service --desired-count N` is never reverted, and a later `apply` won't restore
   it either. Scale back explicitly.
-- **The API service is also under App Auto Scaling** (`api_min_capacity` / `api_max_capacity`,
-  with CPU, memory and ALB-request target-tracking policies). Change its range through those
-  tfvars, not just `desired_count`. **Auth** scales on CPU and memory (`auth_min_capacity` /
-  `auth_max_capacity`; login and register are bcrypt-bound). **Admin** scales on CPU and memory (`admin_min_capacity` / `admin_max_capacity`). The worker scales on queue depth
-  (`worker_min_capacity` / `worker_max_capacity`).
-- **ADOT sidecar: off in every environment.** The collector only forwards traces and metrics the
-  app sends it, and the backend has no OpenTelemetry/X-Ray instrumentation. ECS already
-  publishes per-service CPU and memory metrics (`AWS/ECS`). If it's ever turned on, it reserves 256 CPU / 512 MiB
-  of each task, so a task needs at least 512 / 1024: `modules/ecs-service` refuses smaller at plan
-  time. Tracing plan: [auth-users-split.md](auth-users-split.md) 15.5.
+- **Every runtime is under App Auto Scaling**, between its tier's `min_capacity` and
+  `max_capacity` (`runtime_sizes`). Change the range there, not just `desired_count`.
+  - **HTTP runtimes** use CPU, memory and ALB-request target tracking. Auth has its own tier,
+    because login and register are bcrypt-bound.
+  - **Workers** have a CPU floor that never scales in. They scale out on queue depth (over 100
+    messages) and back in when it stays at 10 or below for 5 minutes; the generating ones also
+    scale out on `PendingJobCount`.
+  - **The collector** uses CPU.
+- **Tracing.** Every runtime sends its spans to the collector; the collector keeps every error
+  and every trace slower than 2 s, plus `xray_default_sampling_rate` of the rest. With more
+  than one collector task, a trace's spans can land on different tasks, which each decide
+  alone: see [auth-users-split.md](auth-users-split.md) 15.5.
 
 ---
 
-## Secrets Manager — app secrets
+## Secrets Manager — service secrets
 
-Each backend region has its own secret, `{app}/{env}/backend-secrets`, in that region. It's a JSON
-object with `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`GEMINI_API_KEY`, `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
+Each service has its own secret per region, `{app}/{env}/<service>-secrets`: a JSON object with
+the keys in `local.secret_keys` (`services.tf`). Every service with a database has its own
+`MONGODB_URI`. Auth's also holds `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID` and `EMAIL_HMAC_PEPPER`;
+discover, grow, transform and release hold the three LLM keys; platform holds `OPENAI_API_KEY`.
+A service and its worker share the secret, and each runtime's execution role can read only its
+own service's.
 
 - **Created with placeholders.** Terraform writes `REPLACE_ME` for every key and then ignores
   the value (`ignore_changes = [secret_string]`).
-- **Filled on the first apply only.** After `terraform apply`, `terraform-live-backend` reads
-  the secret. If any **required** key (`JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `OPENAI_API_KEY`,
-  `MONGODB_URI`, `REDIS_AUTH_TOKEN`) is still `REPLACE_ME`, it writes all keys from the GitHub
-  environment secrets. Otherwise it leaves the secret alone, so manual rotations are never
-  overwritten. `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` stay `REPLACE_ME` if unset; the app starts,
-  but those providers are unavailable.
+- **Filled on the first apply only.** After `terraform apply`, `terraform-live-backend` runs
+  `scripts/fill-service-secrets.sh`. A secret with a required key still `REPLACE_ME` (or with
+  every key still `REPLACE_ME`) gets all its keys from the GitHub environment: its own entry of
+  `MONGODB_URIS`, `JWT_PRIVATE_KEY`, `EMAIL_HMAC_PEPPER`, `GOOGLE_CLIENT_ID` and the LLM keys.
+  Any other secret is left alone, so manual rotations are never overwritten. Nothing is written
+  unless every secret that needs it can be, so a missing `MONGODB_URIS` entry leaves no secret
+  half-filled. An unset `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` stays `REPLACE_ME`: the services
+  start, but those providers are unavailable.
 - **Hard-deleted on destroy.** `recovery_window_in_days = 0` means `terraform destroy` deletes
   the secret immediately, with no 30-day recovery window, so a re-apply doesn't hit a name clash.
   ⚠ This is irreversible — back up the values first.
+- **Service-token keys aren't here.** Terraform generates them (`service_tokens.tf`) into
+  `/{app}/{env}/backend/{region}/<service>/internal_signing_key` (SSM SecureString). To rotate one,
+  bump its entry in `service_token_key_versions`, apply, and redeploy every runtime: the others
+  learn the new public key from their `INTERNAL_PUBLIC_KEYS` when they restart.
 
 ### Rotating a value
 
-After the first apply this is the only way to change a secret. **Repeat it for every active
-backend region.** `put-secret-value` replaces the whole JSON, so send every key:
+This is how a secret's value changes. **Repeat it for every active backend region.** `put-secret-value` replaces the whole JSON, so send every key:
 
 ```bash
 for region in ap-south-1 eu-west-1 us-east-1; do   # the regions this environment runs in
   aws secretsmanager put-secret-value \
     --region "$region" \
-    --secret-id "{app}/{env}/backend-secrets" \
-    --secret-string file://backend-secrets.json
+    --secret-id "{app}/{env}/<service>-secrets" \
+    --secret-string file://<service>-secrets.json
 done
 ```
 
-Running tasks keep the old values until they restart. Run `restart-live-backend` (service `all`,
-same region set) afterwards. Delete the local JSON file once done.
+Running tasks keep the old values until they restart. Run `restart-live-backend` afterwards for that
+service's runtimes (e.g. `users,users-worker`, same region set). Delete the local JSON file once done.
 
 JWT key rotation has its own procedure, because the Lambda@Edge validator also holds the public
 keys: see [jwt-keys.md](jwt-keys.md).
@@ -363,10 +384,12 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 |---|---|
 | Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
 | ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy); deregistration delay `llm_timeout_seconds` + 30 s (90 s dev/sbx/stg, 120 s prod), so a rollout waits that long at most for old tasks' in-flight requests instead of AWS's 300 s default |
-| ECS | Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
-| ECR | `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
-| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + AUTH token (`REDIS_AUTH_TOKEN`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters and locks only |
-| CloudWatch Logs | One log group per service, `/ecs/<app>/<key>/<env>` (auth, admin, backend, worker); retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
+| ECS | 18 runtimes (9 HTTP, 8 workers, the OpenTelemetry collector), sized by `runtime_sizes`; Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); HTTP container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
+| Cloud Map | Private DNS namespace `<app>-<env>.internal`: each HTTP service except platform on 8001, the collector on 4318, reachable only from the `internal-callers` security group |
+| SNS / SQS | From `backend/common/events/catalogue.json` (`modules/events`): a topic per producing service (customer-managed KMS key), a queue + DLQ per consuming service (SSE-SQS), filtered subscriptions; DLQ and message-age alarms when `enable_all_alarms` |
+| ECR | One repository per service, `<app>/<env>/<service>`; `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
+| ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache |
+| CloudWatch Logs | One log group per runtime, `/ecs/<app>/<runtime>/<env>`; retention 7 d (dev/sbx), 30 d (stg), 90 d (prod) |
 
 ### Frontend deploy (`deploy-live-frontend.yml`)
 

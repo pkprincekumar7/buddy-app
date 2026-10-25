@@ -1,0 +1,9 @@
+{
+  "description": "Test fixture: one published event and two reserved ones (modules/events tests).",
+  "data_services": ["children"],
+  "events": {
+    "discover.completed": { "producer": "discover", "consumers": ["children"], "schema": "discover.completed.v1" },
+    "user.role_changed": { "producer": "auth", "consumers": [], "schema": "user.role_changed.v1", "reserved": true },
+    "connect.visited": { "producer": "connect", "consumers": [], "schema": "connect.visited.v1", "reserved": true }
+  }
+}

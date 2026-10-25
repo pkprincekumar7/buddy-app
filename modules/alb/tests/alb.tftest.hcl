@@ -40,8 +40,8 @@ run "single_catch_all_target" {
   command = apply
 
   assert {
-    condition     = aws_lb.this.name == "superpower-backend-alb-prod" && can(regex("^superpower-backend-tg-prod-[0-9a-f]{4}$", aws_lb_target_group.service["backend"].name)) && aws_lb_target_group.service["backend"].tags.Name == "superpower-backend-tg-prod" && aws_security_group.alb.name == "superpower-backend-alb-sg-prod"
-    error_message = "Names match the pre-module ones; target groups add a 4-character hash suffix."
+    condition     = aws_lb.this.name == "superpower-backend-alb-prod" && can(regex("^superpower-backend-prod-[0-9a-f]{4}$", aws_lb_target_group.service["backend"].name)) && aws_lb_target_group.service["backend"].tags.Name == "superpower-backend-prod" && aws_security_group.alb.name == "superpower-backend-alb-sg-prod"
+    error_message = "ALB and security group names match the pre-module ones; target groups are <app>-<key>-<env> plus a 4-character hash."
   }
   assert {
     condition     = aws_lb.this.drop_invalid_header_fields && length(aws_lb.this.access_logs) == 0
@@ -84,7 +84,7 @@ run "path_routed_target" {
   }
 
   assert {
-    condition     = startswith(aws_lb_target_group.service["auth"].name, "superpower-auth-tg-prod-") && one(aws_lb_target_group.service["auth"].health_check).path == "/api/health"
+    condition     = startswith(aws_lb_target_group.service["auth"].name, "superpower-auth-prod-") && one(aws_lb_target_group.service["auth"].health_check).path == "/api/health"
     error_message = "Each target gets its own target group and health check path."
   }
   assert {
@@ -144,17 +144,174 @@ run "needs_an_origin_verify_value" {
   expect_failures = [var.origin_verify_values]
 }
 
-run "needs_exactly_one_catch_all" {
+run "at_most_one_catch_all" {
   command = plan
 
   variables {
     targets = {
-      auth    = { port = 8000, path_patterns = ["/api/v1/auth/*"], priority = 10 }
-      backend = { port = 8000, path_patterns = ["/api/v1/*"], priority = 20 }
+      backend = { port = 8000 }
+      other   = { port = 8000 }
     }
   }
 
-  expect_failures = [var.targets]
+  expect_failures = [aws_lb_target_group.service]
+}
+
+run "no_catch_all_gives_unknown_paths_a_fixed_404" {
+  command = apply
+
+  variables {
+    targets = {
+      auth = { port = 8000, path_patterns = ["/api/v1/auth/*"], priority = 120 }
+    }
+  }
+
+  assert {
+    condition     = keys(aws_lb_listener_rule.from_cloudfront) == ["auth"] && length(aws_lb_listener_rule.not_found) == 1
+    error_message = "No catch-all target: the auth rule plus the fixed 404."
+  }
+  assert {
+    condition     = aws_lb_listener_rule.not_found[0].priority == 50000 && one(one(aws_lb_listener_rule.not_found[0].action).fixed_response).status_code == "404"
+    error_message = "The fixed 404 is evaluated last, at 50000."
+  }
+  assert {
+    condition     = one(one(aws_lb_listener_rule.not_found[0].condition).http_header).http_header_name == "X-Origin-Verify"
+    error_message = "Only requests through CloudFront get the 404; without the header it's the listener's 403."
+  }
+}
+
+run "a_catch_all_target_needs_no_404_rule" {
+  command = plan
+
+  assert {
+    condition     = length(aws_lb_listener_rule.not_found) == 0
+    error_message = "With a catch-all target nothing reaches priority 50000 unmatched."
+  }
+}
+
+# The stack reads shared/service-routes.json (build plan 2.5): the same rules, here.
+run "routes_from_the_shared_route_list" {
+  command = apply
+
+  variables {
+    targets = {
+      for service in distinct([
+        for r in jsondecode(file("../../shared/service-routes.json")).rules : r.service if lookup(r, "built", true)
+      ]) : service => { port = 8000 }
+    }
+    routes = [
+      for r in jsondecode(file("../../shared/service-routes.json")).rules : {
+        priority      = r.priority
+        target        = r.service
+        path_patterns = r.paths
+      } if lookup(r, "built", true)
+    ]
+    origin_verify_values = ["current-secret", "next-secret"]
+  }
+
+  assert {
+    condition     = length(aws_lb_listener_rule.from_cloudfront) == 10 && length(aws_lb_target_group.service) == 9 && length(aws_lb_listener_rule.not_found) == 1
+    error_message = "10 rules (13.1, connect not built) to 9 target groups, plus the fixed 404."
+  }
+  assert {
+    condition = toset(flatten([
+      for c in aws_lb_listener_rule.from_cloudfront["route-10"].condition : [for p in c.path_pattern : p.values]
+    ])) == toset(["/api/v1/children/*/onboarding*"])
+    error_message = "A mid-path pattern reaches the rule unchanged."
+  }
+  assert {
+    condition = (
+      aws_lb_listener_rule.from_cloudfront["route-10"].priority < aws_lb_listener_rule.from_cloudfront["route-100"].priority
+      && one(aws_lb_listener_rule.from_cloudfront["route-10"].action).target_group_arn == aws_lb_target_group.service["onboarding"].arn
+      && one(aws_lb_listener_rule.from_cloudfront["route-100"].action).target_group_arn == aws_lb_target_group.service["children"].arn
+    )
+    error_message = "The circle rules come before children's, which would also match their paths."
+  }
+  assert {
+    condition = (
+      one(aws_lb_listener_rule.from_cloudfront["route-130"].action).target_group_arn == aws_lb_target_group.service["platform"].arn
+      && one(aws_lb_listener_rule.from_cloudfront["route-140"].action).target_group_arn == aws_lb_target_group.service["platform"].arn
+    )
+    error_message = "One target can have several rules (platform: 130 and 140)."
+  }
+  assert {
+    condition = alltrue([
+      for r in values(aws_lb_listener_rule.from_cloudfront) : anytrue([for c in r.condition : length(c.http_header) == 1])
+    ])
+    error_message = "Every rule requires X-Origin-Verify."
+  }
+}
+
+run "routes_need_known_targets" {
+  command = plan
+
+  variables {
+    targets = { auth = { port = 8000 } }
+    routes  = [{ priority = 120, target = "nobody", path_patterns = ["/api/v1/auth/*"] }]
+  }
+
+  expect_failures = [var.routes]
+}
+
+run "routes_need_unique_priorities_in_range" {
+  command = plan
+
+  variables {
+    targets = { auth = { port = 8000 } }
+    routes = [
+      { priority = 120, target = "auth", path_patterns = ["/a/*"] },
+      { priority = 120, target = "auth", path_patterns = ["/b/*"] },
+    ]
+  }
+
+  expect_failures = [var.routes]
+}
+
+run "routes_cant_use_the_404s_priority" {
+  command = plan
+
+  variables {
+    targets = { auth = { port = 8000 } }
+    routes  = [{ priority = 50000, target = "auth", path_patterns = ["/a/*"] }]
+  }
+
+  expect_failures = [var.routes]
+}
+
+run "routes_have_one_to_three_patterns" {
+  command = plan
+
+  variables {
+    targets = { auth = { port = 8000 } }
+    routes  = [{ priority = 120, target = "auth", path_patterns = ["/a", "/b", "/c", "/d"] }]
+  }
+
+  expect_failures = [var.routes]
+}
+
+run "with_routes_targets_carry_no_paths" {
+  command = plan
+
+  variables {
+    targets = { auth = { port = 8000, path_patterns = ["/api/v1/auth/*"], priority = 120 } }
+    routes  = [{ priority = 120, target = "auth", path_patterns = ["/api/v1/auth/*"] }]
+  }
+
+  expect_failures = [aws_lb_target_group.service]
+}
+
+run "with_routes_every_target_has_one" {
+  command = plan
+
+  variables {
+    targets = {
+      auth  = { port = 8000 }
+      users = { port = 8000 }
+    }
+    routes = [{ priority = 120, target = "auth", path_patterns = ["/api/v1/auth/*"] }]
+  }
+
+  expect_failures = [aws_lb_target_group.service]
 }
 
 run "path_targets_need_a_unique_priority" {
@@ -221,7 +378,7 @@ run "target_group_name_changes_with_its_replacement_settings" {
   }
 
   assert {
-    condition     = aws_lb_target_group.service["backend"].name == "superpower-backend-tg-prod-${substr(sha1(jsonencode([8000, "HTTP", "ip", "vpc-1"])), 0, 4)}"
+    condition     = aws_lb_target_group.service["backend"].name == "superpower-backend-prod-${substr(sha1(jsonencode([8000, "HTTP", "ip", "vpc-1"])), 0, 4)}"
     error_message = "The hash covers port, protocol, target type and VPC."
   }
 }
@@ -234,7 +391,7 @@ run "target_group_name_on_another_port" {
   }
 
   assert {
-    condition     = aws_lb_target_group.service["backend"].name == "superpower-backend-tg-prod-${substr(sha1(jsonencode([8080, "HTTP", "ip", "vpc-1"])), 0, 4)}" && aws_lb_target_group.service["backend"].name != "superpower-backend-tg-prod-${substr(sha1(jsonencode([8000, "HTTP", "ip", "vpc-1"])), 0, 4)}"
+    condition     = aws_lb_target_group.service["backend"].name == "superpower-backend-prod-${substr(sha1(jsonencode([8080, "HTTP", "ip", "vpc-1"])), 0, 4)}" && aws_lb_target_group.service["backend"].name != "superpower-backend-prod-${substr(sha1(jsonencode([8000, "HTTP", "ip", "vpc-1"])), 0, 4)}"
     error_message = "A different port gives a different name."
   }
 }

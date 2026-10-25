@@ -14,6 +14,11 @@
 locals {
   family = "${var.app_name}-${var.role}-${var.environment}"
 
+  # The public port (the ALB's target), then the internal one (Cloud Map, 13.2).
+  port_mappings = [
+    for port in [var.container.port, var.internal_port] : { containerPort = port, protocol = "tcp" } if port != null
+  ]
+
   # Optional parts are merged in, not set to null, so the task definition
   # JSON has no `"command": null`-style keys (they'd show up as a diff).
   main_container = merge(
@@ -33,7 +38,7 @@ locals {
       }
     },
     var.container.command != null ? { command = var.container.command } : {},
-    var.container.port != null ? { portMappings = [{ containerPort = var.container.port, protocol = "tcp" }] } : {},
+    length(local.port_mappings) > 0 ? { portMappings = local.port_mappings } : {},
     var.container.health_check != null ? { healthCheck = var.container.health_check } : {},
   )
 
@@ -120,6 +125,15 @@ resource "aws_ecs_service" "this" {
 
   health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
+  # ECS registers each task's IP when it starts and deregisters it when it starts
+  # stopping (13.2).
+  dynamic "service_registries" {
+    for_each = var.service_discovery != null ? [1] : []
+    content {
+      registry_arn = aws_service_discovery_service.this[0].arn
+    }
+  }
+
   deployment_circuit_breaker {
     enable   = true
     rollback = true
@@ -129,11 +143,48 @@ resource "aws_ecs_service" "this" {
     type = "ECS"
   }
 
-  lifecycle {
-    ignore_changes = [task_definition, desired_count]
-  }
-
   tags = {
     Name = "${var.app_name}-${var.role}-service-${var.environment}"
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition, desired_count]
+
+    precondition {
+      condition     = var.service_discovery == null || var.internal_port != null
+      error_message = "${local.family}: service_discovery registers the internal API, so it needs internal_port (8001, or 4318 for the collector)."
+    }
+    precondition {
+      condition     = var.internal_port == null || var.internal_port != var.container.port
+      error_message = "${local.family}: internal_port must differ from the container's public port."
+    }
+  }
+}
+
+# Cloud Map service for this ECS service (13.2): multivalue A records, so each
+# lookup returns up to 8 task IPs and the client picks one at random. ECS reports
+# each task's health from its container health check, so an unhealthy or
+# stopping task isn't answered.
+resource "aws_service_discovery_service" "this" {
+  count = var.service_discovery != null ? 1 : 0
+
+  name = coalesce(var.service_discovery.name, var.role)
+
+  dns_config {
+    namespace_id   = var.service_discovery.namespace_id
+    routing_policy = "MULTIVALUE"
+
+    dns_records {
+      type = "A"
+      ttl  = var.service_discovery.dns_ttl
+    }
+  }
+
+  # ECS reports health from the container health check (failure_threshold is
+  # deprecated: AWS always uses 1).
+  health_check_custom_config {}
+
+  tags = {
+    Name = "${var.app_name}-${var.role}-discovery-${var.environment}"
   }
 }

@@ -39,58 +39,67 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 | CloudWatch Logs Interface Endpoint | `aws_vpc_endpoint` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
 | X-Ray Interface Endpoint | `aws_vpc_endpoint` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
 | VPC Endpoint Security Group | `aws_security_group` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
-| Endpoint SG Ingress: from API Task | `aws_vpc_security_group_ingress_rule` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
-| Endpoint SG Ingress: from Worker Task | `aws_vpc_security_group_ingress_rule` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
+| Endpoint SG Ingress: from each runtime's task SG | `aws_vpc_security_group_ingress_rule` | ❌ ¹ | ❌ ¹ | ✅ | ✅ |
 
 > ¹ Interface endpoints require `nat_gateway_count > 1`. dev/sbx use a single NAT gateway so all interface endpoint resources (including the shared security group and its ingress rules) are skipped — traffic routes via the NAT gateway instead.
 
-### ECS — API Service
+### Runtimes
+
+The stack runs **18 runtimes** (`services.tf`): 9 HTTP services (auth, users, children, onboarding, discover, grow, transform, release, platform), 8 workers (`<service>-worker`, none for platform) and the OpenTelemetry collector. Rows marked *per runtime* repeat for each of the 18; rows marked *per service* for each of the 9. Task sizes and counts per environment are in `runtime_sizes` (the tfvars).
+
+### ECS
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
 | ECS Cluster | `aws_ecs_cluster` | ✅ | ✅ | ✅ | ✅ |
 | Cluster Capacity Providers | `aws_ecs_cluster_capacity_providers` | ✅ | ✅ | ✅ | ✅ |
-| API Task Definition | `aws_ecs_task_definition` | ✅ | ✅ | ✅ | ✅ |
-| API ECS Service | `aws_ecs_service` | ✅ | ✅ | ✅ | ✅ |
-| API Auto Scaling Target | `aws_appautoscaling_target` | ✅ | ✅ | ✅ | ✅ |
-| API CPU Scaling Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
-| API Memory Scaling Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
-| API ALB Request Scaling Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
-
-### ECS — Worker Service
-
-| Resource | AWS Type | dev | sbx | stg | prod |
-|----------|----------|:---:|:---:|:---:|:----:|
-| Worker Task Definition | `aws_ecs_task_definition` | ✅ | ✅ | ✅ | ✅ |
-| Worker ECS Service | `aws_ecs_service` | ✅ | ✅ | ✅ | ✅ |
-| Worker Auto Scaling Target | `aws_appautoscaling_target` | ✅ | ✅ | ✅ | ✅ |
-| Worker CPU Scaling Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
-| Worker Pending Jobs Scale-Out Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
-| Worker Pending Jobs Scale-In Policy | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
+| Task Definition + ECS Service (per runtime) | `aws_ecs_task_definition` / `aws_ecs_service` | ✅ | ✅ | ✅ | ✅ |
+| Auto Scaling Target (per runtime) | `aws_appautoscaling_target` | ✅ | ✅ | ✅ | ✅ |
+| Scaling Policies: HTTP services' CPU, memory and ALB requests (3 each) | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
+| Scaling Policies: workers' CPU floor, queue depth and queue low (3 each), plus pending jobs for the 4 generating workers | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
+| Scaling Policy: collector CPU | `aws_appautoscaling_policy` | ✅ | ✅ | ✅ | ✅ |
+| Cloud Map Namespace (`<app>-<env>.internal`) | `aws_service_discovery_private_dns_namespace` | ✅ | ✅ | ✅ | ✅ |
+| Cloud Map Service (the 8 HTTP services with an internal API, and the collector) | `aws_service_discovery_service` | ✅ | ✅ | ✅ | ✅ |
 
 ### Load Balancer
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
 | Internal ALB | `aws_lb` | ✅ | ✅ | ✅ | ✅ |
-| ALB Target Group | `aws_lb_target_group` | ✅ | ✅ | ✅ | ✅ |
+| ALB Target Group (per HTTP service) | `aws_lb_target_group` | ✅ | ✅ | ✅ | ✅ |
 | ALB HTTPS Listener | `aws_lb_listener` | ✅ | ✅ | ✅ | ✅ |
-| ALB Listener Rule (Origin Verify) | `aws_lb_listener_rule` | ✅ | ✅ | ✅ | ✅ |
+| ALB Listener Rules (one per `shared/service-routes.json` rule, plus the fixed 404 at 50000) | `aws_lb_listener_rule` | ✅ | ✅ | ✅ | ✅ |
 | ALB Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
 | ALB SG Ingress: from CloudFront | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
-| ECS Task Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
-| ECS Task SG Ingress: from ALB | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
-| Worker Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
+| Task Security Group (per runtime) | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
+| Task SG Ingress: from ALB (per HTTP service) | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
+| Internal-callers Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
+| Task SG Ingress: internal port from internal callers (each Cloud Map runtime) | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
 
-### ElastiCache (Redis)
+### ElastiCache (Valkey)
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
 | Subnet Group | `aws_elasticache_subnet_group` | ✅ | ✅ | ✅ | ✅ |
 | Parameter Group | `aws_elasticache_parameter_group` | ✅ | ✅ | ✅ | ✅ |
 | Replication Group | `aws_elasticache_replication_group` | ✅ Valkey 8.0 `cache.t4g.micro` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.micro` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.small` ×0 replicas | ✅ Valkey 8.0 `cache.t4g.medium` ×1 replica, multi-AZ |
+| RBAC User (per service, IAM authentication) and a disabled default user | `aws_elasticache_user` | ✅ | ✅ | ✅ | ✅ |
+| RBAC User Group | `aws_elasticache_user_group` | ✅ | ✅ | ✅ | ✅ |
 | ElastiCache Security Group | `aws_security_group` | ✅ | ✅ | ✅ | ✅ |
-| ElastiCache SG Ingress: from ECS Tasks | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
+| ElastiCache SG Ingress: from each service runtime (not the collector) | `aws_vpc_security_group_ingress_rule` | ✅ | ✅ | ✅ | ✅ |
+
+### Events (SNS / SQS)
+
+From `backend/common/events/catalogue.json`, for the 9 services only (`modules/events`).
+
+| Resource | AWS Type | dev | sbx | stg | prod |
+|----------|----------|:---:|:---:|:---:|:----:|
+| Events KMS Key + Alias | `aws_kms_key` / `aws_kms_alias` | ✅ | ✅ | ✅ | ✅ |
+| Topic (per producing service) | `aws_sns_topic` | ✅ | ✅ | ✅ | ✅ |
+| Queue + DLQ (per consuming service) | `aws_sqs_queue` | ✅ | ✅ | ✅ | ✅ |
+| Queue Policy + Redrive Allow Policy (per consuming service) | `aws_sqs_queue_policy` / `aws_sqs_queue_redrive_allow_policy` | ✅ | ✅ | ✅ | ✅ |
+| Subscription (per consumer and producer topic, filtered on `event_type`) | `aws_sns_topic_subscription` | ✅ | ✅ | ✅ | ✅ |
+| Alarms: DLQ depth, oldest message age (per queue) | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
 
 ### Storage & Registry
 
@@ -98,43 +107,34 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
-| ECR Repository | `aws_ecr_repository` | ✅ | ✅ | ✅ | ✅ |
-| ECR Lifecycle Policy | `aws_ecr_lifecycle_policy` | ✅ | ✅ | ✅ | ✅ |
+| ECR Repository + Lifecycle Policy (per service) | `aws_ecr_repository` / `aws_ecr_lifecycle_policy` | ✅ | ✅ | ✅ | ✅ |
 | S3 Uploads Bucket CORS Config | `aws_s3_bucket_cors_configuration` | ✅ | ✅ | ✅ | ✅ |
 | S3 Uploads Bucket Lifecycle Config | `aws_s3_bucket_lifecycle_configuration` | ✅ | ✅ | ✅ | ✅ |
 | S3 Regional Logging Bucket Policy ² | `aws_s3_bucket_policy` | ❌ | ❌ | ✅ | ✅ |
 
-> ² Created when **either** `enable_cloudtrail` or `enable_alb_access_logs` is true (the two flags are independent — see `variables.tf` — but share this one bucket/policy resource). Both happen to be `false` on dev/sbx and `true` on stg/prod today, so the ✅/❌ pattern is the same as before the flags were decoupled; either one being flipped independently would change this row without changing the other security/ALB rows.
+> ² Created when **either** `enable_cloudtrail` or `enable_alb_access_logs` is true (the two flags are independent — see `variables.tf` — but share this one bucket/policy resource). Both are `false` on dev/sbx and `true` on stg/prod today.
 
 ### IAM
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
-| ECS Execution Role | `aws_iam_role` | ✅ | ✅ | ✅ | ✅ |
-| ECS Execution Managed Policy Attachment | `aws_iam_role_policy_attachment` | ✅ | ✅ | ✅ | ✅ |
-| ECS Execution Secrets Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
-| ECS Task Role | `aws_iam_role` | ✅ | ✅ | ✅ | ✅ |
-| ECS Task S3 Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
-| ECS Task S3 Uploads Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
-| Worker Task Role | `aws_iam_role` | ✅ | ✅ | ✅ | ✅ |
-| Worker Task CloudWatch Policy | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
-| ECS Exec Policy (API) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
-| ECS Exec Policy (Worker) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
-| X-Ray Policy (one per service) | `aws_iam_role_policy` | ❌ | ❌ | ❌ | ❌ |
-
-X-Ray policies are created only with `enable_adot_sidecar = true`, which is off everywhere (the app isn't instrumented). The X-Ray sampling rules below still exist, and cost nothing while no traces are sent.
+| Execution Role + Managed Policy Attachment (per runtime) | `aws_iam_role` / `aws_iam_role_policy_attachment` | ✅ | ✅ | ✅ | ✅ |
+| Execution Secrets Policy: its service's secret and signing key (every runtime but the collector) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
+| Task Role (per runtime) | `aws_iam_role` | ✅ | ✅ | ✅ | ✅ |
+| Task Policies: `valkey`, `metrics`, `events` (workers), `s3-uploads` (children, transform), `s3-apk` (platform), `xray` (collector) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
+| ECS Exec Policy (per runtime) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
 
 ### Secrets & Config
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
-| App Secret | `aws_secretsmanager_secret` | ✅ | ✅ | ✅ | ✅ |
-| App Secret Placeholder Version | `aws_secretsmanager_secret_version` | ✅ | ✅ | ✅ | ✅ |
+| Service Secret + Placeholder Version (per service) | `aws_secretsmanager_secret` / `aws_secretsmanager_secret_version` | ✅ | ✅ | ✅ | ✅ |
+| Service-token Key Pair (per service; generated by Terraform, held in state) | `tls_private_key` | ✅ | ✅ | ✅ | ✅ |
+| SSM: Signing Key, SecureString (per service, in the region) | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
+| SSM: Internal Public Keys | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
 | SSM: ALB Internal FQDN | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
-| SSM: ECR Repository URL | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
 | SSM: ECS Cluster Name | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
-| SSM: ECS Service Name | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
-| SSM: ECS Worker Service Name | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
+| SSM: ECS Services manifest | `aws_ssm_parameter` | ✅ | ✅ | ✅ | ✅ |
 
 ### DNS
 
@@ -146,27 +146,19 @@ X-Ray policies are created only with `enable_adot_sidecar = true`, which is off 
 
 | Resource | AWS Type | dev | sbx | stg | prod |
 |----------|----------|:---:|:---:|:---:|:----:|
-| CloudWatch Log Group (API) | `aws_cloudwatch_log_group` | ✅ 7d | ✅ 7d | ✅ 30d | ✅ 90d |
-| CloudWatch Log Group (Worker) | `aws_cloudwatch_log_group` | ✅ 7d | ✅ 7d | ✅ 30d | ✅ 90d |
+| CloudWatch Log Group (per runtime) | `aws_cloudwatch_log_group` | ✅ 7d | ✅ 7d | ✅ 30d | ✅ 90d |
 | SNS Alerts Topic | `aws_sns_topic` | ✅ | ✅ | ✅ | ✅ |
 | SNS Email Subscription | `aws_sns_topic_subscription` | ❌ | ❌ | ❌ | ✅ |
-| X-Ray Default Sampling Rule | `aws_xray_sampling_rule` | ✅ 5% | ✅ 5% | ✅ 5% | ✅ 1% |
-| X-Ray Error Sampling Rule (100%) | `aws_xray_sampling_rule` | ❌ | ❌ | ❌ | ✅ |
-| CloudWatch Dashboard (9 widgets) | `aws_cloudwatch_dashboard` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: ALB Healthy Hosts | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ✅ | ✅ |
+| CloudWatch Dashboard | `aws_cloudwatch_dashboard` | ❌ | ❌ | ❌ | ✅ |
+| Alarm: ALB Healthy Hosts (per HTTP service) | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ✅ | ✅ |
 | Alarm: ALB 5XX Errors | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ✅ | ✅ |
-| Alarm: API CPU Sustained | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: API Memory Sustained | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: API CPU High | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: API Memory High | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker CPU Sustained | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker CPU High | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker Memory High | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker Processing Stuck | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker Pending Jobs High | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
-| Alarm: Worker Pending Jobs (Scale-Out) | `aws_cloudwatch_metric_alarm` | ✅ | ✅ | ✅ | ✅ |
-| Alarm: Worker Pending Jobs (Scale-In) | `aws_cloudwatch_metric_alarm` | ✅ | ✅ | ✅ | ✅ |
+| Alarms: CPU / memory sustained and high (per runtime) | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
+| Alarms: pending jobs high, processing stuck, pending jobs missing (per generating service) | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
+| Alarm: outbox stale (per worker) | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
+| Scaling alarms: queue depth and queue low (per worker), pending jobs (per generating worker) | `aws_cloudwatch_metric_alarm` | ✅ | ✅ | ✅ | ✅ |
 | Alarm: Redis Connections | `aws_cloudwatch_metric_alarm` | ❌ | ❌ | ❌ | ✅ |
+
+Traces go through the collector runtime to X-Ray. It keeps errors, slow traces and `xray_default_sampling_rate` of the rest (5% dev/sbx/stg, 1% prod). There are no X-Ray sampling rules.
 
 ### Security
 
@@ -260,25 +252,11 @@ X-Ray policies are created only with `enable_adot_sidecar = true`, which is off 
 
 ## Summary — Resource Count per Environment
 
-Counts below are for **one backend region** (a single-region deployment, e.g. `["ap-south-1"]`) plus one application each of edge, frontend, and scheduler.
+Counts below are one application each of edge, frontend, and scheduler. The backend's count isn't kept here: it follows from the *per runtime* (18) and *per service* (9) rows above, and `terraform plan` in a region gives the exact number.
 
 | Category | dev | sbx | stg | prod |
 |----------|:---:|:---:|:---:|:----:|
-| Networking (VPC, subnets, IGW, route tables, routes, associations) | 22 | 22 | 22 | 22 |
-| NAT Gateways + EIPs | 2 | 2 | 4 | 6 |
-| VPC Endpoints + SG ingress rules | 1 | 1 | 9 | 9 |
-| ECS (cluster, tasks, services, autoscaling policies) | 14 | 14 | 14 | 14 |
-| Load Balancer (ALB, TG, listener, listener rule, SGs, ingress rules) | 9 | 9 | 9 | 9 |
-| ElastiCache (Redis, SG, ingress rule) | 5 | 5 | 5 | 5 |
-| ECR | 2 | 2 | 2 | 2 |
-| S3 configs & policies (backend) | 2 | 2 | 3 | 3 |
-| IAM roles & policies (backend) | 10 | 10 | 12 | 10 |
-| Secrets Manager (backend) | 2 | 2 | 2 | 2 |
-| SSM Parameters (backend) | 5 | 5 | 5 | 5 |
-| DNS (internal) | 1 | 1 | 1 | 1 |
-| Observability (logs, alarms, X-Ray, SNS) | 6 | 6 | 8 | 21 |
-| Security — backend (GuardDuty, CloudTrail) | 0 | 0 | 3 | 3 |
-| **Backend subtotal (per region)** | **81** | **81** | **99** | **112** |
+| **Backend (per region)** | see above | see above | see above | see above |
 | CloudFront + OAC (×2) + response headers + SPA function + DNS + assets S3 policy | 9 | 9 | 9 | 9 |
 | Lambda@Edge (incl. destroy-only `time_sleep`) | 4 | 4 | 4 | 4 |
 | WAF | 0 | 0 | 1 | 5 |
@@ -287,14 +265,7 @@ Counts below are for **one backend region** (a single-region deployment, e.g. `[
 | **Edge subtotal** | **17** | **17** | **19** | **24** |
 | Frontend S3 policy | 1 | 1 | 1 | 1 |
 | Scheduler (Lambda, IAM, EventBridge, Secrets Manager) | 10 | 10 | 10 | 10 |
-| **Total (1 backend region)** | **109** | **109** | **129** | **147** |
 
 ### Scaling to more backend regions
 
-The **Backend subtotal** is per region and multiplies directly — applying `infra-live-backend` for `eu-west-1` and `us-east-1` in addition to `ap-south-1` adds two more full backend subtotals. Edge, Frontend, and Scheduler stay fixed regardless of how many backend regions are active (the edge no longer manages any uploads-bucket policy, EDGE-05):
-
-| Active backend regions | dev/sbx total | stg total | prod total |
-|:---:|:---:|:---:|:---:|
-| 1 (`ap-south-1` only) | 109 | 129 | 147 |
-| 2 (+ `eu-west-1`) | 109 + 81 = 190 | 129 + 99 = 228 | 147 + 112 = 259 |
-| 3 (+ `us-east-1`) | 190 + 81 = 271 | 228 + 99 = 327 | 259 + 112 = 371 |
+The backend is per region and multiplies directly: applying `infra-live-backend` for `eu-west-1` and `us-east-1` in addition to `ap-south-1` adds two more full backend stacks. Edge, Frontend, and Scheduler stay fixed regardless of how many backend regions are active (the edge no longer manages any uploads-bucket policy, EDGE-05).
