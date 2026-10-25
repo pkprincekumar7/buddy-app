@@ -53,6 +53,8 @@ class Runtime:
     limits: RateLimits
     sns: Any = None
     sqs: Any = None
+    # The relay's OldestUnpublishedOutboxAgeSeconds (15.5); None in tests.
+    cloudwatch: Any = None
     cache: Any = None
     uploads: Uploads | None = None
 
@@ -90,6 +92,7 @@ class Runtime:
             ),
             sns=boto3.client("sns", **aws),
             sqs=boto3.client("sqs", **aws),
+            cloudwatch=boto3.client("cloudwatch", **aws),
             cache=cache,
             uploads=Uploads(UploadsConfig.from_env(environ))
             if environ.get("UPLOADS_BUCKET_NAME")

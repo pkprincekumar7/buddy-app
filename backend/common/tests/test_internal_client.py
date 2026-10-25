@@ -33,6 +33,7 @@ from common.internal_client import (
     allow_callers,
     authz_fill,
 )
+from common.logging import request_id_var
 from common.routers import PolicyRouter, route_policies
 
 
@@ -308,6 +309,26 @@ def test_a_call_carries_a_token_for_the_callee_and_the_trace_headers():
     assert request.headers["x-request-id"] == "r-1" and request.headers["traceparent"] == "00-x"
     token = request.headers["authorization"].removeprefix("Bearer ")
     assert ServiceTokenVerifier("children", KEYS).verify(token) == "grow"
+
+
+def test_a_call_carries_the_current_requests_id_by_default():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200)
+
+    async def main() -> None:
+        client = _client(handler)
+        token = request_id_var.set("gw-7")
+        try:
+            await client.get("children", "/internal/children/c1")
+        finally:
+            request_id_var.reset(token)
+            await client.aclose()
+
+    asyncio.run(main())
+    assert seen[0].headers["x-request-id"] == "gw-7"
 
 
 def test_a_stopped_ip_is_retried_on_another():

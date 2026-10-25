@@ -601,15 +601,17 @@ async def delete_account(
     counted_admin = account["role"] == "admin" and not account.get("is_locked")
     if counted_admin:
         await admin.take_admin_out(runtime)
+
+    async def undo() -> None:
+        await admin.put_admin_back(runtime)
+
     try:
-        await deletion.start(runtime, account)
-    except BaseException as exc:
-        if counted_admin:
-            await admin.put_admin_back(runtime)
-        if isinstance(exc, deletion.AlreadyDeleting):
-            # A second request that a task's 30-second cached entry let through (9.3).
-            raise HTTPException(status_code=401, detail="Not authenticated") from None
-        raise
+        await deletion.start(runtime, account, undo=undo if counted_admin else None)
+    except deletion.AlreadyDeleting:
+        # A second request that a task's 30-second cached entry let through (9.3).
+        raise HTTPException(status_code=401, detail="Not authenticated") from None
+    except deletion.AccountChanged:
+        raise error(409, "account_changed", "Your account changed meanwhile; try again.") from None
     clear_cookies(runtime, response)
     return {"status": "deleting"}
 

@@ -1,6 +1,8 @@
 """OpenTelemetry for every service (docs/auth-users-split.md, 15.5).
 
-`setup_telemetry(...)` once at startup:
+`setup_observability(service, apps=...)` once at startup, in every HTTP task (common.serve)
+and worker: JSON logs (common.logging) and `setup_telemetry(...)`, from the variables every
+task has (`APP_ENV`, `AWS_REGION`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`). Tracing:
 - resource attributes `service.name`, `deployment.environment`, `cloud.region`;
 - X-Ray-compatible trace ids (the first 32 bits are the start time), so traces are valid in X-Ray;
 - W3C `traceparent` propagation between services;
@@ -18,9 +20,10 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import random
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -66,6 +69,7 @@ def setup_telemetry(
     endpoint: str | None = None,
     app: Any = None,
     exporter: SpanExporter | None = None,
+    apps: Sequence[Any] = (),
 ) -> tuple[TracerProvider, list[str]]:
     """Configure tracing for this process. Returns the provider and the instrumented libraries."""
     provider = TracerProvider(
@@ -83,11 +87,32 @@ def setup_telemetry(
         provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
     propagate.set_global_textmap(TraceContextTextMapPropagator())
-    return provider, instrument(app, provider)
+    return provider, instrument(app, provider, apps=apps)
 
 
-def instrument(app: Any, provider: TracerProvider) -> list[str]:
-    """Turn on every installed instrumentation; a missing one is logged, not fatal."""
+def setup_observability(
+    service: str, *, apps: Sequence[Any] = (), environ: Mapping[str, str] = os.environ
+) -> TracerProvider:
+    """JSON logs and tracing for this process, configured from its environment (15.5)."""
+    from common.logging import configure_logging
+
+    configure_logging(service, environ.get("LOG_LEVEL") or "INFO")
+    provider, _ = setup_telemetry(
+        service,
+        environment=environ.get("APP_ENV") or "local",
+        region=environ.get("AWS_REGION") or "ap-south-1",
+        endpoint=(environ.get("OTEL_EXPORTER_OTLP_ENDPOINT") or "").strip() or None,
+        apps=apps,
+    )
+    return provider
+
+
+def instrument(app: Any, provider: TracerProvider, *, apps: Sequence[Any] = ()) -> list[str]:
+    """Turn on every installed instrumentation; a missing one is logged, not fatal.
+
+    FastAPI is instrumented per app: `app`, and each of `apps` (a public and internal pair).
+    """
+    targets = ([] if app is None else [app]) + list(apps)
     enabled: list[str] = []
     for library, (module_name, class_name) in INSTRUMENTATIONS.items():
         try:
@@ -97,9 +122,10 @@ def instrument(app: Any, provider: TracerProvider) -> list[str]:
             continue
         instrumentor = getattr(module, class_name)
         if library == "fastapi":
-            if app is None:
+            if not targets:
                 continue
-            instrumentor.instrument_app(app, tracer_provider=provider)
+            for target in targets:
+                instrumentor.instrument_app(target, tracer_provider=provider)
         else:
             instrumentor().instrument(tracer_provider=provider)
         enabled.append(library)

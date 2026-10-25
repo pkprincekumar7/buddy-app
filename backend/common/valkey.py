@@ -51,6 +51,7 @@ class ElastiCacheIAMProvider(CredentialProvider):
         self._lock = threading.Lock()
         self._token: str | None = None
         self._made_at = 0.0
+        self._session: Any = None
 
     def _signer(self) -> Any:
         # botocore ships with boto3, which every deployed service already installs.
@@ -58,7 +59,11 @@ class ElastiCacheIAMProvider(CredentialProvider):
         from botocore.model import ServiceId
         from botocore.signers import RequestSigner
 
-        session = botocore.session.get_session()
+        # Kept on the provider: the signer holds its event emitter only weakly, so a session
+        # that went out of scope could be collected mid-sign (ReferenceError).
+        if self._session is None:
+            self._session = botocore.session.get_session()
+        session = self._session
         credentials = self._credentials or session.get_credentials()
         if credentials is None:
             raise RuntimeError("no AWS credentials for the Valkey IAM token (the task role)")

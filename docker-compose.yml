@@ -17,6 +17,37 @@
 # checkout folder (buddy-app).
 name: superpower
 
+# Settings and wiring every split service shares (the services under profile "split").
+x-split-env: &split-env
+  APP_ENV: local
+  APP_NAME: superpower
+  AWS_REGION: ap-south-1
+  MONGODB_URI: mongodb://mongo:27017/?directConnection=true
+  REDIS_URL: redis://valkey:6379
+  JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}
+  # Moto on the host (see the top of this file); the fake credentials are Moto's.
+  AWS_ENDPOINT_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  LOG_LEVEL: INFO
+
+x-split-service: &split-service
+  restart: unless-stopped
+  volumes:
+    - local_keys:/keys:ro
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  networks:
+    - superpower_net
+  depends_on:
+    mongo:
+      condition: service_healthy
+    valkey:
+      condition: service_healthy
+    local-keys:
+      condition: service_completed_successfully
+
 services:
   # Single-node replica set: change streams and transactions need one (design 7.3, 9.3).
   # The member is registered as localhost:27017, so every client connects with
@@ -211,9 +242,136 @@ services:
       retries: 3
       start_period: 5s
 
+  # ── The split's services (docs/auth-users-split-build-plan.md), profile "split" ──────────
+  # Started only with `docker compose --profile split up -d --build`; the gateway (port
+  # ${GATEWAY_PORT:-8088}) routes /api/v1/auth, /users and /children to them, as the ALB does.
+  # Before the first start: Moto running and `scripts/local-aws-setup.py` run (topics, queues,
+  # buckets), and EMAIL_HMAC_PEPPER set in .env. Each service has its own database and its own
+  # service-token key, made by local-keys into the local_keys volume (never the repository).
+
+  # One-shot: the service-token keys and JWT_PUBLIC_KEYS (scripts/local-keys.py).
+  local-keys:
+    profiles: ["split"]
+    # auth's image (built by `auth`): it has the cryptography package the script needs.
+    image: superpower-auth:local
+    pull_policy: never
+    user: "0"
+    command: ["python", "/tools/local-keys.py"]
+    environment:
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
+      JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
+    volumes:
+      - ./scripts/local-keys.py:/tools/local-keys.py:ro
+      - local_keys:/keys
+    healthcheck:
+      disable: true
+    restart: "no"
+    networks:
+      - superpower_net
+
+  auth:
+    profiles: ["split"]
+    image: superpower-auth:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: auth
+    command: &serve-auth ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/auth.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve auth"]
+    environment: &auth-env
+      <<: *split-env
+      SERVICE_NAME: auth
+      MONGODB_DB_NAME: auth
+      INTERNAL_SIGNING_KID: auth-local
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
+      EMAIL_HMAC_PEPPER: ${EMAIL_HMAC_PEPPER:-}
+      # For `python -m auth.seed` (the local allow-list), run in this container.
+      LOCAL_ALLOWED_EMAIL: ${LOCAL_ALLOWED_EMAIL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+      COOKIE_DOMAIN: ""
+      # The participants built so far (build plan 3.5): users and children.
+      DELETION_PARTICIPANTS: users,children
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-auth-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-auth-events
+    <<: *split-service
+
+  auth-worker:
+    profiles: ["split"]
+    image: superpower-auth:local  # built by `auth`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/auth.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m auth.worker"]
+    environment: *auth-env
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  users:
+    profiles: ["split"]
+    image: superpower-users:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: users
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/users.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve users"]
+    environment: &users-env
+      <<: *split-env
+      SERVICE_NAME: users
+      MONGODB_DB_NAME: users
+      INTERNAL_SIGNING_KID: users-local
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-users-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-users-events
+    <<: *split-service
+
+  users-worker:
+    profiles: ["split"]
+    image: superpower-users:local  # built by `users`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/users.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m users.worker"]
+    environment: *users-env
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  children:
+    profiles: ["split"]
+    image: superpower-children:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: children
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/children.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve children"]
+    environment: &children-env
+      <<: *split-env
+      SERVICE_NAME: children
+      MONGODB_DB_NAME: children
+      INTERNAL_SIGNING_KID: children-local
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-children-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-children-events
+      UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
+      UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
+      # What presigned photo URLs point at: the host's Moto, which the browser can reach.
+      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
+    <<: *split-service
+
+  children-worker:
+    profiles: ["split"]
+    image: superpower-children:local  # built by `children`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/children.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m children.worker"]
+    environment: *children-env
+    healthcheck:
+      disable: true
+    <<: *split-service
+
 volumes:
   mongo_data:
     name: superpower_mongo_data
+  local_keys:
+    name: superpower_local_keys
   valkey_data:
     name: superpower_valkey_data
 

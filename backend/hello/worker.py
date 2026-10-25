@@ -20,7 +20,8 @@ from common.events import (
     ensure_outbox,
     versioned_upsert,
 )
-from common.logging import configure_logging
+from common.metrics import outbox_metrics
+from common.telemetry import setup_observability
 from hello.app.demo import PING_COPIES, SERVICE, Demo
 
 
@@ -49,7 +50,10 @@ async def run(demo: Demo, stop: asyncio.Event, *, wait_seconds: int = 20) -> Non
         raise RuntimeError("hello's worker needs EVENTS_TOPIC_ARN and EVENTS_QUEUE_URL")
     await ensure_outbox(demo.db)
     relay = Relay(
-        demo.db, SnsPublisher(demo.sns, settings.events_topic_arn), region=settings.aws_region
+        demo.db,
+        SnsPublisher(demo.sns, settings.events_topic_arn),
+        region=settings.aws_region,
+        metrics=outbox_metrics(demo.cloudwatch, service=SERVICE, environment=settings.app_env),
     )
     consumer = build_consumer(demo)
     await asyncio.gather(
@@ -60,7 +64,7 @@ async def run(demo: Demo, stop: asyncio.Event, *, wait_seconds: int = 20) -> Non
 
 def main() -> int:  # pragma: no cover - the container's entry point; run() is tested
     demo = Demo.from_env()
-    configure_logging(SERVICE, demo.settings.log_level)
+    setup_observability(SERVICE)
 
     async def go() -> None:
         stop = asyncio.Event()

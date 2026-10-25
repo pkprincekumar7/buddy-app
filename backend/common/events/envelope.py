@@ -26,9 +26,16 @@ _UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-
 _TRACEPARENT_RE = re.compile(r"[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}")
 _REGION_RE = re.compile(r"[a-z]{2}(-[a-z]+)+-[0-9]")
 
+# SNS's limit on one message: the body and its attributes together.
+SNS_MAX_BYTES = 256 * 1024
+
 
 class InvalidEvent(ValueError):
     """An event that breaks the envelope rules, the catalogue or its schema."""
+
+
+class EventTooLarge(InvalidEvent):
+    """Bigger than SNS takes (SNS_MAX_BYTES): it could never be published, so it isn't written."""
 
 
 class ReservedEvent(InvalidEvent):
@@ -122,6 +129,8 @@ class Event:
             raise InvalidEvent(str(exc)) from exc
         except schemas.InvalidPayload as exc:
             raise InvalidEvent(str(exc)) from exc
+        if self.message_bytes() > SNS_MAX_BYTES:
+            raise EventTooLarge(f"{self.event_type} is over SNS's {SNS_MAX_BYTES} bytes")
 
     # ── the outbox row (4.1) ──────────────────────────────────────────────────
 
@@ -178,6 +187,13 @@ class Event:
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    def message_bytes(self) -> int:
+        """The size SNS counts: the body, and each attribute's name, type and value."""
+        size = len(self.to_message().encode())
+        for name, attribute in self.message_attributes().items():
+            size += len(name.encode()) + sum(len(v.encode()) for v in attribute.values())
+        return size
 
     def message_attributes(self) -> dict[str, dict[str, str]]:
         attrs = {

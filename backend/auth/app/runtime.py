@@ -122,6 +122,8 @@ class Runtime:
     audit_log: AuditLog | None = None
     sns: Any = None
     sqs: Any = None
+    # The relay's OldestUnpublishedOutboxAgeSeconds (15.5); None in tests.
+    cloudwatch: Any = None
     authorizer: AuthAuthorizer = field(init=False)
     audit: AuditTrail = field(init=False)
 
@@ -183,6 +185,7 @@ class Runtime:
             cache=cache,
             sns=boto3.client("sns", **aws),
             sqs=boto3.client("sqs", **aws),
+            cloudwatch=boto3.client("cloudwatch", **aws),
         )
 
     async def prepare(self) -> None:

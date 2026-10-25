@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import pytest
 from auth_testkit import JWT_PRIVATE, KID, OTHER_PRIVATE, Running, claims, issuer, running
+from pymongo import MongoClient
 
 from auth.app.store import AUTH, SESSIONS
 from auth.app.tokens import TokenIssuer
@@ -66,6 +67,34 @@ def test_a_refresh_rotates_within_the_family(mongo_uri):
         # The web app sends the cookie instead; the new pair works the same way.
         r.http.cookies.set("refresh_token", response.json()["refresh_token"])
         assert (await r.http.post(PATH)).status_code == 200
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_logout_all_during_a_refresh_leaves_no_session(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        tokens = await _signed_in(r)
+        user_id = claims(tokens["refresh_token"])["sub"]
+        real = TokenIssuer.issue
+        mongo: MongoClient[dict[str, Any]] = MongoClient(mongo_uri)
+
+        def logout_all_meanwhile(self: TokenIssuer, *args: Any, **kwargs: Any) -> Any:
+            # Another device's logout-all lands after the refresh read the account.
+            mongo[r.db.name][AUTH].update_one(
+                {"_id": user_id},
+                {"$set": {"tokens_revoked_at": datetime.now(UTC)}, "$inc": {"authz_version": 1}},
+            )
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(TokenIssuer, "issue", logout_all_meanwhile)
+        response = await _refresh(r, tokens["refresh_token"])
+        assert response.status_code == 401 and _code(response) == "session_revoked"
+        new_sessions = await r.db[SESSIONS].count_documents(
+            {"user_id": user_id, "_id": {"$ne": claims(tokens["refresh_token"])["jti"]}}
+        )
+        assert new_sessions == 0
+        mongo.close()
 
     live(mongo_uri, test)
 

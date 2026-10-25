@@ -231,7 +231,7 @@ run "prod_stack_wiring" {
   }
 
   assert {
-    condition     = { for e in jsondecode(module.service["auth-worker"].container_definitions)[0].environment : e.name => e.value }["DELETION_PARTICIPANTS"] == "users"
+    condition     = { for e in jsondecode(module.service["auth-worker"].container_definitions)[0].environment : e.name => e.value }["DELETION_PARTICIPANTS"] == "users,children"
     error_message = "auth and its worker wait for the participants deployed so far (users), not all seven (build plan 3.5)."
   }
   assert {

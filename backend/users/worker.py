@@ -31,8 +31,8 @@ from common.events import (
     tombstone_key,
     write_tombstone,
 )
-from common.logging import configure_logging
-from common.telemetry import current_traceparent
+from common.metrics import outbox_metrics
+from common.telemetry import current_traceparent, setup_observability
 from users.app.runtime import SERVICE, Runtime
 from users.app.store import USERS
 
@@ -84,7 +84,10 @@ async def run(runtime: Runtime, stop: asyncio.Event, *, wait_seconds: int = 20) 
         raise RuntimeError("users' worker needs EVENTS_TOPIC_ARN and EVENTS_QUEUE_URL")
     await runtime.prepare()
     relay = Relay(
-        runtime.db, SnsPublisher(runtime.sns, settings.events_topic_arn), region=settings.aws_region
+        runtime.db,
+        SnsPublisher(runtime.sns, settings.events_topic_arn),
+        region=settings.aws_region,
+        metrics=outbox_metrics(runtime.cloudwatch, service=SERVICE, environment=settings.app_env),
     )
     consumer = build_consumer(runtime)
     await asyncio.gather(
@@ -95,7 +98,7 @@ async def run(runtime: Runtime, stop: asyncio.Event, *, wait_seconds: int = 20) 
 
 def main() -> int:  # pragma: no cover - the container's entry point; run() is tested
     runtime = Runtime.from_env()
-    configure_logging(SERVICE, runtime.settings.log_level)
+    setup_observability(SERVICE)
 
     async def go() -> None:
         stop = asyncio.Event()

@@ -59,6 +59,9 @@ OUTBOX_VALIDATOR: Doc = {
             "traceparent": {"bsonType": "string"},
             "created_at": {"bsonType": "date"},
             "published_at": {"bsonType": ["date", "null"]},
+            # A row the relay could never publish, kept for a person to look at (relay).
+            "set_aside_at": {"bsonType": "date"},
+            "set_aside_reason": {"bsonType": "string"},
         },
     }
 }  # fmt: skip

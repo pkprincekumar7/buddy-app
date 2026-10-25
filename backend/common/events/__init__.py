@@ -11,7 +11,13 @@
 """
 
 from common.events.consumer import Consumer, Outcome
-from common.events.envelope import Event, InvalidEvent, ReceivedEvent, ReservedEvent
+from common.events.envelope import (
+    Event,
+    EventTooLarge,
+    InvalidEvent,
+    ReceivedEvent,
+    ReservedEvent,
+)
 from common.events.relay import Relay, SnsPublisher
 from common.events.store import (
     add_to_outbox,
@@ -28,6 +34,7 @@ from common.events.store import (
 __all__ = [
     "Consumer",
     "Event",
+    "EventTooLarge",
     "InvalidEvent",
     "Outcome",
     "ReceivedEvent",

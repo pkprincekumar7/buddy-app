@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
-from common.events import catalogue, schemas, topology
-from common.events.envelope import Event, InvalidEvent, ReservedEvent
+from common.events import catalogue, envelope, schemas, topology
+from common.events.envelope import Event, EventTooLarge, InvalidEvent, ReservedEvent
 from common.events.testing import example_event
 
 CHILD = "9b1c6f64-2f4e-4d0e-8e2a-6c1f0d3a7b55"
@@ -267,3 +267,11 @@ def test_topology_cli(capsys):
 
 def test_timestamps_are_utc():
     assert _new().created_at <= datetime.now(UTC)
+
+
+def test_an_event_too_big_for_sns_is_refused_before_it_is_written(monkeypatch):
+    event = example_event("child.changed")
+    assert event.message_bytes() > len(event.to_message())  # the attributes count too
+    monkeypatch.setattr(envelope, "SNS_MAX_BYTES", event.message_bytes() - 1)
+    with pytest.raises(EventTooLarge):
+        event.check()

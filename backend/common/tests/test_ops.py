@@ -185,6 +185,42 @@ def test_configure_logging_installs_one_json_handler(capsys):
         root.setLevel(saved[1])
 
 
+def test_setup_observability_reads_the_tasks_environment(monkeypatch):
+    seen: dict[str, Any] = {}
+
+    def fake_setup(service: str, **kwargs: Any) -> tuple[str, list[str]]:
+        seen.update(service=service, **kwargs)
+        return "provider", []
+
+    monkeypatch.setattr(telemetry, "setup_telemetry", fake_setup)
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    apps = (object(), object())
+    try:
+        environ = {
+            "APP_ENV": "stg",
+            "AWS_REGION": "eu-west-1",
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector:4318",
+            "LOG_LEVEL": "WARNING",
+        }
+        assert telemetry.setup_observability("auth", apps=apps, environ=environ) == "provider"
+        assert isinstance(root.handlers[0].formatter, clog.JsonFormatter)
+        assert root.level == logging.WARNING
+        assert seen == {
+            "service": "auth",
+            "environment": "stg",
+            "region": "eu-west-1",
+            "endpoint": "http://otel-collector:4318",
+            "apps": apps,
+        }
+        telemetry.setup_observability("auth", environ={"OTEL_EXPORTER_OTLP_ENDPOINT": " "})
+        assert seen["endpoint"] is None and seen["environment"] == "local"
+        assert root.level == logging.INFO
+    finally:
+        root.handlers[:], _ = saved
+        root.setLevel(saved[1])
+
+
 def test_the_request_id_middleware():
     app = FastAPI()
     app.add_middleware(clog.RequestIdMiddleware)
@@ -261,6 +297,12 @@ def test_large_batches_are_split_and_failures_dropped(monkeypatch):
     assert asyncio.run(broken.flush()) == 0
 
 
+def test_the_relays_publisher_needs_a_client():
+    assert metrics.outbox_metrics(None, service="auth", environment="dev") is None
+    publisher = metrics.outbox_metrics(FakeCloudWatch(), service="auth", environment="dev")
+    assert publisher is not None and publisher.namespace == "Superpower/auth"
+
+
 @pytest.mark.live_service
 def test_outbox_age(mongo_run):
     async def body(db, client):
@@ -273,6 +315,12 @@ def test_outbox_age(mongo_run):
                 {
                     "region": "eu-west-1",
                     "published_at": None,
+                    "created_at": old - timedelta(hours=1),
+                },
+                {  # set aside by the relay: its own alarm reports it
+                    "region": "ap-south-1",
+                    "published_at": None,
+                    "set_aside_at": old,
                     "created_at": old - timedelta(hours=1),
                 },
             ]
@@ -582,6 +630,9 @@ def test_installed_instrumentations_are_enabled(monkeypatch):
     assert calls == ["app", "global", "global", "global", "global"]
     calls.clear()
     assert "fastapi" not in telemetry.instrument(None, provider)  # no app to instrument
+    calls.clear()
+    telemetry.instrument(None, provider, apps=[object(), object()])  # public and internal
+    assert calls.count("app") == 2
 
 
 def test_a_request_span_continues_the_callers_trace(spans, uninstrument):

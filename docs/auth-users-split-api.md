@@ -384,7 +384,7 @@ No body. If an access token is also sent (cookie or header), its `sub` must matc
 | `401` | `missing_token` | No refresh token |
 | `401` | `invalid_token` | Bad signature, wrong type, mismatched access token, or bad claims |
 | `401` | `session_expired` | Session not found or past `expires_at` |
-| `401` | `session_revoked` | Reuse detected, `tokens_revoked_at` after issue, or the account is being deleted |
+| `401` | `session_revoked` | Reuse detected, `tokens_revoked_at` after issue, the account is being deleted, or it changed (logout-all, lock, role, deletion) while the new session was written: that session is deleted again |
 | `403` | `account_locked` | The account is locked |
 | `429` | — | Rate limit |
 
@@ -523,6 +523,7 @@ A second call can't happen: the tokens are already revoked, so it gets `401`. Lo
 | `400` | `confirmation_mismatch` | `confirm_email` doesn't match |
 | `401` | — | Not signed in, or tokens revoked |
 | `409` | `last_admin` | The caller is the only active admin |
+| `409` | `account_changed` | The account's role or lock changed while deleting it (try again); an admin taken off the counter is put back |
 | `429` | — | Rate limit |
 
 ---
@@ -649,7 +650,7 @@ Locking an already locked account succeeds with the same body.
 
 ### Errors
 
-`400 cannot_lock_self`; `401`; `403 forbidden`; `404 account_not_found`; `409 last_admin`.
+`400 cannot_lock_self`; `401`; `403 forbidden`; `404 account_not_found`; `409 last_admin`; `409 account_deleting` (the account is being deleted); `409 account_changed` (it kept changing; try again).
 
 ---
 
@@ -722,7 +723,7 @@ Setting the same role again succeeds and changes nothing.
 
 ### Errors
 
-`401`; `403 forbidden`; `404 account_not_found`; `409 last_admin`; `422` for an unknown role.
+`401`; `403 forbidden`; `404 account_not_found`; `409 last_admin`; `409 account_deleting` (the account is being deleted); `409 account_changed` (it kept changing; try again); `422` for an unknown role.
 
 The first admin of an environment isn't created here: it's created by the `backend/tools/promote-admin` command (proposal 11.4).
 
@@ -1259,7 +1260,7 @@ A replaced or cleared photo's old object is deleted from S3 after the update com
 
 ### Errors
 
-`401`; `403 parents_only`; `404 child_not_found`; `422`.
+`401`; `403 parents_only`; `404 child_not_found`; `409 child_changed` (changed by another request each of 3 tries; try again); `422`.
 
 ---
 

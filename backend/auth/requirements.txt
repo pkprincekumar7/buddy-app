@@ -1,6 +1,6 @@
 # The auth service's runtime dependencies (build plan 3.2). backend/Dockerfile installs the
 # buddy-common line from the local source only.
-buddy-common==0.10.0
+buddy-common==0.11.0
 # buddy-common's own dependencies, pinned to the same versions as backend/requirements.txt.
 fastapi==0.136.1
 uvicorn[standard]==0.34.0

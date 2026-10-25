@@ -20,8 +20,9 @@ from typing import Any
 from children.app import lifecycle
 from children.app.runtime import SERVICE, Runtime
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
-from common.logging import configure_logging
+from common.metrics import outbox_metrics
 from common.regions import locations_for_region
+from common.telemetry import setup_observability
 
 PURGE_SECONDS = 3600.0
 
@@ -76,7 +77,10 @@ async def run(
         raise RuntimeError("children's worker needs EVENTS_TOPIC_ARN and EVENTS_QUEUE_URL")
     await runtime.prepare()
     relay = Relay(
-        runtime.db, SnsPublisher(runtime.sns, settings.events_topic_arn), region=settings.aws_region
+        runtime.db,
+        SnsPublisher(runtime.sns, settings.events_topic_arn),
+        region=settings.aws_region,
+        metrics=outbox_metrics(runtime.cloudwatch, service=SERVICE, environment=settings.app_env),
     )
     await asyncio.gather(
         relay.run(stop),
@@ -89,7 +93,7 @@ async def run(
 
 def main() -> int:  # pragma: no cover - the container's entry point; run() is tested
     runtime = Runtime.from_env()
-    configure_logging(SERVICE, runtime.settings.log_level)
+    setup_observability(SERVICE)
 
     async def go() -> None:
         stop = asyncio.Event()

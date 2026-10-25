@@ -434,6 +434,13 @@ async def get_child(
     return await _view(runtime, doc)
 
 
+PATCH_ATTEMPTS = 3
+
+
+class _Stale(Exception):
+    """The child changed after it was read (its version moved)."""
+
+
 def _upload_error(exc: UploadError) -> HTTPException:
     """A refused avatar_key, with common.uploads' codes named for avatars as the API says."""
     code = {"not_uploaded": "avatar_not_uploaded", "too_large": "avatar_too_large"}.get(
@@ -451,45 +458,56 @@ def _upload_error(exc: UploadError) -> HTTPException:
 async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: SignedIn) -> Child:
     _parents_only(caller)
     before = await _owned(runtime, caller, id)
-    changes: dict[str, Any] = {name: getattr(body, name) for name in body.model_fields_set}
-    if changes.get("avatar_key"):
+    requested: dict[str, Any] = {name: getattr(body, name) for name in body.model_fields_set}
+    if requested.get("avatar_key"):
         if runtime.uploads is None:
             raise _error(503, "uploads_not_configured", "Photo uploads aren't configured.")
         try:
-            await runtime.uploads.accept(changes["avatar_key"], before["location"], id, "avatar")
+            await runtime.uploads.accept(requested["avatar_key"], before["location"], id, "avatar")
         except UploadError as exc:
             raise _upload_error(exc) from exc
-        changes["avatar_id"] = None
-    elif changes.get("avatar_id"):
-        changes["avatar_key"] = None
-    merged = {**before, **changes}
-    if not before["progress"]["profile"] and profile_complete(merged):
-        changes["progress.profile"] = True  # one-way: set once, never cleared (12.4)
-    copied_changed = "progress.profile" in changes or any(
-        name in changes and changes[name] != before.get(name) for name in SNAPSHOT_FIELDS
-    )
+        requested["avatar_id"] = None
+    elif requested.get("avatar_id"):
+        requested["avatar_key"] = None
     now = datetime.now(UTC)
     result: dict[str, Any] = {}
 
     async def write(session: AsyncClientSession) -> None:
+        # What changes, and whether the copies must hear of it, is decided against the
+        # version read: a concurrent PATCH in between makes the update find nothing.
+        changes = dict(requested)
+        merged = {**before, **changes}
+        if not before["progress"]["profile"] and profile_complete(merged):
+            changes["progress.profile"] = True  # one-way: set once, never cleared (12.4)
+        copied_changed = "progress.profile" in changes or any(
+            name in changes and changes[name] != before.get(name) for name in SNAPSHOT_FIELDS
+        )
         updated = await runtime.db[CHILDREN].find_one_and_update(
             {
                 "_id": id,
                 "location": before["location"],
                 "user_id": caller.user_id,
                 "is_deleted": False,
+                "version": before["version"],
             },
             {"$set": {**changes, "updated_at": now}, "$inc": {"version": 1}},
             return_document=ReturnDocument.AFTER,
             session=session,
         )
         if updated is None:
-            raise _not_found()  # deleted in between
+            raise _Stale()
         if copied_changed:
             await _event(runtime, updated, session)
         result["doc"] = updated
 
-    await _transaction(runtime, write)
+    for _ in range(PATCH_ATTEMPTS):
+        try:
+            await _transaction(runtime, write)
+            break
+        except _Stale:
+            before = await _owned(runtime, caller, id)  # 404 if deleted in between
+    else:
+        raise _error(409, "child_changed", "The child changed while updating; try again.")
     old_key = before.get("avatar_key")
     if old_key and old_key != result["doc"].get("avatar_key") and runtime.uploads is not None:
         # The replaced or cleared photo, after the change committed.

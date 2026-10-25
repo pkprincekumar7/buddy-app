@@ -112,7 +112,7 @@ locals {
   # Who must confirm an account deletion (10.3). common.deletion.PARTICIPANTS lists all
   # seven; until each is built, only those deployed confirm, or no deletion could finish.
   # Add each service here as it ships (build plan 3.5).
-  deletion_participants = ["users"]
+  deletion_participants = ["users", "children"]
   deletion_environment  = [{ name = "DELETION_PARTICIPANTS", value = join(",", local.deletion_participants) }]
 
   # Per service, extra environment for its HTTP runtime and its worker.

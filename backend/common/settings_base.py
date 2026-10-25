@@ -15,6 +15,9 @@ from pymongo import AsyncMongoClient
 
 AppEnv = Literal["local", "dev", "sbx", "stg", "prod"]
 
+# As the rate limits' client (common.limiter).
+VALKEY_TIMEOUT_SECONDS = 2
+
 
 class ServiceSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -86,12 +89,21 @@ class ServiceSettings(BaseSettings):
         return valkey_options(self)
 
     def valkey_client(self) -> Any:
-        """The service's async Valkey client, or None without REDIS_URL."""
+        """The service's async Valkey client, or None without REDIS_URL.
+
+        Short timeouts, so an unreachable Valkey fails at once and the authz check falls back
+        to auth and its local cache (9.3) instead of hanging every request.
+        """
         if not self.redis_url:
             return None
         import redis.asyncio as aioredis
 
-        return aioredis.Redis.from_url(self.redis_url, **self.valkey_options())
+        return aioredis.Redis.from_url(
+            self.redis_url,
+            socket_connect_timeout=VALKEY_TIMEOUT_SECONDS,
+            socket_timeout=VALKEY_TIMEOUT_SECONDS,
+            **self.valkey_options(),
+        )
 
     def mongo_client(self, **kwargs: Any) -> AsyncMongoClient[dict[str, Any]]:
         """The service's MongoDB client, with the shared pool limit and UTC-aware dates."""

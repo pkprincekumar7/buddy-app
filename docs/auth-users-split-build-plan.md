@@ -989,3 +989,23 @@ Record decisions taken during the build here, with the date, so the plan and the
     - ruff, mypy; `terraform test` (5 passed).
   - **To confirm at the first deploy:** a real IAM sign-in to ElastiCache (2.7 / 3.1's dev checks).
 - 2026-10-25: Gate 4, code half: the full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack) passed **88 of 88**, now with mypy, pytest + coverage, the OpenAPI spec and Spectral for children. The first run found 2 failures, both in the new `common/tests/test_valkey.py`: unformatted, and two mypy errors (an unused `type: ignore`, and a `limits` `Storage` attribute now narrowed to `RedisStorage`). Fixed, and the second run was clean. The other half, Home listing children with progress from one query in dev, waits for the dev deploy.
+- 2026-10-26: Review before Phase 5 (four parallel reviews, each finding checked in the code). Fixed, with tests; **buddy-common 0.11.0** (every service pins it):
+  - **The outbox-stale alarm had no metric.** The relay now reports `OldestUnpublishedOutboxAgeSeconds` every minute (0 when idle) through `MetricsPublisher`. Each worker's runtime has a CloudWatch client for it; in tests there's none, so nothing is sent.
+  - **One bad outbox row could stop a service's events for good.** An event over SNS's 256 KiB (body and attributes) is refused when it's built (`EventTooLarge`), so it's never written. A row the relay still can't publish (unreadable, or too large) is set aside (`set_aside_at`, `set_aside_reason`) and logged as `outbox.row.set_aside`, and the rows behind it go out. A new log metric filter and alarm per worker (`outbox-set-aside`, `enable_all_alarms`) reports it. SNS errors are still retried, never set aside.
+  - **The HTTP services had no JSON logs, request ids or traces.** `common.serve` now calls `common.telemetry.setup_observability` (JSON logs and tracing for both apps, from `APP_ENV`, `AWS_REGION`, `OTEL_EXPORTER_OTLP_ENDPOINT` and `LOG_LEVEL`) and wraps each app in `RequestIdMiddleware`. The workers call the same function. Internal calls carry the current request's id by default.
+  - **A down Valkey would hang requests** instead of falling back to auth: `valkey_client()` now sets 2-second connect and socket timeouts, as the rate limits' client does.
+  - **Deletions would get stuck in AWS:** `services.tf` now lists `users` and `children` as `DELETION_PARTICIPANTS`, as compose already did.
+  - **The admin counter could drift:**
+    - `DELETE /account` puts a taken admin back only if the deletion's transaction didn't commit (`deletion.start(..., undo=)`; nothing is undone when the commit result is unknown). After the commit, a failed `deletions` upsert or cache write is logged, and the worker makes it good.
+    - That transaction finds the account only with the role and lock the counter step was decided on (`409 account_changed` otherwise).
+    - Admin changes refuse an account being deleted (`409 account_deleting`).
+  - **A session could outlive a logout-all, lock or role change** that raced a login or refresh. `sign_in` checks the account's `authz_version` once the session is written. If it moved, the session is deleted again and the answer is `401 session_revoked`.
+  - **A PATCH racing another could skip `child.changed`.** It's now decided against the version read and conditional on it, retried up to 3 times, then `409 child_changed`.
+  - **Found on the way:** the Valkey IAM signer could fail at random with `ReferenceError`, because botocore's `RequestSigner` holds its session's event emitter weakly and the session was a local. The provider now keeps its session.
+  - **Left for later (low):** the 10-children limit race; `avatar_key: ""` skipping validation; S3 errors on PATCH giving 500; the purge's avatar delete before its version-guarded delete; users' internal `PUT` tombstone race; error codes on the users 403 and `account_locked`; Pydantic lax coercion; a redelivered `user.data_deleted` after finish; login timing; the sync `limits` storage; auth's own fill giving 500, not 503; a second schema version (7.8); IAM credential errors not counting as Valkey being unavailable; any authz 404 read as "no account".
+  - **Checked locally:**
+    - ruff, mypy;
+    - common 404 tests and the backend suite (1559 passed, 99.85%); auth 165, users 46, children 45 and hello 15 tests, all at 100%;
+    - every service's OpenAPI spec is unchanged;
+    - `terraform validate` and `terraform test` (5 passed).
+  - **Not run:** the full `./check.sh`.

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
+from common.events import relay as relay_mod
 from common.events import store
 from common.events.envelope import Event
 from common.events.relay import Relay, SnsPublisher
@@ -273,6 +274,86 @@ def test_run_polls_on_an_interval_while_watching(mongo_run):
         stop.set()
         await asyncio.wait_for(task, 5)
         assert publisher.published == []
+
+    mongo_run(body)
+
+
+def test_a_row_sns_could_never_take_is_set_aside_and_the_rest_still_go(
+    mongo_run, monkeypatch, caplog
+):
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        big = await _write(db, client)
+        # Grown past the limit after it was written; the row behind it is still small.
+        await db[store.OUTBOX].update_one(
+            {"_id": big.event_id}, {"$set": {"payload.padding": "x" * 1000}}
+        )
+        monkeypatch.setattr(relay_mod, "SNS_MAX_BYTES", big.message_bytes() + 100)
+        behind = await _write(db, client, version=2)
+        publisher = FakePublisher()
+        relay = Relay(db, publisher, region="ap-south-1")
+        assert await relay.publish_pending() == 1
+        assert [e.event_id for e in publisher.published] == [behind.event_id]
+        row = await db[store.OUTBOX].find_one({"_id": big.event_id})
+        assert row["published_at"] is None
+        assert row["set_aside_reason"] == "over SNS's size limit"
+        assert await relay.publish_pending() == 0  # not tried again
+        return row
+
+    with caplog.at_level("ERROR", logger="common.events.relay"):
+        mongo_run(body)
+    (record,) = [r for r in caplog.records if r.getMessage() == "outbox.row.set_aside"]
+    assert record.reason == "over SNS's size limit"
+
+
+def test_an_unreadable_row_is_set_aside(mongo_run):
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        publisher = FakePublisher()
+        relay = Relay(db, publisher, region="ap-south-1")
+        assert await relay._publish({"_id": "broken", "event_type": "child.changed"}) is False
+        assert publisher.published == []
+
+    mongo_run(body)
+
+
+class FakeMetrics:
+    def __init__(self) -> None:
+        self.points: list[tuple[str, float]] = []
+        self.flushes = 0
+        self.fail = False
+
+    def put(self, name: str, value: float) -> None:
+        if self.fail:
+            self.fail = False
+            raise RuntimeError("cloudwatch down")
+        self.points.append((name, value))
+
+    async def flush(self) -> int:
+        self.flushes += 1
+        return 1
+
+
+def test_run_reports_the_outbox_age_every_interval(mongo_run):
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        metrics = FakeMetrics()
+        metrics.fail = True  # the first report fails; the next ones still go
+        relay = Relay(
+            db,
+            FakePublisher(),
+            region="ap-south-1",
+            poll_interval=0.05,
+            max_await_ms=50,
+            metrics=metrics,
+            report_interval=0.05,
+        )
+        stop = asyncio.Event()
+        task = asyncio.create_task(relay.run(stop))
+        await _until(lambda: metrics.flushes >= 2)
+        stop.set()
+        await asyncio.wait_for(task, 5)
+        assert metrics.points[0] == ("OldestUnpublishedOutboxAgeSeconds", 0.0)  # idle
 
     mongo_run(body)
 

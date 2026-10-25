@@ -335,6 +335,40 @@ resource "aws_cloudwatch_dashboard" "main" {
 # auth-worker logs `auth.deletion.stuck` for each one every 10 minutes; this counts those
 # lines. The credentials are kept until every service confirms, so the account can't be
 # signed into meanwhile, and the deletion resumes once the stuck service catches up.
+# The relay sets aside an outbox row SNS could never take (common.events.relay), so the
+# rows behind it still go; that event is lost until someone looks, so it alarms.
+resource "aws_cloudwatch_log_metric_filter" "outbox_set_aside" {
+  for_each = local.outbox_alarms
+
+  name           = "${var.app_name}-${each.key}-outbox-set-aside-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["${each.key}-worker"].name
+  pattern        = "\"outbox.row.set_aside\""
+
+  metric_transformation {
+    name          = "SetAsideOutboxRows"
+    namespace     = "Superpower/${each.key}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "outbox_set_aside" {
+  for_each = local.outbox_alarms
+
+  alarm_name          = "${var.app_name}-${each.key}-outbox-set-aside-${var.environment}"
+  alarm_description   = "${each.key}'s relay set aside an event SNS could never take (too large or unreadable). The ${each.key}-worker log line names the event id; the row stays in its outbox with set_aside_reason."
+  namespace           = "Superpower/${each.key}"
+  metric_name         = aws_cloudwatch_log_metric_filter.outbox_set_aside[each.key].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
 resource "aws_cloudwatch_log_metric_filter" "deletion_stuck" {
   count = var.enable_all_alarms ? 1 : 0
 

@@ -6,6 +6,9 @@
 (the `/internal/*` routes, reached only through Cloud Map). They're separate ASGI apps on
 separate ports, so an internal route can't be reached on the public port, whatever a
 service's routers do. Both servers share one process and one event loop.
+
+Every service gets the same observability here (15.5): JSON logs, traces for both apps,
+and `X-Request-Id` on every request (common.logging.RequestIdMiddleware).
 """
 
 import asyncio
@@ -15,9 +18,12 @@ import re
 import signal
 import sys
 from collections.abc import Iterator, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 import uvicorn
+
+from common.logging import RequestIdMiddleware
+from common.telemetry import setup_observability
 
 PUBLIC_PORT = 8000
 INTERNAL_PORT = 8001
@@ -45,19 +51,29 @@ class _Server(uvicorn.Server):
         yield
 
 
-# Containers listen on all interfaces; security groups limit who reaches each port.
-def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]:  # nosec B104
-    """The public and internal servers for `service`, not started."""
+def load_apps(service: str) -> tuple[Any, Any]:
+    """`service`'s public and internal ASGI apps."""
     if not _SERVICE_RE.fullmatch(service):
         raise ValueError(f"invalid service name {service!r}")
     module = importlib.import_module(f"{service}.app.main")
-    servers: list[uvicorn.Server] = []
-    for attr, port in (("app", PUBLIC_PORT), ("internal_app", INTERNAL_PORT)):
+    apps = []
+    for attr in ("app", "internal_app"):
         asgi = getattr(module, attr, None)
         if asgi is None:
             raise ValueError(f"{service}.app.main defines no {attr}")
-        servers.append(_Server(uvicorn.Config(asgi, host=host, port=port, server_header=False)))
-    return servers
+        apps.append(asgi)
+    return apps[0], apps[1]
+
+
+# Containers listen on all interfaces; security groups limit who reaches each port.
+def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]:  # nosec B104
+    """The public and internal servers for `service`, not started."""
+    return [
+        _Server(
+            uvicorn.Config(RequestIdMiddleware(asgi), host=host, port=port, server_header=False)
+        )
+        for asgi, port in zip(load_apps(service), (PUBLIC_PORT, INTERNAL_PORT), strict=True)
+    ]
 
 
 def _stop(servers: Sequence[Runnable]) -> None:
@@ -91,7 +107,9 @@ def main(argv: list[str]) -> int:
     if len(argv) != 1:
         print("usage: python -m common.serve <service>", file=sys.stderr)
         return 2
-    asyncio.run(serve(build_servers(argv[0])))
+    servers = build_servers(argv[0])
+    setup_observability(argv[0], apps=load_apps(argv[0]))
+    asyncio.run(serve(servers))
     return 0
 
 

@@ -1,6 +1,6 @@
 # The children service's runtime dependencies (build plan 4.1). backend/Dockerfile installs
 # the buddy-common line from the local source only, then the rest from PyPI.
-buddy-common[uploads]==0.10.0
+buddy-common[uploads]==0.11.0
 fastapi==0.136.1
 uvicorn[standard]==0.34.0
 # buddy-common's authorization layer, pinned to the same versions as backend/requirements.txt.

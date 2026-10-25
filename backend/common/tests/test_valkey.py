@@ -92,9 +92,10 @@ def test_settings_choose_iam_in_aws_and_the_url_alone_locally(monkeypatch, tmp_p
     provider = deployed.valkey_options()["credential_provider"]
     assert isinstance(provider, ElastiCacheIAMProvider) and provider.user == "superpower-dev-users"
     client = deployed.valkey_client()
-    assert isinstance(
-        client.connection_pool.connection_kwargs["credential_provider"], ElastiCacheIAMProvider
-    )
+    kwargs = client.connection_pool.connection_kwargs
+    assert isinstance(kwargs["credential_provider"], ElastiCacheIAMProvider)
+    # An unreachable Valkey fails fast, so requests fall back to auth (9.3).
+    assert kwargs["socket_connect_timeout"] == kwargs["socket_timeout"] == 2
     asyncio.run(client.aclose())
     # Blank values are unset, and a user needs the group its token is signed for.
     assert _settings(REDIS_USERNAME=" ").redis_username is None
@@ -145,3 +146,21 @@ def test_a_client_signs_in_with_the_token(monkeypatch):
 
 def test_the_module_says_what_it_is_for():
     assert valkey.TOKEN_SECONDS == 900 and valkey.REUSE_SECONDS < valkey.TOKEN_SECONDS
+
+
+def test_the_signer_survives_a_garbage_collection():
+    import gc
+
+    provider = _provider()
+    signer = provider._signer()
+    gc.collect()  # the signer's event emitter is a weak reference to the provider's session
+    assert signer.generate_presigned_url(
+        {
+            "method": "GET",
+            "url": "https://g/?Action=connect",
+            "body": {},
+            "headers": {},
+            "context": {},
+        },
+        operation_name="connect",
+    )

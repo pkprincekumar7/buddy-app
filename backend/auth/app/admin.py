@@ -165,12 +165,14 @@ async def _read(runtime: Runtime, user_id: str, location: str) -> dict[str, Any]
 
 
 def _state(doc: Mapping[str, Any]) -> dict[str, Any]:
-    """The exact state an update must still find: role and lock as read."""
+    """The exact state an update must still find: role and lock as read, not being deleted
+    (a deletion took a counted admin off the counter, so a change now would count it again)."""
     return {
         "_id": doc["_id"],
         "location": doc["location"],
         "role": doc["role"],
         "is_locked": True if doc.get("is_locked") else {"$ne": True},
+        "is_being_deleted": {"$ne": True},
     }
 
 
@@ -211,6 +213,8 @@ async def _change(
     """Read, guard the counter, apply; retried when the account changed in between."""
     for _ in range(MAX_ATTEMPTS):
         doc = await _read(runtime, user_id, location)
+        if doc.get("is_being_deleted"):
+            raise error(409, "account_deleting", "This account is being deleted.")
         if all(doc.get(k, False) == v for k, v in expected.items()):
             return doc  # already so: nothing to do
         removing = removes_active_admin and doc["role"] == "admin" and not doc.get("is_locked")

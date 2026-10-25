@@ -485,6 +485,55 @@ def test_a_child_deleted_during_a_change_is_not_found(mongo_uri, monkeypatch):
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_a_patch_racing_another_decides_against_the_latest_version(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        child = (await add_child(r, name="Mira")).json()
+        path = f"{API}/{child['id']}"
+        await r.http.patch(path, json={"age": 6}, headers=auth_header())
+        real = main._owned
+        raced: list[bool] = []
+
+        async def changed_meanwhile(runtime: Runtime, caller: Any, child_id: str) -> Any:
+            doc = await real(runtime, caller, child_id)
+            if not raced:  # another PATCH sets age 5 between this read and the update
+                raced.append(True)
+                await runtime.db[CHILDREN].update_one(
+                    {"_id": child_id}, {"$set": {"age": 5}, "$inc": {"version": 1}}
+                )
+            return doc
+
+        monkeypatch.setattr(main, "_owned", changed_meanwhile)
+        # 6 looks like no change against the stale read; against the latest it is one.
+        response = await r.http.patch(path, json={"age": 6}, headers=auth_header())
+        assert response.status_code == 200 and response.json()["age"] == 6
+        latest = (await _events(r, child["id"]))[-1]
+        doc = await r.db[CHILDREN].find_one({"_id": child["id"]})
+        assert doc is not None and (latest["version"], latest["age"]) == (doc["version"], 6)
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_child_that_keeps_changing_is_409(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        child = (await add_child(r)).json()
+        real = main._owned
+
+        async def always_changed(runtime: Runtime, caller: Any, child_id: str) -> Any:
+            doc = await real(runtime, caller, child_id)
+            await runtime.db[CHILDREN].update_one({"_id": child_id}, {"$inc": {"version": 1}})
+            return doc
+
+        monkeypatch.setattr(main, "_owned", always_changed)
+        response = await r.http.patch(
+            f"{API}/{child['id']}", json={"name": "B"}, headers=auth_header()
+        )
+        assert response.status_code == 409 and _code(response) == "child_changed"
+
+    live(mongo_uri, test)
+
+
 # ── the internal read-through ──────────────────────────────────────────────────
 
 

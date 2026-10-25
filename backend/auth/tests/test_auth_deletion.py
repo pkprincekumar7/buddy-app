@@ -135,16 +135,17 @@ def test_admins_leave_the_counter_and_a_failed_start_puts_them_back(mongo_uri, m
     async def test(r: Running) -> None:
         a = await _signed_up(r, "a@example.com", role="admin")
         b = await _signed_up(r, "b@example.com", role="admin")
-        real = deletion.start
+        real = deletion.add_to_outbox
 
         async def broken(*args: Any) -> Any:
             raise RuntimeError("primary stepped down")
 
-        monkeypatch.setattr(deletion, "start", broken)
+        # Inside the transaction, so nothing committed: the admin is put back.
+        monkeypatch.setattr(deletion, "add_to_outbox", broken)
         with pytest.raises(RuntimeError):
             await _delete(r, a, email="a@example.com")
         assert (await r.db[ADMIN_COUNT].find_one({}))["active"] == 2
-        monkeypatch.setattr(deletion, "start", real)
+        monkeypatch.setattr(deletion, "add_to_outbox", real)
         assert (await _delete(r, a, email="a@example.com")).status_code == 202
         assert (await r.db[ADMIN_COUNT].find_one({}))["active"] == 1
         # A locked admin was already taken off when locked: the counter stays.
@@ -154,6 +155,56 @@ def test_admins_leave_the_counter_and_a_failed_start_puts_them_back(mongo_uri, m
         assert (await _delete(r, b, email="b@example.com")).status_code == 403
 
     live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_failure_after_the_commit_neither_fails_nor_puts_the_admin_back(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        await _signed_up(r, "b@example.com", role="admin")
+        a = await _signed_up(r, "a@example.com", role="admin")
+
+        async def cache_down(*args: Any) -> None:
+            raise ConnectionError("valkey down")
+
+        monkeypatch.setattr(deletion, "write_entry", cache_down)
+        # Started: the authz stream writes the entry instead.
+        assert (await _delete(r, a, email="a@example.com")).status_code == 202
+        assert (await r.db[ADMIN_COUNT].find_one({}))["active"] == 1
+        assert (await r.db[AUTH].find_one({"_id": a["id"]}))["is_being_deleted"] is True
+        assert await r.db[DELETIONS].count_documents({"_id": a["id"]}) == 1
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_role_changed_after_it_was_read_is_409_and_the_counter_put_back(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        await _signed_up(r, "b@example.com", role="admin")
+        a = await _signed_up(r, "a@example.com", role="admin")
+        real = main.admin.take_admin_out
+
+        async def demoted_meanwhile(runtime: Any) -> None:
+            await real(runtime)
+            # Another admin demoted (and so uncounted) them between the read and the start.
+            await r.db[AUTH].update_one({"_id": a["id"]}, {"$set": {"role": "parent"}})
+
+        monkeypatch.setattr(main.admin, "take_admin_out", demoted_meanwhile)
+        response = await _delete(r, a, email="a@example.com")
+        assert response.status_code == 409 and _code(response) == "account_changed"
+        assert (await r.db[ADMIN_COUNT].find_one({}))["active"] == 2
+        assert not (await r.db[AUTH].find_one({"_id": a["id"]})).get("is_being_deleted")
+
+    live(mongo_uri, test)
+
+
+def test_an_unknown_commit_result_undoes_nothing():
+    from pymongo.errors import OperationFailure
+
+    unknown = OperationFailure("commit timed out")
+    unknown._add_error_label("UnknownTransactionCommitResult")
+    assert deletion._not_committed(unknown) is False
+    assert deletion._not_committed(OperationFailure("write conflict")) is True
+    assert deletion._not_committed(RuntimeError("x")) is True
 
 
 @pytest.mark.live_service

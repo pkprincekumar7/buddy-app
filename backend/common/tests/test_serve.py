@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import types
+from typing import Any, cast
 
 import pytest
 
@@ -35,8 +36,14 @@ async def _internal(scope, receive, send):  # pragma: no cover - never called, o
 def test_build_servers_puts_each_app_on_its_port(monkeypatch):
     _fake_service(monkeypatch, "svc_demo", app=_asgi, internal_app=_internal)
     public, internal = serve_mod.build_servers("svc_demo")
-    assert (public.config.app, public.config.port) == (_asgi, serve_mod.PUBLIC_PORT)
-    assert (internal.config.app, internal.config.port) == (_internal, serve_mod.INTERNAL_PORT)
+    # Each app behind the request-id middleware, so every request (and log line) has one.
+    wrapped = [server.config.app for server in (public, internal)]
+    assert all(isinstance(app, serve_mod.RequestIdMiddleware) for app in wrapped)
+    assert [cast(Any, app).app for app in wrapped] == [_asgi, _internal]
+    assert (public.config.port, internal.config.port) == (
+        serve_mod.PUBLIC_PORT,
+        serve_mod.INTERNAL_PORT,
+    )
     assert public.config.host == internal.config.host == "0.0.0.0"  # nosec B104
     assert not public.config.server_header
 
@@ -155,7 +162,16 @@ def test_main_serves_the_named_service(monkeypatch):
     async def fake_serve(servers):
         seen["servers"] = servers
 
+    def fake_observe(service, apps):
+        seen["observed"] = (service, apps)
+
+    _fake_service(monkeypatch, "svc_main", app=_asgi, internal_app=_internal)
     monkeypatch.setattr(serve_mod, "build_servers", fake_build)
     monkeypatch.setattr(serve_mod, "serve", fake_serve)
-    assert serve_mod.main(["hello"]) == 0
-    assert seen == {"service": "hello", "servers": ["servers"]}
+    monkeypatch.setattr(serve_mod, "setup_observability", fake_observe)
+    assert serve_mod.main(["svc_main"]) == 0
+    assert seen == {
+        "service": "svc_main",
+        "servers": ["servers"],
+        "observed": ("svc_main", (_asgi, _internal)),  # logs and traces for both apps
+    }

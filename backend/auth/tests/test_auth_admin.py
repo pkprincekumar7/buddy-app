@@ -372,6 +372,26 @@ def test_an_update_finds_nothing_when_the_account_changed_since_it_was_read(mong
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_an_account_being_deleted_cant_be_changed(mongo_uri):
+    async def test(r: Running) -> None:
+        boss = await _account(r, "boss@example.com", role="admin")
+        jane = await _account(r, "jane@example.com")
+        await r.db[AUTH].update_one({"_id": jane["id"]}, {"$set": {"is_being_deleted": True}})
+        role = f"{API}/accounts/{jane['id']}/role?location={LOCATION}"
+        response = await r.http.patch(role, json={"role": "admin"}, headers=boss["headers"])
+        # Promoting it would count an admin the deletion will remove.
+        assert response.status_code == 409 and _code(response) == "account_deleting"
+        assert await _admins(r) == 1
+        # And a change read before the deletion started finds nothing.
+        read = await r.db[AUTH].find_one({"_id": jane["id"]})
+        assert read is not None
+        read["is_being_deleted"] = False
+        assert await admin._apply(r.runtime, read, {"role": "admin"}, end_sessions=True) is None
+
+    live(mongo_uri, test)
+
+
 # ── role ───────────────────────────────────────────────────────────────────────
 
 

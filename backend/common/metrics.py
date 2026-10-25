@@ -82,10 +82,22 @@ class MetricsPublisher:
         return sent
 
 
+def outbox_metrics(cloudwatch: Any, *, service: str, environment: str) -> MetricsPublisher | None:
+    """The relay's publisher for `OldestUnpublishedOutboxAgeSeconds`; None without a client."""
+    if cloudwatch is None:
+        return None
+    return MetricsPublisher(cloudwatch, service=service, environment=environment)
+
+
 async def oldest_unpublished_outbox_age(db: Db, region: str) -> float:
-    """Seconds since this region's oldest unpublished outbox row was written; 0 if none."""
+    """Seconds since this region's oldest unpublished outbox row was written; 0 if none.
+
+    Rows the relay set aside don't count: their own alarm reports them (`outbox.row.set_aside`).
+    """
     oldest = await db[OUTBOX].find_one(
-        {"region": region, "published_at": None}, {"created_at": 1}, sort=[("created_at", 1)]
+        {"region": region, "published_at": None, "set_aside_at": None},
+        {"created_at": 1},
+        sort=[("created_at", 1)],
     )
     if oldest is None:
         return 0.0

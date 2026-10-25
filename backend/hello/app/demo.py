@@ -51,6 +51,8 @@ class Demo:
     internal: InternalClient
     sns: Any = None
     sqs: Any = None
+    # The relay's OldestUnpublishedOutboxAgeSeconds (15.5); None in tests.
+    cloudwatch: Any = None
     cache: Any = None
 
     @property
@@ -78,6 +80,7 @@ class Demo:
             internal=internal,
             sns=boto3.client("sns", **aws),
             sqs=boto3.client("sqs", **aws),
+            cloudwatch=boto3.client("cloudwatch", **aws),
             cache=cache,
         )
 

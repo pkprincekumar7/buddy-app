@@ -22,6 +22,33 @@ All supported variables are documented in `.env.example` (JWT lifetimes, CORS, M
 
 There are no schema migrations — MongoDB collections and indexes are created automatically by the backend on startup.
 
+## The split's services locally (Docker, optional)
+
+The new `auth`, `users` and `children` services and their workers run under the compose profile `split`, behind the gateway on port 8088, which routes paths as the ALB will. `docker compose up` on its own is unchanged and doesn't start them. Once:
+
+1. Set `EMAIL_HMAC_PEPPER` (and `LOCAL_ALLOWED_EMAIL`) in `.env`, as `.env.example` says.
+2. Start Moto and create the topics, queues and buckets (Moto keeps them in memory, so repeat this after restarting it):
+
+```bash
+backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
+```
+
+```bash
+backend/.venv/bin/python scripts/local-aws-setup.py
+```
+
+Then start the stack. The first start builds three images, which downloads their Python packages:
+
+```bash
+docker compose --profile split up -d --build
+```
+
+- `local-keys` runs first and makes each service's service-token key and the JWT public keys from your `JWT_PRIVATE_KEY`, into the `superpower_local_keys` volume (never the repository or `.env`). It keeps them across restarts; `docker volume rm superpower_local_keys` makes new ones.
+- Each service has its own database in the local Mongo (`auth`, `users`, `children`); internal calls go service to service on port 8001, signed as in AWS.
+- Allow-list your email for registration: `docker compose --profile split exec auth python -m auth.seed` (it reads `LOCAL_ALLOWED_EMAIL` from the running container), then register through `http://localhost:8088/api/v1/auth/register`.
+- Changing `EMAIL_HMAC_PEPPER` makes every local email key unmatchable: seed and register again (or start from an empty `auth` database).
+- Paths no new service has yet (the circles) still go to today's backend through the frontend on port 5173.
+
 ## Local development (without Docker)
 
 Requires **Python 3.13** and **Node.js 22** (versions used by the Docker images).

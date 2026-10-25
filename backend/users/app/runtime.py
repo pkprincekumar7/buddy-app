@@ -50,6 +50,8 @@ class Runtime:
     limits: RateLimits
     sns: Any = None
     sqs: Any = None
+    # The relay's OldestUnpublishedOutboxAgeSeconds (15.5); None in tests.
+    cloudwatch: Any = None
     cache: Any = None
 
     @property
@@ -86,6 +88,7 @@ class Runtime:
             ),
             sns=boto3.client("sns", **aws),
             sqs=boto3.client("sqs", **aws),
+            cloudwatch=boto3.client("cloudwatch", **aws),
             cache=cache,
         )
 

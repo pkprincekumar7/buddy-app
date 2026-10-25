@@ -4,6 +4,11 @@ Every sign-in (register, login, Google, refresh) ends here: a token pair, a `ses
 for the refresh token (its `jti`, in a rotation `family_id`), the HttpOnly cookies for the
 web app (the mobile app takes the tokens from the body), and the account's authz entry
 written to Valkey so the first request doesn't miss.
+
+The session is checked once it's written: if the account's `authz_version` moved since the
+caller read it (a logout-all, lock, role change or deletion in between, each of which ends
+the sessions it can see), the new session is deleted and the sign-in refused, so none
+outlives the change that should have ended it.
 """
 
 from __future__ import annotations
@@ -17,8 +22,9 @@ from fastapi import Response
 from pydantic import BaseModel
 
 from auth.app.authz_cache import entry_from_account, write_entry
+from auth.app.deps import error
 from auth.app.runtime import Runtime
-from auth.app.store import SESSIONS
+from auth.app.store import AUTH, SESSIONS
 from auth.app.tokens import IssuedTokens
 
 ACCESS_COOKIE = "access_token"
@@ -94,6 +100,12 @@ async def sign_in(
             "created_at": datetime.now(UTC),
         }
     )
+    current = await runtime.db[AUTH].find_one(
+        {"_id": user_id, "location": location}, {"authz_version": 1}
+    )
+    if current is None or current.get("authz_version") != account.get("authz_version"):
+        await runtime.db[SESSIONS].delete_one({"_id": tokens.jti, "location": location})
+        raise error(401, "session_revoked", "Your account changed while signing in; sign in again.")
     set_cookies(runtime, response, tokens)
     # Best effort: a missed write only means the first request fills from auth (9.3).
     await write_entry(runtime.cache, user_id, entry_from_account(account))

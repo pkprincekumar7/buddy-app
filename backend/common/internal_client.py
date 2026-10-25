@@ -40,6 +40,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import PyJWTError
 
 from common.authz import AuthUnavailable, AuthzEntry, AuthzFill, mark_policy
+from common.logging import request_id_var
 
 INTERNAL_PORT = 8001
 TOKEN_TTL_SECONDS = 60
@@ -304,6 +305,8 @@ class InternalClient:
         if not addresses:
             raise InternalUnavailable(f"{host} has no addresses")
         headers = {"Authorization": f"Bearer {self.signer.token_for(service)}", "Host": host}
+        # The current request's id by default, so one id follows a request across services.
+        request_id = request_id or request_id_var.get()
         if request_id:
             headers["X-Request-Id"] = request_id
         if traceparent:
