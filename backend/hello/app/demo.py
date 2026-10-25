@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import boto3
-import redis.asyncio as aioredis
 from pydantic import Field
 from pymongo import AsyncMongoClient
 from pymongo.errors import CollectionInvalid
@@ -63,7 +62,7 @@ class Demo:
         # `environ` overrides the process environment, which settings also read.
         settings = HelloSettings.model_validate(dict(environ))
         internal = InternalClient.from_env({"SERVICE_NAME": SERVICE, **environ})
-        cache = aioredis.Redis.from_url(settings.redis_url) if settings.redis_url else None
+        cache = settings.valkey_client()
         aws: dict[str, Any] = {"region_name": settings.aws_region}
         if settings.aws_endpoint_url:
             aws["endpoint_url"] = settings.aws_endpoint_url

@@ -330,3 +330,39 @@ resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.app_name}-${var.environment}-${var.aws_region}"
   dashboard_body = jsonencode({ widgets = local.dashboard_widgets })
 }
+
+# An account deletion older than 24 hours: a service hasn't confirmed it (10.3). The
+# auth-worker logs `auth.deletion.stuck` for each one every 10 minutes; this counts those
+# lines. The credentials are kept until every service confirms, so the account can't be
+# signed into meanwhile, and the deletion resumes once the stuck service catches up.
+resource "aws_cloudwatch_log_metric_filter" "deletion_stuck" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  name           = "${var.app_name}-auth-deletion-stuck-${var.environment}"
+  log_group_name = aws_cloudwatch_log_group.service["auth-worker"].name
+  pattern        = "\"auth.deletion.stuck\""
+
+  metric_transformation {
+    name          = "StuckDeletions"
+    namespace     = "Superpower/auth"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "deletion_stuck" {
+  count = var.enable_all_alarms ? 1 : 0
+
+  alarm_name          = "${var.app_name}-auth-deletion-stuck-${var.environment}"
+  alarm_description   = "An account deletion is older than 24 hours: a service hasn't sent user.data_deleted. The auth-worker log line names the user id and the services it's waiting for."
+  namespace           = "Superpower/auth"
+  metric_name         = aws_cloudwatch_log_metric_filter.deletion_stuck[0].metric_transformation[0].name
+  statistic           = "Sum"
+  period              = 900
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}

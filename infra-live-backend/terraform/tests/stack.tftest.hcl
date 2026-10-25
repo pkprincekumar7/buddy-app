@@ -195,9 +195,10 @@ run "prod_stack_wiring" {
   assert {
     # Exactly these env var names, in order.
     condition = [for e in jsondecode(module.service["auth"].container_definitions)[0].environment : e.name] == [
-      "SERVICE_NAME", "APP_NAME", "APP_ENV", "AWS_REGION", "MONGODB_DB_NAME", "MONGODB_MAX_POOL_SIZE", "REDIS_URL", "REDIS_USERNAME",
+      "SERVICE_NAME", "APP_NAME", "APP_ENV", "AWS_REGION", "MONGODB_DB_NAME", "MONGODB_MAX_POOL_SIZE", "REDIS_URL", "REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID",
       "INTERNAL_DNS_SUFFIX", "INTERNAL_SIGNING_KID", "INTERNAL_PUBLIC_KEYS", "OTEL_EXPORTER_OTLP_ENDPOINT", "LOG_LEVEL",
       "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "CORS_ORIGINS", "COOKIE_SECURE", "COOKIE_SAMESITE", "COOKIE_DOMAIN",
+      "DELETION_PARTICIPANTS",
     ]
     error_message = "Auth's HTTP container has exactly its env vars."
   }
@@ -227,6 +228,15 @@ run "prod_stack_wiring" {
       "immediate:memory" = "superpower-auth-memory-high-prod"
     }
     error_message = "Sustained and immediate CPU/memory alarms (enable_all_alarms)."
+  }
+
+  assert {
+    condition     = { for e in jsondecode(module.service["auth-worker"].container_definitions)[0].environment : e.name => e.value }["DELETION_PARTICIPANTS"] == "users"
+    error_message = "auth and its worker wait for the participants deployed so far (users), not all seven (build plan 3.5)."
+  }
+  assert {
+    condition     = aws_cloudwatch_log_metric_filter.deletion_stuck[0].log_group_name == aws_cloudwatch_log_group.service["auth-worker"].name && aws_cloudwatch_metric_alarm.deletion_stuck[0].namespace == "Superpower/auth"
+    error_message = "A deletion stuck over 24 h alarms, from the auth-worker's log line."
   }
 
   # -- the generating circles -------------------------------------------------------
@@ -393,7 +403,7 @@ run "dev_has_no_interface_endpoints_or_sustained_alarms" {
     error_message = "Dev: no sustained alarms."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.outbox_stale) == 0 && length(aws_cloudwatch_metric_alarm.pending_jobs_high) == 0
+    condition     = length(aws_cloudwatch_metric_alarm.outbox_stale) == 0 && length(aws_cloudwatch_metric_alarm.pending_jobs_high) == 0 && length(aws_cloudwatch_metric_alarm.deletion_stuck) == 0
     error_message = "Dev: no job or outbox alarms (enable_all_alarms)."
   }
   assert {

@@ -72,6 +72,8 @@ locals {
       # IAM authentication (9.3): the client signs in as this user with a token from its task role.
       { name = "REDIS_URL", value = "rediss://${module.redis.primary_endpoint_address}:6379" },
       { name = "REDIS_USERNAME", value = module.redis.rbac_user_names[s] },
+      # What the IAM token is signed for (common.valkey).
+      { name = "REDIS_REPLICATION_GROUP_ID", value = module.redis.replication_group_id },
       { name = "INTERNAL_DNS_SUFFIX", value = local.internal_dns_namespace },
       { name = "INTERNAL_SIGNING_KID", value = local.signing_kid[s] },
       { name = "INTERNAL_PUBLIC_KEYS", value = jsonencode(local.internal_public_keys) },
@@ -107,18 +109,25 @@ locals {
     { name = "UPLOADS_URL_TTL_SECONDS", value = tostring(var.uploads_url_ttl_seconds) },
   ]
 
+  # Who must confirm an account deletion (10.3). common.deletion.PARTICIPANTS lists all
+  # seven; until each is built, only those deployed confirm, or no deletion could finish.
+  # Add each service here as it ships (build plan 3.5).
+  deletion_participants = ["users"]
+  deletion_environment  = [{ name = "DELETION_PARTICIPANTS", value = join(",", local.deletion_participants) }]
+
   # Per service, extra environment for its HTTP runtime and its worker.
   service_http_environment = {
-    auth = [
+    auth = concat([
       { name = "COOKIE_SECURE", value = "true" },
       { name = "COOKIE_SAMESITE", value = "lax" },
       { name = "COOKIE_DOMAIN", value = var.cookie_domain },
-    ]
+    ], local.deletion_environment)
     children  = local.uploads_environment
     transform = local.uploads_environment
     platform  = [{ name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name }]
   }
   service_worker_environment = {
+    auth      = local.deletion_environment
     children  = local.uploads_environment
     transform = local.uploads_environment
   }

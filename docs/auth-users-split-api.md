@@ -1,6 +1,6 @@
 # Service split: API reference
 
-**Status:** proposal, companion to [auth-users-split.md](auth-users-split.md). Nothing here is implemented yet.
+**Status:** proposal, companion to [auth-users-split.md](auth-users-split.md). Implemented so far: the users endpoints (build plan 3.1, `backend/users/`) and every auth endpoint: sign-in (3.2), `GET /internal/authz` (3.3), the admin endpoints (3.4), account deletion and the email lookup (3.5), in `backend/auth/`; the children endpoints (4.1, `backend/children/`). The rest isn't built yet.
 **Scope:** one entry per endpoint in [section 13.4](auth-users-split.md#134-full-api-list) of the proposal, with what it accepts, what it does and what it returns. Entries are added one at a time; the list in 13.4 stays the index.
 
 **Conventions for every entry:**

@@ -109,6 +109,8 @@ Registration is gated by an allowlist. Only emails present in the `allowed_email
 
 This is a one-time manual process done directly in the database. There is no API endpoint to promote a user to admin — that must be done via mongosh or Compass.
 
+> **The new auth service** (`backend/auth/`, not yet deployed) replaces this with a command. Sign up as usual, then, with auth's own `MONGODB_URI`, `MONGODB_DB_NAME` and `EMAIL_HMAC_PEPPER`, run `cd backend && python -m auth.promote_admin --user-id <id>`, or locally `echo you@example.com | python -m auth.promote_admin --email-stdin`. It works once per environment: it refuses if an admin exists, and it's audited. In AWS, run it as a one-off ECS task on the auth image. Later admins are promoted from the admin screen (`PATCH /api/v1/auth/accounts/{id}/role`).
+
 **Step 1 — add the email to the allowlist**
 
 In mongosh:

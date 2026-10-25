@@ -65,3 +65,43 @@ Protected routes read the `access_token` from an HTTP-only cookie set at login. 
 
 - `GET /health` — returns `{"status": "ok"}` (no auth, no rate limit)
 - `GET /api/health` — returns `{"status": "ok", "commit": "<git-sha>", "branch": "<branch>", "committed_at": "<iso-timestamp>", "tag": "<tag>|null"}` — git metadata is baked into the image at build time via Docker build args (CI sets real values; local/scan builds return `"unknown"`; no auth; rate-limited: 30/min per IP)
+
+## users service (`backend/users/`, build plan 3.1)
+
+The first service of the split, built but **not yet routed in any environment**: today's backend still serves `/api/v1/user/...` above. Full reference: [auth-users-split-api.md](auth-users-split-api.md). Tokens come from the `access_token` cookie or `Authorization: Bearer`.
+
+- `GET/PATCH /users/{user_id}/profile` — names and address (`{user_id}` is your id or `me`). An admin needs `profiles:read:any` / `profiles:write:any` and the owner's `?location=` (422 `location_required` without it). Anyone else gets the same `404 profile_not_found` as a missing profile. PATCH replaces each field sent and `null` clears an optional one; admin changes are audited with the field names only (rate-limited: 60/min GET, 30/min PATCH per user).
+- `GET/PATCH /users/{user_id}/preferences` — `{"tts_enabled": bool}`, default `true`; `dark_mode` and `last_visited_path` are gone, so sending them is 422 (same access and limits).
+- `GET /users/profiles?ids=` — names (no address) for 1–100 accounts, for the admin list; admins only, audited per id (60/min per user).
+- Internal, port 8001, auth's service token only: `PUT /internal/users/{user_id}` (create or replace; 201 / 200; `409 location_mismatch`, `409 profile_deleted`) and `DELETE /internal/users/{user_id}?location=` (204).
+- The worker (`python -m users.worker`) deletes the profile on `user.deletion_requested` and confirms with `user.data_deleted`.
+
+## auth service (`backend/auth/`, build plan 3.2)
+
+Built but **not yet routed in any environment**; today's backend still serves `/api/v1/auth/...` above. Full reference: [auth-users-split-api.md](auth-users-split-api.md). Errors the apps tell apart carry `detail.code`.
+
+- `POST /auth/register` — allow-listed emails only (`403 registration_closed`); `first_name` (required), `middle_name`, `last_name`, `country_code`, optional address lines; no `full_name`. Runs the registration saga: reserve the email's HMAC key, save credentials, create the users profile, activate. `409 email_taken`, `503 registration_unavailable` (users unreachable; retry), `201` with tokens and cookies (rate-limited: 5/min per IP).
+- `POST /auth/login` — `401 invalid_credentials` for any wrong email or password; the lock (`403 account_locked`) is revealed only with the right password. 5 failures in 15 minutes for one email from one IP block that pair (`429 too_many_attempts`) (10/min per IP).
+- `POST /auth/google` — signs in an existing account whatever its provider, or creates one (allow-list, `country_code` required: `422 country_code_required`) (5/min per IP).
+- `POST /auth/refresh` — rotates the refresh token within its family; a rotated token reused within 30 s gets a pair too, later it revokes the family and logs the account out everywhere (`401 session_revoked`). Every refusal clears both cookies (20/min per user).
+- `POST /auth/logout` (204, always, unless the tokens belong to different users) and `POST /auth/logout-all` (204, every session, and every older access token) (20/min, 3/min per user).
+- `GET /auth/me` — `id`, `email`, `role`, `auth_provider`, `location`, `created_at`; names are in the users service (60/min per user).
+- Access tokens now carry `role` and `iat_ms`; refresh tokens `family_id`. Every sign-in writes the account's `authz:{user_id}` entry to Valkey through the versioned write.
+- Local: `cd backend && python -m auth.seed` adds `LOCAL_ALLOWED_EMAIL` (from `.env`) to the local allow-list.
+- Admin (each needs its permission; audited; 60/min per user): `GET /auth/accounts` (filters `role`, `locked`; `skip` / `limit`), `POST /auth/accounts/search` (email in the body), `POST /auth/accounts/{id}/lock` and `/unlock` and `PATCH /auth/accounts/{id}/role` (each with the account's `?location=`; never the last active admin: `409 last_admin`), and the allow-list: `GET /auth/allowed-emails`, `POST /auth/allowed-emails/search`, `POST /auth/allowed-emails`, `DELETE /auth/allowed-emails/{key}` (its HMAC key, never an email). Lock and role change sign the account out everywhere; unlock keeps the old tokens invalid.
+- `DELETE /auth/account` — body `{"confirm_email"}` (must match; `400 confirmation_mismatch`); `202 {"status": "deleting"}`: signed out everywhere at once, and the data is deleted as each service confirms (`DELETION_PARTICIPANTS`, `users` so far). The email is free again when the saga finishes (3/min per user).
+- Internal: `GET /internal/auth/users/{user_id}/email?location=` — for a service that must contact a user; no service is allowed yet (403), and every read is audited.
+- Internal, port 8001: `GET /internal/authz/{user_id}` — the account's authz entry for the other services' cache misses (callers: every service that verifies tokens); it refills Valkey. The worker (`python -m auth.worker`) keeps each region's cached entries current from a change stream on `auth.auth`, and reaps registrations abandoned for 15 minutes.
+
+## children service (`backend/children/`, build plan 4.1)
+
+Built but **not yet routed in any environment**; today's backend still serves `/api/v1/children/...` above. Full reference: [auth-users-split-api.md](auth-users-split-api.md).
+
+- `GET /children` — your live children with their `progress`, in one query (`sort`: `created_at`, `-created_at` (default), `name`, `-name`; `limit` 1–200). An admin passes the parent's `?user_id=` and `?location=` (audited) (60/min per user).
+- `POST /children` — parents only; `name`, `age` (0–25), `gender`, `school`, `avatar_id`; unknown fields are 422; at most 10 children (`422 child_limit`) (20/min).
+- `GET / PATCH / DELETE /children/{id}` — someone else's child is `404 child_not_found`. PATCH replaces the fields sent (`null` clears), and `avatar_id` / `avatar_key` exclude each other. DELETE hides the child at once (204); the purge follows after 30 days (60 / 30 / 10 per min).
+- `POST /children/{id}/avatar/presign` — `{content_type}` → `{upload_url, avatar_key, avatar_url}`. PUT the photo within 5 minutes, then PATCH the child with `avatar_key`: it must be this child's `…/avatar/` key, an allowed image, at most 5 MB (20/min).
+- `progress.profile` is set by the service once name, age and gender are all present. `created_date` is now `created_at`, and the onboarding answers, personality and phase fields are gone (they belong to the circles).
+- Internal, port 8001: `GET /internal/children/{id}?location=` — a child's access fields, deleted or not, for the circles' read-through.
+- The worker (`python -m children.worker`) sets each progress flag from its circle's completion event (in any order), purges children deleted more than 30 days ago (`child.deleted`), and deletes all of a user's children on account deletion.
+

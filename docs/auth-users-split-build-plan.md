@@ -287,7 +287,7 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
       - Worker scale-in is a separate queue-low step policy, not 15.5's combined metric-math alarm.
       - The collector's tail sampling sees a whole trace only when one task gets all of its spans. With 2 collector tasks (stg/prod), a trace's spans can be split between them, so a load-balancing exporter tier is needed before relying on the sampling there.
     - **Follow-ups:**
-      - **Valkey clients:** the services' Redis clients need an IAM-token credential provider (`REDIS_USERNAME` + a SigV4 token) before they can connect in AWS (Phase 3, with `common`).
+      - **Valkey clients:** the services' Redis clients need an IAM-token credential provider (`REDIS_USERNAME` + a SigV4 token) before they can connect in AWS (Phase 3, with `common`). *(Done: `common.valkey`, buddy-common 0.10.0; see the 2026-10-25 note.)*
       - **Workflows:** done in 2.6.
       - **hello in 2.7:** the hello image has no `<service>.worker` modules, so the worker runtimes can't start on it as-is.
 - [ ] **2.6 Workflows and scripts.** Needs: 2.5.
@@ -314,16 +314,19 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
       - `ecs-services.test.sh` gains the three new helpers (29 pass);
       - both run in `check.sh` and CI, with shellcheck.
   - **Check:** `scripts/ecs-services.test.sh`, `check-service-lists.sh`, shellcheck.
-- [ ] **2.7 First dev apply.** Needs: 2.6, 0.4.
-  - Fresh `terraform apply` in dev, with the `hello` image deployed for each runtime.
+- [ ] **2.7 First dev apply (infrastructure only).** Needs: 2.6, P.3.
+  - Fresh `terraform-live-backend` apply in dev, with no images deployed. The real services are deployed from Phase 3 onwards, as each one is built. Until then, the ECS services have no image to start (their task definitions point at `:latest`, which no repository holds yet), which is expected.
+  - **Before it:** in the `dev` GitHub environment, add `MONGODB_URIS` (one Atlas user per service, P.3) and `EMAIL_HMAC_PEPPER`; delete `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
   - Checked by hand in dev:
-    - each runtime registers in Cloud Map;
-    - a call between two `hello` tasks over port 8001 succeeds with a service token;
-    - an SNS → SQS round trip works;
-    - the ALB returns the fixed 404 for an unknown path.
-  - **Check:** the four items above; no manual console changes.
+    - the apply succeeds, and the 9 service secrets are filled (no `REPLACE_ME` left in a required key);
+    - the Cloud Map namespace `<app>-dev.internal` exists, with a service for each of the 8 internal APIs and the collector;
+    - an SNS → SQS round trip works: a test message published to one topic with an `event_type` attribute reaches only the queues subscribed to that event;
+    - the ALB returns the fixed 404 for an unknown path with the origin-verify header, and 403 without it;
+    - ElastiCache accepted the RBAC users' access strings, including `%R~`, and the user group with or without the default user (2.3).
+  - **Moved to the first service deploy (3.1):** each runtime registering in Cloud Map, and an internal call over port 8001 with a service token.
+  - **Check:** the items above; no manual console changes.
 
-**Gate 2:** `./check.sh` passes, including checkov and trivy config; the dev environment runs `hello` everywhere.
+**Gate 2:** `./check.sh` passes, including checkov and trivy config; the dev infrastructure is applied and passes 2.7's checks. Real services are deployed from Phase 3, not on a placeholder.
 
 ---
 
@@ -342,6 +345,32 @@ Everything else depends on them. Build users first: auth's registration calls it
     - [ ] `PUT /internal/users/{user_id}`
     - [ ] `DELETE /internal/users/{user_id}`
   - **Check:** route-policy test; ownership matrix (self, admin with `?location=`, another user gets 404); event contract tests.
+  - **First deploy to dev (moved from 2.7):** users and users-worker run their own image; users registers in Cloud Map (`users.<app>-dev.internal`), and a signed internal call to it on 8001 succeeds while an unsigned one is refused.
+  - *(in progress: code done locally, waiting for review and merge; the dev deploy waits for 2.7)*
+  - **As built** (`backend/users/`, the same shape as hello: `app/runtime.py`, `app/store.py`, `app/main.py`, `worker.py`):
+    - **`users.users`:** validator and the `{location, _id}` unique index, created at startup with `outbox` and `tombstones`. The optional `{location, last_name, first_name}` admin-search index isn't added: no endpoint searches by name.
+    - **Endpoints:** the seven in the API reference, every route on a `PolicyRouter`.
+      - Reads and writes are filtered by `{_id, location}`: your own location, or an admin's `?location=`. An admin without it gets `422 location_required`.
+      - Someone else's id is refused by `require_self_or` with a plain 404. An exception handler gives every 404 on a `{user_id}` route the `profile_not_found` body, so a refusal and a missing profile look the same and ids can't be probed.
+      - Rate limits are per user (60/min reads, 30/min writes), keyed under `users` as its Valkey user requires (2.3).
+    - **Auditing:**
+      - `GET /profiles` records one privileged event per id requested, after `require`'s own;
+      - an admin's PATCH records a second event carrying the changed field **names**, since `require_self_or` runs before the body is known.
+    - **`PUT /internal/users/{id}`:**
+      - a retry with the same body writes nothing, and a changed one bumps `version`;
+      - a different location is `409 location_mismatch`;
+      - **decided here:** a tombstoned id is `409 profile_deleted`, so a deleted account's profile can't come back (7.4);
+      - a concurrent insert answers as "already existed"; if the profile was also deleted in between, it's `409 profile_conflict` and the saga retries.
+    - **Worker:** relay plus a `user.deletion_requested` handler. It deletes the profile, writes the `user:` tombstone (version = the event's) and queues `user.data_deleted`, in one transaction. It always confirms, even with no profile, and a redelivery confirms again, which auth's `$addToSet` ignores.
+  - **Checked locally:**
+    - `pytest users/tests`: 46 passed, 100% line and branch coverage. They cover the route-policy test, the ownership matrix, validation, auditing, the rate limit, the internal API, and the deletion handler (replay-twice, consumer contract, a forged topic rejected, and the SQS → worker → relay round trip on Moto);
+    - ruff, mypy, bandit, import-linter (3 contracts kept) and `tools/services.py --check` (3 services);
+    - `backend/openapi/users.json` exported, and Spectral is clean;
+    - `common.serve` builds both servers.
+  - **Not run yet:** a `docker build --build-arg SERVICE=users` (it downloads packages; left for the full `check.sh` or CI), and the dev deploy.
+  - **Still open:**
+    - the Valkey IAM-token credential provider in `common`, needed before users can reach Valkey in AWS; *(Done: `common.valkey`, buddy-common 0.10.0; see the 2026-10-25 note.)*
+    - a users container in `docker-compose.yml` for the local gateway's `/api/v1/users/*` route.
 - [ ] **3.2 auth: registration and sign-in.** Needs: 3.1.
   - Database: `auth`, `sessions`, `email_index`, `allowed_emails`, `deletions`, `audit`, `admin_count`, `outbox` (5.1, 5.2, section 14); `auth/emails.py`, `auth/countries.py`.
   - **Local seed:** a script adds a test email (from `.env`, never committed) to the local allow-list, so registration works in local end-to-end runs.
@@ -357,6 +386,42 @@ Everything else depends on them. Build users first: auth's registration calls it
     - saga failure tests at every step, including takeover of a stale reservation and the profile-undo call;
     - pepper-rotation duplicate check;
     - refresh reuse after 30 s revokes the family.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/auth/`):
+    - `emails.py`, `app/store.py`, `app/tokens.py`, `app/authz_cache.py`, `app/throttle.py`, `app/sessions.py`, `app/registration.py`, `app/runtime.py`, `app/main.py`, `seed.py`.
+    - **Collections:** all eight, with validators and the section-14 indexes, created at startup with `outbox` and `tombstones`. The sessions TTL index replaces today's cleanup task. The `{status, reserved_at}` index is partial on `reserved`.
+    - **Emails:**
+      - `normalise()` trims and lower-cases, nothing else. `email-validator` only checks that an address is valid; it no longer normalises.
+      - `EMAIL_HMAC_PEPPER` is one pepper (v1), or, during a rotation, a JSON object of version → pepper with the highest version current. **Decided here:** it's still one secret key, so the Terraform secret and the fill script need no change for a rotation.
+      - Lookups try the current pepper first; the allow-list and registration's "taken" check look at every version (6.5).
+    - **The saga** (`registration.py`) is shared by register and Google sign-up. The undo order and responses follow the API reference, with these additions:
+      - **Takeover cleanup:** if the old attempt's profile can't be deleted, the stale row is put back as it was (`503`). Otherwise neither the reaper nor anyone else could find those leftovers again. The old credentials are deleted only after the profile is gone.
+      - **users refusing the profile** with a 4xx is `500 registration_failed`, after the undo; unreachable or 5xx is `503`.
+      - **A reservation removed under the duplicate check** (the reaper) is `409`, and the client may retry.
+    - **Sign-in** issues tokens with `role` and `iat_ms` (access) and `family_id` (refresh), writes the session row and cookies, and writes `authz:{id}`.
+      - **Decided here:** the versioned Lua write that 3.3 lists is built now, because 3.2's sign-ins need it. It accepts only a strictly higher `ver`, or the same `ver` with identical canonical JSON, with a TTL of 1 h. 3.3 reuses it.
+      - auth is its own authz fill: it reads `auth.auth` instead of calling itself.
+    - **Login:** the per-key-and-IP throttle (5 / 15 min, keyed `auth/login-failures/<key[:16]>/<ip>`) runs before any lookup. The dummy bcrypt check covers unknown, reserved and being-deleted accounts, and the lock is checked only after the right password.
+    - **Refresh:** rotation marks `rotated_at` / `replaced_by`. Within 30 s a reused token gets a pair in the same family; later it deletes the family, sets `tokens_revoked_at`, bumps `authz_version` and writes the cache. The milliseconds comparison is `revoked_at_ms >= iat_ms`. Every refusal clears both cookies.
+    - **`logout-all`:** one transaction (revocation, `$inc authz_version`, delete the sessions), then the cache write.
+    - **Startup check:** auth refuses to start if `JWT_PUBLIC_KEYS[JWT_KEY_ID]` isn't the public half of `JWT_PRIVATE_KEY`.
+    - **Local seed:** `python -m auth.seed` (`APP_ENV=local` only) upserts `LOCAL_ALLOWED_EMAIL` into the allow-list as an HMAC key with a masked hint. `EMAIL_HMAC_PEPPER` and `LOCAL_ALLOWED_EMAIL` were added to both `.env.example` files.
+  - **Checked locally:**
+    - `pytest auth/tests`: 109 passed, 100% line and branch coverage, against the compose Mongo and Valkey. They cover:
+      - a failure at every saga step: unsaved credentials, users down / 5xx / 4xx, a failed undo leaving everything for the reaper, the reservation reaped before activation;
+      - the stale-reservation takeover, its failed cleanup, and a takeover lost to another attempt;
+      - the pepper-rotation duplicate and allow-list checks;
+      - refresh reuse after 30 s revoking the family and every older token;
+      - the throttle and its Valkey fallback, and the Lua write against real Valkey (a slow write can't undo a lock);
+      - logs carrying `email_key`, never the email.
+    - ruff, mypy, bandit, import-linter (3 contracts kept) and `tools/services.py --check`;
+    - `backend/openapi/auth.json` exported, and Spectral is clean.
+  - **Not run:** `docker build --build-arg SERVICE=auth`, and the dev deploy.
+  - **Known gaps, by design or for later tasks:**
+    - Without Valkey, a revocation reaches each task's 30-second in-process copy only when it expires (9.3). With Valkey, sign-in, logout-all and reuse write the new entry at once.
+    - `auth-worker`: built in 3.3.
+    - auth's audit records go to the log sink only; the `audit` collection sink comes with the admin endpoints (3.4).
+    - The Valkey IAM-token credential provider in `common` is still open (also for users). *(Done: `common.valkey`, buddy-common 0.10.0; see the 2026-10-25 note.)*
 - [ ] **3.3 auth: authz cache.** Needs: 3.2.
   - The worker: the change stream over **all** of `auth.auth` in each region, the versioned Lua write (strictly higher `ver`), 1 h TTL, the reservation reaper (9.3).
   - [ ] `GET /internal/authz/{user_id}`
@@ -364,6 +429,26 @@ Everything else depends on them. Build users first: auth's registration calls it
     - a slow fill can't overwrite a lock;
     - every authz-changing write increments `authz_version`;
     - a Valkey outage falls back to the 30-second cache.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built:**
+    - **`GET /internal/authz/{user_id}`** (`app/main.py`) is open to the services that verify tokens: users, children, the four circles, platform and hello; auth itself gets 403. It returns the entry and refills the region's cache through the versioned write; no account, or a non-UUID id, is 404. `common.internal_client.authz_fill` was tested end to end against it.
+    - **The change stream** (`app/authz_stream.py`) watches every `update`, `replace` and `delete` on all of `auth.auth`, with `updateLookup`:
+      - it rewrites `authz:{id}` only if the region already holds it (a new `only_existing` mode of the versioned Lua write) and drops the entry of a deleted account;
+      - **decided here:** the resume token is kept in a new tiny unsharded `worker_state` collection (`authz-stream:<region>`), saved after every change and as the cluster's time advances;
+      - a token the oplog no longer has (codes 260 / 280 / 286) restarts from now; other errors retry after 5 s.
+    - **The reaper** (`app/reaper.py`) runs every minute over reservations older than 15 minutes, 100 at a time, in its own region's locations only (every location locally).
+      - **Decided here:** it claims a row by deleting it (an exact match on the row read) **before** cleaning up. A saga activating it in that moment fails its conditional activation and undoes itself, so an account can never become active after its credentials are gone.
+      - It then deletes the profile through users and the credentials. If users can't confirm, it puts the row back to retry, unless a new registration has taken the key meanwhile.
+    - **Every authz change bumps the version:** `store.authz_change(fields, now)` builds every update to role, lock, deletion or revocation with `$inc: {authz_version: 1}`, and refuses other fields. logout-all and refresh reuse use it, and a test scans `auth/app/` for any other `$set` of those fields.
+    - **Worker:** `python -m auth.worker` runs the stream and the reaper; the relay and the `user.data_deleted` consumer join in 3.5.
+  - **Checked locally:**
+    - `pytest auth/tests`: 124 passed, 100% line and branch coverage. The three checks:
+      - **a slow fill can't overwrite a lock:** a fill reads the account, the stream applies the lock (ver 2), and the fill's write of ver 1 is refused;
+      - **every authz change bumps the version:** the helper's tests and the source scan;
+      - **a Valkey outage falls back to the 30-second cache:** with Valkey unreachable, three requests cost one `auth.auth` read, and a lock takes effect once the 30 s are up.
+    - Also covered: the stream (only held keys, deletes, resuming after a stop, a lost token), the reaper (region scope, users down, a row that changed meanwhile, a key taken by a new registration), the worker loop, and the endpoint's callers;
+    - ruff, mypy, bandit and import-linter; the public spec is unchanged (the new route is internal).
+  - **Needs in AWS:** change streams need the dedicated Atlas tier (M10+, P.3) (the IAM-token Valkey client is done: `common.valkey`).
 - [ ] **3.4 auth: admin endpoints.** Needs: 3.3.
   - Endpoints:
     - [ ] `GET /api/v1/auth/accounts`
@@ -380,15 +465,68 @@ Everything else depends on them. Build users first: auth's registration calls it
     - two admins demoting each other at once leave one admin;
     - unlock keeps `tokens_revoked_at`;
     - no email appears in any URL or log.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`auth/app/admin.py`, `auth/app/audit.py`; the shared dependencies moved to `auth/app/deps.py`):
+    - **All nine endpoints**, each behind its permission (`accounts:list` / `:lock` / `:role`, `allowed_emails:read` / `:write`) and limited to 60/min per user. Searches are `POST`s with the email in the body, and allow-list entries are removed by HMAC key, so no email is ever in a URL.
+    - **The admin counter** (`admin_count {_id: "admins", active}`) counts unlocked admins:
+      - locking, or demoting an unlocked admin, first does `$inc: -1` matching only while `active > 1` (`409 last_admin` otherwise);
+      - the account update then matches exactly the role and lock it read. If it misses, the counter is put back and the step retried, up to three times. **New code:** `409 account_changed` when it keeps missing.
+      - Unlocking an admin, or promoting an unlocked account, adds one. Demoting or promoting a locked account leaves it alone.
+      - Already-so requests (lock a locked account, the same role) answer 200 and change nothing.
+    - **Lock and role change** set `tokens_revoked_at`, end the sessions and write `authz:{id}` through `authz_change` (so `authz_version` goes up). **Unlock keeps `tokens_revoked_at`**: old tokens stay invalid, and the user signs in again.
+    - **Audit:** `AuthAuthorizer` (common's Authorizer) also writes every recorded check to auth's `audit` collection, with the caller's location, because `common.audit.AuditEvent` has none. Rows are inserted as their own task, after the change and never in its transaction; a failure is logged.
+      - Each change adds an event with the changed field **names**.
+      - A role change logs `audit.role_changed` as the line for 11.3's alarm. The CloudWatch metric filter and alarm on it are a follow-up in `infra-live-backend` (Phase 8).
+    - **Found while testing:** adding `" Name@Example.com "` to the allow-list was refused, because the address was validated before trimming. It's now normalised first, as register does.
+  - **Checked locally:**
+    - `pytest auth/tests`: 142 passed, 100% line and branch coverage. The plan's checks:
+      - two admins demoting each other at once (`asyncio.gather` on the live stack) leave exactly one admin and a counter of 1;
+      - unlock keeps `tokens_revoked_at`, and the pre-lock token stays refused;
+      - no route path takes an email, searches are `POST`, and no audit row or service log line (at INFO, as deployed) holds an `@`.
+    - Also covered: the permission matrix with every denial audited, the counter rules, a lost race retried with the counter put back, and the allow-list with a pepper rotation and a concurrent add;
+    - ruff, mypy, bandit and import-linter; `backend/openapi/auth.json` re-exported, and Spectral is clean.
+  - **Deviation from the API reference, recorded:** `GET /internal/authz/{id}` (3.3) takes no `?location=`, because `common.internal_client.authz_fill` sends only the user id. The read is by `_id` (once sharded, a scatter read). Adding the location means changing common's fill signature and the services' calls, a `buddy-common` version bump; it's left until the cluster is sharded.
+  - **Not here:** the first admin's `promote-admin` tool is its own later task (it also seeds the counter).
 - [ ] **3.5 auth: account deletion and email lookup.** Needs: 3.4.
   - Endpoints:
     - [ ] `DELETE /api/v1/auth/account` (the start of the saga, 10.3; `deletions` outside the transaction)
     - [ ] `GET /internal/auth/users/{user_id}/email` (no callers allowed yet)
   - The worker: `user.data_deleted` confirmations taken from the TopicArn, the 24 h alarm, credentials deleted last.
   - **Check:** the saga completes with users as the only participant so far; a confirmation carrying another service's name in its payload is ignored.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`auth/app/deletion.py`, `auth/worker.py`):
+    - **`DELETE /api/v1/auth/account`** (3/min per user; `202 {"status": "deleting"}`):
+      - checks `confirm_email` (normalised) against the account, and takes a non-locked admin off the counter first (`409 last_admin`); the counter is put back if the start fails;
+      - then one transaction (`is_being_deleted` + `tokens_revoked_at` through `authz_change`, every session deleted, and the `user.deletion_requested` outbox row, version = the new `authz_version`);
+      - then the `deletions` upsert outside it, the `deleting` cache entry, and cleared cookies;
+      - a second request that a task's 30-second cached entry lets through is a 401, not a second deletion.
+    - **`GET /internal/auth/users/{id}/email?location=`:** `allow_callers` refuses an empty list, so it has its own policy, which verifies the service token and allows only `EMAIL_CALLERS`. That list is **empty**, so every caller gets 403. A future caller is added there, and every read is audited (`emails:read`).
+    - **The worker** adds the outbox relay (publishing `user.deletion_requested`), the `user.data_deleted` consumer and the stuck report to the stream and the reaper:
+      - each confirmation is recorded as `received.source_service`, from the topic, with `$addToSet`. The payload is never read, so one service can't confirm for another;
+      - a confirmation that arrives before the `deletions` row creates it;
+      - when `confirmed ⊇ expected`, it deletes `email_index`, then `auth.auth`, then `authz:{id}`, then the row: credentials last.
+    - **Decided here: the participants.** `common.deletion.PARTICIPANTS` lists all seven services, so with every one expected, no deletion could finish until all are built. auth takes `DELETION_PARTICIPANTS`, a subset in the catalogue's order, defaulting to all seven. `services.tf` sets it to `users` for auth and auth-worker (`local.deletion_participants`): **add each service there as it ships.**
+    - **Decided here: the 24 h alarm.** `common.metrics` deliberately allows only the 15.5 metrics, so instead the worker logs `auth.deletion.stuck id=… waiting_for=…` every 10 minutes for each of its region's deletions over 24 h. A log metric filter on the auth-worker's log group (`Superpower/auth` `StuckDeletions`) and an alarm (`enable_all_alarms`) were added to `cloudwatch.tf`.
+  - **Checked locally:**
+    - `pytest auth/tests`: 153 passed, 100% line and branch coverage. They cover:
+      - **the saga completes with users as the only participant:** the request, then users' confirmation from its own topic; the credentials go, and the email registers again;
+      - **a confirmation naming another service in its payload is ignored:** users' event saying `children` counts only for users, and a topic from a non-data service is rejected;
+      - the worker end to end on Moto (the relay publishes to auth's topic and SNS delivers to users' queue; users' confirmation reaches auth's queue and the worker finishes), the last-admin rule, the counter put back on a failed start, the stuck report, and the email endpoint refusing every caller;
+    - `infra-live-backend`: validate, `terraform test` (5 passed, with the new assertions), tflint, checkov (0 failed) and trivy config;
+    - ruff, mypy, bandit, import-linter and Spectral.
 - [ ] **3.6 First admin tool.** Needs: 3.4.
   - `backend/tools/promote-admin.py`: once per environment, refuses if an admin exists, writes an audit event, increments the admin counter (11.4).
   - **Check:** a second run refuses.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built:** `python -m auth.promote_admin` (`backend/auth/promote_admin.py`).
+    - **Decided here, against the plan's path:** it's a module of the auth service, not `backend/tools/promote-admin.py`, because the auth image ships only `backend/auth/` and prod has ECS Exec off. So 9.2 runs it as a one-off ECS task on the auth image, with this command.
+    - **By user id (`--user-id`)**, so no email is in a command line, task override or CloudTrail; locally `--email-stdin` reads the email instead. The account must be a parent, and neither locked nor being deleted.
+    - **Once:** it refuses if any account is an admin. The admin counter is the atomic gate: it inserts `{active: 1}`, or claims `active < 1 → 1`. If the account changed before the update, the counter is put back to 0.
+    - **The change:** `authz_change({role, tokens_revoked_at})` and the sessions deleted, so the next sign-in carries the role. Each region's worker updates its cached entry from the change stream.
+    - **Audited:** an `audit` row (actor `promote-admin`) and the `audit.role_changed` log line.
+  - **Checked locally:**
+    - `pytest auth/tests`: 160 passed, 100% line and branch coverage. They cover a second run refusing (the plan's check), two runs at once making one admin, a counter left at 0 being claimed, a counter that says an admin exists refusing, the refusals, and the counter given back when the account changes meanwhile;
+    - ruff, mypy and bandit; `getting-started.md` says how to run it.
 
 **Gate 3:** `./check.sh` passes; in dev, sign-up, Google sign-in, login, refresh, lock, unlock and role change work end to end. **Review before Phase 4.**
 
@@ -414,11 +552,50 @@ It gates every circle.
     - files over 5 MB rejected;
     - the 10-children limit;
     - unknown fields rejected.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/children/`, the same shape as users; `buddy-common[uploads]==0.10.0`):
+    - **`children.children`:** validator, `{location, _id}` unique, `{location, user_id, is_deleted}` (Home and the 10-limit), and the partial `{deleted_at}` where `is_deleted` (the purge, 4.2).
+    - **The seven endpoints**, every route on a `PolicyRouter`.
+      - **Ownership:** a parent's queries filter by `{location, user_id}`, so another family's child is `404 child_not_found`.
+      - **Writes are parents only:** **decided here:** a role check (`caller.role == "parent"`, `403 parents_only`). The spec has admins refused, and the permission table gives admins every permission, so no permission can express it.
+      - **Admin reads** use `children:read:any` with the owner's `?location=` (and `?user_id=` for the list), each audited as privileged; a parent sending `?user_id=` gets 403.
+    - **Events:** one `child.changed` with the full snapshot (`user_id`, name, age, gender, `is_deleted`, progress), in the write's transaction: on create, on delete, and on a patch that changes a copied field or completes the profile. A school or avatar change publishes nothing, and the same value again isn't a change.
+    - **`progress.profile`** is set by children, one-way, when name, age and gender are first all present. Clearing a field later doesn't unset it.
+    - **Photos:** presign (`415 unsupported_image_type`, `502 upload_url_failed`, `503 uploads_not_configured`), then `PATCH {avatar_key}`.
+      - **The plan's first two checks:** the key must be under this child's `uploads/{location}/{id}/avatar/` (`422 invalid_avatar_key`), and `HeadObject` must find an allowed image of at most 5 MB (`avatar_not_uploaded`, `avatar_too_large`, `unsupported_image_type`).
+      - `avatar_id` and `avatar_key` exclude each other; a replaced or cleared photo is deleted after the change commits, best effort.
+    - **`GET /internal/children/{id}?location=`:** for the circles' read-through (onboarding, discover, grow, transform, release), deleted children included.
+  - **Checked locally:**
+    - `pytest children/tests`: 34 passed, 100% line and branch coverage, on Mongo and Moto (SNS, SQS, S3). They cover the four checks, ownership and the admin reads, the event rules, the profile flag, the photo flow (replace, clear, old objects deleted), S3 failures, a child deleted during a change, the internal read and the rate limit;
+    - ruff, mypy, bandit, import-linter (now 4 services) and `tools/services.py --check`;
+    - `backend/openapi/children.json` exported, and Spectral is clean.
+  - `children-worker` (`python -m children.worker`): built in 4.2. The gateway already routes `/api/v1/children*` to children.
 - [ ] **4.2 children worker.** Needs: 4.1.
   - Consumes the completion events (`onboarding.conversation_completed`, `discover.completed`, `grow.completed`, `transform.completed`, `release.completed`) and sets each flag **without** an order check (12.4).
   - Runs the 30-day purge (soft-deleted children, then `child.deleted`).
   - Handles `user.deletion_requested`.
   - **Check:** completion events arriving out of order all set their flags; the purge publishes `child.deleted` with the final version.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`children/app/lifecycle.py`, `children/worker.py`): the worker runs the relay, the consumer and the purge.
+    - **Flags:** the five completion events set `conversation`, `discover`, `grow`, `transform` and `release`, with no order check. The conditional update (`progress.<flag> ≠ true`) means only a real change bumps `version` and publishes one `child.changed`, so a duplicate does nothing.
+      - A soft-deleted child still records the flag; a purged or unknown one is skipped quietly.
+      - A completion from another service's topic is rejected by the consumer (the DLQ).
+      - connect's visit comes with 5.7.
+    - **The purge** runs hourly, in batches of 100 until none is left, over its region's locations (every location locally), for children deleted more than 30 days ago:
+      - the avatar objects first (only `…/avatar/`: plan photos are transform's to delete);
+      - then one transaction: the document, matching exactly the version read so a child restored meanwhile isn't purged, plus a `child:` tombstone and `child.deleted` (`{user_id}`), both at the final version (the last version + 1).
+    - **Account deletion:** every child of the user goes at once, soft-deleted or not, with no 30-day wait: the avatars, then one transaction for the documents, a `child:` tombstone each (version + 1), the `user:` tombstone and `user.data_deleted`.
+      - It always confirms, even with no children, and a redelivery confirms again.
+      - **Decided here:** no `child.deleted` per child. The circles consume `user.deletion_requested` themselves.
+  - **Checked locally:**
+    - `pytest children/tests`: 43 passed (9 new), 100% line and branch coverage with `REDIS_URL` set, as in CI. They cover:
+      - **the out-of-order check:** the five events arrive backwards and every flag is set, with one snapshot per change;
+      - **the purge check:** the final version 3 (create 1, soft delete 2, purge 3) on both `child.deleted` and the tombstone;
+      - a duplicate (replay-twice), the consumer contract, a forged completion, a restored child not purged, the region scope, account deletion (including soft-deleted children, another parent's kept, avatars, tombstones, re-confirmation), no uploads bucket, the purge loop's retry and full batches;
+      - the worker end to end on Moto: discover's event is consumed, the old child purged, and `child.changed` and `child.deleted` reach grow's queue from children's topic.
+    - ruff, mypy, bandit and import-linter.
+  - **Deletion participants:** children can now confirm account deletion. Add `children` to `local.deletion_participants` in `services.tf` when children is deployed (3.5).
+
 **Gate 4:** `./check.sh` passes; in dev, Home lists children with progress from one query.
 
 ---
@@ -763,7 +940,7 @@ Record decisions taken during the build here, with the date, so the plan and the
   - **The key names are the code's own:** `common.limiter` writes `LIMITS:LIMITER/<prefix>/…`, the LLM limit `llm:hourly:<user>`, and leader locks use `leader:<service>:…`. Services must use their own name as the limiter prefix and in leader-lock keys.
   - **Proven on the local stand-in** (Redis 7.4, the same ACL syntax as Valkey 8), with temporary users that were deleted afterwards. A reader can `GET authz:*` but `SET` and a Lua write are denied; auth can do both. A service reaches its own limiter and leader keys but not another's. Only `llm_limit` services reach `llm:hourly:*`. Other keys, `KEYS`, `FLUSHALL` and `CONFIG` are denied.
   - **To confirm at the first dev apply (2.7):** whether ElastiCache's Valkey user groups still require a `default` user. The module adds a disabled one (`off -@all`, no password) by default, and `include_default_user = false` drops it if AWS doesn't need it. Also confirm that ElastiCache accepts `%R~` key permissions in access strings, as Valkey does.
-  - **Follow-up in `common`, before any service connects in AWS:** IAM authentication means the Redis clients sign in with a short-lived token (SigV4 for `elasticache:Connect`, valid 15 min, refreshed). The services' Valkey clients need that credential provider (redis-py's `credential_provider`). Locally they keep plain `redis://`. That belongs with 2.5 / the first service (3.1).
+  - **Follow-up in `common`, before any service connects in AWS:** IAM authentication means the Redis clients sign in with a short-lived token (SigV4 for `elasticache:Connect`, valid 15 min, refreshed). The services' Valkey clients need that credential provider (redis-py's `credential_provider`). Locally they keep plain `redis://`. That belongs with 2.5 / the first service (3.1). *(Done: `common.valkey`, buddy-common 0.10.0; see the 2026-10-25 note.)*
   - **Checked locally:** `modules/redis` `terraform test`: 11 passed. The 4 existing runs are unchanged; 7 are new: per-service users with their exact access strings, no default user, no RBAC resources in token mode, and the refusals (both modes at once, neither, a non-auth `writes_authz`, a bad service name). `infra-live-backend` `terraform test`: 4 passed. tflint, checkov (15 passed, 0 failed), trivy config and `terraform fmt` are clean.
 - 2026-10-25: 2.4 built.
   - **Same plan as the code:** the module's subscriptions were compared with `common.events.topology.plan("superpower-prod")` through `terraform console`: 33 (consumer, producer) subscriptions, identical event types, the same topics. Both read the same catalogue.
@@ -796,3 +973,19 @@ Record decisions taken during the build here, with the date, so the plan and the
   - **Not run:** the workflows themselves; their first run is 2.7.
   - **Still open for 2.7:** hello has no `<service>.worker` modules, so the 8 worker runtimes won't start on the hello placeholder (`build_from=hello`). Either deploy only the HTTP runtimes and the collector in 2.7, or give hello's image those modules first.
 - 2026-10-25: Gate 2, code half: the full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack) passed **78 of 78**. That includes checkov, trivy config, every module and stack `terraform test`, tflint, and the new `fill-service-secrets.sh` tests. The other half, a running dev environment, waits for 2.7.
+- 2026-10-25: 2.7 and Gate 2 changed (decided): the first dev apply is **infrastructure only**, and the real services are deployed from Phase 3 onwards, as each is built, instead of running `hello` in every runtime first. This makes the "Still open for 2.7" item under 2.6 moot (hello's image has no worker modules). The two checks that need running tasks move to 3.1: Cloud Map registration and a signed internal call on 8001. 2.7 now needs P.3 (the Atlas users behind `MONGODB_URIS`) rather than 0.4. The `build_from` input stays in the deploy workflow for any later placeholder use.
+- 2026-10-25: Gate 3, code half: the full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack) passed **84 of 84**. It includes mypy and pytest + coverage for auth, hello and users; import-linter; the auth, hello and users OpenAPI specs (up to date, Spectral clean); semgrep, bandit, gitleaks and pip-audit for the services; and every Terraform test. Nothing needed fixing. The other half, the end-to-end runs in dev (sign-up, Google sign-in, login, refresh, lock, unlock, role change), waits for the dev apply (2.7) and the first deploy of auth and users.
+- 2026-10-25: The Valkey IAM-token client, in `common` (**buddy-common 0.10.0**; auth, users and hello now pin it).
+  - **`common/valkey.py`:** `ElastiCacheIAMProvider` is a redis-py `CredentialProvider` returning `(user, token)`.
+    - The token is a SigV4-presigned `GET https://<replication group>/?Action=connect&User=<user>` (service `elasticache`, 900 s), signed with the task role's credentials through botocore.
+    - It's made on a new connection and reused for 10 minutes. ElastiCache's 12-hour disconnect just reconnects with a fresh one.
+  - **Settings:** `ServiceSettings` gains `REDIS_USERNAME` and `REDIS_REPLICATION_GROUP_ID` (a user needs the group: a validation error otherwise), plus `valkey_options()` and `valkey_client()`. Locally neither is set, and the URL alone connects, as before.
+  - **Every Valkey client now uses it:** each service's authz cache client, `common.limiter.RateLimits` (a new `redis_options`) and auth's `LoginThrottle`. `botocore>=1.35` is a core dependency of common.
+  - **Terraform:** every service runtime gets `REDIS_REPLICATION_GROUP_ID` (`module.redis.replication_group_id`) next to `REDIS_USERNAME`; the stack test was updated.
+  - **Found on the way:** `auth/requirements.txt` was missing `boto3`, which the worker's SNS and SQS clients (3.5) import. Local runs share one venv, so it passed here; CI's install-alone step would have failed. It's added.
+  - **Checked locally:**
+    - `common/tests/test_valkey.py` (7): the token's shape and signing scope, the 10-minute reuse, missing credentials, the settings in AWS and locally, the limiter, and a live sign-in against the local Valkey: an ACL user whose password is the token is signed into by a client that has only the provider, as ElastiCache checks it;
+    - the backend suite: 1551 passed, 99.85%; users 46, hello 15 and auth 160 tests, all at 100%;
+    - ruff, mypy; `terraform test` (5 passed).
+  - **To confirm at the first deploy:** a real IAM sign-in to ElastiCache (2.7 / 3.1's dev checks).
+- 2026-10-25: Gate 4, code half: the full `./check.sh` (with `MONGODB_TEST_URI` and `REDIS_URL` on the compose stack) passed **88 of 88**, now with mypy, pytest + coverage, the OpenAPI spec and Spectral for children. The first run found 2 failures, both in the new `common/tests/test_valkey.py`: unformatted, and two mypy errors (an unused `type: ignore`, and a `limits` `Storage` attribute now narrowed to `RedisStorage`). Fixed, and the second run was clean. The other half, Home listing children with progress from one query in dev, waits for the dev deploy.

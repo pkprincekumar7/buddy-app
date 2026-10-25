@@ -11,16 +11,16 @@ own database work:
 Buckets are per (route template, method, identity), so two routes with the same limit don't
 share one. While Valkey is unreachable the limits are counted in process (per task, as
 today); Valkey is retried after 30 s rather than abandoned for the life of the task.
-Credentials, when Valkey needs them, go in the URL (`redis://user:token@host:6379`), as each
-service's RBAC user will (2.3).
+In AWS, pass `redis_options=settings.valkey_options()`: the service signs in as its own
+RBAC user with an IAM token (common.valkey, build plan 2.3).
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Awaitable, Callable
-from typing import Annotated
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request
 from limits import RateLimitItem, parse
@@ -44,12 +44,16 @@ class RateLimits:
         behind_proxy: bool = False,
         primary: Storage | None = None,
         clock: Callable[[], float] = time.monotonic,
+        redis_options: Mapping[str, Any] | None = None,
     ) -> None:
         self.prefix = prefix
         self.behind_proxy = behind_proxy
         self.clock = clock
         if primary is None and redis_url:
-            primary = RedisStorage(redis_url, socket_connect_timeout=2, socket_timeout=2)
+            # redis_options: the IAM token provider in AWS (common.valkey).
+            primary = RedisStorage(
+                redis_url, socket_connect_timeout=2, socket_timeout=2, **(redis_options or {})
+            )
         self._primary = FixedWindowRateLimiter(primary) if primary is not None else None
         self._memory = FixedWindowRateLimiter(MemoryStorage())
         self._primary_down_until = 0.0

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import AsyncMongoClient
 
@@ -37,6 +37,12 @@ class ServiceSettings(BaseSettings):
 
     # ── Valkey (9.3): unset means no cache, so the authz check and rate limits run per task ──
     redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
+    # In AWS, the service's RBAC user and the replication group it signs its IAM token for
+    # (common.valkey); unset locally, where the URL alone connects.
+    redis_username: str | None = Field(default=None, validation_alias="REDIS_USERNAME")
+    redis_replication_group_id: str | None = Field(
+        default=None, validation_alias="REDIS_REPLICATION_GROUP_ID"
+    )
 
     # ── internal calls (13.2) ──
     internal_dns_suffix: str = Field(default="", validation_alias="INTERNAL_DNS_SUFFIX")
@@ -51,7 +57,13 @@ class ServiceSettings(BaseSettings):
     # Behind CloudFront and the ALB the client's address comes from a header (15.1).
     behind_proxy: bool = Field(default=False, validation_alias="BEHIND_PROXY")
 
-    @field_validator("redis_url", "otel_exporter_otlp_endpoint", mode="before")
+    @field_validator(
+        "redis_url",
+        "redis_username",
+        "redis_replication_group_id",
+        "otel_exporter_otlp_endpoint",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value
@@ -60,6 +72,26 @@ class ServiceSettings(BaseSettings):
     def events_prefix(self) -> str:
         """`{app}-{env}`: topics and queues are `{prefix}-{service}-events` (7.2)."""
         return f"{self.app_name}-{self.app_env}"
+
+    @model_validator(mode="after")
+    def _iam_valkey_needs_its_group(self) -> ServiceSettings:
+        if self.redis_username and not self.redis_replication_group_id:
+            raise ValueError("REDIS_USERNAME needs REDIS_REPLICATION_GROUP_ID (its IAM token)")
+        return self
+
+    def valkey_options(self) -> dict[str, Any]:
+        """redis-py options for this service's Valkey: the IAM token provider in AWS."""
+        from common.valkey import valkey_options
+
+        return valkey_options(self)
+
+    def valkey_client(self) -> Any:
+        """The service's async Valkey client, or None without REDIS_URL."""
+        if not self.redis_url:
+            return None
+        import redis.asyncio as aioredis
+
+        return aioredis.Redis.from_url(self.redis_url, **self.valkey_options())
 
     def mongo_client(self, **kwargs: Any) -> AsyncMongoClient[dict[str, Any]]:
         """The service's MongoDB client, with the shared pool limit and UTC-aware dates."""
