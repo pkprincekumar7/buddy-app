@@ -1,3 +1,8 @@
 pytest==8.3.4
+# Runs the import-boundary contract tests in common/tests (build plan 0.1).
+import-linter==2.15
+# Local SNS, SQS and S3 (build plan 0.3): in-process in tests (mock_aws), and `moto_server`
+# for local end-to-end runs, since Docker Desktop's org policy blocks the motoserver image here.
+moto[server,sns,sqs,s3]==5.2.3
 pytest-cov==6.0.0
 httpx==0.27.2

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# The protocol layer shared by every backend service (docs/auth-users-split.md, section 2):
+# code that must behave the same everywhere. Each service pins a compatible version range
+# in its own requirements, so a change here doesn't force every runtime to redeploy.
+[project]
+name = "buddy-common"
+dynamic = ["version"]
+description = "Protocol layer shared by the backend services: authz, events, internal calls, telemetry."
+requires-python = ">=3.13"
+# uvicorn runs both of a service's apps (serve.py). Services pin exact versions in their own
+# requirements.txt; these are the lowest that work.
+dependencies = ["uvicorn>=0.34"]
+
+# Installed only by the services that need them (section 2): generation by discover, grow,
+# transform and release; uploads by children and transform. Their dependencies are added
+# with the modules (build plan 1.6, 1.7).
+[project.optional-dependencies]
+generation = []
+uploads = []
+
+# Flat layout: this directory is the `common` package itself, so imports read
+# `from common.authz import …`. The tests stay out of the installed package.
+[tool.setuptools]
+package-dir = { "common" = "." }
+packages = ["common"]
+
+[tool.setuptools.dynamic]
+version = { attr = "common.__version__" }

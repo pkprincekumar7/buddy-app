@@ -1,0 +1,4 @@
+# The auth service's runtime dependencies. Only common so far; its routers and their
+# dependencies arrive in build plan 3.x. backend/Dockerfile installs the buddy-common line
+# from the local source only.
+buddy-common==0.1.0

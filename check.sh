@@ -95,6 +95,7 @@ _tool() {
 }
 RUFF="$(_tool ruff)"
 MYPY="$(_tool mypy)"
+PIP="$(_tool pip)"
 BANDIT="$(_tool bandit)"
 PIP_AUDIT="$(_tool pip-audit)"
 SEMGREP="$(_tool semgrep)"
@@ -111,7 +112,32 @@ run "ruff format (check)" \
     bash -c "cd '$BACKEND' && '$RUFF' format --check ."
 
 run "mypy" \
-    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/"
+    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/ common/"
+
+# Every directory under backend/ with requirements.txt is a service (tools/services.py);
+# each is type-checked, tested and spec-checked on its own below.
+run "service tree valid (tools/services.py --check)" \
+    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/services.py --check"
+SERVICES=()
+read -ra SERVICES <<< "$("$VENV_BIN/python" "$BACKEND/tools/services.py" 2>/dev/null | tr '\n' ' ')"
+# For the scanners: "auth/ hello/" relative to backend/, and the same under $BACKEND.
+SERVICE_DIRS="${SERVICES[*]+${SERVICES[*]/%//}}"
+SERVICE_PATHS="${SERVICES[*]+${SERVICES[*]/#/$BACKEND/}}"
+
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  run "mypy ($svc)" \
+      bash -c "cd '$BACKEND' && '$MYPY' '$svc/'"
+done
+
+# Service import boundaries (docs/auth-users-split.md, section 2), generated from the
+# services in the tree.
+run "import-linter (service boundaries)" \
+    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/import_contracts.py"
+
+# The shared package must install on its own and with each extra, as every service
+# image installs it. A throwaway target keeps the local venv untouched.
+run "common installs (core and extras)" \
+    bash -c "tmp=\$(mktemp -d) && cp -R '$BACKEND/common' \"\$tmp/src\" && cd \"\$tmp\" && '$PIP' install -q --target \"\$tmp/out\" ./src './src[generation,uploads]' && rm -rf \"\$tmp\""
 
 # ── frontend ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
@@ -161,12 +187,20 @@ run "jest (frontend-app)" \
 # Settings load from backend/.env (needs JWT_PRIVATE_KEY, as for the dev server); no
 # test connects to MONGODB_URI. Same command and coverage gate as CI. The real
 # Mongo/Redis integration tests skip unless you point them at throwaway servers —
-# never a real cluster — e.g. (docker run -d -p 27017:27017 mongo:7, same for redis):
-#   MONGODB_TEST_URI=mongodb://localhost:27017 REDIS_URL=redis://localhost:6379 ./check.sh
+# never a real cluster — e.g. the docker-compose services (docker compose up -d mongo valkey):
+#   MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
 
 run "pytest + coverage (backend)" \
-    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+
+# Each service's tests, with its own coverage gate. Locally they share the backend venv;
+# CI installs each service alone (scripts/install-backend-service.sh), which also proves
+# its requirements.txt is complete.
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  run "pytest + coverage ($svc)" \
+      bash -c "cd '$BACKEND' && '$PYTEST' '$svc/tests' --cov='$svc' --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+done
 
 # Validates the hand-built mutant lists against the current source (seconds).
 # This never runs mutation testing itself — that's manual (docs/mutation-testing.md).
@@ -195,7 +229,8 @@ run "service lists match services.tf (scripts)" \
     bash "$ROOT/scripts/check-service-lists.sh"
 if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
-      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh"
+      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
+        "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh"
 fi
 
 # shared/routing.json → generated backend/app/routing_data.py and the frontends'
@@ -203,16 +238,21 @@ fi
 run "routing data in sync (shared/routing.json)" \
     node "$ROOT/scripts/sync-routing.mjs" --check
 
+run "gateway config in sync (shared/service-routes.json)" \
+    node "$ROOT/scripts/sync-gateway.mjs" --check
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
 # ---- always-run: tools available from the bootstrapped venv / npm ----------------
 run "bandit" \
-    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ -ll -q"
+    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ common/ $SERVICE_DIRS -ll -q"
 
 run "pip-audit" \
     bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable \
       --ignore-vuln PYSEC-2025-183"
+run "pip-audit (services)" \
+    bash "$ROOT/scripts/audit-backend-services.sh" "$PIP_AUDIT" "$VENV_BIN/python"
 # PYSEC-2025-183 is disputed with no fix (see requirements.txt). PyJWT and semgrep share
 # the venv, so a PyJWT bump may need a semgrep bump too (semgrep pins pyjwt[crypto]).
 
@@ -302,7 +342,7 @@ if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
 fi
 
 run "semgrep (SAST)" \
-    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$BACKEND/common/' $SERVICE_PATHS '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
 
 if require_tool hadolint HADOLINT "brew install hadolint"; then
   run "hadolint (backend Dockerfile)" \
@@ -432,6 +472,30 @@ spectral_api_lint() {
   "$SPECTRAL" lint "$ROOT/openapi.json" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
 }
 run "spectral (OpenAPI lint)" spectral_api_lint
+
+# Each HTTP service's committed spec (backend/openapi/<service>.json), regenerated the
+# same way as openapi.json above, then linted.
+service_spec_up_to_date() {
+  local svc="$1" spec="$ROOT/backend/openapi/$1.json" fresh
+  fresh="$(mktemp)"
+  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" --service "$svc" > "$fresh" \
+    || { rm -f "$fresh"; echo "Failed to export the $svc spec"; return 1; }
+  if [[ -f "$spec" ]] && cmp -s "$fresh" "$spec"; then
+    rm -f "$fresh"
+  else
+    mkdir -p "$(dirname "$spec")"
+    cat "$fresh" > "$spec" && rm -f "$fresh"
+    echo "backend/openapi/$svc.json was out of date — regenerated it. Review and commit."
+    return 1
+  fi
+}
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  if [[ -f "$BACKEND/$svc/app/main.py" ]]; then
+    run "backend/openapi/$svc.json up to date" service_spec_up_to_date "$svc"
+    run "spectral ($svc)" \
+        "$SPECTRAL" lint "$ROOT/backend/openapi/$svc.json" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
+  fi
+done
 
 # nuclei (DAST) is disabled locally per company security-team guidance (active
 # scanning tool, not permitted on company laptops). CI (check.yml) is unaffected

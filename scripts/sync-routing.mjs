@@ -6,7 +6,9 @@
 //   node scripts/sync-routing.mjs --check  exit 1 if any generated file is stale (CI)
 //
 // Generated (do not edit by hand):
-//   backend/app/routing_data.py
+//   backend/common/regions_data.py      region → locations and Atlas zones (every service)
+//   backend/auth/countries_data.py      country → location, blocked countries (auth only)
+//   backend/app/routing_data.py         today's backend; removed with it (build plan 8.6)
 //   frontend/src/lib/countries.ts       frontend-app/src/lib/countries.ts
 //   frontend/src/lib/locationHint.ts    frontend-app/src/lib/locationHint.ts
 //
@@ -45,7 +47,7 @@ if (!isObject(regions))
 if (!Array.isArray(blocked)) fail('"blocked_countries" must be an array of country codes');
 if (!Array.isArray(countries)) fail('"countries" must be an array of { code, location, label }');
 
-const LOCATION_RE = /^[a-z0-9_-]{1,16}$/; // same as LOCATION_RE in backend/app/routing.py
+const LOCATION_RE = /^[a-z0-9_-]{1,16}$/; // same as LOCATION_RE in backend/common/regions.py
 const CODE_RE = /^[A-Z]{2}$/;
 const REGION_RE = /^[a-z]{2}-[a-z]+-\d$/;
 const ZONE_RE = /^[A-Za-z0-9_]+$/;
@@ -101,43 +103,71 @@ const byLabel = [...countries].sort((a, b) => a.label.localeCompare(b.label, 'en
 
 const tsString = (s) => (s.includes("'") ? `"${s}"` : `'${s}'`);
 
-function renderPython() {
-  // Match ruff format (line-length 100): one line if it fits, else wrapped.
+// Python blocks, shared by the files below. Formatted to match ruff format
+// (line-length 100): one line if it fits, else wrapped.
+function pyHeader() {
+  return [`# ${GENERATED_NOTE}`, `# ${EDIT_NOTE}`, '# Grouping rules and their reasoning: shared/README.md.'];
+}
+
+function pyCountries() {
+  return [
+    '# Country (ISO-3166-1 alpha-2, plus XK) → location stored on the account and in its JWT.',
+    'COUNTRY_TO_REGION: dict[str, str] = {',
+    ...byCode.map((c) => `    "${c.code}": "${c.location}",  # ${c.label}`),
+    '}',
+  ];
+}
+
+function pyBlocked() {
   const blockedSetLiteral = `{${[...blockedSet]
     .sort()
     .map((c) => `"${c}"`)
     .join(', ')}}`;
   const blockedOneLine = `BLOCKED_COUNTRIES: frozenset[str] = frozenset(${blockedSetLiteral})`;
-  const blockedLines =
-    blockedOneLine.length <= 100
-      ? [blockedOneLine]
-      : ['BLOCKED_COUNTRIES: frozenset[str] = frozenset(', `    ${blockedSetLiteral}`, ')'];
-  const lines = [
-    `# ${GENERATED_NOTE}`,
-    `# ${EDIT_NOTE}`,
-    '# Grouping rules and their reasoning: shared/README.md.',
-    '',
-    '# Country (ISO-3166-1 alpha-2, plus XK) → location stored on the account and in its JWT.',
-    'COUNTRY_TO_REGION: dict[str, str] = {',
-    ...byCode.map((c) => `    "${c.code}": "${c.location}",  # ${c.label}`),
-    '}',
-    '',
+  return [
     '# Never served: refused at registration (403 country_not_supported) and geo-blocked by the WAF.',
-    ...blockedLines,
-    '',
+    ...(blockedOneLine.length <= 100
+      ? [blockedOneLine]
+      : ['BLOCKED_COUNTRIES: frozenset[str] = frozenset(', `    ${blockedSetLiteral}`, ')']),
+  ];
+}
+
+function pyRegions() {
+  return [
     '# AWS region → locations its backend and worker serve (Lambda@Edge routes by the inverse).',
     'REGION_TO_LOCATIONS: dict[str, list[str]] = {',
     ...Object.entries(regions).map(
       ([r, v]) => `    "${r}": [${v.locations.map((l) => `"${l}"`).join(', ')}],`,
     ),
     '}',
-    '',
+  ];
+}
+
+function pyZones() {
+  return [
     '# AWS region → Atlas Global Cluster zone holding its locations (backend/tools/atlas_zone_ranges.py).',
     'ATLAS_ZONE_FOR_REGION: dict[str, str] = {',
     ...Object.entries(regions).map(([r, v]) => `    "${r}": "${v.atlas_zone}",`),
     '}',
   ];
-  return lines.join('\n') + '\n';
+}
+
+const pyFile = (...blocks) =>
+  [...pyHeader(), ...blocks.flatMap((b) => ['', ...b])].join('\n') + '\n';
+
+// Today's backend (backend/app); removed with it in build plan 8.6.
+function renderPython() {
+  return pyFile(pyCountries(), pyBlocked(), pyRegions(), pyZones());
+}
+
+// Every service: region scoping for workers and relays (docs/auth-users-split.md, 4.1).
+function renderCommonRegions() {
+  return pyFile(pyRegions(), pyZones());
+}
+
+// auth only: registration resolves a location from the country (section 16).
+function renderAuthCountries() {
+  return pyFile(pyCountries(), pyBlocked());
 }
 
 function renderCountries() {
@@ -190,6 +220,8 @@ function renderLocationHint() {
 // -- write / check ------------------------------------------------------------------
 
 const outputs = {
+  'backend/common/regions_data.py': renderCommonRegions(),
+  'backend/auth/countries_data.py': renderAuthCountries(),
   'backend/app/routing_data.py': renderPython(),
   'frontend/src/lib/countries.ts': renderCountries(),
   'frontend-app/src/lib/countries.ts': renderCountries(),

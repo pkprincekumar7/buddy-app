@@ -1996,7 +1996,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 **Where:**
 - Tag-pinned actions everywhere: `aquasecurity/trivy-action@v0.36.0` ×10, `aws-actions/configure-aws-credentials@v6.1.1` ×14, `hashicorp/setup-terraform@v4.0.1` ×6, `actions/cache@v5` ×7, `actions/upload-artifact@v7/@v7.0.1`, `actions/dependency-review-action@v5`, `github/codeql-action/*@v3`, `actions/setup-java@v5`, `hadolint/hadolint-action@v3.3.0`, `terraform-linters/setup-tflint@v6.2.2`. Some are **major-only** tags (`@v5`, `@v3`).
 - Nuclei (`check.yml:778-783`) and Dockle (`:579-583`) are downloaded with `curl` and **no checksum** (gitleaks at `:285-292` does verify).
-- The service containers `mongo:7` and `redis:7-alpine` are tag-only.
+- The service containers `mongo:7` and `redis:7-alpine` are tag-only. ✅ **Partly fixed 2026-10-25:** CI and docker-compose now pin exact versions (`mongo:8.0.34`, `valkey/valkey:8.0.11-alpine`, `motoserver/moto:5.2.3`); digests aren't pinned yet.
 - There's no `.github/dependabot.yml`.
 
 **Problem:** Tags can be moved; `trivy-action` has had its tags hijacked before. A compromised action runs with the workflow's OIDC role and, because of SEC-06, with every secret in the job.

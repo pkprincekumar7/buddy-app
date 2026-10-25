@@ -1,0 +1,8 @@
+# The hello service's runtime dependencies (build plan 0.4). backend/Dockerfile installs
+# the buddy-common line from the local source only, then the rest from PyPI.
+buddy-common==0.1.0
+fastapi==0.136.1
+uvicorn[standard]==0.34.0
+
+# starlette CVE floor, as in backend/requirements.txt.
+starlette>=1.3.1

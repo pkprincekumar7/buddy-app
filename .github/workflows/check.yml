@@ -49,7 +49,23 @@ jobs:
         run: ruff format --check .
 
       - name: mypy type check
-        run: mypy app/ tools/
+        run: mypy app/ tools/ common/
+
+      # Every directory under backend/ with requirements.txt is a service; each gets its own
+      # job below (backend-service). This fails on a malformed one or an orphaned spec.
+      - name: Service tree valid
+        run: python tools/services.py --check
+
+      # Service import boundaries (docs/auth-users-split.md, section 2): common never
+      # imports service code, and services never import each other. The contracts are
+      # generated from the services in the tree.
+      - name: import-linter
+        run: python tools/import_contracts.py
+
+      # The shared package must install on its own and with each extra, the way every
+      # service image installs it (build plan 0.1).
+      - name: Install common (core and extras)
+        run: pip install ./common './common[generation,uploads]'
 
       # Validates the hand-built mutant lists against the current source (seconds).
       # Never runs mutation testing itself — that's manual (docs/mutation-testing.md).
@@ -64,24 +80,18 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # MongoDB isn't a service container: services can't pass the --replSet flag, and
+    # change streams and transactions need a replica set. A step starts it instead,
+    # the same way docker-compose.yml does (build plan 0.3).
     services:
       # Health checks make GitHub wait until each service accepts connections
       # before the first step runs (it otherwise only waits for "started").
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
-      redis:
-        image: redis:7-alpine
+      valkey:
+        image: valkey/valkey:8.0.11-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "valkey-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -89,6 +99,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6.0.2
+
+      - name: Start MongoDB 8.0 (single-node replica set)
+        run: bash ../scripts/ci-start-mongo.sh
 
       - name: Set up Python
         uses: actions/setup-python@v6.2.0
@@ -113,12 +126,12 @@ jobs:
       # Line + branch coverage of app/ is ~99.96% (one branch in main.py's
       # session-cleanup loop real Motor can't reach); the gate stops it slipping.
       - name: pytest + coverage
-        run: pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+        run: pytest --cov=app --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
         env:
-          MONGODB_URI: mongodb://localhost:27017
-          # Enables tests/test_mongo_integration.py against the mongo:7 service above
-          # (separate from MONGODB_URI so local runs never touch a real cluster).
-          MONGODB_TEST_URI: mongodb://localhost:27017
+          MONGODB_URI: mongodb://localhost:27017/?directConnection=true
+          # Enables tests/test_mongo_integration.py against the MongoDB replica set started
+          # above (separate from MONGODB_URI so local runs never touch a real cluster).
+          MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
           # A skipped live_service test (Mongo/Redis unreachable) fails the run instead
           # of passing silently — see tests/conftest.py.
           REQUIRE_LIVE_SERVICES: "1"
@@ -126,6 +139,127 @@ jobs:
           JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
           APP_ENV: dev
+
+  # ── per-service jobs (build plan 0.5) ────────────────────────────────────────
+  # The services are found from the tree (backend/tools/services.py), so a new one gets its
+  # job without editing this file. Each installs only its own requirements.txt, the way its
+  # image does, which proves the file is complete.
+  backend-service-list:
+    name: Backend Service List
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+
+      - name: List services
+        id: list
+        run: echo "services=$(python tools/services.py --json)" >> "$GITHUB_OUTPUT"
+
+  backend-service:
+    name: Backend Service (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend-lint, backend-service-list]
+    if: needs.backend-service-list.outputs.services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.backend-service-list.outputs.services) }}
+    env:
+      SERVICE: ${{ matrix.service }}
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      valkey:
+        image: valkey/valkey:8.0.11-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Start MongoDB 8.0 (single-node replica set)
+        run: bash ../scripts/ci-start-mongo.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/${{ matrix.service }}/requirements.txt
+            backend/requirements-test.txt
+            backend/requirements-lint.txt
+
+      # buddy-common comes from this tree's backend/common only, never from PyPI.
+      - name: Install the service alone (as its image does) + test tools
+        run: bash ../scripts/install-backend-service.sh "$SERVICE" requirements-test.txt requirements-lint.txt
+
+      - name: mypy type check
+        run: mypy "$SERVICE/"
+
+      - name: pytest + coverage
+        run: pytest "$SERVICE/tests" --cov="$SERVICE" --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+        env:
+          MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
+          REDIS_URL: redis://localhost:6379
+          APP_ENV: dev
+
+      # backend/openapi/<service>.json is committed, like openapi.json; Spectral lints the
+      # committed copies in the dast job.
+      - name: OpenAPI spec up to date
+        run: |
+          if [ ! -f "$SERVICE/app/main.py" ]; then
+            echo "$SERVICE serves no HTTP yet"
+            exit 0
+          fi
+          python tools/export-openapi.py --service "$SERVICE" > "openapi/$SERVICE.json"
+          if [ -n "$(git status --porcelain -- "openapi/$SERVICE.json")" ]; then
+            git diff -- "openapi/$SERVICE.json"
+            echo "::error::backend/openapi/$SERVICE.json is missing or out of date. Run check.sh locally and commit the regenerated file."
+            exit 1
+          fi
+
+  # One stable check name for branch protection, whatever services exist.
+  backend-services:
+    name: Backend Services
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [backend-service-list, backend-service]
+    if: always()
+    steps:
+      - name: All service jobs passed
+        env:
+          LIST_RESULT: ${{ needs.backend-service-list.result }}
+          SERVICES: ${{ needs.backend-service-list.outputs.services }}
+          RESULT: ${{ needs.backend-service.result }}
+        run: |
+          if [ "$LIST_RESULT" != success ]; then
+            echo "Listing the services failed: $LIST_RESULT"; exit 1
+          fi
+          if [ "$RESULT" = success ] || { [ "$RESULT" = skipped ] && [ "$SERVICES" = "[]" ]; }; then
+            echo "Services: $SERVICES"; exit 0
+          fi
+          echo "Service jobs: $RESULT"; exit 1
 
   frontend-lint:
     name: Frontend Lint
@@ -231,6 +365,11 @@ jobs:
       # region; the backend and both frontends commit generated copies of it.
       - name: Routing data in sync with shared/routing.json
         run: node scripts/sync-routing.mjs --check
+
+      # shared/service-routes.json drives both the ALB rules and the local gateway's
+      # nginx config (docs/auth-users-split.md, 13.1; build plan 0.3).
+      - name: Gateway config in sync with shared/service-routes.json
+        run: node scripts/sync-gateway.mjs --check
 
       - name: Run jwt-validator-lambda unit tests
         run: node --test infra-live-edge/functions/jwt-validator-lambda.test.js
@@ -358,12 +497,16 @@ jobs:
       - name: Bandit (Python SAST)
         id: bandit
         continue-on-error: true
-        run: bandit -r backend/app/ backend/tools/ -ll -q
+        run: |
+          read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
+          bandit -r backend/app/ backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" -ll -q
 
       - name: Semgrep (SAST)
         id: semgrep
         continue-on-error: true
-        run: semgrep --config p/security-audit --error backend/app/ backend/tools/ frontend/src/ frontend-app/src/
+        run: |
+          read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
+          semgrep --config p/security-audit --error backend/app/ backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
@@ -371,6 +514,7 @@ jobs:
         run: |
           pip-audit -r backend/requirements.txt --skip-editable \
             --ignore-vuln PYSEC-2025-183
+          bash scripts/audit-backend-services.sh pip-audit python
 
       - name: Checkov (Terraform IaC security)
         id: checkov
@@ -722,11 +866,11 @@ jobs:
     needs: [backend-lint, frontend-lint, frontend-app-lint]
     services:
       mongodb:
-        image: mongo:7
+        image: mongo:8.0.34
         ports:
           - 27017:27017
-      redis:
-        image: redis:7-alpine
+      valkey:
+        image: valkey/valkey:8.0.11-alpine
         ports:
           - 6379:6379
 
@@ -818,6 +962,17 @@ jobs:
         continue-on-error: true
         run: frontend/node_modules/.bin/spectral lint openapi.json --ruleset .spectral.yaml --fail-severity error
 
+      # The services' committed specs (backend/openapi/*.json); the backend-service job
+      # checks each one matches its code.
+      - name: Spectral (service OpenAPI specs)
+        id: spectral_services
+        continue-on-error: true
+        run: |
+          shopt -s nullglob
+          specs=(backend/openapi/*.json)
+          if [ ${#specs[@]} -eq 0 ]; then echo "No service specs yet"; exit 0; fi
+          frontend/node_modules/.bin/spectral lint "${specs[@]}" --ruleset .spectral.yaml --fail-severity error
+
       # ── Dynamic Application Security Testing (Nuclei) ────────────────────────
       - name: Install Nuclei
         run: |
@@ -842,6 +997,7 @@ jobs:
           FAILED_CHECKS=()
           [[ "${{ steps.openapi_drift.outcome }}" == "failure" ]] && FAILED_CHECKS+=(openapi-drift)
           [[ "${{ steps.spectral.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral)
+          [[ "${{ steps.spectral_services.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral-services)
           [[ "${{ steps.nuclei.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then
             echo "Failed DAST checks: ${FAILED_CHECKS[*]}"
