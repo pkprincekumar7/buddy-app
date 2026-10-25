@@ -1632,9 +1632,13 @@ buddy-app/
 │   │   ├── audit.py                            audit events written by the permission check (11.3)
 │   │   ├── routers.py                          deny-by-default router: refuses a route without a policy (11.2)
 │   │   ├── events/                             outbox, relay (own-region rows), SNS publisher, SQS consumer, opt-in inbox (7.3)
+│   │   │   ├── catalogue.json                  producer, consumers and schema of every event (7.6); also read by modules/events
+│   │   │   ├── topology.py                     topics, queues and filter policies derived from the catalogue (7.2); creates them in local Moto
+│   │   │   ├── testing.py                      contract and replay-twice harnesses (7.4, 7.8)
 │   │   │   └── schemas/                        versioned JSON Schemas, e.g. child.changed.v1.json (7.8)
 │   │   ├── generation/                         [extra: discover, grow, transform, release]  job model and queue, LLM client, per-user hourly LLM limit, prompt helper (8)
 │   │   ├── deletion.py                         PARTICIPANTS for the deletion saga (10.3)
+│   │   ├── models.py                           child_access, *_inputs and jobs: validators, section-14 indexes, copy builders from events, the unlock check (4.1, 12.4)
 │   │   ├── internal_client.py                  service tokens, Cloud Map DNS client: random IP, retry once, 30 s keep-alive (13.2)
 │   │   ├── telemetry.py                        OpenTelemetry setup, trace context in events (15.5)
 │   │   ├── metrics.py                          PutMetricData for the 16 alarm and scaling metrics (15.5)

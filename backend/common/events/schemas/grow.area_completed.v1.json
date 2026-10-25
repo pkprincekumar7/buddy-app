@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/grow.area_completed.v1.json",
+  "title": "grow.area_completed v1",
+  "description": "A growth area is complete. aggregate_id is the child id. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "area_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "area_name": {
+      "type": "string"
+    },
+    "answers": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "child_activity_results": {
+      "type": [
+        "array",
+        "object",
+        "null"
+      ]
+    },
+    "recommendations": {
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "ai_three_month_recommendations": {
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "area_id",
+    "area_name"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "area_id": "focus",
+      "area_name": "Focus",
+      "answers": {
+        "q1": "often"
+      },
+      "child_activity_results": [],
+      "recommendations": [
+        "Short tasks"
+      ],
+      "ai_three_month_recommendations": null
+    }
+  ]
+}

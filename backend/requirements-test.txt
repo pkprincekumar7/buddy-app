@@ -1,4 +1,18 @@
 pytest==8.3.4
+# common.events validates payloads against JSON Schema (common/events/schemas). Not in
+# requirements.txt: today's backend doesn't use it. 4.25.x is also what semgrep needs.
+jsonschema==4.25.1
+# common.telemetry (common/telemetry.py): the SDK, the OTLP exporter and the instrumentations.
+# Not in requirements.txt: today's backend has no tracing. 1.45.1 fixes GHSA-xcq7-p3pf-p88h;
+# semgrep pins ~=1.37, so locally it has its own venv (check.sh).
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-fastapi==0.66b1
+opentelemetry-instrumentation-pymongo==0.66b1
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-botocore==0.66b1
+opentelemetry-instrumentation-redis==0.66b1
 # Runs the import-boundary contract tests in common/tests (build plan 0.1).
 import-linter==2.15
 # Local SNS, SQS and S3 (build plan 0.3): in-process in tests (mock_aws), and `moto_server`

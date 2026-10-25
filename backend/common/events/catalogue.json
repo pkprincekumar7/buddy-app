@@ -1,0 +1,94 @@
+{
+  "description": "The event catalogue (docs/auth-users-split.md, 7.6): each event's producer, consumers and current schema. The single definition behind common.events (the TopicArn check, schemas), the local Moto topology (scripts/local-aws-setup.py) and modules/events (build plan 2.4). producer \"*\" means any service in data_services (user.data_deleted). A reserved event has a name and schema but is never published: nothing consumes it yet. hello.pinged is the placeholder service's demo event (build plan Gate 1 and Gate 2), removed with hello in 8.6.",
+  "data_services": ["users", "children", "onboarding", "discover", "grow", "transform", "release"],
+  "events": {
+    "user.deletion_requested": {
+      "producer": "auth",
+      "consumers": ["users", "children", "onboarding", "discover", "grow", "transform", "release"],
+      "schema": "user.deletion_requested.v1"
+    },
+    "user.data_deleted": {
+      "producer": "*",
+      "consumers": ["auth"],
+      "schema": "user.data_deleted.v1"
+    },
+    "user.role_changed": {
+      "producer": "auth",
+      "consumers": [],
+      "schema": "user.role_changed.v1",
+      "reserved": true
+    },
+    "user.profile_updated": {
+      "producer": "users",
+      "consumers": [],
+      "schema": "user.profile_updated.v1",
+      "reserved": true
+    },
+    "child.changed": {
+      "producer": "children",
+      "consumers": ["onboarding", "discover", "grow", "transform", "release"],
+      "schema": "child.changed.v1"
+    },
+    "child.deleted": {
+      "producer": "children",
+      "consumers": ["onboarding", "discover", "grow", "transform", "release"],
+      "schema": "child.deleted.v1"
+    },
+    "onboarding.conversation_completed": {
+      "producer": "onboarding",
+      "consumers": ["discover", "grow", "transform", "release", "children"],
+      "schema": "onboarding.conversation_completed.v1"
+    },
+    "onboarding.answers_updated": {
+      "producer": "onboarding",
+      "consumers": ["grow", "transform", "release"],
+      "schema": "onboarding.answers_updated.v1"
+    },
+    "discover.personality_finalised": {
+      "producer": "discover",
+      "consumers": ["grow", "transform"],
+      "schema": "discover.personality_finalised.v1"
+    },
+    "discover.completed": {
+      "producer": "discover",
+      "consumers": ["children"],
+      "schema": "discover.completed.v1"
+    },
+    "grow.area_completed": {
+      "producer": "grow",
+      "consumers": ["transform", "release"],
+      "schema": "grow.area_completed.v1"
+    },
+    "grow.area_updated": {
+      "producer": "grow",
+      "consumers": ["transform", "release"],
+      "schema": "grow.area_updated.v1"
+    },
+    "grow.completed": {
+      "producer": "grow",
+      "consumers": ["children"],
+      "schema": "grow.completed.v1"
+    },
+    "transform.completed": {
+      "producer": "transform",
+      "consumers": ["children"],
+      "schema": "transform.completed.v1"
+    },
+    "release.completed": {
+      "producer": "release",
+      "consumers": ["children"],
+      "schema": "release.completed.v1"
+    },
+    "hello.pinged": {
+      "producer": "hello",
+      "consumers": ["hello"],
+      "schema": "hello.pinged.v1"
+    },
+    "connect.visited": {
+      "producer": "connect",
+      "consumers": [],
+      "schema": "connect.visited.v1",
+      "reserved": true
+    }
+  }
+}

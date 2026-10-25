@@ -27,7 +27,13 @@ def test_version_comes_from_the_package():
 def test_package_is_the_directory_itself_without_its_tests():
     setuptools = PYPROJECT["tool"]["setuptools"]
     assert setuptools["package-dir"] == {"common": "."}
-    assert setuptools["packages"] == ["common"]
+    # Subpackages are listed explicitly, so common/tests never ships.
+    assert setuptools["packages"] == ["common", "common.events", "common.generation"]
+
+
+def test_the_event_catalogue_and_schemas_ship_with_the_package():
+    data = PYPROJECT["tool"]["setuptools"]["package-data"]
+    assert data == {"common.events": ["catalogue.json", "schemas/*.json"]}
 
 
 def test_extras_match_the_design():

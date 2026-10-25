@@ -48,13 +48,33 @@ if [ "$VENV_PY_VERSION" != "$PYTHON_VERSION" ]; then
   echo "  rm -rf backend/.venv && ./check.sh"
   exit 1
 fi
+# semgrep gets its own venv: it pins OpenTelemetry ~=1.37, and the services pin 1.45.1 (a
+# security fix, GHSA-xcq7-p3pf-p88h), which requirements-test.txt matches. CI already
+# installs requirements-security.txt in a job of its own. So backend/.venv gets every other
+# security tool, and backend/.venv-semgrep gets semgrep alone.
+SEMGREP_VENV="$BACKEND/.venv-semgrep"
+SECURITY_REQS="$(mktemp)"
+SEMGREP_REQS="$(mktemp)"
+grep -v '^semgrep==' "$BACKEND/requirements-security.txt" > "$SECURITY_REQS"
+grep '^semgrep==' "$BACKEND/requirements-security.txt" > "$SEMGREP_REQS"
+
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
   -r "$BACKEND/requirements.txt" \
   -r "$BACKEND/requirements-lint.txt" \
-  -r "$BACKEND/requirements-security.txt" \
+  -r "$SECURITY_REQS" \
   -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or requirements.txt${RESET}"; exit 1; }
+
+if [ ! -d "$SEMGREP_VENV" ]; then
+  echo -e "${CYAN}Creating backend/.venv-semgrep (Python $PYTHON_VERSION)...${RESET}"
+  "python$PYTHON_VERSION" -m venv "$SEMGREP_VENV" \
+    || { echo -e "${RED}Failed to create backend/.venv-semgrep${RESET}"; exit 1; }
+fi
+echo -e "${CYAN}Syncing backend/.venv-semgrep...${RESET}"
+"$SEMGREP_VENV/bin/pip" install -q -r "$SEMGREP_REQS" \
+  || { echo -e "${RED}pip install of semgrep failed — check your network${RESET}"; exit 1; }
+rm -f "$SECURITY_REQS" "$SEMGREP_REQS"
 
 # Frontend: npm ci, as CI does — installs exactly what package-lock.json says and
 # never rewrites it (npm install can, so local checks could run against different
@@ -98,7 +118,8 @@ MYPY="$(_tool mypy)"
 PIP="$(_tool pip)"
 BANDIT="$(_tool bandit)"
 PIP_AUDIT="$(_tool pip-audit)"
-SEMGREP="$(_tool semgrep)"
+# Its own venv (see the sync above); PATH in CI.
+if [ -x "$SEMGREP_VENV/bin/semgrep" ]; then SEMGREP="$SEMGREP_VENV/bin/semgrep"; else SEMGREP="semgrep"; fi
 CHECKOV="$(_tool checkov)"
 PYTEST="$(_tool pytest)"
 

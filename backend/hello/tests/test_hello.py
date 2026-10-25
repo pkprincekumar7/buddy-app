@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from common.routers import assert_every_route_has_a_policy
 from hello.app.main import app, internal_app
 
 
@@ -29,3 +30,8 @@ def test_no_docs_or_openapi_are_served():
     client = TestClient(app)
     assert client.get("/docs").status_code == 404
     assert client.get("/openapi.json").status_code == 404
+
+
+def test_every_public_route_declares_an_access_policy():
+    # The route-policy test every service runs (design 11.2).
+    assert_every_route_has_a_policy(app)

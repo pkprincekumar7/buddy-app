@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs pip-audit on each backend service's requirements.txt (CI's security-scan job and check.sh).
 #
-#   scripts/audit-backend-services.sh [pip-audit [python]]
+#   bash scripts/audit-backend-services.sh [pip-audit [python]]
 #
 # The buddy-common line is left out: it's this repository's own package, built from
 # backend/common, and pip-audit would otherwise look it up on PyPI.

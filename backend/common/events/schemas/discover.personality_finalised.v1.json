@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/discover.personality_finalised.v1.json",
+  "title": "discover.personality_finalised v1",
+  "description": "The personality is ready. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "traits": {
+      "type": [
+        "array",
+        "object",
+        "string",
+        "null"
+      ]
+    },
+    "strengths": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "traits",
+    "strengths"
+  ],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "traits": {
+        "summary": "Curious and creative"
+      },
+      "strengths": [
+        "curious"
+      ]
+    }
+  ]
+}
