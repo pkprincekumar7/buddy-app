@@ -706,7 +706,7 @@ async def internal_email(
 # Every service that verifies users' tokens asks auth on a cache miss (9.3).
 AUTHZ_CALLERS = (
     "users", "children", "onboarding", "discover", "grow", "transform", "release",
-    "platform", "hello",
+    "shared", "hello",
 )  # fmt: skip
 _UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 

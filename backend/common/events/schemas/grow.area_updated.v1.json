@@ -36,6 +36,43 @@
         "array",
         "null"
       ]
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The child's parent (optional, added 2026-10-26): lets a consumer keep its copy before it has a child_access copy."
+    },
+    "reflections": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ]
+      },
+      "description": "The area's questions with the parent's answers (optional, added 2026-10-26)."
+    },
+    "child_choices": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "description": "The child's picks in the area's rounds, as \"Chose “X” over “Y”\" lines (optional, added 2026-10-26)."
     }
   },
   "required": [

@@ -229,10 +229,10 @@ run "routes_from_the_shared_route_list" {
   }
   assert {
     condition = (
-      one(aws_lb_listener_rule.from_cloudfront["route-130"].action).target_group_arn == aws_lb_target_group.service["platform"].arn
-      && one(aws_lb_listener_rule.from_cloudfront["route-140"].action).target_group_arn == aws_lb_target_group.service["platform"].arn
+      one(aws_lb_listener_rule.from_cloudfront["route-130"].action).target_group_arn == aws_lb_target_group.service["shared"].arn
+      && one(aws_lb_listener_rule.from_cloudfront["route-140"].action).target_group_arn == aws_lb_target_group.service["shared"].arn
     )
-    error_message = "One target can have several rules (platform: 130 and 140)."
+    error_message = "One target can have several rules (shared: 130 and 140)."
   }
   assert {
     condition = alltrue([

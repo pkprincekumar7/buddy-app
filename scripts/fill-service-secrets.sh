@@ -17,7 +17,7 @@
 #   EMAIL_HMAC_PEPPER  auth
 #   GOOGLE_CLIENT_ID   auth (may be empty: Google Sign-In off)
 #   OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY
-#                      generating services and platform; an unset one stays REPLACE_ME
+#                      generating services and shared; an unset one stays REPLACE_ME
 # The keys come from the secret itself, so a key added in secrets.tf needs a case
 # in value_for and nothing else. Values are never printed.
 #
@@ -50,7 +50,7 @@ value_for() {
 }
 
 # needs_init SECRET_JSON → success if a required key is still REPLACE_ME, or if
-# every key is (an untouched secret, such as platform's, whose only key is optional).
+# every key is (an untouched secret, such as shared's, whose only key is optional).
 needs_init() {
   jq -e --argjson opt "$OPTIONAL_SECRET_KEYS" '
     to_entries

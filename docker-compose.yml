@@ -244,7 +244,8 @@ services:
 
   # ── The split's services (docs/auth-users-split-build-plan.md), profile "split" ──────────
   # Started only with `docker compose --profile split up -d --build`; the gateway (port
-  # ${GATEWAY_PORT:-8088}) routes /api/v1/auth, /users and /children to them, as the ALB does.
+  # ${GATEWAY_PORT:-8088}) routes /api/v1/auth, /users, /children and the circles' paths
+  # (onboarding, personality, growth-areas, transform, observations) to them, as the ALB does.
   # Before the first start: Moto running and `scripts/local-aws-setup.py` run (topics, queues,
   # buckets), and EMAIL_HMAC_PEPPER set in .env. Each service has its own database and its own
   # service-token key, made by local-keys into the local_keys volume (never the repository).
@@ -291,8 +292,8 @@ services:
       COOKIE_SECURE: "false"
       COOKIE_SAMESITE: lax
       COOKIE_DOMAIN: ""
-      # The participants built so far (build plan 3.5): users and children.
-      DELETION_PARTICIPANTS: users,children
+      # Every service that holds user data (common.deletion.PARTICIPANTS).
+      DELETION_PARTICIPANTS: users,children,onboarding,discover,grow,transform,release
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-auth-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-auth-events
     <<: *split-service
@@ -365,6 +366,212 @@ services:
     environment: *children-env
     healthcheck:
       disable: true
+    <<: *split-service
+
+  onboarding:
+    profiles: ["split"]
+    image: superpower-onboarding:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: onboarding
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/onboarding.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve onboarding"]
+    environment: &onboarding-env
+      <<: *split-env
+      SERVICE_NAME: onboarding
+      MONGODB_DB_NAME: onboarding
+      INTERNAL_SIGNING_KID: onboarding-local
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-onboarding-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-onboarding-events
+    <<: *split-service
+
+  onboarding-worker:
+    profiles: ["split"]
+    image: superpower-onboarding:local  # built by `onboarding`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/onboarding.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m onboarding.worker"]
+    environment: *onboarding-env
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  discover:
+    profiles: ["split"]
+    image: superpower-discover:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: discover
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/discover.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve discover"]
+    # Starts jobs; never calls an LLM, so no keys (as in AWS).
+    environment: &discover-env
+      <<: *split-env
+      SERVICE_NAME: discover
+      MONGODB_DB_NAME: discover
+      INTERNAL_SIGNING_KID: discover-local
+      LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-discover-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-discover-events
+    <<: *split-service
+
+  discover-worker:
+    profiles: ["split"]
+    image: superpower-discover:local  # built by `discover`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/discover.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m discover.worker"]
+    # The only discover runtime with LLM keys (8); from .env, as the backend's worker.
+    environment:
+      <<: *discover-env
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  grow:
+    profiles: ["split"]
+    image: superpower-grow:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: grow
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/grow.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve grow"]
+    # Starts jobs; never calls an LLM, so no keys (as in AWS).
+    environment: &grow-env
+      <<: *split-env
+      SERVICE_NAME: grow
+      MONGODB_DB_NAME: grow
+      INTERNAL_SIGNING_KID: grow-local
+      LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-grow-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-grow-events
+    <<: *split-service
+
+  grow-worker:
+    profiles: ["split"]
+    image: superpower-grow:local  # built by `grow`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/grow.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m grow.worker"]
+    # The only grow runtime with LLM keys (8); from .env, as the backend's worker.
+    environment:
+      <<: *grow-env
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  transform:
+    profiles: ["split"]
+    image: superpower-transform:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: transform
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/transform.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve transform"]
+    # Starts jobs; never calls an LLM, so no keys (as in AWS).
+    environment: &transform-env
+      <<: *split-env
+      SERVICE_NAME: transform
+      MONGODB_DB_NAME: transform
+      INTERNAL_SIGNING_KID: transform-local
+      LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-transform-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-transform-events
+      UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-person-local-uploads-bucket-ap-south-1}
+      UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
+      # What presigned photo URLs point at: the host's Moto, which the browser can reach.
+      AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
+    <<: *split-service
+
+  transform-worker:
+    profiles: ["split"]
+    image: superpower-transform:local  # built by `transform`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/transform.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m transform.worker"]
+    # The only transform runtime with LLM keys (8); from .env, as the backend's worker.
+    environment:
+      <<: *transform-env
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  release:
+    profiles: ["split"]
+    image: superpower-release:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: release
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/release.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve release"]
+    # Starts jobs; never calls an LLM, so no keys (as in AWS).
+    environment: &release-env
+      <<: *split-env
+      SERVICE_NAME: release
+      MONGODB_DB_NAME: release
+      INTERNAL_SIGNING_KID: release-local
+      LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
+      EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-release-events
+      EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-release-events
+    <<: *split-service
+
+  release-worker:
+    profiles: ["split"]
+    image: superpower-release:local  # built by `release`
+    pull_policy: never
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/release.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m release.worker"]
+    # The only release runtime with LLM keys (8); from .env, as the backend's worker.
+    environment:
+      <<: *release-env
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+    healthcheck:
+      disable: true
+    <<: *split-service
+
+  shared:
+    profiles: ["split"]
+    image: superpower-shared:local
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: shared
+    command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/shared.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve shared"]
+    # Speech-to-text, the APK link and the build's health; no database of its own.
+    environment:
+      <<: *split-env
+      SERVICE_NAME: shared
+      INTERNAL_SIGNING_KID: shared-local
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
     <<: *split-service
 
 volumes:

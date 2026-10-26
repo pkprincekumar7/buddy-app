@@ -16,7 +16,7 @@
     { "priority": 100, "service": "children", "paths": ["/api/v1/children", "/api/v1/children/*"] },
     { "priority": 110, "service": "users", "paths": ["/api/v1/users/*"] },
     { "priority": 120, "service": "auth", "paths": ["/api/v1/auth/*"] },
-    { "priority": 130, "service": "platform", "paths": ["/api/v1/speech/*", "/api/v1/downloads/*"] },
-    { "priority": 140, "service": "platform", "paths": ["/api/health"] }
+    { "priority": 130, "service": "shared", "paths": ["/api/v1/speech/*", "/api/v1/downloads/*"] },
+    { "priority": 140, "service": "shared", "paths": ["/api/health"] }
   ]
 }

@@ -232,7 +232,7 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `JWT_PRIVATE_KEY` | RSA private key, see [jwt-keys.md](jwt-keys.md) |
 | `ORIGIN_VERIFY_SECRET` | Long random string with no `*` or `?` (the ALB treats them as wildcards), e.g. `openssl rand -hex 32` |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Don't create it at setup.** Optional, set only during a rotation; see [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret) |
-| `MONGODB_URIS` | JSON object, service → its own connection string (every service but platform), see [ci-cd.md](ci-cd.md) |
+| `MONGODB_URIS` | JSON object, service → its own connection string (every service but shared), see [ci-cd.md](ci-cd.md) |
 | `EMAIL_HMAC_PEPPER` | `openssl rand -hex 32`; back it up, and change it only by the versioned rotation in [auth-users-split.md](auth-users-split.md) 6.5 |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | At least one |
 

@@ -77,9 +77,9 @@ Each backend region runs one ECS service per runtime in `local.services`
 (`infra-live-backend/terraform/services.tf`), 18 in all, derived from `local.split_services`:
 
 - **9 HTTP runtimes**, one per service (auth, users, children, onboarding, discover, grow, transform,
-  release, platform): the public API on 8000 behind the ALB, and (all but platform) the internal API
+  release, shared): the public API on 8000 behind the ALB, and (all but shared) the internal API
   on 8001, registered in Cloud Map as `<service>.<app>-<env>.internal`.
-- **8 workers**, `<service>-worker` (no platform worker): the same image as their service, with the
+- **8 workers**, `<service>-worker` (no shared worker): the same image as their service, with the
   command `python -m <service>.worker` (outbox relay, event consumer, and for discover, grow,
   transform and release the LLM job worker).
 - **`otel-collector`**: the AWS Distro for OpenTelemetry image (`otel_collector_image`), on 4318
@@ -98,7 +98,7 @@ registers a **new revision**:
 | Category | Examples |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_ENV`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, the `JWT_*` verification settings. HTTP runtimes: `BEHIND_PROXY`, `CORS_ORIGINS`; auth's cookie settings. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform: the uploads bucket; platform: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
+| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_ENV`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, the `JWT_*` verification settings. HTTP runtimes: `BEHIND_PROXY`, `CORS_ORIGINS`; auth's cookie settings. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform: the uploads bucket; shared: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
 | Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Platform: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
 | Infrastructure | log group, health check, execution/task role, network mode |
 | Image | the service's repository at `:latest` — a placeholder; see below (the collector: the pinned `otel_collector_image`) |
@@ -154,7 +154,7 @@ current revision without registering one.
 Add the service's name to `local.split_services` in `infra-live-backend/terraform/services.tf`
 (and to `generating_services` if it runs LLM jobs). Its place in the list is its deploy order; the
 name is lowercase with hyphens. That produces two runtimes, `<service>` and `<service>-worker`
-(exclude it on the `worker_services` line if it has no database or events, as platform does), each
+(exclude it on the `worker_services` line if it has no database or events, as shared does), each
 with:
 
 | From | Created |
@@ -224,7 +224,7 @@ Ed25519 key (`service_tokens.tf`).
 Each service has its own secret per region, `{app}/{env}/<service>-secrets`: a JSON object with
 the keys in `local.secret_keys` (`services.tf`). Every service with a database has its own
 `MONGODB_URI`. Auth's also holds `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID` and `EMAIL_HMAC_PEPPER`;
-discover, grow, transform and release hold the three LLM keys; platform holds `OPENAI_API_KEY`.
+discover, grow, transform and release hold the three LLM keys; shared holds `OPENAI_API_KEY`.
 A service and its worker share the secret, and each runtime's execution role can read only its
 own service's.
 
@@ -385,7 +385,7 @@ Values are per environment where they differ (`tfvars/<env>.tfvars` in each modu
 | Networking | ECS tasks in **private** subnets (`assign_public_ip = false`); outbound via NAT (1 per region in dev/sbx, 2 stg, 3 prod); interface VPC endpoints (ECR, Secrets Manager, Logs, X-Ray) only when `nat_gateway_count > 1` |
 | ALB | HTTPS 443 only, TLS policy `ELBSecurityPolicy-TLS13-1-2-2021-06`; ingress only from CloudFront's origin-facing prefix list, plus the `X-Origin-Verify` header check; target health check `GET /health`, 200, every 30 s (5 s timeout, 2 healthy / 3 unhealthy); deregistration delay `llm_timeout_seconds` + 30 s (90 s dev/sbx/stg, 120 s prod), so a rollout waits that long at most for old tasks' in-flight requests instead of AWS's 300 s default |
 | ECS | 18 runtimes (9 HTTP, 8 workers, the OpenTelemetry collector), sized by `runtime_sizes`; Container Insights on in prod only (`enable_container_insights`; dev/sbx/stg rely on the free `AWS/ECS` metrics); HTTP container health check `GET http://127.0.0.1:8000/health` (30 s, 3 retries, 60 s start period); circuit breaker with rollback; ECS Exec on in dev/sbx/stg, off in prod |
-| Cloud Map | Private DNS namespace `<app>-<env>.internal`: each HTTP service except platform on 8001, the collector on 4318, reachable only from the `internal-callers` security group |
+| Cloud Map | Private DNS namespace `<app>-<env>.internal`: each HTTP service except shared on 8001, the collector on 4318, reachable only from the `internal-callers` security group |
 | SNS / SQS | From `backend/common/events/catalogue.json` (`modules/events`): a topic per producing service (customer-managed KMS key), a queue + DLQ per consuming service (SSE-SQS), filtered subscriptions; DLQ and message-age alarms when `enable_all_alarms` |
 | ECR | One repository per service, `<app>/<env>/<service>`; `scan_on_push`, **immutable** tags, AES256; lifecycle keeps the newest 30 tagged images and expires untagged ones after 7 days |
 | ElastiCache Valkey 8.0 | At-rest encryption + TLS required + RBAC: one IAM-authenticated user per service, limited to its own keys (`modules/redis`); single node in dev/sbx (`cache.t4g.micro`) and stg (`cache.t4g.small`), primary + 1 replica with Multi-AZ failover in prod (`cache.t4g.medium`). Holds rate-limit counters, leader locks and the `authz:{user}` cache |

@@ -6,7 +6,7 @@ on:
     inputs:
       # Free text — see deploy-live-backend.yml's service input.
       service:
-        description: "Services to restart: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, platform (e.g. users,users-worker). Restarted in parallel."
+        description: "Services to restart: all, or a comma-separated list of: otel-collector, auth, auth-worker, users, users-worker, children, children-worker, onboarding, onboarding-worker, discover, discover-worker, grow, grow-worker, transform, transform-worker, release, release-worker, shared (e.g. users,users-worker). Restarted in parallel."
         required: true
         default: "all"
         type: string

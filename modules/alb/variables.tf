@@ -78,7 +78,7 @@ variable "targets" {
 variable "routes" {
   description = <<-EOT
     Path rules, when a service needs several (docs/auth-users-split.md, 13.1):
-    platform has /api/v1/speech/* and /api/v1/downloads/* at 130 and /api/health
+    shared has /api/v1/speech/* and /api/v1/downloads/* at 130 and /api/health
     at 140. Mirrors shared/service-routes.json, which the stack reads. There's no
     catch-all: an unknown path gets the fixed 404 at priority 50000.
       priority      — 1-49999, unique; lower is evaluated first

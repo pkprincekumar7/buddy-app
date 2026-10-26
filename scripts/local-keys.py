@@ -3,7 +3,7 @@
 
 In AWS, Terraform makes each service's service-token key and publishes the public keys
 (infra-live-backend/terraform/service_tokens.tf); locally this does the same, so internal
-calls (auth → users at registration, the circles → children) are signed and verified as
+calls (auth → users at registration, onboarding and the circles → children) are signed and verified as
 deployed. Into KEYS_DIR (the `local_keys` volume, never the repository or `.env`):
 
 - `<service>.pem`: each service's Ed25519 private key, made on the first run only, so a
@@ -29,7 +29,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVICES = ("auth", "users", "children")
+SERVICES = (
+    "auth", "users", "children", "onboarding", "discover", "grow", "transform", "release",
+    "shared",
+)  # fmt: skip
 
 
 def kid(service: str) -> str:

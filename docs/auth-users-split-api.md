@@ -1,6 +1,6 @@
 # Service split: API reference
 
-**Status:** proposal, companion to [auth-users-split.md](auth-users-split.md). Implemented so far: the users endpoints (build plan 3.1, `backend/users/`) and every auth endpoint: sign-in (3.2), `GET /internal/authz` (3.3), the admin endpoints (3.4), account deletion and the email lookup (3.5), in `backend/auth/`; the children endpoints (4.1, `backend/children/`). The rest isn't built yet.
+**Status:** proposal, companion to [auth-users-split.md](auth-users-split.md). Implemented so far: the users endpoints (build plan 3.1, `backend/users/`) and every auth endpoint: sign-in (3.2), `GET /internal/authz` (3.3), the admin endpoints (3.4), account deletion and the email lookup (3.5), in `backend/auth/`; the children endpoints (4.1, `backend/children/`) and the Connect visit (5.7); the onboarding endpoints (5.1, `backend/onboarding/`); the discover endpoints (5.2, `backend/discover/`); the grow endpoints (5.3, `backend/grow/`); the transform endpoints (5.4, `backend/transform/`); the release endpoints (5.5, `backend/release/`); the shared endpoints (5.6, `backend/shared/`). The rest isn't built yet.
 **Scope:** one entry per endpoint in [section 13.4](auth-users-split.md#134-full-api-list) of the proposal, with what it accepts, what it does and what it returns. Entries are added one at a time; the list in 13.4 stays the index.
 
 **Conventions for every entry:**
@@ -105,7 +105,7 @@
 **connect** (served by children until a connect service exists):
 - [POST /api/v1/children/{id}/connect/visit](#post-apiv1childrenidconnectvisit)
 
-**platform:**
+**shared:**
 - [POST /api/v1/speech/transcriptions](#post-apiv1speechtranscriptions)
 - [GET /api/v1/downloads/apk](#get-apiv1downloadsapk)
 - [GET /api/health](#get-apihealth)
@@ -1387,6 +1387,7 @@ Returns the child's onboarding answers, once the conversation is finished.
 ```json
 {
   "status": "completed",
+  "child_name": "Aarav",
   "answers": {
     "strengths": ["curious", "kind"],
     "hobbies": ["drawing"],
@@ -1400,8 +1401,13 @@ Returns the child's onboarding answers, once the conversation is finished.
 }
 ```
 
-- **Before the chat is finished,** the response is `{"status": "not_started", "answers": {}, "completed_at": null}`, not `404`. The server stores nothing until the end; while the chat is in progress, the app keeps its place, as today.
-- **The child's name** for the heading comes from the same database (`child_access`), with no second call (proposal 12.2).
+- **Before the chat is finished,** the response is `{"status": "not_started", "child_name": "Aarav", "answers": {}, "completed_at": null}`, not `404`. The server stores nothing until the end; while the chat is in progress, the app keeps its place, as today.
+- **The child's name** for the heading is `child_name`, from the same database (`child_access`), with no second call (proposal 12.2).
+- **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); the read is audited, and there's no unlock check.
+
+### Errors
+
+Circle errors (conventions): `404 child_not_found`; `403 circle_locked` (the profile isn't complete, and children confirms it); `503 children_unavailable` with `Retry-After` when children can't be asked. `422 location_required` for an admin without `?location=`.
 
 ---
 
@@ -1432,7 +1438,7 @@ All seven answers are required:
 | `social_behaviour` | string | 1–500 |
 | `emotional_behaviour` | string | 1–500 |
 
-A missing field, `null` or an unknown field is `422`. The question wording stays in the apps; the server stores only the answers (proposal 12.1).
+A missing field, `null`, an unknown field or a value of the wrong type (no coercion) is `422`. Surrounding whitespace is trimmed, so a blank answer is `422` too. The question wording stays in the apps; the server stores only the answers (proposal 12.1).
 
 ### Processing
 
@@ -1441,9 +1447,11 @@ A missing field, `null` or an unknown field is `422`. The question wording stays
    - discover starts generating the personality on its own (proposal 12.1), so the app doesn't call discover. It goes on to the Discover page, which shows "generating…".
 2. **A later save** (the same seven fields, changed): replace the answers, increment `version` and publish `onboarding.answers_updated`. Grow, transform and release update their copies; the personality isn't regenerated (proposal 12.1). Sending identical answers changes nothing and publishes nothing.
 
+3. **Races:** each save is decided against the conversation as it read it. Two first saves at once make one conversation (the second becomes a change to it), and a save that keeps losing is `409 conversation_changed`. A child or account deleted meanwhile (a tombstone) is `404`.
+
 ### Errors
 
-Circle errors (conventions); `422`.
+Circle errors (conventions, as in GET); `409 conversation_changed`; `422`.
 
 **Differences from today:** a dedicated endpoint, still one call at the end of the chat; completion is decided by the server when it receives all seven answers, not by the client sending `onboarding_completed: true`; `onboarding_phase` and `current_phase` are gone (proposal 12.1).
 
@@ -1515,6 +1523,13 @@ Returns the child's AI personality for the Discover page.
 - **`view_model`** is built and validated **by the server** from the LLM output, replacing the browser's `adaptAiPersonalityToViewModel`. Its shape is the one the Discover pages render today. The raw `analysis` is never returned.
 - **Generated once:** the personality comes from the answers at the end of the conversation. Later answer changes don't regenerate it (proposal 12.1).
 - **`viewed_at`** is set once the parent has passed the reveal splash ([POST …/personality/viewed](#post-apiv1childrenidpersonalityviewed)). Until then Discover isn't done, and Grow stays locked.
+- **`job_id`** is set only while `generating`; `view_model` only when `ready`.
+- **`view_model`** is `{type, scores, profile}`, as `adaptAiPersonalityToViewModel` built it: the port is checked against that code's output on a set of fixtures (`backend/discover/tests/fixtures`). As today, `profile.famous_people` comes from the archetype's table, not from the LLM's `role_models`, and has no images (the apps draw the avatars).
+- **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); audited, no unlock check.
+
+### Errors
+
+Circle errors (conventions): `404 child_not_found`; `403 circle_locked` (the conversation isn't completed, and onboarding confirms it); `503 children_unavailable` or `onboarding_unavailable` with `Retry-After` when an owner can't be asked.
 
 ---
 
@@ -1546,9 +1561,13 @@ No body. `kind` is always `personality`.
    - in the same transaction, publishes `discover.personality_finalised` with the trait summary and strengths, so grow and transform update their copies. **Discover isn't done yet:** that waits for the parent to pass the reveal splash ([POST …/personality/viewed](#post-apiv1childrenidpersonalityviewed)).
    - On final failure, it sets `status: "failed"`.
 
+- **Answers not copied yet:** the start reads them through from onboarding (`GET /internal/onboarding/children/{id}/answers`) first, so the job has its inputs; onboarding not having them is `503 onboarding_unavailable`.
+- **The hourly LLM limit** is counted only when a new job starts, not when the running one is returned.
+- **The automatic start** comes from `onboarding.conversation_completed`, whose payload carries the child's `user_id` (an optional field, added for this). It starts nothing when the personality is already `generating` or `ready`.
+
 ### Errors
 
-Circle errors; `409 already_generated`; `429 llm_limit`; `503 generation_unavailable` (the job couldn't be stored).
+Circle errors (as in GET); `409 already_generated`; `429 llm_limit` (with `Retry-After`); `503 generation_unavailable` (the job couldn't be stored); `404 child_not_found` for a child or account being deleted.
 
 **Differences from today:** no prompt or `write_back` from the client.
 
@@ -1598,7 +1617,7 @@ Confirm-before-deny for grow (proposal 12.4). Cloud Map, port 8001, service toke
 
 ## GET /internal/discover/children/{id}/summary
 
-Read-through for the `personality_inputs` copies in grow and transform (proposal 7.5). Cloud Map, port 8001, service token `aud = "discover-internal"` (callers: **grow, transform**), query `location`. Returns the `personality_inputs` fields (proposal 4.1), `traits` and `strengths`, with `version`; or `404` until a personality is finalised.
+Read-through for the `personality_inputs` copies in grow and transform (proposal 7.5). Cloud Map, port 8001, service token `aud = "discover-internal"` (callers: **grow, transform**), query `location`. Returns the `personality_inputs` fields (proposal 4.1), `traits` and `strengths`, with `version`; or `404` until a personality is finalised. `traits` is `{dominant_style, personality_category, traits, description}` and `strengths` the profile's strength bullets, the same as `discover.personality_finalised`'s payload; the response also has `child_id`, `user_id` and `location`.
 
 ---
 
@@ -1643,6 +1662,8 @@ Returns all of the child's growth areas, with their questions, answers and recom
 
 - Areas come back in the order they were started.
 - `generating` lists the kinds with a job running for that area, so the page knows what to poll.
+- **The generated parts are stored normalised,** by today's normalisers run on the server: `parent_questions` is `{"questions": [{"id": "self_care_gq1", "question", "hint"}, …]}` (five), `child_rounds` is `{"rounds": [{"a": {"id": "self_care_gr1a", "text", "star", "tag", "icon"}, "b": {…}}, …]}` (six; `icon` is a key such as `rocket`, which the apps draw), and `ai_three_month_recommendations` is `[{"title", "detail"}]`. The apps' own normalisers give the same result again, so they keep working as they are.
+- **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); audited, no unlock check.
 - It's one query (proposal 12.2). There's no pagination: a child has a handful of areas, each at most 64 KB.
 
 ---
@@ -1686,9 +1707,12 @@ Saves one growth area: the parent's progress through its wizard, and its complet
    - if it's the child's first completed area, also publish `grow.completed`. Children then sets `progress.grow`, which unlocks Transform.
 3. **Editing a completed area** publishes `grow.area_updated`. Transform then clears that area's Life Pathway milestones, which were built from the old answers.
 
+4. **Races:** a save is decided against the area as it read it; two first saves at once make one area, and a save that keeps losing is `409 area_changed`. A child or account deleted meanwhile is `404`.
+5. **Unchanged saves** (every field the same) change nothing and publish nothing.
+
 ### Errors
 
-Circle errors; `422` (validation, unknown question id, generated field sent, or `area_completed`).
+Circle errors (`403 circle_locked` once discover confirms Discover isn't done; `503 …_unavailable` when an owner can't be asked); `409 area_changed`; `422` (validation, `unknown_question`, a generated field sent, `area_completed`, `area_too_large`, `invalid_area_id`).
 
 ---
 
@@ -1727,9 +1751,12 @@ Generates one of an area's AI parts.
    - writes the result to the area's field (as in the table above).
    - **For `recommendations` on a completed area,** it also publishes `grow.area_updated`, because transform's Life Pathway prompt uses `ai_three_month_recommendations` first, as today's `useLifePathwayArea` does. The question sets publish nothing: no other service uses them.
 
+3. **Before the job:** the copies its prompt uses are read through if missing (onboarding's answers, discover's summary), and the hourly LLM limit is counted for a new job only. Each kind has its own lock, so different kinds can run at once for one area.
+4. **What's stored** goes through today's normalisers (word caps, ids assigned by the server, icons checked against the keys); an answer they reject is retried, then the job fails and the area keeps what it had. A job never changes the area's `status`.
+
 ### Errors
 
-Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_answers`; `429 llm_limit`.
+Circle errors; `404 area_not_found` (any kind but `parent_questions`, for an area that doesn't exist); `409 already_generated`; `409 needs_answers`; `422 unknown_area` (generation is for the six areas the apps show) or `invalid_area_id`; `429 llm_limit`; `503 generation_unavailable`.
 
 ---
 
@@ -1747,7 +1774,7 @@ Confirm-before-deny for transform (proposal 12.4). Cloud Map, `grow.{app}-{env}.
 
 ## GET /internal/grow/children/{id}/areas
 
-Read-through for the `growth_inputs` copies in transform and release (proposal 7.5). Cloud Map, port 8001, service token `aud = "grow-internal"` (callers: **transform, release**), query `location`. Returns the completed areas in the `growth_inputs` shape (proposal 4.1): `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations`, each with its `version`. It's an empty list until an area is completed.
+Read-through for the `growth_inputs` copies in transform and release (proposal 7.5). Cloud Map, port 8001, service token `aud = "grow-internal"` (callers: **transform, release**), query `location`. Returns the completed areas in the `growth_inputs` shape (proposal 4.1): `area_id`, `area_name`, `answers`, `child_activity_results`, `recommendations`, `ai_three_month_recommendations`, each with its `version`. It's an empty list until an area is completed. The response is `{"areas": [...]}`; each also has `child_id`, `user_id` and `location`, and `child_activity_results` is the area's `child_activity.results`. The `grow.area_completed` and `grow.area_updated` payloads carry the same fields plus `user_id`.
 
 ---
 
@@ -1804,6 +1831,9 @@ Returns everything the Transform circle shows: the Life Pathway (milestones per 
 - `areas` lists the completed growth areas from transform's `growth_inputs` copy, with each area's Life Pathway milestones (stored in transform, below). It's one read, plus the copy, in the same database (proposal 12.2).
 - `photos` gives each photo's stored S3 `key` and a short-lived GET `url`. The client needs the keys to add or remove one photo without dropping the others (PATCH below).
 - `generating` lists the plan-level kinds with a job running (`plan`, `event_tracker`); each area's `life_pathway_generating` says whether its milestones are being generated.
+- **`life_pathway_milestones`** is stored normalised by today's `normalizeLifePathwayArea`, run on the server: an object keyed by slot (`y1`, `y2`, `y3`, `y5`, `y8`, `y10`: years after the child's age), with only the usable milestones (`title`, `guided`, `power`, `drift`). The apps' own normaliser reads it back the same, and fills a missing slot from its fallback copy, as today.
+- Areas come in the order their copies were last updated; a plan with no document yet answers with empty maps and `event_set: false`.
+- **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); audited, no unlock check.
 
 ---
 
@@ -1851,9 +1881,12 @@ Any subset; each field sent replaces the stored one. Map keys match `^[a-zA-Z0-9
    - publish `transform.completed` in the same transaction. Children sets `progress.transform`, which unlocks Release (proposal 12.4).
    - Clearing the event later doesn't undo it.
 
+4. **Races:** a save is decided against the plan as it read it, version-conditional; two first saves at once make one plan, and one that keeps losing is `409 plan_changed`. A child or account deleted meanwhile is `404`.
+5. **`event_date`** is stored as a date and returned as `YYYY-MM-DD`; `null` clears it.
+
 ### Errors
 
-Circle errors; `422`.
+Circle errors (`403 circle_locked` once grow confirms no area is completed; `503 …_unavailable` when an owner can't be asked); `409 plan_changed`; `422` (validation, a generated field sent, a bad map key, `invalid_photo_key`, `photo_not_uploaded`, `photo_too_large`, `plan_too_large`); `503 uploads_not_configured` for photos without an uploads bucket.
 
 ---
 
@@ -1894,9 +1927,13 @@ The worker:
      - the child's `age` or `gender` changes (`child.changed`, as today's `_LIFE_PATHWAY_INPUTS`);
      - or that area's answers change (`grow.area_updated`).
 
+- **Before the job:** a `life_pathway` start reads grow's completed areas through if the area isn't in the copy yet; `plan` and `life_pathway` read the personality through from discover if needed. The hourly LLM limit is counted for a new job only. Each kind has its own lock, and the Life Pathway one per area.
+- **The `plan`** needs the parent's `ask` (`409 needs_ask`): the prompt is built around it. **The tracker** is built around the event and the same `ask` (today the app derives a label from the `ask` by keyword; the words themselves are used instead).
+- **What's stored:** the Life Pathway through today's normaliser (above); the plan and the tracker as the LLM wrote them once they fit their schemas (`ninetyDayPlanSchema`, `ninetyDayTrackerSchema`). An answer that doesn't is retried, then the job fails.
+
 ### Errors
 
-Circle errors; `404 area_not_found`; `409 needs_completed_area` / `needs_plan` / `needs_event`; `429 llm_limit`.
+Circle errors; `409 needs_completed_area` (the area isn't completed in grow, or isn't this child's) / `needs_ask` / `needs_plan` / `needs_event`; `422 area_id_required`; `429 llm_limit`; `503 generation_unavailable`.
 
 ---
 
@@ -1983,7 +2020,9 @@ Returns the child's observation patterns and what the parent is watching, for th
 ```
 
 - `status` is `not_started`, `generating`, `ready` or `failed`, as for the personality.
-- `items` has at most 8 patterns, already validated by the server (icon and source enums). Today's `pending_observations` staging is gone.
+- `items` has at most 8 patterns, already validated by the server (icon and source enums). Today's `pending_observations` staging is gone. In practice it holds the six the page shows: the server runs today's `normalizeObservations` (a card needs a note and a source; icons from the registry, `note` as the fallback; a "Chose … over …" note only if it matches a line the prompt was given) and `selectObservations` (every offered evidence block gets a card before any gets a second). Each item is `{id, title, summary, notes, icon, sources}`; `id` is the title's slug, as today.
+- `job_id` is set only while `generating`. With no document yet the answer is `not_started` with empty `items` and `watching`.
+- **An admin** with `children:read:any` passes the owner's `?location=` (`422 location_required` without it); audited, no unlock check.
 
 ---
 
@@ -2015,9 +2054,11 @@ Saves which patterns the parent watches and for how long ("Start tracking").
 2. Save `watching` and `span`, set `started_at = now`, and increment `version`.
 3. **The first time `watching` is non-empty:** set `completed_at` and publish `release.completed` in the same transaction. Children sets `progress.release`, which unlocks Connect (proposal 12.4). Un-watching everything later doesn't undo it.
 
+4. **Races:** decided against the document as read, version-conditional; two first saves make one document, and one that keeps losing is `409 observations_changed`. Duplicate ids in `watching` count once.
+
 ### Errors
 
-Circle errors; `422`.
+Circle errors; `409 observations_changed`; `422` (validation, `unknown_pattern`, `items`, `source` or `started_at` sent).
 
 ---
 
@@ -2051,9 +2092,11 @@ The worker:
 3. replaces `items`, sets `source: "llm"` and `status: "ready"`, and clears `watching`, as today's promote step does: a tick against an older set of cards has no meaning against a new one.
    - `completed_at` stays: Release remains done.
 
+- **The evidence** comes from release's copies. Each completed area's `growth_inputs` copy carries `reflections` (the questions with the parent's answers) and `child_choices` (the picks as `Chose “X” over “Y”` lines); grow sends both in `grow.area_completed` / `grow.area_updated` (optional fields, added for this). Before the job, missing copies are read through from onboarding and grow, and with nothing to read back the start is `409 needs_evidence`.
+
 ### Errors
 
-Circle errors; `429 llm_limit`.
+Circle errors; `409 needs_evidence`; `429 llm_limit`; `503 generation_unavailable`.
 
 ---
 
@@ -2085,8 +2128,8 @@ Records that the parent has opened the Connect circle.
 
 ### Processing
 
-1. Refuse with `403 circle_locked` if Release isn't done.
-2. Set `progress.connect = true` (one-way) and increment `version`. If it changed, publish `child.changed` (the full snapshot) in the same transaction.
+1. Refuse with `403 circle_locked` if Release isn't done. When the child's `progress.release` isn't set yet, release is asked; a `404` from it counts as not done, and an unreachable or odd answer is `503 release_unavailable` with `Retry-After: 2`.
+2. Set `progress.connect = true` (one-way) and increment `version`. If release had to confirm, `progress.release` is set in the same write, so Home agrees before `release.completed` arrives (that event then changes nothing). If it changed, publish `child.changed` (the full snapshot) in the same transaction. A repeat visit returns the progress unchanged, with no event.
 
 **Connect isn't a service yet.** The page has no data of its own today, so there's nothing for a connect service to own. Until it's built:
 - children serves this one endpoint, and sets the flag directly;
@@ -2097,7 +2140,7 @@ When Connect gets data of its own, the connect service takes over this path, thr
 
 ### Errors
 
-`401`; `403 circle_locked`; `404 child_not_found`.
+`401`; `403 parents_only`; `403 circle_locked`; `404 child_not_found`; `429`; `503 release_unavailable`.
 
 ---
 
@@ -2107,7 +2150,7 @@ Turns a voice recording into text, for the voice input shared by several circles
 
 | | |
 |---|---|
-| **Service** | platform |
+| **Service** | shared |
 | **Routing** | ALB rule 130, `/api/v1/speech/*` |
 | **Access** | Signed in, parents only (admins get `403`), as today |
 | **Rate limit** | 10 per minute per user, as today |
@@ -2123,8 +2166,10 @@ Turns a voice recording into text, for the voice input shared by several circles
 
 ### Processing
 
-1. Send the audio to OpenAI's transcription API (`whisper-1`, language `en`), as today, with `OPENAI_API_KEY` from platform's own secret (proposal 15.1).
-2. Return the text. Nothing is stored: platform has no database, and the audio isn't kept or logged.
+1. Send the audio to OpenAI's transcription API (`whisper-1`, language `en`), as today, with `OPENAI_API_KEY` from shared's own secret (proposal 15.1).
+2. Return the text. Nothing is stored: shared has no database, and the audio isn't kept or logged.
+
+The type comes from the upload's last extension, after control characters are stripped (`webm` without one). OpenAI gets a fixed name, `recording.<ext>`, and that type's MIME, never the parent's filename or `Content-Type`. A failed call logs the error's type only.
 
 ### Response
 
@@ -2144,7 +2189,7 @@ Returns a short-lived link to the latest Android APK.
 
 | | |
 |---|---|
-| **Service** | platform |
+| **Service** | shared |
 | **Routing** | ALB rule 130, `/api/v1/downloads/*` |
 | **Access** | Signed in, **parents only** (admins get `403`), as today: the route requires `CurrentParent`, and the edge also rejects it without a token. |
 | **Rate limit** | 10 per minute per user |
@@ -2164,7 +2209,7 @@ List the APKs under `app-assets/applications/android/` in the assets bucket (`us
 
 ### Errors
 
-`401`; `403 parents_only`; `404 apk_not_available` (no build yet); `429`; `503 downloads_not_configured`.
+`401`; `403 parents_only`; `404 apk_not_available` (no build yet); `429`; `503 downloads_not_configured` (no assets bucket); `503 downloads_unavailable` (the bucket can't be listed).
 
 ---
 
@@ -2174,7 +2219,7 @@ Returns the running build, for smoke tests and support.
 
 | | |
 |---|---|
-| **Service** | platform |
+| **Service** | shared |
 | **Routing** | Edge: `PURE_BYPASS_PATHS`. ALB: rule 140. |
 | **Access** | Public |
 | **Rate limit** | 30 per minute per IP, as today |
@@ -2187,6 +2232,6 @@ Returns the running build, for smoke tests and support.
 { "status": "ok", "commit": "a1b2c3d", "branch": "main", "committed_at": "2026-10-23T18:00:00Z", "tag": "v1.4.0" }
 ```
 
-Values are `"unknown"` when the image has no build metadata, as today.
+Values are `"unknown"` when the image has no build metadata, as today; `tag` is `null` when the build has none.
 
-It reports **platform's** build only. Each service's own health is its target group's `GET /health` on port 8000, which isn't routed through the ALB.
+It reports **shared's** build only. Each service's own health is its target group's `GET /health` on port 8000, which isn't routed through the ALB.

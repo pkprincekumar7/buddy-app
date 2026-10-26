@@ -5,7 +5,7 @@ A job writes only to its own service's documents. Its target is the circle's doc
 `active_jobs.<type>` where one document has several kinds of generation.
 
 - `start_job`: one transaction takes the lock on the target (creating the document if
-  needed, `status: generating`) and inserts the job. A second start while a job is
+  needed, `status: generating` unless the target keeps its own status) and inserts the job. A second start while a job is
   running gets that job back instead of a new one, and a failure leaves neither, so
   there's never a document stuck in `generating` without a job.
 - `claim_next`: a worker takes the oldest due job whose `location` its region serves,
@@ -106,9 +106,17 @@ async def start_job(
     target_on_insert: Mapping[str, Any] | None = None,
     target_set: Mapping[str, Any] | None = None,
     max_llm_attempts: int = DEFAULT_MAX_LLM_ATTEMPTS,
+    target_status: str | None = "generating",
 ) -> tuple[str, bool]:
-    """Start a job, or return the one already running. Returns (job id, created)."""
-    set_fields = {"status": "generating", **(target_set or {})}
+    """Start a job, or return the one already running. Returns (job id, created).
+
+    `target_status=None` leaves the target's `status` alone (a growth area's status is the
+    parent's wizard, not the job's); a new target then needs it in `target_on_insert`.
+    """
+    set_fields = {
+        **({} if target_status is None else {"status": target_status}),
+        **(target_set or {}),
+    }
     insert_fields = dict(target_on_insert or {})
     overlap = set(set_fields) & set(insert_fields)
     if overlap:
@@ -283,10 +291,12 @@ async def fail_or_retry(
     *,
     target_failure: Mapping[str, Any] | None = None,
     permanent: bool = False,
+    target_status: str | None = "failed",
 ) -> Literal["retry", "failed"]:
     """After a failed attempt: retry later with backoff, or fail the job and its target.
 
     `permanent` (e.g. no LLM provider configured) fails at once instead of using retries.
+    `target_status=None` releases the lock without touching the target's `status`.
     """
     if not permanent and job["llm_attempt"] < job["max_llm_attempts"]:
         now = _now()
@@ -308,7 +318,11 @@ async def fail_or_retry(
         await db[target.collection].update_one(
             {"_id": target.doc_id, target.lock: job["_id"]},
             {
-                "$set": {"status": "failed", **(target_failure or {}), "updated_at": _now()},
+                "$set": {
+                    **({} if target_status is None else {"status": target_status}),
+                    **(target_failure or {}),
+                    "updated_at": _now(),
+                },
                 "$unset": {target.lock: ""},
             },
             session=session,

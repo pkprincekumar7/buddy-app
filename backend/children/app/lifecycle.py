@@ -36,7 +36,8 @@ from children.app.store import CHILDREN, snapshot
 from common.events import Event, ReceivedEvent, add_to_outbox, tombstone_key, write_tombstone
 from common.telemetry import current_traceparent
 
-# Which flag each completion event sets (12.4); connect's visit comes with 5.7.
+# Which flag each completion event sets (12.4). `connect` is set by the visit route
+# (main.connect_visit) until a connect service exists.
 FLAG_FOR_EVENT: dict[str, str] = {
     "onboarding.conversation_completed": "conversation",
     "discover.completed": "discover",

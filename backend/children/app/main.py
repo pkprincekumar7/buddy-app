@@ -6,6 +6,7 @@ endpoint is in docs/auth-users-split-api.md:
 
 - `GET /api/v1/children` (Home, one query), `POST`, and `GET` / `PATCH` / `DELETE
   /api/v1/children/{id}`; `POST …/{id}/avatar/presign` for a photo;
+- `POST /api/v1/children/{id}/connect/visit`: served here until a connect service exists;
 - `GET /internal/children/{id}`: the circles' read-through for their child_access copy.
 
 **Ownership (12.3):** a parent's queries filter by their own `{location, user_id}`, so
@@ -52,7 +53,7 @@ from children.app.store import (
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
 from common.events import Event, add_to_outbox
-from common.internal_client import allow_callers
+from common.internal_client import InternalUnavailable, allow_callers
 from common.models import PROGRESS_FLAGS
 from common.routers import PolicyRouter, public
 from common.telemetry import current_traceparent
@@ -63,6 +64,10 @@ UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 READ_ANY = "children:read:any"
 # Every circle reads children through (7.5); connect joins when it's built.
 INTERNAL_CALLERS = ("onboarding", "discover", "grow", "transform", "release")
+
+# Connect opens once Release is done; release is asked before refusing (7.5).
+CONNECT_UNLOCKED_BY = "release"
+RETRY_AFTER_SECONDS = 2
 
 _logger = logging.getLogger(__name__)
 _runtime: Runtime | None = None
@@ -293,6 +298,10 @@ class PresignOut(BaseModel):
     upload_url: str
     avatar_key: str
     avatar_url: str
+
+
+class ProgressOut(BaseModel):
+    progress: Progress
 
 
 class ChildAccess(BaseModel):
@@ -577,6 +586,70 @@ async def presign_avatar(
         _logger.exception("children: presigning failed")
         raise _error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc
     return PresignOut(upload_url=upload_url, avatar_key=key, avatar_url=avatar_url)
+
+
+async def _release_done(runtime: Runtime, doc: Mapping[str, Any]) -> bool:
+    """Release's own answer; 503 with Retry-After if it can't be asked or answers oddly."""
+    owner = CONNECT_UNLOCKED_BY
+    unavailable = HTTPException(
+        status_code=503,
+        detail={"code": f"{owner}_unavailable", "msg": "Try again in a moment."},
+        headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+    )
+    try:
+        response = await runtime.internal.get(
+            owner, f"/internal/{owner}/children/{doc['_id']}/status?location={doc['location']}"
+        )
+    except InternalUnavailable as exc:
+        raise unavailable from exc
+    if response.status_code == 404:
+        return False
+    if response.status_code != 200:
+        raise unavailable
+    return bool(response.json().get("completed"))
+
+
+@router.post(
+    "/{id}/connect/visit",
+    dependencies=[Depends(per_user("30/minute"))],
+    description="Record that the parent opened Connect (parents only): sets "
+    "`progress.connect` once. Locked until Release is done (release is asked first).",
+)
+async def connect_visit(id: ChildId, runtime: Ready, caller: SignedIn) -> ProgressOut:
+    _parents_only(caller)
+    before = await _owned(runtime, caller, id)
+    if before["progress"]["connect"]:
+        return ProgressOut(progress=Progress(**before["progress"]))
+    changes = {"progress.connect": True}
+    if not before["progress"][CONNECT_UNLOCKED_BY]:
+        if not await _release_done(runtime, before):
+            raise _error(403, "circle_locked", "Finish Release first.")
+        # Confirmed by its owner: set now, so Home agrees before release.completed arrives
+        # (one-way, so that event then changes nothing).
+        changes[f"progress.{CONNECT_UNLOCKED_BY}"] = True
+    result: dict[str, Any] = {}
+
+    async def write(session: AsyncClientSession) -> None:
+        updated = await runtime.db[CHILDREN].find_one_and_update(
+            {
+                "_id": id,
+                "location": before["location"],
+                "user_id": caller.user_id,
+                "is_deleted": False,
+                "progress.connect": {"$ne": True},
+            },
+            {"$set": {**changes, "updated_at": datetime.now(UTC)}, "$inc": {"version": 1}},
+            return_document=ReturnDocument.AFTER,
+            session=session,
+        )
+        if updated is not None:
+            await _event(runtime, updated, session)
+        result["doc"] = updated
+
+    await _transaction(runtime, write)
+    # None: another visit set it first, or the child was deleted meanwhile (404).
+    doc = result["doc"] or await _owned(runtime, caller, id)
+    return ProgressOut(progress=Progress(**doc["progress"]))
 
 
 app.include_router(health_router)

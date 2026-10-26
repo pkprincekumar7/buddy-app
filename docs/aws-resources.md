@@ -45,7 +45,7 @@ Legend: ✅ Created &nbsp; ❌ Skipped
 
 ### Runtimes
 
-The stack runs **18 runtimes** (`services.tf`): 9 HTTP services (auth, users, children, onboarding, discover, grow, transform, release, platform), 8 workers (`<service>-worker`, none for platform) and the OpenTelemetry collector. Rows marked *per runtime* repeat for each of the 18; rows marked *per service* for each of the 9. Task sizes and counts per environment are in `runtime_sizes` (the tfvars).
+The stack runs **18 runtimes** (`services.tf`): 9 HTTP services (auth, users, children, onboarding, discover, grow, transform, release, shared), 8 workers (`<service>-worker`, none for shared) and the OpenTelemetry collector. Rows marked *per runtime* repeat for each of the 18; rows marked *per service* for each of the 9. Task sizes and counts per environment are in `runtime_sizes` (the tfvars).
 
 ### ECS
 
@@ -121,7 +121,7 @@ From `backend/common/events/catalogue.json`, for the 9 services only (`modules/e
 | Execution Role + Managed Policy Attachment (per runtime) | `aws_iam_role` / `aws_iam_role_policy_attachment` | ✅ | ✅ | ✅ | ✅ |
 | Execution Secrets Policy: its service's secret and signing key (every runtime but the collector) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
 | Task Role (per runtime) | `aws_iam_role` | ✅ | ✅ | ✅ | ✅ |
-| Task Policies: `valkey`, `metrics`, `events` (workers), `s3-uploads` (children, transform), `s3-apk` (platform), `xray` (collector) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
+| Task Policies: `valkey`, `metrics`, `events` (workers), `s3-uploads` (children, transform), `s3-apk` (shared), `xray` (collector) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ✅ |
 | ECS Exec Policy (per runtime) | `aws_iam_role_policy` | ✅ | ✅ | ✅ | ❌ |
 
 ### Secrets & Config

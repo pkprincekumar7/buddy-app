@@ -24,7 +24,7 @@ There are no schema migrations — MongoDB collections and indexes are created a
 
 ## The split's services locally (Docker, optional)
 
-The new `auth`, `users` and `children` services and their workers run under the compose profile `split`, behind the gateway on port 8088, which routes paths as the ALB will. `docker compose up` on its own is unchanged and doesn't start them. Once:
+The new `auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release` and `shared` services and their workers run under the compose profile `split`, behind the gateway on port 8088, which routes paths as the ALB will. `docker compose up` on its own is unchanged and doesn't start them. Once:
 
 1. Set `EMAIL_HMAC_PEPPER` (and `LOCAL_ALLOWED_EMAIL`) in `.env`, as `.env.example` says.
 2. Start Moto and create the topics, queues and buckets (Moto keeps them in memory, so repeat this after restarting it):
@@ -44,7 +44,9 @@ docker compose --profile split up -d --build
 ```
 
 - `local-keys` runs first and makes each service's service-token key and the JWT public keys from your `JWT_PRIVATE_KEY`, into the `superpower_local_keys` volume (never the repository or `.env`). It keeps them across restarts; `docker volume rm superpower_local_keys` makes new ones.
-- Each service has its own database in the local Mongo (`auth`, `users`, `children`); internal calls go service to service on port 8001, signed as in AWS.
+- Each service has its own database in the local Mongo (`auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release`); internal calls go service to service on port 8001, signed as in AWS.
+- `shared` (no database) transcribes with `OPENAI_API_KEY` and links the APK from `ASSETS_BUCKET_NAME` in Moto; without them it answers `503`.
+- `discover-worker`, `grow-worker`, `transform-worker` and `release-worker` generate with the LLM keys in `.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`); without one, each job fails at once with a clear error (the personality shows `failed`; a growth area keeps what it had).
 - Allow-list your email for registration: `docker compose --profile split exec auth python -m auth.seed` (it reads `LOCAL_ALLOWED_EMAIL` from the running container), then register through `http://localhost:8088/api/v1/auth/register`.
 - Changing `EMAIL_HMAC_PEPPER` makes every local email key unmatchable: seed and register again (or start from an empty `auth` database).
 - Paths no new service has yet (the circles) still go to today's backend through the frontend on port 5173.

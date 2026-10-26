@@ -439,6 +439,59 @@
           }
         }
       }
+    },
+    "/api/v1/children/{id}/connect/visit": {
+      "post": {
+        "tags": [
+          "children"
+        ],
+        "summary": "Connect Visit",
+        "description": "Record that the parent opened Connect (parents only): sets `progress.connect` once. Locked until Release is done (release is asked first).",
+        "operationId": "connect_visit_api_v1_children__id__connect_visit_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -778,6 +831,18 @@
           "connect"
         ],
         "title": "Progress"
+      },
+      "ProgressOut": {
+        "properties": {
+          "progress": {
+            "$ref": "#/components/schemas/Progress"
+          }
+        },
+        "type": "object",
+        "required": [
+          "progress"
+        ],
+        "title": "ProgressOut"
       },
       "ValidationError": {
         "properties": {

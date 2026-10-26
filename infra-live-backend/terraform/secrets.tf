@@ -4,7 +4,7 @@
 # "<app>/<env>/<service>-secrets", a JSON object with the keys in
 # local.secret_keys (services.tf): every service's own MONGODB_URI (its Atlas
 # database user), auth's JWT private key, Google client id and email HMAC pepper,
-# and the LLM keys of the generating services and platform. A service and its
+# and the LLM keys of the generating services and shared. A service and its
 # worker share it; each runtime injects only the keys it needs.
 #
 # Terraform creates each secret with REPLACE_ME placeholders and never touches

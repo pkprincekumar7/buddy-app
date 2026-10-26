@@ -394,17 +394,17 @@ run "unregistered_service_has_no_cloud_map_entry" {
   command = apply
 
   variables {
-    role               = "platform"
-    scaling_name       = "platform"
-    security_group_ids = ["sg-platform"]
+    role               = "shared"
+    scaling_name       = "shared"
+    security_group_ids = ["sg-shared"]
     container = {
-      name              = "platform"
-      image             = "repo/platform:latest"
+      name              = "shared"
+      image             = "repo/shared:latest"
       port              = 8000
       environment       = []
       secrets           = []
-      log_group_name    = "/ecs/superpower-platform-prod"
-      log_stream_prefix = "platform"
+      log_group_name    = "/ecs/superpower-shared-prod"
+      log_stream_prefix = "shared"
     }
   }
 

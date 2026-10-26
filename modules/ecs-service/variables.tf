@@ -127,7 +127,7 @@ variable "internal_port" {
 variable "service_discovery" {
   description = <<-EOT
     Register each task's IP in Cloud Map (13.2), or null for a service with no
-    internal endpoints (workers, platform). Callers resolve
+    internal endpoints (workers, shared). Callers resolve
     "<name>.<namespace>" and get up to 8 healthy task IPs (multivalue A records);
     only tasks whose container health check passes are answered.
       namespace_id — the private DNS namespace ({app}-{env}.internal, 2.5)

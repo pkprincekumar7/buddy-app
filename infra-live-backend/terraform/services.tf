@@ -2,7 +2,7 @@
 # ECS runtimes — THE place to add a backend service (docs/auth-users-split.md, 15.2)
 #
 # The split's services: each has an HTTP runtime (public API on 8000, internal
-# API on 8001 through Cloud Map) and, except platform, a worker (outbox relay,
+# API on 8001 through Cloud Map) and, except shared, a worker (outbox relay,
 # event consumer, and for the generating circles the LLM job worker). Plus the
 # shared OpenTelemetry collector (15.5). 17 runtimes + 1 collector.
 #
@@ -33,12 +33,12 @@
 
 locals {
   # Order is deploy order (the ecs_services list and the workflows' help text).
-  split_services      = ["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "platform"]
+  split_services      = ["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared"]
   generating_services = ["discover", "grow", "transform", "release"]
-  # Services whose /internal/* API others call (13.2); platform has none.
-  internal_services = [for s in local.split_services : s if s != "platform"]
-  # Services with a worker (outbox relay, consumer); platform has no database.
-  worker_services = [for s in local.split_services : s if s != "platform"]
+  # Services whose /internal/* API others call (13.2); shared has none.
+  internal_services = [for s in local.split_services : s if s != "shared"]
+  # Services with a worker (outbox relay, consumer); shared has no database.
+  worker_services = [for s in local.split_services : s if s != "shared"]
 
   internal_dns_namespace = "${var.app_name}-${var.environment}.internal"
 
@@ -109,10 +109,9 @@ locals {
     { name = "UPLOADS_URL_TTL_SECONDS", value = tostring(var.uploads_url_ttl_seconds) },
   ]
 
-  # Who must confirm an account deletion (10.3). common.deletion.PARTICIPANTS lists all
-  # seven; until each is built, only those deployed confirm, or no deletion could finish.
-  # Add each service here as it ships (build plan 3.5).
-  deletion_participants = ["users", "children"]
+  # Who must confirm an account deletion (10.3): all seven of common.deletion.PARTICIPANTS,
+  # now that each is built (build plan 3.5, 5.5).
+  deletion_participants = ["users", "children", "onboarding", "discover", "grow", "transform", "release"]
   deletion_environment  = [{ name = "DELETION_PARTICIPANTS", value = join(",", local.deletion_participants) }]
 
   # Per service, extra environment for its HTTP runtime and its worker.
@@ -124,7 +123,7 @@ locals {
     ], local.deletion_environment)
     children  = local.uploads_environment
     transform = local.uploads_environment
-    platform  = [{ name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name }]
+    shared    = [{ name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name }]
   }
   service_worker_environment = {
     auth      = local.deletion_environment
@@ -135,7 +134,7 @@ locals {
   # -- Secrets (one per service, 15.1) ---------------------------------------------
 
   # Keys of each service's secret JSON. LLM keys are injected only into the
-  # generating workers and platform (speech-to-text) (8).
+  # generating workers and shared (speech-to-text) (8).
   secret_keys = {
     auth       = ["MONGODB_URI", "JWT_PRIVATE_KEY", "GOOGLE_CLIENT_ID", "EMAIL_HMAC_PEPPER"]
     users      = ["MONGODB_URI"]
@@ -145,7 +144,7 @@ locals {
     grow       = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
     transform  = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
     release    = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
-    platform   = ["OPENAI_API_KEY"]
+    shared     = ["OPENAI_API_KEY"]
   }
   llm_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
 
@@ -234,10 +233,10 @@ locals {
         }
       } : {},
       r.kind != "collector" ? { valkey = local.valkey_policy[r.service] } : {},
-      r.kind != "collector" && r.service != "platform" ? { metrics = local.metrics_policy[r.service] } : {},
+      r.kind != "collector" && r.service != "shared" ? { metrics = local.metrics_policy[r.service] } : {},
       contains(keys(local.uploads_policy), coalesce(r.service, "-")) ? { s3-uploads = local.uploads_policy[r.service] } : {},
       r.kind == "worker" ? { events = local.events_policy[r.service] } : {},
-      r.service == "platform" ? {
+      r.service == "shared" ? {
         # The APK download link (13.3): the assets bucket's Android prefix only.
         s3-apk = {
           Version = "2012-10-17"

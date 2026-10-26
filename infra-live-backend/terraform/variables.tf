@@ -147,7 +147,7 @@ variable "runtime_sizes" {
   description = <<-EOT
     Task size and count per runtime tier (docs/auth-users-split.md, 15.3). Every
     runtime in services.tf uses one tier:
-      http              — the HTTP services except auth (users, children, the circles, platform)
+      http              — the HTTP services except auth (users, children, the circles, shared)
       auth              — auth's HTTP service (bcrypt makes it CPU-bound)
       worker            — auth, users, children and onboarding workers
       generating-worker — discover, grow, transform and release workers (LLM jobs)

@@ -158,6 +158,32 @@ def settings(db_name: str, mongo_uri: str, **extra: str) -> ChildrenSettings:
     )
 
 
+# ── release, faked (the Connect visit asks it) ─────────────────────────────────
+
+
+@dataclass
+class FakeRelease:
+    """release's internal status: `completed` holds the children it says are done."""
+
+    completed: set[str] = field(default_factory=set)
+    down: bool = False
+    status: int = 200
+    calls: list[str] = field(default_factory=list)
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if self.down:
+            raise httpx.ConnectError("connection refused", request=request)
+        self.calls.append(f"{request.url.host} {request.url.path}?{request.url.query.decode()}")
+        if self.status != 200:
+            return httpx.Response(self.status)
+        child_id = request.url.path.split("/")[-2]
+        return httpx.Response(200, json={"completed": child_id in self.completed})
+
+
+async def _resolve(host: str, port: int) -> list[str]:
+    return [host]  # the fake answers by name
+
+
 # ── the running service ────────────────────────────────────────────────────────
 
 
@@ -168,6 +194,7 @@ class Running:
     internal: httpx.AsyncClient  # the internal app
     layout: dict[str, Any]
     audit: list[AuditEvent] = field(default_factory=list)
+    release: FakeRelease = field(default_factory=FakeRelease)
 
     @property
     def db(self) -> Any:
@@ -190,6 +217,7 @@ async def running(mongo_uri: str, *, uploads: bool = True) -> AsyncIterator[Runn
             EVENTS_QUEUE_URL=layout["queues"]["children"],
         )
         audit: list[AuditEvent] = []
+        release = FakeRelease()
         client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(mongo_uri, tz_aware=True)
         runtime = Runtime(
             settings=configured,
@@ -198,7 +226,11 @@ async def running(mongo_uri: str, *, uploads: bool = True) -> AsyncIterator[Runn
                 authz_config(), cache=None, fill=_fill, audit=AuditLog(sinks=[audit.append])
             ),
             verifier=ServiceTokenVerifier("children", SERVICE_KEYS),
-            internal=InternalClient(ServiceTokenSigner("children", "c1", CHILDREN_PRIVATE)),
+            internal=InternalClient(
+                ServiceTokenSigner("children", "c1", CHILDREN_PRIVATE),
+                resolver=_resolve,
+                transport=httpx.MockTransport(release.handle),
+            ),
             limits=RateLimits(None, prefix="children"),
             sns=sns,
             sqs=sqs,
@@ -214,7 +246,7 @@ async def running(mongo_uri: str, *, uploads: bool = True) -> AsyncIterator[Runn
             transport=httpx.ASGITransport(app=main.internal_app), base_url="http://u"
         )
         try:
-            yield Running(runtime, http, internal, layout, audit)
+            yield Running(runtime, http, internal, layout, audit, release)
         finally:
             await http.aclose()
             await internal.aclose()

@@ -384,3 +384,31 @@ def test_naive_claim_times_are_utc():
 
     age = asyncio.run(jobs.oldest_processing_age({"jobs": Coll()}, locations=None))  # type: ignore[arg-type]
     assert 39 < age < 80
+
+
+def test_a_target_can_keep_its_own_status(mongo_run):
+    """A growth area's status is the parent's wizard: a job neither sets nor fails it."""
+
+    async def body(db, client):
+        await ensure_jobs(db, "grow")
+        await store.ensure_tombstones(db)
+        area = Target("growth_areas", f"{CHILD}:focus", lock="active_jobs.generate_recommendations")
+        await _start(
+            db,
+            client,
+            job_type="generate_recommendations",
+            target=area,
+            target_on_insert={"status": "in_progress"},
+            target_status=None,
+        )
+        assert (await db.growth_areas.find_one({}))["status"] == "in_progress"
+        await db.growth_areas.update_one({}, {"$set": {"status": "completed"}})
+        job = await _claim(db)
+        assert (
+            await jobs.fail_or_retry(db, client, job, "x", permanent=True, target_status=None)
+            == "failed"
+        )
+        doc = await db.growth_areas.find_one({})
+        assert doc["status"] == "completed" and doc["active_jobs"] == {}
+
+    mongo_run(body)

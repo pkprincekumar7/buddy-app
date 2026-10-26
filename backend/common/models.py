@@ -56,6 +56,10 @@ GROWTH_FIELDS: tuple[str, ...] = (
     "child_activity_results",
     "recommendations",
     "ai_three_month_recommendations",
+    # Added for release's observations (0.13.0): the questions with their answers, and the
+    # child's picks as "Chose “X” over “Y”" lines. Optional: older events lack them.
+    "reflections",
+    "child_choices",
 )
 
 # Each generating service's own job types (4.1, today's names).
@@ -147,6 +151,8 @@ GROWTH_INPUTS_VALIDATOR = _schema(
         "child_activity_results": {"bsonType": ["array", "object", "null"]},
         "recommendations": {"bsonType": ["array", "null"]},
         "ai_three_month_recommendations": {"bsonType": ["array", "null"]},
+        "reflections": {"bsonType": ["array", "null"]},
+        "child_choices": {"bsonType": ["array", "null"], "items": _STRING},
     },
 )
 

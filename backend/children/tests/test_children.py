@@ -67,7 +67,13 @@ def test_every_route_declares_a_policy_and_stays_on_its_app():
     assert_every_route_has_a_policy(main.app)
     assert_every_route_has_a_policy(main.internal_app)
     public = {r.path for r in main.app.routes if isinstance(r, APIRoute)}
-    assert public == {"/health", API, f"{API}/{{id}}", f"{API}/{{id}}/avatar/presign"}
+    assert public == {
+        "/health",
+        API,
+        f"{API}/{{id}}",
+        f"{API}/{{id}}/avatar/presign",
+        f"{API}/{{id}}/connect/visit",
+    }
     internal = {r.path for r in main.internal_app.routes if isinstance(r, APIRoute)}
     assert internal == {"/internal/ping", "/internal/children/{id}"}
 
@@ -639,3 +645,105 @@ def test_the_lifespan_shares_one_runtime(mongo_uri, monkeypatch, fake_aws_creden
             assert main.app.state.runtime is None
 
     asyncio.run(unconfigured())
+
+
+# ── the Connect visit (build plan 5.7) ─────────────────────────────────────────
+
+
+async def _visit(r: Running, child_id: str, user_id: str = PARENT) -> httpx.Response:
+    return await r.http.post(f"{API}/{child_id}/connect/visit", headers=auth_header(user_id))
+
+
+async def _release_done(r: Running, child_id: str) -> None:
+    await r.db[CHILDREN].update_one({"_id": child_id}, {"$set": {"progress.release": True}})
+
+
+def test_connect_is_locked_before_release_is_done_and_release_is_asked_first(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = (await add_child(r)).json()["id"]
+        locked = await _visit(r, child_id)
+        assert locked.status_code == 403 and _code(locked) == "circle_locked"
+        assert r.release.calls == [
+            f"release /internal/release/children/{child_id}/status?location={LOCATION}"
+        ]
+        assert (await r.db[CHILDREN].find_one({"_id": child_id}))["progress"]["connect"] is False
+        # Release done, but its event hasn't arrived: release's yes is enough, and both
+        # flags are set in one write with one snapshot.
+        r.release.completed.add(child_id)
+        visited = await _visit(r, child_id)
+        assert visited.status_code == 200
+        progress = visited.json()["progress"]
+        assert progress["release"] is True and progress["connect"] is True
+        events = await _events(r, child_id)
+        assert [e["type"] for e in events] == ["child.changed", "child.changed"]
+        assert events[-1]["progress"]["connect"] is True and events[-1]["version"] == 2
+
+    live(mongo_uri, test)
+
+
+def test_connect_is_set_once(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = (await add_child(r)).json()["id"]
+        await _release_done(r, child_id)
+        first = await _visit(r, child_id)
+        assert first.json()["progress"]["connect"] is True
+        again = await _visit(r, child_id)
+        assert again.status_code == 200 and again.json() == first.json()
+        assert r.release.calls == []  # its own flag was enough
+        assert len(await _events(r, child_id)) == 2  # created, then visited: once
+        doc = await r.db[CHILDREN].find_one({"_id": child_id})
+        assert doc["version"] == 2
+
+    live(mongo_uri, test)
+
+
+def test_two_visits_at_once_publish_once(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = (await add_child(r)).json()["id"]
+        await _release_done(r, child_id)
+        both = await asyncio.gather(_visit(r, child_id), _visit(r, child_id))
+        assert [v.json()["progress"]["connect"] for v in both] == [True, True]
+        assert len(await _events(r, child_id)) == 2
+
+    live(mongo_uri, test)
+
+
+def test_a_visit_racing_a_delete_is_not_found(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        child_id = (await add_child(r)).json()["id"]
+        await _release_done(r, child_id)
+        real = main._transaction
+
+        async def deleted_first(runtime: Runtime, write: Any) -> None:
+            await r.db[CHILDREN].update_one({"_id": child_id}, {"$set": {"is_deleted": True}})
+            await real(runtime, write)
+
+        monkeypatch.setattr(main, "_transaction", deleted_first)
+        gone = await _visit(r, child_id)
+        assert gone.status_code == 404 and _code(gone) == "child_not_found"
+
+    live(mongo_uri, test)
+
+
+def test_connect_refusals(mongo_uri):
+    async def test(r: Running) -> None:
+        child_id = (await add_child(r)).json()["id"]
+        assert _code(await _visit(r, child_id, OTHER)) == "child_not_found"
+        assert _code(await _visit(r, str(uuid.uuid4()))) == "child_not_found"
+        admin = await _visit(r, child_id, ADMIN)
+        assert admin.status_code == 403 and _code(admin) == "parents_only"
+        r.release.status = 404  # release has never heard of it: still locked
+        assert _code(await _visit(r, child_id)) == "circle_locked"
+        for status, down in ((500, False), (200, True)):
+            r.release.status, r.release.down = status, down
+            unavailable = await _visit(r, child_id)
+            assert unavailable.status_code == 503 and _code(unavailable) == "release_unavailable"
+            assert unavailable.headers["Retry-After"] == "2"
+        statuses = []
+        r.release.down = False
+        r.release.status = 200
+        for _ in range(30):
+            statuses.append((await _visit(r, child_id)).status_code)
+        assert statuses[-1] == 429
+
+    live(mongo_uri, test)

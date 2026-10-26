@@ -267,7 +267,7 @@ def test_who_confirmed_comes_from_the_topic_never_the_payload(mongo_uri):
         # A topic that isn't a data service's is rejected outright (the consumer's check).
         other = await consumer.handle_body(
             sns_envelope(
-                _confirmation(jane["id"], "users"), topic_arn("superpower-local", "platform")
+                _confirmation(jane["id"], "users"), topic_arn("superpower-local", "shared")
             )
         )
         assert other.value == "rejected"

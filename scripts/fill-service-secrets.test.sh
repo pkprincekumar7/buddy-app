@@ -36,12 +36,12 @@ ok() { PASS=$((PASS + 1)); echo "ok   - $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL - $1${2:+: $2}"; }
 check() { local name="$1" got="$2" want="$3"; [ "$got" = "$want" ] && ok "$name" || fail "$name" "got '$got', want '$want'"; }
 
-ARNS='{"auth":"arn:aws:secretsmanager:ap-south-1:1:secret:auth","grow":"arn:aws:secretsmanager:ap-south-1:1:secret:grow","platform":"arn:aws:secretsmanager:ap-south-1:1:secret:platform"}'
+ARNS='{"auth":"arn:aws:secretsmanager:ap-south-1:1:secret:auth","grow":"arn:aws:secretsmanager:ap-south-1:1:secret:grow","shared":"arn:aws:secretsmanager:ap-south-1:1:secret:shared"}'
 placeholders() {
   rm -f "$FAKE/puts"
   echo '{"MONGODB_URI":"REPLACE_ME","JWT_PRIVATE_KEY":"REPLACE_ME","GOOGLE_CLIENT_ID":"REPLACE_ME","EMAIL_HMAC_PEPPER":"REPLACE_ME"}' > "$FAKE/secrets/auth"
   echo '{"MONGODB_URI":"REPLACE_ME","OPENAI_API_KEY":"REPLACE_ME","ANTHROPIC_API_KEY":"REPLACE_ME","GEMINI_API_KEY":"REPLACE_ME"}' > "$FAKE/secrets/grow"
-  echo '{"OPENAI_API_KEY":"REPLACE_ME"}' > "$FAKE/secrets/platform"
+  echo '{"OPENAI_API_KEY":"REPLACE_ME"}' > "$FAKE/secrets/shared"
 }
 export MONGODB_URIS='{"auth":"mongodb+srv://auth-user@test","grow":"mongodb+srv://grow-user@test"}'
 export JWT_PRIVATE_KEY="fake-private-key" EMAIL_HMAC_PEPPER="fake-pepper" GOOGLE_CLIENT_ID="fake-client" OPENAI_API_KEY="fake-openai"
@@ -52,7 +52,7 @@ placeholders
 out=$(fill_service_secrets "$ARNS" 2>&1)
 check "auth gets its own keys" "$(jq -c . "$FAKE/secrets/auth")" '{"MONGODB_URI":"mongodb+srv://auth-user@test","JWT_PRIVATE_KEY":"fake-private-key","GOOGLE_CLIENT_ID":"fake-client","EMAIL_HMAC_PEPPER":"fake-pepper"}'
 check "each service gets its own MONGODB_URI; an unset LLM key stays REPLACE_ME" "$(jq -c . "$FAKE/secrets/grow")" '{"MONGODB_URI":"mongodb+srv://grow-user@test","OPENAI_API_KEY":"fake-openai","ANTHROPIC_API_KEY":"REPLACE_ME","GEMINI_API_KEY":"REPLACE_ME"}'
-check "platform, with no database, needs no MONGODB_URI" "$(jq -c . "$FAKE/secrets/platform")" '{"OPENAI_API_KEY":"fake-openai"}'
+check "shared, with no database, needs no MONGODB_URI" "$(jq -c . "$FAKE/secrets/shared")" '{"OPENAI_API_KEY":"fake-openai"}'
 [[ "$out" != *fake-* && "$out" != *mongodb* ]] && ok "no value is printed" || fail "no value is printed" "$out"
 
 # -- later applies ---------------------------------------------------------------
@@ -77,7 +77,7 @@ placeholders
 if out=$(EMAIL_HMAC_PEPPER="" fill_service_secrets "$ARNS" 2>&1); then fail "a missing pepper is an error"; else
   [[ "$out" == *"EMAIL_HMAC_PEPPER is not set (needed by auth)"* ]] && ok "a missing required value names it" || fail "missing value message" "$out"; fi
 placeholders
-echo '{"NEW_KEY":"REPLACE_ME"}' > "$FAKE/secrets/platform"
+echo '{"NEW_KEY":"REPLACE_ME"}' > "$FAKE/secrets/shared"
 if out=$(fill_service_secrets "$ARNS" 2>&1); then fail "an unknown key is an error"; else
   [[ "$out" == *"doesn't know: NEW_KEY"* ]] && ok "an unknown key says where to add it" || fail "unknown key message" "$out"; fi
 

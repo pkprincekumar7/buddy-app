@@ -1,0 +1,459 @@
+[
+  {
+    "allowed": [
+      "Chose “Build a robot” over “Tell a story”"
+    ],
+    "sources": [
+      "onboarding",
+      "grow",
+      "child"
+    ],
+    "answer": {
+      "observations": [
+        {
+          "title": "Settles better outdoors than indoors",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "onboarding"
+          ]
+        },
+        {
+          "title": "Attention runs long on chosen projects",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "unknown_icon",
+          "sources": [
+            "grow"
+          ]
+        },
+        {
+          "title": "Picks making over telling",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Chose “Build a robot” over “Tell a story”",
+            "Chose “Fly” over “Swim”",
+            "“Prefers hands-on work”"
+          ],
+          "icon": "social",
+          "sources": [
+            "child"
+          ]
+        },
+        {
+          "title": "Settles better outdoors than indoors",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "grow",
+            "grow",
+            "bogus"
+          ]
+        },
+        {
+          "title": "No notes",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "",
+            "  ",
+            "\"\"",
+            "…"
+          ],
+          "icon": "social",
+          "sources": [
+            "onboarding"
+          ]
+        },
+        {
+          "title": "No sources",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "nope"
+          ]
+        },
+        {
+          "title": "",
+          "summary": "x",
+          "notes": [
+            "a"
+          ],
+          "sources": [
+            "grow"
+          ]
+        },
+        "not an object",
+        {
+          "title": "A title that runs on and on well past the ten word cap for titles",
+          "summary": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+          "notes": [
+            "n n n n n n n n n n n n n n n n n n n n n n n n n n n n n n",
+            "He said \"stop\" then \"go\" twice",
+            "Third",
+            "Fourth"
+          ],
+          "icon": "social",
+          "sources": [
+            "onboarding"
+          ]
+        },
+        {
+          "title": "Ninth candidate",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "onboarding"
+          ]
+        },
+        {
+          "title": "Tenth candidate is cut",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "onboarding"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "allowed": null,
+    "sources": [
+      "onboarding",
+      "grow",
+      "child"
+    ],
+    "answer": [
+      {
+        "title": "Pattern 0",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Pattern 1",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Pattern 2",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Pattern 3",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Pattern 4",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Grow one",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "grow"
+        ]
+      },
+      {
+        "title": "Child one",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Chose “A” over “B”"
+        ],
+        "icon": "social",
+        "sources": [
+          "child"
+        ]
+      },
+      {
+        "title": "Pattern 7",
+        "summary": "She settles outdoors.",
+        "notes": [
+          "Calmer after time outside",
+          "Asks to go out"
+        ],
+        "icon": "social",
+        "sources": [
+          "onboarding"
+        ]
+      }
+    ]
+  },
+  {
+    "allowed": [],
+    "sources": [
+      "onboarding"
+    ],
+    "answer": {
+      "observations": [
+        {
+          "title": "Only child lines",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Chose “A” over “B”"
+          ],
+          "icon": "social",
+          "sources": [
+            "child"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "allowed": null,
+    "sources": [
+      "grow"
+    ],
+    "answer": {
+      "other": []
+    }
+  },
+  {
+    "allowed": null,
+    "sources": [],
+    "answer": "nope"
+  },
+  {
+    "allowed": null,
+    "sources": [
+      "grow",
+      "child"
+    ],
+    "answer": {
+      "observations": [
+        {
+          "title": "!!!",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "grow"
+          ]
+        },
+        {
+          "title": "Same id",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "grow"
+          ]
+        },
+        {
+          "title": "same ID",
+          "summary": "She settles outdoors.",
+          "notes": [
+            "Calmer after time outside",
+            "Asks to go out"
+          ],
+          "icon": "social",
+          "sources": [
+            "child"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "allowed": null,
+    "sources": [
+      "onboarding",
+      "grow",
+      "child"
+    ],
+    "answer": [
+      {
+        "title": "Nine 0",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 1",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 2",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 3",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 4",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 5",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 6",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 7",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 8",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      },
+      {
+        "title": "Nine 9",
+        "summary": "s",
+        "notes": [
+          "n one",
+          "n two"
+        ],
+        "icon": "focus",
+        "sources": [
+          "onboarding"
+        ]
+      }
+    ]
+  }
+]

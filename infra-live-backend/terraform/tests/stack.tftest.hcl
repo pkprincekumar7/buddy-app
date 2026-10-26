@@ -118,11 +118,11 @@ run "prod_stack_wiring" {
   # -- the runtimes -------------------------------------------------------------
   assert {
     condition = toset(keys(local.services)) == toset([
-      "auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "platform",
+      "auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared",
       "auth-worker", "users-worker", "children-worker", "onboarding-worker", "discover-worker", "grow-worker", "transform-worker", "release-worker",
       "otel-collector",
     ])
-    error_message = "9 HTTP services, 8 workers (none for platform) and the collector."
+    error_message = "9 HTTP services, 8 workers (none for shared) and the collector."
   }
   assert {
     condition     = module.service["users"].service_name == "superpower-users-prod" && module.service["users-worker"].task_definition_family == "superpower-users-worker-prod"
@@ -141,7 +141,7 @@ run "prod_stack_wiring" {
 
   # -- ALB --------------------------------------------------------------------
   assert {
-    condition     = toset(keys(module.alb.target_group_arns)) == toset(["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "platform"])
+    condition     = toset(keys(module.alb.target_group_arns)) == toset(["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared"])
     error_message = "One ALB target group per HTTP service; none for workers or the collector."
   }
   assert {
@@ -169,7 +169,7 @@ run "prod_stack_wiring" {
     error_message = "HTTP services register as <service> on 8001; the collector as otel-collector on 4318."
   }
   assert {
-    condition     = module.service["platform"].service_discovery_name == null && module.service["users-worker"].service_discovery_name == null
+    condition     = module.service["shared"].service_discovery_name == null && module.service["users-worker"].service_discovery_name == null
     error_message = "Platform (no internal API) and the workers don't register."
   }
   assert {
@@ -187,7 +187,7 @@ run "prod_stack_wiring" {
     error_message = "Valkey reachable from every service runtime but not the collector; primary + 1 replica in prod."
   }
   assert {
-    condition     = toset(keys(module.redis.rbac_user_names)) == toset(["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "platform"])
+    condition     = toset(keys(module.redis.rbac_user_names)) == toset(["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared"])
     error_message = "One Valkey RBAC user per service."
   }
 
@@ -231,7 +231,7 @@ run "prod_stack_wiring" {
   }
 
   assert {
-    condition     = { for e in jsondecode(module.service["auth-worker"].container_definitions)[0].environment : e.name => e.value }["DELETION_PARTICIPANTS"] == "users,children"
+    condition     = { for e in jsondecode(module.service["auth-worker"].container_definitions)[0].environment : e.name => e.value }["DELETION_PARTICIPANTS"] == "users,children,onboarding,discover,grow,transform,release"
     error_message = "auth and its worker wait for the participants deployed so far (users), not all seven (build plan 3.5)."
   }
   assert {
@@ -287,13 +287,13 @@ run "prod_stack_wiring" {
     error_message = "Only the workers get an events policy."
   }
 
-  # -- platform and the collector ----------------------------------------------------
+  # -- shared and the collector ----------------------------------------------------
   assert {
-    condition     = [for x in jsondecode(module.service["platform"].container_definitions)[0].secrets : x.name] == ["OPENAI_API_KEY", "INTERNAL_SIGNING_KEY"] && { for e in jsondecode(module.service["platform"].container_definitions)[0].environment : e.name => e.value }["ASSETS_BUCKET_NAME"] == "superpower-assets"
+    condition     = [for x in jsondecode(module.service["shared"].container_definitions)[0].secrets : x.name] == ["OPENAI_API_KEY", "INTERNAL_SIGNING_KEY"] && { for e in jsondecode(module.service["shared"].container_definitions)[0].environment : e.name => e.value }["ASSETS_BUCKET_NAME"] == "superpower-assets"
     error_message = "Platform has no database: only its speech-to-text key, and the assets bucket for the APK link."
   }
   assert {
-    condition     = toset([for k, _ in aws_iam_role_policy.task : split("/", k)[1] if startswith(k, "platform/")]) == toset(["valkey", "s3-apk"])
+    condition     = toset([for k, _ in aws_iam_role_policy.task : split("/", k)[1] if startswith(k, "shared/")]) == toset(["valkey", "s3-apk"])
     error_message = "Platform's task role: Valkey and the APK prefix only."
   }
   assert {
@@ -355,7 +355,7 @@ run "prod_stack_wiring" {
 
   # -- SSM hand-off -----------------------------------------------------------
   assert {
-    condition     = [for e in jsondecode(aws_ssm_parameter.ecs_services.value) : e.name] == ["otel-collector", "auth", "auth-worker", "users", "users-worker", "children", "children-worker", "onboarding", "onboarding-worker", "discover", "discover-worker", "grow", "grow-worker", "transform", "transform-worker", "release", "release-worker", "platform"]
+    condition     = [for e in jsondecode(aws_ssm_parameter.ecs_services.value) : e.name] == ["otel-collector", "auth", "auth-worker", "users", "users-worker", "children", "children-worker", "onboarding", "onboarding-worker", "discover", "discover-worker", "grow", "grow-worker", "transform", "transform-worker", "release", "release-worker", "shared"]
     error_message = "ecs_services lists every runtime in deploy_order (the collector first) — what the deploy/restart/promote workflows read."
   }
   assert {

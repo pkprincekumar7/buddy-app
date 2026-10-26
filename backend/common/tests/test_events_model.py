@@ -73,7 +73,7 @@ def test_subscriptions_skip_reserved_events():
         "transform.completed",
         "user.deletion_requested",
     ]
-    assert cat.subscriptions("platform") == []
+    assert cat.subscriptions("shared") == []
 
 
 def test_data_deleted_comes_from_every_data_service_topic():
@@ -84,7 +84,7 @@ def test_data_deleted_comes_from_every_data_service_topic():
     spec = cat.spec("user.data_deleted")
     assert spec.produced_by("grow", cat.data_services)
     assert not spec.produced_by("auth", cat.data_services)
-    assert not spec.produced_by("platform", cat.data_services)
+    assert not spec.produced_by("shared", cat.data_services)
 
 
 def test_unknown_event_type():

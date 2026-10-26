@@ -28,7 +28,7 @@
 | 2 | Infrastructure (parallel with Phase 1) | 7 | 0 |
 | 3 | auth and users | 6 | 0 |
 | 4 | children | 2 | 0 |
-| 5 | Circle services, platform and the Connect visit | 7 | 0 |
+| 5 | Circle services, shared and the Connect visit | 7 | 0 |
 | 6 | Deletion end to end | 2 | 0 |
 | 7 | Web and mobile clients (alongside Phases 3–5) | 9 | 0 |
 | 8 | Hardening | 6 | 0 |
@@ -250,7 +250,7 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
 - [ ] **2.5 `infra-live-backend` stack.** Needs: 2.1–2.4, 0.4.
   - `services.tf`: one entry per runtime (17 plus `otel-collector`), with `image_repository` and `secret_name`; the dev/sbx/stg/prod sizes from 15.3.
   - `ecs.tf`: per-service execution and task roles. `iam.tf`: per-service policies:
-    - S3: children `…/avatar/*` only, transform `…/ninety-day-plan/*` only, platform the APK prefix;
+    - S3: children `…/avatar/*` only, transform `…/ninety-day-plan/*` only, shared the APK prefix;
     - `sns:Publish` on the service's own topic, and its own queue;
     - `cloudwatch:PutMetricData` by namespace.
   - `ecr.tf`: one repository per service.
@@ -266,11 +266,11 @@ Runs alongside Phase 1. Every task: `terraform fmt`, `terraform validate`, `terr
   - **Check:** `terraform test`; `terraform plan` for dev shows only additions.
   - *(in progress: done locally, waiting for review and merge; the dev `terraform plan` is 2.7's, with the workflows from 2.6)*
   - **As built:**
-    - **`services.tf`** derives the runtimes from `split_services` and `generating_services` instead of listing them: 9 HTTP runtimes, 8 workers (`<service>-worker`, none for platform) and `otel-collector`. Each runtime's size comes from one of five tiers in the new `runtime_sizes` variable (`http`, `auth`, `worker`, `generating-worker`, `collector`), which replaces the per-service sizing variables. The tfvars carry 15.3's sizes; prod uses the **lean** variant (one task per worker, decided in 2.5).
+    - **`services.tf`** derives the runtimes from `split_services` and `generating_services` instead of listing them: 9 HTTP runtimes, 8 workers (`<service>-worker`, none for shared) and `otel-collector`. Each runtime's size comes from one of five tiers in the new `runtime_sizes` variable (`http`, `auth`, `worker`, `generating-worker`, `collector`), which replaces the per-service sizing variables. The tfvars carry 15.3's sizes; prod uses the **lean** variant (one task per worker, decided in 2.5).
     - **Environment:** every service runtime gets `SERVICE_NAME`, its own `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE` (5), `REDIS_URL` + `REDIS_USERNAME` (its RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS` and `OTEL_EXPORTER_OTLP_ENDPOINT`. Workers also get their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`; the generating services get the LLM settings.
     - **Secrets:** one `<app>/<env>/<service>-secrets` per service with REPLACE_ME placeholders. A generating circle's HTTP runtime doesn't get the LLM keys; only its worker does.
     - **Service-token keys (decided in 2.5: Terraform generates them):** `service_tokens.tf` makes one `tls_private_key` (Ed25519) per service. The private key goes into an SSM SecureString in the region, injected as `INTERNAL_SIGNING_KEY`; the public map goes to every runtime and to `/<app>/<env>/backend/<region>/internal_public_keys`. The kid is `<service>-v<n>`, and bumping `service_token_key_versions[service]` rotates it. The private keys are also in Terraform state. The `hashicorp/tls` provider was added.
-    - **IAM:** one execution and one task role per runtime. The execution role reads only its service's secret and signing key. Task policies: `valkey` (`elasticache:Connect` as its own user), `metrics` (`PutMetricData` in `Superpower/<service>`), `s3-uploads` (children's and transform's prefixes), `events` (workers: publish to its own topic with the KMS key, consume its own queue), `s3-apk` (platform) and `xray` (collector only).
+    - **IAM:** one execution and one task role per runtime. The execution role reads only its service's secret and signing key. Task policies: `valkey` (`elasticache:Connect` as its own user), `metrics` (`PutMetricData` in `Superpower/<service>`), `s3-uploads` (children's and transform's prefixes), `events` (workers: publish to its own topic with the KMS key, consume its own queue), `s3-apk` (shared) and `xray` (collector only).
     - **Cloud Map:** the `<app>-<env>.internal` namespace. HTTP services register on 8001, the collector as `otel-collector` on 4318, and they admit those ports only from the `internal-callers` group, which every service runtime joins.
     - **Collector:** `otel_collector.tf` is the ADOT config (`AOT_CONFIG_CONTENT`). It tail-samples (errors, latency > 2 s, then `xray_default_sampling_rate`) and exports to X-Ray. The X-Ray sampling rules, `enable_adot_sidecar` and `enable_xray_error_rule` were removed.
     - **Events:** `modules/events` gets a new `services` input, which builds only events between the deployed services. The catalogue still holds hello's demo event, which the stack must not create. The stack passes `split_services`.
@@ -431,7 +431,7 @@ Everything else depends on them. Build users first: auth's registration calls it
     - a Valkey outage falls back to the 30-second cache.
   - *(in progress: code done locally, waiting for review and merge)*
   - **As built:**
-    - **`GET /internal/authz/{user_id}`** (`app/main.py`) is open to the services that verify tokens: users, children, the four circles, platform and hello; auth itself gets 403. It returns the entry and refills the region's cache through the versioned write; no account, or a non-UUID id, is 404. `common.internal_client.authz_fill` was tested end to end against it.
+    - **`GET /internal/authz/{user_id}`** (`app/main.py`) is open to the services that verify tokens: users, children, the four circles, shared and hello; auth itself gets 403. It returns the entry and refills the region's cache through the versioned write; no account, or a non-UUID id, is 404. `common.internal_client.authz_fill` was tested end to end against it.
     - **The change stream** (`app/authz_stream.py`) watches every `update`, `replace` and `delete` on all of `auth.auth`, with `updateLookup`:
       - it rewrites `authz:{id}` only if the region already holds it (a new `only_existing` mode of the versioned Lua write) and drops the entry of a deleted account;
       - **decided here:** the resume token is kept in a new tiny unsharded `worker_state` collection (`authz-stream:<region>`), saved after every change and as the cluster's time advances;
@@ -600,7 +600,7 @@ It gates every circle.
 
 ---
 
-## Phase 5: Circle services and platform
+## Phase 5: Circle services and shared
 
 Build onboarding first, because it fixes the circle pattern: `child_access`, unlock, confirm-before-deny, events. 5.3–5.6 can then run in parallel once discover (5.2) is reviewed, each in its own session if wanted; 5.7 follows release.
 
@@ -615,6 +615,29 @@ Build onboarding first, because it fixes the circle pattern: `child_access`, unl
     - the unlock via children's read-through (the exception to "don't overwrite");
     - `conversation_completed` published once;
     - identical answers publish nothing.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/onboarding/`, the same shape as children; `buddy-common==0.11.0`):
+    - **`onboarding.conversations`:** `_id` = the child id, the seven answers (validator with the API's limits), `completed_at`, `version`; `{location, _id}` unique, `{location, user_id}` (account deletion). Plus `child_access` (common.models), `outbox`, `tombstones`. No `jobs`, no `inbox`: it calls no LLM, and every handler is safe to run twice.
+    - **Access** (`onboarding/app/access.py`), the pattern the other circles follow:
+      - the `child_access` copy answers; a missing one is read through from `GET /internal/children/{id}` and stored as a version-checked upsert (never over a tombstone); a purged child (a `child:` tombstone) is 404 without asking;
+      - ownership by `user_id` and `is_deleted`: `404 child_not_found`;
+      - unlock on `progress.profile`, confirmed with children before `403 circle_locked`; children's answer is stored the same way (12.4's exception), never as a `confirmed` flag;
+      - children unreachable or answering anything but 200 / 404: `503 children_unavailable` with `Retry-After: 2`.
+    - **Endpoints:**
+      - `GET` returns `child_name` from `child_access` too (12.2). Admins with `children:read:any` pass `?location=`, are audited, and skip the unlock check.
+      - `PUT` validates strictly (no coercion; trimmed; 1–20 items of 1–200, texts 1–500). It runs one transaction per attempt: a tombstone check, then insert (201 + `conversation_completed`), nothing (identical answers), or a version-conditional update (200 + `answers_updated`). A lost race (`DuplicateKeyError` or a moved version) is decided again, up to 3 times, then `409 conversation_changed`.
+      - **Decided here:** writes need ownership, so an admin's `PUT` on a child is 404 (they have no children); no separate role check.
+      - The internal `status` (callers: discover) and `answers` (callers: discover, grow, transform, release; `404` until completed).
+    - **Worker** (`onboarding/worker.py`, `onboarding/app/lifecycle.py`): relay (with the outbox-age metric) and consumer:
+      - `child.changed` → `child_access`;
+      - `child.deleted` → the conversation and copy go, with a `child:` tombstone at the final version;
+      - `user.deletion_requested` → every conversation and copy of the user, a `user:` tombstone (covering their children's copies) and `user.data_deleted`, in one transaction.
+    - **Found on the way:** the first save's response had `completed_at` in microseconds while MongoDB keeps milliseconds, so a later `GET` showed a different time. Dates are written truncated to the millisecond (`store.to_millis`).
+    - **Wired in:** `onboarding` joins `DELETION_PARTICIPANTS` (`services.tf` and compose); compose runs `onboarding` and `onboarding-worker` under the `split` profile (the gateway already routed `/api/v1/children/*/onboarding*`); `scripts/local-keys.py` makes its key; `backend/openapi/onboarding.json`.
+    - **Checked locally:**
+      - onboarding's 31 tests, at 100%: the plan's three checks, ownership, validation, both races, the internal routes and their callers, the worker end to end on Moto (discover's and children's queues get `conversation_completed`);
+      - ruff, mypy, import-linter; the spec, Spectral clean; `terraform test` (5 passed).
+    - **Not run:** the full `./check.sh`; the compose stack with onboarding.
 - [ ] **5.2 discover.** Needs: 5.1.
   - Database: `personalities`, `jobs`, `child_access`, `onboarding_inputs`, `outbox`, `tombstones`. The server-built `view_model`, ported from `adaptAiPersonalityToViewModel` (12.1).
   - Endpoints:
@@ -629,6 +652,25 @@ Build onboarding first, because it fixes the circle pattern: `child_access`, unl
     - the automatic start and the endpoint racing create one job;
     - `viewed` refused unless `ready`;
     - `view_model` matches today's adapter output for a set of fixtures (also checked visually in 8.4).
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/discover/`, the same shape as onboarding; `buddy-common[generation]==0.11.0` with the LLM SDKs pinned as in `backend/requirements.txt`):
+    - **`discover.personalities`:** `_id` = the child id; `status`, `view_model`, `analysis`, `source`, `active_job_id`, `finalised_at`, `viewed_at`, `version` (validator); `{location, _id}` unique, `{location, user_id}`. Plus `jobs` (`generate_personality_analysis` only), `child_access`, `onboarding_inputs`, `outbox`, `tombstones`.
+    - **The port** (`discover/app/personality.py`): today's archetype table, `personalityLlmSchema`, the prompt and `adaptAiPersonalityToViewModel` with `personalizedDescriptionOneLiner`.
+      - The prompt puts the child's name, age, gender and answers in data blocks (common.generation.prompts); only server text is in the instructions. `school` is no longer in the questionnaire block: discover's copy doesn't hold it.
+      - **The plan's fixture check:** `discover/tests/fixtures/regenerate.sh` copies today's adapter verbatim out of the web app and runs it with Node on 8 fixtures (a full answer, missing or invalid fields, clamping, the description's `{childName}` and `their`, cut sentences, `NaN` scores). The Python port gives the same JSON for all 8.
+      - The LLM answer is checked against the schema before anything is stored; a mismatch is retried, and the job's error names the paths only, never the text.
+    - **Access** (`discover/app/access.py`): onboarding's pattern, with the unlock on `progress.conversation` confirmed with onboarding (stored as `child_access.confirmed.conversation`, 7.5), and a read-through of the answers when a start comes before `onboarding.conversation_completed`.
+    - **Generation** (`discover/app/generation.py`):
+      - `start` only from `not_started` / `failed` (`409 already_generated` once ready), through `common.generation.jobs.start_job`. The running job comes back with `200`, and the hourly LLM limit is counted only for a new job.
+      - The worker's `process`: copies missing, an LLM error or a schema mismatch is retried with backoff, then `failed`; no provider configured fails at once. `ready` is stored with `discover.personality_finalised` in one transaction; `version` goes 1 (start), 2 (finalised), 3 (viewed).
+      - `report_jobs`: `PendingJobCount` and `OldestRunningJobAgeSeconds` every minute from one leader per region (`leader:discover:jobs:<region>`, which its Valkey user may write), in the HTTP runtime's lifespan.
+    - **Events:** the automatic start on `onboarding.conversation_completed`. **Decided here:** onboarding's events now carry the child's `user_id` (an optional field in both schemas, onboarding sends it), so discover can start a job before its `child_access` copy arrives; without either, the message is retried. `child.deleted` and `user.deletion_requested` delete the personality and copies and cancel the jobs (`cancel_jobs`), and the deletion confirms.
+    - **`personality_finalised`'s `traits`:** `{dominant_style, personality_category, traits, description}`, with the profile's strengths as `strengths`. The internal summary returns the same.
+    - **Wired in:** `discover` joins `DELETION_PARTICIPANTS` (`services.tf`, compose); compose runs `discover` (no LLM keys) and `discover-worker` (the keys from `.env`); `scripts/local-keys.py`; `backend/openapi/discover.json`.
+    - **Checked locally:**
+      - discover's 48 tests, at 100%: the plan's three checks (the race run five times per test; the fixtures; `viewed` refused unless ready), retries, failures, cancellation, the leader, the internal routes, and the worker end to end on Moto with a fake provider behind the real `LlmClient` (grow's queue gets `personality_finalised`);
+      - onboarding (31) and common (405) after the schema change; ruff, mypy, import-linter; the spec, Spectral clean; `terraform test` (5 passed).
+    - **Not run:** the full `./check.sh`; a real LLM call; the compose stack with discover.
 - [ ] **5.3 grow.** Needs: 5.2. *Parallel with 5.4–5.6 once 5.2's pattern is reviewed.*
   - Database: `growth_areas` (`_id` = `{child_id}:{area_id}`), `jobs`, copies, `outbox`, `tombstones`. `area_id` must match `^[a-z0-9_-]{1,50}$` and not start with another circle's path word.
   - Endpoints:
@@ -642,6 +684,22 @@ Build onboarding first, because it fixes the circle pattern: `child_access`, unl
     - today's area ids (`self_care`, `life_ambition`, …) are accepted;
     - generated fields can't be PUT;
     - `grow.area_updated` is published when AI recommendations arrive for a completed area.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/grow/`, the same shape as discover; `buddy-common[generation]==0.12.0`):
+    - **`grow.growth_areas`:** `_id` = `{child_id}:{area_id}`; the fields of 12.1 (validator), `active_jobs` (one lock per kind); `{location, _id}` unique, `{location, user_id}`, `{location, child_id, created_at}`. Plus `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `outbox`, `tombstones`.
+    - **The port:**
+      - `grow/app/area_data.json` is generated from the web app's `growthAreaData.ts` by `grow/tests/fixtures/regenerate.sh`: the six areas, their archetypes (the rounds' tags), the 22 icon keys, the counts, the pronoun tokens.
+      - `grow/app/areas.py` ports `normalizeGeneratedQuestions`, `normalizeGeneratedRounds`, `normalizeRecommendations`, `fillTemplate`, `pickedOptions` and `topArchetype`. The same script runs today's normalisers on 20 fixtures, and the port matches all 20. Icons are stored as keys (the apps draw them), and ids are assigned by the server, so `PUT` can check answer keys against them.
+      - `grow/app/prompts.py` ports the three prompts with the parent's data in data blocks.
+    - **`PUT`:** decided against the area as read, version-conditional, retried up to 3 times (`409 area_changed`); unknown answer keys, generated or unknown fields, `completed → in_progress`, over 64 KB and reserved area ids are 422. Completing publishes `grow.area_completed`, plus `grow.completed` when no other area of the child is completed (counted in the transaction); editing a completed area publishes `grow.area_updated`; an identical save is a no-op.
+    - **Generation:** per-kind locks; `parent_questions` creates the area `in_progress`; the question sets once (`409 already_generated`); recommendations need answers. **Decided here:** generation only for the six known areas (`422 unknown_area`): the child rounds need an area's archetypes, and the prompts its description. The copies are read through at the start; the job never touches the area's `status`. Recommendations bump `version`, and for a completed area publish `grow.area_updated` in the job's transaction.
+    - **Found on the way, in `common`:** `start_job` set the target's `status` to `generating`, and `fail_or_retry` to `failed`. Right for a personality, wrong for a growth area, whose status is the parent's. Both gained `target_status` (`None` leaves it alone), backward compatible: **buddy-common 0.12.0**, every service pins it.
+    - **Events:** grow's two area events carry `user_id`. `discover.personality_finalised` gained it too (optional, discover sends it), so grow keeps its `personality_inputs` copy without waiting for `child_access`.
+    - **Wired in:** `grow` joins `DELETION_PARTICIPANTS`; compose runs `grow` and `grow-worker`; `scripts/local-keys.py`; `backend/openapi/grow.json`.
+    - **Checked locally:**
+      - grow's 74 tests, at 100%: the plan's three checks, the area's whole journey (questions → answers → rounds → picks → recommendations → completion), per-kind locks, both races, retries and failures, the circle rules, the internal routes, and the worker end to end on Moto (transform gets `grow.area_completed`, children `grow.completed`);
+      - common (406), discover (48) and onboarding (31) after the `common` change; ruff, mypy, import-linter; the spec, Spectral clean; `terraform test` (5 passed).
+    - **Not run:** the full `./check.sh`; a real LLM call; the compose stack with grow.
 - [ ] **5.4 transform.** Needs: 5.2. *Parallel.*
   - Database: `plans` (`_id` = child id, with `life_pathway`), `jobs`, copies, `outbox`, `tombstones`.
   - Endpoints:
@@ -655,6 +713,28 @@ Build onboarding first, because it fixes the circle pattern: `child_access`, unl
     - completion only with a plan **and** the event set;
     - Life Pathway cleared on an `age` or `gender` change and on `grow.area_updated`;
     - photos `{key, url}` round trip, with keys only under `…/ninety-day-plan/`.
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/transform/`, the same shape as grow; `buddy-common[generation,uploads]==0.12.0`):
+    - **`transform.plans`:** `_id` = the child id; the fields of 12.1 (validator), `active_jobs`; `{location, _id}` unique, `{location, user_id}`. Plus `jobs`, `child_access`, `onboarding_inputs`, `personality_inputs`, `growth_inputs`, `outbox`, `tombstones`.
+    - **The port:**
+      - `transform/app/pathway.py`: `lifePathwayAreaSchema`, `buildLifePathwayAreaPrompt` and `normalizeLifePathwayArea`, including the nested-slot repair and the legacy `{milestones}` shape. `transform/tests/fixtures/regenerate.sh` runs today's normaliser on 11 fixtures, and the port matches all 11. What's stored is keyed by slot, so the apps' normaliser reads it back the same.
+      - `transform/app/plans.py`: the plan and tracker schemas and prompts. Answers are checked against the schemas before they're stored.
+      - Parent data goes in data blocks. **Decided here:** the tracker uses the parent's `ask` instead of the app's keyword-derived interest label.
+    - **PATCH:** the API's fields with strict types and map-key patterns. Photos are checked through `common.uploads` (prefix, uploaded, image, ≤ 5 MB), and a field's replaced keys are deleted after the commit. `clear_track_steps`; ≤ 64 KB for the body and the document. Saves are version-conditional with up to 3 attempts (`409 plan_changed`).
+    - **Completion:** `complete_if_ready` sets `completed_at` once and publishes `transform.completed`, from PATCH or from the plan job's transaction, whichever comes last.
+    - **Generation:**
+      - per-kind locks, the Life Pathway's per area (`generate_life_pathway:<area_id>`);
+      - `life_pathway` reads grow's areas through when the copy is behind;
+      - **decided here:** `plan` needs an `ask` (`409 needs_ask`);
+      - the tracker needs the plan and the event;
+      - jobs never touch a status (`target_status=None`).
+    - **Clearing:** a `child.changed` that was applied and changed `age` or `gender` clears every milestone; an applied `grow.area_updated` clears that area's.
+    - **Deletions:** a purged child's or deleted account's plan, copies and photos (`delete_child` on the plan-photo prefix), jobs cancelled, tombstones, the confirmation.
+    - **Wired in:** `transform` joins `DELETION_PARTICIPANTS`; compose runs `transform` and `transform-worker` with the uploads bucket; `scripts/local-keys.py`; `backend/openapi/transform.json`. Terraform already gave transform the uploads environment and its S3 prefix.
+    - **Checked locally:**
+      - transform's 68 tests, at 100%: the plan's three checks (completion both ways, clearing both ways, the photo round trip with keys only under the prefix), the generation rules, PATCH validation, the circle rules, both races, retries and failures, deletions with photos, and the worker end to end on Moto (children gets `transform.completed`);
+      - ruff, mypy, import-linter; the spec, Spectral clean; `terraform test` (5 passed).
+    - **Not run:** the full `./check.sh`; a real LLM call; the compose stack with transform.
 - [ ] **5.5 release.** Needs: 5.2. *Parallel.*
   - Database: `observations` (`_id` = child id), `jobs`, copies, `outbox`, `tombstones`.
   - Endpoints:
@@ -667,16 +747,53 @@ Build onboarding first, because it fixes the circle pattern: `child_access`, unl
     - completion when `watching` first becomes non-empty;
     - regeneration clears `watching` but keeps completion;
     - at most 8 items.
-- [ ] **5.6 platform.** Needs: Gate 3. *Parallel; doesn't need children.*
+  - *(in progress: code done locally, waiting for review and merge)*
+  - **As built** (`backend/release/`, the same shape as discover; `buddy-common[generation]==0.13.0`):
+    - **`release.observations`:** `_id` = the child id; `status`, `source`, `items`, `watching`, `span`, `started_at`, `active_job_id`, `completed_at`, `version` (validator); `{location, _id}` unique, `{location, user_id}`. Plus `jobs`, `child_access`, `onboarding_inputs`, `growth_inputs`, `outbox`, `tombstones`.
+    - **The port** (`release/app/observations.py`):
+      - `normalizeObservations` (with `tidyNote` and the child-choice whitelist), `selectObservations`, `observationsLlmSchema` and `buildObservationsPrompt`, plus the page's evidence builders. Parent data goes in data blocks, named in the instructions by source key only.
+      - `release/tests/fixtures/regenerate.sh` runs today's code on 7 fixtures; the port matches all 7. What's stored is what today's page promoted: at most the six cards, every offered block on one first.
+    - **Found on the way:** release's `growth_inputs` copy had no question texts and no child picks, so today's grow and child evidence couldn't be built. **Decided here:**
+      - grow's area events, its internal `areas` read and the shared `growth_inputs` copy gain `reflections` and `child_choices`, as optional fields (additive, 7.8);
+      - grow computes them from its questions, answers, rounds and selections;
+      - **buddy-common 0.13.0** (`GROWTH_FIELDS` and the copy's validator), and every service pins it.
+    - **PATCH:** `{watching, span}` only, strict; unknown pattern ids are 422; `started_at` is the server's. The first non-empty `watching` sets `completed_at` and publishes `release.completed` in the same transaction. Version-conditional with 3 attempts (`409 observations_changed`).
+    - **Generation:** from any status (a new set replaces the last; `start_job` sets `generating`); missing copies are read through from onboarding and grow; **decided here:** `409 needs_evidence` when there's nothing to read back. The job stores `items` (`source: llm`, `ready`), clears `watching`, keeps `completed_at` and bumps `version`. With no evidence the job fails at once.
+    - **Wired in:** `release` joins `DELETION_PARTICIPANTS`, which now lists all seven participants (`services.tf`, compose); compose runs `release` and `release-worker`; `scripts/local-keys.py`; `backend/openapi/release.json`.
+    - **Checked locally:**
+      - release's 52 tests, at 100%: the plan's three checks (completion on the first watch, regeneration clearing `watching` but not completion, at most the six cards), the evidence and its read-through, the circle rules, both races, retries and failures, and the worker end to end on Moto (children gets `release.completed`);
+      - grow (75) with the new fields; ruff, mypy, import-linter; the specs (grow's, transform's, discover's and onboarding's unchanged), Spectral clean; `terraform test` (5 passed).
+    - **Not run:** the full `./check.sh`; a real LLM call; the compose stack with release.
+- [ ] **5.6 shared.** Needs: Gate 3. *Parallel; doesn't need children.*
   - Endpoints:
     - [ ] `POST /api/v1/speech/transcriptions` (≤ 10 MB, parents only)
     - [ ] `GET /api/v1/downloads/apk` (parents only)
     - [ ] `GET /api/health`
   - **Check:** the audio is never stored or logged; the APK link expires in 300 s.
+  - **As built** (`backend/shared/`):
+    - **Renamed from `platform`:** a `backend/platform` package shadows Python's `platform` module for every import under `backend/`. The service, its Terraform keys (`split_services`, the ALB routes, `sg-shared`, the secret), the gateway, `shared/service-routes.json` (rules 130 and 140), the workflows' descriptions, auth's authz callers and common's `NOT_PARTICIPANTS` all say `shared`. The proposal and the API reference were updated to match.
+    - **No database and no worker:** `SharedSettings` makes `MONGODB_URI` optional; the runtime holds the authorizer, the internal client (for the authz fill), the limits, an OpenAI client (only with `OPENAI_API_KEY`) and an S3 client (only with `ASSETS_BUCKET_NAME`; SigV4, `us-east-1`). The internal app serves `/internal/ping` only.
+    - **Speech-to-text:** parents only, 10/min per user. Reads at most 10 MB + 1 byte (`413 audio_too_large`); the type is the last extension after control characters are stripped (`415 unsupported_audio_type`). OpenAI gets `whisper-1`, `en`, a fixed `recording.<ext>` and the allow-listed MIME. A failure is `502 transcription_unavailable` and logs the error type only; no key is `503 transcription_not_configured`.
+    - **APK link:** parents only, 10/min per user. Lists `app-assets/applications/android/`, takes the newest `.apk` key and presigns it for 300 s with `Content-Disposition: attachment; filename="superpower-android.apk"`. `404 apk_not_available`, `503 downloads_not_configured`, and (**decided here**) `503 downloads_unavailable` when the bucket can't be listed.
+    - **`/api/health`:** public, 30/min per IP, today's build metadata from the `GIT_*` env; it answers even before the runtime is configured.
+    - **Wired in:** compose runs `shared` (profile `split`, with `OPENAI_API_KEY` and `ASSETS_BUCKET_NAME` from `.env`); `scripts/local-keys.py`; `backend/openapi/shared.json`.
+    - **Checked locally:**
+      - shared's 16 tests, at 100%, on a fake OpenAI client and Moto S3: the plan's two checks (the recording isn't logged and goes out under a fixed name; `X-Amz-Expires=300` and the download name), parents only, both limits, every refusal, configuration and the lifespan;
+      - common (406) and auth (165) after the rename; ruff, mypy, import-linter; Spectral clean on the new spec; `terraform test` (alb 23, ecs-service 14, stack 5); the ecs-services (29) and fill-secrets (12) script tests; the routing and gateway syncs.
+    - **Not run:** the full `./check.sh`; a real transcription; the compose stack with shared.
 
 - [ ] **5.7 Connect visit (children).** Needs: 4.1, 5.5. It asks release's status before refusing, so it comes after release exists.
   - [ ] `POST /api/v1/children/{id}/connect/visit`: served by children until a connect service exists; asks release's status before refusing.
   - **Check:** locked before Release is done; sets `progress.connect` once.
+  - **As built** (`children/app/main.py`, `connect_visit`):
+    - Parents only (`403 parents_only` for admins, as children's other writes; **decided here**), 30/min per user; someone else's child is `404 child_not_found`.
+    - Already visited: returns the progress, asks nobody and publishes nothing.
+    - **Unlock:** the child's own `progress.release`; otherwise release's `GET /internal/release/children/{id}/status` (children is already its only allowed caller). A `404` is "not done"; unreachable or any other status is `503 release_unavailable`, `Retry-After: 2`.
+    - **Decided here:** release's yes also sets `progress.release` in the same write. children owns progress, and Home would otherwise show Connect visited with Release not done until `release.completed` arrives; that event is then a no-op.
+    - One `find_one_and_update` conditional on `progress.connect` not set, with `child.changed` in its transaction, so two visits at once publish once. A child deleted in between is `404`.
+    - `connect` stays out of `common.deletion.PARTICIPANTS`; no connect database, queue or ECS service.
+    - **Checked locally:** children's 50 tests at 100% (5 new: the lock and release's confirmation, set once, concurrent visits, a racing delete, the refusals and the limit, on a fake release); ruff, mypy; `backend/openapi/children.json` regenerated, Spectral clean.
+    - **Not run:** the full `./check.sh`; the compose stack (Gate 5's walk through every circle).
 
 **Gate 5:** `./check.sh` passes; in dev, one child goes from profile to Connect through every circle. **Review before Phase 6.**
 
@@ -885,7 +1002,7 @@ Record decisions taken during the build here, with the date, so the plan and the
     - A service's `jobs` validator accepts only its own job types (`jobs_validator(service)`).
     - A job's `error` is limited to 500 characters (a short reason, never the prompt).
   - **Copies:** onboarding, personality and growth events carry no `user_id`, so the builders take it from the consumer's `child_access` copy.
-  - **Deletion:** `PARTICIPANTS` is checked against the catalogue (`data_services` and the consumers of `user.deletion_requested`). Every directory under `backend/` with a `requirements.txt` must be in `PARTICIPANTS` or in `NOT_PARTICIPANTS` with a reason (auth, platform, hello).
+  - **Deletion:** `PARTICIPANTS` is checked against the catalogue (`data_services` and the consumers of `user.deletion_requested`). Every directory under `backend/` with a `requirements.txt` must be in `PARTICIPANTS` or in `NOT_PARTICIPANTS` with a reason (auth, shared, hello).
   - **Checked locally:** the 1.5 check passed against the compose replica set: every index from section 14 exists after running the `ensure_*` functions twice on an empty database, and each validator rejects the malformed cases while accepting valid documents, including each copy written through `versioned_upsert` from its event. common at 100% line and branch coverage. The shared suite, run as CI runs it: 1,488 passed, 99.83%. hello and auth install alone with 0.7.0; the contracts hold; bandit and pip-audit are clean; the hello image imports the new modules.
 - 2026-10-25: 1.6 built.
   - **Atomic start:**
@@ -927,7 +1044,7 @@ Record decisions taken during the build here, with the date, so the plan and the
 - 2026-10-25: 2.1 built.
   - **Found by the new test that feeds the real `shared/service-routes.json` through the module:** with the old `<app>-<key>-tg-<env>-<hash>` names, `onboarding` (34 characters) and `transform` (33) are over AWS's 32-character limit for target group names. Without the fix, the module's precondition would refuse the 2.5 plan. The fix drops `-tg`: `superpower-onboarding-prod-xxxx` is 31. Nothing is deployed, so the rename is free. `docs/environments.md` (app name + environment ≤ 15 characters, now because of `onboarding`) and `docs/infra-operations.md` say so.
   - **How the checks are split:** Terraform can't have two variables' validations refer to each other. So `routes` validates its own rules (priorities 1–49999 and unique, targets known, 1–3 patterns), and the checks on `targets` that depend on `routes` are target-group preconditions: at most one catch-all, no `path_patterns` with routes, every target routed.
-  - **Checked locally:** `modules/alb` `terraform test`: 23 passed. Five runs are new: the 404 without a catch-all, none with one, the full shared route list (10 rules to 9 target groups, the mid-path `/api/v1/children/*/onboarding*` passed through unchanged, circle rules before children's, platform's two rules), plus the six refusals. `infra-live-backend` `terraform test`: 4 passed, so today's stack is unaffected. tflint, checkov (19 passed, 0 failed) and trivy config are clean; `terraform fmt` is clean.
+  - **Checked locally:** `modules/alb` `terraform test`: 23 passed. Five runs are new: the 404 without a catch-all, none with one, the full shared route list (10 rules to 9 target groups, the mid-path `/api/v1/children/*/onboarding*` passed through unchanged, circle rules before children's, shared's two rules), plus the six refusals. `infra-live-backend` `terraform test`: 4 passed, so today's stack is unaffected. tflint, checkov (19 passed, 0 failed) and trivy config are clean; `terraform fmt` is clean.
 - 2026-10-25: 2.2 built.
   - **Registration requires `internal_port`:** only services with internal endpoints register (13.2). The internal port must also differ from the public one. Both are checked as ECS-service preconditions.
   - **Health:** ECS reports task health to Cloud Map from the container health check, so a starting, unhealthy or stopping task isn't answered. `failure_threshold` is deprecated in AWS provider 6 (AWS always uses 1), so the custom health-check block is empty.
@@ -960,9 +1077,9 @@ Record decisions taken during the build here, with the date, so the plan and the
     - tflint; checkov (0 failed); trivy config (0 misconfigurations); `terraform fmt`.
   - **Not run:** a `terraform plan` against the real dev account. It's 2.7's, after 2.6 updates the workflows that supply the variables.
 - 2026-10-25: 2.6 built.
-  - **Found by the new fill test:** platform's secret holds only `OPENAI_API_KEY`, one of the optional LLM keys. So a "required key still REPLACE_ME" rule would never fill it. A secret whose keys are all still REPLACE_ME now counts as needing a fill too.
+  - **Found by the new fill test:** shared's secret holds only `OPENAI_API_KEY`, one of the optional LLM keys. So a "required key still REPLACE_ME" rule would never fill it. A secret whose keys are all still REPLACE_ME now counts as needing a fill too.
   - **Secrets you add to each GitHub environment before the first apply:**
-    - `MONGODB_URIS`: one entry per service with a database (every service but platform). It needs P.3's Atlas users, one per service.
+    - `MONGODB_URIS`: one entry per service with a database (every service but shared). It needs P.3's Atlas users, one per service.
     - `EMAIL_HMAC_PEPPER`: `openssl rand -hex 32`, backed up.
     - Delete `MONGODB_URI` and `REDIS_AUTH_TOKEN`.
   - **Also fixed:** two older shellcheck SC2129 style findings that actionlint reports, in deploy (git metadata) and terraform-live-backend (model variables).
@@ -1009,3 +1126,11 @@ Record decisions taken during the build here, with the date, so the plan and the
     - every service's OpenAPI spec is unchanged;
     - `terraform validate` and `terraform test` (5 passed).
   - **Not run:** the full `./check.sh`.
+- 2026-10-26: 5.1 built (onboarding, as-built notes under 5.1). It fixes the circle pattern: the `child_access` copy, read-through, confirm-before-deny with the previous circle's owner, `503` with `Retry-After` when that owner can't be asked, and version-checked saves. discover (5.2) copies `onboarding/app/access.py`'s shape, with onboarding as the owner it asks.
+- 2026-10-26: 5.2 built (discover, as-built notes under 5.2). The first generating circle: grow, transform and release follow `discover/app/generation.py` (start / process / report_jobs) and its tests' fake provider. onboarding's two events gained an optional `user_id`.
+- 2026-10-26: 5.3 built (grow, as-built notes under 5.3). **buddy-common 0.12.0:** `start_job` and `fail_or_retry` take `target_status`. transform and release can start from grow's shape for a circle with several kinds of generation per document.
+- 2026-10-26: 5.4 built (transform, as-built notes under 5.4). Release (5.5) follows the same pattern, unlocked by transform's status.
+- 2026-10-26: 5.5 built (release, as-built notes under 5.5). **buddy-common 0.13.0:** `growth_inputs` gains `reflections` and `child_choices`, which grow now sends. Every deletion participant is built, so `DELETION_PARTICIPANTS` lists all seven. Left in Phase 5: 5.6 (shared, then named platform) and 5.7 (the Connect visit in children, which asks release's new status).
+- 2026-10-26: 5.6 built (shared, as-built notes under 5.6). The proposal's `platform` service is now `shared` everywhere, because a `platform` package shadows Python's standard library. Left in Phase 5: 5.7 (the Connect visit in children).
+- 2026-10-26: 5.7 built (the Connect visit in children, as-built notes under 5.7). Every Phase 5 task is built; next is **Gate 5**: the full `./check.sh`, then one child from profile to Connect through every circle, and the review before Phase 6.
+- 2026-10-26: the full `./check.sh` passes after 5.1–5.7 (112 checks, with the test Mongo and Valkey), so the "Not run: the full `./check.sh`" lines under 5.3–5.7 are covered. Gate 5's other half, one child from profile to Connect in dev, is still to do.

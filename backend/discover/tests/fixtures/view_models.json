@@ -1,0 +1,465 @@
+[
+  {
+    "type": "Thinker",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 78,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 100,
+      "Playful": 55
+    },
+    "profile": {
+      "name": "Thinker",
+      "category": "adventurers",
+      "traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "description": "Aarav notices the small things and asks why, turning Aarav's curiosity into careful thinking.",
+      "famous_people": [
+        {
+          "name": "Albert Einstein"
+        },
+        {
+          "name": "Marie Curie"
+        }
+      ],
+      "color": "from-info to-personality-alt-strong",
+      "strengths": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "I want to know how everything works!",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "type": "Thinker",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 78,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 100,
+      "Playful": 55
+    },
+    "profile": {
+      "name": "Thinker",
+      "category": "adventurers",
+      "traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "description": "your child loves your child's sketchbook.",
+      "famous_people": [
+        {
+          "name": "Albert Einstein"
+        },
+        {
+          "name": "Marie Curie"
+        }
+      ],
+      "color": "from-info to-personality-alt-strong",
+      "strengths": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "I want to know how everything works!",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "type": "Thinker",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 78,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 100,
+      "Playful": 55
+    },
+    "profile": {
+      "name": "Thinker",
+      "category": "adventurers",
+      "traits": [
+        "Curious",
+        "Observant",
+        "Kind",
+        "Patient"
+      ],
+      "description": "your child's your child is a bright explorer who loves building elaborate block towers and asking questions about how everything around the house actually works and why it is the…",
+      "famous_people": [
+        {
+          "name": "Albert Einstein"
+        },
+        {
+          "name": "Marie Curie"
+        }
+      ],
+      "color": "from-info to-personality-alt-strong",
+      "strengths": [
+        "Asks thoughtful questions",
+        "Notices details",
+        "Patient with puzzles",
+        "Kind to friends",
+        "Loves drawing",
+        "Calm under pressure"
+      ],
+      "growth_areas": [
+        "Sharing ideas aloud",
+        "Trying before perfect",
+        "Joining group play",
+        "Naming feelings"
+      ],
+      "trait_scores": [
+        {
+          "label": "Curiosity",
+          "score": 92
+        },
+        {
+          "label": "Focus Power",
+          "score": 81
+        },
+        {
+          "label": "Creativity",
+          "score": 74
+        },
+        {
+          "label": "Social Energy",
+          "score": 48
+        }
+      ],
+      "child_quote": "I want to know how everything works!",
+      "parent_note": "Your child thrives when given time to explore; ask open questions at dinner."
+    }
+  },
+  {
+    "type": "Creative",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 100,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 14,
+      "Playful": 14
+    },
+    "profile": {
+      "name": "Creative",
+      "category": "creatives",
+      "traits": [
+        "Imaginative",
+        "Inventive",
+        "Curious",
+        "Expressive",
+        "Resourceful"
+      ],
+      "description": "Mira enjoys creating, imagining new possibilities, and finding unique solutions. They are inspired by self-expression and novel ideas.",
+      "famous_people": [
+        {
+          "name": "Leonardo da Vinci"
+        },
+        {
+          "name": "Frida Kahlo"
+        }
+      ],
+      "color": "from-personality-light to-accent-pink",
+      "strengths": [
+        "Imagination",
+        "Problem-solving",
+        "Adaptability",
+        "Artistic skills"
+      ],
+      "growth_areas": [
+        "Practical implementation",
+        "Time management",
+        "Accepting criticism"
+      ],
+      "trait_scores": [
+        {
+          "label": "Grit",
+          "score": 61
+        },
+        {
+          "label": "7",
+          "score": 0
+        },
+        {
+          "label": "Odd",
+          "score": null
+        }
+      ],
+      "child_quote": "",
+      "parent_note": ""
+    }
+  },
+  {
+    "type": "Playful",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 14,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 72,
+      "Playful": 100
+    },
+    "profile": {
+      "name": "Playful",
+      "category": "socializers",
+      "traits": [
+        "3",
+        "null",
+        "Kind",
+        "true",
+        "2.5",
+        "3"
+      ],
+      "description": "No punctuation here but quite a lot of words about Zoe and what makes her laugh so hard",
+      "famous_people": [
+        {
+          "name": "Jim Carrey"
+        },
+        {
+          "name": "Robin Williams"
+        }
+      ],
+      "color": "from-accent-pink to-personality",
+      "strengths": [
+        "Humor",
+        "Joy",
+        "Creativity",
+        "Social engagement"
+      ],
+      "growth_areas": [
+        "Focus",
+        "Handling serious tasks",
+        "Patience"
+      ],
+      "trait_scores": [],
+      "child_quote": "",
+      "parent_note": ""
+    }
+  },
+  {
+    "type": "Creative",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 100,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 14,
+      "Playful": 14
+    },
+    "profile": {
+      "name": "Creative",
+      "category": "creatives",
+      "traits": [
+        "Imaginative",
+        "Inventive",
+        "Curious",
+        "Expressive",
+        "Resourceful"
+      ],
+      "description": "Kai enjoys creating, imagining new possibilities, and finding unique solutions. They are inspired by self-expression and novel ideas.",
+      "famous_people": [
+        {
+          "name": "Leonardo da Vinci"
+        },
+        {
+          "name": "Frida Kahlo"
+        }
+      ],
+      "color": "from-personality-light to-accent-pink",
+      "strengths": [
+        "Imagination",
+        "Problem-solving",
+        "Adaptability",
+        "Artistic skills"
+      ],
+      "growth_areas": [
+        "Practical implementation",
+        "Time management",
+        "Accepting criticism"
+      ],
+      "trait_scores": [],
+      "child_quote": "",
+      "parent_note": ""
+    }
+  },
+  {
+    "type": "Playful",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 14,
+      "Creative": 14,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 80,
+      "Playful": 100
+    },
+    "profile": {
+      "name": "Playful",
+      "category": "socializers",
+      "traits": [
+        "Joyful",
+        "Silly",
+        "Energetic",
+        "Curious",
+        "Spontaneous"
+      ],
+      "description": "Lena brings fun and joy to situations, enjoys games and surprises, and approaches life with a light-hearted spirit.",
+      "famous_people": [
+        {
+          "name": "Jim Carrey"
+        },
+        {
+          "name": "Robin Williams"
+        }
+      ],
+      "color": "from-accent-pink to-personality",
+      "strengths": [
+        "Humor",
+        "Joy",
+        "Creativity",
+        "Social engagement"
+      ],
+      "growth_areas": [
+        "Focus",
+        "Handling serious tasks",
+        "Patience"
+      ],
+      "trait_scores": [],
+      "child_quote": "",
+      "parent_note": ""
+    }
+  },
+  {
+    "type": "Outgoing",
+    "scores": {
+      "Ambitious": 14,
+      "Determined": 14,
+      "Outgoing": 100,
+      "Creative": 14,
+      "Enthusiastic": 14,
+      "Restless": 14,
+      "Highly Energetic": 14,
+      "Thinker": 80,
+      "Playful": 14
+    },
+    "profile": {
+      "name": "Outgoing",
+      "category": "socializers",
+      "traits": [
+        "Friendly",
+        "Sociable",
+        "Confident",
+        "Energetic",
+        "Engaging"
+      ],
+      "description": "Ravi thrives in social settings, enjoys meeting new people, and energizes others through their presence and enthusiasm.",
+      "famous_people": [
+        {
+          "name": "Oprah Winfrey"
+        },
+        {
+          "name": "Will Smith"
+        }
+      ],
+      "color": "from-warning to-warning-orange",
+      "strengths": [
+        "Networking",
+        "Communication",
+        "Confidence",
+        "Positive energy"
+      ],
+      "growth_areas": [
+        "Listening skills",
+        "Sensitivity to introverts",
+        "Managing overstimulation"
+      ],
+      "trait_scores": [],
+      "child_quote": "",
+      "parent_note": ""
+    }
+  }
+]

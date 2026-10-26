@@ -230,7 +230,7 @@ They replace the old per-region secrets `ACM_CERTIFICATE_ARN_<REGION>`, `UPLOADS
 | Secret | Value |
 |---|---|
 | `JWT_PRIVATE_KEY` | RSA private key PEM (single-line, `\n` escaped) — see [docs/jwt-keys.md](jwt-keys.md) for generation instructions. Reaches only the auth service. |
-| `MONGODB_URIS` | JSON object, service → that service's own connection string (one Atlas database user per service, read/write on its own database only), e.g. `{"auth": "mongodb+srv://<auth-user>:<pass>@<cluster>.mongodb.net/", "users": "…"}`. Needs every service with a database (all but platform); `terraform-live-backend` refuses to fill any secret if one is missing. |
+| `MONGODB_URIS` | JSON object, service → that service's own connection string (one Atlas database user per service, read/write on its own database only), e.g. `{"auth": "mongodb+srv://<auth-user>:<pass>@<cluster>.mongodb.net/", "users": "…"}`. Needs every service with a database (all but shared); `terraform-live-backend` refuses to fill any secret if one is missing. |
 | `EMAIL_HMAC_PEPPER` | Auth's pepper for the email lookup hash: a long random string, e.g. `openssl rand -hex 32`. The same in every region of the environment; reaches only the auth service. Back it up: losing it makes every email lookup unmatchable, and changing it needs the versioned rotation in [auth-users-split.md](auth-users-split.md) 6.5. |
 | `OPENAI_API_KEY` | OpenAI key — at least one of `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/`GEMINI_API_KEY` is required (the generating services refuse to start without one); an unset one stays `REPLACE_ME` in their secrets |
 | `ANTHROPIC_API_KEY` | Anthropic key (see `OPENAI_API_KEY`) |
