@@ -29,6 +29,8 @@ from common.events import (
     Event,
     ReceivedEvent,
     add_to_outbox,
+    delete_child_events,
+    delete_user_events,
     tombstone_key,
     versioned_upsert,
     write_tombstone,
@@ -158,6 +160,7 @@ async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
             {"location": location, "child_id": child_id}, session=session
         )
         await cancel_jobs(runtime.db, child_id=child_id, session=session)
+        await delete_child_events(runtime.db, location=location, child_id=child_id, session=session)
         await write_tombstone(
             runtime.db, tombstone_key("child", child_id), location=location,
             version=event.version, session=session,
@@ -172,12 +175,14 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
     event = received.event
     user_id, location = event.aggregate_id, event.location
     if runtime.uploads is not None:
-        for plan in (
-            await runtime.db[PLANS]
-            .find({"location": location, "user_id": user_id}, {"_id": 1})
-            .to_list(None)
-        ):
-            await runtime.uploads.delete_child(location, plan["_id"], PHOTO_KIND)
+        # Every child it knows of: a photo can be uploaded before the child has a plan.
+        owned = {"location": location, "user_id": user_id}
+        children = {
+            *await runtime.db[PLANS].distinct("_id", owned),
+            *await runtime.db[CHILD_ACCESS].distinct("_id", owned),
+        }
+        for child_id in sorted(children):
+            await runtime.uploads.delete_child(location, child_id, PHOTO_KIND)
     confirmation = Event.new(
         "user.data_deleted",
         producer=SERVICE,
@@ -190,6 +195,10 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
     )
 
     async def write(session: AsyncClientSession) -> None:
+        # The user's children, as this service knows them (before their copies go).
+        child_ids = await runtime.db[CHILD_ACCESS].distinct(
+            "_id", {"location": location, "user_id": user_id}, session=session
+        )
         for name in (PLANS, GROWTH_INPUTS, *COPIES):
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
@@ -200,6 +209,9 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
             runtime.db, tombstone_key("user", user_id), location=location,
             version=event.version, session=session,
         )  # fmt: skip
+        await delete_user_events(
+            runtime.db, location=location, user_id=user_id, child_ids=child_ids, session=session
+        )
         await add_to_outbox(runtime.db, confirmation, session)
 
     await _transaction(runtime, write)

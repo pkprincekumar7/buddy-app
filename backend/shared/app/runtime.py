@@ -30,6 +30,8 @@ ASSETS_REGION = "us-east-1"
 # SigV4 on the regional endpoint: botocore's default presigns with SigV2 in us-east-1,
 # which S3 refuses for buckets created after June 2020 (today's downloads router).
 _S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "virtual"})
+# A local endpoint (Moto) has no per-bucket hostnames: path style, as common.uploads does.
+_LOCAL_S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "path"})
 
 
 class SharedSettings(ServiceSettings):
@@ -72,7 +74,7 @@ class Runtime:
                 region_name=ASSETS_REGION,
                 endpoint_url=settings.aws_endpoint_url
                 or f"https://s3.{ASSETS_REGION}.amazonaws.com",
-                config=_S3_CONFIG,
+                config=_LOCAL_S3_CONFIG if settings.aws_endpoint_url else _S3_CONFIG,
             )
         return cls(
             settings=settings,

@@ -26,7 +26,13 @@ from users_testkit import (
 )
 
 from common.events import Event, Relay, SnsPublisher
-from common.events.testing import assert_consumer_contract, assert_replay_safe, sns_envelope
+from common.events.testing import (
+    assert_consumer_contract,
+    assert_replay_safe,
+    seed_user_outbox,
+    seeded_outbox_left,
+    sns_envelope,
+)
 from users import worker
 from users.app import main
 from users.app.runtime import Runtime
@@ -59,6 +65,7 @@ def test_a_deletion_removes_the_profile_and_confirms(mongo_uri):
         async with running(mongo_uri) as r:
             await create_profile(r)
             await create_profile(r, OTHER)
+            await seed_user_outbox(r.runtime.db, user_id=PARENT, child_id=None, other_user_id=OTHER)
             consumer = worker.build_consumer(r.runtime)
             body = sns_envelope(deletion_requested(), r.layout["topics"]["auth"])
             assert (await consumer.handle_body(body)).value == "handled"
@@ -68,7 +75,10 @@ def test_a_deletion_removes_the_profile_and_confirms(mongo_uri):
             tombstone = await r.runtime.db.tombstones.find_one({"_id": f"user:{PARENT}"})
             assert tombstone is not None
             assert (tombstone["location"], tombstone["version"]) == (LOCATION, 4)
-            rows = await r.runtime.db.outbox.find({}).to_list(None)
+            assert await seeded_outbox_left(r.runtime.db) == {"other"}
+            rows = await r.runtime.db.outbox.find(
+                {"_id": {"$not": {"$regex": "^seeded-"}}}
+            ).to_list(None)
             assert [(x["event_type"], x["aggregate_id"], x["version"]) for x in rows] == [
                 ("user.data_deleted", PARENT, 4)
             ]

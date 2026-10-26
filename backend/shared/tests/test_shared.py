@@ -263,9 +263,14 @@ def test_from_env_needs_no_database(fake_aws_credentials, monkeypatch, tmp_path)
         )
     )
     assert full.openai is not None and full.s3.meta.endpoint_url == "http://localhost:5050"
+    # Moto has no per-bucket hostnames (found by the Gate 5 walk): the bucket goes in the path.
+    local_url = full.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})
+    assert local_url.startswith(f"http://localhost:5050/{BUCKET}/k?")
     asyncio.run(full.aclose())
     aws = Runtime.from_env(_env(ASSETS_BUCKET_NAME=BUCKET))
     assert aws.s3.meta.endpoint_url == "https://s3.us-east-1.amazonaws.com"
+    aws_url = aws.s3.generate_presigned_url("get_object", Params={"Bucket": BUCKET, "Key": "k"})
+    assert aws_url.startswith(f"https://{BUCKET}.s3.us-east-1.amazonaws.com/k?")
 
 
 def test_the_lifespan_shares_one_runtime(fake_aws_credentials, monkeypatch, tmp_path):

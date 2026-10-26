@@ -882,8 +882,8 @@ sequenceDiagram
 
 `DELETE /api/v1/children/{id}`:
 1. **Soft delete:** the children service sets `is_deleted` and publishes `child.changed` (with `is_deleted: true`). Each circle marks its `child_access` copy deleted, so the child disappears everywhere at once, but its data is kept for **30 days**, as today's soft delete promises.
-2. **Purge:** after 30 days, the `children-worker` purge job hard-deletes the child and its avatar, and publishes `child.deleted`.
-3. **Each circle then deletes** its data for that child, plus its S3 objects (plan photos), drops the child from its `child_access` copy and writes a tombstone. Pending or running generation jobs for that child are marked `failed` (`error: "deleted"`), and a job that finishes later finds the tombstone and stores nothing.
+2. **Purge:** after 30 days, the `children-worker` purge job hard-deletes the child, its avatar and its own outbox rows about the child, and publishes `child.deleted`.
+3. **Each circle then deletes** its data for that child, plus its S3 objects (plan photos) and its outbox rows about the child (`child.deleted` rows stay), drops the child from its `child_access` copy and writes a tombstone. Pending or running generation jobs for that child are marked `failed` (`error: "cancelled"`), and a job that finishes later finds the tombstone and stores nothing.
 
 There's no restore endpoint; within the 30 days, support can restore a child by clearing `is_deleted`. Account deletion (10.3) skips the 30 days and deletes everything at once.
 
@@ -897,7 +897,7 @@ There's no restore endpoint; within the 30 days, support can restore a child by 
    - **Then, outside the transaction**, it upserts `deletions {_id: user_id, expected: [users, children, onboarding, discover, grow, transform, release], confirmed: []}` (plus `connect` once it exists). `deletions` is unsharded, so including it would make a cross-region distributed transaction (section 14). The upsert is idempotent, and the `auth-worker` creates the row too if a crash skipped it, when the first `user.data_deleted` arrives.
    - It returns **202**.
    - The authz cache flips to `deleting`, so every service rejects the user from now on.
-2. **Each service deletes** everything it holds for that user, including local copies and S3 objects, cancels the user's pending generation jobs, and writes a `user:` tombstone. It then publishes `user.data_deleted` on its own topic, which tells auth which service confirmed (7.2). Deleting twice is a no-op, so this is idempotent.
+2. **Each service deletes** everything it holds for that user, including local copies, S3 objects and its own outbox rows about the user or their children (published rows keep their payloads for 7 days; `user.data_deleted` rows stay), cancels the user's pending generation jobs, and writes a `user:` tombstone. It then publishes `user.data_deleted` on its own topic, which tells auth which service confirmed (7.2). Deleting twice is a no-op, so this is idempotent.
 3. **`auth-worker`** records each confirmation in `deletions.confirmed`. When `confirmed ⊇ expected`, it deletes `email_index`, then `auth.auth`, then `authz:{id}`, then the `deletions` row.
 4. **Alert** on any deletion older than 24 h, which points to a stuck service. **Credentials are always deleted last**, so a stuck deletion can't be logged into, and can still be resumed.
 
@@ -1411,7 +1411,7 @@ Each `…/status` returns `{completed}`; each read-through endpoint returns exac
 | circle documents (`conversations`, `personalities`, `growth_areas`, `plans`, `observations`) | `{location, _id}` unique, with `_id` = child id (`{child_id}:{area_id}` for `growth_areas`) · `{location, user_id}` (user deletion) · `growth_areas` also `{location, child_id}` |
 | every `child_access` / `*_inputs` copy | `{location, _id}` unique (`_id` = child id; `{child_id}:{area_id}` for `growth_inputs`) · `{location, user_id}` (user deletion) · `growth_inputs` also `{location, child_id}` |
 | every `jobs` | `{location, _id}` unique · `{location, child_id, type, status}` · `{location, status, retry_after}` (claim query and pending count, region-scoped) · `{location, user_id}` (user deletion) · TTL 7 days on `completed_at` |
-| every `outbox` | `{location, _id}` unique (sharded like the data it's written with) · `{region, published_at}` (relay polling fallback, own region only) · TTL 7 days after `published_at` |
+| every `outbox` | `{location, _id}` unique (sharded like the data it's written with) · `{region, published_at}` (relay polling fallback, own region only) · `{location, aggregate_id}` (account deletion, 10.3) · TTL 7 days after `published_at` |
 | every `tombstones` (4.1) | `{location, _id}` unique · TTL 30 days on `deleted_at` |
 | every `inbox` (opt-in, 7.3) | `_id` · TTL 15 days on `processed_at` |
 

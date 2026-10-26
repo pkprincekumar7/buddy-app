@@ -6,12 +6,15 @@
   state as handling it once.
 - `assert_consumer_contract(...)`: the consumer has a handler for every event it subscribes
   to, and each schema's example is accepted by the consumer's checks.
+- `seed_user_outbox(...)` / `seeded_outbox_left(...)`: outbox rows for an account-deletion
+  test, and which of them survived (only another user's should).
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from common.events import catalogue, schemas
@@ -85,3 +88,42 @@ def assert_consumer_contract(consumer: Consumer) -> None:
         )
         body = sns_envelope(example_event(event_type), topic_arn(consumer.topic_prefix, producer))
         consumer.check(body)
+
+
+SEEDED = "seeded-"
+
+
+async def seed_user_outbox(
+    db: Any,
+    *,
+    user_id: str,
+    child_id: str | None,
+    other_user_id: str,
+    other_child_id: str | None = None,
+    location: str = "in",
+) -> None:
+    """Rows a deletion of `user_id` must remove (their child's or their own, one naming them in
+    its payload, one already published) and one of another user's, which must stay."""
+    now = datetime.now(UTC)
+
+    def row(name: str, aggregate_id: str, payload: dict[str, Any], published: bool = False) -> Any:
+        return {
+            "_id": f"{SEEDED}{name}", "event_type": "test.seeded", "schema": "test.seeded.v1",
+            "aggregate_id": aggregate_id, "location": location, "version": 1,
+            "payload": payload, "region": TEST_REGION, "created_at": now,
+            "published_at": now if published else None,
+        }  # fmt: skip
+
+    await db.outbox.insert_many(
+        [
+            row("own", child_id or user_id, {"name": "Aarav"}),
+            row("named", "4e0c1b2a-0000-4000-8000-000000000001", {"user_id": user_id}),
+            row("published", child_id or user_id, {"name": "Aarav"}, published=True),
+            row("other", other_child_id or other_user_id, {"user_id": other_user_id}),
+        ]
+    )
+
+
+async def seeded_outbox_left(db: Any) -> set[str]:
+    rows = await db.outbox.find({"_id": {"$regex": f"^{SEEDED}"}}, {"_id": 1}).to_list(None)
+    return {row["_id"].removeprefix(SEEDED) for row in rows}

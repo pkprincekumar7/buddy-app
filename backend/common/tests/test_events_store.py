@@ -10,12 +10,13 @@ from common.events import relay as relay_mod
 from common.events import store
 from common.events.envelope import Event
 from common.events.relay import Relay, SnsPublisher
-from common.events.testing import example_event
+from common.events.testing import example_event, seed_user_outbox, seeded_outbox_left
 
 pytestmark = pytest.mark.live_service
 
 CHILD = "9b1c6f64-2f4e-4d0e-8e2a-6c1f0d3a7b55"
 USER = "3f6c2a1e-8b7d-4c5e-9f10-2a3b4c5d6e7f"
+OTHER_USER = "5a7d3b2f-9c8e-4d6f-a021-3b4c5d6e7f80"
 
 
 class FakePublisher:
@@ -44,6 +45,73 @@ def test_ensure_is_safe_to_repeat_and_validates(mongo_run):
         assert ttl[0]["expireAfterSeconds"] == store.OUTBOX_TTL_SECONDS
         with pytest.raises(OperationFailure):  # the validator refuses a malformed row
             await db[store.OUTBOX].insert_one({"_id": "x", "event_type": "child.changed"})
+
+    mongo_run(body)
+
+
+def test_two_processes_preparing_at_once_both_succeed(mongo_run, monkeypatch):
+    async def body(db, client):
+        # Both runtimes of a service prepare at the same start (found by the Gate 5 walk).
+        await asyncio.gather(*(store.ensure_outbox(db) for _ in range(8)))
+        # The losing side of that race, every time: the other process created the collection
+        # after pymongo's existence check, and the server refuses the create with 48.
+        real = db.create_collection
+
+        async def raced(name: str, **options: Any) -> Any:
+            await real(name, **options)
+            raise OperationFailure("namespace already exists", code=store.NAMESPACE_EXISTS)
+
+        monkeypatch.setattr(db, "create_collection", raced)
+        await store.ensure_tombstones(db)
+        info = await db.command("listCollections", filter={"name": store.TOMBSTONES})
+        assert info["cursor"]["firstBatch"][0]["options"]["validator"] == store.TOMBSTONE_VALIDATOR
+
+        async def broken(name: str, **options: Any) -> Any:
+            raise OperationFailure("not authorized", code=13)
+
+        monkeypatch.setattr(db, "create_collection", broken)
+        with pytest.raises(OperationFailure, match="not authorized"):
+            await store.ensure_inbox(db)
+
+    mongo_run(body)
+
+
+def test_delete_user_events_takes_the_users_rows_only_and_keeps_confirmations(mongo_run):
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        await seed_user_outbox(db, user_id=USER, child_id=CHILD, other_user_id=OTHER_USER)
+        confirmation = example_event("user.data_deleted", aggregate_id=USER)
+        async with client.start_session() as session:
+            with pytest.raises(RuntimeError, match="inside the deletion's transaction"):
+                await store.delete_user_events(db, location="in", user_id=USER, session=session)
+            async with await session.start_transaction():
+                await store.add_to_outbox(db, confirmation, session)
+                removed = await store.delete_user_events(
+                    db, location="in", user_id=USER, child_ids=[CHILD], session=session
+                )
+        assert removed == 3
+        assert await seeded_outbox_left(db) == {"other"}
+        assert await db[store.OUTBOX].find_one({"_id": confirmation.event_id}) is not None
+
+    mongo_run(body)
+
+
+def test_delete_child_events_takes_the_childs_rows_and_keeps_child_deleted(mongo_run):
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        await seed_user_outbox(db, user_id=USER, child_id=CHILD, other_user_id=OTHER_USER)
+        deleted = example_event("child.deleted", aggregate_id=CHILD)
+        async with client.start_session() as session:
+            with pytest.raises(RuntimeError, match="inside the purge's transaction"):
+                await store.delete_child_events(db, location="in", child_id=CHILD, session=session)
+            async with await session.start_transaction():
+                await store.add_to_outbox(db, deleted, session)
+                removed = await store.delete_child_events(
+                    db, location="in", child_id=CHILD, session=session
+                )
+        assert removed == 2
+        assert await seeded_outbox_left(db) == {"named", "other"}
+        assert await db[store.OUTBOX].find_one({"_id": deleted.event_id}) is not None
 
     mongo_run(body)
 

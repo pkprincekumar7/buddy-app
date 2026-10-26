@@ -49,6 +49,25 @@ docker compose --profile split up -d --build
 - `discover-worker`, `grow-worker`, `transform-worker` and `release-worker` generate with the LLM keys in `.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`); without one, each job fails at once with a clear error (the personality shows `failed`; a growth area keeps what it had).
 - Allow-list your email for registration: `docker compose --profile split exec auth python -m auth.seed` (it reads `LOCAL_ALLOWED_EMAIL` from the running container), then register through `http://localhost:8088/api/v1/auth/register`.
 - Changing `EMAIL_HMAC_PEPPER` makes every local email key unmatchable: seed and register again (or start from an empty `auth` database).
+- End-to-end runs (they use the LLM keys in `.env`, so a few provider calls each, and allow-list a new test email themselves). Either the whole journey, one child from profile to Connect:
+
+```bash
+backend/.venv/bin/python scripts/e2e/journey.py
+```
+
+or the same journey, then deleting the account and checking nothing of it is left in any service's database, Valkey or the uploads bucket:
+
+```bash
+backend/.venv/bin/python scripts/e2e/account-deletion.py
+```
+
+or the failure and convergence scenarios (workers killed mid-deletion, a late event and a finishing job, a child's 30-day purge); they stop and start the stack's workers:
+
+```bash
+backend/.venv/bin/python scripts/e2e/convergence.py
+```
+
+`RUN_E2E=1 ./check.sh` runs the last two after the other checks.
 - Paths no new service has yet (the circles) still go to today's backend through the frontend on port 5173.
 
 ## Local development (without Docker)

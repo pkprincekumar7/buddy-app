@@ -572,6 +572,21 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
   done
 fi
 
+# ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
+# Off by default: they need the compose `split` stack and Moto up (docs/getting-started.md),
+# make a few LLM calls with the keys in .env, and stop and start the stack's workers.
+# Gate 6 runs them:
+#   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
+if [ "${RUN_E2E:-}" = "1" ]; then
+  echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"
+  run "e2e: account deletion (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/account-deletion.py"
+  run "e2e: failure and convergence (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/convergence.py"
+else
+  echo -e "\n${CYAN}End-to-end runs skipped: RUN_E2E=1 runs them against the local split stack.${RESET}"
+fi
+
 # ── summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}════ SUMMARY ════${RESET}"

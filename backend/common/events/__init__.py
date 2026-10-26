@@ -21,6 +21,8 @@ from common.events.envelope import (
 from common.events.relay import Relay, SnsPublisher
 from common.events.store import (
     add_to_outbox,
+    delete_child_events,
+    delete_user_events,
     ensure_inbox,
     ensure_outbox,
     ensure_tombstones,
@@ -42,6 +44,8 @@ __all__ = [
     "ReservedEvent",
     "SnsPublisher",
     "add_to_outbox",
+    "delete_child_events",
+    "delete_user_events",
     "ensure_inbox",
     "ensure_outbox",
     "ensure_tombstones",

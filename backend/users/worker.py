@@ -28,6 +28,7 @@ from common.events import (
     Relay,
     SnsPublisher,
     add_to_outbox,
+    delete_user_events,
     tombstone_key,
     write_tombstone,
 )
@@ -61,6 +62,7 @@ async def delete_user_data(runtime: Runtime, received: ReceivedEvent) -> None:
             version=event.version,
             session=session,
         )
+        await delete_user_events(runtime.db, location=location, user_id=user_id, session=session)
         await add_to_outbox(runtime.db, confirmation, session)
 
     # with_transaction retries a transient conflict instead of failing the message.

@@ -30,6 +30,8 @@ from common.events.testing import (
     assert_consumer_contract,
     assert_replay_safe,
     example_event,
+    seed_user_outbox,
+    seeded_outbox_left,
     sns_envelope,
 )
 
@@ -157,8 +159,16 @@ def test_the_purge_publishes_child_deleted_with_the_final_version(mongo_uri):
         s3 = r.runtime.uploads.client
         for k in (key, plan):
             s3.put_object(Bucket=BUCKET, Key=k, Body=b"x", ContentType="image/jpeg")
+        await seed_user_outbox(
+            r.db,
+            user_id=PARENT,
+            child_id=old["id"],
+            other_user_id=OTHER,
+            other_child_id=live_child["id"],
+        )
 
         assert await lifecycle.purge(r.runtime, None) == 1
+        assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
         assert await r.db[CHILDREN].find_one({"_id": old["id"]}) is None
         row = await r.db.outbox.find_one({"aggregate_id": old["id"], "event_type": "child.deleted"})
         # Soft delete made version 2; the purge is the final write: 3.
@@ -214,12 +224,16 @@ def test_account_deletion_removes_every_child_at_once_and_confirms(mongo_uri):
         a = (await add_child(r, name="A")).json()
         b = await _deleted_days_ago(r, 3, name="B")  # soft-deleted: no 30-day wait
         theirs = (await add_child(r, OTHER, name="Theirs")).json()
+        await seed_user_outbox(
+            r.db, user_id=PARENT, child_id=a["id"], other_user_id=OTHER, other_child_id=theirs["id"]
+        )
         key = f"uploads/{LOCATION}/{a['id']}/avatar/{uuid.uuid4()}.jpg"
         r.runtime.uploads.client.put_object(
             Bucket=BUCKET, Key=key, Body=b"x", ContentType="image/jpeg"
         )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
+        assert await seeded_outbox_left(r.db) == {"other"}
         assert await r.db[CHILDREN].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILDREN].find_one({"_id": theirs["id"]}) is not None
         assert r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0

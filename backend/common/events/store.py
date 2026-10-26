@@ -18,7 +18,7 @@ from pymongo import ASCENDING
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, DuplicateKeyError
+from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure
 
 from common.events.envelope import Event
 
@@ -92,12 +92,23 @@ INBOX_VALIDATOR: Doc = {
 }
 
 
+NAMESPACE_EXISTS = 48
+
+
 async def ensure_validated_collection(db: Db, name: str, validator: Doc) -> AsyncCollection[Doc]:
-    """Create `name` with `validator`, or update the validator of an existing one."""
+    """Create `name` with `validator`, or update the validator of an existing one.
+
+    A service and its worker prepare at the same start, so the other may create `name`
+    between pymongo's existence check and the create: the server then refuses with
+    NamespaceExists (48), which is the same "already there" as CollectionInvalid."""
     try:
         await db.create_collection(name, validator=validator)
     except CollectionInvalid:
-        await db.command("collMod", name, validator=validator)
+        pass
+    except OperationFailure as exc:
+        if exc.code != NAMESPACE_EXISTS:
+            raise
+    await db.command("collMod", name, validator=validator)
     return db[name]
 
 
@@ -109,6 +120,8 @@ async def ensure_outbox(db: Db) -> None:
     await outbox.create_index(
         [("region", ASCENDING), ("published_at", ASCENDING), ("created_at", ASCENDING)]
     )
+    # Account deletion's delete_user_events and the purge's delete_child_events (10.2, 10.3).
+    await outbox.create_index([("location", ASCENDING), ("aggregate_id", ASCENDING)])
     # Unpublished rows (published_at null) never expire: TTL ignores non-dates.
     await outbox.create_index("published_at", expireAfterSeconds=OUTBOX_TTL_SECONDS)
 
@@ -138,6 +151,52 @@ async def add_to_outbox(db: Db, event: Event, session: AsyncClientSession) -> No
     if not session.in_transaction:
         raise RuntimeError("add_to_outbox must run inside the change's transaction")
     await db[OUTBOX].insert_one(event.to_outbox(), session=session)
+
+
+async def delete_user_events(
+    db: Db,
+    *,
+    location: str,
+    user_id: str,
+    child_ids: Iterable[str] = (),
+    session: AsyncClientSession,
+) -> int:
+    """Account deletion (10.3): the user's rows in this service's outbox, published or not.
+
+    A published row keeps its payload (child snapshots, answers, reflections) for 7 days,
+    so it goes with the rest of the user's data. A row is the user's when its aggregate is
+    the user or one of their children, or its payload names them. Unpublished ones go too:
+    every consumer would drop them on the user's tombstone anyway. `user.data_deleted`
+    rows are kept. Call it in the deletion's transaction. Returns how many.
+    """
+    if not session.in_transaction:
+        raise RuntimeError("delete_user_events must run inside the deletion's transaction")
+    selector: Doc = {
+        "location": location,
+        # Confirmations stay: ids only, and auth needs each one (a repeat confirms again).
+        "event_type": {"$ne": "user.data_deleted"},
+        "$or": [
+            {"aggregate_id": {"$in": [user_id, *child_ids]}},
+            {"payload.user_id": user_id},
+        ],
+    }
+    result = await db[OUTBOX].delete_many(selector, session=session)
+    return result.deleted_count
+
+
+async def delete_child_events(
+    db: Db, *, location: str, child_id: str, session: AsyncClientSession
+) -> int:
+    """A purged child (10.2): this service's rows about the child, published or not, as
+    `delete_user_events` does for an account. `child.deleted` rows stay (ids only; the
+    circles need it). Call it in the purge's transaction. Returns how many."""
+    if not session.in_transaction:
+        raise RuntimeError("delete_child_events must run inside the purge's transaction")
+    result = await db[OUTBOX].delete_many(
+        {"location": location, "aggregate_id": child_id, "event_type": {"$ne": "child.deleted"}},
+        session=session,
+    )
+    return result.deleted_count
 
 
 # ── tombstones ─────────────────────────────────────────────────────────────────

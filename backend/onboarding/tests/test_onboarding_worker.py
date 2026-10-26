@@ -24,6 +24,8 @@ from common.events.testing import (
     assert_consumer_contract,
     assert_replay_safe,
     example_event,
+    seed_user_outbox,
+    seeded_outbox_left,
     sns_envelope,
 )
 from common.models import CHILD_ACCESS
@@ -131,8 +133,12 @@ def test_a_purged_child_is_deleted_and_cant_come_back(mongo_uri):
         child, kept = str(uuid.uuid4()), str(uuid.uuid4())
         await _saved(r, child)
         await _saved(r, kept)
+        await seed_user_outbox(
+            r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=kept
+        )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_child_deleted(r, child, 5))).value == "handled"
+        assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
         assert await r.db[CONVERSATIONS].find_one({"_id": child}) is None
         assert await r.db[CHILD_ACCESS].find_one({"_id": child}) is None
         assert await r.db[CONVERSATIONS].find_one({"_id": kept}) is not None
@@ -156,8 +162,12 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         await _saved(r, a)
         await _saved(r, b)
         await _saved(r, theirs, OTHER)
+        await seed_user_outbox(
+            r.db, user_id=PARENT, child_id=a, other_user_id=OTHER, other_child_id=theirs
+        )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
+        assert await seeded_outbox_left(r.db) == {"other"}
         assert await r.db[CONVERSATIONS].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILD_ACCESS].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CONVERSATIONS].count_documents({"user_id": OTHER}) == 1

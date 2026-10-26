@@ -24,6 +24,8 @@ from common.events import (
     Event,
     ReceivedEvent,
     add_to_outbox,
+    delete_child_events,
+    delete_user_events,
     tombstone_key,
     versioned_upsert,
     write_tombstone,
@@ -121,6 +123,7 @@ async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
                 {"_id": child_id, "location": location}, session=session
             )
         await cancel_jobs(runtime.db, child_id=child_id, session=session)
+        await delete_child_events(runtime.db, location=location, child_id=child_id, session=session)
         await write_tombstone(
             runtime.db, tombstone_key("child", child_id), location=location,
             version=event.version, session=session,
@@ -146,6 +149,10 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
     )
 
     async def write(session: AsyncClientSession) -> None:
+        # The user's children, as this service knows them (before their copies go).
+        child_ids = await runtime.db[CHILD_ACCESS].distinct(
+            "_id", {"location": location, "user_id": user_id}, session=session
+        )
         for name in (GROWTH_AREAS, *COPIES):
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
@@ -156,6 +163,9 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
             runtime.db, tombstone_key("user", user_id), location=location,
             version=event.version, session=session,
         )  # fmt: skip
+        await delete_user_events(
+            runtime.db, location=location, user_id=user_id, child_ids=child_ids, session=session
+        )
         await add_to_outbox(runtime.db, confirmation, session)
 
     await _transaction(runtime, write)

@@ -33,7 +33,15 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from children.app.runtime import SERVICE, Runtime
 from children.app.store import CHILDREN, snapshot
-from common.events import Event, ReceivedEvent, add_to_outbox, tombstone_key, write_tombstone
+from common.events import (
+    Event,
+    ReceivedEvent,
+    add_to_outbox,
+    delete_child_events,
+    delete_user_events,
+    tombstone_key,
+    write_tombstone,
+)
 from common.telemetry import current_traceparent
 
 # Which flag each completion event sets (12.4). `connect` is set by the visit route
@@ -133,6 +141,10 @@ async def purge_one(runtime: Runtime, doc: Mapping[str, Any]) -> bool:
         done["purged"] = removed.deleted_count == 1
         if not done["purged"]:
             return
+        # Its earlier snapshots (names, progress) go with it; child.deleted stays.
+        await delete_child_events(
+            runtime.db, location=doc["location"], child_id=doc["_id"], session=session
+        )
         await write_tombstone(
             runtime.db, tombstone_key("child", doc["_id"]), location=doc["location"],
             version=final, session=session,
@@ -181,6 +193,7 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
     )
 
     async def write(session: AsyncClientSession) -> None:
+        child_ids = [doc["_id"] for doc in docs]
         await runtime.db[CHILDREN].delete_many(
             {"location": location, "user_id": user_id}, session=session
         )
@@ -193,6 +206,9 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
             runtime.db, tombstone_key("user", user_id), location=location,
             version=event.version, session=session,
         )  # fmt: skip
+        await delete_user_events(
+            runtime.db, location=location, user_id=user_id, child_ids=child_ids, session=session
+        )
         await add_to_outbox(runtime.db, confirmation, session)
 
     await _transaction(runtime, write)

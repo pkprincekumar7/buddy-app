@@ -29,7 +29,13 @@ from grow_testkit import (
 )
 
 from common.events import Event, SnsPublisher
-from common.events.testing import assert_consumer_contract, example_event, sns_envelope
+from common.events.testing import (
+    assert_consumer_contract,
+    example_event,
+    seed_user_outbox,
+    seeded_outbox_left,
+    sns_envelope,
+)
 from common.generation.llm import LlmClient, LlmConfig
 from common.models import CHILD_ACCESS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from grow import worker
@@ -421,8 +427,12 @@ def test_a_purged_child_is_deleted_with_its_areas_and_jobs(mongo_uri):
                 _path(target, f"/{AREA}/generation"), json={"kind": "parent_questions"},
                 headers=auth_header(),
             )  # fmt: skip
+        await seed_user_outbox(
+            r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=kept
+        )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_child_deleted(r, child, 7))).value == "handled"
+        assert await seeded_outbox_left(r.db) == {"named", "other"}  # only the child's went
         assert await r.db[GROWTH_AREAS].count_documents({"child_id": child}) == 0
         assert await r.db[GROWTH_AREAS].count_documents({"child_id": kept}) == 1
         for name in (CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
@@ -446,8 +456,12 @@ def test_account_deletion_removes_everything_and_always_confirms(mongo_uri):
         )
         theirs = r.owners.add_child(user_id=OTHER)
         await r.copy(theirs, user_id=OTHER)
+        await seed_user_outbox(
+            r.db, user_id=PARENT, child_id=child, other_user_id=OTHER, other_child_id=theirs
+        )
         consumer = worker.build_consumer(r.runtime)
         assert (await consumer.handle_body(_deletion(r))).value == "handled"
+        assert await seeded_outbox_left(r.db) == {"other"}
         for name in (GROWTH_AREAS, CHILD_ACCESS, ONBOARDING_INPUTS, PERSONALITY_INPUTS):
             assert await r.db[name].count_documents({"user_id": PARENT}) == 0
         assert await r.db[CHILD_ACCESS].count_documents({"user_id": OTHER}) == 1
