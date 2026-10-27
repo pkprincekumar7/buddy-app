@@ -1,6 +1,6 @@
 # aws_region and environment are supplied via workflow inputs (TF_VAR_*)
 
-# app_name, mongodb_db_name, domain_name, hosted_zone_id, acm_certificate_arn,
+# app_name, domain_name, hosted_zone_id, acm_certificate_arn,
 # assets_bucket_name, subdomain_internal, cookie_domain, cors_origins,
 # openai_model, anthropic_model, gemini_model
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
@@ -24,11 +24,16 @@ elasticache_node_type     = "cache.t4g.medium"
 elasticache_replica_count = 1
 elasticache_multi_az      = true
 
-# ECS — API. One uvicorn process per task (backend/Dockerfile), so ~1 vCPU is
-# all it can use: scale out with more tasks, not bigger ones (TF-03).
-task_cpu      = 1024
-task_memory   = 2048
-desired_count = 15 # = api_min_capacity; only used on the first apply
+# ECS — lean workers (docs/auth-users-split.md, 15.3): HTTP services keep two
+# tasks for availability, workers one each (SQS holds messages while a task is
+# replaced). desired_count is only used on the first apply; autoscaling owns it after.
+runtime_sizes = {
+  "http"              = { cpu = 1024, memory = 2048, desired_count = 2, min_capacity = 2, max_capacity = 25 }
+  "auth"              = { cpu = 2048, memory = 4096, desired_count = 3, min_capacity = 3, max_capacity = 30 }
+  "worker"            = { cpu = 512, memory = 1024, desired_count = 1, min_capacity = 1, max_capacity = 5 }
+  "generating-worker" = { cpu = 1024, memory = 2048, desired_count = 1, min_capacity = 1, max_capacity = 10 }
+  "collector"         = { cpu = 512, memory = 1024, desired_count = 2, min_capacity = 2, max_capacity = 4 }
+}
 
 # Application
 llm_timeout_seconds = 90
@@ -37,40 +42,11 @@ llm_hourly_limit    = 200
 # ECS Exec
 enable_execute_command = false
 
-# Worker ECS
-# One asyncio process, I/O-bound on LLM calls — same sizing reasoning as the API.
-worker_task_cpu              = 1024
-worker_task_memory           = 2048
-worker_desired_count         = 5 # = worker_min_capacity
-worker_concurrency           = 5
-worker_poll_interval_seconds = 2
-
-# Auth ECS (login/register are bcrypt-bound — scales on CPU)
-auth_task_cpu      = 2048
-auth_task_memory   = 4096
-auth_desired_count = 3 # = auth_min_capacity
-
-# Admin ECS (/api/v1/admin/* — low traffic)
-admin_task_cpu      = 512
-admin_task_memory   = 1024
-admin_desired_count = 1
-
-# Autoscaling
-api_min_capacity    = 15
-api_max_capacity    = 200
-worker_min_capacity = 5
-worker_max_capacity = 50
-auth_min_capacity   = 3
-auth_max_capacity   = 30
-admin_min_capacity  = 1
-admin_max_capacity  = 3
-
 # Observability — prod: 90-day retention, all alarms, dashboard enabled, email alerts on
 log_retention_days         = 90
 enable_basic_alarms        = true
 enable_all_alarms          = true
 enable_dashboard           = true
-enable_xray_error_rule     = true
 xray_default_sampling_rate = 0.01
 enable_ops_email           = true
 
@@ -83,13 +59,6 @@ enable_cloudtrail = true
 # ALB access logs always enabled on prod — independent of enable_cloudtrail
 # above (see enable_alb_access_logs's own description); shares the same bucket
 enable_alb_access_logs = true
-
-# ADOT sidecar — off. The backend has no OpenTelemetry/X-Ray instrumentation,
-# so a collector would receive nothing, and ECS already publishes per-service
-# CPU/memory metrics (AWS/ECS). The app now gets the whole task
-# (the sidecar reserved 256 CPU / 512 MiB of it); task size, and so cost, are
-# unchanged. Tracing plan: docs/auth-users-split.md section 15.5.
-enable_adot_sidecar = false
 
 # Container Insights — on in prod only: task-level metrics, task counts and
 # performance log events for investigating incidents (~$34/month per cluster).

@@ -1,0 +1,168 @@
+{
+  "age_offsets": [
+    1,
+    2,
+    3,
+    5,
+    8,
+    10
+  ],
+  "slots": [
+    "y1",
+    "y2",
+    "y3",
+    "y5",
+    "y8",
+    "y10"
+  ],
+  "normalised": [
+    [
+      {
+        "title": "Year 0 title",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      {
+        "title": "Year 1 title",
+        "guided": "Guided 1",
+        "power": "Power 1",
+        "drift": "Drift 1"
+      },
+      {
+        "title": "Year 2 title",
+        "guided": "Guided 2",
+        "power": "Power 2",
+        "drift": "Drift 2"
+      },
+      {
+        "title": "Year 3 title",
+        "guided": "Guided 3",
+        "power": "Power 3",
+        "drift": "Drift 3"
+      },
+      {
+        "title": "Year 4 title",
+        "guided": "Guided 4",
+        "power": "Power 4",
+        "drift": "Drift 4"
+      },
+      {
+        "title": "Year 5 title",
+        "guided": "Guided 5",
+        "power": "Power 5",
+        "drift": "Drift 5"
+      }
+    ],
+    [
+      {
+        "title": "Year 0 title",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      {
+        "title": "Year 1 title",
+        "guided": "Guided 1",
+        "power": "Power 1",
+        "drift": "Drift 1"
+      },
+      {
+        "title": "Year 2 title",
+        "guided": "Guided 2",
+        "power": "Power 2",
+        "drift": "Drift 2"
+      },
+      {
+        "title": "Year 3 title",
+        "guided": "Guided 3",
+        "power": "Power 3",
+        "drift": "Drift 3"
+      },
+      {
+        "title": "Year 4 title",
+        "guided": "Guided 4",
+        "power": "Power 4",
+        "drift": "Drift 4"
+      },
+      {
+        "title": "Year 5 title",
+        "guided": "Guided 5",
+        "power": "Power 5",
+        "drift": "Drift 5"
+      }
+    ],
+    [
+      {
+        "title": "Year 0 title",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      null,
+      {
+        "title": "Year 2 title",
+        "guided": "Guided 2",
+        "power": "",
+        "drift": "Drift 2"
+      },
+      null,
+      null,
+      {
+        "title": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT…",
+        "guided": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG…",
+        "power": "Power 5",
+        "drift": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD…"
+      }
+    ],
+    [
+      {
+        "title": "Year 0 title",
+        "guided": "Guided 0",
+        "power": "Power 0",
+        "drift": "Drift 0"
+      },
+      {
+        "title": "Year 2 title",
+        "guided": "Guided 2",
+        "power": "Power 2",
+        "drift": "Drift 2"
+      },
+      null,
+      null,
+      null,
+      null
+    ],
+    null,
+    null,
+    null,
+    null,
+    [
+      {
+        "title": "T0",
+        "guided": "G0",
+        "power": "",
+        "drift": "D0"
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    [
+      {
+        "title": "T1",
+        "guided": "G1",
+        "power": "",
+        "drift": "D1"
+      },
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    null
+  ]
+}

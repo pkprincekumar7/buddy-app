@@ -23,15 +23,18 @@ module "alb" {
   # empty next value. See docs/infra-operations.md.
   origin_verify_values = distinct(compact([var.origin_verify_secret, var.origin_verify_secret_next]))
 
-  # One target group + rule per HTTP service (services.tf): path-routed ones
-  # first, the catch-all (no path_patterns) last.
-  targets = {
-    for k, s in local.http_services : k => {
-      port          = s.http.port
-      path_patterns = s.http.path_patterns
-      priority      = s.http.priority
-    }
-  }
+  # One target group per HTTP service (services.tf); the rules come from
+  # shared/service-routes.json, the same list the local gateway is built from
+  # (13.1). No catch-all: an unknown path gets the module's fixed 404. A rule for
+  # a service that isn't built yet ("built": false, connect) is skipped.
+  targets = { for k, s in local.http_services : k => { port = s.http.port } }
+  routes = [
+    for r in jsondecode(file("${path.module}/../../shared/service-routes.json")).rules : {
+      priority      = r.priority
+      target        = r.service
+      path_patterns = r.paths
+    } if lookup(r, "built", true)
+  ]
 
   # During a rollout the ALB stops sending old tasks new requests and waits
   # up to this long for their in-flight ones to finish. The longest a request runs is an LLM call (LLM_TIMEOUT_SECONDS),

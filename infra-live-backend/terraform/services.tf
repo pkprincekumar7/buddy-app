@@ -1,395 +1,413 @@
 # ---------------------------------------------------------------------------
-# ECS services — THE place to add a backend service (TF-01)
+# ECS runtimes — THE place to add a backend service (docs/auth-users-split.md, 15.2)
 #
-# Every entry in local.services gets, from this one map:
+# The split's services: each has an HTTP runtime (public API on 8000, internal
+# API on 8001 through Cloud Map) and, except shared, a worker (outbox relay,
+# event consumer, and for the generating circles the LLM job worker). Plus the
+# shared OpenTelemetry collector (15.5). 17 runtimes + 1 collector.
+#
+# From local.services, every runtime gets:
 #   - an ECS service + task definition, autoscaling and alarms (ecs.tf →
-#     ../../modules/ecs-service)
-#   - its own task IAM role and policies (iam.tf)
-#   - its own security group, reaching the VPC endpoints (security_groups.tf)
-#   - its own log group /ecs/<app>/<key>/<env> (cloudwatch.tf)
-#   - an entry in the ecs_services SSM parameter, which is how the deploy,
-#     restart and promote workflows find it (ssm_write.tf) — no workflow edits
+#     ../../modules/ecs-service), registered in Cloud Map when it serves
+#     internal endpoints;
+#   - its own execution and task roles (iam.tf): its execution role reads only
+#     its service's secret and signing key; its task role has only its own AWS
+#     access (15.1);
+#   - its own security group (security_groups.tf) and log group;
+#   - an entry in the ecs_services SSM parameter, with its service's ECR
+#     repository, which is how the deploy / restart / promote workflows find it.
 #
-# To add a service: copy the worker entry, give it a new key (lowercase,
-# hyphens — it's the name you pass to the workflows' `service` input), set
-# its container, sizing, permissions and scaling, add its key to the service
-# list in the `service` input description of deploy-, restart- and
-# promote-live-backend.yml (scripts/check-service-lists.sh checks it), apply
-# terraform-live-backend, then deploy.
+# A service and its worker share one image, one ECR repository, one secret, one
+# service-token key and one Valkey user (section 2): the image's CMD runs the HTTP
+# apps (python -m common.serve <service>); the worker overrides the command.
 #
-# HTTP services (`http` set) each get their own ALB target group and listener
-# rule (../../modules/alb). One of them leaves path_patterns empty: the
-# catch-all (backend). Any other lists the ALB path patterns it owns and a
-# unique rule priority (lower is matched first). CloudFront and Lambda@Edge
-# need no change — they forward /api/* to the ALB, which splits by path.
+# HTTP routing comes from shared/service-routes.json (alb.tf), the same file the
+# local gateway uses. Topics and queues come from the event catalogue
+# (events.tf → ../../modules/events).
 #
-# All services run the same image (the backend ECR repo); `command` picks the
-# entry point and APP_COMPONENT which routers it serves (backend/app/main.py).
-# deploy_order is the order services are listed in (the ecs_services SSM
-# list, the workflows' `service` help text). Deploy, promote and restart roll
-# all selected services out in parallel, so it isn't a rollout order: every
-# service must work against the previous image of the others while a deploy
-# is in flight (e.g. no API change the old worker can't handle).
-#
-# Only auth holds JWT_PRIVATE_KEY and mints tokens. Admin and the API verify
-# with JWT_PUBLIC_KEYS only, and the worker needs neither.
-#
-# Optional name overrides (iam_name, security_group) exist only so the two
-# original services keep their AWS names; new services should leave them
-# unset and get <app>-<key>-task-role-…, <app>-<key>-sg-… etc.
+# To add a service: add it to local.split_services (and generating_services if it
+# runs LLM jobs), give it its env and permissions below, add its routes to
+# shared/service-routes.json and its events to the catalogue, and list it in the
+# workflows' `service` help text (scripts/check-service-lists.sh checks it).
 # ---------------------------------------------------------------------------
 
 locals {
-  # Env vars every token-verifying service (auth, admin, backend) shares.
+  # Order is deploy order (the ecs_services list and the workflows' help text).
+  split_services      = ["auth", "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared"]
+  generating_services = ["discover", "grow", "transform", "release"]
+  # Services whose /internal/* API others call (13.2); shared has none.
+  internal_services = [for s in local.split_services : s if s != "shared"]
+  # Services with a worker (outbox relay, consumer); shared has no database.
+  worker_services = [for s in local.split_services : s if s != "shared"]
+
+  internal_dns_namespace = "${var.app_name}-${var.environment}.internal"
+
+  # Runtime key → its service and kind.
+  runtime_kinds = merge(
+    { for s in local.split_services : s => { service = s, kind = "http" } },
+    { for s in local.worker_services : "${s}-worker" => { service = s, kind = "worker" } },
+    { "otel-collector" = { service = null, kind = "collector" } },
+  )
+
+  # Which runtime_sizes tier a runtime uses.
+  runtime_tier = {
+    for k, r in local.runtime_kinds : k => (
+      r.kind == "collector" ? "collector" :
+      r.kind == "http" ? (r.service == "auth" ? "auth" : "http") :
+      contains(local.generating_services, r.service) ? "generating-worker" : "worker"
+    )
+  }
+
+  # -- Environment ----------------------------------------------------------------
+
+  # Every service runtime (not the collector).
+  base_environment = {
+    for s in local.split_services : s => [
+      { name = "SERVICE_NAME", value = s },
+      { name = "APP_NAME", value = var.app_name },
+      { name = "APP_ENV", value = var.environment },
+      { name = "AWS_REGION", value = var.aws_region },
+      { name = "MONGODB_DB_NAME", value = s },
+      { name = "MONGODB_MAX_POOL_SIZE", value = tostring(var.mongodb_max_pool_size) },
+      # IAM authentication (9.3): the client signs in as this user with a token from its task role.
+      { name = "REDIS_URL", value = "rediss://${module.redis.primary_endpoint_address}:6379" },
+      { name = "REDIS_USERNAME", value = module.redis.rbac_user_names[s] },
+      # What the IAM token is signed for (common.valkey).
+      { name = "REDIS_REPLICATION_GROUP_ID", value = module.redis.replication_group_id },
+      { name = "INTERNAL_DNS_SUFFIX", value = local.internal_dns_namespace },
+      { name = "INTERNAL_SIGNING_KID", value = local.signing_kid[s] },
+      { name = "INTERNAL_PUBLIC_KEYS", value = jsonencode(local.internal_public_keys) },
+      { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://otel-collector.${local.internal_dns_namespace}:4318" },
+      { name = "LOG_LEVEL", value = "INFO" },
+    ]
+  }
+
+  # Token verification (9.2): every HTTP service and worker that checks users.
   jwt_environment = [
     { name = "JWT_KEY_ID", value = var.jwt_key_id },
-    # kid → public key map for verification (APP-02). The API verifies with
-    # these keys only, so it must include jwt_key_id's (variables.tf checks).
     { name = "JWT_PUBLIC_KEYS", value = jsonencode(var.jwt_public_keys) },
-    # iss / aud stamped on and required of every token (EDGE-04). Must equal
-    # the jwt_issuer / jwt_audience infra-live-edge builds the Lambda@Edge
-    # validator with (lambda_edge.tf) — same expressions.
+    # Must equal what infra-live-edge builds the Lambda@Edge validator with.
     { name = "JWT_ISSUER", value = "${var.app_name}-${var.environment}" },
     { name = "JWT_AUDIENCE", value = "${var.app_name}-api" },
   ]
-}
 
-locals {
-  services = {
-    # -- Auth: register, login, Google, refresh, logout, me, account deletion --
-    # The only service with JWT_PRIVATE_KEY. Account deletion stays here, on
-    # the shared database (it removes the user's data from every collection).
-    auth = {
-      display_name = "Auth"
-      scaling_name = "auth"
-      deploy_order = 1
+  http_environment = [
+    { name = "BEHIND_PROXY", value = "true" },
+    { name = "CORS_ORIGINS", value = var.cors_origins },
+  ]
 
-      # Keep in step with ALB_PATH_PATTERNS["auth"] in backend/tests/test_main.py,
-      # which checks these against the auth router's real routes. /user/me is
-      # exact, so /api/v1/user/<anything else> stays on the API.
-      http = {
-        port                              = 8000
-        health_check_grace_period_seconds = 90
-        path_patterns                     = ["/api/v1/auth/*", "/api/v1/user/me"]
-        priority                          = 10
-      }
-      uses_redis = true # rate limits on login / register
+  llm_environment = [
+    { name = "OPENAI_MODEL", value = var.openai_model },
+    { name = "ANTHROPIC_MODEL", value = var.anthropic_model },
+    { name = "GEMINI_MODEL", value = var.gemini_model },
+    { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
+    { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
+  ]
 
-      cpu           = var.auth_task_cpu
-      memory        = var.auth_task_memory
-      desired_count = var.auth_desired_count
-      min_capacity  = var.auth_min_capacity
-      max_capacity  = var.auth_max_capacity
+  uploads_environment = [
+    { name = "UPLOADS_BUCKET_NAME", value = var.uploads_bucket_name },
+    { name = "UPLOADS_URL_TTL_SECONDS", value = tostring(var.uploads_url_ttl_seconds) },
+  ]
 
-      command = null
-      environment = concat([
-        { name = "APP_COMPONENT", value = "auth" },
-        { name = "MONGODB_DB_NAME", value = var.mongodb_db_name },
-        { name = "COOKIE_SECURE", value = "true" },
-        { name = "COOKIE_SAMESITE", value = "lax" },
-        { name = "BEHIND_PROXY", value = "true" },
-        { name = "APP_ENV", value = var.environment },
-        { name = "REDIS_URL", value = "rediss://${module.redis.primary_endpoint_address}:6379" },
-        { name = "AWS_REGION", value = var.aws_region },
-        { name = "CORS_ORIGINS", value = var.cors_origins },
-        { name = "COOKIE_DOMAIN", value = var.cookie_domain },
-      ], local.jwt_environment)
-      secret_keys = ["MONGODB_URI", "JWT_PRIVATE_KEY", "GOOGLE_CLIENT_ID", "REDIS_AUTH_TOKEN"]
+  # Who must confirm an account deletion (10.3): all seven of common.deletion.PARTICIPANTS,
+  # now that each is built (build plan 3.5, 5.5).
+  deletion_participants = ["users", "children", "onboarding", "discover", "grow", "transform", "release"]
+  deletion_environment  = [{ name = "DELETION_PARTICIPANTS", value = join(",", local.deletion_participants) }]
 
-      health_check = {
-        command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
+  # Per service, extra environment for its HTTP runtime and its worker.
+  service_http_environment = {
+    auth = concat([
+      { name = "COOKIE_SECURE", value = "true" },
+      { name = "COOKIE_SAMESITE", value = "lax" },
+      { name = "COOKIE_DOMAIN", value = var.cookie_domain },
+    ], local.deletion_environment)
+    children  = local.uploads_environment
+    transform = local.uploads_environment
+    shared    = [{ name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name }]
+  }
+  service_worker_environment = {
+    auth      = local.deletion_environment
+    children  = local.uploads_environment
+    transform = local.uploads_environment
+  }
 
-      # No AWS access beyond what every service gets (logs, ECS Exec, X-Ray).
-      task_policies = {}
+  # -- Secrets (one per service, 15.1) ---------------------------------------------
 
-      target_tracking_policies = {
-        cpu    = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-        memory = { metric_type = "ECSServiceAverageMemoryUtilization", target_value = 70, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-      }
-      step_scaling_policies = {}
+  # Keys of each service's secret JSON. LLM keys are injected only into the
+  # generating workers and shared (speech-to-text) (8).
+  secret_keys = {
+    auth       = ["MONGODB_URI", "JWT_PRIVATE_KEY", "GOOGLE_CLIENT_ID", "EMAIL_HMAC_PEPPER"]
+    users      = ["MONGODB_URI"]
+    children   = ["MONGODB_URI"]
+    onboarding = ["MONGODB_URI"]
+    discover   = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
+    grow       = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
+    transform  = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
+    release    = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
+    shared     = ["OPENAI_API_KEY"]
+  }
+  llm_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
 
-      sustained_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-      immediate_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-    }
+  runtime_secret_keys = {
+    for k, r in local.runtime_kinds : k => (
+      r.kind == "collector" ? [] :
+      r.kind == "worker" ? local.secret_keys[r.service] :
+      # A generating circle's HTTP runtime starts jobs but never calls an LLM.
+      contains(local.generating_services, r.service) ? [for key in local.secret_keys[r.service] : key if !contains(local.llm_keys, key)] :
+      local.secret_keys[r.service]
+    )
+  }
 
-    # -- Admin: /api/v1/admin/* (allow-list, user lookup, lock / unlock) -------
-    # Verifies tokens with JWT_PUBLIC_KEYS only; get_current_admin checks the
-    # role. Touches only users, email_index and allowed_emails on the shared
-    # database. Little traffic, so small; scales on CPU and memory like auth.
-    admin = {
-      display_name = "Admin"
-      scaling_name = "admin"
-      deploy_order = 2
+  # -- Permissions (15.1) -----------------------------------------------------------
 
-      # Keep in step with ALB_PATH_PATTERNS in backend/tests/test_main.py.
-      http = {
-        port                              = 8000
-        health_check_grace_period_seconds = 90
-        path_patterns                     = ["/api/v1/admin/*"]
-        priority                          = 20
-      }
-      uses_redis = true # rate limits on the admin endpoints
+  # S3 prefixes per service: they never overlap, so neither can touch the other's.
+  uploads_prefix = {
+    children  = "uploads/*/*/avatar/*"
+    transform = "uploads/*/*/ninety-day-plan/*"
+  }
 
-      cpu           = var.admin_task_cpu
-      memory        = var.admin_task_memory
-      desired_count = var.admin_desired_count
-      min_capacity  = var.admin_min_capacity
-      max_capacity  = var.admin_max_capacity
-
-      command = null
-      environment = concat([
-        { name = "APP_COMPONENT", value = "admin" },
-        { name = "MONGODB_DB_NAME", value = var.mongodb_db_name },
-        { name = "BEHIND_PROXY", value = "true" },
-        { name = "APP_ENV", value = var.environment },
-        { name = "REDIS_URL", value = "rediss://${module.redis.primary_endpoint_address}:6379" },
-        { name = "AWS_REGION", value = var.aws_region },
-        { name = "CORS_ORIGINS", value = var.cors_origins },
-      ], local.jwt_environment)
-      secret_keys = ["MONGODB_URI", "REDIS_AUTH_TOKEN"]
-
-      health_check = {
-        command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
-
-      # No AWS access beyond what every service gets (logs, ECS Exec, X-Ray).
-      task_policies = {}
-
-      target_tracking_policies = {
-        cpu    = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-        memory = { metric_type = "ECSServiceAverageMemoryUtilization", target_value = 70, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-      }
-      step_scaling_policies = {}
-
-      sustained_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-      immediate_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-    }
-
-    # -- API: everything else under /api/v1 (the ALB's catch-all) -------------
-    backend = {
-      display_name = "API"
-      scaling_name = "api"
-      deploy_order = 3
-      iam_name     = "ecs-task"
-      security_group = {
-        name        = "ecs-task-sg"
-        description = "Allow port 8000 from ALB; unrestricted egress via NAT (stg/prod: AWS services via VPC endpoints)"
-      }
-
-      # No path_patterns: the catch-all for every request no other service claims.
-      http       = { port = 8000, health_check_grace_period_seconds = 90, path_patterns = [], priority = null }
-      uses_redis = true
-
-      cpu           = var.task_cpu
-      memory        = var.task_memory
-      desired_count = var.desired_count
-      min_capacity  = var.api_min_capacity
-      max_capacity  = var.api_max_capacity
-
-      command = null
-      environment = concat([
-        # Verifies tokens with JWT_PUBLIC_KEYS only — no JWT_PRIVATE_KEY here.
-        { name = "APP_COMPONENT", value = "api" },
-        { name = "MONGODB_DB_NAME", value = var.mongodb_db_name },
-        { name = "OPENAI_MODEL", value = var.openai_model },
-        { name = "ANTHROPIC_MODEL", value = var.anthropic_model },
-        { name = "GEMINI_MODEL", value = var.gemini_model },
-        { name = "COOKIE_SECURE", value = "true" },
-        { name = "COOKIE_SAMESITE", value = "lax" },
-        { name = "BEHIND_PROXY", value = "true" },
-        { name = "APP_ENV", value = var.environment },
-        { name = "REDIS_URL", value = "rediss://${module.redis.primary_endpoint_address}:6379" },
-        { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
-        { name = "LLM_HOURLY_LIMIT", value = tostring(var.llm_hourly_limit) },
-        { name = "ASSETS_BUCKET_NAME", value = var.assets_bucket_name },
-        { name = "UPLOADS_BUCKET_NAME", value = var.uploads_bucket_name },
-        { name = "AWS_REGION", value = var.aws_region },
-        # Lifetime of the S3 presigned GET URLs the API returns for photos (EDGE-05).
-        { name = "UPLOADS_URL_TTL_SECONDS", value = tostring(var.uploads_url_ttl_seconds) },
-        { name = "CORS_ORIGINS", value = var.cors_origins },
-        { name = "COOKIE_DOMAIN", value = var.cookie_domain },
-      ], local.jwt_environment)
-      # Keys of the backend-secrets JSON injected as env vars.
-      secret_keys = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "REDIS_AUTH_TOKEN"]
-
-      health_check = {
-        command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
-
-      # Task role policies: name part → policy document. Role policy names are
-      # <app>-<iam_name>-<key>-<env>-<region>. ECS Exec and X-Ray policies are
-      # added to every service automatically when those features are on.
-      task_policies = {
-        s3 = {
-          Version = "2012-10-17"
-          Statement = [
-            { Effect = "Allow", Action = ["s3:ListBucket"], Resource = ["arn:aws:s3:::${var.assets_bucket_name}"] },
-            { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = ["arn:aws:s3:::${var.assets_bucket_name}/*"] },
-          ]
-        }
-        # Presigned PUT (upload) and GET (view, EDGE-05) URLs for the uploads
-        # bucket. A presigned URL carries the signer's permissions, so the role
-        # itself must be able to read. GetBucketLocation is needed by some SDK
-        # versions to resolve the bucket endpoint when signing.
-        s3-uploads = {
-          Version = "2012-10-17"
-          Statement = [
-            { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}" },
-            { Effect = "Allow", Action = ["s3:PutObject"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}/*" },
-            { Effect = "Allow", Action = ["s3:GetObject"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}/uploads/*" },
-          ]
-        }
-      }
-
-      # Scale-out on whichever fires first, scale-in only when all are below
-      # target: cpu (compute-bound), memory (large payloads / leaks),
-      # alb-requests (most proactive — fires on a throughput spike before CPU
-      # or memory rise; target is requests per task per minute). ecs.tf fills
-      # in an ALBRequestCountPerTarget policy's resource_label with this
-      # service's own target group.
-      target_tracking_policies = {
-        cpu    = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-        memory = { metric_type = "ECSServiceAverageMemoryUtilization", target_value = 70, scale_in_cooldown = 300, scale_out_cooldown = 60 }
-        alb-requests = {
-          metric_type        = "ALBRequestCountPerTarget"
-          target_value       = 1000
-          scale_in_cooldown  = 300
-          scale_out_cooldown = 60
-        }
-      }
-      step_scaling_policies = {}
-
-      sustained_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-      immediate_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
-    }
-
-    # -- Worker: async LLM jobs, no endpoints ----------------------------------
-    worker = {
-      display_name   = "Worker"
-      scaling_name   = "worker"
-      deploy_order   = 4
-      iam_name       = "worker-task"
-      security_group = { name = "worker-sg", description = "Worker: no inbound, unrestricted egress for LLM APIs and MongoDB" }
-
-      http       = null
-      uses_redis = false # rate limiting is API-side
-
-      cpu           = var.worker_task_cpu
-      memory        = var.worker_task_memory
-      desired_count = var.worker_desired_count
-      min_capacity  = var.worker_min_capacity
-      max_capacity  = var.worker_max_capacity
-
-      command = ["python", "worker.py"]
-      environment = [
-        # Neither mints nor verifies tokens — no JWT keys at all.
-        { name = "APP_COMPONENT", value = "worker" },
-        { name = "MONGODB_DB_NAME", value = var.mongodb_db_name },
-        { name = "OPENAI_MODEL", value = var.openai_model },
-        { name = "ANTHROPIC_MODEL", value = var.anthropic_model },
-        { name = "GEMINI_MODEL", value = var.gemini_model },
-        { name = "APP_ENV", value = var.environment },
-        { name = "LLM_TIMEOUT_SECONDS", value = tostring(var.llm_timeout_seconds) },
-        { name = "AWS_REGION", value = var.aws_region },
-        { name = "WORKER_CONCURRENCY", value = tostring(var.worker_concurrency) },
-        { name = "WORKER_POLL_INTERVAL_SECONDS", value = tostring(var.worker_poll_interval_seconds) },
-        # Each regional worker only processes its own region's locations (see worker.py)
-        { name = "WORKER_SCOPE_TO_REGION", value = "true" },
+  uploads_policy = {
+    for s, prefix in local.uploads_prefix : s => {
+      Version = "2012-10-17"
+      Statement = [
+        { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}/${prefix}" },
+        # HeadObject needs GetObject; listing is for deleting a child's objects (10.2).
+        { Effect = "Allow", Action = ["s3:ListBucket"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}", Condition = { StringLike = { "s3:prefix" = [prefix] } } },
+        { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = "arn:aws:s3:::${var.uploads_bucket_name}" },
       ]
-      secret_keys  = ["MONGODB_URI", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]
-      health_check = null
+    }
+  }
 
-      task_policies = {
-        # PendingJobCount emission. PutMetricData needs Resource = "*" (no
-        # resource-level ARNs), but the cloudwatch:namespace condition IS
-        # enforced for it — the only thing stopping the worker writing to
-        # arbitrary namespaces. Don't remove it as "ineffective".
-        cloudwatch = {
+  # Alarm and scaling metrics, each service in its own namespace (15.5). The
+  # condition is the only thing limiting PutMetricData, which takes no resource.
+  metrics_policy = {
+    for s in local.split_services : s => {
+      Version = "2012-10-17"
+      Statement = [{
+        Effect    = "Allow"
+        Action    = ["cloudwatch:PutMetricData"]
+        Resource  = "*"
+        Condition = { StringEquals = { "cloudwatch:namespace" = "Superpower/${s}" } }
+      }]
+    }
+  }
+
+  # Valkey as the service's own RBAC user (9.3, build plan 2.3).
+  valkey_policy = {
+    for s in local.split_services : s => {
+      Version = "2012-10-17"
+      Statement = [{
+        Effect   = "Allow"
+        Action   = ["elasticache:Connect"]
+        Resource = [module.redis.replication_group_arn, module.redis.rbac_user_arns[s]]
+      }]
+    }
+  }
+
+  # A worker relays to its own topic and consumes its own queue (7.2).
+  events_policy = {
+    for s in local.worker_services : s => {
+      Version = "2012-10-17"
+      Statement = concat(
+        contains(keys(module.events.topic_arns), s) ? [
+          { Effect = "Allow", Action = ["sns:Publish"], Resource = module.events.topic_arns[s] },
+          { Effect = "Allow", Action = ["kms:GenerateDataKey", "kms:Decrypt"], Resource = module.events.key_arn },
+        ] : [],
+        contains(keys(module.events.queue_arns), s) ? [
+          { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"], Resource = module.events.queue_arns[s] },
+        ] : [],
+      )
+    }
+  }
+
+  task_policies = {
+    for k, r in local.runtime_kinds : k => merge(
+      r.kind == "collector" ? {
+        xray = {
           Version = "2012-10-17"
           Statement = [{
-            Effect    = "Allow"
-            Action    = ["cloudwatch:PutMetricData"]
-            Resource  = "*"
-            Condition = { StringEquals = { "cloudwatch:namespace" = "Superpower/Worker" } }
+            Effect   = "Allow"
+            Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"]
+            Resource = "*"
           }]
         }
-      }
-
-      # Scaling on queue depth, not CPU: workers spend most time in LLM I/O
-      # wait, so CPU is unreliable for them.
-      #   cpu          — scale-in disabled: a floor that stops scale-in while
-      #                  workers are genuinely busy
-      #   pending-jobs — step scale-out on PendingJobCount > 50 (bounds are
-      #                  relative to it: 50–100 → +2, 100–150 → +4, >150 → +6)
-      #   scale-in     — −1 task per 5 minutes once PendingJobCount ≤ 10 for 5
-      #                  minutes; one at a time so mid-job workers aren't all killed
-      # treat_missing_data = notBreaching on both alarms: no data = empty queue,
-      # and during the ~60 s start-up no metric exists yet — treating that as
-      # breaching would scale in before the first job, causing a restart loop.
-      target_tracking_policies = {
-        cpu = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_out_cooldown = 60, disable_scale_in = true }
-      }
-      step_scaling_policies = {
-        pending-jobs = {
-          adjustment_type         = "ChangeInCapacity"
-          cooldown                = 60
-          metric_aggregation_type = "Average"
-          steps = [
-            { lower_bound = 0, upper_bound = 50, adjustment = 2 },
-            { lower_bound = 50, upper_bound = 100, adjustment = 4 },
-            { lower_bound = 100, adjustment = 6 },
+      } : {},
+      r.kind != "collector" ? { valkey = local.valkey_policy[r.service] } : {},
+      r.kind != "collector" && r.service != "shared" ? { metrics = local.metrics_policy[r.service] } : {},
+      contains(keys(local.uploads_policy), coalesce(r.service, "-")) ? { s3-uploads = local.uploads_policy[r.service] } : {},
+      r.kind == "worker" ? { events = local.events_policy[r.service] } : {},
+      r.service == "shared" ? {
+        # The APK download link (13.3): the assets bucket's Android prefix only.
+        s3-apk = {
+          Version = "2012-10-17"
+          Statement = [
+            { Effect = "Allow", Action = ["s3:GetObject"], Resource = "arn:aws:s3:::${var.assets_bucket_name}/app-assets/applications/android/*" },
+            { Effect = "Allow", Action = ["s3:ListBucket"], Resource = "arn:aws:s3:::${var.assets_bucket_name}", Condition = { StringLike = { "s3:prefix" = ["app-assets/applications/android/*"] } } },
           ]
-          alarm = {
-            metric_name = "PendingJobCount", namespace = "Superpower/Worker", statistic = "Average", period = 60, evaluation_periods = 1
-            threshold   = 50, comparison_operator = "GreaterThanThreshold", treat_missing_data = "notBreaching", dimensions = { Environment = var.environment }
-          }
         }
-        scale-in = {
-          adjustment_type         = "ChangeInCapacity"
-          cooldown                = 300
-          metric_aggregation_type = "Average"
-          steps                   = [{ upper_bound = 0, adjustment = -1 }]
-          alarm = {
-            name_suffix        = "pending-jobs-low", metric_name = "PendingJobCount", namespace = "Superpower/Worker", statistic = "Average", period = 60
-            evaluation_periods = 5, threshold = 10, comparison_operator = "LessThanOrEqualToThreshold", treat_missing_data = "notBreaching", dimensions = { Environment = var.environment }
-          }
+      } : {},
+    )
+  }
+
+  # -- Scaling (15.5) ---------------------------------------------------------------
+
+  http_scaling = {
+    cpu    = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_in_cooldown = 300, scale_out_cooldown = 60 }
+    memory = { metric_type = "ECSServiceAverageMemoryUtilization", target_value = 70, scale_in_cooldown = 300, scale_out_cooldown = 60 }
+    alb-requests = {
+      metric_type        = "ALBRequestCountPerTarget"
+      target_value       = 1000
+      scale_in_cooldown  = 300
+      scale_out_cooldown = 60
+    }
+  }
+
+  # Workers spend most of their time waiting on I/O, so they scale on the work
+  # waiting, not on CPU: queue depth for every worker, and PendingJobCount for the
+  # generating ones. Missing data means "nothing to do" (an idle queue stops
+  # reporting, 15.5).
+  queue_step_scaling = {
+    for s in local.worker_services : s => {
+      queue-depth = {
+        adjustment_type         = "ChangeInCapacity"
+        cooldown                = 60
+        metric_aggregation_type = "Average"
+        steps = [
+          { lower_bound = 0, upper_bound = 100, adjustment = 1 },
+          { lower_bound = 100, adjustment = 3 },
+        ]
+        alarm = {
+          metric_name = "ApproximateNumberOfMessagesVisible", namespace = "AWS/SQS", statistic = "Maximum", period = 60, evaluation_periods = 2
+          threshold   = 100, comparison_operator = "GreaterThanThreshold", treat_missing_data = "notBreaching"
+          dimensions  = { QueueName = "${var.app_name}-${var.environment}-${s}-events" }
         }
       }
+      queue-low = {
+        adjustment_type         = "ChangeInCapacity"
+        cooldown                = 300
+        metric_aggregation_type = "Average"
+        steps                   = [{ upper_bound = 0, adjustment = -1 }]
+        alarm = {
+          name_suffix        = "queue-depth-low", metric_name = "ApproximateNumberOfMessagesVisible", namespace = "AWS/SQS", statistic = "Maximum", period = 60
+          evaluation_periods = 5, threshold = 10, comparison_operator = "LessThanOrEqualToThreshold", treat_missing_data = "notBreaching"
+          dimensions         = { QueueName = "${var.app_name}-${var.environment}-${s}-events" }
+        }
+      }
+    }
+  }
 
-      sustained_alarms = { cpu = "CPUUtilization" }
+  pending_jobs_scaling = {
+    for s in local.generating_services : s => {
+      pending-jobs = {
+        adjustment_type         = "ChangeInCapacity"
+        cooldown                = 60
+        metric_aggregation_type = "Average"
+        steps = [
+          { lower_bound = 0, upper_bound = 50, adjustment = 2 },
+          { lower_bound = 50, upper_bound = 100, adjustment = 4 },
+          { lower_bound = 100, adjustment = 6 },
+        ]
+        alarm = {
+          metric_name = "PendingJobCount", namespace = "Superpower/${s}", statistic = "Maximum", period = 60, evaluation_periods = 1
+          threshold   = 50, comparison_operator = "GreaterThanThreshold", treat_missing_data = "notBreaching", dimensions = { Environment = var.environment }
+        }
+      }
+    }
+  }
+
+  # Keyed by runtime ("<service>-worker"); other runtimes have no step scaling.
+  worker_step_scaling = {
+    for s in local.worker_services : "${s}-worker" => merge(local.queue_step_scaling[s], lookup(local.pending_jobs_scaling, s, {}))
+  }
+
+  target_tracking_by_kind = {
+    http = local.http_scaling
+    collector = {
+      cpu = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_in_cooldown = 300, scale_out_cooldown = 60 }
+    }
+    # A floor: no scale-in while the worker is busy, whatever the queue says.
+    worker = {
+      cpu = { metric_type = "ECSServiceAverageCPUUtilization", target_value = 60, scale_out_cooldown = 60, disable_scale_in = true }
+    }
+  }
+
+  # -- The runtimes ------------------------------------------------------------------
+
+  services = {
+    for k, r in local.runtime_kinds : k => {
+      service      = r.service
+      kind         = r.kind
+      display_name = r.kind == "collector" ? "OpenTelemetry collector" : (r.kind == "worker" ? "${title(r.service)} worker" : title(r.service))
+      scaling_name = k
+      deploy_order = r.kind == "collector" ? 1 : 2 + index(local.split_services, r.service) * 2 + (r.kind == "worker" ? 1 : 0)
+
+      http = r.kind == "http" ? { port = 8000, health_check_grace_period_seconds = 90 } : null
+      # Registered in Cloud Map: the internal API (8001) or the collector's OTLP (4318).
+      internal_port = r.kind == "collector" ? 4318 : (r.kind == "http" && contains(local.internal_services, r.service) ? 8001 : null)
+      uses_valkey   = r.kind != "collector"
+
+      cpu           = var.runtime_sizes[local.runtime_tier[k]].cpu
+      memory        = var.runtime_sizes[local.runtime_tier[k]].memory
+      desired_count = var.runtime_sizes[local.runtime_tier[k]].desired_count
+      min_capacity  = var.runtime_sizes[local.runtime_tier[k]].min_capacity
+      max_capacity  = var.runtime_sizes[local.runtime_tier[k]].max_capacity
+
+      image   = r.kind == "collector" ? var.otel_collector_image : null # null: the service's ECR repository
+      command = r.kind == "worker" ? ["python", "-m", "${r.service}.worker"] : null
+
+      environment = r.kind == "collector" ? [
+        { name = "AOT_CONFIG_CONTENT", value = local.otel_collector_config },
+        ] : concat(
+        local.base_environment[r.service],
+        local.jwt_environment,
+        r.kind == "http" ? local.http_environment : [],
+        r.kind == "http" ? lookup(local.service_http_environment, r.service, []) : lookup(local.service_worker_environment, r.service, []),
+        contains(local.generating_services, r.service) ? local.llm_environment : [],
+        r.kind == "worker" && contains(keys(module.events.topic_arns), r.service) ? [{ name = "EVENTS_TOPIC_ARN", value = module.events.topic_arns[r.service] }] : [],
+        r.kind == "worker" && contains(keys(module.events.queue_urls), r.service) ? [{ name = "EVENTS_QUEUE_URL", value = module.events.queue_urls[r.service] }] : [],
+      )
+      secret_keys = local.runtime_secret_keys[k]
+
+      health_check = r.kind == "http" ? {
+        command     = ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 60
+        } : r.kind == "collector" ? {
+        command     = ["CMD", "/healthcheck"]
+        interval    = 30
+        timeout     = 5
+        retries     = 3
+        startPeriod = 30
+      } : null
+
+      task_policies = local.task_policies[k]
+
+      # try(): each kind's policy set is a differently shaped object.
+      target_tracking_policies = try(local.target_tracking_by_kind[r.kind], {})
+      step_scaling_policies    = try(local.worker_step_scaling[k], {})
+
+      sustained_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
       immediate_alarms = { cpu = "CPUUtilization", memory = "MemoryUtilization" }
     }
   }
 
-  # -- Derived ------------------------------------------------------------------
+  # -- Derived --------------------------------------------------------------------
 
-  # Per-service names, applying the optional overrides above.
-  service_iam_name = { for k, s in local.services : k => coalesce(try(s.iam_name, null), "${k}-task") }
-
-  # Services behind the ALB, each with its own target group and rule.
   http_services = { for k, s in local.services : k => s if s.http != null }
 
-  # What the deploy / restart / promote workflows read from SSM, in rollout
-  # order. container = the container whose image a deploy replaces.
+  # What the deploy / restart / promote workflows read from SSM, in deploy order.
+  # ecr_repository_url is the service's repository (a worker shares its service's);
+  # empty for the collector, which runs a public image.
   ecs_services_manifest = [
     for k in sort([for k, s in local.services : format("%03d-%s", s.deploy_order, k)]) : {
-      name      = substr(k, 4, -1)
-      service   = module.service[substr(k, 4, -1)].service_name
-      family    = module.service[substr(k, 4, -1)].task_definition_family
-      container = substr(k, 4, -1)
+      name               = substr(k, 4, -1)
+      service            = module.service[substr(k, 4, -1)].service_name
+      family             = module.service[substr(k, 4, -1)].task_definition_family
+      container          = substr(k, 4, -1)
+      image_service      = local.services[substr(k, 4, -1)].service != null ? local.services[substr(k, 4, -1)].service : ""
+      ecr_repository_url = local.services[substr(k, 4, -1)].service != null ? aws_ecr_repository.service[local.services[substr(k, 4, -1)].service].repository_url : ""
     }
   ]
 }

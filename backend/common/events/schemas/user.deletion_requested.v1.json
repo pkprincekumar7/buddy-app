@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/user.deletion_requested.v1.json",
+  "title": "user.deletion_requested v1",
+  "description": "auth starts deleting an account; every service holding user data deletes it. aggregate_id is the user id; version is the account's authz_version. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": true,
+  "examples": [
+    {}
+  ]
+}

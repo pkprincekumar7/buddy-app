@@ -1,0 +1,263 @@
+{
+  "areas": [
+    {
+      "id": "life_ambition",
+      "name": "Life Ambition",
+      "description": "Discovering purpose and future goals"
+    },
+    {
+      "id": "self_care",
+      "name": "Self Care",
+      "description": "Building healthy habits and emotional wellness"
+    },
+    {
+      "id": "critical_thinking",
+      "name": "Critical Thinking",
+      "description": "Problem solving and analytical skills"
+    },
+    {
+      "id": "creativity",
+      "name": "Creativity",
+      "description": "Imagination and creative expression"
+    },
+    {
+      "id": "physical_wellness",
+      "name": "Physical Wellness",
+      "description": "Body awareness and physical health"
+    },
+    {
+      "id": "social_skills",
+      "name": "Social Skills",
+      "description": "Communication and relationship building"
+    }
+  ],
+  "archetypes": {
+    "life_ambition": {
+      "maker": {
+        "title": "The Builder",
+        "line": "{name} is drawn to making things that work. Give {him} materials, time and a problem worth fixing."
+      },
+      "teller": {
+        "title": "The Storyteller",
+        "line": "{name} reaches for words and worlds. Audiences, journals and stages will feed this."
+      },
+      "leader": {
+        "title": "The Leader",
+        "line": "{name} wants a team and a direction. Let {him} run something real, however small."
+      },
+      "explorer": {
+        "title": "The Explorer",
+        "line": "{name} is pulled towards the unfamiliar. New places and open questions keep {him} alight."
+      },
+      "thinker": {
+        "title": "The Solver",
+        "line": "{name} likes a puzzle with a locked door. Give {him} harder ones than you think {he} can take."
+      },
+      "helper": {
+        "title": "The Helper",
+        "line": "{name} measures {himself} by who {he} lift{s}. Responsibility for others will grow {him} fastest."
+      }
+    },
+    "self_care": {
+      "rest": {
+        "title": "The Recharger",
+        "line": "{name} refills in quiet. Protect {his} downtime instead of filling it."
+      },
+      "body": {
+        "title": "The Body Listener",
+        "line": "{name} feels things physically first. Food, air and movement change {his} mood fastest."
+      },
+      "feelings": {
+        "title": "The Feeler",
+        "line": "{name} is ready to name what {he} feel{s}. Keep asking, and keep the answers safe."
+      },
+      "order": {
+        "title": "The Steady One",
+        "line": "{name} does better with rhythm than with rules. Build the routine with {him}."
+      },
+      "joy": {
+        "title": "The Joy Seeker",
+        "line": "{name} resets through fun. An hour of nothing useful is doing real work."
+      }
+    },
+    "critical_thinking": {
+      "curious": {
+        "title": "The Question Machine",
+        "line": "{name} learns by asking. Answer two, then hand the third back to {him}."
+      },
+      "logic": {
+        "title": "The Pattern Finder",
+        "line": "{name} enjoys order in a mess. Puzzles, codes and strategy games suit {him}."
+      },
+      "evidence": {
+        "title": "The Fact Checker",
+        "line": "{name} wants to know how you know. Show {him} where to look it up."
+      },
+      "invent": {
+        "title": "The Rule Bender",
+        "line": "{name} reshapes the problem rather than solving it as given. Leave room for that."
+      },
+      "patient": {
+        "title": "The Long Thinker",
+        "line": "{name} can stay with something difficult. Resist rescuing {him} too early."
+      }
+    },
+    "creativity": {
+      "make": {
+        "title": "The Maker",
+        "line": "{name} thinks with {his} hands. Keep raw materials within reach."
+      },
+      "story": {
+        "title": "The Storyteller",
+        "line": "{name} turns everything into narrative. Give {him} somewhere to publish it."
+      },
+      "perform": {
+        "title": "The Performer",
+        "line": "{name} needs an audience to come alive. Find {him} a small stage."
+      },
+      "imagine": {
+        "title": "The Dreamer",
+        "line": "{name} builds whole worlds internally. Unstructured time is not wasted on {him}."
+      },
+      "mix": {
+        "title": "The Remixer",
+        "line": "{name} collides ideas that do not belong together. Expose {him} to more of them."
+      }
+    },
+    "physical_wellness": {
+      "speed": {
+        "title": "The Sprinter",
+        "line": "{name} is built for bursts. Short, sharp challenges hold {him}."
+      },
+      "strength": {
+        "title": "The Strong One",
+        "line": "{name} enjoys the effort itself. Give {him} something heavy and safe to work at."
+      },
+      "skill": {
+        "title": "The Skill Collector",
+        "line": "{name} will drill one move for weeks. Reward the practice, not just the result."
+      },
+      "team": {
+        "title": "The Teammate",
+        "line": "{name} moves best beside other people. Team sport beats solo training here."
+      },
+      "outdoors": {
+        "title": "The Outdoor Kid",
+        "line": "{name} regulates {himself} outside. Long days out do more than any programme."
+      }
+    },
+    "social_skills": {
+      "friend": {
+        "title": "The Friend Maker",
+        "line": "{name} invests in people one at a time. Depth matters more than numbers."
+      },
+      "lead": {
+        "title": "The Natural Lead",
+        "line": "{name} organises the room without being asked. Give {him} something to be in charge of."
+      },
+      "listen": {
+        "title": "The Listener",
+        "line": "{name} holds what others tell {him}. Make sure someone is listening to {him} too."
+      },
+      "kind": {
+        "title": "The Kind One",
+        "line": "{name} notices who is left out. Name it when you see it."
+      },
+      "brave": {
+        "title": "The Brave Voice",
+        "line": "{name} will speak when it costs {him} something. Back {him} publicly."
+      }
+    }
+  },
+  "icon_keys": [
+    "book",
+    "box",
+    "chat",
+    "clock",
+    "flag",
+    "glass",
+    "globe",
+    "hand",
+    "heart",
+    "leaf",
+    "mic",
+    "moon",
+    "music",
+    "pad",
+    "palette",
+    "plate",
+    "rocket",
+    "run",
+    "shield",
+    "spark",
+    "trophy",
+    "wrench"
+  ],
+  "parent_questions_per_area": 5,
+  "game_rounds_per_area": 6,
+  "copy_tokens": {
+    "male": {
+      "he": "he",
+      "He": "He",
+      "his": "his",
+      "His": "His",
+      "him": "him",
+      "Him": "Him",
+      "himself": "himself",
+      "Himself": "Himself",
+      "is": "is",
+      "Is": "Is",
+      "does": "does",
+      "Does": "Does",
+      "has": "has",
+      "Has": "Has",
+      "was": "was",
+      "Was": "Was",
+      "s": "s",
+      "es": "es",
+      "ies": "ies"
+    },
+    "female": {
+      "he": "she",
+      "He": "She",
+      "his": "her",
+      "His": "Her",
+      "him": "her",
+      "Him": "Her",
+      "himself": "herself",
+      "Himself": "Herself",
+      "is": "is",
+      "Is": "Is",
+      "does": "does",
+      "Does": "Does",
+      "has": "has",
+      "Has": "Has",
+      "was": "was",
+      "Was": "Was",
+      "s": "s",
+      "es": "es",
+      "ies": "ies"
+    },
+    "other": {
+      "he": "they",
+      "He": "They",
+      "his": "their",
+      "His": "Their",
+      "him": "them",
+      "Him": "Them",
+      "himself": "themselves",
+      "Himself": "Themselves",
+      "is": "are",
+      "Is": "Are",
+      "does": "do",
+      "Does": "Do",
+      "has": "have",
+      "Has": "Have",
+      "was": "were",
+      "Was": "Were",
+      "s": "",
+      "es": "",
+      "ies": "y"
+    }
+  }
+}

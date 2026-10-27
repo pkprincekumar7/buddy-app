@@ -1,0 +1,34 @@
+# The shared service's runtime dependencies (build plan 5.6). backend/Dockerfile installs
+# the buddy-common line from the local source only, then the rest from PyPI.
+buddy-common==0.16.0
+fastapi==0.136.1
+uvicorn[standard]==0.34.0
+# buddy-common's authorization layer, pinned to the same versions as backend/requirements.txt.
+PyJWT==2.15.1
+cryptography==50.0.0
+redis==5.2.1
+pymongo==4.18.3
+jsonschema==4.25.1
+httpx==0.27.2
+limits==5.8.0
+pydantic-settings==2.7.1
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-http==1.45.1
+opentelemetry-instrumentation-fastapi==0.66b1
+opentelemetry-instrumentation-pymongo==0.66b1
+opentelemetry-instrumentation-httpx==0.66b1
+opentelemetry-instrumentation-botocore==0.66b1
+opentelemetry-instrumentation-redis==0.66b1
+
+# S3 for the APK link, as in backend/requirements.txt.
+boto3==1.35.49
+
+# starlette CVE floor, as in backend/requirements.txt.
+starlette>=1.3.1
+
+# Speech-to-text (OpenAI's transcription API) and the audio upload, pinned as in
+# backend/requirements.txt. No LLM SDKs otherwise: shared generates nothing.
+openai==1.68.2
+python-multipart==0.0.31
+urllib3>=2.8.0

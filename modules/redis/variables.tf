@@ -47,9 +47,44 @@ variable "multi_az" {
 }
 
 variable "auth_token" {
-  description = "AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /). Valkey accepts the same token as Redis."
+  description = "AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /), shared by every client. Today's stack; the split's services use rbac_services instead. A replication group takes one or the other, never both."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "rbac_services" {
+  description = <<-EOT
+    One ElastiCache user per service, signing in with IAM (no password to store or
+    rotate), instead of auth_token (docs/auth-users-split.md, 9.3, 15.1). Keyed by
+    service. Every user can:
+      - read authz:* (only auth, writes_authz = true, can write it);
+      - use its own rate-limit keys, LIMITS:LIMITER/<service>/*, and leader locks,
+        leader:<service>:*;
+      - with llm_limit = true (discover, grow, transform, release), the shared hourly
+        LLM limit, llm:hourly:*.
+    Nothing else: no other keys, and no dangerous commands (KEYS, FLUSHALL, CONFIG…).
+  EOT
+  type = map(object({
+    writes_authz = optional(bool, false)
+    llm_limit    = optional(bool, false)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for k in keys(var.rbac_services) : can(regex("^[a-z][a-z0-9-]{0,24}$", k))])
+    error_message = "rbac_services keys are service names: lowercase letters, digits and hyphens, at most 25 characters."
+  }
+  validation {
+    condition     = alltrue([for k, s in var.rbac_services : !s.writes_authz || k == "auth"])
+    error_message = "Only auth writes the authz cache (9.3): writes_authz is for the auth service only."
+  }
+}
+
+variable "include_default_user" {
+  description = "Add a disabled user named \"default\" to the RBAC user group, for engines that require one in every group. It can't sign in or run anything."
+  type        = bool
+  default     = true
 }
 
 variable "engine_version" {

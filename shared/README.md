@@ -24,11 +24,13 @@ both mapped and blocked, and labels are safe to embed in code.
 
 | Consumer | How | Uses |
 |---|---|---|
-| `backend/app/routing_data.py` | **Generated** (committed) | Registration: `country_code` → `location`; validation; blocked-country 403; worker region scoping; Atlas zone script |
+| `backend/app/routing_data.py` | **Generated** (committed) | Registration: `country_code` → `location`; validation; blocked-country 403; worker region scoping; Atlas zone script. Kept until today's backend is removed (build plan 8.6) |
+| `backend/common/regions_data.py` | **Generated** (committed) | Region → locations and Atlas zones, for the new services' workers, relays and token checks (`common/regions.py`) |
+| `backend/auth/countries_data.py` | **Generated** (committed) | Country → location and the blocked list, for registration in the auth service (`auth/countries.py`) |
 | `frontend/src/lib/countries.ts`, `frontend-app/src/lib/countries.ts` | **Generated** (committed) | Country selector |
 | `frontend/src/lib/locationHint.ts`, `frontend-app/src/lib/locationHint.ts` | **Generated** (committed) | `X-Client-Location` registration hint |
 | `infra-live-edge/terraform/routing.tf` | **Read directly** (`jsondecode(file(...))`) | Lambda@Edge API routing, WAF geo-block list |
-| `backend/tools/atlas_zone_ranges.py` | Via `routing_data.py` | Atlas zone ranges for the Global Cluster |
+| `backend/tools/atlas_zone_ranges.py` | Via `common/regions.py` | Atlas zone ranges for the Global Cluster |
 
 Generated files are committed (not built on the fly) because the web frontend's Docker build
 and the mobile app's Metro bundler can only see their own folders. Don't edit them by hand — the
@@ -78,5 +80,24 @@ These groupings are engineering defaults, not legal advice.
 | Block/unblock a country | Edit `blocked_countries` (and remove/add it in `countries`); sync; deploy backend + frontends; apply the edge Terraform (WAF) |
 
 The mobile app's copy only updates when users install a new app release.
+
+# `shared/service-routes.json` — public API path → service
+
+Which service owns each public API path, in ALB priority order (docs/auth-users-split.md, 13.1).
+Patterns use the ALB's syntax (`*` matches any characters, including `/`); a rule with
+`"built": false` is listed but not routed yet.
+
+```bash
+node scripts/sync-gateway.mjs          # regenerate the local gateway config after editing
+node scripts/sync-gateway.mjs --check  # what CI runs — fails if it's stale
+```
+
+| Consumer | How | Uses |
+|---|---|---|
+| `local/gateway/nginx.conf` | **Generated** (committed) | The local gateway (`docker compose up gateway`, port 8088). Until build plan 8.6, any other `/api/` path goes to today's backend |
+| `infra-live-backend` ALB rules | **Read directly** (`jsondecode(file(...))`, build plan 2.5) | Listener rules, one per entry, at its priority |
+
+The script checks priorities (1–49999, unique, ascending), service names, 1–3 paths per rule
+(the ALB allows 5 condition values and 2 go to the origin header) and that no pattern repeats.
 
 See [`GLOBAL_ROUTING_MONGO.md`](../GLOBAL_ROUTING_MONGO.md) for the end-to-end architecture.

@@ -27,7 +27,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
+known-first-party = ["app", "common"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -44,7 +44,8 @@ disallow_untyped_defs = false
 check_untyped_defs = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Each service's own tests run per service, in its own install (tools/services.py).
+testpaths = ["tests", "common/tests"]
 pythonpath = ["."]
 markers = [
     "live_service: needs a real MongoDB/Redis; skipped locally without one, but a skip fails the run when REQUIRE_LIVE_SERVICES=1 (CI)",
@@ -73,3 +74,10 @@ do_not_mutate = ["app/routing_data.py"]
 also_copy = ["tools", "worker.py"]
 pytest_add_cli_args_test_selection = ["tests"]
 pytest_add_cli_args = ["-p", "no:warnings", "-q"]
+
+[tool.coverage.run]
+# Measure the code, not its tests (each package keeps its tests inside it).
+omit = ["*/tests/*"]
+
+# Import boundaries (docs/auth-users-split.md, section 2) are generated from the services
+# in the tree, so there's no list to keep here: `python tools/import_contracts.py`.

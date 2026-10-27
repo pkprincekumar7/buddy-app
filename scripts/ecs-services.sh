@@ -6,9 +6,11 @@
 #
 # The list of ECS services comes from the SSM parameter terraform-live-backend
 # writes — /<app>/<env>/backend/<region>/ecs_services, a JSON array (in
-# deploy_order) of { name, service, family, container } (see
-# infra-live-backend/terraform/services.tf). So adding a service in Terraform
-# needs no workflow logic change: these helpers loop over whatever is listed.
+# deploy_order) of { name, service, family, container, image_service,
+# ecr_repository_url } (see infra-live-backend/terraform/services.tf): a worker's
+# image_service and repository are its service's, the collector's are empty. So
+# adding a service in Terraform needs no workflow logic change: these helpers
+# loop over whatever is listed.
 #
 # Needs: aws (credentials configured), jq. All SSM reads go to us-east-1 (the
 # control-plane region), whatever region the services run in.
@@ -22,7 +24,7 @@ get_ssm() {
 
 # resolve_services SSM_BASE SELECTION → JSON array of the selected services, in
 # deploy_order (services.tf) — the order they're listed in. SSM_BASE is /<app>/<env>/backend/<region>. SELECTION is "all"
-# or a comma-separated list of service names (e.g. "backend,worker"); unknown
+# or a comma-separated list of service names (e.g. "users,users-worker"); unknown
 # names are an error that lists the valid ones.
 resolve_services() {
   local base="$1" selection="${2:-all}" manifest
@@ -48,6 +50,43 @@ resolve_services() {
   fi
   # Keep the manifest's deploy_order, not the order they were typed in.
   jq -c --argjson w "$wanted" '[.[] | select(.name as $n | $w | index($n))]' <<<"$manifest"
+}
+
+# image_runtimes SERVICES_JSON [SELECTION] → the entries of SERVICES_JSON that run
+# one of the app's own images (image_service set): what deploy and promote can
+# roll out. The collector runs a public image Terraform pins
+# (otel_collector_image), so "all" leaves it out, and naming it is an error.
+image_runtimes() {
+  local services="$1" selection="${2:-all}" pinned runtimes
+  pinned=$(jq -r '[.[] | select((.image_service // "") == "") | .name] | join(", ")' <<<"$services")
+  if [ -n "$pinned" ] && [ "$selection" != "all" ]; then
+    echo "ERROR: $pinned runs an image Terraform pins (otel_collector_image), not one these workflows build. Change it in Terraform, apply, then run restart-live-backend." >&2
+    return 1
+  fi
+  runtimes=$(jq -c '[.[] | select((.image_service // "") != "")]' <<<"$services")
+  if [ "$(jq 'length' <<<"$runtimes")" -eq 0 ]; then
+    echo "ERROR: none of the selected services runs an image these workflows build." >&2
+    return 1
+  fi
+  printf '%s\n' "$runtimes"
+}
+
+# image_services SERVICES_JSON → JSON array of the distinct image_service values,
+# in order: the images to build (a worker shares its service's).
+image_services() {
+  jq -c '[.[].image_service | select(. != null and . != "")] | reduce .[] as $s ([]; if index($s) then . else . + [$s] end)' <<<"$1"
+}
+
+# repository_for SERVICES_JSON IMAGE_SERVICE → that service's ECR repository URL
+# from the manifest, or an error if no entry has it.
+repository_for() {
+  local repo
+  repo=$(jq -r --arg s "$2" '[.[] | select(.image_service == $s) | .ecr_repository_url][0] // ""' <<<"$1")
+  if [ -z "$repo" ]; then
+    echo "ERROR: no ECR repository for '$2' in the ecs_services list. Run the terraform-live-backend workflow (apply) for this environment and region first." >&2
+    return 1
+  fi
+  printf '%s\n' "$repo"
 }
 
 # register_with_image FAMILY CONTAINER IMAGE → ARN of a new revision of FAMILY

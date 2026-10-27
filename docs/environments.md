@@ -50,9 +50,9 @@ Example with `SUBDOMAIN=superpower`, `DOMAIN_NAME=example.com`, environment `qa`
 - Environment id: lowercase letters/digits, short (`qa`, `perf`, `uat`).
 - `APP_NAME`: lowercase letters, digits and hyphens.
 - **`APP_NAME` + environment id together must be at most 15 characters.** The longest AWS name
-  is the API's target group, `<APP_NAME>-backend-tg-<env>-xxxx` (a 4-character hash, see
-  `modules/alb`), and target group names have a 32-character limit. Terraform refuses a longer
-  one at plan time. (`superpower` + `perf` = 14 ✓.)
+  is a target group, `<APP_NAME>-<service>-<env>-xxxx` (a 4-character hash, see `modules/alb`),
+  with the longest service key, `onboarding`, and target group names have a 32-character limit.
+  Terraform refuses a longer one at plan time. (`superpower` + `perf` = 14 ✓.)
 - Only the literal name `prod` gets prod behaviour (bare hostname, no nightly-destroy schedule).
   Any other name is treated as non-prod.
 
@@ -111,13 +111,14 @@ Settings that matter (backend):
 | `vpc_cidrs` | A map with one `/16` **per region** for this environment, listing all three regions even if not deployed yet, so each block is reserved. Pattern: `10.<base>`, `10.<base+1>`, `10.<base+2>` for ap-south-1, eu-west-1, us-east-1 (existing bases: dev `2`, stg `12`, prod `22`, sbx `32`), e.g. qa `10.42`/`10.43`/`10.44`. Every (environment, region) pair must be unique so VPCs can be peered later (NET-01). Values must be `10.x.0.0/16`; Terraform checks the shape and per-environment uniqueness. Subnets are derived in `modules/network` (public `/24` ×3, private `/20` ×3), not configured. |
 | `nat_gateway_count` | 1–3. Each NAT uses one Elastic IP — counts toward the account's per-region EIP quota (section 5). |
 | `elasticache_node_type`, `elasticache_replica_count`, `elasticache_multi_az` | `multi_az = true` needs `replica_count >= 1`. |
-| `task_cpu`/`task_memory`, `worker_*`, `auth_*`, `admin_*`, `api_min/max_capacity`, `worker_min/max_capacity` | Sizing for the four services (API, worker, auth, admin). All of them count toward the account's Fargate vCPU quota (section 5). With `enable_adot_sidecar = true` a task must be at least 512 / 1024; dev/sbx run 256 / 512 with it off. |
+| `runtime_sizes` | CPU, memory, desired count and the autoscaling range for each of the five tiers (`http`, `auth`, `worker`, `generating-worker`, `collector`); every one of the 18 runtimes uses one tier (`services.tf`). All of them count toward the account's Fargate vCPU quota (section 5). dev/sbx run every tier at 256 / 512 × 1; prod runs one task per worker. |
+| `mongodb_max_pool_size` | MongoDB connections per task (default 5). Multiply by every task in the environment to stay under the Atlas cluster's connection limit. |
+| `service_token_key_versions` | Per service, the version of its service-token key pair (default 1). Bump one to rotate that key. |
 | `enable_guardduty` | **See section 5 — at most one environment per AWS account.** |
 | `enable_cloudtrail`, `enable_alb_access_logs` | Write to that region's `REGIONAL_LOGGING_BUCKET_NAMES` entry. |
-| `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `enable_xray_error_rule` | Observability level. |
+| `enable_basic_alarms`, `enable_all_alarms`, `enable_dashboard`, `xray_default_sampling_rate` | Observability level, and the share of ordinary traces the collector keeps (errors and slow traces are always kept). |
 | `enable_ops_email` | `true` requires the `OPS_EMAIL` variable. |
 | `enable_execute_command` | ECS Exec shell access (keep `false` for prod-like data). |
-| `enable_adot_sidecar` | Tracing sidecar (takes 0.25 vCPU / 512 MiB of every task). **`false` everywhere**: the app isn't instrumented, so it would collect nothing. See [auth-users-split.md](auth-users-split.md) 15.5 for the tracing plan. |
 
 Settings that matter (edge):
 
@@ -166,8 +167,8 @@ These are the only things that can collide. Everything else is unique by name au
 | S3 buckets: `ASSETS_BUCKET_NAME`, `SPA_BUCKET_NAME`, the `UPLOADS_BUCKET_NAMES` entries | Never share between environments. | The edge/frontend stacks replace the bucket's whole policy with one that trusts only this environment's CloudFront — a shared bucket breaks the other environment with 403s. |
 | `GLOBAL_LOGGING_BUCKET_NAME` | Must differ from that environment's `us-east-1` entry in `REGIONAL_LOGGING_BUCKET_NAMES`. | Both stacks replace that bucket's policy; the edge one has no ALB-log grant. |
 | `DOMAIN_NAME` + `SUBDOMAIN` + environment | Must produce hostnames no other environment uses. | CloudFront aliases are globally unique across all of AWS. |
-| `MONGODB_URI` / database | Separate database per environment (default name `<APP_NAME>-<env>`). | Shared data. |
-| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEYS`, `ORIGIN_VERIFY_SECRET`, `REDIS_AUTH_TOKEN` | Generate fresh per environment. | A token from one environment must not be valid in another. |
+| `MONGODB_URIS` / databases | Each service has its own database (named after the service) and its own Atlas user, per environment. | Shared data. |
+| `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEYS`, `ORIGIN_VERIFY_SECRET`, `EMAIL_HMAC_PEPPER` | Generate fresh per environment (the service-token keys are generated by Terraform per environment and region). | A token from one environment must not be valid in another. |
 
 Each `REGIONAL_LOGGING_BUCKET_NAMES` entry follows the same rule for every environment that turns
 on `enable_cloudtrail` or `enable_alb_access_logs` (its backend stack replaces that bucket's
@@ -195,7 +196,7 @@ may share one — but the secret must still be set (section 6).
 |---|---|---|
 | Elastic IPs | 5 | `nat_gateway_count` of every environment in that region |
 | VPCs | 5 | one per environment, plus the default VPC |
-| Fargate On-Demand vCPU | account-specific (often low on new accounts) | `api_min_capacity × task_cpu/1024 + worker_min_capacity × worker_task_cpu/1024`, ×2 during rolling deploys (up to the `*_max_capacity` values when scaled out) |
+| Fargate On-Demand vCPU | account-specific (often low on new accounts) | Σ over the 18 runtimes of `min_capacity × cpu/1024` for its `runtime_sizes` tier, ×2 during rolling deploys (up to the `max_capacity` values when scaled out) |
 | CloudTrail trails | 5 | environments with `enable_cloudtrail = true` (+1 in `us-east-1` for an edge trail) |
 
 Raise anything that would exceed its quota **before** the first apply.
@@ -218,7 +219,7 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `HOSTED_ZONE_ID` | Route 53 zone of `DOMAIN_NAME`, in the same account |
 | `ASSETS_BUCKET_NAME` | This environment's assets bucket (`us-east-1`) |
 | `SPA_BUCKET_NAME` | This environment's frontend bucket (`us-east-1`) |
-| `JWT_PUBLIC_KEYS` | Public key map matching `JWT_PRIVATE_KEY`, see [jwt-keys.md](jwt-keys.md). Required by the backend **and** edge workflows; must contain `JWT_KEY_ID`'s public key, because admin and the API verify with these keys only (the backend workflow checks it matches `JWT_PRIVATE_KEY`) |
+| `JWT_PUBLIC_KEYS` | Public key map matching `JWT_PRIVATE_KEY`, see [jwt-keys.md](jwt-keys.md). Required by the backend **and** edge workflows; must contain `JWT_KEY_ID`'s public key, because every service but auth verifies with these keys only (the backend workflow checks it matches `JWT_PRIVATE_KEY`) |
 | `JWT_KEY_ID` | Optional, defaults to `key-v1` |
 | `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `GEMINI_MODEL` | All three |
 | `GOOGLE_CLIENT_ID` | Google OAuth Web client ID |
@@ -231,8 +232,8 @@ Create the GitHub Environment (Settings → Environments → New environment →
 | `JWT_PRIVATE_KEY` | RSA private key, see [jwt-keys.md](jwt-keys.md) |
 | `ORIGIN_VERIFY_SECRET` | Long random string with no `*` or `?` (the ALB treats them as wildcards), e.g. `openssl rand -hex 32` |
 | `ORIGIN_VERIFY_SECRET_NEXT` | **Don't create it at setup.** Optional, set only during a rotation; see [infra-operations.md](infra-operations.md#rotating-the-origin-verify-secret) |
-| `REDIS_AUTH_TOKEN` | 16–128 printable characters, no spaces, quotes, `@` or `/` |
-| `MONGODB_URI` | This environment's connection string |
+| `MONGODB_URIS` | JSON object, service → its own connection string (every service but shared), see [ci-cd.md](ci-cd.md) |
+| `EMAIL_HMAC_PEPPER` | `openssl rand -hex 32`; back it up, and change it only by the versioned rotation in [auth-users-split.md](auth-users-split.md) 6.5 |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | At least one |
 
 ### Required per backend region — environment **variables** (TF-01)

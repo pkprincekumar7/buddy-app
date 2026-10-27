@@ -28,7 +28,7 @@ Coverage is reported on every run but not yet gated. Raise `--cov-fail-under` in
 
 ### CI
 
-Tests run in the `backend-test` job in [`check.yml`](../.github/workflows/check.yml) after `backend-lint` passes. The job spins up real MongoDB 7 and Redis 7 containers as services — no mocking. Exit code 5 (no tests collected) is explicitly caught and treated as a pass.
+Tests run in the `backend-test` job in [`check.yml`](../.github/workflows/check.yml) after `backend-lint` passes. The job starts real MongoDB 8.0 (a single-node replica set, started by a step because service containers can't pass `--replSet`) and Valkey 8.0 containers — no mocking. Locally, `docker compose up -d mongo valkey moto` gives the same MongoDB and Valkey, plus Moto for SNS, SQS and S3. Exit code 5 (no tests collected) is explicitly caught and treated as a pass.
 
 ---
 

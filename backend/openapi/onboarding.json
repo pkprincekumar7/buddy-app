@@ -1,0 +1,391 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "onboarding",
+    "description": "The conversational onboarding: each child's seven answers.",
+    "contact": {
+      "name": "Superpower Engineering",
+      "email": "prince.kumar@pearson.com"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current environment"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "description": "Liveness check for the load balancer.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/onboarding": {
+      "get": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Get Onboarding",
+        "description": "The child's answers once the conversation is finished, else `not_started`. An admin with `children:read:any` passes the owner's `?location=` (audited).",
+        "operationId": "get_onboarding_api_v1_children__id__onboarding_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_-]{1,16}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The owner's location (admins only)",
+              "title": "Location"
+            },
+            "description": "The owner's location (admins only)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Onboarding"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "onboarding"
+        ],
+        "summary": "Put Onboarding",
+        "description": "All seven answers, once, at the end of the chat (the child's parent only). The first save is `201` and publishes `onboarding.conversation_completed`; a later change is `200` and publishes `onboarding.answers_updated`; identical answers change nothing.",
+        "operationId": "put_onboarding_api_v1_children__id__onboarding_put",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Answers"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Onboarding"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The conversation's first save"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Answers": {
+        "properties": {
+          "strengths": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Strengths"
+          },
+          "hobbies": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Hobbies"
+          },
+          "thinking_pattern": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Thinking Pattern"
+          },
+          "communication_style": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Communication Style"
+          },
+          "energy_level": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Energy Level"
+          },
+          "social_behaviour": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Social Behaviour"
+          },
+          "emotional_behaviour": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Emotional Behaviour"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "strengths",
+          "hobbies",
+          "thinking_pattern",
+          "communication_style",
+          "energy_level",
+          "social_behaviour",
+          "emotional_behaviour"
+        ],
+        "title": "Answers",
+        "description": "All seven, as the chat collected them. Question wording stays in the apps."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Onboarding": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "child_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Name"
+          },
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Answers"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "child_name",
+          "answers",
+          "completed_at"
+        ],
+        "title": "Onboarding"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "access_token"
+      },
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Service health"
+    },
+    {
+      "name": "onboarding",
+      "description": "The conversation's answers"
+    }
+  ]
+}

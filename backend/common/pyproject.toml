@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# The protocol layer shared by every backend service (docs/auth-users-split.md, section 2):
+# code that must behave the same everywhere. Each service pins a compatible version range
+# in its own requirements, so a change here doesn't force every runtime to redeploy.
+[project]
+name = "buddy-common"
+dynamic = ["version"]
+description = "Protocol layer shared by the backend services: authz, events, internal calls, telemetry."
+requires-python = ">=3.13"
+# uvicorn runs both of a service's apps (serve.py); FastAPI, PyJWT, cryptography and redis
+# are the authorization layer (authz.py); pymongo and jsonschema are events (events/);
+# httpx is the internal-call client (internal_client.py); OpenTelemetry, pydantic-settings
+# and limits are the operations helpers (telemetry, settings_base, limiter).
+# Services pin exact versions in their own requirements.txt; these are the lowest that work.
+dependencies = [
+    # IAM-token Valkey sign-in (valkey.py): every deployed service connects that way.
+    "botocore>=1.35",
+    "cryptography>=44",
+    "fastapi>=0.133",
+    "httpx>=0.27",
+    "jsonschema>=4.23",
+    "limits>=5.0",
+    # 1.45.1: the fix for GHSA-xcq7-p3pf-p88h (O(N²) tracestate parsing).
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-fastapi>=0.66b1",
+    "opentelemetry-instrumentation-pymongo>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+    "opentelemetry-instrumentation-botocore>=0.66b1",
+    "opentelemetry-instrumentation-redis>=0.66b1",
+    "opentelemetry-sdk>=1.45.1",
+    "pydantic-settings>=2.7",
+    "pymongo>=4.13",
+    "PyJWT>=2.10",
+    "redis>=5.2",
+    "uvicorn>=0.34",
+]
+
+# Installed only by the services that need them (section 2): generation by discover, grow,
+# transform and release (the LLM provider SDKs); uploads by children and transform (boto3).
+[project.optional-dependencies]
+generation = ["anthropic>=0.49", "google-generativeai>=0.8", "openai>=1.68"]
+uploads = ["boto3>=1.35"]
+
+# Flat layout: this directory is the `common` package itself, so imports read
+# `from common.authz import …`. The tests stay out of the installed package.
+[tool.setuptools]
+package-dir = { "common" = "." }
+packages = ["common", "common.events", "common.generation"]
+
+# The event catalogue and schemas ship inside the package (common.events reads them).
+[tool.setuptools.package-data]
+"common.events" = ["catalogue.json", "schemas/*.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "common.__version__" }

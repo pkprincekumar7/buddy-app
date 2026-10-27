@@ -9,6 +9,11 @@ mock_provider "aws" {
       arn = "arn:aws:autoscaling:ap-south-1:111111111111:scalingPolicy:00000000-0000-0000-0000-000000000000:resource/ecs/service/superpower-backend-prod/superpower-worker-prod:policyName/test"
     }
   }
+  mock_resource "aws_service_discovery_service" {
+    defaults = {
+      arn = "arn:aws:servicediscovery:ap-south-1:111111111111:service/srv-0123456789abcdef"
+    }
+  }
 }
 
 variables {
@@ -302,4 +307,229 @@ run "sidecar_fits_from_512_1024" {
     condition     = [for c in jsondecode(aws_ecs_task_definition.this.container_definitions) : c.name] == ["admin", "aws-otel-collector"]
     error_message = "512 / 1024 is the smallest task that takes the sidecar."
   }
+}
+
+# ── Cloud Map registration and the internal port (docs/auth-users-split.md, 13.2) ──
+
+run "registered_service_with_an_internal_port" {
+  command = apply
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children", "sg-internal-callers"]
+    internal_port      = 8001
+    service_discovery  = { namespace_id = "ns-superpower-prod" }
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+    load_balancer = { target_group_arn = "arn:aws:elasticloadbalancing:ap-south-1:111111111111:targetgroup/superpower-children-prod-abcd/0123456789abcdef", container_port = 8000 }
+  }
+
+  assert {
+    condition = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].portMappings == [
+      { containerPort = 8000, protocol = "tcp" },
+      { containerPort = 8001, protocol = "tcp" },
+    ]
+    error_message = "The public port for the ALB, then the internal one."
+  }
+  assert {
+    condition     = aws_service_discovery_service.this[0].name == "children" && one(one(aws_service_discovery_service.this[0].dns_config).dns_records).type == "A"
+    error_message = "Registered as <role> with A records (task IPs)."
+  }
+  assert {
+    condition     = one(aws_service_discovery_service.this[0].dns_config).routing_policy == "MULTIVALUE" && one(one(aws_service_discovery_service.this[0].dns_config).dns_records).ttl == 10
+    error_message = "Multivalue answers with a 10-second TTL, so a stopped task drops out quickly."
+  }
+  assert {
+    condition     = one(aws_service_discovery_service.this[0].dns_config).namespace_id == "ns-superpower-prod" && length(aws_service_discovery_service.this[0].health_check_custom_config) == 1
+    error_message = "In the environment's namespace, with health reported by ECS (the container health check)."
+  }
+  assert {
+    condition     = one(aws_ecs_service.this.service_registries).registry_arn == aws_service_discovery_service.this[0].arn && length(aws_ecs_service.this.load_balancer) == 1
+    error_message = "The ECS service registers its tasks, and still sits behind the ALB."
+  }
+  assert {
+    condition     = output.service_discovery_arn == aws_service_discovery_service.this[0].arn && output.service_discovery_name == "children" && output.internal_port == 8001
+    error_message = "The registration is exposed for the callers' configuration."
+  }
+}
+
+run "the_otel_collector_registers_on_4318_without_a_public_port" {
+  command = apply
+
+  variables {
+    role               = "otel-collector"
+    scaling_name       = "otel"
+    security_group_ids = ["sg-otel"]
+    internal_port      = 4318
+    service_discovery  = { namespace_id = "ns-superpower-prod", name = "otel-collector", dns_ttl = 30 }
+    container = {
+      name              = "otel-collector"
+      image             = "public.ecr.aws/aws-observability/aws-otel-collector:latest"
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-otel-collector-prod"
+      log_stream_prefix = "otel"
+    }
+  }
+
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].portMappings == [{ containerPort = 4318, protocol = "tcp" }]
+    error_message = "Only the internal OTLP port; no ALB target."
+  }
+  assert {
+    condition     = aws_service_discovery_service.this[0].name == "otel-collector" && one(one(aws_service_discovery_service.this[0].dns_config).dns_records).ttl == 30 && length(aws_ecs_service.this.load_balancer) == 0
+    error_message = "A custom name and TTL; no load balancer."
+  }
+}
+
+run "unregistered_service_has_no_cloud_map_entry" {
+  command = apply
+
+  variables {
+    role               = "shared"
+    scaling_name       = "shared"
+    security_group_ids = ["sg-shared"]
+    container = {
+      name              = "shared"
+      image             = "repo/shared:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-shared-prod"
+      log_stream_prefix = "shared"
+    }
+  }
+
+  assert {
+    condition     = length(aws_service_discovery_service.this) == 0 && length(aws_ecs_service.this.service_registries) == 0
+    error_message = "No service_discovery: nothing in Cloud Map."
+  }
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].portMappings == [{ containerPort = 8000, protocol = "tcp" }]
+    error_message = "Only the public port without internal_port."
+  }
+  assert {
+    condition     = output.service_discovery_arn == null && output.service_discovery_name == null && output.internal_port == null
+    error_message = "The outputs are null without a registration."
+  }
+}
+
+run "registration_needs_an_internal_port" {
+  command = plan
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children"]
+    service_discovery  = { namespace_id = "ns-superpower-prod" }
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
+run "the_internal_port_must_differ_from_the_public_one" {
+  command = plan
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children"]
+    internal_port      = 8000
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
+run "registration_name_must_be_a_dns_label" {
+  command = plan
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children"]
+    internal_port      = 8001
+    service_discovery  = { namespace_id = "ns-superpower-prod", name = "Children_Service" }
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+  }
+
+  expect_failures = [var.service_discovery]
+}
+
+run "registration_ttl_is_bounded" {
+  command = plan
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children"]
+    internal_port      = 8001
+    service_discovery  = { namespace_id = "ns-superpower-prod", dns_ttl = 3600 }
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+  }
+
+  expect_failures = [var.service_discovery]
+}
+
+run "internal_port_must_be_a_tcp_port" {
+  command = plan
+
+  variables {
+    role               = "children"
+    scaling_name       = "children"
+    security_group_ids = ["sg-children"]
+    internal_port      = 70000
+    container = {
+      name              = "children"
+      image             = "repo/children:latest"
+      port              = 8000
+      environment       = []
+      secrets           = []
+      log_group_name    = "/ecs/superpower-children-prod"
+      log_stream_prefix = "children"
+    }
+  }
+
+  expect_failures = [var.internal_port]
 }

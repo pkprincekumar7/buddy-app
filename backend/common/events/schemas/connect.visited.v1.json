@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/connect.visited.v1.json",
+  "title": "connect.visited v1",
+  "description": "Reserved, not published: the parent visited Connect. children records the visit itself until a connect service exists (13.4). Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": true,
+  "examples": [
+    {}
+  ]
+}

@@ -48,13 +48,33 @@ if [ "$VENV_PY_VERSION" != "$PYTHON_VERSION" ]; then
   echo "  rm -rf backend/.venv && ./check.sh"
   exit 1
 fi
+# semgrep gets its own venv: it pins OpenTelemetry ~=1.37, and the services pin 1.45.1 (a
+# security fix, GHSA-xcq7-p3pf-p88h), which requirements-test.txt matches. CI already
+# installs requirements-security.txt in a job of its own. So backend/.venv gets every other
+# security tool, and backend/.venv-semgrep gets semgrep alone.
+SEMGREP_VENV="$BACKEND/.venv-semgrep"
+SECURITY_REQS="$(mktemp)"
+SEMGREP_REQS="$(mktemp)"
+grep -v '^semgrep==' "$BACKEND/requirements-security.txt" > "$SECURITY_REQS"
+grep '^semgrep==' "$BACKEND/requirements-security.txt" > "$SEMGREP_REQS"
+
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
   -r "$BACKEND/requirements.txt" \
   -r "$BACKEND/requirements-lint.txt" \
-  -r "$BACKEND/requirements-security.txt" \
+  -r "$SECURITY_REQS" \
   -r "$BACKEND/requirements-test.txt" \
   || { echo -e "${RED}pip install failed — check your network or requirements.txt${RESET}"; exit 1; }
+
+if [ ! -d "$SEMGREP_VENV" ]; then
+  echo -e "${CYAN}Creating backend/.venv-semgrep (Python $PYTHON_VERSION)...${RESET}"
+  "python$PYTHON_VERSION" -m venv "$SEMGREP_VENV" \
+    || { echo -e "${RED}Failed to create backend/.venv-semgrep${RESET}"; exit 1; }
+fi
+echo -e "${CYAN}Syncing backend/.venv-semgrep...${RESET}"
+"$SEMGREP_VENV/bin/pip" install -q -r "$SEMGREP_REQS" \
+  || { echo -e "${RED}pip install of semgrep failed — check your network${RESET}"; exit 1; }
+rm -f "$SECURITY_REQS" "$SEMGREP_REQS"
 
 # Frontend: npm ci, as CI does — installs exactly what package-lock.json says and
 # never rewrites it (npm install can, so local checks could run against different
@@ -95,9 +115,11 @@ _tool() {
 }
 RUFF="$(_tool ruff)"
 MYPY="$(_tool mypy)"
+PIP="$(_tool pip)"
 BANDIT="$(_tool bandit)"
 PIP_AUDIT="$(_tool pip-audit)"
-SEMGREP="$(_tool semgrep)"
+# Its own venv (see the sync above); PATH in CI.
+if [ -x "$SEMGREP_VENV/bin/semgrep" ]; then SEMGREP="$SEMGREP_VENV/bin/semgrep"; else SEMGREP="semgrep"; fi
 CHECKOV="$(_tool checkov)"
 PYTEST="$(_tool pytest)"
 
@@ -111,7 +133,32 @@ run "ruff format (check)" \
     bash -c "cd '$BACKEND' && '$RUFF' format --check ."
 
 run "mypy" \
-    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/"
+    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/ common/"
+
+# Every directory under backend/ with requirements.txt is a service (tools/services.py);
+# each is type-checked, tested and spec-checked on its own below.
+run "service tree valid (tools/services.py --check)" \
+    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/services.py --check"
+SERVICES=()
+read -ra SERVICES <<< "$("$VENV_BIN/python" "$BACKEND/tools/services.py" 2>/dev/null | tr '\n' ' ')"
+# For the scanners: "auth/ hello/" relative to backend/, and the same under $BACKEND.
+SERVICE_DIRS="${SERVICES[*]+${SERVICES[*]/%//}}"
+SERVICE_PATHS="${SERVICES[*]+${SERVICES[*]/#/$BACKEND/}}"
+
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  run "mypy ($svc)" \
+      bash -c "cd '$BACKEND' && '$MYPY' '$svc/'"
+done
+
+# Service import boundaries (docs/auth-users-split.md, section 2), generated from the
+# services in the tree.
+run "import-linter (service boundaries)" \
+    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/import_contracts.py"
+
+# The shared package must install on its own and with each extra, as every service
+# image installs it. A throwaway target keeps the local venv untouched.
+run "common installs (core and extras)" \
+    bash -c "tmp=\$(mktemp -d) && cp -R '$BACKEND/common' \"\$tmp/src\" && cd \"\$tmp\" && '$PIP' install -q --target \"\$tmp/out\" ./src './src[generation,uploads]' && rm -rf \"\$tmp\""
 
 # ── frontend ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
@@ -161,12 +208,20 @@ run "jest (frontend-app)" \
 # Settings load from backend/.env (needs JWT_PRIVATE_KEY, as for the dev server); no
 # test connects to MONGODB_URI. Same command and coverage gate as CI. The real
 # Mongo/Redis integration tests skip unless you point them at throwaway servers —
-# never a real cluster — e.g. (docker run -d -p 27017:27017 mongo:7, same for redis):
-#   MONGODB_TEST_URI=mongodb://localhost:27017 REDIS_URL=redis://localhost:6379 ./check.sh
+# never a real cluster — e.g. the docker-compose services (docker compose up -d mongo valkey):
+#   MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
 
 run "pytest + coverage (backend)" \
-    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+
+# Each service's tests, with its own coverage gate. Locally they share the backend venv;
+# CI installs each service alone (scripts/install-backend-service.sh), which also proves
+# its requirements.txt is complete.
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  run "pytest + coverage ($svc)" \
+      bash -c "cd '$BACKEND' && '$PYTEST' '$svc/tests' --cov='$svc' --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+done
 
 # Validates the hand-built mutant lists against the current source (seconds).
 # This never runs mutation testing itself — that's manual (docs/mutation-testing.md).
@@ -189,13 +244,19 @@ run "spa-rewrite CloudFront Function unit tests (infra-live-edge)" \
 # fake aws CLI (no AWS access needed).
 run "ecs-services.sh tests (scripts)" \
     bash "$ROOT/scripts/ecs-services.test.sh"
+# terraform-live-backend's first-apply fill of the per-service secrets, against
+# a fake aws CLI (fake values only).
+run "fill-service-secrets.sh tests (scripts)" \
+    bash "$ROOT/scripts/fill-service-secrets.test.sh"
 # The service names listed in those workflows' `service` input descriptions
 # must match services.tf (they're the help text people pick names from).
 run "service lists match services.tf (scripts)" \
     bash "$ROOT/scripts/check-service-lists.sh"
 if command -v shellcheck >/dev/null 2>&1; then
   run "shellcheck (scripts/ecs-services.sh)" \
-      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh"
+      shellcheck -x "$ROOT/scripts/ecs-services.sh" "$ROOT/scripts/ecs-services.test.sh" "$ROOT/scripts/check-service-lists.sh" \
+        "$ROOT/scripts/fill-service-secrets.sh" "$ROOT/scripts/fill-service-secrets.test.sh" \
+        "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh"
 fi
 
 # shared/routing.json → generated backend/app/routing_data.py and the frontends'
@@ -203,16 +264,21 @@ fi
 run "routing data in sync (shared/routing.json)" \
     node "$ROOT/scripts/sync-routing.mjs" --check
 
+run "gateway config in sync (shared/service-routes.json)" \
+    node "$ROOT/scripts/sync-gateway.mjs" --check
+
 # ── security ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
 # ---- always-run: tools available from the bootstrapped venv / npm ----------------
 run "bandit" \
-    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ -ll -q"
+    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ common/ $SERVICE_DIRS -ll -q"
 
 run "pip-audit" \
     bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable \
       --ignore-vuln PYSEC-2025-183"
+run "pip-audit (services)" \
+    bash "$ROOT/scripts/audit-backend-services.sh" "$PIP_AUDIT" "$VENV_BIN/python"
 # PYSEC-2025-183 is disputed with no fix (see requirements.txt). PyJWT and semgrep share
 # the venv, so a PyJWT bump may need a semgrep bump too (semgrep pins pyjwt[crypto]).
 
@@ -302,7 +368,7 @@ if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
 fi
 
 run "semgrep (SAST)" \
-    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$BACKEND/common/' $SERVICE_PATHS '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
 
 if require_tool hadolint HADOLINT "brew install hadolint"; then
   run "hadolint (backend Dockerfile)" \
@@ -433,6 +499,30 @@ spectral_api_lint() {
 }
 run "spectral (OpenAPI lint)" spectral_api_lint
 
+# Each HTTP service's committed spec (backend/openapi/<service>.json), regenerated the
+# same way as openapi.json above, then linted.
+service_spec_up_to_date() {
+  local svc="$1" spec="$ROOT/backend/openapi/$1.json" fresh
+  fresh="$(mktemp)"
+  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" --service "$svc" > "$fresh" \
+    || { rm -f "$fresh"; echo "Failed to export the $svc spec"; return 1; }
+  if [[ -f "$spec" ]] && cmp -s "$fresh" "$spec"; then
+    rm -f "$fresh"
+  else
+    mkdir -p "$(dirname "$spec")"
+    cat "$fresh" > "$spec" && rm -f "$fresh"
+    echo "backend/openapi/$svc.json was out of date — regenerated it. Review and commit."
+    return 1
+  fi
+}
+for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+  if [[ -f "$BACKEND/$svc/app/main.py" ]]; then
+    run "backend/openapi/$svc.json up to date" service_spec_up_to_date "$svc"
+    run "spectral ($svc)" \
+        "$SPECTRAL" lint "$ROOT/backend/openapi/$svc.json" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
+  fi
+done
+
 # nuclei (DAST) is disabled locally per company security-team guidance (active
 # scanning tool, not permitted on company laptops). CI (check.yml) is unaffected
 # and still runs it.
@@ -480,6 +570,24 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
     name="${m#"$ROOT/"}"
     run "tflint (${name%/})" bash -c "'$TFLINT' --chdir='$m'"
   done
+fi
+
+# ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
+# Off by default: they need the compose `split` stack and Moto up (docs/getting-started.md),
+# make LLM calls with the keys in .env (about 20 a run), stop and start the stack's workers,
+# and take about 7-10 minutes.
+# Gate 6 runs them:
+#   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
+if [ "${RUN_E2E:-}" = "1" ]; then
+  echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"
+  run "e2e: every endpoint (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/full-journey.py"
+  run "e2e: account deletion (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/account-deletion.py"
+  run "e2e: failure and convergence (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/convergence.py"
+else
+  echo -e "\n${CYAN}End-to-end runs skipped: RUN_E2E=1 runs them against the local split stack.${RESET}"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────

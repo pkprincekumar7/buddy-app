@@ -7,10 +7,12 @@
 # var.certificate_arn must cover that name. ALB→ECS stays within the VPC on
 # plain HTTP (each target's port).
 #
-# var.targets is keyed by service (services.tf). A target with path_patterns
-# gets its own rule at its priority; the one without is the catch-all, at the
-# lowest priority. Every rule also requires X-Origin-Verify, so nothing
-# reaches a target group without it.
+# var.targets is keyed by service (services.tf), one target group each. The
+# rules come either from the targets (one per target with path_patterns, at its
+# priority, and an optional catch-all) or from var.routes (several per target,
+# shared/service-routes.json). Without a catch-all, origin-verified requests for
+# an unknown path get a fixed 404 at priority 50000 (13.1). Every rule requires
+# X-Origin-Verify, so nothing reaches a target group without it.
 # ---------------------------------------------------------------------------
 
 # CloudFront managed prefix list — restricts ALB inbound to CloudFront IPs only.
@@ -89,8 +91,10 @@ resource "aws_lb" "this" {
 # gets a new name and create_before_destroy can bring it up (and repoint the
 # listener rule and ECS service) before the old one is deleted. Without it
 # the delete fails with ResourceInUse.
+# No "-tg" in the name: with it, "superpower-onboarding-tg-prod-xxxx" is 34 characters,
+# over AWS's 32 (the precondition below).
 locals {
-  target_group_base_name = { for k, _ in var.targets : k => "${var.app_name}-${k}-tg-${var.environment}" }
+  target_group_base_name = { for k, _ in var.targets : k => "${var.app_name}-${k}-${var.environment}" }
   target_group_name = {
     for k, t in var.targets : k => "${local.target_group_base_name[k]}-${substr(sha1(jsonencode([t.port, "HTTP", "ip", var.vpc_id])), 0, 4)}"
   }
@@ -130,6 +134,18 @@ resource "aws_lb_target_group" "service" {
       # base + "-" + 4-character hash
       condition     = length(local.target_group_base_name[each.key]) + 5 <= 32
       error_message = "Target group name ${local.target_group_base_name[each.key]}-xxxx is over AWS's 32 characters — use a shorter service key."
+    }
+    precondition {
+      condition     = length(var.routes) > 0 || length([for t in values(var.targets) : t if length(t.path_patterns) == 0]) <= 1
+      error_message = "At most one target may have no path_patterns (the catch-all). With none, unknown paths get a fixed 404."
+    }
+    precondition {
+      condition     = length(var.routes) == 0 || length(each.value.path_patterns) == 0
+      error_message = "Target ${each.key} has path_patterns, but routes is set: with routes, routes says which paths go where."
+    }
+    precondition {
+      condition     = length(var.routes) == 0 || contains([for r in var.routes : r.target], each.key)
+      error_message = "Target ${each.key} has no route: a target group no rule forwards to is a mistake."
     }
   }
 }
@@ -174,17 +190,36 @@ resource "aws_lb_listener" "https" {
 # ---------------------------------------------------------------------------
 locals {
   catch_all_priority = 50000
+
+  # Rules from the targets keep the target's key (one rule per target); rules
+  # from var.routes are keyed by their priority. The two styles don't mix.
+  target_rules = length(var.routes) > 0 ? {} : {
+    for k, t in var.targets : k => {
+      target        = k
+      priority      = length(t.path_patterns) > 0 ? t.priority : local.catch_all_priority
+      path_patterns = t.path_patterns
+    }
+  }
+  route_rules = {
+    for r in var.routes : "route-${r.priority}" => {
+      target        = r.target
+      priority      = r.priority
+      path_patterns = r.path_patterns
+    }
+  }
+  forward_rules = merge(local.target_rules, local.route_rules)
+  has_catch_all = anytrue([for r in values(local.forward_rules) : length(r.path_patterns) == 0])
 }
 
 resource "aws_lb_listener_rule" "from_cloudfront" {
-  for_each = var.targets
+  for_each = local.forward_rules
 
   listener_arn = aws_lb_listener.https.arn
-  priority     = length(each.value.path_patterns) > 0 ? each.value.priority : local.catch_all_priority
+  priority     = each.value.priority
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.service[each.key].arn
+    target_group_arn = aws_lb_target_group.service[each.value.target].arn
   }
 
   condition {
@@ -208,6 +243,33 @@ resource "aws_lb_listener_rule" "from_cloudfront" {
       # AWS allows 5 condition values per rule, across all its conditions.
       condition     = length(var.origin_verify_values) + length(each.value.path_patterns) <= 5
       error_message = "Listener rule for ${each.key}: origin-verify values + path_patterns is over AWS's 5 condition values per rule. Use fewer (broader) path patterns."
+    }
+  }
+}
+
+# No catch-all target: a request that came through CloudFront (it has the
+# header) for a path no service owns gets a 404, not another service's
+# handler. Without the header it's still the listener's 403.
+resource "aws_lb_listener_rule" "not_found" {
+  count = local.has_catch_all ? 0 : 1
+
+  listener_arn = aws_lb_listener.https.arn
+  priority     = local.catch_all_priority
+
+  action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "application/json"
+      message_body = jsonencode({ detail = "Not Found" })
+      status_code  = "404"
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = var.origin_verify_values
     }
   }
 }

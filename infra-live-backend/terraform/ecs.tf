@@ -9,10 +9,14 @@
 # Endpoints and never reaches NAT. In dev/sbx (no Interface Endpoints),
 # all outbound traffic including AWS service calls traverses NAT.
 #
-# Task definitions use :latest as the initial image. The deploy workflow
+# Task definitions use the service's repository at :latest as the initial image
+# (the collector: var.otel_collector_image). The deploy workflow
 # (deploy-live-backend.yml) manages image updates; Terraform is not involved
 # after the initial apply (ignore_changes = [task_definition, desired_count]
 # in the module).
+#
+# A runtime with an internal port registers in Cloud Map (service_discovery.tf),
+# and every service runtime joins the internal-callers group (13.2).
 # ---------------------------------------------------------------------------
 
 # Container Insights is per environment (var.enable_container_insights): on in
@@ -57,30 +61,38 @@ module "service" {
 
   cpu                = each.value.cpu
   memory             = each.value.memory
-  execution_role_arn = aws_iam_role.ecs_execution_role.arn
+  execution_role_arn = aws_iam_role.execution[each.key].arn
   task_role_arn      = aws_iam_role.task[each.key].arn
 
   container = {
     name        = each.key
-    image       = "${aws_ecr_repository.backend.repository_url}:latest"
+    image       = each.value.image != null ? each.value.image : "${aws_ecr_repository.service[each.value.service].repository_url}:latest"
     command     = each.value.command
     port        = try(each.value.http.port, null)
     environment = each.value.environment
     # "<secret ARN>:<JSON key>::" — the ECS agent injects each key of the
-    # backend-secrets JSON as an env var.
-    secrets           = [for k in each.value.secret_keys : { name = k, valueFrom = "${aws_secretsmanager_secret.app.arn}:${k}::" }]
+    # service's secret JSON as an env var, plus the service-token signing key.
+    secrets = concat(
+      [for k in each.value.secret_keys : { name = k, valueFrom = "${aws_secretsmanager_secret.service[each.value.service].arn}:${k}::" }],
+      each.value.service != null ? [{ name = "INTERNAL_SIGNING_KEY", valueFrom = aws_ssm_parameter.signing_key[each.value.service].arn }] : [],
+    )
     log_group_name    = aws_cloudwatch_log_group.service[each.key].name
     log_stream_prefix = each.key
     health_check      = each.value.health_check
   }
-  enable_adot_sidecar = var.enable_adot_sidecar
 
   cluster_id             = aws_ecs_cluster.backend.id
   cluster_name           = aws_ecs_cluster.backend.name
   desired_count          = each.value.desired_count
   enable_execute_command = var.enable_execute_command
   subnet_ids             = module.network.private_subnet_ids
-  security_group_ids     = [aws_security_group.service[each.key].id]
+  security_group_ids = concat(
+    [aws_security_group.service[each.key].id],
+    each.value.service != null ? [aws_security_group.internal_callers.id] : [],
+  )
+
+  internal_port     = each.value.internal_port
+  service_discovery = each.value.internal_port != null ? { namespace_id = aws_service_discovery_private_dns_namespace.internal.id, name = each.value.service != null ? each.value.service : each.key } : null
 
   load_balancer                     = each.value.http != null ? { target_group_arn = module.alb.target_group_arns[each.key], container_port = each.value.http.port } : null
   health_check_grace_period_seconds = try(each.value.http.health_check_grace_period_seconds, null)

@@ -76,6 +76,17 @@ if out=$(resolve_services "$BASE" " , " 2>&1); then fail "empty selection is an 
 if out=$(resolve_services "/superpower/dev/backend/eu-west-1" all 2>&1); then fail "missing manifest is an error"; else
   [[ "$out" == *"ecs_services not found in SSM"* ]] && ok "missing manifest is an error that says to apply Terraform" || fail "missing manifest message" "$out"; fi
 
+# -- image_runtimes / image_services / repository_for ----------------------------
+SPLIT='[{"name":"otel-collector","image_service":"","ecr_repository_url":""},{"name":"users","image_service":"users","ecr_repository_url":"1.dkr.ecr/superpower/prod/users"},{"name":"users-worker","image_service":"users","ecr_repository_url":"1.dkr.ecr/superpower/prod/users"},{"name":"shared","image_service":"shared","ecr_repository_url":"1.dkr.ecr/superpower/prod/shared"}]'
+check "all leaves out the collector's pinned image" "$(image_runtimes "$SPLIT" all | jq -r '[.[].name] | join(",")')" "users,users-worker,shared"
+if out=$(image_runtimes "$(jq -c '.[:2]' <<<"$SPLIT")" "otel-collector,users" 2>&1); then fail "naming the collector is an error"; else
+  [[ "$out" == *"otel-collector runs an image Terraform pins"* ]] && ok "naming the collector says to change it in Terraform" || fail "collector message" "$out"; fi
+if image_runtimes "$(jq -c '.[:1]' <<<"$SPLIT")" all >/dev/null 2>&1; then fail "nothing to build is an error"; else ok "nothing to build is an error"; fi
+check "one image per service, in order: a worker shares its service's" "$(image_services "$SPLIT" | jq -r 'join(",")')" "users,shared"
+check "a service's repository comes from the manifest" "$(repository_for "$SPLIT" shared)" "1.dkr.ecr/superpower/prod/shared"
+if out=$(repository_for "$SPLIT" grow 2>&1); then fail "an unknown image service is an error"; else
+  [[ "$out" == *"no ECR repository for 'grow'"* ]] && ok "an unknown image service is an error" || fail "unknown repository message" "$out"; fi
+
 # -- register_with_image -------------------------------------------------------
 cat > "$FAKE/td-superpower-backend-prod.json" <<'EOF'
 {"family":"superpower-backend-prod","taskDefinitionArn":"arn:old","revision":4,"status":"ACTIVE","registeredAt":1,"registeredBy":"x","compatibilities":["FARGATE"],"requiresAttributes":[],"cpu":"4096",

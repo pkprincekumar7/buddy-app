@@ -71,14 +71,15 @@ the `prepare` script in `package.json`) — no separate command needed.
 ```
 
 No manual setup required for backend, frontend, or frontend-app checks. On every run the script automatically:
-- Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements.txt`, `requirements-lint.txt` (ruff, mypy), `requirements-security.txt` (bandit, semgrep, pip-audit, checkov), and `requirements-test.txt` (pytest, pytest-cov). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
+- Creates `backend/.venv` if it does not exist, then syncs all Python packages from `requirements.txt`, `requirements-lint.txt` (ruff, mypy, import-linter), `requirements-security.txt` (bandit, pip-audit, checkov) and `requirements-test.txt` (pytest, pytest-cov, Moto, OpenTelemetry). `pip install` is a no-op when versions are already correct, so this is fast on subsequent runs. These files are the single source of truth for tool versions — both `check.sh` and CI read from them.
+- Creates `backend/.venv-semgrep` for semgrep alone, at the version in `requirements-security.txt`. semgrep pins OpenTelemetry `~=1.37`, while the services and tests pin 1.45.1 (a security fix), so the two can't share a venv. CI already installs the security tools in a job of their own.
 - Runs `npm install` in `frontend/`. This is fast when `node_modules` already exists and ensures any `package.json` change is always reflected.
 - Runs `yarn install --frozen-lockfile` in `frontend-app/`. Fast on subsequent runs when `node_modules` already exists.
 - Downloads/refreshes the retire.js vulnerability database to `frontend/retire-jsrepo.json` if it is absent or older than 7 days. The file is gitignored so it stays current without committing a static snapshot. If the network is unavailable and a previous copy exists, the existing file is reused with a warning.
 
 The script looks for each tool in `backend/.venv/bin/` first, then falls back to `PATH`.
 
-**Required host tools:** `check.sh` fails if any of these are absent — install all of them before running the script. `semgrep` and `checkov` are installed automatically into the venv via `requirements-security.txt` and do not need a separate step. `terraform` is also used by the jwt-validator-lambda test (check 13) — that one specific check self-skips with a message instead of failing if `terraform` is missing, but every other check listed below is a hard failure.
+**Required host tools:** `check.sh` fails if any of these are absent — install all of them before running the script. `semgrep` (into `backend/.venv-semgrep`) and `checkov` (into `backend/.venv`) are installed automatically from `requirements-security.txt` and do not need a separate step. `terraform` is also used by the jwt-validator-lambda test (check 13) — that one specific check self-skips with a message instead of failing if `terraform` is missing, but every other check listed below is a hard failure.
 
 ```bash
 brew install gitleaks
@@ -120,7 +121,7 @@ brew install terraform-linters/tap/tflint
 | 18 | retire.js | retire (devDependency) | `frontend/` — browser library CVEs not always caught by npm audit |
 | 19 | retire.js (frontend-app) | retire (devDependency) | `frontend-app/` — same scan using the same retire.js database |
 | 20 ² | gitleaks | gitleaks | Entire repo git history — accidentally committed secrets, API keys, tokens |
-| 21 | semgrep (SAST) | semgrep 1.167.0 | `backend/app/`, `backend/tools/`, `frontend/src/`, `frontend-app/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset); venv-installed |
+| 21 | semgrep (SAST) | semgrep 1.179.0 | `backend/app/`, `backend/tools/`, `backend/common/`, each backend service, `frontend/src/`, `frontend-app/src/` — Python and JavaScript/React SAST (`p/security-audit` ruleset); installed in its own venv, `backend/.venv-semgrep` |
 | 22 ² | hadolint (backend Dockerfile) | hadolint | `backend/Dockerfile` — Dockerfile best practices and security misconfigurations |
 | 23 ² | hadolint (frontend Dockerfile) | hadolint | `frontend/Dockerfile` — same |
 | 24 | checkov (Terraform IaC) | checkov 3.2.529 | `infra-live-*/terraform/` (backend, edge, frontend, scheduler) — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM); venv-installed |

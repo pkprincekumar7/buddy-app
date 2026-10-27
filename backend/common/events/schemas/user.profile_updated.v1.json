@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buddy.local/events/user.profile_updated.v1.json",
+  "title": "user.profile_updated v1",
+  "description": "Reserved, not published: a user's display names changed. Schema of the event's payload; the envelope (ids, location, version) is checked by common.events. Changes are additive only: new fields are optional (7.8).",
+  "type": "object",
+  "properties": {
+    "first_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "middle_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "first_name": "Asha",
+      "middle_name": null,
+      "last_name": "Rao"
+    }
+  ]
+}

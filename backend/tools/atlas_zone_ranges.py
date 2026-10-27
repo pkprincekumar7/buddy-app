@@ -3,7 +3,7 @@
 
 Run via:  python backend/tools/atlas_zone_ranges.py <db_name> > zone-setup.js
 
-Generated from shared/routing.json (via app/routing.py), so the Atlas zone
+Generated from shared/routing.json (via common/regions.py), so the Atlas zone
 ranges can never drift from the Lambda@Edge routing and the regional workers —
 all three read that one file. tests/test_atlas_zone_ranges.py checks the output.
 
@@ -18,8 +18,10 @@ import sys
 _BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _BACKEND)
 
+# Collection names still come from today's backend; each service's db.py replaces them
+# when the services exist (docs/auth-users-split-build-plan.md, 0.2 and 8.6).
 from app import models  # noqa: E402 — must come after sys.path setup
-from app.routing import ATLAS_ZONE_FOR_REGION, REGION_TO_LOCATIONS  # noqa: E402
+from common.regions import ATLAS_ZONE_FOR_REGION, REGION_TO_LOCATIONS  # noqa: E402
 
 # Zone names (ATLAS_ZONE_FOR_REGION) come from shared/routing.json and must match
 # the zone names configured on the Global Cluster in the Atlas UI.

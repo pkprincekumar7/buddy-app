@@ -22,6 +22,61 @@ All supported variables are documented in `.env.example` (JWT lifetimes, CORS, M
 
 There are no schema migrations — MongoDB collections and indexes are created automatically by the backend on startup.
 
+## The split's services locally (Docker, optional)
+
+The new `auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release` and `shared` services and their workers run under the compose profile `split`, behind the gateway on port 8088, which routes paths as the ALB will. `docker compose up` on its own is unchanged and doesn't start them. Once:
+
+1. Set `EMAIL_HMAC_PEPPER` (and `LOCAL_ALLOWED_EMAIL`) in `.env`, as `.env.example` says.
+2. Start Moto and create the topics, queues and buckets (Moto keeps them in memory, so repeat this after restarting it):
+
+```bash
+backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
+```
+
+```bash
+backend/.venv/bin/python scripts/local-aws-setup.py
+```
+
+Then start the stack. The first start builds the images, which downloads their Python packages. Downloads go to a Docker build cache shared by every service's image (`backend/Dockerfile`), so each package is fetched once and later builds reuse it; `docker builder prune` empties it:
+
+```bash
+docker compose --profile split up -d --build
+```
+
+- `local-keys` runs first and makes each service's service-token key and the JWT public keys from your `JWT_PRIVATE_KEY`, into the `superpower_local_keys` volume (never the repository or `.env`). It keeps them across restarts; `docker volume rm superpower_local_keys` makes new ones.
+- Each service has its own database in the local Mongo (`auth`, `users`, `children`, `onboarding`, `discover`, `grow`, `transform`, `release`); internal calls go service to service on port 8001, signed as in AWS.
+- `shared` (no database) transcribes with `OPENAI_API_KEY` and links the APK from `ASSETS_BUCKET_NAME` in Moto; without them it answers `503`.
+- `discover-worker`, `grow-worker`, `transform-worker` and `release-worker` generate with the LLM keys in `.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY`); without one, each job fails at once with a clear error (the personality shows `failed`; a growth area keeps what it had).
+- Allow-list your email for registration: `docker compose --profile split exec auth python -m auth.seed` (it reads `LOCAL_ALLOWED_EMAIL` from the running container), then register through `http://localhost:8088/api/v1/auth/register`.
+- Changing `EMAIL_HMAC_PEPPER` makes every local email key unmatchable: seed and register again (or start from an empty `auth` database).
+- End-to-end runs (they use the LLM keys in `.env`, so a few provider calls each, and allow-list a new test email themselves). Either the whole journey, one child from profile to Connect:
+
+```bash
+backend/.venv/bin/python scripts/e2e/journey.py
+```
+
+or every endpoint of the split services (the journey plus login, refresh, logout-all, the profile, every kind of generation, speech-to-text, the APK link, and the admin's reads, lock, unlock and role change; about ten generations):
+
+```bash
+backend/.venv/bin/python scripts/e2e/full-journey.py
+```
+
+or the journey, then deleting the account and checking nothing of it is left in any service's database, Valkey or the uploads bucket:
+
+```bash
+backend/.venv/bin/python scripts/e2e/account-deletion.py
+```
+
+or the failure and convergence scenarios (workers killed mid-deletion, a late event and a finishing job, a child's 30-day purge); they stop and start the stack's workers:
+
+```bash
+backend/.venv/bin/python scripts/e2e/convergence.py
+```
+
+`RUN_E2E=1 ./check.sh` runs the last three after the other checks (about 7–10 minutes, some 20 LLM calls).
+- The gateway sends paths no new service claims to today's backend. `GATEWAY_CONFIG=nginx.alb.conf docker compose --profile split up -d gateway` answers them with the ALB's 404 instead, as AWS will, so a client still calling an old path fails locally too.
+- Paths no new service has yet (the circles) still go to today's backend through the frontend on port 5173.
+
 ## Local development (without Docker)
 
 Requires **Python 3.13** and **Node.js 22** (versions used by the Docker images).
@@ -108,6 +163,8 @@ Registration is gated by an allowlist. Only emails present in the `allowed_email
 ### Creating the first admin account
 
 This is a one-time manual process done directly in the database. There is no API endpoint to promote a user to admin — that must be done via mongosh or Compass.
+
+> **The new auth service** (`backend/auth/`, not yet deployed) replaces this with a command. Sign up as usual, then, with auth's own `MONGODB_URI`, `MONGODB_DB_NAME` and `EMAIL_HMAC_PEPPER`, run `cd backend && python -m auth.promote_admin --user-id <id>`, or locally `echo you@example.com | python -m auth.promote_admin --email-stdin`. It works once per environment: it refuses if an admin exists, and it's audited. In AWS, run it as a one-off ECS task on the auth image. Later admins are promoted from the admin screen (`PATCH /api/v1/auth/accounts/{id}/role`).
 
 **Step 1 — add the email to the allowlist**
 

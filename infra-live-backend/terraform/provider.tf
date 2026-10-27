@@ -14,6 +14,11 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.28"
     }
+    # Service-token key pairs (service_tokens.tf).
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 

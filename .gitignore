@@ -4,8 +4,11 @@
 node_modules/
 __pycache__/
 .venv/
+.venv-*/
 venv/
 dist/
+*.egg-info/
+backend/common/build/
 *.pyc
 .DS_Store
 .docx_extract/

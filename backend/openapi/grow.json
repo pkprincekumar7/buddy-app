@@ -1,0 +1,899 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "grow",
+    "description": "Grow: each child's growth areas, with their generated questions, rounds and recommendations.",
+    "contact": {
+      "name": "Superpower Engineering",
+      "email": "prince.kumar@pearson.com"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current environment"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "description": "Liveness check for the load balancer.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/growth-areas": {
+      "get": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "List Areas",
+        "description": "Every growth area of the child, in the order they were started, with `generating` naming the kinds with a job running. An admin with `children:read:any` passes the owner's `?location=` (audited).",
+        "operationId": "list_areas_api_v1_children__id__growth_areas_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_-]{1,16}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The owner's location (admins only)",
+              "title": "Location"
+            },
+            "description": "The owner's location (admins only)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Areas"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/growth-areas/{area_id}": {
+      "put": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "Save Area",
+        "description": "Save one area: the parent's progress through its wizard, and its completion (`grow.area_completed`, and `grow.completed` for the child's first). Editing a completed area publishes `grow.area_updated`. Answer keys must be ids from the area's `parent_questions`; the generated parts can't be sent.",
+        "operationId": "save_area_api_v1_children__id__growth_areas__area_id__put",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "area_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,50}$",
+              "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect",
+              "title": "Area Id"
+            },
+            "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AreaIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Area"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/growth-areas/{area_id}/generation": {
+      "post": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "Start Generation",
+        "description": "Generate one of the area's AI parts (`kind`). `parent_questions` on a new area creates it (with `area_name`). The question sets are generated once (`409 already_generated`); recommendations need the answers saved (`409 needs_answers`) and replace the last ones. The running job is returned with `200`. Counts against the hourly LLM limit (`429 llm_limit`).",
+        "operationId": "start_generation_api_v1_children__id__growth_areas__area_id__generation_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "area_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,50}$",
+              "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect",
+              "title": "Area Id"
+            },
+            "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Started"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The job already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Started"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{id}/growth-areas/{area_id}/generation/{job_id}": {
+      "get": {
+        "tags": [
+          "growth-areas"
+        ],
+        "summary": "Get Job",
+        "description": "A grow job's status, while the area shows generating. When `completed`, reload the areas.",
+        "operationId": "get_job_api_v1_children__id__growth_areas__area_id__generation__job_id__get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "The child's id",
+              "title": "Id"
+            },
+            "description": "The child's id"
+          },
+          {
+            "name": "area_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,50}$",
+              "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect",
+              "title": "Area Id"
+            },
+            "description": "The area's id (today's: `self_care`, `life_ambition`, \u2026); never starting with onboarding, personality, growth-areas, transform, observations, connect"
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActivityResults": {
+        "properties": {
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "strengths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strengths"
+          },
+          "suggested_activities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Activities"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ActivityResults"
+      },
+      "Area": {
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "title": "Area Id"
+          },
+          "area_name": {
+            "type": "string",
+            "title": "Area Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "parent_questions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Questions"
+          },
+          "child_rounds": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Rounds"
+          },
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Answers"
+          },
+          "child_activity": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Activity"
+          },
+          "recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendations"
+          },
+          "ai_three_month_recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Three Month Recommendations"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "generating": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "parent_questions",
+                "child_rounds",
+                "recommendations"
+              ]
+            },
+            "type": "array",
+            "title": "Generating"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "area_id",
+          "area_name",
+          "status",
+          "step",
+          "parent_questions",
+          "child_rounds",
+          "answers",
+          "child_activity",
+          "recommendations",
+          "ai_three_month_recommendations",
+          "feedback",
+          "generating",
+          "completed_at",
+          "updated_at"
+        ],
+        "title": "Area"
+      },
+      "AreaIn": {
+        "properties": {
+          "area_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Area Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "answers": {
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "type": "object",
+            "maxProperties": 100,
+            "title": "Answers"
+          },
+          "child_activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChildActivity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendations"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "area_name",
+          "status",
+          "answers"
+        ],
+        "title": "AreaIn",
+        "description": "The parent's part of an area. The generated parts are grow's jobs' only (422)."
+      },
+      "Areas": {
+        "properties": {
+          "areas": {
+            "items": {
+              "$ref": "#/components/schemas/Area"
+            },
+            "type": "array",
+            "title": "Areas"
+          }
+        },
+        "type": "object",
+        "required": [
+          "areas"
+        ],
+        "title": "Areas"
+      },
+      "ChildActivity": {
+        "properties": {
+          "selections": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selections"
+          },
+          "results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityResults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ChildActivity",
+        "description": "The child's picks (option ids from `child_rounds`) and, for older flows, results."
+      },
+      "GenerationIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "parent_questions",
+              "child_rounds",
+              "recommendations"
+            ],
+            "title": "Kind"
+          },
+          "area_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "GenerationIn"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Job": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "parent_questions",
+              "child_rounds",
+              "recommendations"
+            ],
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "kind",
+          "status",
+          "error",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "Job"
+      },
+      "Started": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "Started"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "access_token"
+      },
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "Service health"
+    },
+    {
+      "name": "growth-areas",
+      "description": "The child's growth areas"
+    }
+  ]
+}
