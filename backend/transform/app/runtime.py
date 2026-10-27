@@ -19,6 +19,7 @@ import boto3
 from pydantic import Field
 from pymongo import AsyncMongoClient
 
+from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
 from common.events.store import Db, ensure_outbox, ensure_tombstones
 from common.generation.llm_limit import DEFAULT_LIMIT, LlmHourlyLimit
@@ -124,6 +125,7 @@ class Runtime:
         """Create the collections before serving. Creating one inside a transaction (an
         implicit create on first insert) conflicts with any concurrent create of it."""
         await ensure_plans(self.db)
+        await upload_tracking.ensure_pending_uploads(self.db)
         await ensure_jobs(self.db, SERVICE)
         await ensure_child_access(self.db)
         await ensure_inputs(self.db, [ONBOARDING_INPUTS, PERSONALITY_INPUTS, GROWTH_INPUTS])

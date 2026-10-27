@@ -1,13 +1,13 @@
 # The release service's runtime dependencies (build plan 5.5). backend/Dockerfile installs
 # the buddy-common line from the local source only, then the rest from PyPI.
-buddy-common[generation]==0.15.0
+buddy-common[generation]==0.16.0
 fastapi==0.136.1
 uvicorn[standard]==0.34.0
 # buddy-common's authorization layer, pinned to the same versions as backend/requirements.txt.
 PyJWT==2.15.1
 cryptography==50.0.0
 redis==5.2.1
-pymongo==4.18.2
+pymongo==4.18.3
 jsonschema==4.25.1
 httpx==0.27.2
 limits==5.8.0

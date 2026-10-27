@@ -34,13 +34,14 @@ from pymongo import ASCENDING
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
+from common import upload_tracking
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
 from common.events import is_tombstoned, tombstone_key
 from common.generation.jobs import JobRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import GROWTH_INPUTS, JOBS, growth_inputs_id
+from common.models import CHILD_ID_PATTERN, GROWTH_INPUTS, JOBS, growth_inputs_id
 from common.routers import PolicyRouter, public
 from common.uploads import UploadError
 from transform.app import generation
@@ -189,7 +190,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     return dependency
 
 
-ChildId = Annotated[str, Path(description="The child's id")]
+ChildId = Annotated[str, Path(pattern=CHILD_ID_PATTERN, description="The child's id")]
 LocationQuery = Annotated[
     str | None,
     Query(pattern=LOCATION_PATTERN, description="The owner's location (admins only)"),
@@ -388,6 +389,23 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE}
 
 
+async def _admin_child(
+    request: Request, runtime: Runtime, caller: Caller, child_id: str, location: str | None
+) -> dict[str, Any]:
+    """An admin's read (`children:read:any`): audited whether it's allowed or refused."""
+    try:
+        if location is None:
+            raise error(422, "location_required", "Pass ?location= (the owner's location)")
+        child = await child_for(runtime, child_id, location=location, owner=None)
+    except HTTPException as exc:
+        runtime.authorizer.record(
+            request, caller, READ_ANY, None, privileged=True, status=exc.status_code
+        )
+        raise
+    runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+    return child
+
+
 @router.get(
     "",
     dependencies=[Depends(per_user("60/minute"))],
@@ -399,10 +417,7 @@ async def get_transform(
     request: Request, id: ChildId, runtime: Ready, caller: SignedIn, location: LocationQuery = None
 ) -> Transform:
     if caller.has(READ_ANY):
-        if location is None:
-            raise error(422, "location_required", "Pass ?location= (the owner's location)")
-        child = await child_for(runtime, id, location=location, owner=None)
-        runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+        child = await _admin_child(request, runtime, caller, id, location)
     else:
         child = await _parents_child(runtime, caller, id)
     return await _view(runtime, child, await runtime.db[PLANS].find_one(_selector(child)))
@@ -459,6 +474,12 @@ async def patch_transform(
             update: dict[str, Any] = {**changes, "updated_at": now}
             if photos:
                 update["photos"] = {**stored_photos, **photos}
+                await upload_tracking.attached(
+                    runtime.db,
+                    [key for keys in photos.values() for key in keys],
+                    location=child["location"],
+                    session=session,
+                )
             merged = {
                 **(existing or new_plan(id, child["user_id"], child["location"], now)),
                 **update,
@@ -481,13 +502,12 @@ async def patch_transform(
                 ):
                     raise _Stale()
             await generation.complete_if_ready(runtime, id, child["location"], session)
-            result["removed"] = [
-                key
-                for field_key, keys in stored_photos.items()
-                if field_key in photos
-                for key in keys
-                if key not in photos[field_key]
-            ]
+            # A key still in any field after the merge stays: a photo moved from one field
+            # to another, or kept in two, isn't deleted (review).
+            kept = {key for keys in merged.get("photos", {}).values() for key in keys}
+            result["removed"] = sorted(
+                {key for keys in stored_photos.values() for key in keys} - kept
+            )
 
         try:
             async with runtime.client.start_session() as session:
@@ -564,6 +584,7 @@ async def start_generation(
             raise error(503, "generation_unavailable", "Try again in a moment.") from exc
         if created:
             return Started(job_id=running, status="pending")
+        await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
     job = await runtime.db[JOBS].find_one({"_id": running}, {"status": 1})
     response.status_code = 200
     return Started(job_id=running, status=job["status"] if job else "pending")
@@ -610,6 +631,9 @@ async def presign_photo(
     try:
         upload_url = await runtime.uploads.presign_put(key, body.content_type)
         photo_url = await runtime.uploads.presign_get(key)
+        await upload_tracking.record_presigned(
+            runtime.db, key, location=child["location"], child_id=id
+        )
     except Exception as exc:
         _logger.exception("transform: presigning failed")
         raise error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc

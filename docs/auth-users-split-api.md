@@ -7,17 +7,20 @@
 - **Authz changes** (logout-all, refresh reuse detection, lock, unlock, role change, account deletion) are one `findOneAndUpdate` with `$inc: {authz_version: 1}` on `auth.auth`. The cache entry `authz:{id}` is then written with the returned version, through the versioned write (proposal 9.3).
 - **Paths** are relative to the site origin. Public endpoints sit under `/api/v1/` on port 8000; internal ones under `/internal/` on port 8001 (proposal 13.2).
 - **Errors** use FastAPI's shape, `{"detail": …}`. Where the client must tell errors apart, `detail` is `{"code": "…", "msg": "…"}`.
+- **Request bodies** are capped before they're read: `413 body_too_large` over 1 MiB (shared's speech-to-text: 10.5 MiB), whether `Content-Length` says so or a chunked body gets there.
+- **A child's `{id}`** in any path is a UUID (`422` otherwise), so it can't add a query or a segment to the internal calls it's passed on to.
 - **"Today"** notes describe the current backend (`backend/app/routers/…`), so the differences are visible.
 - **Circle endpoints** (`/api/v1/children/{id}/…`) share these rules:
-  - **Ownership:** only the child's parent; an admin with `children:read:any` can read, from admin tools only. **An admin read must pass `?location=`** (the child's owner's location, from the account listing): the admin's own token location may be another zone, and every read is targeted by location. Anyone else, or a child that doesn't exist or is soft-deleted, gets `404 child_not_found`. The check uses the circle's `child_access` copy, with read-through on a miss (proposal 7.5).
+  - **Ownership:** only the child's parent; an admin with `children:read:any` can read, from admin tools only. **An admin read must pass `?location=`** (the child's owner's location, from the account listing): the admin's own token location may be another zone, and every read is targeted by location. Anyone else, or a child that doesn't exist or is soft-deleted, gets `404 child_not_found`. The check uses the circle's `child_access` copy, with read-through on a miss (proposal 7.5). An admin's read is audited whether it's allowed or refused (`404`, or `422 location_required`).
+  - **An owner's odd answer** (a `200` that isn't the expected shape, e.g. during a deploy) is treated like an unreachable owner: `503 …_unavailable` with `Retry-After`, never a `500`.
   - **Unlock:** a circle that isn't unlocked yet returns `403 circle_locked`, but only after confirm-before-deny with the previous circle (proposal 12.4). A confirmed answer is stored as `child_access.confirmed.<circle>`, never over `progress` or `version`.
 - **Generation endpoints** (`…/generation`) share these rules:
   - **Start:** `POST` returns `202 Accepted` with `{"job_id", "status"}`. The server builds the prompt from its own data and local copies; the client sends no prompt (proposal 8).
   - **One at a time:** if the same kind is already `pending` or `processing` for that child (and area), the existing job is returned with `200 OK` instead of starting another.
-  - **Limits:** 10 starts per minute per user, plus the shared hourly LLM limit per user across every circle (`LLM_HOURLY_LIMIT`, default 200, in Valkey), which returns `429 llm_limit`.
+  - **Limits:** 10 starts per minute per user, plus the shared hourly LLM limit per user across every circle (`LLM_HOURLY_LIMIT`, default 200, in Valkey), which returns `429 llm_limit`. A start that finds the job already running gives its slot back, so two clicks at once count once.
   - **Kind and type:** `kind` is the short name the API uses (`plan`, `life_pathway`, …); the stored job's `type` keeps today's job-type name (`generate_ninety_day_plan`, …). Each circle's entry maps one to the other.
   - **Polling:** `GET …/generation/{job_id}` returns `{"job_id", "kind", "status", "error", "created_at", "completed_at"}`, with `status` `pending`, `processing`, `completed` or `failed`. A job of another child is `404 job_not_found`. When `completed`, the result is already stored, so the client reloads the circle's `GET`.
-  - **Retries:** the worker retries the LLM call with backoff, as today (`llm_attempt`, `retry_after`). A job that still fails is `failed`, with a short `error`, and the client may start again.
+  - **Retries:** the worker retries the LLM call with backoff, as today (`llm_attempt`, `retry_after`). A job that still fails is `failed`, with a short `error`, and the client may start again. A job whose processing crashes, or that stalled on every attempt, is `failed` too (`crashed (…)`, `gave up: …`) rather than held `processing`. A text longer than its schema's `maxLength` is clipped at a word, with "…", rather than failing the job: providers don't enforce lengths, and today's app stores the answer unchecked. "Generated once" (discover's personality, grow's question sets) is checked again when the job is stored, so a job finishing meanwhile can't be followed by a second one.
 
 ---
 
@@ -1175,7 +1178,7 @@ Adds a child.
 
 ### Errors
 
-`401`; `403 parents_only`; `422` (validation, or `child_limit`).
+`401`; `403 parents_only`; `409 account_deleting` (the account's deletion has started); `422` (validation, or `child_limit`).
 
 ---
 
@@ -1323,6 +1326,8 @@ The flow:
 1. **Upload:** the client PUTs the file to `upload_url` within **5 minutes**, with the same `Content-Type`.
 2. **Save:** it then sends `PATCH /api/v1/children/{id}` with `{"avatar_key": …}`.
 3. **Preview:** `avatar_url` is a short-lived GET URL, so the photo can be shown at once.
+
+A photo refused at save (not an allowed image, or over 5 MB) is deleted at once. One presigned but never saved is deleted after a day: children records each presigned key in `pending_uploads`, the save removes it, and children's worker sweeps what's left. transform does the same for plan photos.
 
 The key is created with `build_upload_key` under `uploads/{location}/{child_id}/avatar/`. Today avatars sit directly under the child's prefix, which also contains the plan photos; the `avatar/` sub-prefix keeps each service's objects, and its IAM access, apart.
 

@@ -11,7 +11,8 @@ it deletes the account (`DELETE /api/v1/auth/account`), waits for auth to finish
 and checks that nothing of the user or the child is left in any split service's database,
 in Valkey or in the uploads bucket.
 
-What may stay, by design (stack.scan): `tombstones`; the ids-only `user.data_deleted` and
+What may stay, by design (stack.scan): `tombstones` (each participant must hold the
+user's) and their `guards`; the ids-only `user.data_deleted` and
 `user.deletion_requested` outbox rows (gone 7 days after publishing); cancelled or finished
 `jobs` (ids only, gone 7 days after they end); auth's `audit` (the agreed retention); and
 Valkey's rate-limit and LLM-hour counters (ids only, expiring within the hour). Those are
@@ -24,7 +25,20 @@ import sys
 import time
 
 from journey import walk
-from stack import API, WalkFailed, auth_gone, check, poll, report, scan, step
+from stack import (
+    API,
+    DATABASES,
+    WalkFailed,
+    auth_gone,
+    check,
+    poll,
+    report,
+    scan,
+    step,
+    tombstoned_everywhere,
+)
+
+PARTICIPANTS = [name for name in DATABASES if name != "auth"]
 
 
 def main() -> int:
@@ -34,10 +48,13 @@ def main() -> int:
         print(
             f"\n   before deletion: {len(before)} rows and objects hold the account's data"
         )
-        if not any(item.startswith("s3 ") for item in before):
-            raise WalkFailed(
-                "the photos never reached S3, so the S3 check would prove nothing"
-            )
+        for kind in ("avatar", "ninety-day-plan"):
+            if not any(
+                item.startswith("s3 ") and f"/{kind}/" in item for item in before
+            ):
+                raise WalkFailed(
+                    f"no {kind} photo reached S3: the S3 check would prove nothing"
+                )
 
         step("delete the account")
         started = time.monotonic()
@@ -56,6 +73,11 @@ def main() -> int:
 
     step("scan every database, Valkey and the uploads bucket")
     if not report(*scan([j.user_id, j.child_id], [j.email])):
+        return 1
+    # What makes the deletion stick: every participant's user: tombstone.
+    missing = tombstoned_everywhere(f"user:{j.user_id}", PARTICIPANTS)
+    if missing:
+        print(f"!! no user: tombstone in {missing}")
         return 1
     print("\nACCOUNT DELETION PASSED: nothing of the account is left")
     return 0

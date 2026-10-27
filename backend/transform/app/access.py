@@ -17,12 +17,21 @@ An owner that can't be reached (or answers anything unexpected) is `503` with
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import HTTPException
 
 from common.events import is_tombstoned, tombstone_key, versioned_upsert
-from common.internal_client import InternalUnavailable
+from common.internal_client import (
+    AREA_ITEM,
+    AREAS_ANSWER,
+    CHILD_ANSWER,
+    STATUS_ANSWER,
+    SUMMARY_ANSWER,
+    InternalUnavailable,
+    checked_answer,
+)
 from common.models import (
     CHILD_ACCESS,
     GROWTH_FIELDS,
@@ -55,7 +64,9 @@ def _unavailable(owner: str) -> HTTPException:
     )
 
 
-async def _ask(runtime: Runtime, owner: str, path: str) -> dict[str, Any] | None:
+async def _ask(
+    runtime: Runtime, owner: str, path: str, shape: Mapping[str, type | tuple[type, ...]]
+) -> dict[str, Any] | None:
     """The owner's answer; None for a 404; 503 if it can't be reached or answers oddly."""
     try:
         response = await runtime.internal.get(owner, path)
@@ -65,8 +76,10 @@ async def _ask(runtime: Runtime, owner: str, path: str) -> dict[str, Any] | None
         return None
     if response.status_code != 200:
         raise _unavailable(owner)
-    data: dict[str, Any] = response.json()
-    return data
+    try:
+        return checked_answer(response.json(), shape)
+    except ValueError as exc:
+        raise _unavailable(owner) from exc
 
 
 def _tombstones(child_id: str, user_id: str) -> list[str]:
@@ -84,7 +97,9 @@ async def child_for(
     if copy is None:
         if await is_tombstoned(runtime.db, [tombstone_key("child", child_id)]):
             raise not_found()  # purged: no need to ask
-        data = await _ask(runtime, "children", f"/internal/children/{child_id}?location={location}")
+        data = await _ask(
+            runtime, "children", f"/internal/children/{child_id}?location={location}", CHILD_ANSWER
+        )
         if data is None:
             raise not_found()
         progress = data.get("progress") or {}
@@ -122,6 +137,7 @@ async def require_unlocked(runtime: Runtime, copy: dict[str, Any]) -> None:
         runtime,
         "grow",
         f"/internal/grow/children/{copy['_id']}/status?location={copy['location']}",
+        STATUS_ANSWER,
     )
     if not (status or {}).get("completed"):
         raise error(403, "circle_locked", "Complete a growth area first.")
@@ -142,7 +158,10 @@ async def personality_for(runtime: Runtime, copy: dict[str, Any]) -> dict[str, A
     if summary is not None:
         return summary
     data = await _ask(
-        runtime, "discover", f"/internal/discover/children/{child_id}/summary?location={location}"
+        runtime,
+        "discover",
+        f"/internal/discover/children/{child_id}/summary?location={location}",
+        SUMMARY_ANSWER,
     )
     if data is None or data.get("user_id") != copy["user_id"]:
         # Unlocked but no personality: discover is behind its own status. Ask again soon.
@@ -172,9 +191,16 @@ async def areas_for(runtime: Runtime, copy: dict[str, Any]) -> list[dict[str, An
     """The child's completed growth areas, read through from grow (and kept) on a miss."""
     child_id, location = copy["_id"], copy["location"]
     data = await _ask(
-        runtime, "grow", f"/internal/grow/children/{child_id}/areas?location={location}"
+        runtime,
+        "grow",
+        f"/internal/grow/children/{child_id}/areas?location={location}",
+        AREAS_ANSWER,
     )
     for area in (data or {}).get("areas", []):
+        try:
+            checked_answer(area, AREA_ITEM)
+        except ValueError as exc:
+            raise _unavailable("grow") from exc
         if area.get("user_id") != copy["user_id"]:
             continue  # someone else's: never copied
         await versioned_upsert(

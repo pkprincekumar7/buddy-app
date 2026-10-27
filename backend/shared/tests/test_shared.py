@@ -314,3 +314,24 @@ def test_closing_closes_the_openai_client_and_the_cache():
         assert r.openai.closed and cache.closed
 
     live(test)
+
+
+def test_an_oversized_body_is_refused_before_the_form_is_parsed():
+    # Found by the Phase 5-6 review: FastAPI parses (and spools) the whole form before
+    # authentication or the 10 MB check run. common.serve puts shared behind this cap.
+    from common.body_limit import BodyLimitMiddleware
+
+    assert main.MAX_AUDIO_BYTES < main.MAX_BODY_BYTES <= main.MAX_AUDIO_BYTES + 1024 * 1024
+
+    async def go() -> httpx.Response:
+        capped = BodyLimitMiddleware(main.app, main.MAX_BODY_BYTES)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=capped), base_url="http://s"
+        ) as http:
+            # No token at all: refused for its size before anything else looks at it.
+            return await http.post(
+                SPEECH, files={"audio": ("v.webm", b"x" * (main.MAX_BODY_BYTES + 1))}
+            )
+
+    response = asyncio.run(go())
+    assert response.status_code == 413 and _code(response) == "body_too_large"

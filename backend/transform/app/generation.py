@@ -32,6 +32,7 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from common.events import Event, add_to_outbox
 from common.generation import jobs
+from common.generation.fit import clip_to_schema
 from common.generation.jobs import Target
 from common.generation.llm import LlmClient, LlmConfigError
 from common.metrics import RegionLeader
@@ -44,7 +45,7 @@ from transform.app.store import JOB_TYPES, KINDS, PLANS, Kind, lock_name
 POLL_SECONDS = 2.0
 REPORT_SECONDS = 60.0
 
-Outcome = Literal["completed", "dropped", "retry", "failed"]
+Outcome = Literal["completed", "dropped", "retry", "failed", "superseded"]
 
 _logger = logging.getLogger(__name__)
 
@@ -131,15 +132,30 @@ async def start(
     )
 
 
+async def fail_job(
+    runtime: Runtime, job: Mapping[str, Any], error: str
+) -> Literal["retry", "failed", "superseded"]:
+    """End a job this worker can't finish (it crashed on it, or retakes ran out)."""
+    return await jobs.fail_or_retry(
+        runtime.db, runtime.client, job, error, permanent=True, target_status=None
+    )
+
+
 async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> Outcome:
     """One claimed job, to its end or its next retry."""
     db, kind = runtime.db, KINDS[job["type"]]
     child_id, location = job["child_id"], job["location"]
 
-    async def give_up(error: str, *, permanent: bool = False) -> Literal["retry", "failed"]:
+    async def give_up(
+        error: str, *, permanent: bool = False
+    ) -> Literal["retry", "failed", "superseded"]:
         return await jobs.fail_or_retry(
             db, runtime.client, job, error, permanent=permanent, target_status=None
         )
+
+    if jobs.exhausted(job):  # retaken after crashes more often than its attempts allow
+        await fail_job(runtime, job, jobs.EXHAUSTED)
+        return "failed"
 
     doc = await db[PLANS].find_one({"_id": child_id, "location": location})
     child = await db[CHILD_ACCESS].find_one({"_id": child_id, "location": location})
@@ -185,10 +201,12 @@ async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> O
         update = {f"life_pathway.{area_id}": pathway.to_slots(milestones)}
     else:
         validator = plans.PLAN_VALIDATOR if kind == "plan" else plans.TRACKER_VALIDATOR
-        problems = plans.errors(validator, result.data)
+        # Over-long text is clipped, not a reason to fail (common.generation.fit).
+        answer = clip_to_schema(result.data, validator.schema)
+        problems = plans.errors(validator, answer)
         if problems:
             return await give_up(f"the answer didn't fit the schema at {', '.join(problems[:5])}")
-        update = {"plan" if kind == "plan" else "track_steps": result.data}
+        update = {"plan" if kind == "plan" else "track_steps": answer}
 
     async def after(session: AsyncClientSession) -> None:
         if kind == "plan":
@@ -209,7 +227,12 @@ async def run_jobs(
         try:
             job = await jobs.claim_next(runtime.db, locations=locations)
             if job is not None:
-                outcome = await process(runtime, llm, job)
+                try:
+                    outcome = await process(runtime, llm, job)
+                except Exception as exc:
+                    # Ended now rather than left `processing` until a retake (review).
+                    _logger.exception("%s: job %s crashed", SERVICE, job["_id"])
+                    outcome = await fail_job(runtime, job, f"crashed ({type(exc).__name__})")
                 _logger.info(
                     "transform.job id=%s type=%s outcome=%s", job["_id"], job["type"], outcome
                 )

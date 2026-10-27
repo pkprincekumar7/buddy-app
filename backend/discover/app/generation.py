@@ -26,6 +26,7 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from common.events import Event, add_to_outbox
 from common.generation import jobs
+from common.generation.fit import clip_to_schema
 from common.generation.jobs import Target
 from common.generation.llm import LlmClient, LlmConfigError
 from common.metrics import RegionLeader
@@ -76,6 +77,15 @@ async def start(
             return held, False
         if current["status"] == "ready":
             raise AlreadyGenerated(child_id)
+    try:
+        return await _start_job(runtime, child_id, user_id, location, input_version)
+    except jobs.TargetRefused:
+        raise AlreadyGenerated(child_id) from None
+
+
+async def _start_job(
+    runtime: Runtime, child_id: str, user_id: str, location: str, input_version: int
+) -> tuple[str, bool]:
     return await jobs.start_job(
         runtime.db,
         runtime.client,
@@ -86,17 +96,33 @@ async def start(
         target=target(child_id),
         input_version=input_version,
         target_on_insert={"version": 1, "source": "llm"},
+        # Checked again in the start's transaction: a job finishing meanwhile can't be
+        # followed by a second generation (review).
+        refuse_if={"status": "ready"},
     )
+
+
+async def fail_job(
+    runtime: Runtime, job: Mapping[str, Any], error: str
+) -> Literal["retry", "failed", "superseded"]:
+    """End a job this worker can't finish (it crashed on it, or retakes ran out)."""
+    return await jobs.fail_or_retry(runtime.db, runtime.client, job, error, permanent=True)
 
 
 async def process(
     runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]
-) -> Literal["completed", "dropped", "retry", "failed"]:
+) -> Literal["completed", "dropped", "retry", "failed", "superseded"]:
     """One claimed job, to its end or its next retry."""
     db, child_id, location = runtime.db, job["child_id"], job["location"]
 
-    async def give_up(error: str, *, permanent: bool = False) -> Literal["retry", "failed"]:
+    async def give_up(
+        error: str, *, permanent: bool = False
+    ) -> Literal["retry", "failed", "superseded"]:
         return await jobs.fail_or_retry(db, runtime.client, job, error, permanent=permanent)
+
+    if jobs.exhausted(job):  # retaken after crashes more often than its attempts allow
+        await fail_job(runtime, job, jobs.EXHAUSTED)
+        return "failed"
 
     child = await db[CHILD_ACCESS].find_one({"_id": child_id, "location": location})
     answers = await db[ONBOARDING_INPUTS].find_one({"_id": child_id, "location": location})
@@ -108,11 +134,15 @@ async def process(
         return await give_up(str(exc), permanent=True)
     except Exception as exc:  # a timeout, a provider error, an unusable answer: retried
         return await give_up(f"the LLM call failed ({type(exc).__name__})")
-    problems = schema_errors(result.data)
+    # Over-long text is clipped, not a reason to fail (common.generation.fit).
+    answer = clip_to_schema(result.data, LLM_SCHEMA)
+    problems = schema_errors(answer)
     if problems:
         return await give_up(f"the answer didn't fit the schema at {', '.join(problems[:5])}")
-    model = view_model(result.data, child.get("name"))
-    personality = await db[PERSONALITIES].find_one({"_id": child_id}, {"version": 1})
+    model = view_model(answer, child.get("name"))
+    personality = await db[PERSONALITIES].find_one(
+        {"_id": child_id, "location": location}, {"version": 1}
+    )
     version = int((personality or {}).get("version", 0)) + 1
     finalised = Event.new(
         "discover.personality_finalised",
@@ -136,7 +166,7 @@ async def process(
         target_update={
             "status": "ready",
             "view_model": model,
-            "analysis": result.data,
+            "analysis": answer,
             "source": "llm",
             "finalised_at": datetime.now(UTC),
             "version": version,
@@ -155,7 +185,12 @@ async def run_jobs(
         try:
             job = await jobs.claim_next(runtime.db, locations=locations)
             if job is not None:
-                outcome = await process(runtime, llm, job)
+                try:
+                    outcome = await process(runtime, llm, job)
+                except Exception as exc:
+                    # Ended now rather than left `processing` until a retake (review).
+                    _logger.exception("%s: job %s crashed", SERVICE, job["_id"])
+                    outcome = await fail_job(runtime, job, f"crashed ({type(exc).__name__})")
                 _logger.info("discover.job id=%s outcome=%s", job["_id"], outcome)
                 continue
         except Exception:

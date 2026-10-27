@@ -35,6 +35,9 @@ PROGRESS_FLAGS: tuple[str, ...] = (
     "connect",
 )
 
+# A child's id, as children makes them (uuid4); every route taking one checks it (review).
+CHILD_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
 CHILD_ACCESS = "child_access"
 ONBOARDING_INPUTS = "onboarding_inputs"
 PERSONALITY_INPUTS = "personality_inputs"
@@ -177,6 +180,7 @@ def jobs_validator(service: str) -> dict[str, Any]:
             "max_llm_attempts": {"bsonType": ["int", "long"], "minimum": 1},
             "retry_after": _DATE,
             "claimed_at": _DATE,
+            "claim_id": _STRING,
             # A short reason only: never the prompt or user data.
             "error": {"bsonType": "string", "maxLength": 500},
             "created_at": _DATE,

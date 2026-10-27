@@ -70,6 +70,38 @@ class InvalidServiceToken(Exception):
     """A service token that doesn't verify."""
 
 
+# `/internal/<segment>/…` with at most one query string of plain `name=value` pairs.
+_SAFE_PATH = re.compile(
+    r"/internal(?:/[A-Za-z0-9._:-]+)+(?:\?[A-Za-z0-9_]+=[A-Za-z0-9._:-]*(?:&[A-Za-z0-9_]+=[A-Za-z0-9._:-]*)*)?"
+)
+
+
+# What each kind of owner answer must hold, for `checked_answer` (7.5).
+CHILD_ANSWER: dict[str, type | tuple[type, ...]] = {
+    "child_id": str, "location": str, "user_id": str, "is_deleted": bool, "version": int,
+}  # fmt: skip
+STATUS_ANSWER: dict[str, type | tuple[type, ...]] = {"completed": bool}
+ANSWERS_ANSWER: dict[str, type | tuple[type, ...]] = {"user_id": str, "version": int}
+SUMMARY_ANSWER: dict[str, type | tuple[type, ...]] = {
+    "user_id": str, "traits": dict, "strengths": list, "version": int,
+}  # fmt: skip
+AREAS_ANSWER: dict[str, type | tuple[type, ...]] = {"areas": list}
+AREA_ITEM: dict[str, type | tuple[type, ...]] = {"area_id": str, "user_id": str, "version": int}
+
+
+def checked_answer(data: Any, shape: Mapping[str, type | tuple[type, ...]]) -> dict[str, Any]:
+    """`data` if it's an object with `shape`'s fields and types; ValueError otherwise, which
+    the caller turns into 503: a half-deployed owner's odd 200 is "unavailable", not a 500."""
+    if not isinstance(data, dict):
+        raise ValueError("the answer isn't an object")
+    for name, kind in shape.items():
+        value = data.get(name)
+        # bool is an int: a version of True isn't a version.
+        if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+            raise ValueError(f"the answer's {name} is missing or malformed")
+    return data
+
+
 class InternalUnavailable(Exception):
     """The callee couldn't be reached (no address, or every attempt failed to connect)."""
 
@@ -295,8 +327,11 @@ class InternalClient:
         traceparent: str | None = None,
     ) -> httpx.Response:
         """Call `service`'s internal `path`. InternalUnavailable if it can't be reached."""
-        if not path.startswith("/internal/"):
-            raise ValueError("internal calls go to /internal/* only")
+        segments = path.split("?", 1)[0].split("/")
+        if not _SAFE_PATH.fullmatch(path) or {".", ".."} & set(segments):
+            # Ids pasted into the path must not add a query, a fragment or a segment: a
+            # `?` or `#` in a client's id would rewrite what the owner is asked (review).
+            raise ValueError("internal calls go to /internal/* with plain segments only")
         host = self.host(service)
         try:
             addresses = await self.resolver(host, self.port)

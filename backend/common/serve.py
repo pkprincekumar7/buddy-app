@@ -8,7 +8,8 @@ separate ports, so an internal route can't be reached on the public port, whatev
 service's routers do. Both servers share one process and one event loop.
 
 Every service gets the same observability here (15.5): JSON logs, traces for both apps,
-and `X-Request-Id` on every request (common.logging.RequestIdMiddleware).
+and `X-Request-Id` on every request (common.logging.RequestIdMiddleware); and the same cap
+on request bodies (common.body_limit).
 """
 
 import asyncio
@@ -22,6 +23,7 @@ from typing import Any, Protocol
 
 import uvicorn
 
+from common.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimitMiddleware
 from common.logging import RequestIdMiddleware
 from common.telemetry import setup_observability
 
@@ -67,12 +69,21 @@ def load_apps(service: str) -> tuple[Any, Any]:
 
 # Containers listen on all interfaces; security groups limit who reaches each port.
 def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]:  # nosec B104
-    """The public and internal servers for `service`, not started."""
+    """The public and internal servers for `service`, not started. Each app is behind the
+    body cap (common.body_limit): 1 MiB, or the service's `MAX_BODY_BYTES`."""
+    apps = load_apps(service)
+    module = importlib.import_module(f"{service}.app.main")
+    limit = int(getattr(module, "MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES))
     return [
         _Server(
-            uvicorn.Config(RequestIdMiddleware(asgi), host=host, port=port, server_header=False)
+            uvicorn.Config(
+                RequestIdMiddleware(BodyLimitMiddleware(asgi, limit)),
+                host=host,
+                port=port,
+                server_header=False,
+            )
         )
-        for asgi, port in zip(load_apps(service), (PUBLIC_PORT, INTERNAL_PORT), strict=True)
+        for asgi, port in zip(apps, (PUBLIC_PORT, INTERNAL_PORT), strict=True)
     ]
 
 

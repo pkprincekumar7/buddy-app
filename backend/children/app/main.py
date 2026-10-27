@@ -50,11 +50,17 @@ from children.app.store import (
     profile_complete,
     snapshot,
 )
+from common import upload_tracking
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
-from common.events import Event, add_to_outbox
-from common.internal_client import InternalUnavailable, allow_callers
-from common.models import PROGRESS_FLAGS
+from common.events import Event, add_to_outbox, is_tombstoned, tombstone_key, write_guards
+from common.internal_client import (
+    STATUS_ANSWER,
+    InternalUnavailable,
+    allow_callers,
+    checked_answer,
+)
+from common.models import CHILD_ID_PATTERN, PROGRESS_FLAGS
 from common.routers import PolicyRouter, public
 from common.telemetry import current_traceparent
 from common.uploads import UploadError
@@ -176,7 +182,7 @@ def _parents_only(caller: Caller) -> None:
         raise _error(403, "parents_only", "Only parents can add or change children.")
 
 
-ChildId = Annotated[str, Path(description="The child's id")]
+ChildId = Annotated[str, Path(pattern=CHILD_ID_PATTERN, description="The child's id")]
 LocationQuery = Annotated[
     str | None,
     Query(pattern=LOCATION_PATTERN, description="The owner's location (admins only)"),
@@ -414,6 +420,12 @@ async def create_child(body: ChildIn, runtime: Ready, caller: SignedIn) -> Child
     )
 
     async def write(session: AsyncClientSession) -> None:
+        # Not for an account being deleted: the user's tombstone, checked behind its guard
+        # so a deletion in flight and this create conflict (review).
+        user_stone = [tombstone_key("user", caller.user_id)]
+        await write_guards(runtime.db, user_stone, location=caller.location, session=session)
+        if await is_tombstoned(runtime.db, user_stone, session, location=caller.location):
+            raise _error(409, "account_deleting", "This account is being deleted.")
         await children.insert_one(doc, session=session)
         await _event(runtime, doc, session)
 
@@ -432,12 +444,15 @@ async def get_child(
 ) -> Child:
     if not caller.has(READ_ANY):
         return await _view(runtime, await _owned(runtime, caller, id))
+    # Audited whether it's allowed or refused (review): a probe for ids leaves a trace too.
     if location is None:
+        runtime.authorizer.record(request, caller, READ_ANY, None, privileged=True, status=422)
         raise _error(422, "location_required", "Pass ?location= (the owner's location)")
     doc = await runtime.db[CHILDREN].find_one(
         {"_id": id, "location": location, "is_deleted": False}
     )
     if doc is None:
+        runtime.authorizer.record(request, caller, READ_ANY, None, privileged=True, status=404)
         raise _not_found()
     runtime.authorizer.record(request, caller, READ_ANY, doc["user_id"], privileged=True)
     return await _view(runtime, doc)
@@ -505,6 +520,10 @@ async def update_child(id: ChildId, body: ChildPatch, runtime: Ready, caller: Si
         )
         if updated is None:
             raise _Stale()
+        if changes.get("avatar_key"):
+            await upload_tracking.attached(
+                runtime.db, [changes["avatar_key"]], location=before["location"], session=session
+            )
         if copied_changed:
             await _event(runtime, updated, session)
         result["doc"] = updated
@@ -582,6 +601,9 @@ async def presign_avatar(
     try:
         upload_url = await runtime.uploads.presign_put(key, body.content_type)
         avatar_url = await runtime.uploads.presign_get(key)
+        await upload_tracking.record_presigned(
+            runtime.db, key, location=child["location"], child_id=id
+        )
     except Exception as exc:
         _logger.exception("children: presigning failed")
         raise _error(502, "upload_url_failed", "Couldn't create an upload URL.") from exc
@@ -606,7 +628,10 @@ async def _release_done(runtime: Runtime, doc: Mapping[str, Any]) -> bool:
         return False
     if response.status_code != 200:
         raise unavailable
-    return bool(response.json().get("completed"))
+    try:
+        return bool(checked_answer(response.json(), STATUS_ANSWER)["completed"])
+    except ValueError as exc:
+        raise unavailable from exc
 
 
 @router.post(
@@ -678,7 +703,7 @@ def ping() -> dict[str, str]:
     "(7.5). The caller checks `user_id` against its own request.",
 )
 async def internal_child(
-    id: str,
+    id: ChildId,
     location: Annotated[str, Query(pattern=LOCATION_PATTERN)],
     runtime: Ready,
     _caller: Annotated[str, Depends(allow_callers(*INTERNAL_CALLERS))],

@@ -236,7 +236,7 @@ def test_children_unreachable_is_503_never_a_wrong_answer(mongo_uri):
         child = r.children.add()
         await r.copy(child, progress=progress(profile=False))
         unknown = r.children.add()
-        for mode in ("down", "error"):
+        for mode in ("down", "error", "odd"):
             r.children.mode = mode
             for target in (child, unknown):
                 response = await r.http.get(_path(target), headers=auth_header())
@@ -281,7 +281,12 @@ def test_admins_read_with_the_owners_location_and_never_write(mongo_uri):
         assert no_location.status_code == 422 and _code(no_location) == "location_required"
         read = await r.http.get(_path(child), params={"location": LOCATION}, headers=admin)
         assert read.status_code == 200 and read.json()["status"] == "not_started"
-        assert [(e.subject_id, e.outcome) for e in r.audit if e.privileged] == [(PARENT, "allowed")]
+        unknown = _path(str(uuid.uuid4()))
+        missing = await r.http.get(unknown, params={"location": LOCATION}, headers=admin)
+        assert missing.status_code == 404
+        # Refused reads are audited too: a probe for ids or locations leaves a trace.
+        audited = [(e.subject_id, e.outcome, e.status) for e in r.audit if e.privileged]
+        assert audited == [(None, "denied", 422), (PARENT, "allowed", 200), (None, "denied", 404)]
         assert (
             await r.http.put(_path(child), json=ANSWERS, headers=admin)
         ).status_code == 404  # not theirs
@@ -459,3 +464,15 @@ def test_the_lifespan_shares_one_runtime(mongo_uri, monkeypatch, fake_aws_creden
             assert main.app.state.runtime is None
 
     asyncio.run(unconfigured())
+
+
+@pytest.mark.live_service
+@pytest.mark.parametrize("bad", ["abc%3Flocation%3Devil%26x%3D", "abc%23", "not-a-uuid"])
+def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
+    # Found by the Phase 5-6 review: `%3F` decodes into the id, which went into the
+    # internal call's URL and could rewrite its query.
+    async def test(r: Running) -> None:
+        response = await r.http.get(_path(bad), headers=auth_header())
+        assert response.status_code == 422
+
+    live(mongo_uri, test)

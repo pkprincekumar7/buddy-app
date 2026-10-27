@@ -13,16 +13,21 @@ one, every job fails at once with a clear error).
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import signal
 import sys
 from typing import Any
 
+from common import upload_tracking
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
 from common.generation.llm import LlmClient, LlmConfig
 from common.metrics import outbox_metrics
 from common.telemetry import setup_observability
 from transform.app import generation, lifecycle
 from transform.app.runtime import SERVICE, Runtime
+
+_logger = logging.getLogger(__name__)
 
 
 def build_consumer(runtime: Runtime) -> Consumer:
@@ -55,6 +60,26 @@ def build_consumer(runtime: Runtime) -> Consumer:
     return consumer
 
 
+SWEEP_SECONDS = 3600.0
+
+
+async def run_sweep(runtime: Runtime, stop: asyncio.Event, *, interval: float) -> None:
+    """Plan photos presigned a day ago and never saved (common.upload_tracking), hourly."""
+    locations = runtime.locations()
+    while not stop.is_set():
+        try:
+            if runtime.uploads is not None:
+                while (
+                    await upload_tracking.sweep(runtime.db, runtime.uploads, locations)
+                    == upload_tracking.SWEEP_BATCH
+                ):
+                    pass
+        except Exception:
+            _logger.exception("transform sweep failed; retrying")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), interval)
+
+
 async def run(
     runtime: Runtime,
     llm: LlmClient,
@@ -62,6 +87,7 @@ async def run(
     *,
     wait_seconds: int = 20,
     poll: float = generation.POLL_SECONDS,
+    sweep_interval: float = SWEEP_SECONDS,
 ) -> None:
     settings = runtime.settings
     if not settings.events_topic_arn or not settings.events_queue_url:
@@ -79,6 +105,7 @@ async def run(
             runtime.sqs, settings.events_queue_url, stop, wait_seconds=wait_seconds
         ),
         generation.run_jobs(runtime, llm, stop, poll=poll),
+        run_sweep(runtime, stop, interval=sweep_interval),
     )
 
 

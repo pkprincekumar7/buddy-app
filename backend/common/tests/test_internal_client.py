@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 from common import internal_client as ic
 from common.authz import POLICY_ATTR, AuthUnavailable, AuthzEntry
 from common.internal_client import (
+    CHILD_ANSWER,
     InternalClient,
     InternalUnavailable,
     InvalidServiceToken,
@@ -32,6 +33,7 @@ from common.internal_client import (
     ServiceTokenVerifier,
     allow_callers,
     authz_fill,
+    checked_answer,
 )
 from common.logging import request_id_var
 from common.routers import PolicyRouter, route_policies
@@ -385,6 +387,36 @@ def test_only_internal_paths_and_valid_services():
         asyncio.run(client.get("auth", "/api/v1/auth/me"))
     with pytest.raises(ValueError, match="invalid service"):
         client.host("Auth")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/internal/children/abc?location=evil&x=?location=in",  # an id that adds a query
+        "/internal/children/abc#?location=in",  # one that drops it
+        "/internal/children/../users/u1",
+        "/internal/children/a b?location=in",
+        "/internal/",
+    ],
+)
+def test_ids_in_the_path_cant_rewrite_the_call(path):
+    # Found by the Phase 5-6 review: a client's `%3F` decodes into the path parameter.
+    with pytest.raises(ValueError, match="plain segments"):
+        asyncio.run(InternalClient(SIGNER).get("children", path))
+
+
+def test_checked_answer_turns_an_odd_200_into_an_error():
+    good = {"child_id": "c", "location": "in", "user_id": "u", "is_deleted": False, "version": 2}
+    assert checked_answer(good, CHILD_ANSWER) is good
+    for odd in (
+        "<html>",
+        [good],
+        {**good, "version": "2"},
+        {**good, "version": True},
+        {k: v for k, v in good.items() if k != "user_id"},
+    ):
+        with pytest.raises(ValueError):
+            checked_answer(odd, CHILD_ANSWER)
 
 
 def test_ipv6_addresses_are_bracketed():

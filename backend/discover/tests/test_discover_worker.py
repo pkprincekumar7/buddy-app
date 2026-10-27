@@ -484,3 +484,52 @@ def test_only_the_leader_reports(mongo_uri):
         assert metrics.points == [] and metrics.flushes == 0
 
     live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_job_that_crashes_or_stalls_too_often_is_failed(mongo_uri, monkeypatch):
+    # Found by the Phase 5-6 review: such a job stayed `processing` with its lock held, and
+    # was retaken every 10 minutes for ever.
+    async def test(r: Running) -> None:
+        stalled = await _start(r, await r.ready_child())
+        retaken = {**stalled, "llm_attempt": stalled["max_llm_attempts"] + 1}
+        assert await generation.process(r.runtime, object(), retaken) == "failed"  # type: ignore[arg-type]
+        ended = await r.db[JOBS].find_one({"_id": stalled["_id"]})
+        assert (ended["status"], ended["error"]) == ("failed", jobs.EXHAUSTED)
+        # A crash ends the job at once instead of waiting for a retake.
+        crashed = await _start(r, await r.ready_child())
+        await r.db[JOBS].update_one({"_id": crashed["_id"]}, {"$set": {"status": "pending"}})
+
+        async def boom(*args: Any) -> Any:
+            raise RuntimeError("a bug")
+
+        monkeypatch.setattr(generation, "process", boom)
+        stop = asyncio.Event()
+        task = asyncio.create_task(generation.run_jobs(r.runtime, object(), stop, poll=0.01))  # type: ignore[arg-type]
+        for _ in range(300):
+            doc = await r.db[JOBS].find_one({"_id": crashed["_id"]})
+            if doc["status"] == "failed":
+                break
+            await asyncio.sleep(0.01)
+        stop.set()
+        await asyncio.wait_for(task, 5)
+        assert doc["error"] == "crashed (RuntimeError)"
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_an_over_long_text_is_clipped_not_failed(mongo_uri):
+    # Found by the e2e full journey: providers don't enforce maxLength, and failing the job
+    # for a few characters lost a good answer.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        long = {**LLM_ANSWER, "child_quote": "I love building tall towers. " * 20}
+        job = await _start(r, child)
+        llm = llm_client(FakeOpenAI(answers=[long]))
+        assert await generation.process(r.runtime, llm, job) == "completed"
+        personality = await r.db[PERSONALITIES].find_one({"_id": child})
+        quote = personality["analysis"]["child_quote"]
+        assert len(quote) <= 120 and quote.endswith("…")
+
+    live(mongo_uri, test)

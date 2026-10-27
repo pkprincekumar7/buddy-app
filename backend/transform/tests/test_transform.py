@@ -38,6 +38,7 @@ from transform_testkit import (
     service_header,
 )
 
+from common import upload_tracking
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS
 from common.routers import assert_every_route_has_a_policy
 from transform.app import generation, main
@@ -193,6 +194,17 @@ def test_a_plan_finished_after_the_event_completes_transform_itself(mongo_uri):
         assert (await r.http.get(_path(child), headers=auth_header())).json()[
             "track_steps"
         ] == TRACKER_ANSWER
+        # An over-long step is clipped, not a reason to fail the job (found by the e2e).
+        long = {
+            "steps": [
+                {**s, "body": "Practise it every day. " * 20} for s in TRACKER_ANSWER["steps"]
+            ]
+        }
+        await _generate(r, child, "event_tracker", long)
+        steps = (await r.http.get(_path(child), headers=auth_header())).json()["track_steps"][
+            "steps"
+        ]
+        assert all(len(s["body"]) <= 160 and s["body"].endswith("…") for s in steps)
         cleared = await _patch(r, child, event_name="New show", clear_track_steps=True)
         assert cleared.json()["track_steps"] is None and cleared.json()["event_name"] == "New show"
 
@@ -215,6 +227,11 @@ def test_each_generation_needs_what_it_builds_on(mongo_uri):
         assert no_area.status_code == 422 and _code(no_area) == "area_id_required"
         not_done = await _start(r, child, "life_pathway", area_id="creativity")
         assert not_done.status_code == 409 and _code(not_done) == "needs_completed_area"
+        # grow answers with a malformed area: unavailable, never a 500 (review).
+        r.owners.odd.add("grow")
+        odd = await _start(r, child, "life_pathway", area_id="creativity")
+        assert odd.status_code == 503 and _code(odd) == "grow_unavailable"
+        r.owners.odd.discard("grow")
 
     live(mongo_uri, test)
 
@@ -360,6 +377,8 @@ def test_photos_round_trip_as_keys_and_urls(mongo_uri, monkeypatch, caplog):
             headers=auth_header(),
         )
         key = presigned.json()["photo_key"]
+        pending = r.db[upload_tracking.PENDING_UPLOADS]
+        assert await pending.find_one({"_id": key}) is not None  # until it's saved (review)
         assert key.startswith(f"uploads/{LOCATION}/{child}/ninety-day-plan/") and key.endswith(
             ".png"
         )
@@ -370,6 +389,7 @@ def test_photos_round_trip_as_keys_and_urls(mongo_uri, monkeypatch, caplog):
         saved = await _patch(r, child, photos={"act:01:sketch": [key]}, applied={"tip-1": True})
         (photo,) = saved.json()["photos"]["act:01:sketch"]
         assert photo["key"] == key and "X-Amz" in photo["url"]
+        assert await pending.find_one({"_id": key}) is None
         # Another field's photo keeps the first; replacing a field's list deletes the old one.
         second = f"uploads/{LOCATION}/{child}/ninety-day-plan/{uuid.uuid4()}.jpg"
         _put_photo(r, second)
@@ -382,6 +402,11 @@ def test_photos_round_trip_as_keys_and_urls(mongo_uri, monkeypatch, caplog):
         }  # fmt: skip
         listed = r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET)
         assert key not in {o["Key"] for o in listed["Contents"]}
+        # Moving a photo to another field keeps it (review: it used to be deleted).
+        moved = await _patch(r, child, photos={"act:01:sketch": [], "moved": [third]})
+        assert [p["key"] for p in moved.json()["photos"]["moved"]] == [third]
+        listed = r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET)
+        assert third in {o["Key"] for o in listed["Contents"]}
         # Keys only under this child's plan-photo prefix, at most 5 MB.
         for bad in (
             f"uploads/{LOCATION}/{child}/avatar/{uuid.uuid4()}.jpg",
@@ -469,7 +494,7 @@ def test_a_locked_copy_is_confirmed_with_grow_before_refusing(mongo_uri):
         assert (await r.http.get(_path(child), headers=auth_header())).status_code == 200
         copy = await r.db[CHILD_ACCESS].find_one({"_id": child})
         assert copy["confirmed"] == {"grow": True}
-        for kind in ("down", "broken"):
+        for kind in ("down", "broken", "odd"):
             other = r.owners.add_child()
             await r.copy(other, progress=progress(profile=True))
             getattr(r.owners, kind).add("grow")
@@ -502,7 +527,12 @@ def test_someone_elses_child_is_not_found_and_admins_only_read(mongo_uri):
         assert no_location.status_code == 422 and _code(no_location) == "location_required"
         read = await r.http.get(_path(child), params={"location": LOCATION}, headers=admin)
         assert read.status_code == 200 and read.json()["areas"][0]["area_id"] == "self_care"
-        assert [(e.subject_id, e.outcome) for e in r.audit if e.privileged] == [(PARENT, "allowed")]
+        unknown = _path(str(uuid.uuid4()))
+        missing = await r.http.get(unknown, params={"location": LOCATION}, headers=admin)
+        assert missing.status_code == 404
+        # Refused reads are audited too: a probe for ids or locations leaves a trace.
+        audited = [(e.subject_id, e.outcome, e.status) for e in r.audit if e.privileged]
+        assert audited == [(None, "denied", 422), (PARENT, "allowed", 200), (None, "denied", 404)]
         assert (
             await r.http.patch(_path(child), json={"ask": "x"}, headers=admin)
         ).status_code == 404
@@ -721,5 +751,17 @@ def test_missing_copies_are_read_through(mongo_uri):
         await r.http.patch(_path(theirs), json={"ask": "x"}, headers=auth_header())
         r.owners.personality(theirs, user_id=OTHER)
         assert (await _start(r, theirs, "plan")).status_code == 503  # never someone else's
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+@pytest.mark.parametrize("bad", ["abc%3Flocation%3Devil%26x%3D", "abc%23", "not-a-uuid"])
+def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
+    # Found by the Phase 5-6 review: `%3F` decodes into the id, which went into the
+    # internal call's URL and could rewrite its query.
+    async def test(r: Running) -> None:
+        response = await r.http.get(_path(bad), headers=auth_header())
+        assert response.status_code == 422
 
     live(mongo_uri, test)

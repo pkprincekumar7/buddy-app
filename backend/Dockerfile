@@ -20,7 +20,11 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # A service declares its common version on one `buddy-common[extras]==X.Y.Z` line in its
 # requirements.txt. The wheel is built from this tree's backend/common; the final stage
 # installs that line from the wheel only, never from PyPI (no dependency confusion).
-RUN set -eu; \
+# Building the wheel fetches its build backend (setuptools) from PyPI: through the same pip
+# cache and patience as the install below.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    set -eu; \
+    export PIP_DEFAULT_TIMEOUT=60 PIP_RETRIES=10; \
     mkdir -p /out/app /out/build; \
     if [ "$SERVICE" = backend ]; then \
       cp requirements.txt /out/build/; \
@@ -35,7 +39,7 @@ RUN set -eu; \
       grep -E '^buddy-common' "$SERVICE/requirements.txt" > /out/build/common.txt; \
       cp -r "$SERVICE" /out/app/; \
       rm -rf "/out/app/$SERVICE/tests"; \
-      pip wheel --no-cache-dir --no-deps --wheel-dir /out/build ./common; \
+      pip wheel --no-deps --wheel-dir /out/build ./common; \
     fi
 
 # ---- the image -----------------------------------------------------------------------------
@@ -76,12 +80,19 @@ COPY --from=select /out/build/ /tmp/build/
 # pip pinned (hadolint DL3013) — bump it deliberately, like any other dependency.
 # Then removed: the app never runs pip, and pip carries its own vendored copies of
 # urllib3/msgpack/setuptools that image scanners flag (and which we can't upgrade).
-RUN set -eu; \
-    python -m pip install --no-cache-dir pip==26.2.1; \
+#
+# Downloads go to a BuildKit cache mount, shared by every service's build and kept between
+# builds, but never part of the image (so no --no-cache-dir: the cache isn't in a layer).
+# A package is downloaded once for all the images, and a build that fails part-way keeps
+# what it fetched. A longer timeout and more retries ride out a slow link to PyPI.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    set -eu; \
+    export PIP_DEFAULT_TIMEOUT=60 PIP_RETRIES=10; \
+    python -m pip install pip==26.2.1; \
     if [ -f /tmp/build/common.txt ]; then \
-      pip install --no-cache-dir --no-index --no-deps --find-links /tmp/build -r /tmp/build/common.txt; \
+      pip install --no-index --no-deps --find-links /tmp/build -r /tmp/build/common.txt; \
     fi; \
-    pip install --no-cache-dir -r /tmp/build/requirements.txt; \
+    pip install -r /tmp/build/requirements.txt; \
     python -m pip uninstall -y pip; \
     rm -rf /tmp/build
 

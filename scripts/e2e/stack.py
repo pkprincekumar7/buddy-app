@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -56,12 +58,54 @@ def step(name: str) -> None:
     print(f"\n== {name}", flush=True)
 
 
+def _redacted(response: httpx.Response) -> str:
+    """The body for an error message, without what was sent: a 422 echoes each refused
+    field's `input`, which for a registration is the password."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text[:1500]
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, list):
+        for item in detail:
+            if isinstance(item, dict) and "input" in item:
+                item["input"] = "(redacted)"
+    return json.dumps(body)[:1500]
+
+
 def check(response: httpx.Response, *ok: int) -> Any:
     line = f"{response.request.method} {response.request.url.path} -> {response.status_code}"
     if response.status_code not in ok:
-        raise WalkFailed(f"{line}\n{response.text[:1500]}")
+        raise WalkFailed(f"{line}\n{_redacted(response)}")
     print(f"   {line}")
     return response.json() if response.content else {}
+
+
+def new_password() -> str:
+    """A throwaway password that always meets the rules (a letter and a digit, 8+)."""
+    return f"{secrets.token_urlsafe(18)}a7"
+
+
+def register(
+    client: httpx.Client | None, email: str, password: str, first_name: str
+) -> dict[str, Any]:
+    """POST /auth/register, waiting out the 5-a-minute limit per address when the e2e runs
+    have used it up (they run back to back in check.sh)."""
+    body = {
+        "email": email,
+        "password": password,
+        "first_name": first_name,
+        "country_code": "IN",
+    }
+    post = client.post if client is not None else httpx.post
+    for _ in range(4):
+        response = post(f"{API}/auth/register", json=body)
+        if response.status_code != 429:
+            break
+        wait = int(response.headers.get("retry-after", "60"))
+        print(f"   registration limit reached: waiting {wait}s")
+        time.sleep(min(wait, 65))
+    return check(response, 201)  # type: ignore[no-any-return]
 
 
 def poll(
@@ -116,6 +160,16 @@ def mongo() -> pymongo.MongoClient[dict[str, Any]]:
     return pymongo.MongoClient(MONGO_URI, tz_aware=True)
 
 
+def tombstoned_everywhere(key: str, databases: Iterable[str]) -> list[str]:
+    """The databases in `databases` with no `key` tombstone (empty when every one has it)."""
+    with mongo() as client:
+        return [
+            name
+            for name in databases
+            if not client[name]["tombstones"].find_one({"_id": key})
+        ]
+
+
 def auth_gone(user_id: str) -> bool:
     with mongo() as client:
         auth = client["auth"]
@@ -132,8 +186,13 @@ ID_ONLY_EVENTS = {"user.data_deleted", "user.deletion_requested", "child.deleted
 
 
 def _allowed(db: str, collection: str, doc: dict[str, Any]) -> bool:
-    if collection in ("tombstones", "jobs"):  # deletion markers; ids-only, 7-day TTL
+    if collection in (
+        "tombstones",
+        "guards",
+    ):  # deletion markers and their write guards
         return True
+    if collection == "jobs":  # ids only, gone 7 days after they end: ended ones only
+        return doc.get("status") in ("completed", "failed")
     if collection == "outbox":
         return doc.get("event_type") in ID_ONLY_EVENTS
     return db == "auth" and collection == "audit"  # the agreed retention
@@ -192,3 +251,38 @@ def report(left: list[str], allowed: list[str]) -> bool:
     for item in left:
         print(f"!! left behind: {item}")
     return not left
+
+
+# ── a local admin for the admin scenarios ──────────────────────────────────────
+
+
+def local_admin(user_id: str, location: str, *, admin: bool) -> None:
+    """Make (or unmake) `user_id` an admin in the local auth database, as
+    `auth.promote_admin` does: the role through a new authz_version, the account's tokens
+    revoked and sessions ended, and the admin counter moved. That command works once per
+    environment; this keeps the e2e runs repeatable, and every run undoes its own admin.
+    Local stack only: it writes straight to the local Mongo."""
+    now = datetime.now(UTC)
+    with mongo() as client:
+        auth = client["auth"]
+        changed = auth["auth"].update_one(
+            {
+                "_id": user_id,
+                "location": location,
+                "role": "parent" if admin else "admin",
+            },
+            {
+                "$set": {
+                    "role": "admin" if admin else "parent",
+                    "tokens_revoked_at": now,
+                    "updated_at": now,
+                },
+                "$inc": {"authz_version": 1},
+            },
+        )
+        if changed.modified_count != 1:
+            raise WalkFailed(f"couldn't {'promote' if admin else 'demote'} {user_id}")
+        auth["sessions"].delete_many({"location": location, "user_id": user_id})
+        auth["admin_count"].update_one(
+            {"_id": "admins"}, {"$inc": {"active": 1 if admin else -1}}, upsert=True
+        )

@@ -31,6 +31,7 @@ from fastapi.routing import APIRoute
 from children.app import main
 from children.app.runtime import Runtime
 from children.app.store import CHILDREN
+from common import upload_tracking
 from common.routers import assert_every_route_has_a_policy
 
 API = "/api/v1/children"
@@ -233,6 +234,9 @@ def test_admins_read_with_the_owners_location_and_never_write(mongo_uri):
             f"{API}/{child['id']}", params={"location": "us"}, headers=admin
         )
         assert elsewhere.status_code == 404
+        # Refused reads are audited too (review): a probe for ids leaves a trace.
+        denied = [(e.subject_id, e.status) for e in r.audit if e.outcome == "denied"]
+        assert (None, 422) in denied and (None, 404) in denied
         # A parent can't read another family's list.
         nosy = await r.http.get(
             API, params={"user_id": OTHER, "location": LOCATION}, headers=auth_header()
@@ -315,11 +319,15 @@ def test_a_photo_is_uploaded_saved_shown_and_replaced(mongo_uri):
         body = presign.json()
         assert body["avatar_key"].startswith(f"uploads/{LOCATION}/{child['id']}/avatar/")
         assert body["avatar_key"].endswith(".png") and "X-Amz-Signature" in body["upload_url"]
+        # Pending until saved: an avatar never saved is swept after a day (review).
+        pending = r.db[upload_tracking.PENDING_UPLOADS]
+        assert await pending.find_one({"_id": body["avatar_key"]}) is not None
         _put_photo(r, body["avatar_key"], content_type="image/png")
         saved = await r.http.patch(
             path, json={"avatar_key": body["avatar_key"]}, headers=auth_header()
         )
         assert saved.status_code == 200
+        assert await pending.find_one({"_id": body["avatar_key"]}) is None
         assert saved.json()["avatar_id"] is None and saved.json()["avatar_url"].startswith(
             "https://"
         )
@@ -734,16 +742,28 @@ def test_connect_refusals(mongo_uri):
         assert admin.status_code == 403 and _code(admin) == "parents_only"
         r.release.status = 404  # release has never heard of it: still locked
         assert _code(await _visit(r, child_id)) == "circle_locked"
-        for status, down in ((500, False), (200, True)):
-            r.release.status, r.release.down = status, down
+        for status, down, odd in ((500, False, False), (200, True, False), (200, False, True)):
+            r.release.status, r.release.down, r.release.odd = status, down, odd
             unavailable = await _visit(r, child_id)
             assert unavailable.status_code == 503 and _code(unavailable) == "release_unavailable"
             assert unavailable.headers["Retry-After"] == "2"
         statuses = []
-        r.release.down = False
+        r.release.down = r.release.odd = False
         r.release.status = 200
         for _ in range(30):
             statuses.append((await _visit(r, child_id)).status_code)
         assert statuses[-1] == 429
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+@pytest.mark.parametrize("bad", ["abc%3Flocation%3Devil%26x%3D", "abc%23", "not-a-uuid"])
+def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
+    # Found by the Phase 5-6 review: `%3F` decodes into the id, which went into the
+    # internal call's URL and could rewrite its query.
+    async def test(r: Running) -> None:
+        response = await r.http.get("/api/v1/children/" + bad, headers=auth_header())
+        assert response.status_code == 422
 
     live(mongo_uri, test)

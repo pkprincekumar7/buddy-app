@@ -189,6 +189,11 @@ def test_generation_needs_evidence_and_reads_it_through(mongo_uri, monkeypatch):
         await r.copy(child)  # no copies of the answers or areas yet
         nothing = await r.http.post(_path(child, "/generation"), headers=auth_header())
         assert nothing.status_code == 409 and _code(nothing) == "needs_evidence"
+        # grow answers with a malformed area: unavailable, never a 500 (review).
+        r.owners.odd.add("grow")
+        odd = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert odd.status_code == 503 and _code(odd) == "grow_unavailable"
+        r.owners.odd.discard("grow")
         r.owners.complete(child, version=2)
         r.owners.complete_area(child, version=3)
         assert (
@@ -293,7 +298,7 @@ def test_a_locked_copy_is_confirmed_with_transform_before_refusing(mongo_uri):
         assert (await r.db[CHILD_ACCESS].find_one({"_id": child}))["confirmed"] == {
             "transform": True
         }
-        for kind in ("down", "broken"):
+        for kind in ("down", "broken", "odd"):
             other = r.owners.add_child()
             await r.copy(other, progress=progress(profile=True))
             getattr(r.owners, kind).add("transform")
@@ -348,7 +353,12 @@ def test_admins_read_with_the_owners_location_and_never_write(mongo_uri):
         assert no_location.status_code == 422 and _code(no_location) == "location_required"
         read = await r.http.get(_path(child), params={"location": LOCATION}, headers=admin)
         assert read.status_code == 200 and read.json()["status"] == "not_started"
-        assert [(e.subject_id, e.outcome) for e in r.audit if e.privileged] == [(PARENT, "allowed")]
+        unknown = _path(str(uuid.uuid4()))
+        missing = await r.http.get(unknown, params={"location": LOCATION}, headers=admin)
+        assert missing.status_code == 404
+        # Refused reads are audited too: a probe for ids or locations leaves a trace.
+        audited = [(e.subject_id, e.outcome, e.status) for e in r.audit if e.privileged]
+        assert audited == [(None, "denied", 422), (PARENT, "allowed", 200), (None, "denied", 404)]
         assert (
             await r.http.patch(_path(child), json={"watching": [], "span": "x"}, headers=admin)
         ).status_code == 404
@@ -542,5 +552,17 @@ def test_a_job_counts_for_the_jobs_collection(mongo_uri):
         child = await r.ready_child()
         await r.http.post(_path(child, "/generation"), headers=auth_header())
         assert await r.db[JOBS].count_documents({"type": "generate_observations"}) == 1
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+@pytest.mark.parametrize("bad", ["abc%3Flocation%3Devil%26x%3D", "abc%23", "not-a-uuid"])
+def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
+    # Found by the Phase 5-6 review: `%3F` decodes into the id, which went into the
+    # internal call's URL and could rewrite its query.
+    async def test(r: Running) -> None:
+        response = await r.http.get(_path(bad), headers=auth_header())
+        assert response.status_code == 422
 
     live(mongo_uri, test)

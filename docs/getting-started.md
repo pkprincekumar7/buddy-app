@@ -37,7 +37,7 @@ backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
 backend/.venv/bin/python scripts/local-aws-setup.py
 ```
 
-Then start the stack. The first start builds three images, which downloads their Python packages:
+Then start the stack. The first start builds the images, which downloads their Python packages. Downloads go to a Docker build cache shared by every service's image (`backend/Dockerfile`), so each package is fetched once and later builds reuse it; `docker builder prune` empties it:
 
 ```bash
 docker compose --profile split up -d --build
@@ -55,7 +55,13 @@ docker compose --profile split up -d --build
 backend/.venv/bin/python scripts/e2e/journey.py
 ```
 
-or the same journey, then deleting the account and checking nothing of it is left in any service's database, Valkey or the uploads bucket:
+or every endpoint of the split services (the journey plus login, refresh, logout-all, the profile, every kind of generation, speech-to-text, the APK link, and the admin's reads, lock, unlock and role change; about ten generations):
+
+```bash
+backend/.venv/bin/python scripts/e2e/full-journey.py
+```
+
+or the journey, then deleting the account and checking nothing of it is left in any service's database, Valkey or the uploads bucket:
 
 ```bash
 backend/.venv/bin/python scripts/e2e/account-deletion.py
@@ -67,7 +73,8 @@ or the failure and convergence scenarios (workers killed mid-deletion, a late ev
 backend/.venv/bin/python scripts/e2e/convergence.py
 ```
 
-`RUN_E2E=1 ./check.sh` runs the last two after the other checks.
+`RUN_E2E=1 ./check.sh` runs the last three after the other checks (about 7–10 minutes, some 20 LLM calls).
+- The gateway sends paths no new service claims to today's backend. `GATEWAY_CONFIG=nginx.alb.conf docker compose --profile split up -d gateway` answers them with the ALB's 404 instead, as AWS will, so a client still calling an old path fails locally too.
 - Paths no new service has yet (the circles) still go to today's backend through the frontend on port 5173.
 
 ## Local development (without Docker)

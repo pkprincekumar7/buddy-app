@@ -9,7 +9,10 @@ A job writes only to its own service's documents. Its target is the circle's doc
   running gets that job back instead of a new one, and a failure leaves neither, so
   there's never a document stuck in `generating` without a job.
 - `claim_next`: a worker takes the oldest due job whose `location` its region serves,
-  including a job a crashed worker left `processing` too long.
+  including a job a crashed worker left `processing` too long. Each claim gets its own
+  `claim_id`, and every write that ends or retries the job matches it: a worker whose job
+  was retaken can't end or reset it under the new owner (review). A job retaken more times
+  than `max_llm_attempts` allows is `exhausted`: the worker fails it instead of running it.
 - `complete_job` / `fail_or_retry`: store the result (or the failure) on the target and
   release the lock, in one transaction with the job's end. `completed_at` is set on
   completed and failed jobs alike (the TTL deletes them 7 days later).
@@ -30,7 +33,7 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.mongo_client import AsyncMongoClient
 from pymongo.errors import DuplicateKeyError
 
-from common.events.store import Db, is_tombstoned, tombstone_key
+from common.events.store import Db, is_tombstoned, tombstone_key, write_guards
 from common.models import JOBS, SCHEMA_VERSION
 
 OPEN_STATUSES = ("pending", "processing")
@@ -39,6 +42,7 @@ STALE_CLAIM_AFTER = timedelta(minutes=10)
 BACKOFF_BASE_SECONDS = 30
 BACKOFF_MAX_SECONDS = 900
 CANCELLED = "cancelled"
+EXHAUSTED = "gave up: the job stalled or crashed on every attempt"
 
 Doc = dict[str, Any]
 Client = AsyncMongoClient[Doc]
@@ -47,6 +51,14 @@ InTransaction = Callable[[AsyncClientSession], Awaitable[None]]
 
 class JobRefused(Exception):
     """The child or user is being deleted (a tombstone): no new generation."""
+
+
+class TargetRefused(Exception):
+    """`start_job`'s `refuse_if` matched the target: e.g. it's generated already."""
+
+
+class _ClaimLost(Exception):
+    """The job was retaken by another worker: this one's writes must not apply."""
 
 
 @dataclass(frozen=True)
@@ -107,11 +119,14 @@ async def start_job(
     target_set: Mapping[str, Any] | None = None,
     max_llm_attempts: int = DEFAULT_MAX_LLM_ATTEMPTS,
     target_status: str | None = "generating",
+    refuse_if: Mapping[str, Any] | None = None,
 ) -> tuple[str, bool]:
     """Start a job, or return the one already running. Returns (job id, created).
 
     `target_status=None` leaves the target's `status` alone (a growth area's status is the
     parent's wizard, not the job's); a new target then needs it in `target_on_insert`.
+    `refuse_if`, a filter on the target, raises TargetRefused when it matches, checked in
+    the start's transaction: "generated once" can't race a job finishing (review).
     """
     set_fields = {
         **({} if target_status is None else {"status": target_status}),
@@ -124,15 +139,24 @@ async def start_job(
     outcome: dict[str, Any] = {}
 
     async def run(session: AsyncClientSession) -> None:
-        if await is_tombstoned(db, _tombstones(user_id, child_id), session=session):
+        stones = _tombstones(user_id, child_id)
+        # Conflicts with a deletion of this child or user in flight (store.write_guards).
+        await write_guards(db, stones, location=location, session=session)
+        if await is_tombstoned(db, stones, location=location, session=session):
             raise JobRefused(f"child {child_id} or its user is deleted")
+        if refuse_if is not None and await db[target.collection].find_one(
+            {"_id": target.doc_id, "location": location, **refuse_if}, {"_id": 1}, session=session
+        ):
+            raise TargetRefused(target.doc_id)
         current = await db[target.collection].find_one(
-            {"_id": target.doc_id}, {target.lock: 1}, session=session
+            {"_id": target.doc_id, "location": location}, {target.lock: 1}, session=session
         )
         held = _get_path(current, target.lock)
         if held:
             running = await db[JOBS].find_one(
-                {"_id": held, "status": {"$in": list(OPEN_STATUSES)}}, {"_id": 1}, session=session
+                {"_id": held, "location": location, "status": {"$in": list(OPEN_STATUSES)}},
+                {"_id": 1},
+                session=session,
             )
             if running is not None:
                 outcome.update(job_id=held, created=False)
@@ -217,7 +241,12 @@ async def claim_next(
             ],
         },
         {
-            "$set": {"status": "processing", "claimed_at": now, "updated_at": now},
+            "$set": {
+                "status": "processing",
+                "claimed_at": now,
+                "claim_id": str(uuid.uuid4()),
+                "updated_at": now,
+            },
             "$inc": {"llm_attempt": 1},
         },
         sort=[("created_at", ASCENDING)],
@@ -225,7 +254,23 @@ async def claim_next(
     )
 
 
+def exhausted(job: Mapping[str, Any]) -> bool:
+    """Claimed more often than its attempts allow: only stale retakes get here (a failed
+    attempt past the limit fails at once). The worker fails it rather than run it again."""
+    return int(job["llm_attempt"]) > int(job["max_llm_attempts"])
+
+
 # ── finishing ──────────────────────────────────────────────────────────────────
+
+
+def _claimed(job: Mapping[str, Any]) -> Doc:
+    """This claim of `job`, still processing: what every ending write matches."""
+    return {
+        "_id": job["_id"],
+        "location": job["location"],
+        "status": "processing",
+        "claim_id": job.get("claim_id"),
+    }
 
 
 async def _end(
@@ -239,7 +284,10 @@ async def _end(
     fields: Doc = {"status": status, "completed_at": now, "updated_at": now}
     if error is not None:
         fields["error"] = error[:500]
-    await db[JOBS].update_one({"_id": job["_id"]}, {"$set": fields}, session=session)
+    ended = await db[JOBS].update_one(_claimed(job), {"$set": fields}, session=session)
+    if ended.matched_count == 0:
+        # Retaken (or cancelled) meanwhile: undo this attempt's writes with the transaction.
+        raise _ClaimLost(job["_id"])
 
 
 async def complete_job(
@@ -254,18 +302,20 @@ async def complete_job(
 
     `in_transaction` runs in the same transaction, e.g. to add the outbox row for
     `discover.personality_finalised`. The result is dropped (the job ends `failed`,
-    `cancelled`) if the child or user was deleted meanwhile, or if the lock was taken over.
+    `cancelled`) if the child or user was deleted meanwhile, or if the lock was taken over;
+    and dropped without touching the job if another worker retook it (its claim decides).
     """
     target = Target.of(job)
     applied: dict[str, bool] = {}
 
     async def run(session: AsyncClientSession) -> None:
-        if await is_tombstoned(db, _tombstones(job["user_id"], job["child_id"]), session=session):
+        stones = _tombstones(job["user_id"], job["child_id"])
+        if await is_tombstoned(db, stones, location=job["location"], session=session):
             await _end(db, session, job, "failed", CANCELLED)
             applied["ok"] = False
             return
         result = await db[target.collection].update_one(
-            {"_id": target.doc_id, target.lock: job["_id"]},
+            {"_id": target.doc_id, "location": job["location"], target.lock: job["_id"]},
             {"$set": {**target_update, "updated_at": _now()}, "$unset": {target.lock: ""}},
             session=session,
         )
@@ -278,8 +328,11 @@ async def complete_job(
         await _end(db, session, job, "completed")
         applied["ok"] = True
 
-    async with client.start_session() as session:
-        await session.with_transaction(run)
+    try:
+        async with client.start_session() as session:
+            await session.with_transaction(run)
+    except _ClaimLost:
+        return False
     return applied["ok"]
 
 
@@ -292,16 +345,17 @@ async def fail_or_retry(
     target_failure: Mapping[str, Any] | None = None,
     permanent: bool = False,
     target_status: str | None = "failed",
-) -> Literal["retry", "failed"]:
+) -> Literal["retry", "failed", "superseded"]:
     """After a failed attempt: retry later with backoff, or fail the job and its target.
 
     `permanent` (e.g. no LLM provider configured) fails at once instead of using retries.
     `target_status=None` releases the lock without touching the target's `status`.
+    `superseded`: another worker retook the job meanwhile, so this one changes nothing.
     """
     if not permanent and job["llm_attempt"] < job["max_llm_attempts"]:
         now = _now()
-        await db[JOBS].update_one(
-            {"_id": job["_id"], "status": "processing"},
+        retried = await db[JOBS].update_one(
+            _claimed(job),
             {
                 "$set": {
                     "status": "pending",
@@ -311,12 +365,12 @@ async def fail_or_retry(
                 }
             },
         )
-        return "retry"
+        return "retry" if retried.matched_count else "superseded"
     target = Target.of(job)
 
     async def run(session: AsyncClientSession) -> None:
         await db[target.collection].update_one(
-            {"_id": target.doc_id, target.lock: job["_id"]},
+            {"_id": target.doc_id, "location": job["location"], target.lock: job["_id"]},
             {
                 "$set": {
                     **({} if target_status is None else {"status": target_status}),
@@ -329,8 +383,11 @@ async def fail_or_retry(
         )
         await _end(db, session, job, "failed", error)
 
-    async with client.start_session() as session:
-        await session.with_transaction(run)
+    try:
+        async with client.start_session() as session:
+            await session.with_transaction(run)
+    except _ClaimLost:
+        return "superseded"
     return "failed"
 
 
@@ -339,12 +396,15 @@ async def cancel_jobs(
     *,
     user_id: str | None = None,
     child_id: str | None = None,
+    location: str | None = None,
     session: AsyncClientSession | None = None,
 ) -> int:
     """End every open job of a deleted user or child (10.2, 10.3). Returns how many."""
     if (user_id is None) == (child_id is None):
         raise ValueError("give exactly one of user_id or child_id")
     selector: Doc = {"user_id": user_id} if user_id is not None else {"child_id": child_id}
+    if location is not None:
+        selector["location"] = location
     now = _now()
     result = await db[JOBS].update_many(
         {**selector, "status": {"$in": list(OPEN_STATUSES)}},

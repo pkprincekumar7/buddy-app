@@ -18,12 +18,19 @@ An owner that can't be reached (or answers anything unexpected) is `503` with
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import HTTPException
 
 from common.events import is_tombstoned, tombstone_key, versioned_upsert
-from common.internal_client import InternalUnavailable
+from common.internal_client import (
+    ANSWERS_ANSWER,
+    CHILD_ANSWER,
+    STATUS_ANSWER,
+    InternalUnavailable,
+    checked_answer,
+)
 from common.models import (
     ANSWER_FIELDS,
     CHILD_ACCESS,
@@ -54,7 +61,9 @@ def _unavailable(owner: str) -> HTTPException:
     )
 
 
-async def _ask(runtime: Runtime, owner: str, path: str) -> dict[str, Any] | None:
+async def _ask(
+    runtime: Runtime, owner: str, path: str, shape: Mapping[str, type | tuple[type, ...]]
+) -> dict[str, Any] | None:
     """The owner's answer; None for a 404; 503 if it can't be reached or answers oddly."""
     try:
         response = await runtime.internal.get(owner, path)
@@ -64,8 +73,10 @@ async def _ask(runtime: Runtime, owner: str, path: str) -> dict[str, Any] | None
         return None
     if response.status_code != 200:
         raise _unavailable(owner)
-    data: dict[str, Any] = response.json()
-    return data
+    try:
+        return checked_answer(response.json(), shape)
+    except ValueError as exc:
+        raise _unavailable(owner) from exc
 
 
 def _tombstones(child_id: str, user_id: str) -> list[str]:
@@ -83,7 +94,9 @@ async def child_for(
     if copy is None:
         if await is_tombstoned(runtime.db, [tombstone_key("child", child_id)]):
             raise not_found()  # purged: no need to ask
-        data = await _ask(runtime, "children", f"/internal/children/{child_id}?location={location}")
+        data = await _ask(
+            runtime, "children", f"/internal/children/{child_id}?location={location}", CHILD_ANSWER
+        )
         if data is None:
             raise not_found()
         progress = data.get("progress") or {}
@@ -121,6 +134,7 @@ async def require_unlocked(runtime: Runtime, copy: dict[str, Any]) -> None:
         runtime,
         "onboarding",
         f"/internal/onboarding/children/{copy['_id']}/status?location={copy['location']}",
+        STATUS_ANSWER,
     )
     if not (status or {}).get("completed"):
         raise error(403, "circle_locked", "Finish the onboarding conversation first.")
@@ -144,6 +158,7 @@ async def answers_for(runtime: Runtime, copy: dict[str, Any]) -> dict[str, Any]:
         runtime,
         "onboarding",
         f"/internal/onboarding/children/{child_id}/answers?location={location}",
+        ANSWERS_ANSWER,
     )
     if data is None or data.get("user_id") != copy["user_id"]:
         # Unlocked but no answers: onboarding is behind its own status. Ask again soon.

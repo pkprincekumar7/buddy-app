@@ -34,14 +34,18 @@ def system_message(schema: dict[str, Any] | None = None) -> str:
     )
 
 
+# `[END DATA]` or `[DATA name]` in a value, however it's cased or spaced.
+_MARKER_RE = re.compile(r"\[\s*(?:END\s*)?DATA\b[^\]]*\]", re.IGNORECASE)
+
+
 def data_block(name: str, value: Any) -> str:
     """`value` as JSON inside a named, delimited block."""
     if not _FIELD_RE.fullmatch(name):
         raise ValueError(f"invalid data block name {name!r}")
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     # JSON doesn't escape brackets, so a value could contain the closing marker and end the
-    # block early: break it up.
-    encoded = encoded.replace("[END DATA]", "[END_DATA]")
+    # block early: break it up, in any case or spacing (review), and any opening marker too.
+    encoded = _MARKER_RE.sub(lambda m: m.group(0).replace("[", "(").replace("]", ")"), encoded)
     return f"[DATA {name}]\n{encoded}\n[END DATA]"
 
 

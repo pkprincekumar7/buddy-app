@@ -206,6 +206,9 @@ def late_event_and_job() -> bool:
     with mongo() as client:
         job = client["grow"]["jobs"].find_one({"_id": job_id})
     print(f"   job: {job['status']} ({job.get('error')})")
+    # The deletion caught it running: cancelled, and its late result dropped.
+    if (job["status"], job.get("error")) != ("failed", "cancelled"):
+        raise WalkFailed(f"the deletion didn't cancel the job: {job['status']}")
     return report(*scan([j.user_id, j.child_id], [j.email]))
 
 

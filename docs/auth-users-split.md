@@ -328,6 +328,8 @@ These collections appear in several databases with the same shape. `common` owns
 
 Written in the same transaction as the deletion. Before any upsert of a copy, a read-through write, or storing a generation job's result, the service checks for a tombstone of that child or user, and drops the write if there is one.
 
+**`guards`** (next to `tombstones`): one document per `child:<id>` / `user:<id>`, `{_id, location, touched_at}`, TTL 1 day after the last touch. MongoDB doesn't see a conflict between reading a tombstone that isn't there yet and writing it, so a copy write that checked "not deleted" could commit after the deletion and bring the copy back. Every write that checks tombstones (a copy, a job's start, a new child) and every tombstone write also write the key's guard in their transaction, so the two conflict and one runs again: it then sees the tombstone, or the deletion sees the copy.
+
 **`jobs`** (every generating service: discover, grow, transform, release; section 8):
 
 | Field | Type | Required | Notes |
@@ -341,6 +343,7 @@ Written in the same transaction as the deletion. Before any upsert of a copy, a 
 | `llm_attempt`, `max_llm_attempts` | int | ✅ | Retries with backoff, as today |
 | `retry_after` | date | — | |
 | `claimed_at` | date | — | Set when a worker takes the job |
+| `claim_id` | string | — | New on every claim. Ending or retrying a job matches it, so a worker whose job was retaken (stale after 10 minutes) changes nothing. A job retaken more often than `max_llm_attempts` allows is failed instead of run again; a job whose processing crashes is failed at once |
 | `error` | string | — | Short reason; never the prompt or user data |
 | `created_at`, `updated_at` | date | ✅ | |
 | `completed_at` | date | — | Set when the job ends as `completed` **or** `failed`; the TTL index deletes it 7 days later (section 14) |

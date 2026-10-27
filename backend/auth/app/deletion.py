@@ -146,6 +146,15 @@ async def confirm(runtime: Runtime, received: ReceivedEvent) -> bool:
     """Record one `user.data_deleted`; finish when all expected services have. True if
     this confirmation finished the deletion."""
     user_id, location = received.event.aggregate_id, received.event.location
+    # A confirmation after the deletion finished (a redelivery, a relay retry, a DLQ
+    # redrive) must not start a row that can never complete (review): only an account
+    # still being deleted takes confirmations.
+    account = await runtime.db[AUTH].find_one(
+        {"_id": user_id, "location": location}, {"is_being_deleted": 1}
+    )
+    if account is None or not account.get("is_being_deleted"):
+        _logger.info("user.data_deleted.late id=%s from=%s", user_id, received.source_service)
+        return False
     deletions = runtime.db[DELETIONS]
     # Created here too if the start crashed between its transaction and the upsert.
     # With upsert and AFTER there's always a document.

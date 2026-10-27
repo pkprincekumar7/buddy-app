@@ -100,6 +100,14 @@ class Relay:
         return published
 
     async def _publish(self, doc: dict[str, Any]) -> bool:
+        # The change stream hands over the row as it was inserted: read it again, so a row
+        # an account or child deletion removed meanwhile is never published (review).
+        current = await self.db[OUTBOX].find_one(
+            {"_id": doc["_id"], "location": doc.get("location"), "published_at": None}
+        )
+        if current is None:
+            return False
+        doc = current
         try:
             event = Event.from_outbox(doc)
         except (KeyError, TypeError, AttributeError, ValueError) as exc:
@@ -108,15 +116,17 @@ class Relay:
             return await self._set_aside(doc, "over SNS's size limit")
         await self.publisher.publish(event)
         result = await self.db[OUTBOX].update_one(
-            {"_id": doc["_id"], "published_at": None},
+            {"_id": doc["_id"], "location": doc["location"], "published_at": None},
             {"$set": {"published_at": datetime.now(UTC)}},
         )
         return result.modified_count == 1
 
     async def _set_aside(self, doc: dict[str, Any], reason: str) -> bool:
         await self.db[OUTBOX].update_one(
-            {"_id": doc["_id"], "published_at": None},
+            {"_id": doc["_id"], "location": doc.get("location"), "published_at": None},
             {"$set": {"set_aside_at": datetime.now(UTC), "set_aside_reason": reason}},
+            # An unreadable row fails the validator too: marking it mustn't be refused.
+            bypass_document_validation=True,
         )
         _logger.error(
             "outbox.row.set_aside",

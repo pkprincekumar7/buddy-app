@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from common.events import is_tombstoned, tombstone_key, versioned_upsert
-from common.internal_client import InternalUnavailable
+from common.internal_client import CHILD_ANSWER, InternalUnavailable, checked_answer
 from common.models import CHILD_ACCESS, PROGRESS_FLAGS, SCHEMA_VERSION, stage_done
 from onboarding.app.runtime import Runtime
 
@@ -58,8 +58,10 @@ async def ask_children(runtime: Runtime, child_id: str, location: str) -> dict[s
         return None
     if response.status_code != 200:
         raise _unavailable()
-    data: dict[str, Any] = response.json()
-    return data
+    try:
+        return checked_answer(response.json(), CHILD_ANSWER)
+    except ValueError as exc:
+        raise _unavailable() from exc
 
 
 def _copy(data: dict[str, Any]) -> dict[str, Any]:

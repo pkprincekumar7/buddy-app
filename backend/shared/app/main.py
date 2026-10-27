@@ -34,6 +34,8 @@ from common.routers import PolicyRouter, public
 from shared.app.runtime import SERVICE, Runtime
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
+# common.serve's cap on a request body: the recording plus the form's own parts.
+MAX_BODY_BYTES = MAX_AUDIO_BYTES + 512 * 1024
 # The allow-listed types and what OpenAI is told each is: never the client's Content-Type.
 AUDIO_TYPES: dict[str, str] = {
     "webm": "audio/webm",
@@ -247,7 +249,8 @@ async def transcribe(
     _parents_only(caller)
     if runtime.openai is None:
         raise _error(503, "transcription_not_configured", "Speech-to-text isn't configured.")
-    # One byte over the limit is enough to know: the rest of the upload isn't buffered.
+    # The body cap (MAX_BODY_BYTES, common.body_limit) already refused anything much larger
+    # before the form was parsed; this is the recording's own limit.
     content = await audio.read(MAX_AUDIO_BYTES + 1)
     if len(content) > MAX_AUDIO_BYTES:
         raise _error(413, "audio_too_large", "The recording is over 10 MB.")

@@ -35,7 +35,7 @@ from release.app.store import JOB_TYPE, OBSERVATIONS
 POLL_SECONDS = 2.0
 REPORT_SECONDS = 60.0
 
-Outcome = Literal["completed", "dropped", "retry", "failed"]
+Outcome = Literal["completed", "dropped", "retry", "failed", "superseded"]
 
 _logger = logging.getLogger(__name__)
 
@@ -80,12 +80,25 @@ async def start(
     )
 
 
+async def fail_job(
+    runtime: Runtime, job: Mapping[str, Any], error: str
+) -> Literal["retry", "failed", "superseded"]:
+    """End a job this worker can't finish (it crashed on it, or retakes ran out)."""
+    return await jobs.fail_or_retry(runtime.db, runtime.client, job, error, permanent=True)
+
+
 async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> Outcome:
     """One claimed job, to its end or its next retry."""
     db, child_id, location = runtime.db, job["child_id"], job["location"]
 
-    async def give_up(error: str, *, permanent: bool = False) -> Literal["retry", "failed"]:
+    async def give_up(
+        error: str, *, permanent: bool = False
+    ) -> Literal["retry", "failed", "superseded"]:
         return await jobs.fail_or_retry(db, runtime.client, job, error, permanent=permanent)
+
+    if jobs.exhausted(job):  # retaken after crashes more often than its attempts allow
+        await fail_job(runtime, job, jobs.EXHAUSTED)
+        return "failed"
 
     child = await db[CHILD_ACCESS].find_one({"_id": child_id, "location": location})
     if child is None:
@@ -139,7 +152,12 @@ async def run_jobs(
         try:
             job = await jobs.claim_next(runtime.db, locations=locations)
             if job is not None:
-                outcome = await process(runtime, llm, job)
+                try:
+                    outcome = await process(runtime, llm, job)
+                except Exception as exc:
+                    # Ended now rather than left `processing` until a retake (review).
+                    _logger.exception("%s: job %s crashed", SERVICE, job["_id"])
+                    outcome = await fail_job(runtime, job, f"crashed ({type(exc).__name__})")
                 _logger.info("release.job id=%s outcome=%s", job["_id"], outcome)
                 continue
         except Exception:

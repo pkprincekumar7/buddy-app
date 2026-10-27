@@ -168,6 +168,7 @@ class FakeRelease:
     completed: set[str] = field(default_factory=set)
     down: bool = False
     status: int = 200
+    odd: bool = False
     calls: list[str] = field(default_factory=list)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -176,6 +177,8 @@ class FakeRelease:
         self.calls.append(f"{request.url.host} {request.url.path}?{request.url.query.decode()}")
         if self.status != 200:
             return httpx.Response(self.status)
+        if self.odd:
+            return httpx.Response(200, text="<html>upgrading</html>")
         child_id = request.url.path.split("/")[-2]
         return httpx.Response(200, json={"completed": child_id in self.completed})
 

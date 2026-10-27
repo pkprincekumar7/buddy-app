@@ -220,6 +220,7 @@ class FakeOwners:
     calls: list[str] = field(default_factory=list)
     down: set[str] = field(default_factory=set)
     broken: set[str] = field(default_factory=set)
+    odd: set[str] = field(default_factory=set)
 
     def add_child(
         self, child_id: str | None = None, *, user_id: str = PARENT, version: int = 1, **fields: Any
@@ -266,6 +267,11 @@ class FakeOwners:
             raise httpx.ConnectError("connection refused", request=request)
         if owner in self.broken:
             return httpx.Response(500)
+        if owner in self.odd:
+            # A half-deployed owner's 200: an areas list with a malformed area, else HTML.
+            if request.url.path.endswith("/areas"):
+                return httpx.Response(200, json={"areas": [{"area_id": 1}]})
+            return httpx.Response(200, text="<html>upgrading</html>")
         path = request.url.path
         self.calls.append(f"{owner} {path}")
         location = parse_qs(request.url.query.decode())["location"][0]

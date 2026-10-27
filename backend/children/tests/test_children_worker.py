@@ -25,6 +25,7 @@ from children_testkit import (
 from children import worker
 from children.app import lifecycle
 from children.app.store import CHILDREN
+from common import upload_tracking
 from common.events import Event, SnsPublisher
 from common.events.testing import (
     assert_consumer_contract,
@@ -320,5 +321,67 @@ def test_the_worker_needs_its_queue_and_survives_a_failed_purge(mongo_uri, monke
         monkeypatch.setattr(lifecycle, "purge", flaky)
         await asyncio.wait_for(worker.run_purge(r.runtime, stop, interval=0.01), 5)
         assert calls[0] == 3
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_each_purge_round_also_sweeps_unsaved_avatars(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        stop = asyncio.Event()
+        sweeps: list[int] = []
+
+        async def sweep(*args: Any) -> int:
+            sweeps.append(1)
+            if len(sweeps) == 1:
+                return upload_tracking.SWEEP_BATCH  # a full batch: sweep again at once
+            stop.set()
+            return 0
+
+        monkeypatch.setattr(upload_tracking, "sweep", sweep)
+        await asyncio.wait_for(worker.run_purge(r.runtime, stop, interval=0.01), 5)
+        assert len(sweeps) == 2
+        # Without an uploads bucket there's nothing to sweep.
+        r.runtime.uploads = None
+        stop = asyncio.Event()
+
+        async def purge(*args: Any) -> int:
+            stop.set()
+            return 0
+
+        monkeypatch.setattr(lifecycle, "purge", purge)
+        await asyncio.wait_for(worker.run_purge(r.runtime, stop, interval=0.01), 5)
+        assert len(sweeps) == 2
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_child_added_while_the_account_is_deleted_goes_too(mongo_uri, monkeypatch):
+    # Found by the Phase 5-6 review: children were read outside the deletion's transaction,
+    # so one created in between was removed without a tombstone or its avatar.
+    async def test(r: Running) -> None:
+        await add_child(r, name="First")
+        late: dict[str, str] = {}
+        real = lifecycle._delete_avatars
+
+        async def and_one_more(runtime: Any, docs: Any) -> None:
+            if not late:
+                child = (await add_child(r, name="Late")).json()
+                late["id"] = child["id"]
+                key = f"uploads/{LOCATION}/{child['id']}/avatar/{uuid.uuid4()}.jpg"
+                r.runtime.uploads.client.put_object(
+                    Bucket=BUCKET, Key=key, Body=b"x", ContentType="image/jpeg"
+                )
+            await real(runtime, docs)
+
+        monkeypatch.setattr(lifecycle, "_delete_avatars", and_one_more)
+        await worker.build_consumer(r.runtime).handle_body(_deletion(r))
+        assert await r.db[CHILDREN].count_documents({"user_id": PARENT}) == 0
+        assert await r.db.tombstones.find_one({"_id": f"child:{late['id']}"}) is not None
+        assert r.runtime.uploads.client.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
+        # And once the account's tombstone is there, no child can be added.
+        refused = await add_child(r, name="After")
+        assert refused.status_code == 409 and refused.json()["detail"]["code"] == "account_deleting"
 
     live(mongo_uri, test)

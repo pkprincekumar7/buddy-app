@@ -280,6 +280,7 @@ def test_a_confirmation_before_the_tracking_row_creates_it(mongo_uri):
     # The start crashed between its transaction and the deletions upsert.
     async def test(r: Running) -> None:
         jane = await _signed_up(r)
+        await r.db[AUTH].update_one({"_id": jane["id"]}, {"$set": {"is_being_deleted": True}})
         received = worker.build_consumer(r.runtime).check(
             sns_envelope(_confirmation(jane["id"], "users"), r.layout["topics"]["users"])
         )
@@ -288,6 +289,23 @@ def test_a_confirmation_before_the_tracking_row_creates_it(mongo_uri):
         tracking = await r.db[DELETIONS].find_one({"_id": jane["id"]})
         assert tracking is not None
         assert (tracking["expected"], tracking["confirmed"]) == (["users", "children"], ["users"])
+
+    live(mongo_uri, test, aws=True)
+
+
+@pytest.mark.live_service
+def test_a_late_confirmation_after_the_deletion_finished_is_ignored(mongo_uri):
+    # Found by the Phase 5-6 review: a redelivered user.data_deleted recreated a tracking row
+    # that could never complete, and was reported as stuck for ever.
+    async def test(r: Running) -> None:
+        jane = await _signed_up(r)
+        received = worker.build_consumer(r.runtime).check(
+            sns_envelope(_confirmation(jane["id"], "users"), r.layout["topics"]["users"])
+        )
+        assert await deletion.confirm(r.runtime, received) is False  # not being deleted
+        await r.db[AUTH].delete_one({"_id": jane["id"]})  # finished: the account is gone
+        assert await deletion.confirm(r.runtime, received) is False
+        assert await r.db[DELETIONS].find_one({"_id": jane["id"]}) is None
 
     live(mongo_uri, test, aws=True)
 

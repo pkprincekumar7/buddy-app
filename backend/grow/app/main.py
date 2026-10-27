@@ -38,10 +38,10 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 from common.audit import route_template
 from common.authz import Caller, current_caller, signed_in
 from common.events import add_to_outbox, is_tombstoned, tombstone_key
-from common.generation.jobs import JobRefused
+from common.generation.jobs import JobRefused, TargetRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import JOBS
+from common.models import CHILD_ID_PATTERN, JOBS
 from common.routers import PolicyRouter, public
 from grow.app import generation
 from grow.app.access import (
@@ -204,7 +204,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     return dependency
 
 
-ChildId = Annotated[str, Path(description="The child's id")]
+ChildId = Annotated[str, Path(pattern=CHILD_ID_PATTERN, description="The child's id")]
 AreaId = Annotated[
     str,
     Path(
@@ -403,6 +403,23 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE}
 
 
+async def _admin_child(
+    request: Request, runtime: Runtime, caller: Caller, child_id: str, location: str | None
+) -> dict[str, Any]:
+    """An admin's read (`children:read:any`): audited whether it's allowed or refused."""
+    try:
+        if location is None:
+            raise error(422, "location_required", "Pass ?location= (the owner's location)")
+        child = await child_for(runtime, child_id, location=location, owner=None)
+    except HTTPException as exc:
+        runtime.authorizer.record(
+            request, caller, READ_ANY, None, privileged=True, status=exc.status_code
+        )
+        raise
+    runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+    return child
+
+
 @router.get(
     "",
     dependencies=[Depends(per_user("60/minute"))],
@@ -414,10 +431,7 @@ async def list_areas(
     request: Request, id: ChildId, runtime: Ready, caller: SignedIn, location: LocationQuery = None
 ) -> Areas:
     if caller.has(READ_ANY):
-        if location is None:
-            raise error(422, "location_required", "Pass ?location= (the owner's location)")
-        child = await child_for(runtime, id, location=location, owner=None)
-        runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+        child = await _admin_child(request, runtime, caller, id, location)
     else:
         child = await _parents_child(runtime, caller, id)
     docs = (
@@ -557,7 +571,7 @@ async def start_generation(
     kind = body.kind
     if area is None and kind != "parent_questions":
         raise error(404, "area_not_found", "Start the area with its questions first.")
-    if kind in ("parent_questions", "child_rounds") and area and area.get(kind):
+    if kind in generation.GENERATED_ONCE and area and area.get(kind):
         raise error(409, "already_generated", f"The area's {kind} are already generated.")
     if kind == "recommendations" and not (area or {}).get("answers"):
         raise error(409, "needs_answers", "Save the parent's answers first.")
@@ -584,11 +598,17 @@ async def start_generation(
             )
         except JobRefused:
             raise not_found() from None
+        except TargetRefused:
+            await runtime.llm_limit.give_back(caller.user_id)
+            raise error(
+                409, "already_generated", f"The area's {kind} are already generated."
+            ) from None
         except PyMongoError as exc:
             _logger.exception("grow: the job couldn't be stored")
             raise error(503, "generation_unavailable", "Try again in a moment.") from exc
         if created:
             return Started(job_id=running, status="pending")
+        await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
     job = await runtime.db[JOBS].find_one({"_id": running}, {"status": 1})
     response.status_code = 200
     return Started(job_id=running, status=job["status"] if job else "pending")

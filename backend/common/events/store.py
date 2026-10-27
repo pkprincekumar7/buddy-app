@@ -24,10 +24,12 @@ from common.events.envelope import Event
 
 OUTBOX = "outbox"
 TOMBSTONES = "tombstones"
+GUARDS = "guards"
 INBOX = "inbox"
 
 OUTBOX_TTL_SECONDS = 7 * 24 * 3600  # after publishing (7.3)
 TOMBSTONE_TTL_SECONDS = 30 * 24 * 3600  # longer than SQS's 14 days plus the DLQ redrive (4.1)
+GUARD_TTL_SECONDS = 24 * 3600  # only ever needed while two transactions overlap
 INBOX_TTL_SECONDS = 15 * 24 * 3600  # longer than SQS's 14-day retention (7.3)
 
 Doc = dict[str, Any]
@@ -75,6 +77,19 @@ TOMBSTONE_VALIDATOR: Doc = {
             "location": {"bsonType": "string"},
             "version": {"bsonType": ["int", "long"], "minimum": 1},
             "deleted_at": {"bsonType": "date"},
+        },
+    }
+}
+
+# A child's or user's write guard: see write_guards.
+GUARD_VALIDATOR: Doc = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["_id", "location", "touched_at"],
+        "properties": {
+            "_id": {"bsonType": "string", "pattern": "^(child|user):"},
+            "location": {"bsonType": "string"},
+            "touched_at": {"bsonType": "date"},
         },
     }
 }
@@ -127,9 +142,13 @@ async def ensure_outbox(db: Db) -> None:
 
 
 async def ensure_tombstones(db: Db) -> None:
+    """The tombstones and the write guards that go with them."""
     tombstones = await ensure_validated_collection(db, TOMBSTONES, TOMBSTONE_VALIDATOR)
     await tombstones.create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
     await tombstones.create_index("deleted_at", expireAfterSeconds=TOMBSTONE_TTL_SECONDS)
+    guards = await ensure_validated_collection(db, GUARDS, GUARD_VALIDATOR)
+    await guards.create_index([("location", ASCENDING), ("_id", ASCENDING)], unique=True)
+    await guards.create_index("touched_at", expireAfterSeconds=GUARD_TTL_SECONDS)
 
 
 async def ensure_inbox(db: Db) -> None:
@@ -206,6 +225,27 @@ def tombstone_key(kind: Literal["child", "user"], record_id: str) -> str:
     return f"{kind}:{record_id}"
 
 
+async def write_guards(
+    db: Db, keys: Iterable[str], *, location: str, session: AsyncClientSession | None
+) -> None:
+    """Touch each key's guard (`child:<id>`, `user:<id>`) in the caller's transaction.
+
+    MongoDB doesn't see a conflict between reading a tombstone that isn't there yet and
+    writing it (review): a copy write that checked "not deleted" could commit after the
+    deletion and bring the copy back. Every write that checks tombstones and every
+    tombstone write also write the same guard document, so the two transactions conflict
+    and one runs again: the copy then sees the tombstone, or the deletion sees the copy.
+    Ids only, and gone a day after the last touch.
+    """
+    for key in sorted(set(keys)):  # one order everywhere
+        await db[GUARDS].update_one(
+            {"_id": key, "location": location},
+            {"$set": {"touched_at": _now()}},
+            upsert=True,
+            session=session,
+        )
+
+
 async def write_tombstone(
     db: Db,
     key: str,
@@ -214,7 +254,9 @@ async def write_tombstone(
     version: int,
     session: AsyncClientSession | None = None,
 ) -> None:
-    """Record a deletion; safe to repeat (the highest version wins)."""
+    """Record a deletion; safe to repeat (the highest version wins). It touches the key's
+    guard too, so it conflicts with any copy write of that key in flight (write_guards)."""
+    await write_guards(db, [key], location=location, session=session)
     await db[TOMBSTONES].update_one(
         {"_id": key, "location": location},
         {"$max": {"version": version}, "$set": {"deleted_at": _now()}},
@@ -224,15 +266,20 @@ async def write_tombstone(
 
 
 async def is_tombstoned(
-    db: Db, keys: Iterable[str], session: AsyncClientSession | None = None
+    db: Db,
+    keys: Iterable[str],
+    session: AsyncClientSession | None = None,
+    *,
+    location: str | None = None,
 ) -> bool:
+    """Whether any of `keys` is deleted; give `location` when known (the shard key)."""
     keys = list(keys)
     if not keys:
         return False
-    return (
-        await db[TOMBSTONES].find_one({"_id": {"$in": keys}}, {"_id": 1}, session=session)
-        is not None
-    )
+    selector: Doc = {"_id": {"$in": keys}}
+    if location is not None:
+        selector["location"] = location
+    return await db[TOMBSTONES].find_one(selector, {"_id": 1}, session=session) is not None
 
 
 # ── safe-to-run-twice writes (7.4) ────────────────────────────────────────────
@@ -253,32 +300,50 @@ async def versioned_upsert(
 
     A duplicate or older event changes nothing, and a tombstone for any of `tombstones`
     (e.g. the child's and its user's) drops the write, so deleted data can't come back.
+    Without `session` it runs in a transaction of its own: the tombstone check and the
+    write then conflict with a deletion in flight (write_guards).
     """
     reserved = {"_id", "location", "version", "updated_at"} & set(fields)
     if reserved:
         raise ValueError(f"fields mustn't set {sorted(reserved)}")
-    if await is_tombstoned(db, tombstones, session=session):
-        return False
-    coll = db[collection]
-    # Read first, so a stale event never relies on a write error: inside a transaction any
-    # write error aborts the whole transaction.
-    existing = await coll.find_one({"_id": doc_id}, {"version": 1}, session=session)
-    if existing is not None and existing.get("version", 0) >= version:
-        return False
-    try:
+    stones = list(tombstones)
+
+    async def apply(s: AsyncClientSession) -> bool:
+        if stones:
+            await write_guards(db, stones, location=location, session=s)
+        if await is_tombstoned(db, stones, location=location, session=s):
+            return False
+        coll = db[collection]
+        # Read first, so a stale event never relies on a write error: inside a transaction
+        # any write error aborts the whole transaction.
+        existing = await coll.find_one(
+            {"_id": doc_id, "location": location}, {"version": 1}, session=s
+        )
+        if existing is not None and existing.get("version", 0) >= version:
+            return False
         result = await coll.update_one(
             {"_id": doc_id, "location": location, "version": {"$lt": version}},
             {"$set": {**fields, "version": version, "updated_at": _now()}},
             upsert=existing is None,
-            session=session,
+            session=s,
         )
+        return result.upserted_id is not None or result.modified_count == 1
+
+    if session is not None:
+        # The caller's transaction: a duplicate-key error has aborted it, so it's re-raised
+        # for the message to be retried.
+        return await apply(session)
+    applied: dict[str, bool] = {}
+
+    async def run(s: AsyncClientSession) -> None:
+        applied["ok"] = await apply(s)
+
+    try:
+        async with db.client.start_session() as own:
+            await own.with_transaction(run)
     except DuplicateKeyError:
-        # A newer copy was inserted between the read and the write (another consumer).
-        # In a transaction the error has aborted it: re-raise so the message is retried.
-        if session is not None and session.in_transaction:
-            raise
-        return False
-    return result.upserted_id is not None or result.modified_count == 1
+        return False  # a newer copy was inserted between the read and the write
+    return applied["ok"]
 
 
 async def set_flag(

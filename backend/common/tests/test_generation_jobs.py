@@ -412,3 +412,74 @@ def test_a_target_can_keep_its_own_status(mongo_run):
         assert doc["status"] == "completed" and doc["active_jobs"] == {}
 
     mongo_run(body)
+
+
+# ── found by the Phase 5-6 review ─────────────────────────────────────────────
+
+
+def test_a_retaken_job_cant_be_ended_or_reset_by_its_first_worker(mongo_run):
+    async def body(db, client):
+        await _setup(db)
+        job_id, _ = await _start(db, client)
+        first = await _claim(db)
+        # The first worker stalls; after 10 minutes another takes the job over.
+        stale = datetime.now(UTC) - timedelta(hours=1)
+        await db.jobs.update_one({"_id": job_id}, {"$set": {"claimed_at": stale}})
+        second = await _claim(db)
+        assert second["claim_id"] != first["claim_id"]
+        # The first worker's late writes change nothing: not its result, its retry or its
+        # failure, and not a cancellation either.
+        assert not await jobs.complete_job(db, client, first, target_update={"status": "ready"})
+        assert await jobs.fail_or_retry(db, client, first, "slow") == "superseded"
+        permanent = await jobs.fail_or_retry(db, client, first, "x", permanent=True)
+        assert permanent == "superseded"
+        job = await db.jobs.find_one({"_id": job_id})
+        assert job["status"] == "processing" and job["claim_id"] == second["claim_id"]
+        assert (await db.personalities.find_one({}))["active_job_id"] == job_id
+        await store.write_tombstone(
+            db, store.tombstone_key("child", CHILD), location="in", version=1
+        )
+        assert not await jobs.complete_job(db, client, first, target_update={"status": "ready"})
+        assert (await db.jobs.find_one({"_id": job_id}))["status"] == "processing"
+        # The owner of the claim ends it.
+        assert not await jobs.complete_job(db, client, second, target_update={"status": "ready"})
+        ended = await db.jobs.find_one({"_id": job_id})
+        assert (ended["status"], ended["error"]) == ("failed", jobs.CANCELLED)
+
+    mongo_run(body)
+
+
+def test_a_job_retaken_past_its_attempts_is_exhausted(mongo_run):
+    async def body(db, client):
+        await ensure_jobs(db, "discover")
+        stale = datetime.now(UTC) - timedelta(hours=1)
+        await _job(db, "crashy", status="processing", claimed_at=stale, llm_attempt=3)
+        crashy = await _claim(db)
+        assert crashy["llm_attempt"] == 4 and jobs.exhausted(crashy)
+        await _job(db, "fresh")
+        assert not jobs.exhausted(await _claim(db))
+
+    mongo_run(body)
+
+
+def test_refuse_if_is_checked_in_the_starts_transaction(mongo_run):
+    async def body(db, client):
+        await _setup(db)
+        await db.personalities.insert_one(
+            {"_id": CHILD, "location": "in", "user_id": USER, "status": "ready"}
+        )
+        with pytest.raises(jobs.TargetRefused):
+            await _start(db, client, refuse_if={"status": "ready"})
+        assert await db.jobs.count_documents({}) == 0
+
+    mongo_run(body)
+
+
+def test_cancel_jobs_only_in_the_given_location(mongo_run):
+    async def body(db, client):
+        await ensure_jobs(db, "discover")
+        await _job(db, "here")
+        assert await jobs.cancel_jobs(db, user_id=USER, location="us") == 0
+        assert await jobs.cancel_jobs(db, user_id=USER, location="in") == 1
+
+    mongo_run(body)

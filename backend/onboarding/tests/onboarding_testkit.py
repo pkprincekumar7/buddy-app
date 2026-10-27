@@ -189,7 +189,7 @@ class FakeChildren:
 
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
     calls: list[str] = field(default_factory=list)
-    mode: str = "ok"  # "down" (can't connect) or "error" (a 500)
+    mode: str = "ok"  # "down" (can't connect), "error" (a 500) or "odd" (a 200 that isn't JSON)
 
     def add(
         self,
@@ -220,6 +220,8 @@ class FakeChildren:
             raise httpx.ConnectError("connection refused", request=request)
         if self.mode == "error":
             return httpx.Response(500)
+        if self.mode == "odd":
+            return httpx.Response(200, json={"child_id": "x", "version": "1"})
         child_id = request.url.path.removeprefix("/internal/children/")
         self.calls.append(child_id)
         location = parse_qs(request.url.query.decode())["location"][0]

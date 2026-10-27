@@ -186,6 +186,8 @@ def test_a_tombstone_blocks_a_late_update(mongo_run):
         tomb = await db[store.TOMBSTONES].find_one({})
         assert tomb["version"] == 9  # the highest version wins
         assert not await store.is_tombstoned(db, [])
+        # Without a location (a caller that doesn't know it) it still answers.
+        assert await store.is_tombstoned(db, [store.tombstone_key("child", CHILD)])
 
     mongo_run(body)
 
@@ -227,6 +229,42 @@ def test_a_race_with_a_newer_insert(mongo_run, monkeypatch):
             with pytest.raises(DuplicateKeyError):
                 async with await session.start_transaction():
                     await _upsert(db, 4, "Older", session=session)
+
+    mongo_run(body)
+
+
+def test_a_copy_write_and_a_deletion_in_flight_conflict(mongo_run):
+    # Found by the Phase 5-6 review: reading "no tombstone" doesn't conflict with writing
+    # one, so a copy could come back after its deletion. Both now write the same guard.
+    async def body(db, client):
+        await store.ensure_tombstones(db)
+        await db.create_collection("child_access")
+        async with (
+            client.start_session() as copying,
+            client.start_session() as deleting,
+            await copying.start_transaction(),
+        ):
+            assert await _upsert(db, 1, "Mira", session=copying)
+            with pytest.raises(OperationFailure) as conflict:
+                async with await deleting.start_transaction():
+                    await store.write_tombstone(
+                        db, store.tombstone_key("user", USER), location="in",
+                        version=2, session=deleting,
+                    )  # fmt: skip
+            assert conflict.value.has_error_label("TransientTransactionError")
+        guards = await db[store.GUARDS].find({}).to_list(None)
+        assert {g["_id"] for g in guards} == {f"child:{CHILD}", f"user:{USER}"}
+
+    mongo_run(body)
+
+
+def test_versioned_upsert_without_tombstones_touches_no_guard(mongo_run):
+    async def body(db, client):
+        await store.ensure_tombstones(db)
+        assert await store.versioned_upsert(
+            db, "child_access", doc_id=CHILD, location="in", version=1, fields={"name": "M"}
+        )
+        assert await db[store.GUARDS].count_documents({}) == 0
 
     mongo_run(body)
 
@@ -379,7 +417,28 @@ def test_an_unreadable_row_is_set_aside(mongo_run):
         await store.ensure_outbox(db)
         publisher = FakePublisher()
         relay = Relay(db, publisher, region="ap-south-1")
-        assert await relay._publish({"_id": "broken", "event_type": "child.changed"}) is False
+        broken = {"_id": "broken", "event_type": "child.changed", "location": "in"}
+        await db[store.OUTBOX].insert_one(
+            {**broken, "published_at": None}, bypass_document_validation=True
+        )
+        assert await relay._publish(broken) is False
+        assert publisher.published == []
+        assert (await db[store.OUTBOX].find_one({"_id": "broken"}))["set_aside_reason"]
+
+    mongo_run(body)
+
+
+def test_a_row_deleted_before_the_relay_got_to_it_isnt_published(mongo_run):
+    # Found by the Phase 5-6 review: the change stream hands over the row as inserted, and
+    # an account or child deletion may have removed it since.
+    async def body(db, client):
+        await store.ensure_outbox(db)
+        publisher = FakePublisher()
+        relay = Relay(db, publisher, region="ap-south-1")
+        row = example_event("child.changed").to_outbox()
+        await db[store.OUTBOX].insert_one(row)
+        await db[store.OUTBOX].delete_one({"_id": row["_id"]})
+        assert await relay._publish(row) is False
         assert publisher.published == []
 
     mongo_run(body)

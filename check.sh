@@ -574,11 +574,14 @@ fi
 
 # ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
 # Off by default: they need the compose `split` stack and Moto up (docs/getting-started.md),
-# make a few LLM calls with the keys in .env, and stop and start the stack's workers.
+# make LLM calls with the keys in .env (about 20 a run), stop and start the stack's workers,
+# and take about 7-10 minutes.
 # Gate 6 runs them:
 #   RUN_E2E=1 MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 if [ "${RUN_E2E:-}" = "1" ]; then
   echo -e "\n${BOLD}════ END TO END (local stack) ════${RESET}"
+  run "e2e: every endpoint (scripts/e2e)" \
+      "$VENV_BIN/python" "$ROOT/scripts/e2e/full-journey.py"
   run "e2e: account deletion (scripts/e2e)" \
       "$VENV_BIN/python" "$ROOT/scripts/e2e/account-deletion.py"
   run "e2e: failure and convergence (scripts/e2e)" \

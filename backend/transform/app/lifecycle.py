@@ -25,6 +25,7 @@ from typing import Final
 
 from pymongo.asynchronous.client_session import AsyncClientSession
 
+from common import upload_tracking
 from common.events import (
     Event,
     ReceivedEvent,
@@ -159,7 +160,10 @@ async def delete_child(runtime: Runtime, received: ReceivedEvent) -> None:
         await runtime.db[GROWTH_INPUTS].delete_many(
             {"location": location, "child_id": child_id}, session=session
         )
-        await cancel_jobs(runtime.db, child_id=child_id, session=session)
+        await cancel_jobs(runtime.db, child_id=child_id, location=location, session=session)
+        await upload_tracking.forget_children(
+            runtime.db, [child_id], location=location, session=session
+        )
         await delete_child_events(runtime.db, location=location, child_id=child_id, session=session)
         await write_tombstone(
             runtime.db, tombstone_key("child", child_id), location=location,
@@ -203,7 +207,10 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> None:
             await runtime.db[name].delete_many(
                 {"location": location, "user_id": user_id}, session=session
             )
-        await cancel_jobs(runtime.db, user_id=user_id, session=session)
+        await cancel_jobs(runtime.db, user_id=user_id, location=location, session=session)
+        await upload_tracking.forget_children(
+            runtime.db, child_ids, location=location, session=session
+        )
         # The user's tombstone covers each of their children: every write checks both.
         await write_tombstone(
             runtime.db, tombstone_key("user", user_id), location=location,

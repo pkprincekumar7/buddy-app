@@ -126,6 +126,8 @@ def test_a_6_mb_object_is_rejected(uploads, s3):
     with pytest.raises(UploadError) as caught:
         asyncio.run(uploads.accept(key, "in", CHILD, "avatar"))
     assert caught.value.code == "too_large"
+    # Refused for good, so deleted at once: nothing will ever point at it (review).
+    assert s3.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0
 
 
 def test_exactly_5_mb_is_accepted(uploads, s3):
@@ -144,6 +146,7 @@ def test_a_missing_or_non_image_object_is_rejected(uploads, s3):
     with pytest.raises(UploadError) as caught:
         asyncio.run(uploads.verify_uploaded(html))
     assert caught.value.code == "unsupported_image_type"
+    assert s3.list_objects_v2(Bucket=BUCKET).get("KeyCount") == 0  # refused: deleted
 
 
 def test_other_s3_errors_propagate(uploads):

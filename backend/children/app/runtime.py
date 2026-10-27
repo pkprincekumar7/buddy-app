@@ -19,6 +19,7 @@ from pydantic import Field
 from pymongo import AsyncMongoClient
 
 from children.app.store import ensure_children
+from common import upload_tracking
 from common.authz import Authorizer, AuthzConfig
 from common.events.store import Db, ensure_outbox, ensure_tombstones
 from common.internal_client import (
@@ -103,6 +104,7 @@ class Runtime:
         """Create the collections before serving. Creating one inside a transaction (an
         implicit create on first insert) conflicts with any concurrent create of it."""
         await ensure_children(self.db)
+        await upload_tracking.ensure_pending_uploads(self.db)
         await ensure_outbox(self.db)
         await ensure_tombstones(self.db)
 

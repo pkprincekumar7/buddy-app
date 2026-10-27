@@ -36,10 +36,17 @@ async def _internal(scope, receive, send):  # pragma: no cover - never called, o
 def test_build_servers_puts_each_app_on_its_port(monkeypatch):
     _fake_service(monkeypatch, "svc_demo", app=_asgi, internal_app=_internal)
     public, internal = serve_mod.build_servers("svc_demo")
-    # Each app behind the request-id middleware, so every request (and log line) has one.
+    # Each app behind the request-id middleware, so every request (and log line) has one,
+    # then the body cap: 1 MiB unless the service sets MAX_BODY_BYTES.
     wrapped = [server.config.app for server in (public, internal)]
     assert all(isinstance(app, serve_mod.RequestIdMiddleware) for app in wrapped)
-    assert [cast(Any, app).app for app in wrapped] == [_asgi, _internal]
+    capped = [cast(Any, app).app for app in wrapped]
+    assert all(isinstance(app, serve_mod.BodyLimitMiddleware) for app in capped)
+    assert [app.app for app in capped] == [_asgi, _internal]
+    assert {app.max_bytes for app in capped} == {serve_mod.DEFAULT_MAX_BODY_BYTES}
+    _fake_service(monkeypatch, "svc_big", app=_asgi, internal_app=_internal, MAX_BODY_BYTES=5)
+    big = serve_mod.build_servers("svc_big")
+    assert {cast(Any, s.config.app).app.max_bytes for s in big} == {5}
     assert (public.config.port, internal.config.port) == (
         serve_mod.PUBLIC_PORT,
         serve_mod.INTERNAL_PORT,

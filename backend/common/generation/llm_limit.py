@@ -91,6 +91,22 @@ class LlmHourlyLimit:
         calls.append(now)
         return True
 
+    async def give_back(self, user_id: str) -> None:
+        """Undo one `take`: the start found a job already running, so no new LLM call is
+        made (review: two clicks at once used to count twice)."""
+        if self.redis is not None and self.monotonic() >= self._primary_down_until:
+            try:
+                await self.redis.zpopmax(self.key(user_id))
+                return
+            except Exception as exc:
+                _logger.warning(
+                    "LLM limit: Valkey unreachable (%s); nothing given back", type(exc).__name__
+                )
+                return
+        calls = self._memory.get(user_id)
+        if calls:
+            calls.pop()
+
     async def enforce(self, user_id: str) -> None:
         """429 when the user has used the hour's LLM calls (for the HTTP start of a job)."""
         if not await self.take(user_id):

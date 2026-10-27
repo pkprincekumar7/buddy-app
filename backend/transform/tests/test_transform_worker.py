@@ -31,6 +31,7 @@ from transform_testkit import (
     running,
 )
 
+from common import upload_tracking
 from common.events import Event, SnsPublisher
 from common.events.testing import (
     assert_consumer_contract,
@@ -39,6 +40,7 @@ from common.events.testing import (
     seeded_outbox_left,
     sns_envelope,
 )
+from common.generation import jobs
 from common.generation.llm import LlmClient, LlmConfig
 from common.models import CHILD_ACCESS, GROWTH_INPUTS, JOBS, ONBOARDING_INPUTS, PERSONALITY_INPUTS
 from transform import worker
@@ -562,5 +564,65 @@ def test_the_worker_needs_its_queue(mongo_uri):
         r.runtime.settings.events_queue_url = None
         with pytest.raises(RuntimeError, match="EVENTS_QUEUE_URL"):
             await worker.run(r.runtime, llm_client(), asyncio.Event())
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_the_sweep_removes_unsaved_photos_hourly_and_survives_failures(mongo_uri, monkeypatch):
+    async def test(r: Running) -> None:
+        stop = asyncio.Event()
+        sweeps: list[int] = []
+
+        async def sweep(*args: Any) -> int:
+            sweeps.append(1)
+            if len(sweeps) == 1:
+                raise ConnectionError("s3 down")  # logged; the next round tries again
+            if len(sweeps) == 2:
+                return upload_tracking.SWEEP_BATCH  # a full batch: sweep again at once
+            stop.set()
+            return 0
+
+        monkeypatch.setattr(upload_tracking, "sweep", sweep)
+        await asyncio.wait_for(worker.run_sweep(r.runtime, stop, interval=0.01), 5)
+        assert len(sweeps) == 3
+        r.runtime.uploads = None
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.05, stop.set)
+        await asyncio.wait_for(worker.run_sweep(r.runtime, stop, interval=0.01), 5)
+        assert len(sweeps) == 3  # no bucket, nothing swept
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_job_that_crashes_or_stalls_too_often_is_failed(mongo_uri, monkeypatch):
+    # Found by the Phase 5-6 review: such a job stayed `processing` with its lock held, and
+    # was retaken every 10 minutes for ever.
+    async def test(r: Running) -> None:
+        stalled = await _start(r, await r.ready_child(), "life_pathway", area_id="self_care")
+        retaken = {**stalled, "llm_attempt": stalled["max_llm_attempts"] + 1}
+        assert await generation.process(r.runtime, object(), retaken) == "failed"  # type: ignore[arg-type]
+        ended = await r.db[JOBS].find_one({"_id": stalled["_id"]})
+        assert (ended["status"], ended["error"]) == ("failed", jobs.EXHAUSTED)
+        # A crash ends the job at once instead of waiting for a retake.
+        crashed = await _start(r, await r.ready_child(), "life_pathway", area_id="self_care")
+        await r.db[JOBS].update_one({"_id": crashed["_id"]}, {"$set": {"status": "pending"}})
+
+        async def boom(*args: Any) -> Any:
+            raise RuntimeError("a bug")
+
+        monkeypatch.setattr(generation, "process", boom)
+        stop = asyncio.Event()
+        task = asyncio.create_task(generation.run_jobs(r.runtime, object(), stop, poll=0.01))  # type: ignore[arg-type]
+        for _ in range(300):
+            doc = await r.db[JOBS].find_one({"_id": crashed["_id"]})
+            if doc["status"] == "failed":
+                break
+            await asyncio.sleep(0.01)
+        stop.set()
+        await asyncio.wait_for(task, 5)
+        assert doc["error"] == "crashed (RuntimeError)"
 
     live(mongo_uri, test)

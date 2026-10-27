@@ -38,7 +38,7 @@ from common.events import Event, add_to_outbox
 from common.generation.jobs import JobRefused
 from common.internal_client import allow_callers
 from common.metrics import MetricsPublisher
-from common.models import JOBS
+from common.models import CHILD_ID_PATTERN, JOBS
 from common.routers import PolicyRouter, public
 from common.telemetry import current_traceparent
 from discover.app import generation
@@ -170,7 +170,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     return dependency
 
 
-ChildId = Annotated[str, Path(description="The child's id")]
+ChildId = Annotated[str, Path(pattern=CHILD_ID_PATTERN, description="The child's id")]
 LocationQuery = Annotated[
     str | None,
     Query(pattern=LOCATION_PATTERN, description="The owner's location (admins only)"),
@@ -261,6 +261,23 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": SERVICE}
 
 
+async def _admin_child(
+    request: Request, runtime: Runtime, caller: Caller, child_id: str, location: str | None
+) -> dict[str, Any]:
+    """An admin's read (`children:read:any`): audited whether it's allowed or refused."""
+    try:
+        if location is None:
+            raise error(422, "location_required", "Pass ?location= (the owner's location)")
+        child = await child_for(runtime, child_id, location=location, owner=None)
+    except HTTPException as exc:
+        runtime.authorizer.record(
+            request, caller, READ_ANY, None, privileged=True, status=exc.status_code
+        )
+        raise
+    runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+    return child
+
+
 @router.get(
     "",
     dependencies=[Depends(per_user("60/minute"))],
@@ -272,10 +289,7 @@ async def get_personality(
     request: Request, id: ChildId, runtime: Ready, caller: SignedIn, location: LocationQuery = None
 ) -> Personality:
     if caller.has(READ_ANY):
-        if location is None:
-            raise error(422, "location_required", "Pass ?location= (the owner's location)")
-        child = await child_for(runtime, id, location=location, owner=None)
-        runtime.authorizer.record(request, caller, READ_ANY, child["user_id"], privileged=True)
+        child = await _admin_child(request, runtime, caller, id, location)
     else:
         child = await _parents_child(runtime, caller, id)
     return _view(await _personality(runtime, child))
@@ -316,6 +330,7 @@ async def start_generation(
                 input_version=int(answers["version"]),
             )
         except generation.AlreadyGenerated:
+            await runtime.llm_limit.give_back(caller.user_id)
             raise error(409, "already_generated", "The personality is already generated.") from None
         except JobRefused:
             raise not_found() from None
@@ -324,6 +339,7 @@ async def start_generation(
             raise error(503, "generation_unavailable", "Try again in a moment.") from exc
         if created:
             return Started(job_id=running, status="pending")
+        await runtime.llm_limit.give_back(caller.user_id)  # a running job: no new call
     job = await runtime.db[JOBS].find_one({"_id": running}, {"status": 1})
     response.status_code = 200
     return Started(job_id=running, status=job["status"] if job else "pending")

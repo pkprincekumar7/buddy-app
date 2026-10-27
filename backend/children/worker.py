@@ -19,6 +19,7 @@ from typing import Any
 
 from children.app import lifecycle
 from children.app.runtime import SERVICE, Runtime
+from common import upload_tracking
 from common.events import Consumer, ReceivedEvent, Relay, SnsPublisher
 from common.metrics import outbox_metrics
 from common.regions import locations_for_region
@@ -59,6 +60,13 @@ async def run_purge(runtime: Runtime, stop: asyncio.Event, *, interval: float) -
             # Batches of 100 until none is left, then wait for the next round.
             while await lifecycle.purge(runtime, locations) == lifecycle.PURGE_BATCH:
                 pass
+            # Avatars presigned a day ago and never saved (common.upload_tracking).
+            if runtime.uploads is not None:
+                while (
+                    await upload_tracking.sweep(runtime.db, runtime.uploads, locations)
+                    == upload_tracking.SWEEP_BATCH
+                ):
+                    pass
         except Exception:
             _logger.exception("children purge failed; retrying")
         with contextlib.suppress(TimeoutError):

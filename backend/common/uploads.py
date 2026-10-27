@@ -8,7 +8,8 @@ auth-users-split-api.md, avatar/presign and transform/photos/presign):
 2. **Save:** `check_key` accepts only a key under this child's prefix *for this kind*, so a
    plan photo can't become an avatar (and replacing an avatar can't delete transform's
    object), and `verify_uploaded` runs `HeadObject`: the object must exist, be an allowed
-   image and be at most 5 MB. A presigned PUT can't limit size, so this is where it's enforced.
+   image and be at most 5 MB. A presigned PUT can't limit size, so this is where it's enforced;
+   a refused object is deleted. One never saved is swept after a day (common.upload_tracking).
 3. **Read:** the bucket is private; `presign_get` turns a stored key into a short-lived URL.
 
 Locally, AWS_ENDPOINT_URL is where the service calls S3 (Moto) and AWS_PUBLIC_ENDPOINT_URL
@@ -171,11 +172,18 @@ class Uploads:
             if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
                 raise UploadError("not_uploaded", "the photo hasn't been uploaded") from exc
             raise
-        if head.get("ContentType") not in ALLOWED_IMAGE_CONTENT_TYPES:
-            raise UploadError("unsupported_image_type", "the uploaded file isn't an allowed image")
+        refusal: UploadError | None = None
         size = int(head.get("ContentLength", 0))
-        if size > MAX_UPLOAD_BYTES:
-            raise UploadError("too_large", "the photo is larger than 5 MB")
+        if head.get("ContentType") not in ALLOWED_IMAGE_CONTENT_TYPES:
+            refusal = UploadError(
+                "unsupported_image_type", "the uploaded file isn't an allowed image"
+            )
+        elif size > MAX_UPLOAD_BYTES:
+            refusal = UploadError("too_large", "the photo is larger than 5 MB")
+        if refusal is not None:
+            # Refused for good: nothing will ever point at it, so it goes now (review).
+            await self.delete(key)
+            raise refusal
         return size
 
     async def accept(self, key: object, location: str, child_id: str, kind: Kind) -> str:

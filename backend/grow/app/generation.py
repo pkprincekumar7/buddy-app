@@ -54,7 +54,7 @@ from grow.app.store import FIELDS, GROWTH_AREAS, JOB_TYPES, KINDS, Kind
 POLL_SECONDS = 2.0
 REPORT_SECONDS = 60.0
 
-Outcome = Literal["completed", "dropped", "retry", "failed"]
+Outcome = Literal["completed", "dropped", "retry", "failed", "superseded"]
 
 _logger = logging.getLogger(__name__)
 
@@ -134,6 +134,10 @@ async def running_job(runtime: Runtime, area: Mapping[str, Any] | None, kind: Ki
     return held if job is not None else None
 
 
+# Kinds generated once per area; recommendations replace the last ones.
+GENERATED_ONCE = ("parent_questions", "child_rounds")
+
+
 async def start(
     runtime: Runtime,
     *,
@@ -163,6 +167,11 @@ async def start(
             "version": 1,
         },
         target_status=None,
+        # The question sets are made once: checked again in the start's transaction, so a
+        # job finishing meanwhile isn't followed by a second one (review).
+        refuse_if=(
+            {kind: {"$exists": True, "$nin": [None, {}, []]}} if kind in GENERATED_ONCE else None
+        ),
     )
 
 
@@ -239,15 +248,30 @@ def _normalised(kind: Kind, area_id: str, raw: Any) -> Any:
     )
 
 
+async def fail_job(
+    runtime: Runtime, job: Mapping[str, Any], error: str
+) -> Literal["retry", "failed", "superseded"]:
+    """End a job this worker can't finish (it crashed on it, or retakes ran out)."""
+    return await jobs.fail_or_retry(
+        runtime.db, runtime.client, job, error, permanent=True, target_status=None
+    )
+
+
 async def process(runtime: Runtime, llm: LlmClient, job: Mapping[str, Any]) -> Outcome:
     """One claimed job, to its end or its next retry."""
     db, kind = runtime.db, KINDS[job["type"]]
     doc_id, location = job["target"]["id"], job["location"]
 
-    async def give_up(error: str, *, permanent: bool = False) -> Literal["retry", "failed"]:
+    async def give_up(
+        error: str, *, permanent: bool = False
+    ) -> Literal["retry", "failed", "superseded"]:
         return await jobs.fail_or_retry(
             db, runtime.client, job, error, permanent=permanent, target_status=None
         )
+
+    if jobs.exhausted(job):  # retaken after crashes more often than its attempts allow
+        await fail_job(runtime, job, jobs.EXHAUSTED)
+        return "failed"
 
     area = await db[GROWTH_AREAS].find_one({"_id": doc_id, "location": location})
     child = await db[CHILD_ACCESS].find_one({"_id": job["child_id"], "location": location})
@@ -295,7 +319,12 @@ async def run_jobs(
         try:
             job = await jobs.claim_next(runtime.db, locations=locations)
             if job is not None:
-                outcome = await process(runtime, llm, job)
+                try:
+                    outcome = await process(runtime, llm, job)
+                except Exception as exc:
+                    # Ended now rather than left `processing` until a retake (review).
+                    _logger.exception("%s: job %s crashed", SERVICE, job["_id"])
+                    outcome = await fail_job(runtime, job, f"crashed ({type(exc).__name__})")
                 _logger.info("grow.job id=%s type=%s outcome=%s", job["_id"], job["type"], outcome)
                 continue
         except Exception:

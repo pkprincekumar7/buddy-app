@@ -9,4 +9,4 @@ change is a new function next to the old one until every service has moved, and 
 major version bump.
 """
 
-__version__ = "0.15.0"
+__version__ = "0.16.0"

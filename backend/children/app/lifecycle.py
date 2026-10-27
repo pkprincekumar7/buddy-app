@@ -33,6 +33,7 @@ from pymongo.asynchronous.client_session import AsyncClientSession
 
 from children.app.runtime import SERVICE, Runtime
 from children.app.store import CHILDREN, snapshot
+from common import upload_tracking
 from common.events import (
     Event,
     ReceivedEvent,
@@ -141,6 +142,9 @@ async def purge_one(runtime: Runtime, doc: Mapping[str, Any]) -> bool:
         done["purged"] = removed.deleted_count == 1
         if not done["purged"]:
             return
+        await upload_tracking.forget_children(
+            runtime.db, [doc["_id"]], location=doc["location"], session=session
+        )
         # Its earlier snapshots (names, progress) go with it; child.deleted stays.
         await delete_child_events(
             runtime.db, location=doc["location"], child_id=doc["_id"], session=session
@@ -180,8 +184,11 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
     """Every child of the account, then the confirmation; returns how many were deleted."""
     event = received.event
     user_id, location = event.aggregate_id, event.location
-    docs = await runtime.db[CHILDREN].find({"location": location, "user_id": user_id}).to_list(None)
-    await _delete_avatars(runtime, docs)
+    selector = {"location": location, "user_id": user_id}
+    # Avatars first (S3 isn't transactional; a crash after it leaves the documents to retry).
+    before = await runtime.db[CHILDREN].find(selector).to_list(None)
+    await _delete_avatars(runtime, before)
+    deleted: dict[str, list[dict[str, Any]]] = {}
     confirmation = Event.new(
         "user.data_deleted",
         producer=SERVICE,
@@ -193,9 +200,14 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
     )
 
     async def write(session: AsyncClientSession) -> None:
+        # Read again in the transaction: a child added since the read above is deleted and
+        # tombstoned too (review). The user's guard makes a create racing this conflict.
+        docs = await runtime.db[CHILDREN].find(selector, session=session).to_list(None)
+        deleted["docs"] = docs
         child_ids = [doc["_id"] for doc in docs]
-        await runtime.db[CHILDREN].delete_many(
-            {"location": location, "user_id": user_id}, session=session
+        await runtime.db[CHILDREN].delete_many(selector, session=session)
+        await upload_tracking.forget_children(
+            runtime.db, child_ids, location=location, session=session
         )
         for doc in docs:
             await write_tombstone(
@@ -212,5 +224,9 @@ async def delete_user(runtime: Runtime, received: ReceivedEvent) -> int:
         await add_to_outbox(runtime.db, confirmation, session)
 
     await _transaction(runtime, write)
+    docs = deleted["docs"]
+    # A child created between the first read and the transaction: its avatars now.
+    known = {doc["_id"] for doc in before}
+    await _delete_avatars(runtime, [doc for doc in docs if doc["_id"] not in known])
     _logger.info("children.user_deleted id=%s children=%d", user_id, len(docs))
     return len(docs)

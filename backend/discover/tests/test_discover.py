@@ -333,7 +333,7 @@ def test_a_missing_copy_is_read_through_and_owners_down_are_503(mongo_uri):
         assert len(r.owners.calls) == calls
         locked = r.owners.add_child(progress=progress(profile=True))
         unknown = r.owners.add_child()
-        for kind in ("down", "broken"):
+        for kind in ("down", "broken", "odd"):
             for owner, target, code in (
                 ("children", unknown, "children_unavailable"),
                 ("onboarding", locked, "onboarding_unavailable"),
@@ -374,7 +374,12 @@ def test_admins_read_with_the_owners_location_and_never_write(mongo_uri):
         assert no_location.status_code == 422 and _code(no_location) == "location_required"
         read = await r.http.get(_path(child), params={"location": LOCATION}, headers=admin)
         assert read.status_code == 200 and read.json()["status"] == "not_started"
-        assert [(e.subject_id, e.outcome) for e in r.audit if e.privileged] == [(PARENT, "allowed")]
+        unknown = _path(str(uuid.uuid4()))
+        missing = await r.http.get(unknown, params={"location": LOCATION}, headers=admin)
+        assert missing.status_code == 404
+        # Refused reads are audited too: a probe for ids or locations leaves a trace.
+        audited = [(e.subject_id, e.outcome, e.status) for e in r.audit if e.privileged]
+        assert audited == [(None, "denied", 422), (PARENT, "allowed", 200), (None, "denied", 404)]
         assert (await r.http.post(_path(child, "/generation"), headers=admin)).status_code == 404
 
     live(mongo_uri, test)
@@ -531,3 +536,44 @@ def test_no_cloudwatch_means_no_job_metrics():
     main._start_reporting(SimpleNamespace(cloudwatch=None))  # type: ignore[arg-type]
     assert main._reporting is None
     asyncio.run(main._stop_reporting())  # nothing to stop
+
+
+@pytest.mark.live_service
+@pytest.mark.parametrize("bad", ["abc%3Flocation%3Devil%26x%3D", "abc%23", "not-a-uuid"])
+def test_a_child_id_must_be_a_uuid(mongo_uri, bad):
+    # Found by the Phase 5-6 review: `%3F` decodes into the id, which went into the
+    # internal call's URL and could rewrite its query.
+    async def test(r: Running) -> None:
+        response = await r.http.get(_path(bad), headers=auth_header())
+        assert response.status_code == 422
+
+    live(mongo_uri, test)
+
+
+@pytest.mark.live_service
+def test_a_start_that_finds_a_job_running_gives_its_llm_slot_back(mongo_uri, monkeypatch):
+    # Found by the Phase 5-6 review: two clicks at once used to count twice.
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        first = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert first.status_code == 202
+
+        async def missed(*args: Any) -> None:  # the second click checked before the first
+            return None
+
+        monkeypatch.setattr(generation, "running_job", missed)
+        second = await r.http.post(_path(child, "/generation"), headers=auth_header())
+        assert second.status_code == 200 and second.json()["job_id"] == first.json()["job_id"]
+        assert len(r.runtime.llm_limit._memory[PARENT]) == 1
+        # "Never regenerate" is checked again in the start's transaction.
+
+        async def refused(*args: Any, **kwargs: Any) -> Any:
+            raise jobs.TargetRefused(child)
+
+        monkeypatch.setattr(jobs, "start_job", refused)
+        with pytest.raises(generation.AlreadyGenerated):
+            await generation.start(
+                r.runtime, child_id=child, user_id=PARENT, location=LOCATION, input_version=1
+            )
+
+    live(mongo_uri, test)

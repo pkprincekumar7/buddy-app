@@ -30,6 +30,7 @@ from common.events.store import (
     set_flag,
     tombstone_key,
     versioned_upsert,
+    write_guards,
     write_tombstone,
 )
 
@@ -53,5 +54,6 @@ __all__ = [
     "set_flag",
     "tombstone_key",
     "versioned_upsert",
+    "write_guards",
     "write_tombstone",
 ]

@@ -9,20 +9,30 @@ It allow-lists a new test email (`auth.seed` in the auth container), registers t
 gives the child a photo, walks every circle (the generations use the LLM keys in .env, so a
 few provider calls) with a 90-day-plan photo, then waits for children to hold all seven
 progress flags. The password is generated and never printed. Exit code 0 when the walk
-completes. Each circle is a step function, so the other e2e scripts can stop part-way.
+completes. Each circle is a step function, so the other e2e scripts can stop part-way;
+full-journey.py walks every endpoint on top of it.
 """
 
 from __future__ import annotations
 
 import base64
 import json
-import secrets
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from stack import API, MOTO_URL, WalkFailed, check, poll, seed_email, step
+from stack import (
+    API,
+    MOTO_URL,
+    WalkFailed,
+    check,
+    new_password,
+    poll,
+    register,
+    seed_email,
+    step,
+)
 
 CHILD_NAME = "Test Kid"
 
@@ -34,6 +44,7 @@ class Journey:
     location: str
     child_id: str
     http: httpx.Client
+    password: str = field(repr=False, default="")  # generated, never printed
 
     @property
     def child(self) -> str:
@@ -76,19 +87,9 @@ def start(email: str | None = None) -> Journey:
     """A new account with one child: a complete profile and a photo."""
     email = email or seed_email()
     http = httpx.Client(timeout=30)
+    password = new_password()
     step("register")
-    tokens = check(
-        http.post(
-            f"{API}/auth/register",
-            json={
-                "email": email,
-                "password": secrets.token_urlsafe(18),
-                "first_name": "Gate",
-                "country_code": "IN",
-            },
-        ),
-        201,
-    )
+    tokens = register(http, email, password, "Gate")
     http.cookies.clear()
     http.headers["Authorization"] = f"Bearer {tokens['access_token']}"
     claims = _claims(tokens["access_token"])
@@ -98,7 +99,9 @@ def start(email: str | None = None) -> Journey:
     child = check(http.post(f"{API}/children", json=body), 201)
     if not child["progress"]["profile"]:
         raise WalkFailed(f"profile not complete: {child['progress']}")
-    journey = Journey(email, claims["sub"], claims["location"], child["id"], http)
+    journey = Journey(
+        email, claims["sub"], claims["location"], child["id"], http, password
+    )
     presigned = check(
         http.post(
             f"{journey.child}/avatar/presign", json={"content_type": "image/jpeg"}
