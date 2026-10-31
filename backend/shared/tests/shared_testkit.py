@@ -123,7 +123,10 @@ async def running(*, openai: bool = True, assets: bool = True) -> AsyncIterator[
         )
         s3.create_bucket(Bucket=BUCKET)
         fake = FakeOpenAI()
-        settings = SharedSettings.model_validate({"ASSETS_BUCKET_NAME": BUCKET} if assets else {})
+        # APP_ENV pinned: settings also read the process environment.
+        settings = SharedSettings.model_validate(
+            {"APP_ENV": "local", **({"ASSETS_BUCKET_NAME": BUCKET} if assets else {})}
+        )
         runtime = Runtime(
             settings=settings,
             authorizer=Authorizer(

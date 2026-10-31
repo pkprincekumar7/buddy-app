@@ -3,8 +3,7 @@
 
 The contracts (docs/auth-users-split.md, section 2) are generated from tools/services.py,
 so a new service is covered without editing any list:
-- common never imports service code (nor today's backend);
-- services never import today's backend, which is removed in build plan 8.6;
+- common never imports service code;
 - services are independent: they share only common, and anything else crosses through
   events or internal calls.
 
@@ -30,30 +29,20 @@ def _toml_list(items: list[str]) -> str:
     return "[" + ", ".join(f'"{item}"' for item in items) + "]"
 
 
-def render(services: list[str], common: str = "common", legacy: str | None = "app") -> str:
+def render(services: list[str], common: str = "common") -> str:
     """The import-linter config, in pyproject.toml form."""
-    old = [legacy] if legacy else []
     lines = [
         "[tool.importlinter]",
-        f"root_packages = {_toml_list([*old, common, *services])}",
+        f"root_packages = {_toml_list([common, *services])}",
     ]
-    if old or services:
+    if services:
         lines += [
             "",
             "[[tool.importlinter.contracts]]",
             'name = "common never imports service code"',
             'type = "forbidden"',
             f"source_modules = {_toml_list([common])}",
-            f"forbidden_modules = {_toml_list([*old, *services])}",
-        ]
-    if old and services:
-        lines += [
-            "",
-            "[[tool.importlinter.contracts]]",
-            '''name = "services never import today's backend"''',
-            'type = "forbidden"',
-            f"source_modules = {_toml_list(services)}",
-            f"forbidden_modules = {_toml_list(old)}",
+            f"forbidden_modules = {_toml_list(services)}",
         ]
     if len(services) > 1:
         lines += [

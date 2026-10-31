@@ -98,7 +98,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             configure(None)
 
 
-# The same contact and servers as today's app (app/main.py), for the published spec.
+# The contact and servers every service's published spec carries.
 app = FastAPI(
     title=SERVICE,
     description="Accounts: registration, sign-in, sessions and tokens.",
@@ -705,8 +705,7 @@ async def internal_email(
 
 # Every service that verifies users' tokens asks auth on a cache miss (9.3).
 AUTHZ_CALLERS = (
-    "users", "children", "onboarding", "discover", "grow", "transform", "release",
-    "shared", "hello",
+    "users", "children", "onboarding", "discover", "grow", "transform", "release", "shared",
 )  # fmt: skip
 _UUID4_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 

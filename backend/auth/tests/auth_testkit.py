@@ -137,8 +137,10 @@ def issuer() -> TokenIssuer:
 
 
 def settings(db_name: str, mongo_uri: str, **extra: str) -> AuthSettings:
+    # APP_ENV pinned: settings also read the process environment, and it sets the topic prefix.
     return AuthSettings.model_validate(
         {
+            "APP_ENV": "local",
             "MONGODB_URI": mongo_uri,
             "MONGODB_DB_NAME": db_name,
             "JWT_PRIVATE_KEY": JWT_PRIVATE,

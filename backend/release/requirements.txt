@@ -3,7 +3,7 @@
 buddy-common[generation]==0.16.0
 fastapi==0.136.1
 uvicorn[standard]==0.34.0
-# buddy-common's authorization layer, pinned to the same versions as backend/requirements.txt.
+# buddy-common's authorization layer, pinned to the same versions in every service.
 PyJWT==2.15.1
 cryptography==50.0.0
 redis==5.2.1
@@ -21,17 +21,17 @@ opentelemetry-instrumentation-httpx==0.66b1
 opentelemetry-instrumentation-botocore==0.66b1
 opentelemetry-instrumentation-redis==0.66b1
 
-# The worker's SNS and SQS clients and CloudWatch metrics, as in backend/requirements.txt.
+# The worker's SNS and SQS clients and CloudWatch metrics, as in the other services.
 boto3==1.35.49
 
-# starlette CVE floor, as in backend/requirements.txt.
+# starlette CVE floor (reasons: backend/requirements-dev.txt).
 starlette>=1.3.1
 
-# The LLM SDKs (common[generation]), pinned as in backend/requirements.txt. Only the worker
+# The LLM SDKs (common[generation]), pinned as in the other generating services. Only the worker
 # gets LLM keys; the HTTP runtime starts jobs and never calls an LLM.
 openai==1.68.2
 anthropic==0.49.0
 google-generativeai==0.8.3
-# CVE floors for what the SDKs pull in, as in backend/requirements.txt.
+# CVE floors for what the SDKs pull in (reasons: backend/requirements-dev.txt).
 urllib3>=2.8.0
 requests>=2.33.0

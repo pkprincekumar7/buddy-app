@@ -644,6 +644,7 @@ def _env(**extra: str) -> dict[str, str]:
     from grow_testkit import JWT_PUBLIC, KID
 
     return {
+        "APP_ENV": "local",  # pinned: from_env also reads the process environment
         "MONGODB_DB_NAME": "x",
         "JWT_PUBLIC_KEYS": json.dumps({KID: JWT_PUBLIC}),
         "INTERNAL_SIGNING_KID": "g1",

@@ -391,6 +391,37 @@
             "type": "string",
             "title": "Area Name"
           },
+          "recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendations"
+          },
+          "ai_three_month_recommendations": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Three Month Recommendations"
+          },
           "life_pathway_milestones": {
             "anyOf": [
               {
@@ -412,6 +443,8 @@
         "required": [
           "area_id",
           "area_name",
+          "recommendations",
+          "ai_three_month_recommendations",
           "life_pathway_milestones",
           "life_pathway_generating"
         ],

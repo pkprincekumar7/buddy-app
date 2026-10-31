@@ -104,8 +104,8 @@ jobs:
       TF_VAR_origin_verify_secret_next: ${{ secrets.ORIGIN_VERIFY_SECRET_NEXT }}
       # TF_VAR_acm_certificate_arn is resolved per-region in the
       # "Resolve ACM certificate ARN" step below and exported to GITHUB_ENV.
-      # TF_VAR_subdomain_internal, TF_VAR_cookie_domain, and TF_VAR_cors_origins
-      # are all derived from SUBDOMAIN + environment + DOMAIN_NAME in the
+      # TF_VAR_subdomain_internal and TF_VAR_cookie_domain
+      # are both derived from SUBDOMAIN + environment + DOMAIN_NAME in the
       # "Resolve derived values" step below and exported to GITHUB_ENV.
 
     steps:
@@ -264,7 +264,6 @@ jobs:
       #
       # subdomain_internal  — internal ALB prefix: SUBDOMAIN + "-internal"
       # cookie_domain       — public CloudFront FQDN (browser cookie scope)
-      # cors_origins        — allowed browser origin: https://{fqdn}
       #
       # None of these need to be maintained as separate GitHub secrets or variables.
       # -------------------------------------------------------------------------
@@ -280,7 +279,6 @@ jobs:
             FQDN="${SUBDOMAIN}-${{ inputs.environment }}.${DOMAIN_NAME}"
           fi
           echo "TF_VAR_cookie_domain=${FQDN}"          >> "$GITHUB_ENV"
-          echo "TF_VAR_cors_origins=https://${FQDN}"   >> "$GITHUB_ENV"
 
       # -------------------------------------------------------------------------
       # Export AI model identifiers from GitHub environment variables.

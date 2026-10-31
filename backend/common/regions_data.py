@@ -2,7 +2,7 @@
 # Edit shared/routing.json, then run `node scripts/sync-routing.mjs`.
 # Grouping rules and their reasoning: shared/README.md.
 
-# AWS region → locations its backend and worker serve (Lambda@Edge routes by the inverse).
+# AWS region → locations its services serve (Lambda@Edge routes by the inverse).
 REGION_TO_LOCATIONS: dict[str, list[str]] = {
     "ap-south-1": ["in", "apac", "me"],
     "eu-west-1": ["eu"],

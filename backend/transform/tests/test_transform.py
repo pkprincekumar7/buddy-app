@@ -133,7 +133,8 @@ def test_an_empty_transform_lists_the_completed_areas(mongo_uri):
         child = await r.ready_child()
         body = (await r.http.get(_path(child), headers=auth_header())).json()
         assert body["areas"] == [{
-            "area_id": "self_care", "area_name": "Self Care",
+            "area_id": "self_care", "area_name": "Self Care", "recommendations": None,
+            "ai_three_month_recommendations": [{"title": "Start a routine", "detail": "Every night."}],
             "life_pathway_milestones": None, "life_pathway_generating": False,
         }]  # fmt: skip
         assert body["plan"] is None and body["event_set"] is False and body["generating"] == []
@@ -646,6 +647,7 @@ def _env(**extra: str) -> dict[str, str]:
     from transform_testkit import JWT_PUBLIC, KID
 
     return {
+        "APP_ENV": "local",  # pinned: from_env also reads the process environment
         "MONGODB_DB_NAME": "x",
         "JWT_PUBLIC_KEYS": json.dumps({KID: JWT_PUBLIC}),
         "INTERNAL_SIGNING_KID": "t1",

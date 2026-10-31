@@ -4,14 +4,13 @@
 #
 # A service image holds the pinned buddy-common version (with that service's extras) and
 # that service's code only, run by `python -m common.serve <name>`: public app on 8000,
-# internal app on 8001. SERVICE=backend, the default, builds today's single app as before,
-# until it's removed in build plan 8.6.
+# internal app on 8001. SERVICE is required: there is no default image.
 
 # ---- select: pick out what the chosen service needs ----------------------------------------
 # Throwaway stage: the whole backend/ tree is copied here, but only /out reaches the image.
 FROM python:3.13-slim AS select
 
-ARG SERVICE=backend
+ARG SERVICE
 WORKDIR /src
 COPY backend/ ./
 
@@ -26,21 +25,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     set -eu; \
     export PIP_DEFAULT_TIMEOUT=60 PIP_RETRIES=10; \
     mkdir -p /out/app /out/build; \
-    if [ "$SERVICE" = backend ]; then \
-      cp requirements.txt /out/build/; \
-      cp -r app worker.py /out/app/; \
-    else \
-      echo "$SERVICE" | grep -Eqx '[a-z][a-z0-9_]{0,30}' || { echo "invalid SERVICE: $SERVICE" >&2; exit 1; }; \
-      [ -d "$SERVICE/app" ] && [ -f "$SERVICE/requirements.txt" ] \
-        || { echo "backend/$SERVICE needs app/ and requirements.txt" >&2; exit 1; }; \
-      [ "$(grep -cEx 'buddy-common(\[[a-z,]+\])?==[0-9]+\.[0-9]+\.[0-9]+' "$SERVICE/requirements.txt")" = 1 ] \
-        || { echo "backend/$SERVICE/requirements.txt needs one buddy-common[extras]==X.Y.Z line" >&2; exit 1; }; \
-      cp "$SERVICE/requirements.txt" /out/build/; \
-      grep -E '^buddy-common' "$SERVICE/requirements.txt" > /out/build/common.txt; \
-      cp -r "$SERVICE" /out/app/; \
-      rm -rf "/out/app/$SERVICE/tests"; \
-      pip wheel --no-deps --wheel-dir /out/build ./common; \
-    fi
+    [ -n "${SERVICE:-}" ] || { echo "SERVICE is required: --build-arg SERVICE=<name>" >&2; exit 1; }; \
+    echo "$SERVICE" | grep -Eqx '[a-z][a-z0-9_]{0,30}' || { echo "invalid SERVICE: $SERVICE" >&2; exit 1; }; \
+    [ -d "$SERVICE/app" ] && [ -f "$SERVICE/requirements.txt" ] \
+      || { echo "backend/$SERVICE needs app/ and requirements.txt" >&2; exit 1; }; \
+    [ "$(grep -cEx 'buddy-common(\[[a-z,]+\])?==[0-9]+\.[0-9]+\.[0-9]+' "$SERVICE/requirements.txt")" = 1 ] \
+      || { echo "backend/$SERVICE/requirements.txt needs one buddy-common[extras]==X.Y.Z line" >&2; exit 1; }; \
+    cp "$SERVICE/requirements.txt" /out/build/; \
+    grep -E '^buddy-common' "$SERVICE/requirements.txt" > /out/build/common.txt; \
+    cp -r "$SERVICE" /out/app/; \
+    rm -rf "/out/app/$SERVICE/tests"; \
+    pip wheel --no-deps --wheel-dir /out/build ./common
 
 # ---- the image -----------------------------------------------------------------------------
 FROM python:3.13-slim
@@ -73,7 +68,7 @@ ENV GIT_BRANCH=$GIT_BRANCH
 ENV GIT_COMMITTED_AT=$GIT_COMMITTED_AT
 ENV GIT_TAG=$GIT_TAG
 
-ARG SERVICE=backend
+ARG SERVICE
 ENV SERVICE=$SERVICE
 
 COPY --from=select /out/build/ /tmp/build/
@@ -89,9 +84,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     set -eu; \
     export PIP_DEFAULT_TIMEOUT=60 PIP_RETRIES=10; \
     python -m pip install pip==26.2.1; \
-    if [ -f /tmp/build/common.txt ]; then \
-      pip install --no-index --no-deps --find-links /tmp/build -r /tmp/build/common.txt; \
-    fi; \
+    pip install --no-index --no-deps --find-links /tmp/build -r /tmp/build/common.txt; \
     pip install -r /tmp/build/requirements.txt; \
     python -m pip uninstall -y pip; \
     rm -rf /tmp/build
@@ -103,10 +96,10 @@ RUN adduser --disabled-password --no-create-home appuser \
 
 USER appuser
 
-# 8001 is the internal port; today's backend (SERVICE=backend) serves 8000 only.
+# 8000: the public app; 8001: the internal one (common.serve).
 EXPOSE 8000 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
 
-CMD ["/bin/sh", "-c", "if [ \"$SERVICE\" = backend ]; then exec uvicorn app.main:app --host 0.0.0.0 --port 8000; else exec python -m common.serve \"$SERVICE\"; fi"]
+CMD ["/bin/sh", "-c", "exec python -m common.serve \"$SERVICE\""]

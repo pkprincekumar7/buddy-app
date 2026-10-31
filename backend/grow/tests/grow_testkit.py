@@ -192,8 +192,15 @@ def authz_config() -> AuthzConfig:
 
 
 def settings(db_name: str, mongo_uri: str, **extra: str) -> GrowSettings:
+    # APP_ENV pinned: settings also read the process environment, and it sets the topic prefix.
     return GrowSettings.model_validate(
-        {"MONGODB_URI": mongo_uri, "MONGODB_DB_NAME": db_name, "AWS_REGION": REGION, **extra}
+        {
+            "MONGODB_URI": mongo_uri,
+            "MONGODB_DB_NAME": db_name,
+            "AWS_REGION": REGION,
+            "APP_ENV": "local",
+            **extra,
+        }
     )
 
 

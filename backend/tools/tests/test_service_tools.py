@@ -1,8 +1,8 @@
 """tools/services.py and tools/import_contracts.py: services found from the tree (build plan 0.5).
 
-The contract tests build throwaway packages shaped like the real backend (common, today's
-app and two services), lint them with the generated config, and check that each import the
-design forbids (docs/auth-users-split.md, section 2) breaks the right contract.
+The contract tests build throwaway packages shaped like the real backend (common and two
+services), lint them with the generated config, and check that each import the design forbids
+(docs/auth-users-split.md, section 2) breaks the right contract.
 """
 
 import json
@@ -36,16 +36,15 @@ def _service(name: str, http: bool = True) -> dict[str, str]:
 # ── discovery ──────────────────────────────────────────────────────────────────
 
 
-def test_the_real_tree_has_auth_and_hello():
-    assert {"auth", "hello"} <= set(services.discover())
-    assert services.serves_http("hello")
+def test_the_real_tree_has_the_services():
+    assert {"auth", "users", "children", "shared"} <= set(services.discover())
+    assert services.serves_http("auth")
     assert services.problems() == []
 
 
 def test_a_service_needs_requirements_and_an_init(tmp_path: Path):
     _write(tmp_path, {**_service("alpha"), **_service("beta", http=False)})
     _write(tmp_path, {"common/__init__.py": "", "common/pyproject.toml": ""})  # not a service
-    _write(tmp_path, {"app/__init__.py": "", "requirements.txt": ""})  # today's app
     _write(tmp_path, {"docs/requirements.txt": ""})  # no __init__.py
     assert services.discover(tmp_path) == ["alpha", "beta"]
     assert services.serves_http("alpha", tmp_path)
@@ -97,8 +96,7 @@ def test_cli_check_fails_on_a_problem(monkeypatch, capsys):
 def test_render_scales_with_the_services():
     assert "independence" not in import_contracts.render(["solo"])
     assert "independent" in import_contracts.render(["a", "b"])
-    assert "today's backend" not in import_contracts.render(["a", "b"], legacy=None)
-    assert "contracts" not in import_contracts.render([], legacy=None)
+    assert "contracts" not in import_contracts.render([])
 
 
 def test_cli_prints_the_config(capsys):
@@ -120,7 +118,7 @@ needs_lint_imports = pytest.mark.skipif(
 
 
 def _lint(root: Path) -> subprocess.CompletedProcess[str]:
-    config = import_contracts.render(["svc_a", "svc_b"], common="demo_common", legacy="demo_app")
+    config = import_contracts.render(["svc_a", "svc_b"], common="demo_common")
     (root / "pyproject.toml").write_text(config)
     return subprocess.run(
         [str(LINT_IMPORTS), "--config", str(root / "pyproject.toml"), "--no-cache"],
@@ -139,8 +137,6 @@ def project(tmp_path: Path) -> Path:
         {
             "demo_common/__init__.py": "",
             "demo_common/authz.py": "VALUE = 1\n",
-            "demo_app/__init__.py": "",
-            "demo_app/main.py": "from demo_common import authz\n",
             "svc_a/__init__.py": "",
             "svc_a/app.py": "from demo_common.authz import VALUE\n",
             "svc_b/__init__.py": "",
@@ -161,9 +157,8 @@ def test_services_using_only_common_pass(project: Path):
     ("path", "source", "contract"),
     [
         ("svc_a/app.py", "from svc_b import app\n", "services are independent"),
-        ("svc_a/app.py", "from demo_app import main\n", "services never import today's backend"),
         ("demo_common/authz.py", "from svc_a import app\n", "common never imports service code"),
-        ("demo_common/authz.py", "import demo_app\n", "common never imports service code"),
+        ("demo_common/authz.py", "import svc_b\n", "common never imports service code"),
     ],
 )
 def test_forbidden_imports_break_their_contract(project: Path, path, source, contract):

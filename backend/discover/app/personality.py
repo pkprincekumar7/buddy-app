@@ -1,8 +1,8 @@
 """The personality: today's archetypes, the LLM's schema, the prompt and the view model (12.1, 8).
 
 Ported from the web app, so the Discover pages render what they render today:
-- `PERSONALITY_TYPES`: `personalityTypes` in `PersonalityAnalysis.tsx` (both apps hold the
-  same table), the base each view model starts from;
+- `PERSONALITY_TYPES`: `personalityTypes` in `PersonalityAnalysis.tsx` (both apps held the
+  same table; it's gone from them since 7.9), the base each view model starts from;
 - `LLM_SCHEMA`: `personalityLlmSchema()` (`lib/llmSchemas.ts`); the answer is checked
   against it before anything is stored;
 - `build_prompt`: `buildPersonalityAnalysisPrompt` (`lib/prompts.ts`), except that the

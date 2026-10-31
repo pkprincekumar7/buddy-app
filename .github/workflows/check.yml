@@ -36,11 +36,12 @@ jobs:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
-            backend/requirements.txt
+            backend/requirements-dev.txt
             backend/requirements-lint.txt
 
+      # The services' runtime packages (their union) and the lint tools.
       - name: Install dependencies + dev tools
-        run: pip install -r requirements.txt -r requirements-lint.txt
+        run: pip install -r requirements-dev.txt -r requirements-lint.txt
 
       - name: ruff check
         run: ruff check .
@@ -49,7 +50,7 @@ jobs:
         run: ruff format --check .
 
       - name: mypy type check
-        run: mypy app/ tools/ common/
+        run: mypy tools/ common/
 
       # Every directory under backend/ with requirements.txt is a service; each gets its own
       # job below (backend-service). This fails on a malformed one or an orphaned spec.
@@ -66,11 +67,6 @@ jobs:
       # service image installs it (build plan 0.1).
       - name: Install common (core and extras)
         run: pip install ./common './common[generation,uploads]'
-
-      # Validates the hand-built mutant lists against the current source (seconds).
-      # Never runs mutation testing itself — that's manual (docs/mutation-testing.md).
-      - name: Mutant lists valid
-        run: python tools/mutate_handlers.py --check
 
   backend-test:
     name: Backend Tests
@@ -109,36 +105,25 @@ jobs:
           python-version: "3.13"
           cache: "pip"
           cache-dependency-path: |
-            backend/requirements.txt
+            backend/requirements-dev.txt
             backend/requirements-test.txt
 
       - name: Install dependencies + test tools
-        run: pip install -r requirements.txt -r requirements-test.txt
+        run: pip install -r requirements-dev.txt -r requirements-test.txt
 
-      - name: Generate test RSA key pair
-        run: |
-          {
-            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
-            openssl genrsa 2048 2>/dev/null
-            echo 'JWTKEYEOF'
-          } >> "$GITHUB_ENV"
-
-      # Line + branch coverage of app/ is ~99.96% (one branch in main.py's
-      # session-cleanup loop real Motor can't reach); the gate stops it slipping.
-      - name: pytest + coverage
-        run: pytest --cov=app --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
+      # common's and the tools' tests (each service has its own job below). The gate keeps
+      # common's line + branch coverage from slipping.
+      - name: pytest + coverage (common, tools)
+        timeout-minutes: 10
+        run: pytest common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
         env:
-          MONGODB_URI: mongodb://localhost:27017/?directConnection=true
-          # Enables tests/test_mongo_integration.py against the MongoDB replica set started
-          # above (separate from MONGODB_URI so local runs never touch a real cluster).
+          # The live tests run against the MongoDB replica set and the Valkey started above
+          # (MONGODB_TEST_URI, so local runs never touch a real cluster).
           MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
           # A skipped live_service test (Mongo/Redis unreachable) fails the run instead
-          # of passing silently — see tests/conftest.py.
+          # of passing silently — see common/tests/conftest.py.
           REQUIRE_LIVE_SERVICES: "1"
-          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
-          JWT_KEY_ID: key-v1
           REDIS_URL: redis://localhost:6379
-          APP_ENV: dev
 
   # ── per-service jobs (build plan 0.5) ────────────────────────────────────────
   # The services are found from the tree (backend/tools/services.py), so a new one gets its
@@ -217,14 +202,20 @@ jobs:
       - name: mypy type check
         run: mypy "$SERVICE/"
 
+      # A hung test fails the step instead of holding the job to its limit.
       - name: pytest + coverage
+        timeout-minutes: 10
         run: pytest "$SERVICE/tests" --cov="$SERVICE" --cov-branch --cov-report=term-missing --cov-fail-under=99 -q
         env:
           MONGODB_TEST_URI: mongodb://localhost:27017/?directConnection=true
           REDIS_URL: redis://localhost:6379
+          REQUIRE_LIVE_SERVICES: "1"
+          # Not what the tests run as: each testkit pins APP_ENV=local (it sets the event
+          # topics' prefix). A different value here checks that nothing leaks in from the
+          # environment.
           APP_ENV: dev
 
-      # backend/openapi/<service>.json is committed, like openapi.json; Spectral lints the
+      # backend/openapi/<service>.json is committed; Spectral lints the
       # committed copies in the dast job.
       - name: OpenAPI spec up to date
         run: |
@@ -282,6 +273,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Both apps' typed API files, generated from backend/openapi/*.json with
+      # openapi-typescript from frontend/node_modules (build plan 7.1).
+      - name: API clients in sync with backend/openapi
+        run: node ../scripts/sync-api-clients.mjs --check
 
       - name: ESLint
         run: npm run lint
@@ -504,21 +500,19 @@ jobs:
         continue-on-error: true
         run: |
           read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
-          bandit -r backend/app/ backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" -ll -q
+          bandit -r backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" -ll -q
 
       - name: Semgrep (SAST)
         id: semgrep
         continue-on-error: true
         run: |
           read -ra SERVICE_DIRS <<< "$(python backend/tools/services.py --paths backend/)"
-          semgrep --config p/security-audit --error backend/app/ backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
+          semgrep --config p/security-audit --error backend/tools/ backend/common/ "${SERVICE_DIRS[@]}" frontend/src/ frontend-app/src/
 
       - name: pip-audit (backend dependency CVEs)
         id: pip_audit
         continue-on-error: true
         run: |
-          pip-audit -r backend/requirements.txt --skip-editable \
-            --ignore-vuln PYSEC-2025-183
           bash scripts/audit-backend-services.sh pip-audit python
 
       - name: Checkov (Terraform IaC security)
@@ -746,24 +740,29 @@ jobs:
         continue-on-error: true
         run: trivy config modules --exit-code 1 --severity HIGH,CRITICAL
 
-      # ── Docker image scan (OS-level CVEs inside the built image) ────────────
-      # GIT_SHA is the Dockerfile's apt-layer cache-bust key, so `apt-get upgrade`
-      # re-runs and the scan sees current Debian security patches even if a layer
-      # cache is ever added (check.sh passes a per-day value for the same reason).
-      - name: Build backend Docker image
-        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t superpower-backend:scan -f backend/Dockerfile .
+      # ── Docker image scans (OS-level CVEs inside each service's image) ───────
+      # One image per service (backend/Dockerfile, --build-arg SERVICE), found from the tree
+      # (backend/tools/services.py). GIT_SHA is the Dockerfile's apt-layer cache-bust key, so
+      # `apt-get upgrade` re-runs and the scan sees current Debian security patches even if a
+      # layer cache is ever added (check.sh passes a per-day value for the same reason).
+      - name: Build the service images
+        run: |
+          for svc in $(python backend/tools/services.py); do
+            docker build --build-arg GIT_SHA=${{ github.sha }} --build-arg SERVICE="$svc" \
+              -t "superpower-$svc:scan" -f backend/Dockerfile .
+          done
 
-      - name: Trivy (backend image scan)
+      - name: Trivy (service image scans)
         id: trivy_image
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: superpower-backend:scan
-          severity: HIGH,CRITICAL
-          exit-code: '1'
-          scanners: vuln
-          ignore-unfixed: true
+        run: |
+          failed=()
+          for svc in $(python backend/tools/services.py); do
+            echo "── $svc"
+            trivy image --severity HIGH,CRITICAL --exit-code 1 --scanners vuln \
+              --ignore-unfixed "superpower-$svc:scan" || failed+=("$svc")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then echo "::error::Image CVEs: ${failed[*]}"; exit 1; fi
 
       # ── CIS Docker Benchmark ─────────────────────────────────────────────────
       # Checks image configuration (root user, exposed secrets in layers,
@@ -778,25 +777,25 @@ jobs:
         id: dockle
         continue-on-error: true
         run: |
-          dockle \
-            -af settings.py \
-            --ignore DKL-DI-0005 \
-            superpower-backend:scan
+          failed=()
+          for svc in $(python backend/tools/services.py); do
+            echo "── $svc"
+            dockle -af settings.py --ignore DKL-DI-0005 "superpower-$svc:scan" || failed+=("$svc")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then echo "::error::Dockle: ${failed[*]}"; exit 1; fi
 
       # ── SBOM generation ──────────────────────────────────────────────────────
-      - name: Generate SBOM (backend image)
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: superpower-backend:scan
-          format: cyclonedx
-          output: sbom-backend.cyclonedx.json
+      - name: Generate SBOMs (service images)
+        run: |
+          for svc in $(python backend/tools/services.py); do
+            trivy image --format cyclonedx --output "sbom-backend-$svc.cyclonedx.json" "superpower-$svc:scan"
+          done
 
-      - name: Upload SBOM artifact (backend)
+      - name: Upload SBOM artifact (services)
         uses: actions/upload-artifact@v7
         with:
           name: sbom-backend
-          path: sbom-backend.cyclonedx.json
+          path: sbom-backend-*.cyclonedx.json
           retention-days: 90
 
       - name: Generate SBOM (frontend filesystem)
@@ -867,17 +866,11 @@ jobs:
   dast:
     name: DAST & API Spec
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     needs: [backend-lint, frontend-lint, frontend-app-lint]
-    services:
-      mongodb:
-        image: mongo:8.0.34
-        ports:
-          - 27017:27017
-      valkey:
-        image: valkey/valkey:8.0.11-alpine
-        ports:
-          - 6379:6379
+    # Nuclei scans the local stack (docker-compose.yml) through its gateway, the way the ALB
+    # fronts the services: every service and worker, Mongo, Valkey and Moto, with throwaway
+    # keys generated in the job.
 
     steps:
       - name: Checkout
@@ -888,66 +881,55 @@ jobs:
         with:
           python-version: "3.13"
           cache: "pip"
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements-dev.txt
 
-      - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+      - name: Install backend dependencies (for the Moto setup)
+        run: pip install -r backend/requirements-dev.txt
 
-      - name: Generate test RSA key pair
+      # Throwaway values for this run only, never printed.
+      - name: Write the stack's .env
         run: |
+          key=$(openssl genrsa 2048 2>/dev/null | awk 'NF {sub(/\r/,""); printf "%s\\n",$0}')
           {
-            echo 'JWT_PRIVATE_KEY<<JWTKEYEOF'
-            openssl genrsa 2048 2>/dev/null
-            echo 'JWTKEYEOF'
-          } >> "$GITHUB_ENV"
+            echo "JWT_PRIVATE_KEY=$key"
+            echo "EMAIL_HMAC_PEPPER=$(openssl rand -hex 32)"
+            echo "LOCAL_MOTO_URL=http://moto:5000"
+            echo "LOCAL_MOTO_PUBLIC_URL=http://localhost:5050"
+          } > .env
 
-      - name: Start backend
+      - name: Start Moto and create the topics, queues and buckets
         run: |
-          cd backend
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          echo $! > /tmp/backend.pid
+          docker compose --profile moto up -d --wait moto
+          python scripts/local-aws-setup.py
         env:
-          MONGODB_URI: mongodb://localhost:27017
-          JWT_PRIVATE_KEY: ${{ env.JWT_PRIVATE_KEY }}
-          JWT_KEY_ID: key-v1
-          REDIS_URL: redis://localhost:6379
-          APP_ENV: dev
+          LOCAL_MOTO_URL: http://localhost:5050
+          AWS_ACCESS_KEY_ID: local
+          AWS_SECRET_ACCESS_KEY: local
 
-      - name: Wait for backend to be healthy
+      - name: Start the stack
+        run: docker compose up -d --build
+
+      # The gateway publishes only shared's /api/health, so each service's /health is read
+      # inside its container.
+      - name: Wait for the gateway and the services
         run: |
-          for i in {1..30}; do
-            if curl -sf http://localhost:8000/health > /dev/null; then
-              echo "Backend is up"
-              exit 0
-            fi
-            echo "Waiting... ($i/30)"
-            sleep 2
-          done
-          echo "Backend failed to start within 60 s"
-          exit 1
-
-      # Uses the same script check.sh does — NOT `curl .../openapi.json` against the
-      # live server. FastAPI serves that route as compact/minified JSON, while this
-      # script pretty-prints (indent=2, matching the committed file's format). Diffing
-      # a curled copy against the committed one would show a spurious diff on every
-      # run from formatting alone, even with zero actual schema changes — both sides
-      # of the comparison must be generated the same way.
-      - name: Export OpenAPI spec
-        run: python backend/tools/export-openapi.py > openapi.json
-
-      # openapi.json is committed as the reference copy of the API spec (see check.sh).
-      # This overwrites the checked-out copy with a freshly generated one above, so a
-      # plain `git diff` here tells us whether the committed copy still matches what
-      # the code actually produces — i.e. whether someone forgot to regenerate and
-      # commit it after changing an endpoint.
-      - name: Verify committed openapi.json is up to date
-        id: openapi_drift
-        continue-on-error: true
-        run: |
-          git diff --exit-code -- openapi.json || {
-            echo "::error::openapi.json is out of date. Run check.sh locally and commit the regenerated file."
-            exit 1
+          up() {
+            curl -sf http://localhost:8088/gateway/health > /dev/null || return 1
+            for svc in $(python backend/tools/services.py); do
+              docker compose exec -T "$svc" python -c \
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" \
+                > /dev/null 2>&1 || return 1
+            done
           }
+          for i in {1..60}; do
+            if up; then echo "The stack is up"; exit 0; fi
+            echo "Waiting... ($i/60)"
+            sleep 3
+          done
+          docker compose ps
+          docker compose logs --tail 50
+          echo "The stack failed to start within 3 minutes"
+          exit 1
 
       # ── OpenAPI spec linting (Spectral) ──────────────────────────────────────
       # spectral-cli is a devDependency in frontend/package.json — no global install needed.
@@ -961,11 +943,6 @@ jobs:
       - name: Install frontend dependencies (includes spectral)
         run: npm ci
         working-directory: frontend
-
-      - name: Spectral (OpenAPI lint)
-        id: spectral
-        continue-on-error: true
-        run: frontend/node_modules/.bin/spectral lint openapi.json --ruleset .spectral.yaml --fail-severity error
 
       # The services' committed specs (backend/openapi/*.json); the backend-service job
       # checks each one matches its code.
@@ -990,7 +967,7 @@ jobs:
         id: nuclei
         continue-on-error: true
         run: |
-          nuclei -u http://localhost:8000 \
+          nuclei -u http://localhost:8088 \
             -t http/misconfiguration,http/exposures,http/technologies \
             -severity medium,high,critical \
             -silent -no-color
@@ -1000,8 +977,6 @@ jobs:
         if: always()
         run: |
           FAILED_CHECKS=()
-          [[ "${{ steps.openapi_drift.outcome }}" == "failure" ]] && FAILED_CHECKS+=(openapi-drift)
-          [[ "${{ steps.spectral.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral)
           [[ "${{ steps.spectral_services.outcome }}" == "failure" ]] && FAILED_CHECKS+=(spectral-services)
           [[ "${{ steps.nuclei.outcome }}"   == "failure" ]] && FAILED_CHECKS+=(nuclei)
           if [ ${#FAILED_CHECKS[@]} -gt 0 ]; then

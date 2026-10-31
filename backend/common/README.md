@@ -15,7 +15,7 @@ Code used by one service lives in that service. Code used by a few is an optiona
 
 ## Rules
 
-- **Versioned:** `__version__` in `__init__.py`, semantic versioning. Each service pins a compatible range in its own requirements.
+- **Versioned:** `__version__` in `__init__.py`, semantic versioning. Each service pins an exact version (`buddy-common[...]==X.Y.Z`) in its own requirements.
 - **Backward-compatible changes only.** A breaking change is a new function next to the old one, until every service has moved; then a major version bump.
 - **No circle rules:** anything about one circle belongs in that circle.
 - **Never imports service code:** enforced by import-linter, with contracts generated from the services in the tree (`backend/tools/import_contracts.py`).

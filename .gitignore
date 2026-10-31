@@ -34,9 +34,6 @@ frontend/retire-jsrepo.json
 infra-live-edge/terraform/*.zip
 infra-live-scheduler/lambda/*.zip
 
-# mutmut working copy (backend mutation testing)
-backend/mutants/
-
 # Terraform provider caches (local init)
 .terraform/
 

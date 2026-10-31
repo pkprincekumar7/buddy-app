@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Print the mongosh commands that zone-shard the database on an Atlas Global Cluster.
+"""Print the mongosh commands that zone-shard the services' databases on an Atlas Global Cluster.
 
-Run via:  python backend/tools/atlas_zone_ranges.py <db_name> > zone-setup.js
+Run via:  python backend/tools/atlas_zone_ranges.py [service ...] > zone-setup.js
+(every service with a database when none is named).
 
-Generated from shared/routing.json (via common/regions.py), so the Atlas zone
-ranges can never drift from the Lambda@Edge routing and the regional workers —
-all three read that one file. tests/test_atlas_zone_ranges.py checks the output.
+Each service has its own database, named after it (infra-live-backend/terraform/services.tf).
+Every per-user and per-child collection is sharded on {location: 1, _id: 1}; a few global
+lookups stay unsharded (docs/auth-users-split.md, section 14). The zones come from
+shared/routing.json (via common/regions.py), so the Atlas zone ranges can never drift from the
+Lambda@Edge routing and the regional workers: all three read that one file.
+tools/tests/test_atlas_zone_ranges.py checks the output, and that the collections below are
+the ones each service creates.
 
-Run the output once against the cluster, on EMPTY collections, before loading
-data — see GLOBAL_ROUTING_MONGO_ATLAS.md "Step 4" for the prerequisites
-(index changes that must ship first) and the Atlas-side zone setup.
+Run the output once against the cluster, on EMPTY collections, before loading data; see
+GLOBAL_ROUTING_MONGO_ATLAS.md "Step 4" for the Atlas-side zone setup.
 """
 
 import os
@@ -18,56 +22,100 @@ import sys
 _BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _BACKEND)
 
-# Collection names still come from today's backend; each service's db.py replaces them
-# when the services exist (docs/auth-users-split-build-plan.md, 0.2 and 8.6).
-from app import models  # noqa: E402 — must come after sys.path setup
 from common.regions import ATLAS_ZONE_FOR_REGION, REGION_TO_LOCATIONS  # noqa: E402
 
-# Zone names (ATLAS_ZONE_FOR_REGION) come from shared/routing.json and must match
-# the zone names configured on the Global Cluster in the Atlas UI.
+# Zone names (ATLAS_ZONE_FOR_REGION) come from shared/routing.json and must match the zone
+# names configured on the Global Cluster in the Atlas UI.
 
-# Zone-sharded collection → second shard-key field (location is always first).
-# jobs and growth_areas don't use _id: their unique indexes
-# (location, job_id, user_id) and (location, user_id, child_id, area_id) must
-# start with the FULL shard key, which {location, _id} would not satisfy.
-SHARD_KEY_SECOND_FIELD: dict[str, str] = {
-    models.USERS: "_id",
-    models.SESSIONS: "_id",
-    models.CHILDREN: "_id",
-    models.OBSERVATIONS: "_id",
-    models.NINETY_DAY_PLANS: "_id",
-    models.GROWTH_AREAS: "user_id",
-    models.JOBS: "job_id",
+# What every service with events has: common.events.store's outbox, and its tombstones with
+# the write guards beside them (ensure_outbox, ensure_tombstones).
+_EVENTS = ("outbox", "tombstones", "guards")
+
+# Service → its zone-sharded collections. Each is sharded on {location: 1, _id: 1}: the
+# service's own data, its copies (child_access, *_inputs, from common.models), its jobs and
+# its pending uploads.
+SHARDED: dict[str, tuple[str, ...]] = {
+    "auth": ("auth", "sessions", "audit", *_EVENTS),
+    "users": ("users", *_EVENTS),
+    "children": ("children", "pending_uploads", *_EVENTS),
+    "onboarding": ("conversations", "child_access", *_EVENTS),
+    "discover": ("personalities", "child_access", "onboarding_inputs", "jobs", *_EVENTS),
+    "grow": (
+        "growth_areas",
+        "child_access",
+        "onboarding_inputs",
+        "personality_inputs",
+        "jobs",
+        *_EVENTS,
+    ),
+    "transform": (
+        "plans",
+        "child_access",
+        "onboarding_inputs",
+        "personality_inputs",
+        "growth_inputs",
+        "jobs",
+        "pending_uploads",
+        *_EVENTS,
+    ),
+    "release": (
+        "observations",
+        "child_access",
+        "onboarding_inputs",
+        "growth_inputs",
+        "jobs",
+        *_EVENTS,
+    ),
 }
 
-# Global lookups with no location field — must stay unsharded.
-UNSHARDED: frozenset[str] = frozenset({models.EMAIL_INDEX, models.ALLOWED_EMAILS})
+# Global lookups with no location field: they stay unsharded, on their database's primary
+# shard (section 14).
+UNSHARDED: dict[str, tuple[str, ...]] = {
+    "auth": ("email_index", "allowed_emails", "deletions", "admin_count", "worker_state"),
+}
+
+SHARD_KEY = "{ location: 1, _id: 1 }"
 
 
-def zone_setup_script(db_name: str) -> str:
+def zone_setup_script(service: str) -> str:
+    """The zone ranges and shardCollection commands for one service's database."""
+    if service not in SHARDED:
+        raise KeyError(f"{service!r} has no database to shard (known: {', '.join(SHARDED)})")
+    db_name = service
     lines = [
         f"// Generated by backend/tools/atlas_zone_ranges.py for database {db_name!r}.",
-        "// Unsharded (leave alone): " + ", ".join(sorted(UNSHARDED)),
+        "// Unsharded (leave alone): " + (", ".join(UNSHARDED.get(service, ())) or "none"),
         "",
         "// 1. Zone ranges — defined before sharding so empty collections are",
         "//    pre-split straight onto the right zone's shards.",
     ]
-    for coll, field in SHARD_KEY_SECOND_FIELD.items():
+    for coll in SHARDED[service]:
         for region, locations in REGION_TO_LOCATIONS.items():
             zone = ATLAS_ZONE_FOR_REGION[region]
             for loc in locations:
                 lines.append(
                     f'sh.updateZoneKeyRange("{db_name}.{coll}", '
-                    f'{{ location: "{loc}", {field}: MinKey }}, '
-                    f'{{ location: "{loc}", {field}: MaxKey }}, "{zone}");'
+                    f'{{ location: "{loc}", _id: MinKey }}, '
+                    f'{{ location: "{loc}", _id: MaxKey }}, "{zone}");'
                 )
     lines += ["", "// 2. Shard the collections."]
-    for coll, field in SHARD_KEY_SECOND_FIELD.items():
-        lines.append(f'sh.shardCollection("{db_name}.{coll}", {{ location: 1, {field}: 1 }});')
+    for coll in SHARDED[service]:
+        lines.append(f'sh.shardCollection("{db_name}.{coll}", {SHARD_KEY});')
     return "\n".join(lines) + "\n"
 
 
+def main(argv: list[str]) -> int:
+    services = argv or list(SHARDED)
+    unknown = [s for s in services if s not in SHARDED]
+    if unknown:
+        print(
+            f"usage: atlas_zone_ranges.py [service ...]; no database for: {', '.join(unknown)}",
+            file=sys.stderr,
+        )
+        return 2
+    sys.stdout.write("\n".join(zone_setup_script(s) for s in services))
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit("usage: atlas_zone_ranges.py <db_name>")
-    sys.stdout.write(zone_setup_script(sys.argv[1]))
+    sys.exit(main(sys.argv[1:]))

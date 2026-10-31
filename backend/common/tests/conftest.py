@@ -5,8 +5,8 @@ cluster: point it at the compose replica set,
 
     MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" pytest common/tests
 
-Without it they skip; with REQUIRE_LIVE_SERVICES=1 (CI) a skip is a failure, as in
-tests/conftest.py, so CI can't pass without exercising the real server.
+Without it they skip; with REQUIRE_LIVE_SERVICES=1 (CI) a skip is a failure, so CI can't pass
+without exercising the real server.
 """
 
 import asyncio

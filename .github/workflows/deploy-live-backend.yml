@@ -14,14 +14,6 @@ on:
         required: true
         default: "all"
         type: string
-      # Optional: build this backend service's code into every selected
-      # service's repository instead of its own (a placeholder image before a
-      # service has code: hello in build plan 2.7). Empty = each its own.
-      build_from:
-        description: "Optional: build every selected image from this backend service's code instead of its own (e.g. hello, for placeholder images). Empty = each service's own code."
-        required: false
-        default: ""
-        type: string
       environment:
         description: "Deployment environment"
         required: true
@@ -55,10 +47,6 @@ on:
         type: string
         required: false
         default: "all"
-      build_from:
-        type: string
-        required: false
-        default: ""
       environment:
         type: string
         required: true
@@ -111,7 +99,6 @@ jobs:
         env:
           ROLE_ARN: ${{ vars.ROLE_ARN }}
           APP_NAME: ${{ vars.APP_NAME }}
-          BUILD_FROM: ${{ inputs.build_from }}
         run: |
           missing=()
           [[ -z "$ROLE_ARN" ]] && missing+=("ROLE_ARN (variable)")
@@ -119,10 +106,6 @@ jobs:
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "ERROR: Required GitHub environment secrets/variables are not set: ${missing[*]}"
             echo "Add them to the '${{ inputs.environment }}' GitHub environment and re-run."
-            exit 1
-          fi
-          if [[ -n "$BUILD_FROM" && ! "$BUILD_FROM" =~ ^[a-z][a-z0-9_]{0,30}$ ]]; then
-            echo "ERROR: build_from '$BUILD_FROM' is not a backend service name."
             exit 1
           fi
 
@@ -207,24 +190,19 @@ jobs:
             echo "ECR ($REGION): $REPO"
           done
 
-      # build_from (optional) builds another service's code into this
-      # service's repository: the placeholder image before a service has code
-      # (build plan 2.7, hello).
       - name: Build Docker image
         env:
           IMAGE_SERVICE: ${{ matrix.image_service }}
-          BUILD_FROM: ${{ inputs.build_from }}
           TAG: ${{ needs.resolve.outputs.image_tag }}
           GIT_SHA: ${{ needs.resolve.outputs.sha }}
           GIT_BRANCH: ${{ needs.resolve.outputs.branch }}
           GIT_COMMITTED_AT: ${{ needs.resolve.outputs.committed_at }}
           GIT_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
-          SERVICE="${BUILD_FROM:-$IMAGE_SERVICE}"
-          echo "Building backend/$SERVICE for $IMAGE_SERVICE"
+          echo "Building backend/$IMAGE_SERVICE"
           docker build \
             --platform linux/amd64 \
-            --build-arg SERVICE="$SERVICE" \
+            --build-arg SERVICE="$IMAGE_SERVICE" \
             --build-arg GIT_SHA="$GIT_SHA" \
             --build-arg GIT_BRANCH="$GIT_BRANCH" \
             --build-arg GIT_COMMITTED_AT="$GIT_COMMITTED_AT" \

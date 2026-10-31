@@ -132,7 +132,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             configure(None)
 
 
-# The same contact and servers as today's app (app/main.py), for the published spec.
+# The contact and servers every service's published spec carries.
 app = FastAPI(
     title=SERVICE,
     description="Transform: each child's Life Pathway and 90-day plan with its tracker.",
@@ -255,6 +255,9 @@ class Photo(BaseModel):
 class AreaView(BaseModel):
     area_id: str
     area_name: str
+    # The area's recommendations, from the copy, for the Life Pathway's 90-day moves.
+    recommendations: list[str] | None
+    ai_three_month_recommendations: list[dict[str, str]] | None
     life_pathway_milestones: dict[str, Any] | None
     life_pathway_generating: bool
 
@@ -343,6 +346,8 @@ async def _view(
             AreaView(
                 area_id=area["area_id"],
                 area_name=area["area_name"],
+                recommendations=area.get("recommendations"),
+                ai_three_month_recommendations=area.get("ai_three_month_recommendations"),
                 life_pathway_milestones=pathway.get(area["area_id"]),
                 life_pathway_generating=bool(
                     running.get(lock_name("life_pathway", area["area_id"]))

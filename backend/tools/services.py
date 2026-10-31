@@ -4,11 +4,11 @@
 A service is a directory directly under backend/ with an `__init__.py` and a
 `requirements.txt`. One with `app/main.py` also serves HTTP, so it has a committed
 OpenAPI spec at backend/openapi/<service>.json. `common` (a pyproject.toml, no
-requirements.txt) and today's `app` (no requirements.txt of its own) aren't services.
+requirements.txt) and `tools` aren't services.
 
     python tools/services.py                  names, one per line
     python tools/services.py --json           a JSON array (CI's matrix)
-    python tools/services.py --paths backend/ each as a path: backend/auth/ backend/hello/
+    python tools/services.py --paths backend/ each as a path: backend/auth/ backend/users/ …
     python tools/services.py --check          exit 1 if a spec has no service, or a name is invalid
 
 Standard library only, so CI can run it before installing anything.

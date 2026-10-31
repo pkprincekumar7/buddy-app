@@ -1,4 +1,4 @@
-"""Rate limits in Valkey, falling back to per task (docs/auth-users-split.md, 9.3, from today's app/limiter.py).
+"""Rate limits in Valkey, falling back to per task (docs/auth-users-split.md, 9.3).
 
 Limits are FastAPI dependencies, so an over-limit request is refused before the route's
 own database work:

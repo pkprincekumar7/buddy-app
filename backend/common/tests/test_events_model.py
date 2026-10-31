@@ -20,7 +20,7 @@ CHILD = "9b1c6f64-2f4e-4d0e-8e2a-6c1f0d3a7b55"
 
 def test_the_catalogue_matches_the_design():
     cat = catalogue.load()
-    assert len(cat.events) == 17  # 7.6 plus hello's demo event, hello.pinged (removed in 8.6)
+    assert len(cat.events) == 16  # the design's 7.6
     assert {e for e, s in cat.events.items() if s.reserved} == {
         "user.role_changed",
         "user.profile_updated",
@@ -33,13 +33,12 @@ def test_the_catalogue_matches_the_design():
         "transform",
         "release",
     )
-    # One topic per producing service (7.2): the design's 8 plus hello's; connect isn't built.
+    # One topic per producing service (7.2): the design's 8; connect isn't built.
     assert cat.producers() == [
         "auth",
         "children",
         "discover",
         "grow",
-        "hello",
         "onboarding",
         "release",
         "transform",

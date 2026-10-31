@@ -23,5 +23,4 @@ PARTICIPANTS: tuple[str, ...] = (
 NOT_PARTICIPANTS: dict[str, str] = {
     "auth": "runs the deletion and deletes the credentials last (10.3)",
     "shared": "no database: speech-to-text and the APK link only (13.3)",
-    "hello": "the build placeholder (build plan 0.4), removed in 8.6",
 }

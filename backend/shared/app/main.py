@@ -95,7 +95,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             configure(None)
 
 
-# The same contact and servers as today's app (app/main.py), for the published spec.
+# The contact and servers every service's published spec carries.
 app = FastAPI(
     title=SERVICE,
     description="Shared: speech-to-text, the Android APK link and the build's health.",

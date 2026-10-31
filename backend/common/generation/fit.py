@@ -2,7 +2,7 @@
 
 The schemas the circles send with their prompts (today's, ported) set a `maxLength` on each
 text, and the server checks every answer against them. Providers don't enforce `maxLength`,
-and today's app stores the answer unchecked, so a plan with one sentence a few characters
+and the old backend stored the answer unchecked, so a plan with one sentence a few characters
 over its limit used to show. Failing the whole job (and its retries) for that loses a good
 answer (found by the e2e full journey). `clip_to_schema` cuts each over-long string at a
 word boundary, with an ellipsis, before the answer is validated; a structural problem
