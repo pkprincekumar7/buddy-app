@@ -177,95 +177,41 @@ If `ASSETS_BUCKET_NAME` is not set, image requests fall back to the emoji/gradie
 
 ## Uploads bucket (user-generated content)
 
-Child profile photos uploaded during onboarding are stored in a **separate uploads bucket**. Like the assets bucket, the local version is a dedicated manually-managed bucket that is never touched by Terraform.
+Child profile photos (the children service) and plan photos (the transform service) are stored in a **separate uploads bucket**. Locally it lives in Moto, the local AWS emulator; deployed buckets are created by hand and their access control is managed by Terraform.
 
 ### Upload and display flow
 
-**Upload (all environments):** The backend generates a presigned S3 PUT URL and a presigned GET URL for the same key (`POST /children/{id}/avatar/presign`). The browser PUTs the file directly to S3 using the PUT URL. The frontend then PATCHes the child record with the returned `avatar_url`; the backend keeps only the S3 key. `PutObject` never requires public bucket access.
+Both services use the shared helper in `backend/common/uploads.py`.
 
-**Display (all environments):** MongoDB stores only the S3 key (`uploads/...`). Each API read returns an **S3 presigned GET URL** (`https://{bucket}.s3.{region}.amazonaws.com/uploads/...?X-Amz-...`, ~1 h) signed with the backend's own AWS credentials (EDGE-05, see [infra-operations.md](infra-operations.md#photo-urls-edge-05)). Deployed buckets have **all four Block Public Access settings ON** and no bucket policy. Photos never go through CloudFront.
+**Upload (all environments):** The service generates a presigned S3 PUT URL (5 minutes) for a new key, plus a presigned GET URL for it (`POST /api/v1/children/{id}/avatar/presign` returns `upload_url`, `avatar_key` and `avatar_url`; transform's is `POST …/transform/photos/presign`). The browser PUTs the file directly to S3 using the PUT URL, then sends the **key** back (e.g. `PATCH /api/v1/children/{id}` with `avatar_key`). The service accepts only a key under that child's prefix for that kind of photo, and checks with `HeadObject` that the object exists, is an allowed image and is at most 5 MB (a presigned PUT can't limit size); a refused object is deleted, and one never saved is swept after a day (`backend/common/upload_tracking.py`). `PutObject` never requires public bucket access.
 
-### Local dev environment variables
+**Display (all environments):** MongoDB stores only the S3 key (`uploads/...`). Each API read returns an **S3 presigned GET URL** (`https://{bucket}.s3.{region}.amazonaws.com/uploads/...?X-Amz-...`, `UPLOADS_URL_TTL_SECONDS`, default 1 h) signed with the service's own AWS credentials (EDGE-05, see [infra-operations.md](infra-operations.md#photo-urls-edge-05)). Deployed buckets have **all four Block Public Access settings ON** and no bucket policy. Photos never go through CloudFront.
 
-Set the following in your root `.env` and `backend/.env`:
+### Local dev (Moto)
+
+Nothing to create in AWS: the compose stack's children and transform services (and their workers) call Moto for S3, with Moto's dummy credentials. Start Moto and create the buckets (and the event topics and queues) once per Moto start — Moto keeps everything in memory:
+
+```bash
+backend/.venv/bin/moto_server -H 0.0.0.0 -p 5050
+backend/.venv/bin/python scripts/local-aws-setup.py
+```
+
+`scripts/local-aws-setup.py` creates the uploads bucket with a CORS rule for the local frontend origins, so the browser can PUT to a presigned URL. The relevant root `.env` keys (see `.env.example`):
 
 ```env
 UPLOADS_BUCKET_NAME=person-local-uploads-bucket-ap-south-1
-AWS_REGION=ap-south-1
-AWS_ACCESS_KEY_ID=your-access-key-id
-AWS_SECRET_ACCESS_KEY=your-secret-access-key
-# These credentials also sign the photo GET URLs, so they need s3:GetObject on
-# uploads/* (the local bucket no longer needs a public GetObject policy).
+# UPLOADS_URL_TTL_SECONDS=3600
+# LOCAL_MOTO_URL=http://host.docker.internal:5050    # what the services call
+# LOCAL_MOTO_PUBLIC_URL=http://localhost:5050        # what presigned URLs point at
 ```
 
-In ECS (dev/stg/prod) `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left unset — the ECS task role provides credentials automatically via IMDS. Those role credentials sign both the PUT (upload) and GET (view) URLs; the role has `s3:PutObject` and `s3:GetObject` on the uploads bucket.
+Compose passes `LOCAL_MOTO_URL` to the services as `AWS_ENDPOINT_URL` and `LOCAL_MOTO_PUBLIC_URL` as `AWS_PUBLIC_ENDPOINT_URL`, so the browser on the same machine can open the presigned URLs.
 
-### Create and configure the local uploads bucket (one-time)
-
-#### a. Create the bucket
-
-1. Open the [S3 console](https://s3.console.aws.amazon.com/s3/) and click **Create bucket**
-2. Set **Bucket name** to `person-local-uploads-bucket-ap-south-1`
-3. Set **AWS Region** to `ap-south-1` (Asia Pacific — Mumbai)
-4. Leave all other settings at their defaults and click **Create bucket**
-
-#### b. Let your local AWS credentials read and write uploads
-
-Photos are private everywhere, local included (EDGE-05): the backend signs both the upload (PUT) and the view (GET) URLs with the AWS credentials in your `.env` (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). So **the bucket keeps all Block Public Access settings ON and needs no bucket policy** — but the IAM user behind those credentials must be allowed to read and write `uploads/*`. A presigned URL only works if its signer could make the same request.
-
-1. Open the [IAM console](https://console.aws.amazon.com/iam/) → **Users** → the user whose access key is in your `.env`
-2. **Permissions** tab → **Add permissions** → **Create inline policy** → **JSON**, and paste (replace `<your-bucket-name>`):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "LocalUploadsReadWrite",
-      "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject"],
-      "Resource": "arn:aws:s3:::<your-bucket-name>/uploads/*"
-    }
-  ]
-}
-```
-
-3. Name it e.g. `superpower-local-uploads` → **Create policy**
-
-If the user already has broader S3 access (e.g. `AmazonS3FullAccess`), nothing to add.
-
-**Upgrading an existing local bucket** set up with the old public-read policy: it still works, but it's no longer needed. To make it private like the deployed buckets, delete the `AllowPublicGetUploads` bucket policy (**Permissions** → **Bucket policy** → **Delete**), then turn the two Block Public Access settings you unchecked back **on**.
-
-**Check:** upload a photo locally, open the image URL from the API response — it loads. Remove everything from `?` onwards and open it again — S3 returns **403 Access Denied**.
-
-#### c. Configure CORS
-
-The browser uploads directly to S3 via presigned URL. Without CORS, the browser blocks the cross-origin PUT request. (Viewing photos uses plain `<img>` tags, which don't need CORS.)
-
-1. Still on the **Permissions** tab, scroll to **Cross-origin resource sharing (CORS)** → **Edit**
-2. Paste the following:
-
-```json
-[
-  {
-    "AllowedHeaders": ["*"],
-    "AllowedMethods": ["PUT", "GET"],
-    "AllowedOrigins": ["http://localhost:5173"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
-
-3. Click **Save changes**
+In ECS (dev/stg/prod) no AWS keys are set — the ECS task role provides credentials. Those role credentials sign both the PUT (upload) and GET (view) URLs; the role has `s3:PutObject` and `s3:GetObject` on the uploads bucket.
 
 > **Production:** For deployed environments (dev/stg/prod), CORS is managed automatically by Terraform (`infra-live-backend/terraform/s3.tf`) — `AllowedOrigins` is set to the CloudFront app domain. The nginx CSP (`connect-src` and `img-src`) allows `https://*.s3.amazonaws.com` plus one explicit domain per backend region currently in use (`https://*.s3.us-east-1.amazonaws.com`, `https://*.s3.eu-west-1.amazonaws.com`, `https://*.s3.ap-south-1.amazonaws.com`) — set in `frontend/nginx.conf` and `frontend/nginx.conf.template`. This is a fixed list, not a wildcard — **adding a new backend region requires manually adding its S3 domain to the CSP in both files**, or image/upload requests from that region will be blocked by the browser.
 
-#### d. Create the uploads folder
-
-1. Click the bucket → **Objects** tab → **Create folder** → name it `uploads` → **Create folder**
-
-Objects are stored as `uploads/<location>/<child_id>/<uuid>.<ext>` (`build_upload_key()` in `backend/app/services/s3_uploads.py` always leads with the user's sharding `location` value — e.g. `eu` for a user registered from Germany, assigned from their country at registration — not the AWS region) — the `<location>/<child_id>` subdirectories are created automatically by S3 on first upload; no manual folder creation is needed inside `uploads/`.
+Objects are stored as `uploads/<location>/<child_id>/<kind>/<uuid>.<ext>`, where `<kind>` is `avatar` or `ninety-day-plan` (`Uploads.new_key()` in `backend/common/uploads.py` always leads with the user's sharding `location` value — e.g. `eu` for a user registered from Germany, assigned from their country at registration — not the AWS region). S3 creates the prefixes on first upload; no folder needs creating.
 
 ### Deployed bucket setup (one-time, per environment)
 

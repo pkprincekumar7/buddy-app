@@ -1,5 +1,7 @@
 # Infrastructure cost estimate — production (ap-south-1)
 
+> **Historical (2026-10-31):** written while the old backend (`backend/app/`) still ran. It was removed in build plan 8.6, so this document's references to it describe the code as it was. For the current code, see [getting-started.md](getting-started.md) and `backend/CLAUDE.md`.
+
 > **Status: superseded — single-region snapshot, predates the multi-region architecture.**
 > The current source of truth for the infrastructure architecture is
 > [`docs/infra-architecture-multi-region.md`](infra-architecture-multi-region.md), which documents

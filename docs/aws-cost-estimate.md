@@ -1,6 +1,7 @@
 # AWS Monthly Cost Estimate
 
 > **What this models:** the infrastructure **as the code defines it today**: the tfvars of each environment, `services.tf` and the Terraform stacks. dev, sbx and stg are costed at their tfvars. **prod is costed at its tfvars in every column**: prod's task counts and Valkey size are fixed by `prod.tfvars` whatever the traffic, so only usage-based lines (data, requests, logs) change with MAU.
+> **Not yet re-costed for the service split:** the compute lines (the ECS rows of the configuration table, section 2's Fargate costs, the ALB rules, the target-tracking alarms and the GuardDuty vCPU figures) still model the old four runtimes (API, worker, auth, admin). The backend now runs 18 runtimes per region (9 HTTP services, 8 workers, the OpenTelemetry collector; `local.services` in `infra-live-backend/terraform/services.tf`), sized per tier (`http`, `auth`, `worker`, `generating-worker`, `collector`) by `runtime_sizes` in each `infra-live-backend/terraform/tfvars/<env>.tfvars`. The split's rough cost is in docs/auth-users-split.md, 15.3.
 > **Scale unit:** Monthly Active Users (MAU): 1K = 1,000 MAU, 10K = 10,000 MAU, and so on.
 > **Region:** one backend region, ap-south-1, plus us-east-1 for the edge (CloudFront, WAF, ACM, Lambda@Edge). Each additional backend region adds its own copy of the per-region lines; see "Key caveats".
 > **Hours:** 720 h/month, with every environment **always on**. Non-prod environments can instead run on the nightly schedule; see "Scheduled non-prod environments".
@@ -35,7 +36,7 @@
 | CloudFront price class | `PriceClass_100` | `PriceClass_100` | `PriceClass_100` | `PriceClass_All` | `cloudfront_price_class` (edge) |
 
 > **Why prod is the same in every column:** `prod.tfvars` keeps 15 API, 5 worker, 3 auth and 1 admin tasks and a 2-node `cache.t4g.medium` Valkey running at all times. That's what the code bills, at 1K MAU as at 100M. Sizing prod down for low traffic would need tfvars changes, which aren't modeled here. Above the minimums, autoscaling adds tasks under load (see section 2).
-> **Task sizing (TF-03):** each process (one uvicorn or asyncio process per task) can use about 1 vCPU, so the API and worker scale by **task count** at 1 vCPU / 2 GB from stg up. Auth is larger in prod (2 vCPU / 4 GB) because bcrypt runs in threads. dev/sbx run every service at Fargate's smallest size, 0.25 vCPU / 0.5 GB.
+> **Task sizing (TF-03):** each task runs one Python process (an HTTP service's `python -m common.serve <service>`, or a worker's asyncio loop), which can use about 1 vCPU, so services and workers scale by **task count** rather than task size. Auth is larger in prod (2 vCPU / 4 GB) because bcrypt runs in threads. dev/sbx run every service at Fargate's smallest size, 0.25 vCPU / 0.5 GB.
 
 ---
 

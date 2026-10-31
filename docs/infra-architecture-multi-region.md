@@ -519,21 +519,18 @@ not any tfvars file.
 
 ### 9. Backend — no changes required
 
-The JWT `location` claim is already present in every access token. From
-`backend/app/auth_utils.py`:
+The JWT `location` claim is already present in every access and refresh token. From
+`TokenIssuer.issue()` in `backend/auth/app/tokens.py`:
 
 ```python
-payload = {
-    "sub": sub,
-    "iat": now,
-    "exp": expire,
-    "type": "access",
-    "location": location,   # ← already set at token creation
-}
+base = {"sub": user_id, "location": location, "iat": now, "iat_ms": now_ms}
+access = self._encode(
+    {**base, "type": "access", "role": role, "exp": now + self.access_minutes * 60}
+)
 ```
 
-The `location` value is set from the user's `location` field in the users collection,
-which is written at registration time via `backend/app/routing.py:resolve_region()`.
+The `location` value is the account's `location` field in auth's `auth` collection, which is
+written at registration time from `resolve_region()` in `backend/auth/countries.py`.
 No backend changes are needed.
 
 ---

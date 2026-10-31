@@ -1,5 +1,7 @@
 # Service split: API reference
 
+> **Historical (2026-10-31):** written while the old backend (`backend/app/`) still ran. It was removed in build plan 8.6, so its **"Today"** notes describe that removed code, not the current services. For the current code, see [getting-started.md](getting-started.md) and `backend/CLAUDE.md`.
+
 **Status:** proposal, companion to [auth-users-split.md](auth-users-split.md). Implemented so far: the users endpoints (build plan 3.1, `backend/users/`) and every auth endpoint: sign-in (3.2), `GET /internal/authz` (3.3), the admin endpoints (3.4), account deletion and the email lookup (3.5), in `backend/auth/`; the children endpoints (4.1, `backend/children/`) and the Connect visit (5.7); the onboarding endpoints (5.1, `backend/onboarding/`); the discover endpoints (5.2, `backend/discover/`); the grow endpoints (5.3, `backend/grow/`); the transform endpoints (5.4, `backend/transform/`); the release endpoints (5.5, `backend/release/`); the shared endpoints (5.6, `backend/shared/`). The rest isn't built yet.
 **Scope:** one entry per endpoint in [section 13.4](auth-users-split.md#134-full-api-list) of the proposal, with what it accepts, what it does and what it returns. Entries are added one at a time; the list in 13.4 stays the index.
 
@@ -1813,6 +1815,8 @@ Returns everything the Transform circle shows: the Life Pathway (milestones per 
     {
       "area_id": "self_care",
       "area_name": "Self care",
+      "recommendations": null,
+      "ai_three_month_recommendations": [{ "title": "…", "detail": "…" }],
       "life_pathway_milestones": { "...": "…" },
       "life_pathway_generating": false
     }
@@ -1833,7 +1837,7 @@ Returns everything the Transform circle shows: the Life Pathway (milestones per 
 }
 ```
 
-- `areas` lists the completed growth areas from transform's `growth_inputs` copy, with each area's Life Pathway milestones (stored in transform, below). It's one read, plus the copy, in the same database (proposal 12.2).
+- `areas` lists the completed growth areas from transform's `growth_inputs` copy, with each area's recommendations (`recommendations` and `ai_three_month_recommendations`, as grow sent them, for the page's 90-day moves) and its Life Pathway milestones (stored in transform, below). It's one read, plus the copy, in the same database (proposal 12.2).
 - `photos` gives each photo's stored S3 `key` and a short-lived GET `url`. The client needs the keys to add or remove one photo without dropping the others (PATCH below).
 - `generating` lists the plan-level kinds with a job running (`plan`, `event_tracker`); each area's `life_pathway_generating` says whether its milestones are being generated.
 - **`life_pathway_milestones`** is stored normalised by today's `normalizeLifePathwayArea`, run on the server: an object keyed by slot (`y1`, `y2`, `y3`, `y5`, `y8`, `y10`: years after the child's age), with only the usable milestones (`title`, `guided`, `power`, `drift`). The apps' own normaliser reads it back the same, and fills a missing slot from its fallback copy, as today.

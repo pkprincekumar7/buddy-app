@@ -1,5 +1,7 @@
 # Production Readiness Review — Terraform & GitHub Actions
 
+> **Historical (2026-10-31):** written while the old backend (`backend/app/`) still ran. It was removed in build plan 8.6, so this review's references to it describe the code as it was. For the current code, see [getting-started.md](getting-started.md) and `backend/CLAUDE.md`.
+
 > **Status:** Findings only — nothing in this document has been fixed yet.
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.

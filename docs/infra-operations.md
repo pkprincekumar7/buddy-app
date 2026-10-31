@@ -98,8 +98,8 @@ registers a **new revision**:
 | Category | Examples |
 |---|---|
 | Compute | CPU, memory |
-| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_ENV`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user), `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, the `JWT_*` verification settings. HTTP runtimes: `BEHIND_PROXY`, `CORS_ORIGINS`; auth's cookie settings. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform: the uploads bucket; shared: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
-| Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Platform: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
+| Plain env vars | Every service runtime: `SERVICE_NAME`, `APP_NAME`, `APP_ENV`, `AWS_REGION`, `MONGODB_DB_NAME` (= the service), `MONGODB_MAX_POOL_SIZE`, `REDIS_URL` + `REDIS_USERNAME` (its own RBAC user) + `REDIS_REPLICATION_GROUP_ID`, `INTERNAL_DNS_SUFFIX`, `INTERNAL_SIGNING_KID`, `INTERNAL_PUBLIC_KEYS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `LOG_LEVEL`, the `JWT_*` verification settings (`JWT_KEY_ID`, `JWT_PUBLIC_KEYS`, `JWT_ISSUER`, `JWT_AUDIENCE`). HTTP runtimes: `BEHIND_PROXY`; auth's cookie settings (`COOKIE_SECURE`, `COOKIE_SAMESITE`, `COOKIE_DOMAIN`). Auth and its worker: `DELETION_PARTICIPANTS`. Workers: their own `EVENTS_TOPIC_ARN` / `EVENTS_QUEUE_URL`. Generating services: `*_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_HOURLY_LIMIT`. Children and transform (HTTP and worker): `UPLOADS_BUCKET_NAME`, `UPLOADS_URL_TTL_SECONDS`; shared: `ASSETS_BUCKET_NAME`. The collector: `AOT_CONFIG_CONTENT` |
+| Secret references | ARN pointers (not values) into the runtime's own service secret, plus `INTERNAL_SIGNING_KEY` from its SSM SecureString. Auth: `MONGODB_URI`, `JWT_PRIVATE_KEY`, `GOOGLE_CLIENT_ID`, `EMAIL_HMAC_PEPPER`. Generating workers: `MONGODB_URI` + the three LLM keys (their HTTP runtimes get `MONGODB_URI` only). Shared: `OPENAI_API_KEY`. The others: `MONGODB_URI`. The collector: none |
 | Infrastructure | log group, health check, execution/task role, network mode |
 | Image | the service's repository at `:latest` — a placeholder; see below (the collector: the pinned `otel_collector_image`) |
 
@@ -112,7 +112,7 @@ until the next deploy.
 A `resolve` job lists the selected runtimes and the images they need: one per service, since a
 worker runs its service's. The collector runs the pinned `otel_collector_image`, so `all` skips it,
 and naming it is an error. A build matrix then builds each image once
-(`--build-arg SERVICE=<service>`, or the `build_from` service's code for a placeholder image) and
+(`--build-arg SERVICE=<service>`) and
 pushes it as `:<YYYYMMDD>-<short-sha>` to that service's repository in every selected region.
 Then, in each region:
 
@@ -340,6 +340,103 @@ anything outside that child's own prefix with 422 (APP-08).
   still not deleted (APP-07 / PRIV-02).
 - **No setup step.** Environments start with a fresh database and uploads bucket, so there is
   nothing to migrate.
+
+---
+
+## First admin of an environment
+
+A new environment has no admin and an empty allow-list, and both are needed to add anyone:
+registration accepts only allow-listed emails, the allow-list API is admin-only, and
+`auth.seed` runs only with `APP_ENV=local`. So the first email goes on the allow-list by hand,
+and the first account is promoted with `auth.promote_admin` as a one-off ECS task (ECS Exec is
+off). After that, admins manage the allow-list and roles from the admin screens. Locally, see
+[getting-started.md](getting-started.md#admin-setup) instead.
+
+The commands below use one region (the one whose site you'll sign up on); any region works,
+since auth's `allowed_emails` and `admin_count` are unsharded global collections (section 14 of
+[auth-users-split.md](auth-users-split.md)). Set these first:
+
+```bash
+APP=superpower ENV=sbx REGION=ap-south-1
+EMAIL=admin@example.com   # the first admin's address
+```
+
+**1. Deploy auth.** `terraform-live-backend` then `deploy-live-backend` (at least `auth`,
+`auth-worker`). Auth creates its database, collections, indexes and validators when it starts
+(`ensure_collections`), so don't create any of them in Atlas by hand.
+
+**2. Allow-list the email.** An entry's `_id` is the HMAC-SHA256 of the lower-cased email,
+keyed with auth's `EMAIL_HMAC_PEPPER`; the plain email never matches. Compute it from the
+secret without printing the pepper:
+
+```bash
+KEY=$(aws secretsmanager get-secret-value --region "$REGION" --secret-id "$APP/$ENV/auth-secrets" \
+  --query SecretString --output text \
+  | EMAIL="$EMAIL" python3 -c 'import hmac,hashlib,json,os,sys
+p = json.loads(sys.stdin.read())["EMAIL_HMAC_PEPPER"].strip()
+if p.startswith("{"): v = json.loads(p); n = max(v, key=int); p = v[n]; print(n, end=" ")
+else: print(1, end=" ")
+print(hmac.new(p.encode(), os.environ["EMAIL"].strip().lower().encode(), hashlib.sha256).hexdigest())')
+echo "key_version ${KEY%% *}, _id ${KEY#* }"
+```
+
+During a pepper rotation (a JSON map of versions) this uses the highest version, as auth does.
+Then, in Atlas Data Explorer (or `mongosh` with an admin user), insert into database `auth`,
+collection `allowed_emails`, matching its validator:
+
+```js
+{
+  _id: "<_id from above>",
+  key_version: 1,                                   // the key_version from above
+  email_hint: "a***@example.com",                   // first character, ***, the domain
+  added_by: "00000000-0000-4000-8000-000000000000", // the placeholder auth.seed uses
+  created_at: new Date()
+}
+```
+
+**3. Register** `$EMAIL` on the environment's site (password, or Google if that origin is an
+authorized JavaScript origin of the OAuth client), and sign in.
+
+**4. Get the user id.** Signed in, open `/api/v1/auth/me` on the site; its `id` is the UUID.
+
+**5. Promote it** with a one-off task from auth's task definition. The task family and
+container come from the deploy manifest in SSM, and the subnets and security group from the
+running auth service, so nothing is copied by hand. `--user-id` (not the email) keeps the
+address out of the task override and CloudTrail:
+
+```bash
+USER_ID=<uuid from step 4>
+CLUSTER="$APP-backend-$ENV"
+MANIFEST=$(aws ssm get-parameter --region us-east-1 --name "/$APP/$ENV/backend/$REGION/ecs_services" \
+  --query Parameter.Value --output text)
+FAMILY=$(jq -r '.[] | select(.name == "auth") | .family' <<<"$MANIFEST")
+CONTAINER=$(jq -r '.[] | select(.name == "auth") | .container' <<<"$MANIFEST")
+SERVICE=$(jq -r '.[] | select(.name == "auth") | .service' <<<"$MANIFEST")
+NETWORK=$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" --services "$SERVICE" \
+  --query 'services[0].networkConfiguration' --output json)
+
+TASK=$(aws ecs run-task --region "$REGION" --cluster "$CLUSTER" --task-definition "$FAMILY" \
+  --launch-type FARGATE --network-configuration "$NETWORK" \
+  --overrides "$(jq -n --arg c "$CONTAINER" --arg u "$USER_ID" \
+    '{containerOverrides: [{name: $c, command: ["python", "-m", "auth.promote_admin", "--user-id", $u]}]}')" \
+  --query 'tasks[0].taskArn' --output text)
+aws ecs wait tasks-stopped --region "$REGION" --cluster "$CLUSTER" --tasks "$TASK"
+aws ecs describe-tasks --region "$REGION" --cluster "$CLUSTER" --tasks "$TASK" \
+  --query 'tasks[0].containers[0].exitCode'
+```
+
+Exit code 0 means promoted; the output is in auth's CloudWatch log group. It refuses (exit 1,
+with the reason) if an admin already exists, or if the account doesn't exist, is locked, is
+being deleted or is already an admin.
+
+**6. Sign in again.** The promotion ends the account's sessions; the next sign-in carries the
+admin role, and the admin screens appear.
+
+**Don't set `role: "admin"` in Atlas instead.** `promote_admin` does what a role change needs:
+a new `authz_version` (so the Valkey authz cache and old tokens stop carrying the old role), the
+account's sessions ended, `admin_count` set to 1 (which keeps `promote_admin` one-shot and stops
+the last admin being demoted), an `audit` row and the `audit.role_changed` log line the
+role-change alarm watches. A manual edit does none of them.
 
 ---
 

@@ -1,5 +1,7 @@
 # Service split: build plan
 
+> **Historical (2026-10-31):** written while the old backend (`backend/app/`) still ran. It was removed in build plan 8.6, so this document's references to it, to `hello` and to the root `openapi.json` describe the code as it was. For the current code, see [getting-started.md](getting-started.md) and `backend/CLAUDE.md`.
+
 **Status:** not started.
 **What this is:** the order in which to build [auth-users-split.md](auth-users-split.md) (the design) and [auth-users-split-api.md](auth-users-split-api.md) (the endpoints). Each task is one PR, small enough to review. Tick a task's box when its PR is merged, and update the progress table.
 **Starting point:** a fresh deployment. Nothing runs today, every database starts empty, and no compatibility with today's API is needed (design, header and step 7).
@@ -843,6 +845,12 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
   - One generated client per service spec in each app, replacing the hand-written `api/client.ts` calls.
   - Error handling matches on `detail.code`.
   - **Check:** typecheck in both apps; one existing screen switched as a proof.
+  - **As built:**
+    - **Generator:** `openapi-typescript` 7.13.0 (dev) and `openapi-fetch` 0.17.0 (runtime, a few KB), pinned in both apps. `scripts/sync-api-clients.mjs` writes `src/api/generated/<service>.ts` in `frontend/` and `frontend-app/` from each `backend/openapi/<service>.json` (not hello), identical in both; `--check` runs in `check.sh` and in CI's frontend job. The generated files are kept out of ESLint and Prettier.
+    - **`src/api/services.ts`** (each app): one `openapi-fetch` client per service, all through `serviceFetch`: cookies on the web, the stored Bearer token on mobile (and a token pair kept from any response that has one), and one refresh and retry on a 401, sharing `client.ts`'s refresh (no refresh on auth's own routes). `unwrap(call)` returns the data or throws an `ApiError`; `ApiError.code` is the service's `detail.code`, and FastAPI's 422 list becomes `code: "invalid_request"`.
+    - **The proofs**, chosen so nothing breaks while the old backend still serves the apps (same path and response on both): the web Home's "Download the Android app" uses `services.shared.GET('/api/v1/downloads/apk')` (`api.downloads` is gone from `client.ts`); the mobile app's sign-out (`AuthContext.logout`) uses `services.auth.POST('/api/v1/auth/logout')`. The rest of `client.ts` moves screen by screen in 7.2–7.8.
+    - **Checked locally:** typecheck, ESLint (0 errors) and Prettier in both apps; the web build (main bundle 366 KB of 1.4 MB); mobile jest 22 passed, 4 of them new (`src/__tests__/services.test.ts`: the Bearer token, refresh and retry, no refresh on auth's 401s, kept tokens, `detail.code` errors); npm audit, yarn audit and both licence scans clean. The web app has no unit-test runner.
+    - **Not run:** the two proofs in a browser or a simulator.
 - [ ] **7.2 Sign-in and account.** Needs: 7.1, Gate 3.
   - Register: `first_name` (required), `middle_name`, `last_name`, three optional address lines. Login handles `429 too_many_attempts`.
   - The name comes from `GET /users/me/profile` (header, welcome screens, mobile `ChildCard`), replacing `full_name` from `/auth/me`.
@@ -850,6 +858,16 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
   - **New account settings screen** (`pages/AccountSettings.tsx` and the mobile screen): edit names and address; "Sign out of all devices" (`POST /auth/logout-all`).
   - Remove the `last_visited_path` writes (`lib/AuthContext.tsx`, `hooks/useStartOver.ts`).
   - **Check:** jest (mobile) and existing web tests; manual sign-up, login, logout-all in dev.
+  - **As built** (both apps):
+    - **`src/api/account.ts`**, on the generated clients: `current()` (`/auth/me` plus `GET /users/me/profile`, best effort: without the profile the app greets "there"), `register` (email, password, country and `RegisterDetails`: first name, optional middle and last name and three address lines; the `X-Client-Location` hint as before), `login`, `google`, `logout` (mobile: then forgets the tokens), `logoutAll`, `redirectToLogin`, `deleteAccount` (`DELETE /auth/account`), `profile.get` / `update`, `preferences.get` / `patch` (`tts_enabled` only). `firstName(user)` and `displayName(user)` read the profile. `client.ts` keeps only the token refresh of its old `auth` calls; `preferences` and the `UserRecord` / `PreferencesRecord` types are gone.
+    - **Screens:** Register asks for first name (required), middle and last name and the address lines; Login and Register match errors on `detail.code` (`invalid_credentials`, `too_many_attempts`, `email_taken`, `registration_closed`, `registration_unavailable`). The header, the welcome screens and the conversational onboarding take the name from the profile. AuthContext holds `CurrentUser`.
+    - **Account settings** (`pages/AccountSettings.tsx`, `screens/AccountSettings.tsx`), from the header's account menu, for parents and admins: edit the names and address (only changed fields are sent; an emptied optional one is cleared), and "Sign out of all devices" with a confirmation, then back to sign-in.
+    - **`httpErrorMessage`** gained `codeMessages` (matched on `detail.code` first) and shows the service's own `detail.msg`, or a 422's first problem without pydantic's "Value error, " prefix, instead of the raw JSON.
+    - **`last_visited_path`** is no longer written (AuthContext, `useStartOver`).
+    - **Local:** the web dev server's `/api` proxy now targets the gateway on 8088 (`API_PROXY_TARGET` overrides it), and `frontend-app/.env.example` has `API_URL=http://localhost:8088`. From here the apps need the split stack; the screens still on today's API fail against it until they move (Home's children list asks `sort=-created_date`: 7.4).
+    - **Checked locally:** both apps' typecheck, ESLint (0 errors), Prettier; the web build; mobile jest 31 passed (9 new in `src/__tests__/account.test.ts`). In the web app against the compose `split` stack: registered with names and an address, the header showed the profile's initials, Account settings showed the registered profile and saved a new last name (the header followed), "Sign out of all devices" returned to sign-in, and signing in again worked.
+    - **The Docker quick start's `frontend` container** now sends `/api/*` to the gateway too: `frontend/nginx-start.sh` renders `API_UPSTREAM` (default `gateway:8080`, compose's `FRONTEND_API_UPSTREAM`) into both nginx configs, and the container waits for the gateway. Checked: both config paths render `proxy_pass http://gateway:8080`, `/api/health` comes from shared through it, and a sign-up at `localhost:5173` landed on Home with the profile's initials; hadolint and shellcheck are clean.
+    - **Not done:** the mobile app wasn't run in a simulator; admin screens still show `full_name` (7.3).
 - [ ] **7.3 Admin screens.** Needs: 7.1, 3.4.
   - `AdminAllowedEmails.tsx` (web), `Admin.tsx` (mobile):
     - accounts list;
@@ -859,11 +877,64 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
     - allow-list list, `POST …/search`, add, and delete by `key`.
   - **New role control** (parent / admin), `PATCH /auth/accounts/{id}/role`, showing `409 last_admin`.
   - **Check:** no email in any request URL (asserted in a test).
+  - **As built** (both apps):
+    - **`src/api/admin.ts`**, the same code in both apps, on the generated clients:
+      - `accounts.list`, `search` (POST, the email in the body; null for a 404), `lock`, `unlock` and `setRole`, each by id with the account's `?location=`;
+      - `names(ids)`: one `GET /users/profiles?ids=…` per page, nothing for an empty page;
+      - `allowedEmails.list`, `search`, `add` and `remove(key)`;
+      - `nameOf(name)`, and `ADMIN_ERRORS`, matched on `detail.code`: `last_admin`, `cannot_lock_self`, `account_deleting`, `account_changed`, `already_allowed`, `invalid_email`.
+      - The old `api.admin` calls and the `AdminUserRecord`, `AdminUsersPage`, `AllowedEmailRecord` and `AllowedEmailsPage` types are gone.
+    - **Screens:**
+      - The users list and the lookup show the profile's name, or just the email when there's none.
+      - The allow-list shows each entry's `email_hint` and date, since raw emails aren't returned any more.
+      - The new role control is a Parent / Admin select on the web, and a "Make admin" / "Make parent" button on mobile. Each asks for confirmation, and the confirmation says the account will be signed out.
+      - The confirmation dialogs keep their target while they close, so the text no longer blanks mid-animation.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, plus the web build.
+      - Mobile jest: 36 passed. The 5 new tests in `src/__tests__/admin.test.ts` include "never put an email in a request URL": both searches and the add are POSTs with the email in the body, and no URL contains it.
+      - The web app against the compose `split` stack, as a local admin with a second, parent account:
+        - the allow-list showed hints, and its lookup found the entry;
+        - the users list showed names;
+        - lock and unlock worked;
+        - making the parent an admin and back worked;
+        - demoting the only admin showed the last-admin message.
+      - None of the 24 API calls in that walk had "@" in its URL.
+    - **Not done:** the mobile app wasn't run in a simulator.
 - [ ] **7.4 Home and children.** Needs: 7.1, Gate 4.
   - Child updates send only profile fields. Home reads `progress.{profile, conversation, discover, grow, transform, release, connect}`.
   - Avatar: upload with `avatar/presign`, then PATCH the `avatar_key`; show the 5 MB limit. Sort by `-created_at`.
   - Remove every `markProgress(...)` call.
   - **Check:** Home and the child profile step in dev.
+  - **As built** (both apps):
+    - **`src/api/children.ts`**, the same code in both apps, on the generated client:
+      - `list(sort = '-created_at', limit)`, `get`, `create(ChildIn)`, `update(id, ChildPatch)` and `remove`. Only the child's own fields go out: name, age, gender, school and `avatar_id` / `avatar_key`.
+      - `uploadAvatar(id, photo, contentType)`: presign, then a PUT to S3 with the signed Content-Type, then a PATCH of `avatar_key`.
+      - `avatarProblem(type, size)` refuses anything other than JPEG, PNG, WebP or GIF, or over 5 MB, before any call. `CHILD_ERRORS` is matched on `detail.code` (`child_limit`, `avatar_too_large`, `avatar_not_uploaded`, `unsupported_image_type`, …).
+      - In `client.ts`, `entities.Child` keeps only `get`, `create` and `update` for the circle screens that move in 7.5–7.7. `list`, `delete`, `markProgress` and `uploadAvatar` are gone, and `ChildRecord`'s six flags are replaced by `progress`.
+    - **Profile step** (`pages/Onboarding.tsx`, `screens/Onboarding.tsx`):
+      - A new child is created in one POST with its fields; an existing one gets one PATCH, and an emptied school is cleared. An emoji avatar is saved with the fields. A photo is uploaded afterwards; if the upload fails, the profile stays saved and a message says why.
+      - Children sets `progress.profile` itself.
+      - The form shows "JPEG, PNG, WebP or GIF, up to 5 MB" and refuses other photos when they're picked.
+      - The age range is now 8–25: the API refuses ages over 25.
+    - **Home, ChildCard, the journey hub:**
+      - Home lists by `-created_at`.
+      - `ChildCard`'s "Completed" badge reads `progress.conversation`.
+      - `PersonalityJourney` reads each circle's state from `progress.*`.
+      - `useStartOver` deletes through `children.remove`.
+    - **No `markProgress` call is left** (profile step, the discover reveal, Life Pathway, Observations, Connect). Until their tasks land, discover isn't recorded (`…/personality/viewed`, 7.5) and connect isn't recorded (`…/connect/visit`, 7.7). Grow, transform and release are set by the services.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, plus the web build.
+      - Mobile jest: 42 passed. The 6 new tests in `src/__tests__/children.test.ts` cover the sort, profile-only bodies, the presign → PUT → PATCH `avatar_key` flow, the 5 MB and type refusal with no call made, `child_limit` and delete.
+      - The web app against the compose `split` stack, with a new parent:
+        - Home called `?sort=-created_at` (200);
+        - a 6 MB photo was refused in the form;
+        - the profile step created the child, and the photo went presign → S3 PUT → PATCH;
+        - the child came back with `progress.profile: true`, and its `avatar_url` served the PNG;
+        - reopening the child prefilled the form; choosing an emoji avatar and a school saved them and cleared the photo;
+        - Home showed "Continue Your Journey";
+        - delete gave `404 child_not_found` afterwards.
+      - The photo PUT from the dev server on port 5199 needed that origin in Moto's CORS rule (`CORS_ORIGINS=… python scripts/local-aws-setup.py`); it was reset afterwards. The default origins (5173, 8080) already work.
+    - **Not done:** the mobile app wasn't run in a simulator. The Docker `frontend` image wasn't rebuilt, so it still serves the old code.
 - [ ] **7.5 Onboarding and discover.** Needs: 7.4, 5.2.
   - **Onboarding chat:** answers stay in the app; one `PUT …/onboarding` with all seven at the end; `GET …/onboarding` on opening; no personality job started by the client.
   - **Discover:**
@@ -872,10 +943,87 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
     - the reveal splash calls `POST …/personality/viewed`;
     - remove `adaptAiPersonalityToViewModel` (`components/shared/PersonalityAnalysis.tsx`) and the personality `Child.update`.
   - **Check:** the chat → personality → reveal flow in dev on both apps.
+  - **As built** (both apps; `api/onboarding.ts`, `api/discover.ts` and `hooks/useJourney.ts` are the same code in both):
+    - **`api/onboarding.ts`:**
+      - `get` and `save` (one PUT with the seven answers).
+      - `draft(childId)`: the child's own fields plus the saved answers, which the chat resumes from. A locked or failed read just starts the chat from the top.
+      - `answersFrom(collected)`: the seven answers, trimmed, with comma lists split; null while one is missing.
+      - `ONBOARDING_ERRORS`.
+    - **`api/discover.ts`:**
+      - `personality`, `generate`, `job`, `viewed`, and `viewModelOf` (the view model only when `ready`).
+      - `settlePersonality(childId, {retry, signal})` waits for `ready` or `failed`. It starts a generation on `not_started`, or after `failed` only when it's a retry; `409 already_generated` just reads the result. It polls the job while `generating`, stops when the page goes away, and times out after 5 minutes.
+      - `DISCOVER_ERRORS` (`llm_limit`, `circle_locked`, `personality_not_ready`, …).
+    - **Chat** (`ConversationalOnboarding` page and component):
+      - The answers stay in the app. At the end, one PUT, then the Personality Journey.
+      - A failed save shows the service's message with "Try again", which re-sends the same answers.
+      - A finished chat reopens with its seven answers in the summary. "Continue" re-sends them: `200` and nothing changes.
+      - No `Child.update`, `onboarding_phase`, `onboarding_completed` or personality job.
+    - **Journey hub** (`PersonalityJourney`, through `useJourney`):
+      - It reads the child (progress) and the personality together, and shows "Preparing …'s profile" while discover generates.
+      - `circle_locked` sends the parent back to the chat; `404` goes Home; a failure shows its message with "Try again" (a retry).
+      - The reveal splash calls `POST …/personality/viewed` before opening the profile.
+      - Transform unlocks on `progress.grow` alone. The hub's second check through `api.completedGrowthAreas.list` (today's API) is gone: against the split stack that call is `401`, and the old client then signs the parent out.
+    - **Profile** (`PersonalityProfile`): the child from children, the view model from discover. It goes back to the hub until the personality is `ready`.
+    - **Removed:**
+      - `adaptAiPersonalityToViewModel` (with `PERSONALITY_TYPE_KEYS`);
+      - `buildPersonalityAnalysisPrompt` (the other prompts stay for 7.6–7.7);
+      - `lib/llmSchemas.ts` and `lib/personalizedDescriptionOneLiner.ts` (discover's `one_liner` does this now);
+      - `stripViewModelImages` and `sanitizeViewModelAvatars` (the profile draws each famous person from their name);
+      - the unused `mergedData` prop of the circles screen.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, the web build, and `sync-api-clients --check`.
+      - Mobile jest: 49 passed. The 7 new tests in `src/__tests__/onboarding-discover.test.ts` cover the seven answers, the one PUT, resuming with and without saved answers, start → poll → ready, no restart after a failure without a retry, abort, and `viewed`.
+      - The web app against the compose `split` stack, with a real LLM provider:
+        - before the chat, the hub sent the parent to the chat;
+        - the chat ended in one PUT (`201`) and the hub;
+        - the hub's POST returned the job discover had already started (`200`) and polled it, then the orb turned interactive (`ready`) in about 20 seconds;
+        - the circles showed Discover lit and Grow locked;
+        - the reveal led to the profile, `viewed_at` was set, and `progress.discover` and `progress.conversation` were true;
+        - the profile's results rendered;
+        - reopening the chat showed the 7 saved answers, and "Continue" gave `200` with no new generation;
+        - no call went to `/jobs` or `/user/*`.
+    - **Found:**
+      - **Today's-API calls sign the parent out against the split stack:** their `401` makes the old client refresh, then sign out. The Grow, Transform and Release screens still make them until 7.6–7.7.
+      - **`frontend-app/jest.setup.ts`'s `console.warn` spy calls itself,** so any test whose code warns overflows the stack. The new test silences warn where it expects one.
+    - **Not done:** the mobile app wasn't run in a simulator.
 - [ ] **7.6 Grow.** Needs: 7.5, 5.3.
   - `completedGrowthAreas.list` / `append` → `GET …/growth-areas` / `PUT …/growth-areas/{area_id}`.
   - Questions, rounds and recommendations via `POST …/{area_id}/generation` with `kind`, polling the job; no `pending_recommendations` step. Delete `completedGrowthAreas.clear`.
   - **Check:** a growth area from start to completion in dev.
+  - **As built** (both apps; `api/grow.ts`, `api/polling.ts` and `hooks/useGrowthAreaQuestions.ts` are the same code in both):
+    - **`api/grow.ts`:**
+      - `list`, `save` (the PUT), `generate` (a `kind`, plus `area_name` for a new area's questions) and `job`.
+      - `areaSave(stored, name, changes)` builds each save from the stored area with the change on top. Grow's PUT replaces every saved field (its body's defaults included), so a save that left one out would clear it. A completed area stays completed.
+      - `runGrowGeneration` starts or joins a generation and polls its job. `409 already_generated` counts as done.
+      - `GROW_ERRORS`.
+      - `api/polling.ts` holds the polling `pause` (now shared with discover) and `isAbort`.
+    - **`useGrowthAreaQuestions`:**
+      - It generates both question sets through grow and reads them back from the area. Grow creates the area itself with the first question set, so `ensureAreaDoc` is gone.
+      - The rounds are grounded in the saved answers on the server, so the client builds no prompt context.
+      - Its caches, its one-generation-per-stage queue, its retry and its progress notes stay as they were.
+    - **Growth Areas page:**
+      - It loads the child (children) and the areas (grow) together. `circle_locked` (Discover not done) sends the parent to the journey.
+      - Every write is a full-area PUT built with `areaSave`, and the page keeps each response.
+      - Finishing the answers saves them, then generates the rounds. Finishing the rounds saves the picks (`child_activity.selections`), generates the recommendations, shows them, then completes the area: grow's first completion sets `progress.grow` and unlocks Transform.
+      - No `pending_recommendations`, `interactive_answers` or `child_activity_selections`.
+    - **Removed:**
+      - `completedGrowthAreas.append` and `.clear` (`list` stays in `client.ts` for the Transform and Release screens until 7.7);
+      - `lib/growthQuestionsPrompt.ts` and `buildGrowthAreaRecommendationsPrompt`;
+      - the web's unused `RecommendationsPhase.tsx` and `ChildActivityGame.tsx` (nothing imported them; the proposal lists them for deletion).
+    - **`frontend-app/jest.setup.ts`:** its `console.warn` spy now calls the real warn saved before it, instead of itself.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, the web build, and `sync-api-clients --check`.
+      - Mobile jest: 55 passed. The 6 new tests in `src/__tests__/grow.test.ts` cover the full-area save (stored fields kept, completed stays completed, no generated field sent), list and save paths, kind and name with no prompt, polling, a failed job, `already_generated`, and `llm_limit` passed on.
+      - The web app against the compose `split` stack, with a real LLM provider, for the 7.5 walk's child:
+        - opening Self Care generated its five questions, written for the child (`202`, then polled);
+        - reopening it reused them;
+        - Finish saved the answers (`PUT 200`) and generated six rounds built from them;
+        - after the six picks: `PUT` of the selections, recommendations generated and shown, then the completing `PUT`;
+        - stored afterwards: 5 questions, 5 answers, 6 rounds, 6 selections, 5 recommendations, `completed`, `completed_at`, `step: null`;
+        - `progress.grow` was true;
+        - after a reload, the area opened straight into its result with no generation;
+        - no call went to `/jobs` or `/user/*`.
+    - **Not done:** the mobile app wasn't run in a simulator. `llm_limit` shows as a failed stage with "Try again", not its own message (7.8).
 - [ ] **7.7 Transform, release and connect.** Needs: 7.6, 5.4, 5.5, 5.7.
   - **Transform:**
     - one `GET …/transform`;
@@ -885,10 +1033,79 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
   - **Release:** `GET` / `PATCH …/observations`; "Start tracking" sends `watching` and `span`; patterns via `POST …/observations/generation`; no `release_visited`.
   - **Connect:** `POST …/connect/visit`.
   - **Check:** Release unlocks only after the plan and event are done; Connect only after a pattern is watched.
+  - **As built** (both apps; the `api/` modules and the Transform hooks are the same code in both, apart from mobile's photo picker and toast import):
+    - **`api/transform.ts`:**
+      - `get`, `patch` (fields replace the stored ones; `photos` by key, per field key), `generate` (`kind`, plus `area_id` for `life_pathway`) and `job`.
+      - `uploadPhoto(childId, fieldKey, photo, contentType)`: presign, then the S3 PUT. It returns `{key, url}`; the caller saves the key with the others in its PATCH.
+      - `runTransformGeneration` and `TRANSFORM_ERRORS`.
+    - **`api/release.ts`:** `get`, `watch(watching, span)`, `generate`, `job`, `runObservationsGeneration` and `RELEASE_ERRORS`.
+    - **Connect:** `children.visitConnect` (`POST …/connect/visit`).
+    - **`api/polling.ts`** gained `runJob(start, poll)`, the one start-then-poll loop that grow, transform and release now share. `hooks/useUnmountSignal.ts` aborts a page's polls when it unmounts (and makes a new signal on a remount).
+    - **Life Pathway** (`useLifePathwayData`, `useLifePathwayArea`):
+      - The child (children), the personality (discover) and the completed areas with their milestones come from one transform GET.
+      - Milestones are generated per area with `life_pathway` and read back from that GET.
+      - The client builds no prompt context; the page's 90-day moves read each area's recommendations from the same GET.
+    - **The 90-day plan** (`useNinetyDayPlan`, `StartJourneyModal`):
+      - Every save is a PATCH through the same debounced buffer, now typed as `PlanPatch`.
+      - `generatePlan` and `generateTrackSteps` first flush the pending save, since transform builds the prompts from the saved `ask` and event, then run `plan` or `event_tracker` and read the plan back. A generation found running on load is joined.
+      - Photos are kept as `{key, url}`, and only keys are saved.
+      - The tracker isn't retried automatically after a failure.
+      - The modal's `childData` and `profile` props are gone.
+    - **Observations:**
+      - The page reads the child and release's document together.
+      - It generates on `not_started` (or joins a running generation), shows `failed` with "Try again", and shows the empty state for `needs_evidence`.
+      - "Start tracking" sends only `watching` and `span`.
+      - The client-side evidence, prompt, `pending_observations` promote and `selectObservations` call are gone.
+    - **Connect** records the visit on opening. `circle_locked` (Release not done) sends the parent back to the journey, as Observations and Life Pathway do for theirs.
+    - **Backend, transform:** the GET's areas now carry `recommendations` and `ai_three_month_recommendations` from transform's `growth_inputs` copy. The page's 90-day moves need them, and the API says this page reads transform's copies rather than grow. The spec and both apps' clients were regenerated, and the test and the API doc's example were updated.
+    - **Fixed, found in the walk:** `serviceFetch` skipped the refresh for every `/api/v1/auth/*` path, so the app opening with an expired access token signed the parent out (`/auth/me` was `401` with no refresh). Only login, register, google, refresh and logout skip it now. A mobile test covers `/auth/me`.
+    - **Removed:**
+      - `lib/prompts.ts`, `lib/lifePathwayPrompt.ts` and `lib/ninetyDayPlanPrompt.ts`, and mobile's `components/observations/evidence.ts`;
+      - from `client.ts`: `completedGrowthAreas`, `observations` and `ninetyDayPlan`;
+      - from `types/api.ts`: `CompletedArea`, `StoredRecommendation`, `CompletedGrowthAreasRecord`, `NinetyDayPlanRecord` and `ObservationsRecord`.
+      - Left for 7.9: `useJob` (only its `jobProgressMessage` is still used), `client.ts`'s `jobs` and `entities`, the unused `useOnboardingComplete`, and `observationsData.ts`'s unused `selectObservations`, `observationsLlmSchema` and `SELECTABLE_ICON_KEYS`.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, the web build, and `sync-api-clients --check`.
+      - transform's tests: 74 passed, coverage 100%, ruff and mypy clean.
+      - Mobile jest: 62 passed. The 6 new tests in `src/__tests__/transform-release.test.ts` cover the PATCH fields, photo upload (key and URL, no save), generation by kind with an area, failed jobs, watching with only `watching` and `span`, observations generation with no body, and the Connect visit. There's also the new `/auth/me` refresh test.
+      - The web app against the compose `split` stack, with a real LLM provider, for a new parent whose child was brought through chat, discover and one growth area by the app's own modules:
+        - Connect and Observations sent the parent back to the journey while locked;
+        - the Life Pathway generated and showed the area's milestones, and month one's move came from the stored recommendation;
+        - "Start 90 days" (Ask "Drawing", the mock checkout's express Pay) saved the ask and generated the plan;
+        - setting the Day-90 event generated a 9-step tracker and completed Transform (`completed_at`, `progress.transform`);
+        - a plan photo went presign → PUT → PATCH by key; a second one kept both, the URL served the image, and removing one kept the other;
+        - Observations generated six patterns from release's copies; ticking two and "Start tracking" saved them with `1 month` and `started_at`, setting `progress.release`;
+        - opening Connect set `progress.connect`, so all seven flags were true;
+        - no call went to `/jobs` or `/user/*`.
+      - The transform containers were rebuilt from cache for the walk. The photo PUT from port 5199 needed that origin in Moto's CORS, which was reset afterwards.
+    - **Not done:** the mobile app wasn't run in a simulator. The other backend images weren't rebuilt (none changed).
 - [ ] **7.8 Shared features.** Needs: 7.1, 5.6.
   - Voice input: `POST /speech/transcriptions` (response field `transcript`). APK download unchanged.
   - Generation, every circle: handle `429 llm_limit` and `409 already_generated`.
   - **Check:** voice input works in every circle that has it.
+  - **As built:**
+    - **Voice input** (web): `api/speech.ts`.
+      - `speech.transcribe(audio, filename)` posts the recording as multipart `audio` to `POST /api/v1/speech/transcriptions` through shared's generated client (a `bodySerializer` returns the `FormData`, so the browser sets the boundary) and returns `transcript`.
+      - `SPEECH_ERRORS` covers `audio_too_large`, `unsupported_audio_type`, `transcription_unavailable` and `transcription_not_configured`.
+      - `components/shared/VoiceInput.tsx` uses it for its MediaRecorder path, the one browsers without `webkitSpeechRecognition` take. It sits behind `ChatInputBar`, `InputWithVoice` and `TextareaWithVoice`, so it's the same in every circle.
+      - The mobile app recognises speech on the device and never uploaded. Its unused `api.audio.transcribe` is gone, as is the web's.
+    - **APK download:** unchanged (`services.shared`, 7.1).
+    - **Generation errors, every circle:**
+      - `409 already_generated` counts as done: discover's `settlePersonality` and grow's `runGrowGeneration` read the stored part. Transform and release don't generate anything once-only.
+      - `429 llm_limit` shows its own message wherever a generation can fail:
+        - the journey hub;
+        - grow's recommendations, and now its question and round stages, which still offer "Try again";
+        - the Life Pathway milestones, which still fall back to the template copy;
+        - the plan and the tracker;
+        - Observations.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors) and Prettier, the web build, and `sync-api-clients --check`; mobile jest 62 passed (`llm_limit` is passed on by the grow tests).
+      - In the web app against the split stack, through `speech.ts`: a generated one-second WAV came back `200` with a transcript, and a `.txt` name gave `415 unsupported_audio_type` with its message.
+      - The 7.7 walk's parent stayed signed in on reopening the app after the access token had expired (the 7.7 refresh fix).
+    - **Not done:**
+      - the MediaRecorder path wasn't driven with a real microphone: the browser pane takes the `webkitSpeechRecognition` path;
+      - the mobile app wasn't run in a simulator;
+      - `llm_limit` wasn't triggered live (the limit is 200 an hour).
 - [ ] **7.9 Remove old client code.** Needs: 7.2–7.8.
   - Delete:
     - `lib/*Prompt.ts` and `lib/prompts.ts` in both apps;
@@ -897,6 +1114,52 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
     - `InvokeLLM`;
     - every client method for a removed path.
   - **Check:** both apps build; a search finds no call to `/user/`, `/admin/`, `/jobs`, `/llm/` or `/audio/`.
+  - **As built** (both apps):
+    - **Already gone with their tasks:** `lib/prompts.ts` and every `lib/*Prompt.ts` (7.5–7.7), the web's `RecommendationsPhase.tsx` and `ChildActivityGame.tsx` (7.6), and the clients for `/user/*` (7.6–7.7), `/admin/*` (7.3) and `/audio/*` (7.8).
+    - **`api/client.ts`** keeps only what the generated clients share: the token refresh (`ensureRefreshed`, `api.auth.silentRefresh`), `resolveAuthExpiry` and `dispatchAuthExpired` (on mobile also `tokenStore` and `captureTokens`).
+      - Gone: `integrations.Core.InvokeLLM` (`/llm/invoke`), `jobs` (`/jobs`), and `entities.Child`.
+      - Gone on mobile: the old `request()`, which nothing called any more.
+    - **Deleted:**
+      - `hooks/useJob.ts`, with its prompt and `write_back` payload. Its progress wording moved to `lib/jobProgress.ts`, keyed by the APIs' generation `kind`;
+      - the unused `hooks/useOnboardingComplete.ts`;
+      - `lib/onboardingHelpers.ts` (the old child draft);
+      - `lib/llmUtils.ts` (InvokeLLM's unwrapping);
+      - `types/api.ts` (`ChildRecord` and the job types), with its line in `types/index.ts`.
+    - **Trimmed:**
+      - `lib/onboardingChildData.ts` keeps only what the chat's resume uses; the old child-record mappers are gone.
+      - `lib/observationsData.ts` keeps the icons, the provenance copy and the stored-set check. `selectObservations`, `observationsLlmSchema` and `SELECTABLE_ICON_KEYS` are gone, since release selects and validates on the server, and its comments now say so.
+    - **Guard:** `frontend-app/src/__tests__/removedPaths.test.ts` scans both apps' sources (outside `generated/` and the tests) for a string that starts with `/user`, `/admin`, `/jobs`, `/llm` or `/audio`, with or without `/api/v1`, and fails on one. Its own cases show that asset paths (`../../assets/audio/…`) and `/api/v1/users/…` don't match. It runs with mobile jest, in `check.sh` and in CI, which check out the whole repo.
+    - **Checked locally:**
+      - Both apps' typecheck, ESLint (0 errors; mobile warnings 102 → 100) and Prettier, the web build, and `sync-api-clients --check`.
+      - Mobile jest: 65 passed.
+      - The same search by hand finds nothing.
+      - In the web app against the split stack, for the 7.7 walk's child: Home, the journey hub, the profile, Growth Areas, the Life Pathway, Observations and Connect each loaded with every call `200` and no sign-out.
+    - **Unused-code cleanup** (2026-10-31, right after 7.9): every file nothing imports and every export nothing uses, found by scanning both apps' sources plus their entry points (`main.tsx`, `App.tsx`, `index.js`, `jest.setup.ts`). The scan was repeated until it came up empty.
+      - **Files deleted, both apps:**
+        - `components/shared/InputWithVoice.tsx` and `PageActions.tsx`;
+        - `components/shared/PersonalityAnalysis.*` (its archetype table now lives in discover, `PERSONALITY_TYPES`);
+        - `lib/insightsUtils.ts`;
+        - `types/common.ts` and the `types/index.ts` barrel.
+      - **Files deleted, web only:**
+        - `components/onboarding/OnboardingProgressHeader.tsx`;
+        - 33 unused shadcn `components/ui/*` files: accordion, alert, aspect-ratio, avatar, badge, breadcrumb, checkbox, collapsible, context-menu, dropdown-menu, form, hover-card, menubar, navigation-menu, pagination, popover, progress, radio-group, scroll-area, select, separator, sheet, sidebar, skeleton, slider, switch, table, toast, toaster, toggle, toggle-group, tooltip, use-toast.
+      - **Files deleted, mobile only:** `lib/authPaths.ts`, `lib/notifications.ts` and `utils/index.ts`.
+      - **Exports removed:**
+        - `FADE_IN` and `PAGE_SLIDE` (`lib/animations.ts`);
+        - `CHART_BAND_COLORS` (`lib/gradientColors.ts`);
+        - `areaByUrlName`, `areaById`, `AREA_QUESTIONS`, `ICON_KEYS` and `recommendationsToLines` (`lib/growthAreaData.ts`);
+        - `FB_ACK` (`lib/startJourneyPlans.ts`);
+        - on mobile, `unlockIOSSpeechSynthesis` and `pickPreferredVoice` (`lib/tts.ts`), and `DialogTrigger` and `DialogClose` (`components/ui/dialog.tsx`).
+        - The declarations were cut with the TypeScript parser, each with the comment directly above it.
+      - **Web dependencies removed** (only the deleted `ui/` files used them): `@hookform/resolvers`, `react-hook-form` and 22 `@radix-ui/react-*` packages (accordion, aspect-ratio, avatar, checkbox, collapsible, context-menu, dropdown-menu, hover-card, menubar, navigation-menu, popover, progress, radio-group, scroll-area, select, separator, slider, switch, toast, toggle, toggle-group, tooltip). That's 85 packages out of `node_modules`. `npm uninstall --offline` was used, so nothing was downloaded, and `npm ls` is clean.
+      - **Kept on mobile:** `@babel/runtime`, `expo-modules-core` and `react-native-screens`, which nothing imports by name but the build and react-navigation need.
+      - **Comments updated:** `lib/lifePathwayData.ts` (archetype keys now point at discover), and discover's `personality.py` docstring (the apps held the table; it's gone from them).
+      - **Checked:**
+        - both apps' typecheck, ESLint (0 errors; mobile warnings 100 → 11, most were in the deleted files) and Prettier;
+        - the web build, and mobile jest (65 passed);
+        - ruff on the touched backend file.
+        - A web smoke walk against the split stack had no API error: Home, Account settings, the circles, a completed growth area's sheet, and the 90-day modal.
+    - **Not done:** the mobile app wasn't run in a simulator. Gate 7 also asks for every journey against dev, not only locally.
 
 **Gate 7:** both apps pass lint, typecheck and tests, and complete every journey against dev.
 
@@ -926,6 +1189,14 @@ Start alongside Phase 3 and follow the backend: each client task needs its servi
   - Remove the old `backend`, `worker`, `auth` and `admin` ECS entries.
   - Update the current-code docs (`infra-operations.md`, `aws-resources.md`, `aws-cost-estimate.md`, `api.md`, `tests.md`) to describe the new services.
   - **Check:** `./check.sh` passes with no reference to the removed paths.
+  - **As built locally (2026-10-31), ahead of 8.1:** `./check.sh` passes (110 checks, with the live tests); not ticked until 8.1 is done.
+    - Deleted `backend/app/`, `backend/worker.py`, `backend/tests/`, `backend/requirements.txt`, `backend/.env.example`, the root `openapi.json`, `hello` (its service, spec and `hello.pinged` event) and mutation testing (`tools/mutate_handlers.py`, `handler_mutants/`, `requirements-mutation.txt`, `docs/mutation-testing.md`).
+    - Compose has no `backend` or `worker` service and no `split` profile: `docker compose up -d --build` starts the services, the gateway and the frontend (Moto keeps its `moto` profile). The gateway has one config, `local/gateway/nginx.conf`, with no fall-through: an unmatched path gets the fixed 404.
+    - `sync-routing.mjs` no longer writes `routing_data.py`. `tools/atlas_zone_ranges.py` prints one script per service database, and `tools/tests/test_atlas_zone_ranges.py` checks its collection table against each service's code (the services have `store.py`, not `db.py`).
+    - `backend/requirements-dev.txt` is the union of the services' pins, for the dev venv; a test keeps it exact. `common/tests` and `tools/tests` are the shared test suites; `backend/Dockerfile` requires `SERVICE`.
+    - check.sh and CI scan every service's image (trivy, dockle, one SBOM per service). CI's DAST job starts the compose stack and runs nuclei through the gateway; nuclei stays commented out in check.sh. The deploy workflow's `build_from` input is gone.
+    - `CORS_ORIGINS` is gone from compose, `.env.example` and the ECS environment: no service reads it, and CloudFront's response headers policy is the only CORS source.
+    - The old `backend`, `worker`, `auth` and `admin` ECS entries were already gone (2.5). The current-code docs describe the services.
 
 **Gate 8:** all of 8.1–8.6 ticked.
 
@@ -1177,4 +1448,13 @@ Record decisions taken during the build here, with the date, so the plan and the
   - **e2e convergence (purge):** registration answered `429`: the e2e runs back to back registered more than 5 accounts a minute from one address. `stack.register()` waits out the `Retry-After`. Error output now redacts each refused field's `input` (a 422 echoes the password).
   - **Dockerfile:** building the buddy-common wheel fetched setuptools from PyPI without the cache, and release kept failing there; that step now uses the same pip cache mount and timeouts. hadolint, trivy (image) and dockle pass on it.
   - Re-run: the three e2e scripts back to back passed (full journey 67 s, account deletion 29 s, convergence 116 s).
-
+- 2026-10-28: 7.1 built (as-built notes under 7.1): typed clients for every service in both apps, generated from the specs, with one screen in each app switched as the proof. Next in Phase 7: 7.2 (sign-in and account) and 7.3 (admin screens), which can run side by side.
+- 2026-10-28: 7.2 built (as-built notes under 7.2): sign-in, the profile name, preferences and a new Account settings screen in both apps, on the auth and users services. The apps now run against the split stack (the gateway on 8088).
+- 2026-10-31: 7.3 built (as-built notes under 7.3): the admin screens in both apps are on auth and users. Accounts and the allow-list are looked up by POST, so no email goes in a URL. Names come from users, and there's a new parent / admin role control. Next in Phase 7: 7.4 (Home and children).
+- 2026-10-31: 7.4 built (as-built notes under 7.4): Home and the child profile step in both apps are on the children service. Updates send only profile fields, photos are saved by `avatar_key` with the 5 MB limit shown, and progress is read from `progress.*`. No `markProgress` call is left. Next in Phase 7: 7.5 (onboarding and discover).
+- 2026-10-31: 7.5 built (as-built notes under 7.5): the chat saves its seven answers in one PUT to onboarding. Discover generates the personality on its own and builds its view model on the server; the hub waits for it, and the reveal records `viewed`. The client-side adapter, prompt and LLM schema are gone. Until 7.6–7.7 land, the Grow, Transform and Release screens' today's-API calls sign the parent out on the split stack. Next in Phase 7: 7.6 (grow).
+- 2026-10-31: 7.6 built (as-built notes under 7.6): Growth Areas in both apps is on grow. Grow generates the questions, rounds and recommendations from a `kind`, and every save is the full area. The client prompts for grow and the web's unused onboarding recommendations components are gone. `jest.setup.ts`'s recursive warn spy is fixed. Next in Phase 7: 7.7 (transform, release and connect).
+- 2026-10-31: 7.7 built (as-built notes under 7.7): the Life Pathway, the 90-day plan, Observations and Connect in both apps are on transform, release and children, and the client prompts and evidence builders are gone. Transform's GET now returns each area's recommendations. Found in the walk and fixed: an expired access token on `/auth/me` signed the parent out instead of refreshing. Every circle now runs end to end on the split stack. Next in Phase 7: 7.8 (shared features).
+- 2026-10-31: 7.8 built (as-built notes under 7.8): the web's voice input posts to `/speech/transcriptions` on shared, and every circle shows `llm_limit` and treats `already_generated` as done. Also this session: the 7.7 as-built notes, which hadn't been saved with that task, were added. Next in Phase 7: 7.9 (remove old client code).
+- 2026-10-31: 7.9 built (as-built notes under 7.9): neither app has code for a removed path any more. `useJob`, `InvokeLLM`, the old job and child types and the client-side observation selection are gone, and a mobile test guards against the removed paths coming back. Phase 7's tasks are done; Gate 7 still needs both apps' journeys against dev (and the mobile app run on a device or simulator).
+- 2026-10-31: 8.6 built locally ahead of 8.1 (as-built notes under 8.6): the old backend, hello and mutation testing are gone, compose starts the services with no profile, and CI scans every service's image and runs nuclei against the compose stack. `./check.sh` passes; not ticked until 8.1 is done. Also: every testkit pins `APP_ENV` (a CI-set value had hung auth's deletion test), and frontend-app's React Navigation (7.5) and the `node-forge`/`joi` resolutions clear new HIGH advisories. The plan's earlier mentions of today's backend are history.

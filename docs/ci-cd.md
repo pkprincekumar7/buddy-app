@@ -12,33 +12,36 @@ Thirteen workflows live under [`.github/workflows/`](../.github/workflows/). Dep
 | `terraform-live-backend.yml` | Manual / called | VPC, ECS, ALB, Valkey, ECR, Cloud Map, SNS/SQS, Secrets Manager — applied once per region (`aws_region` input: `ap-south-1` / `eu-west-1` / `us-east-1`). On an apply it fills each service's secret the first time (`scripts/fill-service-secrets.sh`) |
 | `terraform-live-frontend.yml` | Manual / called | S3 bucket policy for frontend assets (always `us-east-1`) |
 | `terraform-live-edge.yml` | Manual / called | CloudFront distribution, WAF, Lambda@Edge JWT validator, DNS (always `us-east-1`); `backend_regions` input selects which regions' uploads buckets get CloudFront origins and which regions the JWT validator can route to; `bootstrap_region` input (default `auto` = first of `backend_regions`) picks the region that serves login, Google sign-in and health — consumes a pre-existing ACM cert ARN, does not create one |
-| `deploy-live-backend.yml` | Manual / called | Builds one image per selected service (`--build-arg SERVICE=<service>`; a worker runs its service's), in parallel, pushes each to that service's ECR repository in every selected region, and rolls out the selected runtimes (`service`: `all` or a comma-separated list such as `users,users-worker`) in parallel; a failed one doesn't stop the others, and the run fails naming it. The collector runs a pinned public image, so `all` skips it. `build_from` (optional) builds every image from one service's code, for placeholder images (`hello`, build plan 2.7). A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its runtimes added to the help text of the `service` input (CI checks it matches). |
+| `deploy-live-backend.yml` | Manual / called | Builds one image per selected service (`--build-arg SERVICE=<service>`; a worker runs its service's), in parallel, pushes each to that service's ECR repository in every selected region, and rolls out the selected runtimes (`service`: `all` or a comma-separated list such as `users,users-worker`) in parallel; a failed one doesn't stop the others, and the run fails naming it. The collector runs a pinned public image, so `all` skips it. A service added in `infra-live-backend/terraform/services.tf` needs no workflow logic change, only its runtimes added to the help text of the `service` input (CI checks it matches). |
 | `deploy-live-frontend.yml` | Manual / called | Builds frontend, uploads to S3, invalidates CloudFront |
 | `promote-live-backend.yml` | Manual | Promotes a verified backend image from one environment to the next (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) without a rebuild — for the selected services (`service`: `all` or a comma-separated list), all in parallel. An export job (source environment's `ROLE_ARN`) pulls the image each one runs live in the source environment, then the promote job (target's `ROLE_ARN`) pushes each into its service's repository in the target under the same tag and updates each target ECS service. The collector isn't promoted. Works across AWS accounts (e.g. stg and prod in different accounts) |
-| `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev→stg` or `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
-| `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `stg`, `prod`) |
+| `promote-live-frontend.yml` | Manual | Promotes the frontend to the next environment (`dev↔sbx`, `dev→stg`, `sbx→stg`, `stg→prod`) — reads the deployed git SHA from SSM and rebuilds with the target environment's variables (VITE_API_URL is baked into the bundle at build time, so a full rebuild is required) |
+| `build-android-apk.yml` | Manual | Builds a React Native (Expo) Android APK for the selected environment (`dev`, `sbx`, `stg`, `prod`) |
 | `build-ios-ipa.yml` | Manual | Builds a React Native (Expo) iOS IPA for the selected environment |
 | `restart-live-backend.yml` | Manual | Force-restarts ECS tasks without a new build (picks up secret rotations, env changes). `service`: `all` or a comma-separated list, resolved from the `ecs_services` SSM list; services restart in parallel. |
 
 ## Code quality workflow (check.yml)
 
-[`check.yml`](../.github/workflows/check.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has ten jobs. `backend-lint`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
+[`check.yml`](../.github/workflows/check.yml) runs on pushes and pull requests targeting `main`, and can also be triggered manually via `workflow_dispatch` from the GitHub Actions UI. It has thirteen jobs. `backend-lint`, `backend-service-list`, `frontend-lint`, `frontend-app-lint`, `lambda-edge-test`, and `terraform-lint` start in parallel immediately; `backend-test` starts once `backend-lint` passes, and the `backend-service` matrix once `backend-lint` and `backend-service-list` pass; `backend-services` waits for the matrix; `security-scan`, `dast`, and `codeql` all start once `backend-lint`, `frontend-lint`, and `frontend-app-lint` pass; `dependency-review` runs only on pull requests and starts independently of the other jobs. A concurrency guard cancels any in-progress run for the same branch when a new push arrives, avoiding redundant CI minutes. A workflow-level `permissions: contents: read` baseline is set; individual jobs declare their own elevated permissions only when needed (`codeql` needs `security-events: write`; `dependency-review` needs `pull-requests: write`).
 
 ### `backend-lint` (Python 3.13)
 
-The install step runs `pip install -r requirements.txt -r requirements-lint.txt`, picking up `ruff` and `mypy` versions from `backend/requirements-lint.txt` — the single source of truth shared with `check.sh`. All app packages are present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`. The pip cache key covers both files so a change to either invalidates the cache.
+The install step runs `pip install -r requirements-dev.txt -r requirements-lint.txt`, picking up `ruff`, `mypy` and `import-linter` versions from `backend/requirements-lint.txt` — the single source of truth shared with `check.sh`. `requirements-dev.txt` is the union of the services' pins, so every runtime package is present when mypy runs — giving it full type resolution rather than treating third-party imports as `Any`. The pip cache key covers both files so a change to either invalidates the cache.
 
 | Step | Tool | What it checks |
 |---|---|---|
 | `ruff check` | ruff 0.11.2 | Linting — unused imports, bugbear, naming, isort, … |
 | `ruff format --check` | ruff 0.11.2 | Formatting (black-compatible, line-length 100) — fails if any file is unformatted |
-| `mypy` | mypy 1.15.0 | Static type checking of `app/` and `tools/` against real package stubs (Python 3.13, `check_untyped_defs`) |
-| Mutant lists valid | `tools/mutate_handlers.py --check` | Every hand-built mutant still matches the current source exactly once and compiles (seconds). Never runs mutation testing itself — that is manual, see [mutation-testing.md](mutation-testing.md) |
+| `mypy` | mypy 1.15.0 | Static type checking of `tools/` and `common/` against real package stubs (Python 3.13, `check_untyped_defs`); each service is type-checked in its own `backend-service` job |
+| Service tree valid | `tools/services.py --check` | Every directory under `backend/` with a `requirements.txt` is a well-formed service, and no spec in `backend/openapi/` is orphaned |
+| import-linter | `tools/import_contracts.py` | Service import boundaries: `common` never imports service code, and services never import each other (contracts generated from the services in the tree) |
+| Install common | `pip install ./common './common[generation,uploads]'` | The shared `buddy-common` package installs on its own and with each extra, the way every service image installs it |
 
 ### `frontend-lint` (Node.js 22)
 
 | Step | Tool | What it checks |
 |---|---|---|
+| API clients in sync | `scripts/sync-api-clients.mjs --check` | Both apps' typed API files (`frontend/src/api/generated`, `frontend-app/src/api/generated`) match `backend/openapi/*.json` |
 | `eslint` | ESLint (via `npm run lint`) | React/hooks rules, unused imports, security (`eslint-plugin-security`) — covers `src/**` excl. `components/ui/` |
 | `prettier --check` | Prettier (devDependency) | JS/JSX/CSS formatting across `src/**` — fails if any file is unformatted or has unsorted Tailwind classes (`prettier-plugin-tailwindcss`) |
 | `typecheck` | tsc (via `npm run typecheck`) | JSDoc type checking (`checkJs`) across `src/**` excl. `components/ui/` |
@@ -63,6 +66,8 @@ The install step runs `pip install -r requirements.txt -r requirements-lint.txt`
 | `tflint (infra-live-edge)` | tflint 0.62.1 | Same for edge infra (CloudFront / WAF / DNS) |
 | `tflint (infra-live-frontend)` | tflint 0.62.1 | Same for frontend infra (S3 bucket policy) |
 | `tflint (infra-live-scheduler)` | tflint 0.62.1 | Same for scheduler infra (EventBridge Scheduler) |
+| `tflint (modules)` | tflint 0.62.1 | Each shared module under `modules/` on its own |
+| `terraform test` | Terraform 1.16.4 | Each module's tests plus `infra-live-backend`'s wiring test, against a mock AWS provider (no credentials, nothing created) |
 
 ### `lambda-edge-test` (Node.js 22)
 
@@ -70,55 +75,71 @@ Renders `infra-live-edge/functions/jwt-validator-lambda.js.tpl` through a real `
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `node --test jwt-validator-lambda.test.js` | Node's built-in test runner | JWT validation, location-based routing (cookie/header/Bearer-token priority, mobile vs web), 401/503 fail-closed behavior, `cn`/`ru` exclusion — 14 test cases |
+| Routing data in sync | `scripts/sync-routing.mjs --check` | The generated copies of `shared/routing.json` (backend and both frontends) are up to date |
+| Gateway config in sync | `scripts/sync-gateway.mjs --check` | `local/gateway/nginx.conf` matches `shared/service-routes.json` |
+| `node --test jwt-validator-lambda.test.js` | Node's built-in test runner | JWT validation, location-based routing (cookie/header/Bearer-token priority, mobile vs web), 401/503 fail-closed behavior, `cn`/`ru` exclusion |
+| `node --test spa-rewrite.test.js` | Node's built-in test runner | The SPA-rewrite CloudFront Function |
+| `ecs-services.test.sh`, `fill-service-secrets.test.sh` | bash, against a fake `aws` CLI | The deploy / restart / promote helpers and terraform-live-backend's first-apply secret fill (no AWS access) |
+| Service lists match services.tf | `scripts/check-service-lists.sh` | The runtimes named in the deploy / restart / promote `service` input help text match `services.tf`, in `deploy_order` |
+| ShellCheck | shellcheck | The scripts above |
 
 ### `backend-test` (Python 3.13, needs: backend-lint)
 
-Runs after `backend-lint` passes. Spins up MongoDB and Redis as Docker service containers so the FastAPI app can connect to real dependencies — identical to the dev environment. A fresh RSA key pair is generated on the fly with `openssl genrsa 2048` and written to `$GITHUB_ENV` so the job never fails due to a missing secret configuration.
+Runs after `backend-lint` passes, for the shared package and the tools (each service has its own job below). Valkey runs as a service container; MongoDB 8.0 is started as a single-node replica set by `scripts/ci-start-mongo.sh` (a service container can't pass `--replSet`, and change streams and transactions need a replica set), the same way `docker-compose.yml` runs it.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| `pytest --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=99` | pytest 8.3.4 + pytest-cov 6.0.0 | All tests under `backend/tests/`, with line + branch coverage gated at 99% (currently ~99.96%). `MONGODB_TEST_URI` and `REDIS_URL` point the real-Mongo/Redis integration tests at the service containers, and `REQUIRE_LIVE_SERVICES=1` makes a skipped one fail the job instead of passing silently |
+| `pytest common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99` | pytest 8.3.4 + pytest-cov 6.0.0 | `backend/common/` and `backend/tools/` tests, with `common`'s line + branch coverage gated at 99%. `MONGODB_TEST_URI` and `REDIS_URL` point the live Mongo/Valkey tests at the instances above, and `REQUIRE_LIVE_SERVICES=1` makes a skipped one fail the job instead of passing silently |
 
 Coverage reports are printed to the job log with `--cov-report=term-missing` so uncovered lines are visible without downloading an artifact.
 
-### `dast` (needs: backend-lint + frontend-lint + frontend-app-lint)
+### `backend-service-list`, `backend-service`, `backend-services` (Python 3.13)
 
-Runs dynamic application security testing against a live backend instance. Like `backend-test`, it spins up MongoDB and Redis service containers and starts FastAPI with `uvicorn` in the background, then polls `GET /health` for up to 60 seconds before running any scan. All scan steps carry `continue-on-error: true`; a final gate step collects outcomes and fails the job after all tools complete.
+`backend-service-list` finds the services from the tree (`tools/services.py --json`), so a new service gets its job without editing the workflow. `backend-service` is a matrix with one job per service (`fail-fast: false`), each with its own Valkey container and replica-set MongoDB. Each installs only its own `requirements.txt` plus the test and lint tools (`scripts/install-backend-service.sh`), the way its image does, which proves the file is complete.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| openapi.json up to date | `backend/tools/export-openapi.py` + `git diff` | Regenerates the spec from the code and fails if the committed `openapi.json` differs — i.e. someone changed an endpoint without regenerating and committing it |
-| Spectral (OpenAPI lint) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the exported `openapi.json` against `.spectral.yaml` — every operation must declare a security scheme, have a unique `operationId`, and be tagged |
-| Nuclei (DAST) | nuclei v3.3.9 | Probes `http://localhost:8000` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
+| `mypy <service>/` | mypy 1.15.0 | The service's own code, with only its own packages installed |
+| `pytest <service>/tests --cov=<service> --cov-branch --cov-fail-under=99` | pytest + pytest-cov | The service's tests, line + branch coverage gated at 99% |
+| OpenAPI spec up to date | `tools/export-openapi.py --service <service>` + `git status` | Regenerates `backend/openapi/<service>.json` from the code and fails if the committed copy is missing or differs, i.e. someone changed an endpoint without regenerating and committing it. A service without an `app/main.py` would be skipped (every service has one today) |
+
+`backend-services` is one stable check name for branch protection: it passes only if the list job succeeded and every matrix job passed.
+
+### `dast` (needs: backend-lint + frontend-lint + frontend-app-lint)
+
+Runs dynamic application security testing against the local stack (`docker-compose.yml`) started in the job, fronted by its nginx gateway the way the ALB fronts the services: every service and worker, Mongo, Valkey and Moto. The job writes a `.env` with throwaway values (a fresh `JWT_PRIVATE_KEY` from `openssl genrsa 2048`, a random `EMAIL_HMAC_PEPPER`), starts Moto (`docker compose --profile moto up -d --wait moto`) and creates the topics, queues and buckets with `scripts/local-aws-setup.py`, then runs `docker compose up -d --build`. It waits up to 3 minutes for `http://localhost:8088/gateway/health` and each service's `/health` (read inside its container) before running any scan. Both scan steps carry `continue-on-error: true`; a final gate step collects outcomes and fails the job after all tools complete.
+
+| Step | Tool | What it checks |
+|---|---|---|
+| Spectral (service OpenAPI specs) | spectral-cli 6.16.0 (devDependency in `frontend/package.json`) | Lints the committed `backend/openapi/*.json` against `.spectral.yaml` — every operation must declare a security scheme and have a unique `operationId` (errors); tags, descriptions and `info.contact` are warnings. The `backend-service` jobs check each spec matches its code |
+| Nuclei (DAST) | nuclei v3.3.9 | Probes the gateway at `http://localhost:8088` with `http/misconfiguration`, `http/exposures`, and `http/technologies` templates at medium/high/critical severity — detects missing security headers, exposed debug endpoints, dangerous HTTP methods |
 
 ### `security-scan`
 
-All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The final group builds the backend Docker image to scan OS-level CVEs inside the Debian base layer. Steps are grouped by the runtime they require.
+All steps run without cloud credentials. The checkout uses `fetch-depth: 0` so gitleaks can scan the full commit history, not just the current working tree. Gitleaks is installed from the upstream release tarball with SHA-256 checksum verification before extraction. Every security-check step carries `continue-on-error: true` so all tools complete even if an earlier one fails; a final gate step (`if: always()`) collects the outcome of every step and fails the job — printing the full list of which checks failed — only after all tools have run. The final group builds one image per service (`backend/Dockerfile` with `--build-arg SERVICE=<service>`, services found by `backend/tools/services.py`) to scan OS-level CVEs inside the Debian base layer. Steps are grouped by the runtime they require.
 
 | Step | Tool | What it checks |
 |---|---|---|
 | Gitleaks | gitleaks v8.30.1 (CLI) | Full git history — accidentally committed secrets, API keys, private keys, tokens |
-| Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
-| Bandit | bandit 1.9.4 | `backend/app/` — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
-| Semgrep | semgrep 1.167.0 (`p/security-audit`) | `backend/app/`, `backend/tools/`, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
-| pip-audit | pip-audit 2.9.0 | `backend/requirements.txt` — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 and PYSEC-2026-175/177/178/179 suppressed (PyJWT CVEs with no available fix version at time of writing) |
-| Checkov | checkov 3.2.529 | `infra-live-*/terraform/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
-| npm audit | npm | `frontend/` — npm dependency CVE scan (high/critical only) |
-| Retire.js | retire (devDependency) | `frontend/` — browser library CVEs not always caught by npm audit |
-| Trivy (backend fs) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL CVEs in Python packages using the Trivy advisory DB (complements pip-audit) |
-| Trivy (frontend fs) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL CVEs in npm packages using the Trivy advisory DB (complements npm audit) |
-| Trivy (backend license) | trivy-action 0.36.0 | `backend/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) in Python packages |
-| Trivy (frontend license) | trivy-action 0.36.0 | `frontend/` — HIGH/CRITICAL license violations in npm packages |
-| Trivy (frontend SBOM) | trivy-action 0.36.0 | `frontend/` — generates `sbom-frontend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
+| Hadolint | hadolint-action 3.3.0 | `backend/Dockerfile` and `frontend/Dockerfile` — Dockerfile best practices: running as root, `latest` tag, insecure instructions |
+| Bandit | bandit 1.9.4 | `backend/tools/`, `backend/common/` and each service directory — Python SAST: hard-coded secrets, injection, insecure API calls (medium+ severity) |
+| Semgrep | semgrep 1.179.0 (`p/security-audit`) | `backend/tools/`, `backend/common/`, each service directory, `frontend/src/`, `frontend-app/src/` — advanced Python and JavaScript/React SAST patterns |
+| pip-audit | pip-audit 2.9.0 | Each service's `requirements.txt` (`scripts/audit-backend-services.sh`; the `buddy-common` line is left out) — dependency CVE scan (PyPA/OSV DB); PYSEC-2025-183 suppressed (disputed, no fix) |
+| Checkov | checkov 3.2.529 | `infra-live-*/terraform/` and `modules/` — Terraform IaC misconfigurations (open S3 buckets, missing encryption, overly permissive IAM) |
+| npm audit / yarn audit | npm, yarn | `frontend/` and `frontend-app/` — dependency CVE scans (high/critical only, known no-fix dev-tooling advisories ignored) |
+| Retire.js | retire (devDependency) | `frontend/` and `frontend-app/` — browser library CVEs not always caught by npm audit |
+| Trivy (fs) | trivy-action 0.36.0 | `backend/`, `frontend/`, `frontend-app/` — HIGH/CRITICAL CVEs in Python and npm packages using the Trivy advisory DB (complements pip-audit / npm audit) |
+| Trivy (license) | trivy-action 0.36.0 | `backend/`, `frontend/`, `frontend-app/` — HIGH/CRITICAL license violations (GPL, AGPL, LGPL) |
+| Trivy (frontend SBOMs) | trivy-action 0.36.0 | `frontend/` and `frontend-app/` — generate `sbom-frontend.cyclonedx.json` and `sbom-frontend-app.cyclonedx.json` (CycloneDX), uploaded as 90-day workflow artifacts |
 | Trivy config (infra-live-backend) | trivy (CLI) | `infra-live-backend/terraform/` — IaC security misconfigurations using Trivy's built-in Terraform rule set (tfsec successor); complements Checkov with a second rule database; `trivy config` accepts one directory at a time |
 | Trivy config (infra-live-edge) | trivy (CLI) | `infra-live-edge/terraform/` — same |
 | Trivy config (infra-live-frontend) | trivy (CLI) | `infra-live-frontend/terraform/` — same |
 | Trivy config (infra-live-scheduler) | trivy (CLI) | `infra-live-scheduler/terraform/` — same |
-| Docker build (image scan) | docker | Builds `superpower-backend` image once; shared by the three image-level checks below |
-| Trivy (backend image) | trivy-action 0.36.0 | Built `superpower-backend` Docker image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (unfixed only) |
-| Trivy (backend image SBOM) | trivy-action 0.36.0 | Built `superpower-backend` image — generates `sbom-backend.cyclonedx.json` in CycloneDX format, uploaded as a 90-day workflow artifact |
-| Dockle | dockle (installed from release tarball) | Built image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+| Trivy config (modules) | trivy (CLI) | `modules/` — same |
+| Build the service images | docker | Builds `superpower-<service>:scan` for every service (`--build-arg SERVICE=<service>`); shared by the three image-level checks below |
+| Trivy (service image scans) | trivy (CLI) | Each service image — OS-level HIGH/CRITICAL CVEs in the Debian base layer packages (fixed ones only, `--ignore-unfixed`); the error names the failing services |
+| Dockle | dockle (installed from release tarball) | Each service image — CIS Docker Benchmark: root user check, secrets baked into layers, missing `HEALTHCHECK`, unnecessary `setuid`/`setgid` bits |
+| SBOMs (service images) | trivy (CLI) | One `sbom-backend-<service>.cyclonedx.json` per service image, uploaded together as the `sbom-backend` 90-day workflow artifact |
 
 ### `codeql`
 
@@ -126,18 +147,18 @@ Runs two matrix jobs in parallel after `backend-lint`, `frontend-lint`, and `fro
 
 | Matrix | Language | What it checks |
 |---|---|---|
-| `python` | Python 3.13 | `backend/app/` — dataflow and taint analysis, injection flaws, insecure API usage (`security-extended` query suite) |
-| `javascript-typescript` | JavaScript/JSX | `frontend/src/` — XSS, prototype pollution, unsafe regex, DOM-based vulnerabilities (`security-extended` query suite) |
+| `python` | Python 3.13 | The repository's Python (the backend services, `backend/common/`, `backend/tools/`, `scripts/`) — dataflow and taint analysis, injection flaws, insecure API usage (`security-extended` query suite) |
+| `javascript-typescript` | JavaScript/TypeScript | `frontend/src/` and `frontend-app/src/` — XSS, prototype pollution, unsafe regex, DOM-based vulnerabilities (`security-extended` query suite) |
 
 CodeQL requires `security-events: write` permission (set at the job level) to upload SARIF results. It cannot be run locally — it runs only in GitHub Actions CI.
 
 ### `dependency-review`
 
-Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v4` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. Posts a summary comment on the PR. It runs independently of other jobs and does not block push pipelines.
+Runs only on pull requests (`if: github.event_name == 'pull_request'`). Uses the GitHub-native `dependency-review-action@v5` to detect any newly introduced dependency with a known HIGH or CRITICAL vulnerability, comparing the PR's lockfile changes against GitHub's vulnerability database. Posts a summary comment on the PR. It runs independently of other jobs and does not block push pipelines.
 
 | Step | Tool | What it checks |
 |---|---|---|
-| Dependency Review | dependency-review-action v4 | Newly added or changed dependencies in `package-lock.json` / `requirements.txt` that have HIGH/CRITICAL CVEs — blocks merge if any are found |
+| Dependency Review | dependency-review-action v5 | Newly added or changed dependencies (e.g. `package-lock.json`, `yarn.lock`, the services' `requirements.txt`) that have HIGH/CRITICAL CVEs — blocks merge if any are found |
 
 ## One-time AWS setup: GitHub OIDC identity provider
 

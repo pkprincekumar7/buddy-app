@@ -33,7 +33,8 @@ run() {
 # Bootstrap failures exit immediately — these are hard prerequisites, not checks.
 
 # Backend: create the venv on first run, then always sync packages so that
-# requirements.txt changes and tool-version bumps are picked up automatically.
+# requirements changes and tool-version bumps are picked up automatically. The venv holds
+# every service's runtime packages (requirements-dev.txt, their union) plus the tools.
 # pip install is fast (no-ops on already-correct versions).
 # Python 3.13 everywhere: same as backend/Dockerfile and CI (check.yml).
 PYTHON_VERSION="3.13"
@@ -60,11 +61,11 @@ grep '^semgrep==' "$BACKEND/requirements-security.txt" > "$SEMGREP_REQS"
 
 echo -e "${CYAN}Syncing backend/.venv...${RESET}"
 "$BACKEND/.venv/bin/pip" install -q \
-  -r "$BACKEND/requirements.txt" \
+  -r "$BACKEND/requirements-dev.txt" \
   -r "$BACKEND/requirements-lint.txt" \
   -r "$SECURITY_REQS" \
   -r "$BACKEND/requirements-test.txt" \
-  || { echo -e "${RED}pip install failed — check your network or requirements.txt${RESET}"; exit 1; }
+  || { echo -e "${RED}pip install failed — check your network or the requirements files${RESET}"; exit 1; }
 
 if [ ! -d "$SEMGREP_VENV" ]; then
   echo -e "${CYAN}Creating backend/.venv-semgrep (Python $PYTHON_VERSION)...${RESET}"
@@ -133,7 +134,7 @@ run "ruff format (check)" \
     bash -c "cd '$BACKEND' && '$RUFF' format --check ."
 
 run "mypy" \
-    bash -c "cd '$BACKEND' && '$MYPY' app/ tools/ common/"
+    bash -c "cd '$BACKEND' && '$MYPY' tools/ common/"
 
 # Every directory under backend/ with requirements.txt is a service (tools/services.py);
 # each is type-checked, tested and spec-checked on its own below.
@@ -141,7 +142,7 @@ run "service tree valid (tools/services.py --check)" \
     bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/services.py --check"
 SERVICES=()
 read -ra SERVICES <<< "$("$VENV_BIN/python" "$BACKEND/tools/services.py" 2>/dev/null | tr '\n' ' ')"
-# For the scanners: "auth/ hello/" relative to backend/, and the same under $BACKEND.
+# For the scanners: "auth/ users/ …" relative to backend/, and the same under $BACKEND.
 SERVICE_DIRS="${SERVICES[*]+${SERVICES[*]/%//}}"
 SERVICE_PATHS="${SERVICES[*]+${SERVICES[*]/#/$BACKEND/}}"
 
@@ -162,6 +163,10 @@ run "common installs (core and extras)" \
 
 # ── frontend ──────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}════ FRONTEND ════${RESET}"
+
+# Both apps' typed API files, generated from backend/openapi/*.json (build plan 7.1).
+run "API clients in sync (backend/openapi)" \
+    node "$ROOT/scripts/sync-api-clients.mjs" --check
 
 run "eslint" \
     bash -c "cd '$FRONTEND' && npm run lint"
@@ -205,15 +210,14 @@ run "jest (frontend-app)" \
     bash -c "cd '$FRONTEND_APP' && CI=true yarn test --ci"
 
 # ── tests ─────────────────────────────────────────────────────────────────────
-# Settings load from backend/.env (needs JWT_PRIVATE_KEY, as for the dev server); no
-# test connects to MONGODB_URI. Same command and coverage gate as CI. The real
-# Mongo/Redis integration tests skip unless you point them at throwaway servers —
+# common's and the tools' tests, then each service's. Same commands and coverage gates as CI.
+# The real Mongo/Redis integration tests skip unless you point them at throwaway servers —
 # never a real cluster — e.g. the docker-compose services (docker compose up -d mongo valkey):
 #   MONGODB_TEST_URI="mongodb://localhost:27017/?directConnection=true" REDIS_URL=redis://localhost:6379 ./check.sh
 echo -e "\n${BOLD}════ TESTS ════${RESET}"
 
-run "pytest + coverage (backend)" \
-    bash -c "cd '$BACKEND' && '$PYTEST' --cov=app --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
+run "pytest + coverage (common, tools)" \
+    bash -c "cd '$BACKEND' && '$PYTEST' common/tests tools/tests --cov=common --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
 
 # Each service's tests, with its own coverage gate. Locally they share the backend venv;
 # CI installs each service alone (scripts/install-backend-service.sh), which also proves
@@ -222,11 +226,6 @@ for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
   run "pytest + coverage ($svc)" \
       bash -c "cd '$BACKEND' && '$PYTEST' '$svc/tests' --cov='$svc' --cov-branch --cov-report=term-missing --cov-fail-under=99 -q"
 done
-
-# Validates the hand-built mutant lists against the current source (seconds).
-# This never runs mutation testing itself — that's manual (docs/mutation-testing.md).
-run "mutant lists valid (tools/mutate_handlers.py --check)" \
-    bash -c "cd '$BACKEND' && '$VENV_BIN/python' tools/mutate_handlers.py --check"
 
 # Renders the .tpl through real `terraform apply` (not a hand-rolled reimplementation
 # of HCL's templatefile() syntax), so this exercises exactly what gets deployed.
@@ -259,8 +258,8 @@ if command -v shellcheck >/dev/null 2>&1; then
         "$ROOT/scripts/install-backend-service.sh" "$ROOT/scripts/audit-backend-services.sh" "$ROOT/scripts/ci-start-mongo.sh"
 fi
 
-# shared/routing.json → generated backend/app/routing_data.py and the frontends'
-# countries.ts / locationHint.ts. Fails if a generated copy is stale.
+# shared/routing.json → generated backend/common/regions_data.py, backend/auth/countries_data.py
+# and the frontends' countries.ts / locationHint.ts. Fails if a generated copy is stale.
 run "routing data in sync (shared/routing.json)" \
     node "$ROOT/scripts/sync-routing.mjs" --check
 
@@ -272,15 +271,12 @@ echo -e "\n${BOLD}════ SECURITY ════${RESET}"
 
 # ---- always-run: tools available from the bootstrapped venv / npm ----------------
 run "bandit" \
-    bash -c "cd '$BACKEND' && '$BANDIT' -r app/ tools/ common/ $SERVICE_DIRS -ll -q"
+    bash -c "cd '$BACKEND' && '$BANDIT' -r tools/ common/ $SERVICE_DIRS -ll -q"
 
-run "pip-audit" \
-    bash -c "cd '$BACKEND' && '$PIP_AUDIT' -r requirements.txt --skip-editable \
-      --ignore-vuln PYSEC-2025-183"
+# Each service's pins, as its image installs them.
 run "pip-audit (services)" \
     bash "$ROOT/scripts/audit-backend-services.sh" "$PIP_AUDIT" "$VENV_BIN/python"
-# PYSEC-2025-183 is disputed with no fix (see requirements.txt). PyJWT and semgrep share
-# the venv, so a PyJWT bump may need a semgrep bump too (semgrep pins pyjwt[crypto]).
+# PYSEC-2025-183 is disputed with no fix (see requirements-dev.txt).
 
 # Ignored (no fixed release exists): GHSA-vfj7-8cjw-p6xm — braces <=3.0.3 stack-exhaustion
 # DoS on crafted brace patterns. Reached only via build tooling (tailwindcss, spectral-cli),
@@ -368,7 +364,7 @@ if require_tool gitleaks GITLEAKS "brew install gitleaks"; then
 fi
 
 run "semgrep (SAST)" \
-    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/app/' '$BACKEND/tools/' '$BACKEND/common/' $SERVICE_PATHS '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
+    bash -c "'$SEMGREP' --config p/security-audit --error '$BACKEND/tools/' '$BACKEND/common/' $SERVICE_PATHS '$ROOT/frontend/src/' '$ROOT/frontend-app/src/'"
 
 if require_tool hadolint HADOLINT "brew install hadolint"; then
   run "hadolint (backend Dockerfile)" \
@@ -427,46 +423,39 @@ if require_tool trivy TRIVY "brew install aquasecurity/trivy/trivy"; then
       bash -c "'$TRIVY' config '$ROOT/modules' --exit-code 1 --severity HIGH,CRITICAL"
 
   if require_tool docker DOCKER "https://docs.docker.com/get-docker/"; then
-    DOCKLE=""; _SCAN_IMAGE="superpower-backend:check-scan"; _IMAGE_OK=0
+    DOCKLE=""
+    require_tool dockle DOCKLE "brew install goodwithtech/r/dockle" || true
 
-    # Build the image once — shared by trivy image scan, SBOM generation, and dockle.
-    # GIT_SHA is the Dockerfile's apt-layer cache-bust key (CI passes the commit SHA).
-    # A per-day value re-runs `apt-get upgrade` at least daily, so the scan sees newly
-    # published Debian security patches instead of a stale cached layer.
-    build_image_for_scan() {
-      echo "Building backend Docker image for scan..."
-      docker build --build-arg GIT_SHA="local-scan-$(date +%Y%m%d)" \
-        -t "$_SCAN_IMAGE" -f "$BACKEND/Dockerfile" "$ROOT" && _IMAGE_OK=1
-    }
-    run "docker build (image scan)" build_image_for_scan
-
-    if [ "$_IMAGE_OK" -eq 1 ]; then
-      run "trivy (backend image scan)" \
-          bash -c "'$TRIVY' image --exit-code 1 --severity HIGH,CRITICAL \
-            --scanners vuln --ignore-unfixed '$_SCAN_IMAGE'"
-
-      run "trivy (backend image SBOM)" \
-          bash -c "'$TRIVY' image --format cyclonedx \
-            --output '$ROOT/sbom-backend.cyclonedx.json' '$_SCAN_IMAGE' \
-            && echo 'Backend SBOM → sbom-backend.cyclonedx.json'"
-
-      if require_tool dockle DOCKLE "brew install goodwithtech/r/dockle"; then
-        run "dockle (CIS Docker Benchmark)" \
-            bash -c "'$DOCKLE' \
-              -af settings.py \
-              --ignore DKL-DI-0005 \
-              '$_SCAN_IMAGE'"
+    # Each service's image, as it ships: built once and shared by the trivy image scan, its
+    # SBOM (sbom-backend-<service>.cyclonedx.json) and dockle, then removed. GIT_SHA is the
+    # Dockerfile's apt-layer cache-bust key (CI passes the commit SHA); a per-day value re-runs
+    # `apt-get upgrade` at least daily, so the scan sees newly published Debian security
+    # patches instead of a stale cached layer.
+    scan_service_image() {
+      local svc="$1" image="superpower-$1:check-scan"
+      echo "Building the $svc image for scan..."
+      docker build --build-arg SERVICE="$svc" --build-arg GIT_SHA="local-scan-$(date +%Y%m%d)" \
+        -t "$image" -f "$BACKEND/Dockerfile" "$ROOT" || return 1
+      local status=0
+      "$TRIVY" image --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --ignore-unfixed "$image" \
+        || status=1
+      "$TRIVY" image --format cyclonedx --output "$ROOT/sbom-backend-$svc.cyclonedx.json" "$image" \
+        && echo "$svc SBOM → sbom-backend-$svc.cyclonedx.json" || status=1
+      if [ -n "$DOCKLE" ]; then
+        "$DOCKLE" -af settings.py --ignore DKL-DI-0005 "$image" || status=1
       fi
-
-      docker rmi "$_SCAN_IMAGE" >/dev/null 2>&1 || true
-    fi
+      docker rmi "$image" >/dev/null 2>&1 || true
+      return "$status"
+    }
+    for svc in ${SERVICES[@]+"${SERVICES[@]}"}; do
+      run "image scan ($svc: trivy, SBOM, dockle)" scan_service_image "$svc"
+    done
   fi
 fi
 
 # ── dast & api spec ───────────────────────────────────────────────────────────
-# spectral: exports the OpenAPI spec from the FastAPI app without a running server.
-# nuclei:   requires the backend to be running at http://localhost:8000.
-#           Start it first: cd backend && source .venv/bin/activate && uvicorn app.main:app
+# spectral: each service's spec, exported from its app without a running server.
+# nuclei:   only in CI (below); it would need the compose stack's gateway on :8088.
 echo -e "\n${BOLD}════ DAST & API SPEC ════${RESET}"
 
 # spectral is a local devDependency in frontend/ — available after npm install (bootstrap),
@@ -474,33 +463,9 @@ echo -e "\n${BOLD}════ DAST & API SPEC ════${RESET}"
 SPECTRAL="$FRONTEND/node_modules/.bin/spectral"
 NUCLEI=""
 
-# openapi.json is tracked in git — the committed reference copy of the API spec. CI
-# regenerates it and fails if the committed copy differs; this fails the same way
-# when your copy is stale, after writing the fresh one so you can review and commit it.
-openapi_up_to_date() {
-  local spec="$ROOT/openapi.json" fresh
-  fresh="$(mktemp)"
-  "$VENV_BIN/python" "$ROOT/backend/tools/export-openapi.py" > "$fresh" \
-    || { rm -f "$fresh"; echo "Failed to export OpenAPI spec — check backend imports and env vars"; return 1; }
-  if cmp -s "$fresh" "$spec"; then
-    rm -f "$fresh"
-  else
-    # cat, not mv: mktemp's file is owner-only (0600); writing the contents into the
-    # existing file keeps openapi.json's own permissions.
-    cat "$fresh" > "$spec" && rm -f "$fresh"
-    echo "openapi.json was out of date — regenerated it. Review (git diff openapi.json) and commit."
-    return 1
-  fi
-}
-run "openapi.json up to date" openapi_up_to_date
-
-spectral_api_lint() {
-  "$SPECTRAL" lint "$ROOT/openapi.json" --ruleset "$ROOT/.spectral.yaml" --fail-severity error
-}
-run "spectral (OpenAPI lint)" spectral_api_lint
-
-# Each HTTP service's committed spec (backend/openapi/<service>.json), regenerated the
-# same way as openapi.json above, then linted.
+# Each HTTP service's committed spec (backend/openapi/<service>.json) is tracked in git. CI
+# regenerates it and fails if the committed copy differs; this fails the same way when your
+# copy is stale, after writing the fresh one so you can review and commit it. Then it's linted.
 service_spec_up_to_date() {
   local svc="$1" spec="$ROOT/backend/openapi/$1.json" fresh
   fresh="$(mktemp)"
@@ -528,12 +493,12 @@ done
 # and still runs it.
 # if require_tool nuclei NUCLEI "brew install nuclei"; then
 #   nuclei_dast() {
-#     if ! curl -sf http://localhost:8000/health > /dev/null 2>&1; then
-#       echo "Backend not running at http://localhost:8000 — start it first:"
-#       echo "  cd backend && source .venv/bin/activate && uvicorn app.main:app"
+#     if ! curl -sf http://localhost:8088/gateway/health > /dev/null 2>&1; then
+#       echo "The gateway isn't running at http://localhost:8088 — start the stack first:"
+#       echo "  docker compose up -d --build"
 #       return 1
 #     fi
-#     "$NUCLEI" -u http://localhost:8000 \
+#     "$NUCLEI" -u http://localhost:8088 \
 #       -t http/misconfiguration,http/exposures,http/technologies \
 #       -severity medium,high,critical \
 #       -silent -no-color
@@ -573,7 +538,7 @@ if require_tool tflint TFLINT "brew install terraform-linters/tap/tflint"; then
 fi
 
 # ── end to end on the local stack (build plan 6.1, 6.2) ───────────────────────
-# Off by default: they need the compose `split` stack and Moto up (docs/getting-started.md),
+# Off by default: they need the compose stack and Moto up (docs/getting-started.md),
 # make LLM calls with the keys in .env (about 20 a run), stop and start the stack's workers,
 # and take about 7-10 minutes.
 # Gate 6 runs them:
@@ -587,7 +552,7 @@ if [ "${RUN_E2E:-}" = "1" ]; then
   run "e2e: failure and convergence (scripts/e2e)" \
       "$VENV_BIN/python" "$ROOT/scripts/e2e/convergence.py"
 else
-  echo -e "\n${CYAN}End-to-end runs skipped: RUN_E2E=1 runs them against the local split stack.${RESET}"
+  echo -e "\n${CYAN}End-to-end runs skipped: RUN_E2E=1 runs them against the local stack.${RESET}"
 fi
 
 # ── summary ───────────────────────────────────────────────────────────────────

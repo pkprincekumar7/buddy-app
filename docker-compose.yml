@@ -1,7 +1,6 @@
-# Stack: MongoDB + Valkey + gateway + FastAPI (backend) + static UI served by nginx (frontend
-# image). MongoDB and Valkey are the local stand-ins for Atlas and ElastiCache that the new
-# services build on (docs/auth-users-split-build-plan.md, 0.3); automated tests use them too,
-# never Atlas.
+# Stack: MongoDB + Valkey + the gateway + the services (auth, users, children, the circles and
+# shared, each with its worker) + static UI served by nginx (frontend image). MongoDB and Valkey
+# are the local stand-ins for Atlas and ElastiCache; automated tests use them too, never Atlas.
 #
 # SNS, SQS and S3 come from Moto. Run it from the backend venv (Docker Desktop's org policy
 # blocks the motoserver/moto image here):
@@ -10,29 +9,28 @@
 # `docker compose --profile moto up -d moto` runs the same server in a container instead.
 # There is no separate "nginx" service: nginx runs inside the frontend container on port 80.
 #
-# UI: http://localhost:${FRONTEND_PORT:-5173} → nginx proxies /api/* to backend:8000
-# API directly: http://localhost:${BACKEND_PORT:-8000}
+# UI:  http://localhost:${FRONTEND_PORT:-5173} → nginx proxies /api/* to the gateway
+# API: http://localhost:${GATEWAY_PORT:-8088} → the gateway routes each /api/* path to its service
 #
 # Project name: images and containers are named superpower-<service>(-1), not after the
 # checkout folder (buddy-app).
 name: superpower
 
-# Settings and wiring every split service shares (the services under profile "split").
-x-split-env: &split-env
+# Settings and wiring every service shares.
+x-service-env: &service-env
   APP_ENV: local
   APP_NAME: superpower
   AWS_REGION: ap-south-1
   MONGODB_URI: mongodb://mongo:27017/?directConnection=true
   REDIS_URL: redis://valkey:6379
   JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}
   # Moto on the host (see the top of this file); the fake credentials are Moto's.
   AWS_ENDPOINT_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}
   AWS_ACCESS_KEY_ID: local
   AWS_SECRET_ACCESS_KEY: local
   LOG_LEVEL: INFO
 
-x-split-service: &split-service
+x-service: &service
   restart: unless-stopped
   volumes:
     - local_keys:/keys:ro
@@ -120,8 +118,8 @@ services:
       start_period: 5s
 
   # Local stand-in for the ALB's path rules (design 13.1): routes each /api/* path to its
-  # service. Generated from shared/service-routes.json by scripts/sync-gateway.mjs. Until the
-  # old backend is removed (build plan 8.6), paths no new service claims go to `backend`.
+  # service, and answers any other path with the ALB's 404. Generated from
+  # shared/service-routes.json by scripts/sync-gateway.mjs.
   gateway:
     image: nginx:1.31.6-alpine
     restart: unless-stopped
@@ -130,95 +128,13 @@ services:
     ports:
       - "${GATEWAY_PORT:-8088}:8080"
     volumes:
-      # GATEWAY_CONFIG=nginx.alb.conf: unclaimed paths 404 as behind the ALB (no legacy backend).
-      - ./local/gateway/${GATEWAY_CONFIG:-nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./local/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/gateway/health"]
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 5s
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-superpower-local}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
-      JWT_KEY_ID: ${JWT_KEY_ID:-key-v1}
-      JWT_ACCESS_EXPIRE_MINUTES: ${JWT_ACCESS_EXPIRE_MINUTES:-30}
-      JWT_REFRESH_EXPIRE_HOURS: ${JWT_REFRESH_EXPIRE_HOURS:-24}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-      BEHIND_PROXY: ${BEHIND_PROXY:-true}
-      APP_ENV: ${APP_ENV:-local}
-      REDIS_URL: ${REDIS_URL:-redis://valkey:6379}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
-      ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
-      UPLOADS_BUCKET_NAME: ${UPLOADS_BUCKET_NAME:-}
-      AWS_REGION: ${AWS_REGION:-}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
-    networks:
-      - superpower_net
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
-    depends_on:
-      mongo:
-        condition: service_healthy
-      valkey:
-        condition: service_healthy
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\"",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 25s
-
-  worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    command: ["python", "worker.py"]
-    restart: unless-stopped
-    environment:
-      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/?directConnection=true}
-      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-superpower-local}
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?JWT_PRIVATE_KEY is required - see .env.example for how to generate it}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
-      APP_ENV: ${APP_ENV:-local}
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
-      WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-5}
-      AWS_REGION: ${AWS_REGION:-}
-    networks:
-      - superpower_net
-    depends_on:
-      backend:
-        condition: service_healthy
 
   frontend:
     networks:
@@ -230,11 +146,13 @@ services:
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     environment:
       ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
+      # /api/* goes to the gateway, which routes each path to its service as the ALB does.
+      API_UPSTREAM: ${FRONTEND_API_UPSTREAM:-gateway:8080}
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-5173}:8080"
     depends_on:
-      backend:
+      gateway:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
@@ -243,17 +161,16 @@ services:
       retries: 3
       start_period: 5s
 
-  # ── The split's services (docs/auth-users-split-build-plan.md), profile "split" ──────────
-  # Started only with `docker compose --profile split up -d --build`; the gateway (port
-  # ${GATEWAY_PORT:-8088}) routes /api/v1/auth, /users, /children and the circles' paths
-  # (onboarding, personality, growth-areas, transform, observations) to them, as the ALB does.
+  # ── The services ─────────────────────────────────────────────────────────────────────
+  # The gateway (port ${GATEWAY_PORT:-8088}) routes /api/v1/auth, /users, /children, the
+  # circles' paths (onboarding, personality, growth-areas, transform, observations) and
+  # shared's to them, as the ALB does.
   # Before the first start: Moto running and `scripts/local-aws-setup.py` run (topics, queues,
   # buckets), and EMAIL_HMAC_PEPPER set in .env. Each service has its own database and its own
   # service-token key, made by local-keys into the local_keys volume (never the repository).
 
   # One-shot: the service-token keys and JWT_PUBLIC_KEYS (scripts/local-keys.py).
   local-keys:
-    profiles: ["split"]
     # auth's image (built by `auth`): it has the cryptography package the script needs.
     image: superpower-auth:local
     pull_policy: never
@@ -272,7 +189,6 @@ services:
       - superpower_net
 
   auth:
-    profiles: ["split"]
     image: superpower-auth:local
     build:
       context: .
@@ -281,7 +197,7 @@ services:
         SERVICE: auth
     command: &serve-auth ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/auth.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve auth"]
     environment: &auth-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: auth
       MONGODB_DB_NAME: auth
       INTERNAL_SIGNING_KID: auth-local
@@ -297,20 +213,18 @@ services:
       DELETION_PARTICIPANTS: users,children,onboarding,discover,grow,transform,release
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-auth-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-auth-events
-    <<: *split-service
+    <<: *service
 
   auth-worker:
-    profiles: ["split"]
     image: superpower-auth:local  # built by `auth`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/auth.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m auth.worker"]
     environment: *auth-env
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   users:
-    profiles: ["split"]
     image: superpower-users:local
     build:
       context: .
@@ -319,26 +233,24 @@ services:
         SERVICE: users
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/users.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve users"]
     environment: &users-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: users
       MONGODB_DB_NAME: users
       INTERNAL_SIGNING_KID: users-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-users-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-users-events
-    <<: *split-service
+    <<: *service
 
   users-worker:
-    profiles: ["split"]
     image: superpower-users:local  # built by `users`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/users.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m users.worker"]
     environment: *users-env
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   children:
-    profiles: ["split"]
     image: superpower-children:local
     build:
       context: .
@@ -347,7 +259,7 @@ services:
         SERVICE: children
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/children.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve children"]
     environment: &children-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: children
       MONGODB_DB_NAME: children
       INTERNAL_SIGNING_KID: children-local
@@ -357,20 +269,18 @@ services:
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
       # What presigned photo URLs point at: the host's Moto, which the browser can reach.
       AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
-    <<: *split-service
+    <<: *service
 
   children-worker:
-    profiles: ["split"]
     image: superpower-children:local  # built by `children`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/children.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m children.worker"]
     environment: *children-env
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   onboarding:
-    profiles: ["split"]
     image: superpower-onboarding:local
     build:
       context: .
@@ -379,26 +289,24 @@ services:
         SERVICE: onboarding
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/onboarding.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve onboarding"]
     environment: &onboarding-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: onboarding
       MONGODB_DB_NAME: onboarding
       INTERNAL_SIGNING_KID: onboarding-local
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-onboarding-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-onboarding-events
-    <<: *split-service
+    <<: *service
 
   onboarding-worker:
-    profiles: ["split"]
     image: superpower-onboarding:local  # built by `onboarding`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/onboarding.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m onboarding.worker"]
     environment: *onboarding-env
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   discover:
-    profiles: ["split"]
     image: superpower-discover:local
     build:
       context: .
@@ -408,21 +316,20 @@ services:
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/discover.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve discover"]
     # Starts jobs; never calls an LLM, so no keys (as in AWS).
     environment: &discover-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: discover
       MONGODB_DB_NAME: discover
       INTERNAL_SIGNING_KID: discover-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-discover-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-discover-events
-    <<: *split-service
+    <<: *service
 
   discover-worker:
-    profiles: ["split"]
     image: superpower-discover:local  # built by `discover`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/discover.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m discover.worker"]
-    # The only discover runtime with LLM keys (8); from .env, as the backend's worker.
+    # The only discover runtime with LLM keys (8); from .env.
     environment:
       <<: *discover-env
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -434,10 +341,9 @@ services:
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   grow:
-    profiles: ["split"]
     image: superpower-grow:local
     build:
       context: .
@@ -447,21 +353,20 @@ services:
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/grow.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve grow"]
     # Starts jobs; never calls an LLM, so no keys (as in AWS).
     environment: &grow-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: grow
       MONGODB_DB_NAME: grow
       INTERNAL_SIGNING_KID: grow-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-grow-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-grow-events
-    <<: *split-service
+    <<: *service
 
   grow-worker:
-    profiles: ["split"]
     image: superpower-grow:local  # built by `grow`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/grow.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m grow.worker"]
-    # The only grow runtime with LLM keys (8); from .env, as the backend's worker.
+    # The only grow runtime with LLM keys (8); from .env.
     environment:
       <<: *grow-env
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -473,10 +378,9 @@ services:
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   transform:
-    profiles: ["split"]
     image: superpower-transform:local
     build:
       context: .
@@ -486,7 +390,7 @@ services:
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/transform.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve transform"]
     # Starts jobs; never calls an LLM, so no keys (as in AWS).
     environment: &transform-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: transform
       MONGODB_DB_NAME: transform
       INTERNAL_SIGNING_KID: transform-local
@@ -497,14 +401,13 @@ services:
       UPLOADS_URL_TTL_SECONDS: ${UPLOADS_URL_TTL_SECONDS:-3600}
       # What presigned photo URLs point at: the host's Moto, which the browser can reach.
       AWS_PUBLIC_ENDPOINT_URL: ${LOCAL_MOTO_PUBLIC_URL:-http://localhost:5050}
-    <<: *split-service
+    <<: *service
 
   transform-worker:
-    profiles: ["split"]
     image: superpower-transform:local  # built by `transform`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/transform.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m transform.worker"]
-    # The only transform runtime with LLM keys (8); from .env, as the backend's worker.
+    # The only transform runtime with LLM keys (8); from .env.
     environment:
       <<: *transform-env
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -516,10 +419,9 @@ services:
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   release:
-    profiles: ["split"]
     image: superpower-release:local
     build:
       context: .
@@ -529,21 +431,20 @@ services:
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/release.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve release"]
     # Starts jobs; never calls an LLM, so no keys (as in AWS).
     environment: &release-env
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: release
       MONGODB_DB_NAME: release
       INTERNAL_SIGNING_KID: release-local
       LLM_HOURLY_LIMIT: ${LLM_HOURLY_LIMIT:-200}
       EVENTS_TOPIC_ARN: arn:aws:sns:ap-south-1:123456789012:superpower-local-release-events
       EVENTS_QUEUE_URL: ${LOCAL_MOTO_URL:-http://host.docker.internal:5050}/123456789012/superpower-local-release-events
-    <<: *split-service
+    <<: *service
 
   release-worker:
-    profiles: ["split"]
     image: superpower-release:local  # built by `release`
     pull_policy: never
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/release.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m release.worker"]
-    # The only release runtime with LLM keys (8); from .env, as the backend's worker.
+    # The only release runtime with LLM keys (8); from .env.
     environment:
       <<: *release-env
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -555,10 +456,9 @@ services:
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
     healthcheck:
       disable: true
-    <<: *split-service
+    <<: *service
 
   shared:
-    profiles: ["split"]
     image: superpower-shared:local
     build:
       context: .
@@ -568,12 +468,12 @@ services:
     command: ["/bin/sh", "-c", "export INTERNAL_SIGNING_KEY=\"$$(cat /keys/shared.pem)\" INTERNAL_PUBLIC_KEYS=\"$$(cat /keys/internal_public_keys.json)\" JWT_PUBLIC_KEYS=\"$$(cat /keys/jwt_public_keys.json)\"; exec python -m common.serve shared"]
     # Speech-to-text, the APK link and the build's health; no database of its own.
     environment:
-      <<: *split-env
+      <<: *service-env
       SERVICE_NAME: shared
       INTERNAL_SIGNING_KID: shared-local
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ASSETS_BUCKET_NAME: ${ASSETS_BUCKET_NAME:-}
-    <<: *split-service
+    <<: *service
 
 volumes:
   mongo_data:
