@@ -11,6 +11,13 @@ jest
   .mockImplementation((msg: string, ...rest: unknown[]) => {
     if (typeof msg === 'string' && msg.includes('VirtualizedLists')) return;
     if (typeof msg === 'string' && msg.includes('NativeWind')) return;
+    // @react-navigation/stack loads InteractionManager when it can't read the RN version,
+    // which the Jest preset doesn't set; on RN 0.82+ devices it never loads it.
+    if (
+      typeof msg === 'string' &&
+      msg.includes('InteractionManager has been deprecated')
+    )
+      return;
 
     realWarn(msg, ...rest);
   });
