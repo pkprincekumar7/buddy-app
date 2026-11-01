@@ -78,12 +78,52 @@ resource "aws_kinesis_firehose_delivery_stream" "waf_logs" {
   }
 }
 
-# WAF logging configuration — attaches the Firehose stream to the WebACL
+# WAF logging configuration — attaches the Firehose stream to the WebACL.
+# A log record carries every request header, so the access token (Authorization) and
+# the session cookies (Cookie) would sit in S3 in the clear: both are redacted. Only
+# requests a rule blocked or counted are kept; allowed traffic is the ALB's and the
+# services' to log (production-readiness review, SEC-02).
 resource "aws_wafv2_web_acl_logging_configuration" "main" {
   count                   = var.enable_waf_logging ? 1 : 0
   provider                = aws.us_east_1
   log_destination_configs = [aws_kinesis_firehose_delivery_stream.waf_logs[0].arn]
   resource_arn            = aws_wafv2_web_acl.frontend[0].arn
+
+  redacted_fields {
+    single_header {
+      name = "authorization"
+    }
+  }
+  redacted_fields {
+    single_header {
+      name = "cookie"
+    }
+  }
+
+  logging_filter {
+    default_behavior = "DROP"
+
+    filter {
+      behavior    = "KEEP"
+      requirement = "MEETS_ANY"
+      condition {
+        action_condition {
+          action = "BLOCK"
+        }
+      }
+      condition {
+        action_condition {
+          action = "COUNT"
+        }
+      }
+      # A managed rule overridden to count (the way a rule is tried out before it blocks).
+      condition {
+        action_condition {
+          action = "EXCLUDED_AS_COUNT"
+        }
+      }
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------

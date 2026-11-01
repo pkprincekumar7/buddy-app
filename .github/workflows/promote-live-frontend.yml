@@ -131,6 +131,12 @@ jobs:
             echo "Run deploy-live-frontend for that environment successfully before promoting."
             exit 1
           fi
+          # The value comes from SSM, not from this repo: accept only a full commit SHA, so
+          # nothing else reaches the checkout or a later run: block.
+          if [[ ! "$RESOLVED" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: the deployed git SHA in SSM for env=${{ inputs.source_env }} isn't a 40-character commit SHA."
+            exit 1
+          fi
 
           echo "Promoting git SHA: $RESOLVED"
           echo "git_sha=$RESOLVED" >> "$GITHUB_OUTPUT"
@@ -236,6 +242,24 @@ jobs:
         uses: actions/checkout@v6.0.2
         with:
           ref: ${{ needs.source_ref.outputs.git_sha }}
+          fetch-depth: 0  # full history, for the ancestry check below
+
+      # Only a commit already on the default branch is promoted: a SHA that a branch
+      # deploy recorded, or that was written to SSM by hand, stops here (review, CI-10).
+      - name: Verify the commit is on the default branch
+        env:
+          GIT_SHA: ${{ needs.source_ref.outputs.git_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ ! "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: '$GIT_SHA' isn't a 40-character commit SHA."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GIT_SHA" "origin/$DEFAULT_BRANCH"; then
+            echo "ERROR: $GIT_SHA isn't on $DEFAULT_BRANCH. Only commits merged to $DEFAULT_BRANCH are promoted."
+            exit 1
+          fi
+          echo "$GIT_SHA is on $DEFAULT_BRANCH."
 
       - name: Setup Node.js
         uses: actions/setup-node@v6.4.0
@@ -293,11 +317,13 @@ jobs:
       # a subsequent stg → prod promotion can resolve it automatically.
       # -------------------------------------------------------------------------
       - name: Record deployed git SHA
+        env:
+          GIT_SHA: ${{ needs.source_ref.outputs.git_sha }}
         run: |
           aws ssm put-parameter \
             --region us-east-1 \
             --name "/${{ vars.APP_NAME }}/${{ inputs.target_env }}/edge/deployed_git_sha" \
-            --value "${{ needs.source_ref.outputs.git_sha }}" \
+            --value "$GIT_SHA" \
             --type String \
             --overwrite
-          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: ${{ needs.source_ref.outputs.git_sha }}"
+          echo "Recorded deployed git SHA for ${{ inputs.target_env }}: $GIT_SHA"

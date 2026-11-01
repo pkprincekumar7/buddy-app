@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 31 partly done, 37 open and 1 moot. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now).
+> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 33 partly done, 35 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -65,15 +65,14 @@ What still stands in the way:
 
 - **The database:** the prod cluster isn't provisioned yet. The plan is dedicated M10+, with dev, sbx and stg on M0 by design. It stays single-region in ap-south-1 until the Global Cluster (DB-01, DEC-01, DEC-02).
 - **Pipelines:**
-  - prod can be deployed or applied from any branch (CI-01);
+  - prod can be deployed or applied from any branch (CI-01, deferred);
   - plan and apply run in one job (CI-02);
   - the image CI scans isn't the image deployed (CI-03).
 - **Identity and secrets:**
-  - the OIDC trust is documented as a wildcard on an admin role (SEC-04);
-  - secrets sit in Terraform state, now including the service-token private keys (SEC-01);
-  - WAF logs capture tokens (SEC-02).
+  - the OIDC trust is documented as a wildcard on an admin role (SEC-04, deferred);
+  - secrets sit in Terraform state, now including the service-token private keys (SEC-01).
 - **Safety and operations:**
-  - prod can still be destroyed quickly (DR-01);
+  - prod can still be destroyed quickly (DR-01, deferred);
   - alerts go to email only (OBS-01);
   - mobile builds are debug-signed (MOB-01);
   - the WAF's 8 KB body rule blocks larger requests (WAF-01).
@@ -144,9 +143,9 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | EDGE-04 | 🟡 Medium | Edge | Edge JWT validation gaps (`exp`, `type`, `alg`, `kid`, perf) | ✅ Done, incl. `iss`/`aud` (JWKS not done) |
 | EDGE-05 | 🟠 High | Edge | `/uploads/*` (child photos) is public and edge-cached | ✅ Done (S3 presigned GET URLs, not CloudFront signed URLs — see v6 note) |
 | SEC-01 | 🟠 High | Security | Secrets stored in Terraform state | 🟡 Valkey uses IAM auth (no token in state); the scheduler PAT and the service-token private keys are still in state |
-| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | ⬜ Open |
+| SEC-02 | 🟠 High | Security | WAF logs capture tokens and cookies | 🟡 `Authorization`/`Cookie` redacted, BLOCK/COUNT only; log-bucket expiry (manual bucket) open |
 | SEC-03 | 🟠 High | Security | Scheduler: broad classic PAT and raw-event dispatch | ⬜ Open |
-| SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open |
+| SEC-04 | 🔴 Critical | Security | OIDC trust documented as `repo:…:*` with AdministratorAccess | ⬜ Open · ⏸ Deferred |
 | SEC-05 | 🟡 Medium | Security | Secrets init step can overwrite rotated secrets | 🟡 Secret reads fail closed (fix 1); per-key merge open |
 | SEC-06 | 🟡 Medium | Security | Secrets exposed job-wide (`env`/`GITHUB_ENV`) to every step | ⬜ Open |
 | SEC-07 | 🟡 Medium | Security | `${{ }}` interpolated directly into `run:` (script injection pattern) | ⬜ Open |
@@ -192,7 +191,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | SEC-10 | 🟠 High | Security | API task role can overwrite the public APK | ✅ Done (only `shared` reads the APK prefix; no role can write assets) |
 | OBS-04 | 🟡 Medium | Observability | No app logging config, request IDs or structured logs | 🟡 JSON logs with `request_id`/`trace_id`; access log line and ID propagation open |
 | MOB-01 | 🟠 High | Mobile | Prod mobile builds debug-signed and publicly downloadable | ⬜ Open |
-| DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open |
+| DR-01 | 🔴 Critical | Safety | Prod can be destroyed quickly and unrecoverably | ⬜ Open · ⏸ Deferred |
 | DR-02 | 🟡 Medium | Safety | Account-wide services live in the stg stack; NAT EIPs churn | ⬜ Open |
 | OBS-01 | 🟠 High | Observability | Alerting goes nowhere useful; edge/Redis not monitored | ⬜ Open (alarms now per service; still email only) |
 | OBS-02 | 🟡 Medium | Observability | "Processing stuck" alarm will fire constantly | 🟡 Stuck alarm uses `OldestRunningJobAgeSeconds`; pending-age metric open |
@@ -206,7 +205,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
 | WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | ⬜ Open |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | ⬜ Open |
-| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open |
+| CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
 | CI-03 | 🟠 High | Pipelines | Deployed image ≠ scanned image; prod deploy bypasses promotion | ⬜ Open |
 | CI-04 | 🟠 High | Pipelines | Actions pinned by tag; binaries downloaded unverified | ⬜ Open |
@@ -215,7 +214,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | CI-07 | 🟠 High | Pipelines | Frontend deploy deletes live chunks; no rollback | ⬜ Open |
 | CI-08 | 🟢 Low | Pipelines | CodeQL non-gating; no SARIF upload; required checks unverified | ⬜ Open |
 | CI-09 | 🟡 Medium | Pipelines | Promotion moves images via `docker save` artifacts | 🟡 `images.json` read with jq instead of sourced; still `docker save` artifacts |
-| CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | ⬜ Open |
+| CI-10 | 🟠 High | Pipelines | `promote-live-frontend` trusts the SSM SHA (injection, any ref) | 🟡 SHA format and default-branch ancestry checked, passed via `env:`; `ssm:PutParameter` restriction (IAM, outside the repo) open |
 | CI-11 | 🟠 High | Pipelines | A rolled-back deploy can be reported as success | 🟡 Code done (waits on the new deployment's ID); acceptance check needs a deployed env |
 | CI-12 | 🟡 Medium | Pipelines | Concurrency groups per service allow overlapping deploys | 🟡 Lock per environment done; mixed-image reconciliation open |
 | CI-13 | 🟡 Medium | Pipelines | `npm ci` runs with prod AWS credentials loaded | ⬜ Open |
@@ -484,7 +483,7 @@ custom_error_response {
 
 ### SEC-02 — WAF logs capture tokens and cookies 🟠
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `infra-live-edge/terraform/waf_logging.tf:82-87` still has no `redacted_fields` or `logging_filter`.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. `aws_wafv2_web_acl_logging_configuration.main` (`infra-live-edge/terraform/waf_logging.tf`) now redacts the `authorization` and `cookie` headers and has a `logging_filter` that drops everything except `BLOCK`, `COUNT` and `EXCLUDED_AS_COUNT` requests. Logging is still prod-only (`enable_waf_logging`). Still open: lifecycle expiry on the log bucket, which is created by hand outside Terraform. The acceptance check needs a prod apply.
 
 **Where:** `infra-live-edge/terraform/waf_logging.tf:82-87` has no `redacted_fields` and no `logging_filter`. Logging is prod-only. (`X-Origin-Verify` isn't exposed, because it's added after WAF.)
 
@@ -522,7 +521,7 @@ custom_error_response {
 
 ### SEC-04 — OIDC trust documented as `repo:…:*` with AdministratorAccess 🔴 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. The wildcard trust is still documented at `docs/ci-cd.md:189-190`, `frontend-app/README.md:930` and `docs/environments.md:149`.
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. The wildcard trust is still documented at `docs/ci-cd.md:189-190`, `frontend-app/README.md:930` and `docs/environments.md:149`.
 
 **Where:**
 - `docs/ci-cd.md:168` (`repo:YOUR_GITHUB_ORG/buddy-app:*`) and `:169` (AdministratorAccess).
@@ -1636,7 +1635,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DR-01 — Prod can be destroyed quickly and unrecoverably 🔴
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. No `prevent_destroy` anywhere. `secrets.tf:31` (backend) and `infra-live-scheduler/terraform/secrets.tf:25` still allow immediate deletion. ECR is now one repository per service with `force_delete` (`ecr.tf:18`). The ALB moved to `modules/alb` (`main.tf:56`). `terraform-live-backend.yml:8-16` still offers destroy with no confirmation input.
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. No `prevent_destroy` anywhere. `secrets.tf:31` (backend) and `infra-live-scheduler/terraform/secrets.tf:25` still allow immediate deletion. ECR is now one repository per service with `force_delete` (`ecr.tf:18`). The ALB moved to `modules/alb` (`main.tf:56`). `terraform-live-backend.yml:8-16` still offers destroy with no confirmation input.
 
 **Where:**
 - `infra-live-backend/terraform/secrets.tf:44`: `recovery_window_in_days = 0` (all environments including prod).
@@ -2079,7 +2078,7 @@ No `version` is pinned and there are no `rule_action_override`s. WAF is enabled 
 
 ### CI-01 — Prod deploy/apply possible from any branch 🔴
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. The only `github.ref` check is `check.yml:11`; there's no CODEOWNERS file and no ref guard on the deploy or apply workflows.
+> 🔄 **Current code (2026-11-01):** ⏸ Deferred (owner's decision, 2026-11-01): to do later, not before the next releases. ⬜ Open. The only `github.ref` check is `check.yml:11`; there's no CODEOWNERS file and no ref guard on the deploy or apply workflows.
 
 **Where:** Every `workflow_dispatch` deploy, Terraform, promote, restart and mobile workflow. No workflow checks the ref (the only `github.ref*` use is the concurrency key at `check.yml:11`).
 
@@ -2303,7 +2302,7 @@ The duplicated "register task definition" jq block: `deploy-live-backend.yml:275
 
 ### CI-10 — `promote-live-frontend` trusts the SSM SHA 🟠 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. The SHA read from SSM isn't validated (`promote-live-frontend.yml:124-136`). It's checked out at `:238` and interpolated into `run:` at `:300,303`.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. `promote-live-frontend.yml` now refuses an SSM value that isn't a 40-character lowercase commit SHA (in `source_ref`, and again before use), checks out full history and requires `git merge-base --is-ancestor <sha> origin/<default branch>`, and passes the SHA to `run:` through `env:` only (the `Record deployed git SHA` step too). A SHA recorded by a branch deploy can therefore no longer be promoted. Still open: restricting `ssm:PutParameter` on `*/edge/deployed_git_sha` to the deploy roles, which lives in IAM outside this repo.
 
 **Where:** `promote-live-frontend.yml:126-136` (reads `/<app>/<source_env>/edge/deployed_git_sha`), `:238` (`checkout ref: ${{ needs.source_ref.outputs.git_sha }}`, unvalidated), `:300` and `:303` (interpolated into `run:`).
 
