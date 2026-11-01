@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 19 are done, 34 partly done, 32 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 20 are done, 34 partly done, 31 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -77,7 +77,6 @@ What still stands in the way:
   - mobile builds are debug-signed (MOB-01);
   - no separate rate limit on the auth routes, and unpinned managed rule groups (WAF-01).
 - **Remaining backend items:**
-  - synchronous Valkey calls in the rate limiter (APP-05);
   - no LLM spend metric or kill switch, and no dead-job alarm (JOB-02, JOB-03);
   - the refresh token in the response body and the `Domain` cookie (AUTH-05).
 
@@ -154,7 +153,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | APP-02 | 🟠 High | App | JWT key rotation logs everyone out (backend ignores `kid`) | ✅ Done (per-env key check in pipeline not done) |
 | APP-03 | 🟡 Medium | App | LLM calls >60 s return 504 (ALB/CloudFront 60 s vs 90 s timeout) | 🟡 LLM calls now run in worker jobs (no 504 path), SDK retries off; an overall time budget open |
 | APP-04 | 🟡 Medium | App | LLM limiter's Redis init latch is permanent (silent fallback) | 🟡 Latch fixed (Valkey retried after 30 s); degraded metric and alarm open |
-| APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ⬜ Open — moved to `backend/common/limiter.py` |
+| APP-05 | 🟡 Medium | App | Sync Redis calls block the asyncio event loop | ✅ Done (rate limits and the login throttle count through `limits.aio`) |
 | APP-06 | 🟡 Medium | App | Worker has no graceful shutdown (SIGTERM) | 🟡 Workers finish the current job on SIGTERM; `stopTimeout` and worker health check open |
 | APP-07 | 🟡 Medium | App | No upload size cap; orphaned objects never deleted | 🟡 Size checked after upload, orphan sweep, replaced objects deleted; no S3-side size cap |
 | APP-08 | 🟡 Medium | App | Any HTTPS URL accepted as a child's photo / plan photo | 🟡 Photos limited to the child's own uploads (EDGE-05); CSP `img-src` not tightened |
@@ -773,7 +772,12 @@ v5 correction: the earlier grep could never pass. It matched the correct `env:` 
 
 ### APP-05 — Sync Redis calls block the asyncio event loop 🟡 (new in v2)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, moved: `backend/common/limiter.py:53-57,92-94` calls the synchronous `RedisStorage` (2 s timeout) from an async dependency. slowapi is gone, so the fix below about its decorators no longer applies; move the calls to an async client or a thread.
+> 🔄 **Current code (2026-11-01):** ✅ Done (buddy-common 0.20.0).
+> - `RateLimits` (`backend/common/limiter.py`) and auth's `LoginThrottle` (`backend/auth/app/throttle.py`) now count through `limits.aio`, on redis-py's asyncio client (`implementation="redispy"`, same 2 s timeouts and IAM sign-in). A slow or unreachable Valkey holds up only the request being counted, not the event loop.
+> - The API is `await limits.allow(…)` and `await throttle.is_blocked(…)`. The rename is on purpose: a call left un-awaited would have been a coroutine, always truthy, and would silently let every request through. Every caller in the nine services was updated.
+> - The keys (`LIMITS:LIMITER/<prefix>/…`) and the Valkey commands (`EVALSHA`, `INCRBY`, `EXPIRE`) are unchanged, so the RBAC users need nothing new.
+> - `common/tests/test_ops.py` checks that the loop keeps running other work while Valkey takes 0.2 s to answer. On the local stack, both the per-IP login limit and the login throttle counted in Valkey and answered 429.
+> - The other Valkey users, the authz cache and the LLM hourly limit, already used the async client.
 
 **Where:**
 - `backend/app/limiter.py:145-157`: the async dependency calls the **sync** redis client (2 s socket timeout).

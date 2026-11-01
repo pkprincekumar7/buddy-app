@@ -223,14 +223,17 @@ def test_the_versioned_write_never_goes_backwards(redis_url):
 
 
 def test_the_throttle_counts_failures_and_clears_on_success():
-    throttle = LoginThrottle(None)
-    for _ in range(5):
-        assert not throttle.blocked("k" * 64, "1.1.1.1")
-        throttle.failed("k" * 64, "1.1.1.1")
-    assert throttle.blocked("k" * 64, "1.1.1.1")
-    assert not throttle.blocked("k" * 64, "2.2.2.2")
-    throttle.succeeded("k" * 64, "1.1.1.1")
-    assert not throttle.blocked("k" * 64, "1.1.1.1")
+    async def main() -> None:
+        throttle = LoginThrottle(None)
+        for _ in range(5):
+            assert not await throttle.is_blocked("k" * 64, "1.1.1.1")
+            await throttle.failed("k" * 64, "1.1.1.1")
+        assert await throttle.is_blocked("k" * 64, "1.1.1.1")
+        assert not await throttle.is_blocked("k" * 64, "2.2.2.2")
+        await throttle.succeeded("k" * 64, "1.1.1.1")
+        assert not await throttle.is_blocked("k" * 64, "1.1.1.1")
+
+    asyncio.run(main())
 
 
 def test_the_throttle_falls_back_per_task_and_retries_valkey():
@@ -247,12 +250,16 @@ def test_the_throttle_falls_back_per_task_and_retries_valkey():
     now = [0.0]
     throttle = LoginThrottle(None, clock=lambda: now[0])
     throttle._primary = Broken()  # type: ignore[assignment]
-    throttle.failed("k" * 64, "ip")
-    assert Broken.calls == 1 and not throttle.blocked("k" * 64, "ip")
-    assert Broken.calls == 1  # not retried within 30 s
-    now[0] = 31.0
-    throttle.failed("k" * 64, "ip")
-    assert Broken.calls == 2
+
+    async def main() -> None:
+        await throttle.failed("k" * 64, "ip")
+        assert Broken.calls == 1 and not await throttle.is_blocked("k" * 64, "ip")
+        assert Broken.calls == 1  # not retried within 30 s
+        now[0] = 31.0
+        await throttle.failed("k" * 64, "ip")
+        assert Broken.calls == 2
+
+    asyncio.run(main())
     assert LoginThrottle("redis://localhost:6390")._primary is not None
 
 

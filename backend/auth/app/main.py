@@ -333,21 +333,21 @@ async def login(
     key = runtime.peppers.key(email)
     ip = runtime.limits.client_ip(request)
     # Before any lookup, so a blocked attempt costs nothing and reveals nothing (9.1).
-    if runtime.throttle.blocked(key, ip):
+    if await runtime.throttle.is_blocked(key, ip):
         raise error(429, "too_many_attempts", "Too many failed attempts. Try again later.")
     account = await _active_account(runtime, email)
     usable = account if account is not None and not account.get("is_being_deleted") else None
     # The dummy hash when there's no usable account, so timing doesn't tell them apart.
     hashed = usable["password_hash"] if usable is not None else None
     if not await async_check_password(body.password, hashed) or usable is None:
-        runtime.throttle.failed(key, ip)
+        await runtime.throttle.failed(key, ip)
         _logger.warning("auth.login.failed email_key=%s", log_key(key))
         raise error(401, "invalid_credentials", "Invalid email or password.")
     account = usable
     # Only with the right password: the lock isn't revealed to someone without it.
     if account.get("is_locked"):
         raise error(403, "account_locked", "Your account has been locked. Please contact support.")
-    runtime.throttle.succeeded(key, ip)
+    await runtime.throttle.succeeded(key, ip)
     _logger.info("auth.login.ok id=%s location=%s", account["_id"], account["location"])
     return (await sign_in(runtime, response, account)).body
 
@@ -457,7 +457,7 @@ async def refresh(request: Request, response: Response, runtime: Ready) -> Any:
     if _mismatched_access(runtime, request, token, user_id):
         _logger.warning("auth.refresh.failed reason=subject_mismatch sub=%s", user_id)
         return _rejected(runtime, 401, "invalid_token", "Token mismatch.")
-    check_user_limit(runtime, request, "20/minute", user_id)
+    await check_user_limit(runtime, request, "20/minute", user_id)
 
     sessions = runtime.db[SESSIONS]
     session = await sessions.find_one({"_id": jti, "user_id": user_id, "location": location})
@@ -508,7 +508,7 @@ async def logout(request: Request, response: Response, runtime: Ready) -> Any:
         if claims is not None:
             if _mismatched_access(runtime, request, token, claims["sub"]):
                 return _rejected(runtime, 401, "token_mismatch", "Token mismatch.")
-            check_user_limit(runtime, request, "20/minute", claims["sub"])
+            await check_user_limit(runtime, request, "20/minute", claims["sub"])
             await runtime.db[SESSIONS].delete_one(
                 {"_id": claims["jti"], "location": claims["location"]}
             )

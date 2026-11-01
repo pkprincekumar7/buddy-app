@@ -3,12 +3,13 @@
 import asyncio
 import os
 import uuid
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import redis.asyncio as aioredis
 from botocore.credentials import Credentials
-from limits.storage import RedisStorage
+from limits.aio.storage import RedisStorage
 
 from common import valkey
 from common.limiter import RateLimits
@@ -111,7 +112,10 @@ def test_the_rate_limits_sign_in_the_same_way():
     assert limits._primary is not None
     storage = limits._primary.storage
     assert isinstance(storage, RedisStorage)
-    assert storage.storage.connection_pool.connection_kwargs["credential_provider"] is provider
+    # redis-py's asyncio client (APP-05), signing in with the provider.
+    client = cast(Any, storage.bridge).get_connection()  # RedispyBridge; typed as its base
+    assert type(client).__module__ == "redis.asyncio.client"
+    assert client.connection_pool.connection_kwargs["credential_provider"] is provider
 
 
 @pytest.mark.live_service

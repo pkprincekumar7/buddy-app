@@ -148,7 +148,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     async def dependency(
         request: Request, runtime: Ready, caller: Annotated[Caller, Depends(current_caller)]
     ) -> None:
-        if not runtime.limits.hit(
+        if not await runtime.limits.allow(
             item, route_template(request), request.method, f"user:{caller.user_id}"
         ):
             raise _too_many(item.get_expiry())
@@ -163,7 +163,7 @@ def per_ip(limit: str) -> Callable[..., Awaitable[None]]:
         runtime: Runtime | None = getattr(request.app.state, "runtime", None)
         limits = runtime.limits if runtime is not None else _fallback_limits
         ip = limits.client_ip(request)
-        if not limits.hit(item, route_template(request), request.method, f"ip:{ip}"):
+        if not await limits.allow(item, route_template(request), request.method, f"ip:{ip}"):
             raise _too_many(item.get_expiry())
 
     return dependency

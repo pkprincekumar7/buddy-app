@@ -16,7 +16,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from limits import parse
-from limits.storage import MemoryStorage
+from limits.aio.storage import MemoryStorage
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -476,31 +476,74 @@ class FlakyStorage(MemoryStorage):
         super().__init__()
         self.down = False
 
-    def incr(self, *args: Any, **kwargs: Any) -> int:
+    async def incr(self, *args: Any, **kwargs: Any) -> int:
         if self.down:
             raise ConnectionError("valkey down")
-        return super().incr(*args, **kwargs)
+        return await super().incr(*args, **kwargs)
+
+
+class SlowStorage(MemoryStorage):
+    """A Valkey stand-in that takes `delay` seconds to answer, without blocking the loop."""
+
+    def __init__(self, delay: float) -> None:
+        super().__init__()
+        self.delay = delay
+
+    async def incr(self, *args: Any, **kwargs: Any) -> int:
+        await asyncio.sleep(self.delay)
+        return await super().incr(*args, **kwargs)
 
 
 def test_limits_count_in_valkey_then_per_task_while_it_is_down():
-    storage, clock = FlakyStorage(), Clock()
-    limits = RateLimits(None, prefix="t", primary=storage, clock=clock)
-    item = parse("2/minute")
-    assert limits.hit(item, "k") and limits.hit(item, "k") and not limits.hit(item, "k")
+    async def main() -> None:
+        storage, clock = FlakyStorage(), Clock()
+        limits = RateLimits(None, prefix="t", primary=storage, clock=clock)
+        item = parse("2/minute")
+        assert [await limits.allow(item, "k") for _ in range(3)] == [True, True, False]
 
-    storage.down = True
-    assert limits.hit(item, "k2")  # counted in process now
-    storage.down = False
-    assert limits.hit(item, "k2") and not limits.hit(item, "k2")  # still in process: 30 s not up
-    clock.now += RETRY_PRIMARY_AFTER_SECONDS
-    assert limits.hit(item, "k3")  # back on the primary
-    assert storage.get(item.key_for("t", "k3")) == 1
+        storage.down = True
+        assert await limits.allow(item, "k2")  # counted in process now
+        storage.down = False
+        # Still in process: 30 s not up.
+        assert [await limits.allow(item, "k2") for _ in range(2)] == [True, False]
+        clock.now += RETRY_PRIMARY_AFTER_SECONDS
+        assert await limits.allow(item, "k3")  # back on the primary
+        assert await storage.get(item.key_for("t", "k3")) == 1
+
+    asyncio.run(main())
 
 
 def test_without_valkey_limits_are_per_task():
     limits = RateLimits(None, prefix="t")
     item = parse("1/minute")
-    assert limits.hit(item, "a") and not limits.hit(item, "a")
+
+    async def main() -> list[bool]:
+        return [await limits.allow(item, "a") for _ in range(2)]
+
+    assert asyncio.run(main()) == [True, False]
+
+
+def test_a_slow_valkey_does_not_block_other_requests():
+    """APP-05: while one request waits on Valkey, the event loop keeps serving others."""
+    limits = RateLimits(None, prefix="t", primary=SlowStorage(0.2))
+    item = parse("10/minute")
+
+    async def main() -> tuple[bool, int]:
+        ticks = 0
+
+        async def other_work() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        ticker = asyncio.create_task(other_work())
+        allowed = await limits.allow(item, "slow")
+        ticker.cancel()
+        return allowed, ticks
+
+    allowed, ticks = asyncio.run(main())
+    assert allowed and ticks >= 5  # the loop ran other work during the 0.2 s wait
 
 
 @pytest.mark.live_service
@@ -512,7 +555,11 @@ def test_limits_against_real_valkey():
         pytest.skip("REDIS_URL not set")
     limits = RateLimits(url, prefix=f"test-{datetime.now(UTC).timestamp()}")
     item = parse("1/minute")
-    assert limits.hit(item, "real") and not limits.hit(item, "real")
+
+    async def main() -> list[bool]:
+        return [await limits.allow(item, "real") for _ in range(2)]
+
+    assert asyncio.run(main()) == [True, False]
 
 
 def test_per_ip_and_per_user_dependencies():

@@ -11,6 +11,9 @@ own database work:
 Buckets are per (route template, method, identity), so two routes with the same limit don't
 share one. While Valkey is unreachable the limits are counted in process (per task, as
 today); Valkey is retried after 30 s rather than abandoned for the life of the task.
+Counting is async (redis-py's asyncio client, through `limits.aio`): a slow or unreachable
+Valkey holds up only the request being counted, never the event loop and every other
+request on the task (production-readiness review, APP-05).
 In AWS, pass `redis_options=settings.valkey_options()`: the service signs in as its own
 RBAC user with an IAM token (common.valkey, build plan 2.3).
 """
@@ -24,8 +27,8 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request
 from limits import RateLimitItem, parse
-from limits.storage import MemoryStorage, RedisStorage, Storage
-from limits.strategies import FixedWindowRateLimiter
+from limits.aio.storage import MemoryStorage, RedisStorage, Storage
+from limits.aio.strategies import FixedWindowRateLimiter
 
 from common.audit import route_template, source_ip
 from common.authz import Caller, current_caller
@@ -52,23 +55,27 @@ class RateLimits:
         if primary is None and redis_url:
             # redis_options: the IAM token provider in AWS (common.valkey).
             primary = RedisStorage(
-                redis_url, socket_connect_timeout=2, socket_timeout=2, **(redis_options or {})
+                redis_url,
+                implementation="redispy",
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                **(redis_options or {}),
             )
         self._primary = FixedWindowRateLimiter(primary) if primary is not None else None
         self._memory = FixedWindowRateLimiter(MemoryStorage())
         self._primary_down_until = 0.0
 
-    def hit(self, item: RateLimitItem, *identifiers: str) -> bool:
+    async def allow(self, item: RateLimitItem, *identifiers: str) -> bool:
         """Count one request; False when it's over the limit."""
         if self._primary is not None and self.clock() >= self._primary_down_until:
             try:
-                return self._primary.hit(item, self.prefix, *identifiers)
+                return await self._primary.hit(item, self.prefix, *identifiers)
             except Exception as exc:
                 self._primary_down_until = self.clock() + RETRY_PRIMARY_AFTER_SECONDS
                 _logger.warning(
                     "rate limits: Valkey unreachable (%s); counting per task", type(exc).__name__
                 )
-        return self._memory.hit(item, self.prefix, *identifiers)
+        return await self._memory.hit(item, self.prefix, *identifiers)
 
     def client_ip(self, request: Request) -> str:
         """The viewer's address: CloudFront's header behind the proxy, else the peer."""
@@ -78,8 +85,8 @@ class RateLimits:
                 return ip
         return request.client.host if request.client else "unknown"
 
-    def _check(self, request: Request, item: RateLimitItem, identity: str) -> None:
-        if not self.hit(item, route_template(request), request.method, identity):
+    async def _check(self, request: Request, item: RateLimitItem, identity: str) -> None:
+        if not await self.allow(item, route_template(request), request.method, identity):
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests",
@@ -91,7 +98,7 @@ class RateLimits:
         item = parse(limit)
 
         async def dependency(request: Request) -> None:
-            self._check(request, item, f"ip:{self.client_ip(request)}")
+            await self._check(request, item, f"ip:{self.client_ip(request)}")
 
         return dependency
 
@@ -102,6 +109,6 @@ class RateLimits:
         async def dependency(
             request: Request, caller: Annotated[Caller, Depends(current_caller)]
         ) -> None:
-            self._check(request, item, f"user:{caller.user_id}")
+            await self._check(request, item, f"user:{caller.user_id}")
 
         return dependency

@@ -7,7 +7,8 @@ that email are refused for the rest of the window, **before any lookup**. Counti
 Counters are in Valkey, under the `auth` prefix its RBAC user may write
 (`LIMITS:LIMITER/auth/*`, build plan 2.3). While Valkey is unreachable they're counted per
 task, as the rate limits are, so a short outage weakens the throttle rather than blocking
-logins.
+logins. Counting is async (`limits.aio`), so a slow Valkey never blocks the event loop
+(production-readiness review, APP-05).
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from limits import parse
-from limits.storage import MemoryStorage, RedisStorage, Storage
-from limits.strategies import FixedWindowRateLimiter
+from limits.aio.storage import MemoryStorage, RedisStorage, Storage
+from limits.aio.strategies import FixedWindowRateLimiter
 
 FAILURES = parse("5/15minutes")
 RETRY_PRIMARY_AFTER_SECONDS = 30.0
@@ -42,7 +43,11 @@ class LoginThrottle:
         if primary is None and redis_url:
             # redis_options: the IAM token provider in AWS (common.valkey).
             primary = RedisStorage(
-                redis_url, socket_connect_timeout=2, socket_timeout=2, **(redis_options or {})
+                redis_url,
+                implementation="redispy",
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                **(redis_options or {}),
             )
         self._primary = FixedWindowRateLimiter(primary) if primary is not None else None
         self._memory = FixedWindowRateLimiter(MemoryStorage())
@@ -52,25 +57,25 @@ class LoginThrottle:
         # The email key's first 16 characters, as logs carry: enough to separate users.
         return (self.prefix, "login-failures", key[:16], ip)
 
-    def _run(self, method: str, key: str, ip: str) -> bool:
+    async def _run(self, method: str, key: str, ip: str) -> bool:
         if self._primary is not None and self.clock() >= self._primary_down_until:
             try:
-                return bool(getattr(self._primary, method)(FAILURES, *self._ids(key, ip)))
+                return bool(await getattr(self._primary, method)(FAILURES, *self._ids(key, ip)))
             except Exception as exc:
                 self._primary_down_until = self.clock() + RETRY_PRIMARY_AFTER_SECONDS
                 _logger.warning(
                     "login throttle: Valkey unreachable (%s); counting per task",
                     type(exc).__name__,
                 )
-        return bool(getattr(self._memory, method)(FAILURES, *self._ids(key, ip)))
+        return bool(await getattr(self._memory, method)(FAILURES, *self._ids(key, ip)))
 
-    def blocked(self, key: str, ip: str) -> bool:
+    async def is_blocked(self, key: str, ip: str) -> bool:
         """True when this key and IP have used up their failures."""
-        return not self._run("test", key, ip)
+        return not await self._run("test", key, ip)
 
-    def failed(self, key: str, ip: str) -> None:
-        self._run("hit", key, ip)
+    async def failed(self, key: str, ip: str) -> None:
+        await self._run("hit", key, ip)
 
-    def succeeded(self, key: str, ip: str) -> None:
+    async def succeeded(self, key: str, ip: str) -> None:
         """A correct password clears the count."""
-        self._run("clear", key, ip)
+        await self._run("clear", key, ip)

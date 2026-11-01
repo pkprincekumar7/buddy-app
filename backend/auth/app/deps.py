@@ -36,7 +36,9 @@ def per_ip(limit: str) -> Callable[..., Awaitable[None]]:
 
     async def dependency(request: Request, runtime: Ready) -> None:
         ip = runtime.limits.client_ip(request)
-        if not runtime.limits.hit(item, route_template(request), request.method, f"ip:{ip}"):
+        if not await runtime.limits.allow(
+            item, route_template(request), request.method, f"ip:{ip}"
+        ):
             raise too_many(item.get_expiry())
 
     return dependency
@@ -49,7 +51,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     async def dependency(
         request: Request, runtime: Ready, caller: Annotated[Caller, Depends(current_caller)]
     ) -> None:
-        if not runtime.limits.hit(
+        if not await runtime.limits.allow(
             item, route_template(request), request.method, f"user:{caller.user_id}"
         ):
             raise too_many(item.get_expiry())
@@ -57,10 +59,12 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     return dependency
 
 
-def check_user_limit(runtime: Runtime, request: Request, limit: str, user_id: str) -> None:
+async def check_user_limit(runtime: Runtime, request: Request, limit: str, user_id: str) -> None:
     """Refresh and logout carry a refresh token, not an access token: limit by its `sub`."""
     item = parse(limit)
-    if not runtime.limits.hit(item, route_template(request), request.method, f"user:{user_id}"):
+    if not await runtime.limits.allow(
+        item, route_template(request), request.method, f"user:{user_id}"
+    ):
         raise too_many(item.get_expiry())
 
 

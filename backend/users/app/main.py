@@ -143,7 +143,7 @@ def per_user(limit: str) -> Callable[..., Awaitable[None]]:
     async def dependency(
         request: Request, runtime: Ready, caller: Annotated[Caller, Depends(current_caller)]
     ) -> None:
-        if not runtime.limits.hit(
+        if not await runtime.limits.allow(
             item, route_template(request), request.method, f"user:{caller.user_id}"
         ):
             raise HTTPException(
