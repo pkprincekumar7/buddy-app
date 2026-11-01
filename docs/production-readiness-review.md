@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 33 partly done, 35 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 34 partly done, 34 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -75,7 +75,7 @@ What still stands in the way:
   - prod can still be destroyed quickly (DR-01, deferred);
   - alerts go to email only (OBS-01);
   - mobile builds are debug-signed (MOB-01);
-  - the WAF's 8 KB body rule blocks larger requests (WAF-01).
+  - no separate rate limit on the auth routes, and unpinned managed rule groups (WAF-01).
 - **Remaining backend items:**
   - synchronous Valkey calls in the rate limiter (APP-05);
   - no LLM spend metric or kill switch, and no dead-job alarm (JOB-02, JOB-03);
@@ -203,7 +203,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | TF-04 | 🟡 Medium | Terraform | Redis oversized and mis-shaped for future caching | 🟡 Valkey 8.0 and right-sized nodes done; explicit `maxmemory-policy` open (the authz cache now shares the cluster) |
 | TF-05 | 🟡 Medium | Terraform | Bucket policies: no TLS-only deny; manual buckets | ⬜ Open |
 | TF-06 | 🟡 Medium | Terraform | Cross-stack SSM coupling is order-sensitive | ✅ Done (downstream workflows pre-check SSM and fail clearly) |
-| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | ⬜ Open |
+| WAF-01 | 🟠 High | WAF | CRS 8 KB body limit blocks audio/LLM; rate-limit gaps | 🟡 Fix 1 done (CRS body rule counts; own 8 KB rule exempts the four large-body routes); rate rules, version pins, count-mode switch open |
 | SCH-01 | 🟡 Medium | Scheduler | Duplicate dispatch via Lambda async retries; no timeout/alarm | ⬜ Open |
 | CI-01 | 🔴 Critical | Pipelines | Prod deploy/apply possible from any branch | ⬜ Open · ⏸ Deferred |
 | CI-02 | 🔴 Critical | Pipelines | Plan and apply in one job; scheduler applies with no plan | ⬜ Open |
@@ -1991,7 +1991,21 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### WAF-01 — CRS 8 KB body limit blocks audio/LLM; rate-limit gaps 🟠 (v2: raised from Medium)
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. `infra-live-edge/terraform/waf.tf:65-141` still has no `rule_action_override`, version pin, scope-down, auth rule or `association_config`. The body-size table below cites deleted files. The services now cap bodies at 1 MiB by default (APP-09), which sets the size the WAF override has to allow.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial: fix 1 is done in `infra-live-edge/terraform/waf.tf`.
+> - The Core Rule Set's `SizeRestrictions_BODY` is overridden to `count`.
+> - A new `BodySizeLimit` rule (priority 15) blocks a body over 8 KB with a 413 `body_too_large`, the services' own answer. Anything past CloudFront's 16 KB inspection window counts as over (`oversize_handling = MATCH`).
+> - Four routes are exempt (`local.large_body_paths`, an anchored regex on the URI path). Each is capped by its service instead (APP-09):
+>   - `POST /api/v1/speech/transcriptions` (10 MB);
+>   - `PUT /api/v1/children/{id}/onboarding` (about 11 KB);
+>   - `PATCH /api/v1/children/{id}/transform` (64 KB);
+>   - `PUT /api/v1/children/{id}/growth-areas/{area_id}` (64 KB).
+>
+> The regex was checked against every route in `backend/openapi/*.json`: only those four match, and routes under them (`…/generation`, `…/photos/presign`) keep the 8 KB limit. The endpoint table below cites deleted files and routes (`/llm/invoke`, `/jobs`). A new route whose bodies pass 8 KB has to be added to `local.large_body_paths`.
+>
+> Still open:
+> - fixes 2–4: a count-mode switch for new rule groups; the rate rule scoped to `/api/*`, with a strict one on the auth routes; pinned managed-group versions; the anonymous-IP list;
+> - the acceptance check (a 5 MB recording through stg CloudFront), which needs a stg apply;
+> - watching the CRS `*_BODY` rules' counts on `speech/transcriptions`, since they still inspect the first 16 KB of a recording.
 
 **Where:** `infra-live-edge/terraform/waf.tf`:
 - Geo block (priority 5, custom rule, `:38-62`)
