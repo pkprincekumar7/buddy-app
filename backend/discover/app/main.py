@@ -347,7 +347,9 @@ async def start_generation(
 
 @router.get(
     "/generation/{job_id}",
-    dependencies=[Depends(per_user("60/minute"))],
+    # Polled every few seconds while the job runs, so looser than the other routes: several
+    # jobs at once, or an older app polling every 2 s, mustn't hit 429 (review, JOB-05).
+    dependencies=[Depends(per_user("300/minute"))],
     description="A personality job's status, while the page shows generating. When "
     "`completed`, reload the personality.",
 )

@@ -634,6 +634,29 @@ def test_starting_is_limited_to_10_a_minute(mongo_uri):
     live(mongo_uri, test)
 
 
+@pytest.mark.live_service
+def test_five_jobs_polled_every_2_seconds_stay_under_the_poll_limit(mongo_uri):
+    """JOB-05: five jobs polled for a minute every 2 s (an older app) is 150 polls: no 429.
+    The limit (300 a minute, per user) still stops a client polling much faster."""
+
+    async def test(r: Running) -> None:
+        child = await r.ready_child()
+        started = await r.http.post(
+            _path(child, "/self_care/generation"),
+            json={"kind": "parent_questions"},
+            headers=auth_header(),
+        )
+        poll = _path(child, f"/self_care/generation/{started.json()['job_id']}")
+        statuses = [
+            (await r.http.get(poll, headers=auth_header())).status_code for _ in range(5 * 30)
+        ]
+        assert set(statuses) == {200}
+        more = [(await r.http.get(poll, headers=auth_header())).status_code for _ in range(151)]
+        assert more[-1] == 429 and more.count(429) == 1
+
+    live(mongo_uri, test)
+
+
 def test_no_cloudwatch_means_no_job_metrics():
     main._start_reporting(SimpleNamespace(cloudwatch=None))  # type: ignore[arg-type]
     assert main._reporting is None

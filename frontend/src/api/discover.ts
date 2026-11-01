@@ -5,7 +5,7 @@
 // which makes Discover done and unlocks Grow.
 
 import { ApiError } from './errors';
-import { pause } from './polling';
+import { isRateLimited, MAX_INTERVAL_MS, pause, slower } from './polling';
 import type { components } from './generated/discover';
 import { services, unwrap } from './services';
 
@@ -56,8 +56,15 @@ export async function settlePersonality(
     retry = false,
     signal,
     intervalMs = 2000,
+    maxIntervalMs = MAX_INTERVAL_MS,
     timeoutMs = 5 * 60_000,
-  }: { retry?: boolean; signal?: AbortSignal; intervalMs?: number; timeoutMs?: number } = {},
+  }: {
+    retry?: boolean;
+    signal?: AbortSignal;
+    intervalMs?: number;
+    maxIntervalMs?: number;
+    timeoutMs?: number;
+  } = {},
 ): Promise<Personality> {
   let current = await discover.personality(childId);
   if (current.status === 'not_started' || (retry && current.status === 'failed')) {
@@ -70,14 +77,26 @@ export async function settlePersonality(
     current = await discover.personality(childId);
   }
   const deadline = Date.now() + timeoutMs;
+  let wait = intervalMs;
   while (current.status === 'generating' || current.status === 'not_started') {
     if (Date.now() > deadline) throw new Error('The personality is taking too long.');
-    await pause(intervalMs, signal);
-    if (current.job_id) {
-      const job = await discover.job(childId, current.job_id);
-      if (job.status === 'pending' || job.status === 'processing') continue;
+    await pause(wait, signal);
+    try {
+      if (current.job_id) {
+        const job = await discover.job(childId, current.job_id);
+        if (job.status === 'pending' || job.status === 'processing') {
+          wait = slower(wait, maxIntervalMs);
+          continue;
+        }
+      }
+      current = await discover.personality(childId);
+    } catch (err) {
+      // A 429 (JOB-05): wait the longest, then poll again, instead of failing.
+      if (!isRateLimited(err)) throw err;
+      wait = Math.max(wait, maxIntervalMs);
+      continue;
     }
-    current = await discover.personality(childId);
+    wait = slower(wait, maxIntervalMs);
   }
   return current;
 }

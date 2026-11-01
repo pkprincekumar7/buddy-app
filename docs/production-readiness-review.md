@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 18 are done, 34 partly done, 33 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 19 are done, 34 partly done, 32 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -172,7 +172,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | JOB-02 | 🟠 High | Jobs | Retries multiply LLM cost; poison jobs; no DLQ | 🟡 Attempts counted at claim, failed jobs kept 7 days, SDK retries off; dead-job alarm open |
 | JOB-03 | 🟠 High | Jobs | Job path bypasses LLM cost controls (open LLM proxy) | 🟡 Hourly limit at job start, server-built prompts, output cap on every provider; spend metric and kill switch open |
 | JOB-04 | 🟡 Medium | Jobs | No LLM provider fallback | ⬜ Open |
-| JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ⬜ Open — 2 s frontend poll against 60/min per route |
+| JOB-05 | 🟡 Medium | Jobs | Job polling collides with per-user rate limit | ✅ Done (status routes 300/min; clients back off to 5 s and retry a 429) |
 | JOB-06 | 🟡 Medium | Jobs | Enqueue not idempotent; in-process lock only | ✅ Done (transactional target lock) |
 | JOB-07 | 🟢 Low | Jobs | `worker.py` untested and outside coverage gate | ✅ Done (workers inside each service's 99% gate) |
 | JOB-08 | 🟢 Low | Jobs | Region-scoped workers have no failover | ⬜ Open (matters only if DEC-01 = B) |
@@ -1255,7 +1255,11 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### JOB-05 — Job polling collides with the per-user rate limit 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open, moved: the web app polls every 2 s (`frontend/src/api/polling.ts:42`), 30 a minute, against a 60/min per-user limit per route (`grow/app/main.py:619`). Two or three jobs at once hit 429.
+> 🔄 **Current code (2026-11-01):** ✅ Done, in two parts.
+> - **Server:** the four job-status routes (`GET …/generation/{job_id}` in discover, grow, transform and release) allow 300 polls a minute per user, up from 60. Each poll is one indexed read, and app builds already installed keep polling every 2 s, so the server has to absorb them. `grow/tests/test_grow.py` checks that five jobs polled every 2 s for a minute (150 polls) get no 429, and that a much faster client still does.
+> - **Clients** (`frontend/src/api/polling.ts` and `frontend-app/src/api/polling.ts`, used by `runJob` and discover's `settlePersonality`): polls start at 2 s and slow by half each time, up to 5 s (`slower`). A 429 on a poll waits the longest interval and polls again instead of failing the generation; any other error still fails it. Covered by `frontend-app/src/__tests__/polling.test.ts`.
+>
+> A batch or streaming status endpoint wasn't needed.
 
 **Where:** `frontend/src/hooks/useJob.ts:5` (polls every 3 s, so 20 requests/min per job), `backend/app/routers/jobs.py:283` (`60/minute` per user).
 
