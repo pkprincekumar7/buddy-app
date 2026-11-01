@@ -93,7 +93,6 @@ locals {
 
   http_environment = [
     { name = "BEHIND_PROXY", value = "true" },
-    { name = "CORS_ORIGINS", value = var.cors_origins },
   ]
 
   llm_environment = [

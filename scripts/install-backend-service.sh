@@ -5,7 +5,7 @@
 # requirements.txt and any extra requirement files.
 #
 #   bash scripts/install-backend-service.sh <service> [extra requirements files...]
-#   bash scripts/install-backend-service.sh hello backend/requirements-test.txt
+#   bash scripts/install-backend-service.sh users backend/requirements-test.txt
 #
 # CI's per-service job uses it (check.yml); a mismatched common pin fails here, as in the build.
 set -euo pipefail

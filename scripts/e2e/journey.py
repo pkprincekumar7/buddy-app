@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One made-up child from profile to Connect, through the gateway (Gate 5, build plan 5.x).
 
-Run with the backend venv against the compose `split` stack (docs/getting-started.md):
+Run with the backend venv against the local compose stack (docs/getting-started.md):
 
     backend/.venv/bin/python scripts/e2e/journey.py
 

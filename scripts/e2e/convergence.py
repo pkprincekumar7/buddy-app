@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Failure and convergence on the local stack (build plan 6.2, design 4.1, 10.2, 10.3).
 
-Run with the backend venv against the compose `split` stack (it stops and starts workers):
+Run with the backend venv against the local compose stack (it stops and starts workers):
 
     backend/.venv/bin/python scripts/e2e/convergence.py
 

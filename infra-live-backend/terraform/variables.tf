@@ -221,11 +221,6 @@ variable "llm_hourly_limit" {
   type = number
 }
 
-variable "cors_origins" {
-  description = "Allowed CORS origins for the backend API (comma-separated list of URLs)"
-  type        = string
-}
-
 variable "jwt_key_id" {
   description = "JWT key ID (kid header claim) the backend signs with — must be a key in the JWT_PUBLIC_KEYS map that both the Lambda@Edge validator and the backend verify against. Update during key rotation."
   type        = string
@@ -233,12 +228,12 @@ variable "jwt_key_id" {
 }
 
 variable "jwt_public_keys" {
-  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). The API service (APP_COMPONENT=api) has no private key and verifies tokens with these keys ONLY, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
+  description = "Map of JWT key ID → RSA public key PEM, from the same JWT_PUBLIC_KEYS GitHub Environment Secret the edge uses (APP-02). Every service but auth has no private key and verifies tokens with these keys only, so it must include jwt_key_id's key; outgoing keys stay listed during a rotation. Public keys only — not a secret."
   type        = map(string)
 
   validation {
     condition     = contains(keys(var.jwt_public_keys), var.jwt_key_id)
-    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — the API service verifies with these keys only. See docs/jwt-keys.md."
+    error_message = "jwt_public_keys (the JWT_PUBLIC_KEYS secret) must contain the current signing key, jwt_key_id — every service but auth verifies with these keys only. See docs/jwt-keys.md."
   }
 }
 

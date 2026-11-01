@@ -64,15 +64,6 @@ override_resource {
 }
 
 override_resource {
-  target = aws_sns_topic.producer["hello"]
-  values = { arn = "arn:aws:sns:ap-south-1:111111111111:superpower-prod-hello-events" }
-}
-override_resource {
-  target = aws_sqs_queue.consumer["hello"]
-  values = { arn = "arn:aws:sqs:ap-south-1:111111111111:superpower-prod-hello-events", id = "https://sqs.ap-south-1.amazonaws.com/111111111111/superpower-prod-hello-events" }
-}
-
-override_resource {
   target = aws_sns_topic.producer["onboarding"]
   values = { arn = "arn:aws:sns:ap-south-1:111111111111:superpower-prod-onboarding-events" }
 }
@@ -118,7 +109,7 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
 
   assert {
     condition = keys(aws_sns_topic.producer) == [
-      "auth", "children", "discover", "grow", "hello", "onboarding", "release", "transform", "users",
+      "auth", "children", "discover", "grow", "onboarding", "release", "transform", "users",
     ]
     error_message = "One topic per producing service (7.2); connect isn't built."
   }
@@ -128,7 +119,7 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
   }
   assert {
     condition = keys(aws_sqs_queue.consumer) == [
-      "auth", "children", "discover", "grow", "hello", "onboarding", "release", "transform", "users",
+      "auth", "children", "discover", "grow", "onboarding", "release", "transform", "users",
     ]
     error_message = "One queue per consuming service."
   }
@@ -158,12 +149,12 @@ run "topics_queues_and_subscriptions_from_the_catalogue" {
   assert {
     condition = alltrue([
       for p in ["users", "children", "onboarding", "discover", "grow", "transform", "release"] : output.subscriptions["auth:${p}"] == tolist(["user.data_deleted"])
-    ]) && !contains(keys(output.subscriptions), "auth:hello")
+    ]) && !contains(keys(output.subscriptions), "auth:auth")
     error_message = "auth hears user.data_deleted from every service holding user data, and nothing else (7.2)."
   }
   assert {
-    condition     = !contains(keys(output.subscriptions), "children:children") && output.subscriptions["hello:hello"] == tolist(["hello.pinged"])
-    error_message = "No service hears its own events unless it subscribes to them (hello's demo does)."
+    condition     = !contains(keys(output.subscriptions), "children:children")
+    error_message = "No service hears its own events unless it subscribes to them."
   }
   assert {
     condition     = length(aws_sns_topic_subscription.consumer) == length(output.subscriptions)
@@ -238,7 +229,7 @@ run "alarms_on_dlq_depth_and_message_age" {
     error_message = "An idle queue stops reporting: missing data isn't an alarm (15.5)."
   }
   assert {
-    condition     = length(aws_cloudwatch_metric_alarm.dlq_depth) == 9 && length(aws_cloudwatch_metric_alarm.oldest_message_age) == 9
+    condition     = length(aws_cloudwatch_metric_alarm.dlq_depth) == 8 && length(aws_cloudwatch_metric_alarm.oldest_message_age) == 8
     error_message = "Both alarms on every consumer."
   }
 }
@@ -267,8 +258,8 @@ run "reserved_events_create_nothing" {
 }
 
 run "only_the_deployed_services" {
-  # A stack passes the services it deploys: hello's demo event and the
-  # consumers it doesn't run create nothing.
+  # A stack passes the services it deploys: the producers and consumers it
+  # doesn't run create nothing.
   command = plan
 
   variables {

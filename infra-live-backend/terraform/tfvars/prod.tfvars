@@ -1,7 +1,7 @@
 # aws_region and environment are supplied via workflow inputs (TF_VAR_*)
 
 # app_name, domain_name, hosted_zone_id, acm_certificate_arn,
-# assets_bucket_name, subdomain_internal, cookie_domain, cors_origins,
+# assets_bucket_name, subdomain_internal, cookie_domain,
 # openai_model, anthropic_model, gemini_model
 # are supplied via GitHub Actions (TF_VAR_*) — no defaults set for these in variables.tf.
 

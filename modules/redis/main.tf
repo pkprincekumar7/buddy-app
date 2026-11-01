@@ -3,8 +3,8 @@
 # compatible: the app's Redis clients and Lua scripts work unchanged),
 # encrypted at rest and in transit, reachable only from the given client
 # security groups (TF-01). Clients sign in either with one shared AUTH token
-# (today's stack) or as one RBAC user per service with IAM authentication
-# (rbac_services, docs/auth-users-split.md 9.3 and 15.1). Resource names still say "redis"
+# or as one RBAC user per service with IAM authentication (what the backend stack uses:
+# rbac_services, docs/auth-users-split.md 9.3 and 15.1). Resource names still say "redis"
 # so existing replication groups and security groups aren't replaced.
 #
 # Node count and multi-AZ come from the caller per environment. Destroying

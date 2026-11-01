@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Account deletion end to end on the local stack (build plan 6.1, design 10.3).
 
-Run with the backend venv against the compose `split` stack:
+Run with the backend venv against the local compose stack:
 
     backend/.venv/bin/python scripts/e2e/account-deletion.py
 
 It walks one child through every circle (journey.py), so every participant holds data,
 copies and outbox rows for the account, plus an avatar and a 90-day-plan photo in S3. Then
 it deletes the account (`DELETE /api/v1/auth/account`), waits for auth to finish the saga,
-and checks that nothing of the user or the child is left in any split service's database,
+and checks that nothing of the user or the child is left in any service's database,
 in Valkey or in the uploads bucket.
 
 What may stay, by design (stack.scan): `tombstones` (each participant must hold the

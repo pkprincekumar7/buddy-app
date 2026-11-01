@@ -1,7 +1,7 @@
 """What the e2e scripts share: the local stack's addresses, HTTP checks, the compose
 containers, and the scan for anything left of an account or a child.
 
-The stack is the compose `split` profile with Moto on the host (docs/getting-started.md).
+The stack is `docker compose up` with Moto on the host (docs/getting-started.md).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ UPLOADS_BUCKET = os.environ.get(
     "UPLOADS_BUCKET_NAME", "person-local-uploads-bucket-ap-south-1"
 )
 REGION = "ap-south-1"
-# Every split service with a database; connect joins when it exists.
+# Every service with a database.
 DATABASES = (
     "auth",
     "users",
@@ -130,7 +130,7 @@ def poll(
 
 def compose(*args: str) -> str:
     result = subprocess.run(
-        ["docker", "compose", "--profile", "split", *args],
+        ["docker", "compose", *args],
         cwd=ROOT, capture_output=True, text=True, check=False,
     )  # fmt: skip
     if result.returncode != 0:

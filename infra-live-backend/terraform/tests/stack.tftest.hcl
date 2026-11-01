@@ -103,7 +103,6 @@ variables {
   gemini_model           = "gemini-test"
   llm_timeout_seconds    = 60
   llm_hourly_limit       = 200
-  cors_origins           = "https://superpower.example.com"
   cookie_domain          = "superpower.example.com"
   enable_all_alarms      = true
   jwt_public_keys        = { "key-v1" = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n" }
@@ -197,7 +196,7 @@ run "prod_stack_wiring" {
     condition = [for e in jsondecode(module.service["auth"].container_definitions)[0].environment : e.name] == [
       "SERVICE_NAME", "APP_NAME", "APP_ENV", "AWS_REGION", "MONGODB_DB_NAME", "MONGODB_MAX_POOL_SIZE", "REDIS_URL", "REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID",
       "INTERNAL_DNS_SUFFIX", "INTERNAL_SIGNING_KID", "INTERNAL_PUBLIC_KEYS", "OTEL_EXPORTER_OTLP_ENDPOINT", "LOG_LEVEL",
-      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "CORS_ORIGINS", "COOKIE_SECURE", "COOKIE_SAMESITE", "COOKIE_DOMAIN",
+      "JWT_KEY_ID", "JWT_PUBLIC_KEYS", "JWT_ISSUER", "JWT_AUDIENCE", "BEHIND_PROXY", "COOKIE_SECURE", "COOKIE_SAMESITE", "COOKIE_DOMAIN",
       "DELETION_PARTICIPANTS",
     ]
     error_message = "Auth's HTTP container has exactly its env vars."

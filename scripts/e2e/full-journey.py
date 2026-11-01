@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Every endpoint of the split services, through the gateway, on the local stack.
+"""Every endpoint of the services, through the gateway, on the local stack.
 
-Run with the backend venv against the compose `split` stack (docs/getting-started.md):
+Run with the backend venv against the local compose stack (docs/getting-started.md):
 
     backend/.venv/bin/python scripts/e2e/full-journey.py
 

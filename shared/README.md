@@ -24,7 +24,6 @@ both mapped and blocked, and labels are safe to embed in code.
 
 | Consumer | How | Uses |
 |---|---|---|
-| `backend/app/routing_data.py` | **Generated** (committed) | Registration: `country_code` → `location`; validation; blocked-country 403; worker region scoping; Atlas zone script. Kept until today's backend is removed (build plan 8.6) |
 | `backend/common/regions_data.py` | **Generated** (committed) | Region → locations and Atlas zones, for the new services' workers, relays and token checks (`common/regions.py`) |
 | `backend/auth/countries_data.py` | **Generated** (committed) | Country → location and the blocked list, for registration in the auth service (`auth/countries.py`) |
 | `frontend/src/lib/countries.ts`, `frontend-app/src/lib/countries.ts` | **Generated** (committed) | Country selector |
@@ -94,7 +93,7 @@ node scripts/sync-gateway.mjs --check  # what CI runs — fails if it's stale
 
 | Consumer | How | Uses |
 |---|---|---|
-| `local/gateway/nginx.conf` | **Generated** (committed) | The local gateway (`docker compose up gateway`, port 8088). Until build plan 8.6, any other `/api/` path goes to today's backend |
+| `local/gateway/nginx.conf` | **Generated** (committed) | The local gateway (`docker compose up gateway`, port 8088). Any other path gets the ALB's 404, as in AWS |
 | `infra-live-backend` ALB rules | **Read directly** (`jsondecode(file(...))`, build plan 2.5) | Listener rules, one per entry, at its priority |
 
 The script checks priorities (1–49999, unique, ascending), service names, 1–3 paths per rule

@@ -14,7 +14,7 @@ module "events" {
   app_name    = var.app_name
   environment = var.environment
 
-  # The catalogue also holds hello's demo event; only the split's services here.
+  # Only the services this stack deploys.
   services = local.split_services
 
   # A failed handler's message comes back after this; above the slowest handler.

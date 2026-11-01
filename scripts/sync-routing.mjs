@@ -8,7 +8,6 @@
 // Generated (do not edit by hand):
 //   backend/common/regions_data.py      region → locations and Atlas zones (every service)
 //   backend/auth/countries_data.py      country → location, blocked countries (auth only)
-//   backend/app/routing_data.py         today's backend; removed with it (build plan 8.6)
 //   frontend/src/lib/countries.ts       frontend-app/src/lib/countries.ts
 //   frontend/src/lib/locationHint.ts    frontend-app/src/lib/locationHint.ts
 //
@@ -134,7 +133,7 @@ function pyBlocked() {
 
 function pyRegions() {
   return [
-    '# AWS region → locations its backend and worker serve (Lambda@Edge routes by the inverse).',
+    '# AWS region → locations its services serve (Lambda@Edge routes by the inverse).',
     'REGION_TO_LOCATIONS: dict[str, list[str]] = {',
     ...Object.entries(regions).map(
       ([r, v]) => `    "${r}": [${v.locations.map((l) => `"${l}"`).join(', ')}],`,
@@ -154,11 +153,6 @@ function pyZones() {
 
 const pyFile = (...blocks) =>
   [...pyHeader(), ...blocks.flatMap((b) => ['', ...b])].join('\n') + '\n';
-
-// Today's backend (backend/app); removed with it in build plan 8.6.
-function renderPython() {
-  return pyFile(pyCountries(), pyBlocked(), pyRegions(), pyZones());
-}
 
 // Every service: region scoping for workers and relays (docs/auth-users-split.md, 4.1).
 function renderCommonRegions() {
@@ -222,7 +216,6 @@ function renderLocationHint() {
 const outputs = {
   'backend/common/regions_data.py': renderCommonRegions(),
   'backend/auth/countries_data.py': renderAuthCountries(),
-  'backend/app/routing_data.py': renderPython(),
   'frontend/src/lib/countries.ts': renderCountries(),
   'frontend-app/src/lib/countries.ts': renderCountries(),
   'frontend/src/lib/locationHint.ts': renderLocationHint(),

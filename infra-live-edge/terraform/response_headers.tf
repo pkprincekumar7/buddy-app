@@ -39,7 +39,7 @@
 locals {
   # One entry per active region's uploads bucket, on its regional endpoint —
   # the only form the backend's S3 client presigns (SigV4 + regional endpoint,
-  # backend/app/services/s3_uploads.py). The presigned PUT goes straight from
+  # backend/common/uploads.py). The presigned PUT goes straight from
   # the browser to S3, bypassing CloudFront, so every active region must be
   # allow-listed here or the browser blocks the upload. Built from the bucket
   # names alone: no per-region provider or lookup needed (TF-01), so a new
@@ -131,14 +131,9 @@ resource "aws_cloudfront_response_headers_policy" "frontend_security" {
 # Response headers policy for FastAPI API responses (/api/*)
 #
 # Sets the standard security headers that belong on every HTTPS response, and
-# (via cors_config below) is now the authoritative source for CORS headers
-# too. origin_override = true means CloudFront's values win regardless of
-# what FastAPI's own CORSMiddleware sends — the app-level middleware still
-# exists (see backend/app/main.py) purely for direct/local access that never
-# goes through CloudFront; for anything CloudFront-fronted, this policy is
-# the single source of truth, avoiding the duplicate/conflicting
-# Access-Control-* headers that would result if both layers were equally
-# authoritative on the same response.
+# (via cors_config below) is the only source of CORS headers: the services
+# send none (locally the apps call the API on their own origin, through a
+# proxy). origin_override = true keeps it that way if one ever does.
 #
 # override = true on every security header too: CloudFront enforces the
 # correct value regardless of what the origin returns, making this policy
@@ -149,10 +144,7 @@ resource "aws_cloudfront_response_headers_policy" "api_security" {
   name    = "${var.app_name}-api-security-${var.environment}"
   comment = "Security headers for FastAPI /api/* responses (${var.environment})"
 
-  # Mirrors backend/app/main.py's CORSMiddleware config (methods, headers,
-  # credentials) so the two don't drift into different behavior —
-  # origin_override = true means this is what actually reaches the browser
-  # for CloudFront-fronted traffic regardless.
+  # The methods, headers and credentials the apps' API calls use.
   #
   # The allowed origin is local.fqdn (same "https://{fqdn}" value this module
   # already computes and outputs — see outputs.tf) — NOT a separate

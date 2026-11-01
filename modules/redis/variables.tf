@@ -47,7 +47,7 @@ variable "multi_az" {
 }
 
 variable "auth_token" {
-  description = "AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /), shared by every client. Today's stack; the split's services use rbac_services instead. A replication group takes one or the other, never both."
+  description = "AUTH token (16–128 printable ASCII chars, no spaces, quotes, @ or /), shared by every client. The backend stack's services use rbac_services instead. A replication group takes one or the other, never both."
   type        = string
   sensitive   = true
   default     = null

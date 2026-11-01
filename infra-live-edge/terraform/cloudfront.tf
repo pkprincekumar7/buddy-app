@@ -70,7 +70,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 
   # No uploads origins: child photos are private and never served through
   # CloudFront. The API returns short-lived S3 presigned GET URLs for them
-  # (EDGE-05, backend/app/services/s3_uploads.py), so a photo URL can't be
+  # (EDGE-05, backend/common/uploads.py), so a photo URL can't be
   # shared or kept, and /uploads/* here falls through to the default
   # behaviour — a 404 from the frontend bucket (spa_rewrite leaves it alone).
 

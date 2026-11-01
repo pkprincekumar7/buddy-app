@@ -15,7 +15,7 @@
 #   - alarms on DLQ depth and on the age of the oldest message (15.5).
 # Reserved events (no consumers yet) create nothing. user.data_deleted ("*") comes
 # from every service in data_services. var.services limits all of it to the
-# services a stack deploys (the catalogue also holds hello's demo event).
+# services a stack deploys.
 # ---------------------------------------------------------------------------
 
 locals {

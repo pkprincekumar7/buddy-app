@@ -23,7 +23,7 @@ for service in $("$PYTHON" "$ROOT/backend/tools/services.py"); do
     continue
   fi
   echo "backend/$service:"
-  # PYSEC-2025-183: disputed, no fix (see backend/requirements.txt).
+  # PYSEC-2025-183: disputed, no fix (see backend/requirements-dev.txt).
   "$PIP_AUDIT" -r "$reqs" --ignore-vuln PYSEC-2025-183 || status=1
 done
 exit "$status"
