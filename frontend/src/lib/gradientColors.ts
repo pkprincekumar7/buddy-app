@@ -16,13 +16,6 @@
  * removed rather than left as a second, drifting palette.
  */
 
-/** Chart background band fill colors for the 3-month progress chart. */
-export const CHART_BAND_COLORS = [
-  'rgb(var(--chart-band-a-rgb) / 0.03)',
-  'rgb(var(--chart-band-b-rgb) / 0.03)',
-  'rgb(var(--chart-band-c-rgb) / 0.03)',
-];
-
 /**
  * Per-pillar glow rgba values used with the `.glow-pillar` CSS utility
  * (`--pillar-glow` CSS custom property). Each value matches the pillar's

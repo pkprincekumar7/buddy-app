@@ -24,7 +24,7 @@ RUN npm run build
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 # Base config (used as-is when ASSETS_BUCKET_NAME is not set).
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf.base
 # Template used when ASSETS_BUCKET_NAME is set — nginx-start.sh runs envsubst and overwrites default.conf.
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 COPY nginx-start.sh /nginx-start.sh

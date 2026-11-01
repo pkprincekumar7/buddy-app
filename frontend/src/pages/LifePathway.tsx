@@ -37,7 +37,7 @@ import {
   mergeMilestones,
 } from '@/lib/lifePathwayData';
 import type { Milestone } from '@/lib/lifePathwayData';
-import type { CompletedArea } from '@/types/api';
+import type { TransformArea } from '@/api/transform';
 
 /**
  * Multiplies a design-time pixel value by `--lp-type-scale` — 1 on phones, 1.2
@@ -66,10 +66,10 @@ const lpProseW = lpScale;
 
 /**
  * Ensures a fragment can be followed by another sentence. The superpower card
- * joins the profile description to a second, static sentence, and
- * personalizedDescriptionOneLiner only trims to the first sentence *if* it finds
+ * joins the profile description to a second, static sentence, and the view model
+ * discover builds trims the description to its first sentence only *if* it finds
  * a terminator — text without one would otherwise run into the next sentence.
- * Guarded here rather than in that shared helper, which also feeds the
+ * Guarded here rather than in discover, whose description also feeds the
  * personality profile.
  */
 function asSentence(text: string): string {
@@ -161,7 +161,7 @@ export default function LifePathway() {
   // the few px of slack absorb font-loading and sub-pixel variance.
   const isNarrow = useMediaQuery('(max-width: 535px)');
 
-  const { childData, profile, isLoading, completedAreas } = useLifePathwayData(childId);
+  const { childData, viewModel, profile, isLoading, completedAreas } = useLifePathwayData(childId);
   const [showSplash, startTimer] = useStageSplash(0);
   const { setSuppressed: setAmbientSuppressed } = useAmbientAudio();
 
@@ -203,29 +203,22 @@ export default function LifePathway() {
 
   // ── Derived child facts ────────────────────────────────────────────────────
 
-  const childName = typeof childData?.name === 'string' ? childData.name : '';
-  const gender = typeof childData?.gender === 'string' ? childData.gender : null;
-  const currentAge = useMemo(
-    () => Number.parseInt(String(childData?.age ?? ''), 10) || 10,
-    [childData],
-  );
+  const childName = childData?.name ?? '';
+  const gender = childData?.gender ?? null;
+  const currentAge = useMemo(() => childData?.age ?? 10, [childData]);
   const ages = useMemo(() => AGE_OFFSETS.map((o) => currentAge + o), [currentAge]);
   // Last node's age. Derived rather than re-stated as `currentAge + 10` so the
   // span stays defined solely by AGE_OFFSETS.
   const journeyEndAge = ages[ages.length - 1] ?? currentAge;
   const archetype = profile?.personality_type ?? null;
-  const strengths = useMemo(
-    () => (profile?.top_strengths ?? []).map((s) => String(s)).filter(Boolean),
-    [profile],
-  );
   const traits = useMemo(() => {
-    const raw = childData?.personality?.view_model?.profile?.traits;
+    const raw = viewModel?.profile.traits;
     if (!Array.isArray(raw)) return [];
     return raw
       .map((v) => String(v))
       .filter(Boolean)
       .slice(0, 3);
-  }, [childData]);
+  }, [viewModel]);
 
   /** Voice tokens for this child, for the few places that need one pronoun alone. */
   const voice = useMemo(() => copyTokensFor(gender), [gender]);
@@ -285,7 +278,7 @@ export default function LifePathway() {
     const byId = new Map(completedAreas.map((a) => [a.area_id, a]));
     return GROWTH_AREAS.filter((g) => byId.has(g.id)).map((g) => ({
       area: g,
-      completed: byId.get(g.id) as CompletedArea,
+      completed: byId.get(g.id) as TransformArea,
     }));
   }, [completedAreas]);
 
@@ -300,13 +293,8 @@ export default function LifePathway() {
     progressMessage,
   } = useLifePathwayArea({
     childId,
-    child: childData,
     area: selectedArea,
-    completedArea: selected?.completed ?? null,
     areas: completedAreas,
-    archetype,
-    personalityNarrative: profile?.summary ?? null,
-    strengths,
     ages,
     enabled: !isLoading && !showSplash,
   });
@@ -342,7 +330,7 @@ export default function LifePathway() {
   const monthMoves = useMemo(() => {
     const source = areaOptions.length
       ? areaOptions
-      : GROWTH_AREAS.map((g) => ({ area: g, completed: null as CompletedArea | null }));
+      : GROWTH_AREAS.map((g) => ({ area: g, completed: null as TransformArea | null }));
     return source
       .map(({ area, completed }) => {
         const recs = normalizeRecommendations(
@@ -1700,8 +1688,6 @@ export default function LifePathway() {
               childName={childName}
               childGender={gender}
               childId={childId}
-              childData={childData}
-              profile={profile}
             />
           </div>
         )}

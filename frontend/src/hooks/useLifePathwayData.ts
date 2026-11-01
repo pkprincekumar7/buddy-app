@@ -1,42 +1,34 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
+import { children, type Child } from '@/api/children';
+import { discover, viewModelOf, type PersonalityViewModel } from '@/api/discover';
+import { transform, type TransformArea } from '@/api/transform';
 import { onboardingProfileFromViewModel } from '@/lib/onboardingPersonalityProfile';
-import type { ChildRecord, CompletedArea } from '@/types/api';
 
 type ProfileType = ReturnType<typeof onboardingProfileFromViewModel>;
 
 interface LifePathwayData {
-  childData: ChildRecord;
+  childData: Child;
+  viewModel: PersonalityViewModel | null;
   profile: ProfileType;
-  completedAreas: CompletedArea[];
+  /** The completed growth areas, as transform holds them, with their milestones. */
+  completedAreas: TransformArea[];
 }
 
+/**
+ * The child from children, the personality from discover, and the completed areas
+ * (with their stored Life Pathway milestones) from transform's one GET (build plan 7.7).
+ */
 async function fetchLifePathwayData(childId: string): Promise<LifePathwayData> {
-  const child = await api.entities.Child.get(childId);
-  if (!child.id) {
-    return { childData: child, profile: null, completedAreas: [] };
-  }
-
-  const completedData = await api.completedGrowthAreas.list(childId);
-
-  const vm = child.personality?.view_model;
-  const profile = vm?.profile?.name ? onboardingProfileFromViewModel(vm) : null;
-
-  // Filter to finalised areas — matches the same 3-way OR used in GrowthAreas.tsx for green ticks.
-  // status may have been reset to 'in_progress' if the user re-entered the area after completing it,
-  // but ai_three_month_recommendations is never overwritten so it's the reliable completion signal.
-  const allAreas = completedData.areas ?? [];
-  const completedAreas = allAreas.filter(
-    (a) =>
-      a.status === 'completed' ||
-      !a.status ||
-      (Array.isArray(a.ai_three_month_recommendations) &&
-        a.ai_three_month_recommendations.length > 0),
-  );
-
-  return { childData: child, profile, completedAreas };
+  const [child, personality, plan] = await Promise.all([
+    children.get(childId),
+    discover.personality(childId),
+    transform.get(childId),
+  ]);
+  const viewModel = viewModelOf(personality);
+  const profile = viewModel?.profile.name ? onboardingProfileFromViewModel(viewModel) : null;
+  return { childData: child, viewModel, profile, completedAreas: plan.areas };
 }
 
 export function useLifePathwayData(childId: string | undefined) {
@@ -59,15 +51,9 @@ export function useLifePathwayData(childId: string | undefined) {
     }
   }, [isError]);
 
-  // Once Life Pathway content has loaded for this child, mark Transform as visited
-  // — this unlocks the Release/Connect circles on the DimensionCircles page.
-  useEffect(() => {
-    if (!childId || !data?.childData?.id || data.childData.transform_visited) return;
-    api.entities.Child.markProgress(childId, 'transform_visited').catch(console.error);
-  }, [childId, data?.childData?.id, data?.childData?.transform_visited]);
-
   return {
     childData: data?.childData ?? null,
+    viewModel: data?.viewModel ?? null,
     profile: data?.profile ?? null,
     isLoading,
     completedAreas: data?.completedAreas ?? [],

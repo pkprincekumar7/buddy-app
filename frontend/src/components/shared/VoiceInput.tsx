@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/api/client';
+import { speech, SPEECH_ERRORS } from '@/api/speech';
+import { httpErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
 
 const NativeSpeechRecognition: typeof window.webkitSpeechRecognition | null =
@@ -128,14 +129,18 @@ export default function VoiceInput({
         setIsRecording(false);
         setIsTranscribing(true);
         try {
-          const result = (await api.audio.transcribe(blob, `recording.${ext}`)) as {
-            transcript?: string;
-          };
-          if (result?.transcript) onTranscript(result.transcript);
+          // The shared service's speech endpoint (build plan 7.8).
+          const transcript = await speech.transcribe(blob, `recording.${ext}`);
+          if (transcript) onTranscript(transcript);
         } catch (err) {
           // Fix #2: inform the user when Whisper transcription fails
           console.warn('Transcription failed:', err);
-          toast.error('Transcription failed. Please try again.');
+          toast.error(
+            httpErrorMessage(err as Error, {
+              codeMessages: SPEECH_ERRORS,
+              fallback: 'Transcription failed. Please try again.',
+            }),
+          );
         } finally {
           setIsTranscribing(false);
         }

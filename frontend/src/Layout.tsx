@@ -4,10 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useTts } from '@/lib/TtsContext';
-import { api } from '@/api/client';
+import { account, displayName } from '@/api/account';
 import { unlockIOSSpeechSynthesis } from '@/lib/tts';
 import { getInitials } from '@/lib/avatarUtils';
-import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Home, LogOut, VolumeX, Volume2, Mail, RotateCcw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AnimatePresence } from 'framer-motion';
@@ -205,7 +205,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                     aria-expanded={profileOpen}
                     aria-haspopup="true"
                   >
-                    {getInitials(user?.full_name ?? user?.email ?? '?')}
+                    {getInitials(displayName(user) ?? user?.email ?? '?')}
                   </button>
 
                   {profileOpen && (
@@ -218,11 +218,11 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                       <div className="bg-gradient-to-r from-primary-dark/30 to-success-strong/20 px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-medium to-success text-lg font-bold text-white shadow-lg">
-                            {getInitials(user?.full_name ?? user?.email ?? '?')}
+                            {getInitials(displayName(user) ?? user?.email ?? '?')}
                           </div>
                           <div className="min-w-0">
                             <p className="truncate font-semibold text-card-foreground">
-                              {user?.full_name ?? 'User'}
+                              {displayName(user) ?? 'User'}
                             </p>
                             <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                               <Mail className="h-3 w-3 shrink-0" />
@@ -248,6 +248,19 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                           <Home className="h-4 w-4" />
                           Home
                         </Link>
+                        <Link
+                          to={createPageUrl('AccountSettings')}
+                          onClick={() => setProfileOpen(false)}
+                          className={cn(
+                            'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors hover:bg-accent',
+                            currentPageName === 'AccountSettings'
+                              ? 'text-primary'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          <Settings className="h-4 w-4" />
+                          Account settings
+                        </Link>
                         <button
                           onClick={() => {
                             setProfileOpen(false);
@@ -270,7 +283,7 @@ export default function Layout({ children, currentPageName }: LayoutProps) {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    void api.auth.redirectToLogin();
+                    void account.redirectToLogin();
                   }}
                   className="border-border text-muted-foreground hover:bg-accent hover:text-foreground"
                 >

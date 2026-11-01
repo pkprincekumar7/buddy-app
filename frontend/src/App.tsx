@@ -227,6 +227,14 @@ const AdminRoutes = () => (
         </LayoutWrapper>
       }
     />
+    <Route
+      path="/AccountSettings"
+      element={
+        <LayoutWrapper currentPageName="AccountSettings">
+          <Pages.AccountSettings />
+        </LayoutWrapper>
+      }
+    />
     <Route path="*" element={<Navigate to="/Admin" replace />} />
   </Routes>
 );

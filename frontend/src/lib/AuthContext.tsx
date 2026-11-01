@@ -10,14 +10,12 @@ import {
 import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { toast } from 'sonner';
+import { account, type CurrentUser } from '@/api/account';
 import { api, dispatchAuthExpired, resolveAuthExpiry } from '@/api/client';
 import { ApiError } from '@/api/errors';
 import { createPageUrl } from '@/utils';
 import { pagesConfig } from '@/pages.config';
-import { PUBLIC_AUTH_PATHS } from '@/lib/authPaths';
-import type { UserRecord } from '@/types/api';
-
-type UserData = UserRecord;
+type UserData = CurrentUser;
 
 interface AuthErrorUnknown {
   type: 'unknown';
@@ -41,8 +39,6 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const BLOCKED_REDIRECT_PATHS: readonly string[] = PUBLIC_AUTH_PATHS;
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,13 +55,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingAuth(true);
     }
     try {
-      const currentUser = await api.auth.me();
+      const currentUser = await account.current();
       setUser(currentUser);
       setIsAuthenticated(true);
     } catch (error) {
       console.error('Auth check failed:', error);
       if (error instanceof ApiError && error.status === 401) {
-        void api.auth.logout();
+        void account.logout();
         setUser(null);
         setIsAuthenticated(false);
         setAuthError(null);
@@ -100,7 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (message && message !== 'Session expired') {
         toast.error(message);
       }
-      void api.auth.logout().catch(() => {});
+      void account.logout();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);
@@ -144,20 +140,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const timer = setTimeout(() => {
-      if (BLOCKED_REDIRECT_PATHS.includes(location.pathname)) return;
-      api.preferences
-        .patch({ last_visited_path: location.pathname + location.search })
-        .catch(() => {});
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [location.pathname, location.search, isAuthenticated]);
-
   const logout = useCallback(
     async (shouldRedirect = true) => {
-      await api.auth.logout();
+      await account.logout();
       setUser(null);
       setIsAuthenticated(false);
       setAuthError(null);

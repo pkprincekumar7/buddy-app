@@ -7,7 +7,7 @@ import unusedImportsPlugin from 'eslint-plugin-unused-imports';
 import securityPlugin from 'eslint-plugin-security';
 
 export default tseslint.config(
-  { ignores: ['src/components/ui/**', 'dist/**', 'node_modules/**'] },
+  { ignores: ['src/components/ui/**', 'src/api/generated/**', 'dist/**', 'node_modules/**'] },
 
   {
     files: ['src/**/*.ts', 'src/**/*.tsx'],

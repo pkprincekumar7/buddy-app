@@ -1,3 +1,4 @@
+import { firstName, type Profile } from '@/api/account';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import { cn } from '@/lib/utils';
@@ -25,13 +26,12 @@ import {
   Moon,
   Check,
 } from 'lucide-react';
-import { api } from '@/api/client';
+import { onboarding } from '@/api/onboarding';
 import { useTts } from '@/lib/TtsContext';
 import {
   CHATBOT_CAPTURED_FIELDS,
   questionnaireFieldHasValue,
   pickSavedQuestionnaireForChatbot,
-  normalizeOnboardingChildDataBlob,
 } from '@/lib/onboardingChildData';
 import { pickPreferredVoice } from '@/lib/tts';
 import type { LucideIcon } from 'lucide-react';
@@ -72,7 +72,7 @@ interface PhaseSplash {
 }
 
 interface ConversationalOnboardingProps {
-  user?: { full_name?: string; email?: string } | null;
+  user?: { profile?: Profile | null; email?: string } | null;
   activeChildId?: string;
   onComplete: (data: Record<string, unknown>) => void | Promise<void>;
   resumeHydrationReady?: boolean;
@@ -387,7 +387,7 @@ export default function ConversationalOnboarding({
     activeChildIdRef.current = activeChildId ?? undefined;
   }, [activeChildId]);
 
-  const parentName = user?.full_name?.split(' ')[0] ?? 'there';
+  const parentName = firstName(user) ?? 'there';
 
   const conversationFlow = useMemo<ConversationStep[]>(
     () => [
@@ -544,10 +544,9 @@ export default function ConversationalOnboarding({
 
     void (async () => {
       try {
-        const child = childId ? await api.entities.Child.get(childId) : null;
-        const slim = child
-          ? pickSavedQuestionnaireForChatbot(normalizeOnboardingChildDataBlob(child) ?? {})
-          : {};
+        // The child's own fields, plus the answers once the chat was saved (build plan 7.5).
+        const saved = childId ? await onboarding.draft(childId) : {};
+        const slim = pickSavedQuestionnaireForChatbot(saved);
         if (cancelled) return;
 
         const flow = conversationFlowRef.current;
