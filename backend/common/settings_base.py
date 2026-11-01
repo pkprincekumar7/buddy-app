@@ -3,6 +3,10 @@
 A service subclasses `ServiceSettings` and adds its own fields. Values come from the
 environment (in AWS, the task definition and its secrets); a `.env` in the working
 directory is read too, for local runs.
+
+In stg and prod, settings that would quietly weaken the service stop it at startup instead
+(production-readiness review, AUTH-07): `unsafe_settings` lists what every runtime needs,
+and a service adds its own checks by extending it.
 """
 
 from __future__ import annotations
@@ -14,6 +18,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import AsyncMongoClient
 
 AppEnv = Literal["local", "dev", "sbx", "stg", "prod"]
+# The environments real users reach, where unsafe settings refuse to start (AUTH-07).
+STRICT_ENVS: frozenset[str] = frozenset({"stg", "prod"})
+
+
+class UnsafeSettingsError(RuntimeError):
+    """Settings that mustn't serve real users. Not a ValueError on purpose: pydantic wraps a
+    ValueError in a ValidationError that prints part of the input, which holds the secrets;
+    any other exception reaches the caller as it is, with only this message."""
+
 
 # As the rate limits' client (common.limiter).
 VALKEY_TIMEOUT_SECONDS = 2
@@ -80,6 +93,28 @@ class ServiceSettings(BaseSettings):
     def _iam_valkey_needs_its_group(self) -> ServiceSettings:
         if self.redis_username and not self.redis_replication_group_id:
             raise ValueError("REDIS_USERNAME needs REDIS_REPLICATION_GROUP_ID (its IAM token)")
+        return self
+
+    def unsafe_settings(self) -> list[str]:
+        """What's wrong for an environment real users reach; checked only in STRICT_ENVS."""
+        problems = []
+        if not self.redis_url:
+            problems.append("REDIS_URL is unset: rate limits and the authz cache would be per task")
+        elif not self.redis_url.startswith("rediss://"):
+            problems.append("REDIS_URL must use TLS (rediss://)")
+        if not self.redis_username:
+            problems.append("REDIS_USERNAME is unset: Valkey's IAM sign-in needs it")
+        # Every service has this field (Moto, locally); in AWS it must be the real endpoints.
+        if getattr(self, "aws_endpoint_url", None):
+            problems.append("AWS_ENDPOINT_URL is set: AWS calls would go to a local emulator")
+        return problems
+
+    @model_validator(mode="after")
+    def _safe_for_real_users(self) -> ServiceSettings:
+        if self.app_env in STRICT_ENVS and (problems := self.unsafe_settings()):
+            raise UnsafeSettingsError(
+                f"unsafe settings for APP_ENV={self.app_env}: " + "; ".join(problems)
+            )
         return self
 
     def valkey_options(self) -> dict[str, Any]:

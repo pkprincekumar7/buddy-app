@@ -24,6 +24,7 @@ from auth.app.store import ADMIN_COUNT, AUDIT, AUTH, DELETIONS, EMAIL_INDEX, SES
 from common.events import Event
 from common.events.testing import assert_consumer_contract, sns_envelope, topic_arn
 from common.internal_client import ServiceTokenSigner
+from common.settings_base import UnsafeSettingsError
 
 PATH = "/api/v1/auth/account"
 
@@ -448,3 +449,23 @@ def test_deletion_participants_must_be_known_services():
     for bad in ("", "users,billing", " , "):
         with pytest.raises(ValueError):
             AuthSettings.model_validate({**base, "DELETION_PARTICIPANTS": bad})
+
+
+def test_prod_refuses_insecure_cookies_and_partial_deletion():
+    """AUTH-07: auth's own checks, on top of every service's (common.settings_base)."""
+    prod = {
+        "APP_ENV": "prod", "MONGODB_URI": "mongodb://x", "MONGODB_DB_NAME": "x",
+        "JWT_PRIVATE_KEY": "x", "EMAIL_HMAC_PEPPER": "x" * 32,
+        "REDIS_URL": "rediss://valkey:6379", "REDIS_USERNAME": "auth",
+        "REDIS_REPLICATION_GROUP_ID": "superpower-prod",
+    }  # fmt: skip
+    assert AuthSettings.model_validate(prod).unsafe_settings() == []
+    with pytest.raises(UnsafeSettingsError, match="COOKIE_SECURE is false"):
+        AuthSettings.model_validate({**prod, "COOKIE_SECURE": "false"})
+    with pytest.raises(UnsafeSettingsError, match="leaves out children, onboarding"):
+        AuthSettings.model_validate({**prod, "DELETION_PARTICIPANTS": "users,discover,grow"})
+    # Outside stg and prod, both are allowed (local runs use plain-HTTP cookies).
+    local = AuthSettings.model_validate(
+        {**prod, "APP_ENV": "dev", "COOKIE_SECURE": "false", "DELETION_PARTICIPANTS": "users"}
+    )
+    assert not local.cookie_secure and local.participants == ["users"]

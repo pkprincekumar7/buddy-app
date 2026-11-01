@@ -3,7 +3,7 @@
 > **Updated 2026-11-01 (v8):** checked against the current code, after the backend split into nine services and the removal of the old monolith (`backend/app/`, `backend/worker.py`) in build plan 8.6. The verdict, architecture, "What's done well", the [Finding tracker](#finding-tracker) and the low-severity table describe the **current** code.
 > Each finding keeps its original text (written against the 2026-10-18 code) and now opens with a **🔄 Current code** note: its status today and where the code now lives. Where the two disagree, trust the note; the original "Where" lines often point at deleted files or old line numbers.
 
-> **Status (2026-11-01):** of the 86 tracked findings, 17 are done, 34 partly done, 34 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
+> **Status (2026-11-01):** of the 86 tracked findings, 18 are done, 34 partly done, 33 open and 1 moot; DR-01, CI-01 and SEC-04 are open but deferred. Status key: ✅ Done · 🟡 Partial · ⬜ Open · ⚪ Moot (the code it was about is gone, with no equivalent problem now) · ⏸ Deferred (open, set aside for later by the owner).
 > **Scope:** `infra-live-backend/`, `infra-live-edge/`, `infra-live-frontend/`, `infra-live-scheduler/`, `.github/workflows/`. Backend/frontend/mobile code was read where infra behaviour depends on it.
 > **Purpose:** A work list to hand to Claude Code later. Each finding has an ID, location, problem, fix, and acceptance criteria so it can be implemented one item (or one phase) at a time.
 
@@ -79,8 +79,7 @@ What still stands in the way:
 - **Remaining backend items:**
   - synchronous Valkey calls in the rate limiter (APP-05);
   - no LLM spend metric or kill switch, and no dead-job alarm (JOB-02, JOB-03);
-  - the refresh token in the response body and the `Domain` cookie (AUTH-05);
-  - no fail-fast config check for stg and prod (AUTH-07).
+  - the refresh token in the response body and the `Domain` cookie (AUTH-05).
 
 As it stands it suits **dev and stg**. Prod needs Phase 0 (the database) and Phase 1 first.
 
@@ -183,7 +182,7 @@ Status as of 2026-11-01 (v8), checked against the current code.
 | AUTH-04 | 🟡 Medium | Auth | Brute force only per-IP; bcrypt cost & 72-byte truncation | 🟡 Throttle per (email, IP); per-account limit, bcrypt pool and 72-byte cap open |
 | AUTH-05 | 🟡 Medium | Auth | Refresh token returned to web JS; cookie scope; no Origin check | ⬜ Open |
 | AUTH-06 | 🟡 Medium | Auth | Session-cleanup task can die silently; runs in every region | ⚪ Moot (sessions expire by TTL index; the cleanup task is gone) |
-| AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ⬜ Open |
+| AUTH-07 | 🟡 Medium | Auth | No fail-fast config validation for stg/prod | ✅ Done (unsafe stg/prod settings stop every runtime at startup, exit 1) |
 | PRIV-01 | 🟠 High | Privacy | Plaintext passwords and child PII written to logs | ✅ Done (not logged; 422s carry no submitted values, `backend/common/validation.py`) |
 | PRIV-02 | 🟠 High | Privacy | Deletion incomplete; worker recreates data; no 30-day purge | ✅ Done (deletion across services, tombstones, 30-day purge) |
 | PRIV-03 | 🟡 Medium | Privacy | Children's voice/PII sent to LLM providers out of region | ⬜ Open |
@@ -1143,7 +1142,7 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### DB-05 — Atlas failover behaviour unspecified/untested 🟡
 
-> 🔄 **Current code (2026-11-01):** 🟡 Partial. Deletes run in transactions and are re-run by events. Startup `prepare()` has no retry or backoff, so tasks crash-loop during a failover, and no failover test is documented.
+> 🔄 **Current code (2026-11-01):** 🟡 Partial. Deletes run in transactions and are re-run by events. Startup `prepare()` has no retry or backoff, so tasks crash-loop during a failover, and no failover test is documented. A failed startup now at least exits 1 (`common.serve`), so ECS and the deploy see it as a failed task.
 
 **Where:** `backend/app/main.py:102` (`delete_many`), `update_many` call sites, `backend/worker.py:568` (startup ping → `sys.exit`).
 
@@ -1456,7 +1455,12 @@ With DEC-01 = B (three regions), the same per-region numbers triple. Today's pro
 
 ### AUTH-07 — No fail-fast config validation for stg/prod 🟡
 
-> 🔄 **Current code (2026-11-01):** ⬜ Open. Nothing fails startup on unsafe stg/prod settings (`backend/common/settings_base.py`, `auth/app/runtime.py:56`). `COOKIE_SECURE` now defaults to true.
+> 🔄 **Current code (2026-11-01):** ✅ Done (buddy-common 0.19.0). In `stg` and `prod` (`STRICT_ENVS`), a runtime with unsafe settings stops at startup:
+> - **Every runtime** (`ServiceSettings.unsafe_settings`, `backend/common/settings_base.py`): `REDIS_URL` must be set and use TLS (`rediss://`), `REDIS_USERNAME` must be set (IAM sign-in), and `AWS_ENDPOINT_URL` must be unset (no local emulator).
+> - **auth** (`AuthSettings.unsafe_settings`): `COOKIE_SECURE` must be true, and `DELETION_PARTICIPANTS` must name all seven services.
+> - **HTTP runtimes only** (`common.serve.unsafe_http_environment`): `BEHIND_PROXY` must be true, and `MONGODB_URI` must be set, since an unconfigured image would otherwise answer 503 to everything. Workers have no proxy in front of them, so they aren't checked for it.
+>
+> The error is an `UnsafeSettingsError` naming every problem, not a pydantic `ValidationError`, whose message would print part of the settings input (the secrets). `common.serve` now also exits 1 when an app's startup fails: uvicorn returned normally before, so a refused start looked like a clean stop. Checked on the local stack: auth started with `APP_ENV=prod` and `COOKIE_SECURE=false` exits 1 with the list of problems. The CORS and `TRUSTED_PROXY_HOPS` checks no longer apply; the per-environment JWT key check stays with APP-02.
 
 **Where:** `backend/app/settings.py:240-248` (only warnings).
 

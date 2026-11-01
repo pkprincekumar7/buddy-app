@@ -187,9 +187,51 @@ def test_main_serves_the_named_service(monkeypatch):
     monkeypatch.setattr(serve_mod, "build_servers", fake_build)
     monkeypatch.setattr(serve_mod, "serve", fake_serve)
     monkeypatch.setattr(serve_mod, "setup_observability", fake_observe)
-    assert serve_mod.main(["svc_main"]) == 0
+    assert serve_mod.main(["svc_main"], environ={}) == 0
     assert seen == {
         "service": "svc_main",
         "servers": ["servers"],
         "observed": ("svc_main", (_asgi, _internal)),  # logs and traces for both apps
     }
+
+
+def test_main_fails_when_an_app_does_not_start(monkeypatch, capsys):
+    # uvicorn returns normally after a failed startup, with `started` still False.
+    servers = [types.SimpleNamespace(started=True), types.SimpleNamespace(started=False)]
+
+    async def fake_serve(servers):
+        pass
+
+    _fake_service(monkeypatch, "svc_down", app=_asgi, internal_app=_internal)
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service: servers)
+    monkeypatch.setattr(serve_mod, "serve", fake_serve)
+    monkeypatch.setattr(serve_mod, "setup_observability", lambda service, apps: None)
+    assert serve_mod.main(["svc_down"], environ={}) == 1
+    assert "svc_down: startup failed" in capsys.readouterr().err
+
+
+HTTP_ENV = {"APP_ENV": "prod", "BEHIND_PROXY": "true", "MONGODB_URI": "mongodb+srv://x/"}
+
+
+@pytest.mark.parametrize(
+    ("env", "problem"),
+    [
+        ({"BEHIND_PROXY": "false"}, "BEHIND_PROXY isn't true"),
+        ({"BEHIND_PROXY": ""}, "BEHIND_PROXY isn't true"),
+        ({"MONGODB_URI": " "}, "MONGODB_URI is unset"),
+    ],
+)
+def test_main_refuses_an_unsafe_http_runtime_in_stg_and_prod(monkeypatch, capsys, env, problem):
+    monkeypatch.setattr(serve_mod, "build_servers", lambda service: pytest.fail("served"))
+    for app_env in ("stg", "prod"):
+        assert serve_mod.main(["svc"], environ={**HTTP_ENV, **env, "APP_ENV": app_env}) == 1
+        err = capsys.readouterr().err
+        assert f"unsafe settings for APP_ENV={app_env}" in err and problem in err
+
+
+def test_only_stg_and_prod_need_the_http_settings():
+    assert serve_mod.unsafe_http_environment(HTTP_ENV) == []
+    assert serve_mod.unsafe_http_environment({**HTTP_ENV, "BEHIND_PROXY": "1"}) == []
+    for app_env in ("local", "dev", "sbx"):
+        assert serve_mod.unsafe_http_environment({"APP_ENV": app_env}) == []
+    assert serve_mod.unsafe_http_environment({}) == []

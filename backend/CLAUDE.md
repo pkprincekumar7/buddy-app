@@ -63,6 +63,9 @@ on-demand audit that checks a file against this same list. The design behind the
   `SignedIn = Annotated[Caller, Depends(signed_in())]`), not the default-argument style.
 - Settings come from the environment through the service's `ServiceSettings` subclass, parsed
   once when the `Runtime` is built (`Runtime.from_env`), never per request.
+- In stg and prod, unsafe settings stop the service at startup (`UnsafeSettingsError`). A
+  setting that mustn't reach real users gets a check in the subclass's `unsafe_settings`
+  (extend `super().unsafe_settings()`), not a warning.
 - The `Runtime` is built in `lifespan` only when `MONGODB_URI` is set; without it the service
   serves `/health` and every other route answers 503, so the image still starts unconfigured.
   Both apps share one `Runtime` per process and the last one to stop closes it (`aclose`): any

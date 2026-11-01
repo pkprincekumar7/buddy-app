@@ -20,12 +20,12 @@ from limits.storage import MemoryStorage
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from common import logging as clog
 from common import metrics, telemetry
 from common.limiter import RETRY_PRIMARY_AFTER_SECONDS, RateLimits
-from common.settings_base import ServiceSettings
+from common.settings_base import ServiceSettings, UnsafeSettingsError
 
 # ── settings ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +67,53 @@ def test_blank_optional_settings_are_unset(monkeypatch, tmp_path):
 def test_bad_settings_are_refused(monkeypatch, tmp_path, env):
     with pytest.raises(ValidationError):
         _settings(monkeypatch, tmp_path, **env)
+
+
+# What AWS gives every runtime (infra-live-backend/terraform/services.tf).
+SAFE_ENV = {
+    "REDIS_URL": "rediss://valkey.example:6379",
+    "REDIS_USERNAME": "grow",
+    "REDIS_REPLICATION_GROUP_ID": "superpower-stg",
+}
+
+
+class _WithEmulator(ServiceSettings):
+    aws_endpoint_url: str | None = Field(default=None, validation_alias="AWS_ENDPOINT_URL")
+
+
+@pytest.mark.parametrize("app_env", ["stg", "prod"])
+def test_stg_and_prod_start_with_safe_settings(monkeypatch, tmp_path, app_env):
+    for key in ("REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID", "AWS_ENDPOINT_URL"):
+        monkeypatch.delenv(key, raising=False)
+    settings = _settings(monkeypatch, tmp_path, APP_ENV=app_env, **SAFE_ENV)
+    assert settings.unsafe_settings() == []
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({"REDIS_URL": ""}, "REDIS_URL is unset"),
+        ({"REDIS_URL": "redis://valkey.example:6379"}, "REDIS_URL must use TLS"),
+        ({"REDIS_USERNAME": "", "REDIS_REPLICATION_GROUP_ID": ""}, "REDIS_USERNAME is unset"),
+    ],
+)
+def test_stg_and_prod_refuse_unsafe_settings(monkeypatch, tmp_path, env, message):
+    for key in ("REDIS_USERNAME", "REDIS_REPLICATION_GROUP_ID"):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(UnsafeSettingsError, match=f"unsafe settings for APP_ENV=prod: .*{message}"):
+        _settings(monkeypatch, tmp_path, APP_ENV="prod", **{**SAFE_ENV, **env})
+    # The same settings are fine where real users don't reach (local, dev, sbx).
+    for app_env in ("local", "dev", "sbx"):
+        _settings(monkeypatch, tmp_path, APP_ENV=app_env, **{**SAFE_ENV, **env})
+
+
+def test_a_local_aws_emulator_is_refused_in_prod(monkeypatch, tmp_path):
+    _settings(monkeypatch, tmp_path, APP_ENV="prod", **SAFE_ENV)
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://moto:5000")
+    with pytest.raises(UnsafeSettingsError, match="AWS_ENDPOINT_URL is set"):
+        _WithEmulator()  # type: ignore[call-arg]  # the fields come from the environment
+    monkeypatch.setenv("APP_ENV", "dev")
+    assert _WithEmulator().aws_endpoint_url == "http://moto:5000"  # type: ignore[call-arg]
 
 
 def test_the_mongo_client_has_the_pool_limit(monkeypatch, tmp_path):

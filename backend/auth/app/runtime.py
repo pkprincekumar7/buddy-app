@@ -90,6 +90,17 @@ class AuthSettings(ServiceSettings):
     def _blank_domain(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value
 
+    def unsafe_settings(self) -> list[str]:
+        problems = super().unsafe_settings()
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE is false: session cookies would go over plain HTTP")
+        if missing := [name for name in PARTICIPANTS if name not in self.participants]:
+            problems.append(
+                f"DELETION_PARTICIPANTS leaves out {', '.join(missing)}: "
+                "an account deletion would leave their data behind"
+            )
+        return problems
+
 
 async def verify_google_token(token: str, client_id: str) -> dict[str, Any]:  # pragma: no cover
     """Google's own check: signature against Google's keys, audience, issuer and expiry.

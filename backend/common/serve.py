@@ -16,10 +16,11 @@ on request bodies (common.body_limit); and 422s that don't echo the submitted va
 import asyncio
 import contextlib
 import importlib
+import os
 import re
 import signal
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Protocol
 
 import uvicorn
@@ -27,6 +28,7 @@ from fastapi import FastAPI
 
 from common.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimitMiddleware
 from common.logging import RequestIdMiddleware
+from common.settings_base import STRICT_ENVS
 from common.telemetry import setup_observability
 from common.validation import redact_validation_errors
 
@@ -121,13 +123,40 @@ async def serve(servers: Sequence[Runnable]) -> None:
             loop.remove_signal_handler(sig)
 
 
-def main(argv: list[str]) -> int:
+def unsafe_http_environment(environ: Mapping[str, str]) -> list[str]:
+    """What an HTTP runtime in stg or prod mustn't start with (AUTH-07); the settings check
+    the rest (common.settings_base). Only these two are HTTP's alone: a worker has no proxy
+    in front of it, and the image's unconfigured mode (no MONGODB_URI: 503 to everything)
+    is for running it outside an environment, not for serving users."""
+    if environ.get("APP_ENV") not in STRICT_ENVS:
+        return []
+    problems = []
+    if environ.get("BEHIND_PROXY", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        problems.append("BEHIND_PROXY isn't true: client IPs would be the ALB's")
+    if not environ.get("MONGODB_URI", "").strip():
+        problems.append("MONGODB_URI is unset: every route but /health would answer 503")
+    return problems
+
+
+def main(argv: list[str], environ: Mapping[str, str] = os.environ) -> int:
     if len(argv) != 1:
         print("usage: python -m common.serve <service>", file=sys.stderr)
         return 2
+    if problems := unsafe_http_environment(environ):
+        print(
+            f"unsafe settings for APP_ENV={environ['APP_ENV']}: " + "; ".join(problems),
+            file=sys.stderr,
+        )
+        return 1
     servers = build_servers(argv[0])
     setup_observability(argv[0], apps=load_apps(argv[0]))
     asyncio.run(serve(servers))
+    # uvicorn returns normally when the app's startup fails (unsafe settings, a database it
+    # can't reach): it logs the error and never sets `started`. Exit non-zero then, so ECS
+    # and the deploy see a failed task rather than a clean stop.
+    if not all(getattr(server, "started", True) for server in servers):
+        print(f"{argv[0]}: startup failed", file=sys.stderr)
+        return 1
     return 0
 
 
