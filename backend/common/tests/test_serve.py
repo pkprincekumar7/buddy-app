@@ -9,8 +9,11 @@ import types
 from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from common import serve as serve_mod
+from common.validation import validation_error_response
 
 
 def _fake_service(monkeypatch, name: str, **apps) -> None:
@@ -53,6 +56,14 @@ def test_build_servers_puts_each_app_on_its_port(monkeypatch):
     )
     assert public.config.host == internal.config.host == "0.0.0.0"  # nosec B104
     assert not public.config.server_header
+
+
+def test_build_servers_redacts_every_fastapi_apps_422s(monkeypatch):
+    public, internal = FastAPI(), FastAPI()
+    _fake_service(monkeypatch, "svc_api", app=public, internal_app=internal)
+    serve_mod.build_servers("svc_api")
+    for app in (public, internal):
+        assert app.exception_handlers[RequestValidationError] is validation_error_response
 
 
 @pytest.mark.parametrize("missing", ["app", "internal_app"])

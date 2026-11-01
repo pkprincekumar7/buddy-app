@@ -8,8 +8,9 @@ separate ports, so an internal route can't be reached on the public port, whatev
 service's routers do. Both servers share one process and one event loop.
 
 Every service gets the same observability here (15.5): JSON logs, traces for both apps,
-and `X-Request-Id` on every request (common.logging.RequestIdMiddleware); and the same cap
-on request bodies (common.body_limit).
+and `X-Request-Id` on every request (common.logging.RequestIdMiddleware); the same cap
+on request bodies (common.body_limit); and 422s that don't echo the submitted values
+(common.validation).
 """
 
 import asyncio
@@ -22,10 +23,12 @@ from collections.abc import Iterator, Sequence
 from typing import Any, Protocol
 
 import uvicorn
+from fastapi import FastAPI
 
 from common.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimitMiddleware
 from common.logging import RequestIdMiddleware
 from common.telemetry import setup_observability
+from common.validation import redact_validation_errors
 
 PUBLIC_PORT = 8000
 INTERNAL_PORT = 8001
@@ -70,8 +73,12 @@ def load_apps(service: str) -> tuple[Any, Any]:
 # Containers listen on all interfaces; security groups limit who reaches each port.
 def build_servers(service: str, host: str = "0.0.0.0") -> list[uvicorn.Server]:  # nosec B104
     """The public and internal servers for `service`, not started. Each app is behind the
-    body cap (common.body_limit): 1 MiB, or the service's `MAX_BODY_BYTES`."""
+    body cap (common.body_limit): 1 MiB, or the service's `MAX_BODY_BYTES`; a FastAPI app
+    also gets the redacted 422 handler (common.validation)."""
     apps = load_apps(service)
+    for asgi in apps:
+        if isinstance(asgi, FastAPI):
+            redact_validation_errors(asgi)
     module = importlib.import_module(f"{service}.app.main")
     limit = int(getattr(module, "MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES))
     return [

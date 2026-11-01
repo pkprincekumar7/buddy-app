@@ -93,6 +93,9 @@ on-demand audit that checks a file against this same list. The design behind the
   list and number (`Field(max_length=..., ge=..., le=...)`).
 - Request bodies are capped before the app reads them (`common/body_limit.py`, 1 MiB unless the
   service's `app.main` sets `MAX_BODY_BYTES`).
+- A 422 never repeats what was sent: `common.serve` replaces FastAPI's validation handler with
+  `common/validation.py`, which keeps each error's `type`, `loc` and `msg` and drops `input`
+  and `ctx` (passwords and children's details would otherwise come back in the body).
 - **When the same resource is exposed through more than one endpoint (e.g. a list with a
   projection alongside a get-by-id), the projection must include every field any consumer of
   the list relies on** — a field missing from a projection fails with no error anywhere, just
